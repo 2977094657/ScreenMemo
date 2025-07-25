@@ -1,0 +1,90 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android related
+android/local.properties
+android/key.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/*.iml
+
+# iOS related
+ios/Flutter/flutter_assets
+ios/Flutter/flutter_export_environment.sh
+ios/Runner.xcworkspace/xcshareddata/
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcshareddata/
+ios/Runner.xcodeproj/xcuserdata/
+
+# macOS related
+macos/Flutter/flutter_assets
+macos/Flutter/flutter_export_environment.sh
+macos/Runner.xcworkspace/xcshareddata/
+macos/Runner.xcworkspace/xcuserdata/
+macos/Runner.xcodeproj/xcshareddata/
+macos/Runner.xcodeproj/xcuserdata/
+
+# Linux related
+linux/flutter/ephemeral/
+
+# Windows related
+windows/flutter/ephemeral/
+
+# Web related
+web/flutter_assets
+
+# Coverage
+coverage/
+
+# Custom additions - temporary files and documentation
+debug_commands.sh
+get_log_file.bat
+get_log_file.sh
+CLAUDE.md
+CRITICAL_TEST.md
+screenmemo_tech_selection.html

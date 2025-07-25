@@ -1,0 +1,329 @@
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../models/app_info.dart';
+import '../services/app_selection_service.dart';
+
+/// 应用选择组件
+class AppSelectionWidget extends StatefulWidget {
+  final Function(List<AppInfo>)? onSelectionChanged;
+  
+  const AppSelectionWidget({
+    super.key,
+    this.onSelectionChanged,
+  });
+
+  @override
+  State<AppSelectionWidget> createState() => _AppSelectionWidgetState();
+}
+
+class _AppSelectionWidgetState extends State<AppSelectionWidget> {
+  final AppSelectionService _appService = AppSelectionService.instance;
+  final TextEditingController _searchController = TextEditingController();
+  
+  List<AppInfo> _allApps = [];
+  List<AppInfo> _filteredApps = [];
+  List<AppInfo> _selectedApps = [];
+  bool _isLoading = true;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApps();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text;
+      _filteredApps = _appService.searchApps(_searchQuery);
+    });
+  }
+
+  Future<void> _loadApps() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 获取所有应用
+      _allApps = await _appService.getAllInstalledApps();
+      
+      // 获取之前选中的应用
+      final selectedApps = await _appService.getSelectedApps();
+      
+      // 更新选中状态
+      for (final app in _allApps) {
+        app.isSelected = selectedApps.any((selected) => selected.packageName == app.packageName);
+      }
+      
+      _selectedApps = _allApps.where((app) => app.isSelected).toList();
+      _filteredApps = _allApps;
+      
+    } catch (e) {
+      print('加载应用失败: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _toggleAppSelection(AppInfo app) {
+    setState(() {
+      app.isSelected = !app.isSelected;
+      
+      if (app.isSelected) {
+        _selectedApps.add(app);
+      } else {
+        _selectedApps.removeWhere((selected) => selected.packageName == app.packageName);
+      }
+    });
+    
+    widget.onSelectionChanged?.call(_selectedApps);
+  }
+
+  void _selectAll() {
+    setState(() {
+      for (final app in _filteredApps) {
+        if (!app.isSelected) {
+          app.isSelected = true;
+          if (!_selectedApps.contains(app)) {
+            _selectedApps.add(app);
+          }
+        }
+      }
+    });
+    
+    widget.onSelectionChanged?.call(_selectedApps);
+  }
+
+  void _clearAll() {
+    setState(() {
+      for (final app in _filteredApps) {
+        if (app.isSelected) {
+          app.isSelected = false;
+          _selectedApps.removeWhere((selected) => selected.packageName == app.packageName);
+        }
+      }
+    });
+    
+    widget.onSelectionChanged?.call(_selectedApps);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // 搜索栏和统计信息
+        Container(
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.spacing4, // left
+            AppTheme.spacing3, // top - 减少顶部内边距
+            AppTheme.spacing4, // right
+            AppTheme.spacing2, // bottom
+          ),
+          decoration: const BoxDecoration(
+            color: AppTheme.card,
+            border: Border(
+              bottom: BorderSide(color: AppTheme.border, width: 1),
+            ),
+          ),
+          child: Column(
+            children: [
+              // 搜索栏
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '搜索应用...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing3,
+                    vertical: AppTheme.spacing2,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppTheme.spacing3),
+
+              // 统计和操作按钮
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing2,
+                      vertical: AppTheme.spacing1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _selectedApps.isNotEmpty ? AppTheme.primary : AppTheme.secondary,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
+                    child: Text(
+                      '已选择 ${_selectedApps.length} 个',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _selectedApps.isNotEmpty ? AppTheme.primaryForeground : AppTheme.foreground,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _selectAll,
+                    child: const Text('全选', style: TextStyle(fontSize: 14)),
+                  ),
+                  TextButton(
+                    onPressed: _clearAll,
+                    child: const Text('清空', style: TextStyle(fontSize: 14)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // 应用网格列表
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _filteredApps.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: AppTheme.mutedForeground,
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                          Text(
+                            _searchQuery.isEmpty ? '没有找到应用' : '没有匹配的应用',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: AppTheme.mutedForeground,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing3, // left
+                        AppTheme.spacing2, // top - 减少顶部间距
+                        AppTheme.spacing3, // right
+                        AppTheme.spacing3, // bottom
+                      ),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4, // 4列紧凑布局
+                        crossAxisSpacing: AppTheme.spacing2,
+                        mainAxisSpacing: AppTheme.spacing3, // 稍微增加垂直间距
+                        childAspectRatio: 0.8, // 调整高宽比，给文字更多空间
+                      ),
+                      itemCount: _filteredApps.length,
+                      itemBuilder: (context, index) {
+                        final app = _filteredApps[index];
+                        return _buildAppGridItem(app);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAppGridItem(AppInfo app) {
+    return GestureDetector(
+      onTap: () => _toggleAppSelection(app),
+      child: Container(
+        decoration: BoxDecoration(
+          color: app.isSelected ? AppTheme.primary.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: app.isSelected ? Border.all(
+            color: AppTheme.primary,
+            width: 1.0, // 进一步减少边框粗细
+          ) : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 应用图标 - 直接显示，无容器
+            Stack(
+              children: [
+                // 应用图标
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: app.icon != null
+                      ? Image.memory(
+                          app.icon!,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.contain, // 改为contain避免裁剪
+                        )
+                      : const Icon(
+                          Icons.android,
+                          color: AppTheme.mutedForeground,
+                          size: 32,
+                        ),
+                ),
+
+                // 选择状态覆盖层 - 更优雅的设计
+                if (app.isSelected)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.0),
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 10,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: AppTheme.spacing2),
+
+            // 应用名称
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing1),
+              child: Text(
+                app.appName,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: app.isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: app.isSelected ? AppTheme.primary : null,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

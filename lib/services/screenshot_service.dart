@@ -1,0 +1,331 @@
+import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'permission_service.dart';
+import 'screenshot_database.dart';
+import 'path_service.dart';
+import '../models/screenshot_record.dart';
+
+/// 截屏服务异常类
+class ScreenshotServiceException implements Exception {
+  final String message;
+  const ScreenshotServiceException(this.message);
+  
+  @override
+  String toString() => message;
+}
+
+/// 截屏服务管理类
+class ScreenshotService {
+  static ScreenshotService? _instance;
+  static ScreenshotService get instance => _instance ??= ScreenshotService._();
+  
+  ScreenshotService._() {
+    _setupMethodChannelHandlers();
+  }
+  
+  final PermissionService _permissionService = PermissionService.instance;
+  final ScreenshotDatabase _database = ScreenshotDatabase.instance;
+  
+  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+
+  final _screenshotStreamController = StreamController<void>.broadcast();
+  Stream<void> get onScreenshotSaved => _screenshotStreamController.stream;
+  
+  bool _isRunning = false;
+  int _currentInterval = 5;
+  
+  /// 检查截屏服务是否正在运行
+  bool get isRunning => _isRunning;
+  
+  /// 获取当前截屏间隔
+  int get currentInterval => _currentInterval;
+  
+  /// 启动截屏服务
+  Future<bool> startScreenshotService(int intervalSeconds) async {
+    try {
+      print('=== 开始启动截屏服务 ===');
+      print('截屏间隔: $intervalSeconds秒');
+      
+      // 首先检查权限
+      final permissions = await _permissionService.checkAllPermissions();
+      final accessibilityEnabled = permissions['accessibility'] ?? false;
+      final storageGranted = permissions['storage'] ?? false;
+      final notificationGranted = permissions['notification'] ?? false;
+
+      print('权限检查结果:');
+      print('- 无障碍服务: $accessibilityEnabled');
+      print('- 存储权限: $storageGranted');
+      print('- 通知权限: $notificationGranted');
+
+      if (!accessibilityEnabled) {
+        throw ScreenshotServiceException('无障碍服务未启用，请前往设置中启用无障碍服务');
+      }
+
+      if (!storageGranted) {
+        throw ScreenshotServiceException('存储权限未授予，无法保存截图文件');
+      }
+
+      // 检查服务是否运行
+      bool serviceRunning = await _permissionService.isServiceRunning();
+      print('- 服务运行状态: $serviceRunning');
+      
+      // 如果服务未运行，但系统中已启用，尝试等待服务启动
+      if (!serviceRunning && accessibilityEnabled) {
+        print('服务在系统中已启用但实例未就绪，等待服务启动...');
+        
+        // 等待最多3秒，检查服务状态
+        for (int i = 0; i < 6; i++) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          serviceRunning = await _permissionService.isServiceRunning();
+          print('第${i+1}次检查服务状态: $serviceRunning');
+          if (serviceRunning) {
+            print('服务已启动！');
+            break;
+          }
+        }
+      }
+      
+      if (!serviceRunning) {
+        throw ScreenshotServiceException('无障碍服务未运行，请尝试重新启动应用或重新启用无障碍服务');
+      }
+
+      // 直接尝试启动截屏服务（使用无障碍截屏，无需MediaProjection权限）
+      print('尝试启动定时截屏服务...');
+      final success = await _permissionService.startTimedScreenshot(intervalSeconds);
+      
+      if (success) {
+        _isRunning = true;
+        _currentInterval = intervalSeconds;
+        await _saveServiceState();
+        print('=== 截屏服务启动成功，间隔: $intervalSeconds秒 ===');
+        return true;
+      } else {
+        throw ScreenshotServiceException('截屏服务启动失败，请检查：\n1. Android版本是否为11.0(API 30)或以上\n2. 无障碍服务是否正常运行\n3. 尝试重新启动应用');
+      }
+    } on ScreenshotServiceException {
+      rethrow;
+    } catch (e) {
+      print('启动截屏服务异常: $e');
+      throw ScreenshotServiceException('启动截屏服务时发生未知错误：$e');
+    }
+  }
+  
+  /// 停止截屏服务
+  Future<void> stopScreenshotService() async {
+    try {
+      await _permissionService.stopTimedScreenshot();
+      _isRunning = false;
+      await _saveServiceState();
+    } catch (e) {
+      print('停止截屏服务失败: $e');
+    }
+  }
+  
+  /// 更新截屏间隔
+  Future<bool> updateInterval(int intervalSeconds) async {
+    try {
+      if (_isRunning) {
+        // 重新启动服务以应用新间隔
+        await _permissionService.stopTimedScreenshot();
+        final success = await _permissionService.startTimedScreenshot(intervalSeconds);
+        if (success) {
+          _currentInterval = intervalSeconds;
+          await _saveServiceState();
+        }
+        return success;
+      } else {
+        _currentInterval = intervalSeconds;
+        await _saveServiceState();
+        return true;
+      }
+    } catch (e) {
+      print('更新截屏间隔失败: $e');
+      return false;
+    }
+  }
+  
+  /// 手动截屏
+  Future<String?> captureScreenManually() async {
+    try {
+      return await _permissionService.captureScreen();
+    } catch (e) {
+      print('手动截屏失败: $e');
+      return null;
+    }
+  }
+  
+  /// 保存服务状态
+  Future<void> _saveServiceState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('screenshot_service_running', _isRunning);
+      await prefs.setInt('screenshot_interval', _currentInterval);
+    } catch (e) {
+      print('保存截屏服务状态失败: $e');
+    }
+  }
+  
+  /// 恢复服务状态
+  Future<void> restoreServiceState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isRunning = prefs.getBool('screenshot_service_running') ?? false;
+      _currentInterval = prefs.getInt('screenshot_interval') ?? 5;
+      
+      // 如果之前服务在运行，尝试重新启动
+      if (_isRunning) {
+        final success = await startScreenshotService(_currentInterval);
+        if (!success) {
+          _isRunning = false;
+          await _saveServiceState();
+        }
+      }
+    } catch (e) {
+      print('恢复截屏服务状态失败: $e');
+    }
+  }
+  
+  /// 设置方法通道处理器
+  void _setupMethodChannelHandlers() {
+    print('=== 设置ScreenshotService Method Channel Handler ===');
+    _channel.setMethodCallHandler((call) async {
+      print('=== 收到Method Channel调用: ${call.method} ===');
+
+      try {
+        // 安全地检查参数
+        if (call.arguments == null) {
+          print('=== 参数为null ===');
+        } else {
+          print('=== 参数类型: ${call.arguments.runtimeType} ===');
+          print('=== 参数内容: ${call.arguments} ===');
+        }
+        switch (call.method) {
+          case 'onScreenshotSaved':
+            print('=== 开始处理onScreenshotSaved ===');
+
+            // 安全地转换参数
+            if (call.arguments == null) {
+              print('=== 错误：参数为null ===');
+              return;
+            }
+
+            if (call.arguments is! Map) {
+              print('=== 错误：参数不是Map类型，实际类型：${call.arguments.runtimeType} ===');
+              return;
+            }
+
+            final arguments = Map<String, dynamic>.from(call.arguments as Map);
+            print('=== 参数转换成功，开始处理 ===');
+
+            await _handleScreenshotSaved(arguments);
+            print('=== onScreenshotSaved处理完成 ===');
+            break;
+          default:
+            print('未处理的方法调用: ${call.method}');
+        }
+      } catch (e, stackTrace) {
+        print('=== Method Channel处理异常: $e ===');
+        print('=== 堆栈跟踪: $stackTrace ===');
+      }
+    });
+    print('=== ScreenshotService Method Channel Handler设置完成 ===');
+  }
+  
+  /// 处理截图保存通知
+  Future<void> _handleScreenshotSaved(Map<String, dynamic> data) async {
+    try {
+      final packageName = data['packageName'] as String? ?? '';
+      final appName = data['appName'] as String? ?? '';
+      final relativePath = data['filePath'] as String? ?? '';
+      final captureTime = data['captureTime'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+
+      print('收到截图保存通知: $appName - $relativePath');
+
+      if (packageName.isNotEmpty && appName.isNotEmpty && relativePath.isNotEmpty) {
+        // 将相对路径转换为绝对路径
+        final baseDir = await PathService.getExternalFilesDir(null);
+        if (baseDir == null) {
+          print('无法获取基础目录，跳过数据库插入');
+          return;
+        }
+
+        final absolutePath = '${baseDir.path}/$relativePath';
+        print('转换后的绝对路径: $absolutePath');
+
+        // 创建截图记录
+        final record = ScreenshotRecord(
+          appPackageName: packageName,
+          appName: appName,
+          filePath: absolutePath,
+          captureTime: DateTime.fromMillisecondsSinceEpoch(captureTime),
+          fileSize: 0, // 文件大小将在数据库服务中计算
+        );
+
+        // 插入数据库
+        final id = await _database.insertScreenshot(record);
+        print('截图记录已插入数据库，ID: $id');
+        _screenshotStreamController.add(null); // 通知监听器
+      } else {
+        print('截图保存通知数据不完整，跳过数据库插入');
+      }
+    } catch (e) {
+      print('处理截图保存通知失败: $e');
+    }
+  }
+  
+  /// 获取截屏统计信息
+  Future<Map<String, dynamic>> getScreenshotStats() async {
+    try {
+      final totalCount = await _database.getTotalScreenshotCount();
+      final todayCount = await _database.getTodayScreenshotCount();
+      final statistics = await _database.getScreenshotStatistics();
+      
+      // 获取最近的截图时间
+      DateTime? lastScreenshotTime;
+      if (statistics.isNotEmpty) {
+        for (final stat in statistics.values) {
+          final time = stat['lastCaptureTime'] as DateTime?;
+          if (time != null && (lastScreenshotTime == null || time.isAfter(lastScreenshotTime))) {
+            lastScreenshotTime = time;
+          }
+        }
+      }
+      
+      return {
+        'totalScreenshots': totalCount,
+        'todayScreenshots': todayCount,
+        'lastScreenshotTime': lastScreenshotTime?.millisecondsSinceEpoch,
+        'appStatistics': statistics,
+      };
+    } catch (e) {
+      print('获取截屏统计信息失败: $e');
+      return {
+        'totalScreenshots': 0,
+        'todayScreenshots': 0,
+        'lastScreenshotTime': null,
+        'appStatistics': <String, Map<String, dynamic>>{},
+      };
+    }
+  }
+  
+  /// 根据应用包名获取截屏记录
+  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit}) async {
+    try {
+      return await _database.getScreenshotsByApp(appPackageName, limit: limit);
+    } catch (e) {
+      print('获取应用截屏记录失败: $e');
+      return [];
+    }
+  }
+  
+  /// 删除截屏记录
+  Future<bool> deleteScreenshot(int id) async {
+    try {
+      return await _database.deleteScreenshot(id);
+    } catch (e) {
+      print('删除截屏记录失败: $e');
+      return false;
+    }
+  }
+}

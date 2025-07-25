@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Screen Memo</string>
+    <string name="accessibility_service_description">屏幕备忘录无障碍服务，用于截取受保护的屏幕内容。启用此服务后，应用可以截取银行应用、支付应用等受保护内容的屏幕截图。</string>
+    <string name="foreground_service_title">屏幕截图服务运行中</string>
+    <string name="foreground_service_content">点击返回应用</string>
+    <string name="notification_channel_name">屏幕截图服务</string>
+    <string name="notification_channel_description">用于显示屏幕截图服务状态</string>
+</resources>
