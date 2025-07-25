@@ -59,14 +59,56 @@ class ScreenshotDatabase {
     print('数据库从版本 $oldVersion 升级到 $newVersion');
   }
 
-  /// 插入截屏记录
+  /// 检查文件路径是否已存在于数据库中
+  Future<bool> isFilePathExists(String filePath) async {
+    final db = await database;
+    try {
+      final result = await db.query(
+        'screenshots',
+        where: 'file_path = ?',
+        whereArgs: [filePath],
+        limit: 1,
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      print('检查文件路径是否存在失败: $e');
+      return false;
+    }
+  }
+
+  /// 插入截屏记录（如果不存在）
+  Future<int?> insertScreenshotIfNotExists(ScreenshotRecord record) async {
+    final db = await database;
+    try {
+      // 先检查记录是否已存在
+      final exists = await isFilePathExists(record.filePath);
+      if (exists) {
+        print('截屏记录已存在，跳过插入: ${record.appName} - ${record.filePath}');
+        return null;
+      }
+
+      // 检查文件是否存在
+      final file = File(record.filePath);
+      final actualFileSize = await file.exists() ? await file.length() : 0;
+
+      final recordWithSize = record.copyWith(fileSize: actualFileSize);
+      final id = await db.insert('screenshots', recordWithSize.toMap());
+      print('截屏记录已插入数据库: ${record.appName} - ${record.filePath}');
+      return id;
+    } catch (e) {
+      print('插入截屏记录失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 插入截屏记录（保留原方法以兼容性）
   Future<int> insertScreenshot(ScreenshotRecord record) async {
     final db = await database;
     try {
       // 检查文件是否存在
       final file = File(record.filePath);
       final actualFileSize = await file.exists() ? await file.length() : 0;
-      
+
       final recordWithSize = record.copyWith(fileSize: actualFileSize);
       final id = await db.insert('screenshots', recordWithSize.toMap());
       print('截屏记录已插入数据库: ${record.appName} - ${record.filePath}');

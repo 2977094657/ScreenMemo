@@ -232,6 +232,9 @@ class ScreenshotService {
     print('=== ScreenshotService Method Channel Handler设置完成 ===');
   }
   
+  // 用于跟踪正在处理的文件路径，防止重复处理
+  final Set<String> _processingPaths = <String>{};
+
   /// 处理截图保存通知
   Future<void> _handleScreenshotSaved(Map<String, dynamic> data) async {
     try {
@@ -253,19 +256,37 @@ class ScreenshotService {
         final absolutePath = '${baseDir.path}/$relativePath';
         print('转换后的绝对路径: $absolutePath');
 
-        // 创建截图记录
-        final record = ScreenshotRecord(
-          appPackageName: packageName,
-          appName: appName,
-          filePath: absolutePath,
-          captureTime: DateTime.fromMillisecondsSinceEpoch(captureTime),
-          fileSize: 0, // 文件大小将在数据库服务中计算
-        );
+        // 检查是否正在处理相同的文件路径
+        if (_processingPaths.contains(absolutePath)) {
+          print('文件路径正在处理中，跳过重复处理: $absolutePath');
+          return;
+        }
 
-        // 插入数据库
-        final id = await _database.insertScreenshot(record);
-        print('截图记录已插入数据库，ID: $id');
-        _screenshotStreamController.add(null); // 通知监听器
+        // 添加到处理中集合
+        _processingPaths.add(absolutePath);
+
+        try {
+          // 创建截图记录
+          final record = ScreenshotRecord(
+            appPackageName: packageName,
+            appName: appName,
+            filePath: absolutePath,
+            captureTime: DateTime.fromMillisecondsSinceEpoch(captureTime),
+            fileSize: 0, // 文件大小将在数据库服务中计算
+          );
+
+          // 使用新的去重插入方法
+          final id = await _database.insertScreenshotIfNotExists(record);
+          if (id != null) {
+            print('截图记录已插入数据库，ID: $id');
+            _screenshotStreamController.add(null); // 通知监听器
+          } else {
+            print('截图记录已存在，未重复插入');
+          }
+        } finally {
+          // 从处理中集合移除
+          _processingPaths.remove(absolutePath);
+        }
       } else {
         print('截图保存通知数据不完整，跳过数据库插入');
       }
