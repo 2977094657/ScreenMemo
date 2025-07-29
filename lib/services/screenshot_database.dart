@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/screenshot_record.dart';
 
 /// 截屏数据库服务
@@ -20,15 +21,72 @@ class ScreenshotDatabase {
 
   /// 初始化数据库
   Future<Database> _initDatabase() async {
-    final databasesPath = await getDatabasesPath();
-    final path = join(databasesPath, 'screenshot_memo.db');
+    try {
+      // 获取应用的外部存储目录
+      final externalDir = await _getExternalFilesDir();
+      if (externalDir != null) {
+        // 创建 output/databases 目录
+        final databasesDir = Directory(join(externalDir.path, 'output', 'databases'));
+        if (!await databasesDir.exists()) {
+          await databasesDir.create(recursive: true);
+          print('数据库目录已创建: ${databasesDir.path}');
+        }
+        
+        final path = join(databasesDir.path, 'screenshot_memo.db');
+        print('数据库路径: $path');
+        
+        return await openDatabase(
+          path,
+          version: 1,
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+        );
+      } else {
+        // 备选方案：使用默认数据库路径
+        print('无法获取外部存储目录，使用默认数据库路径');
+        final databasesPath = await getDatabasesPath();
+        final path = join(databasesPath, 'screenshot_memo.db');
+        
+        return await openDatabase(
+          path,
+          version: 1,
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+        );
+      }
+    } catch (e) {
+      print('初始化数据库失败，使用默认路径: $e');
+      // 出错时使用默认路径
+      final databasesPath = await getDatabasesPath();
+      final path = join(databasesPath, 'screenshot_memo.db');
+      
+      return await openDatabase(
+        path,
+        version: 1,
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+      );
+    }
+  }
 
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+  /// 获取外部存储目录的辅助方法
+  Future<Directory?> _getExternalFilesDir() async {
+    try {
+      if (Platform.isAndroid) {
+        // 优先尝试外部存储目录
+        final dir = await getExternalStorageDirectory();
+        if (dir != null) {
+          return dir;
+        }
+      }
+      
+      // 备选方案：使用应用文档目录
+      final dir = await getApplicationDocumentsDirectory();
+      return dir;
+    } catch (e) {
+      print('获取外部存储目录失败: $e');
+      return null;
+    }
   }
 
   /// 创建数据库表
