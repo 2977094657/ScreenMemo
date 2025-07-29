@@ -301,7 +301,7 @@ object AccessibilityServiceWatchdog {
                     val service = ScreenCaptureAccessibilityService.instance
                     service?.onDestroy()
                 } catch (e: Exception) {
-                    FileLogger.w(TAG, "清理服务实例失败", e)
+                    FileLogger.w(TAG, "清理服务实例失败: ${e.message}")
                 }
             }
             
@@ -332,7 +332,7 @@ object AccessibilityServiceWatchdog {
                 context.startForegroundService(serviceIntent)
                 FileLogger.i(TAG, "前台服务重启触发成功")
             } catch (e: Exception) {
-                FileLogger.w(TAG, "前台服务重启触发失败", e)
+                FileLogger.w(TAG, "前台服务重启触发失败: ${e.message}")
             }
             
             // 方法2: 发送重启广播
@@ -343,7 +343,7 @@ object AccessibilityServiceWatchdog {
                 context.sendBroadcast(restartIntent)
                 FileLogger.i(TAG, "重启广播发送成功")
             } catch (e: Exception) {
-                FileLogger.w(TAG, "重启广播发送失败", e)
+                FileLogger.w(TAG, "重启广播发送失败: ${e.message}")
             }
             
             // 方法3: 启动MainActivity进行检查
@@ -355,7 +355,7 @@ object AccessibilityServiceWatchdog {
                 context.startActivity(mainIntent)
                 FileLogger.i(TAG, "MainActivity检查启动成功")
             } catch (e: Exception) {
-                FileLogger.w(TAG, "MainActivity检查启动失败", e)
+                FileLogger.w(TAG, "MainActivity检查启动失败: ${e.message}")
             }
             
         } catch (e: Exception) {
