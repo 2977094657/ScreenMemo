@@ -90,12 +90,24 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "isServiceRunning" -> {
-                    val running = isServiceRunning()
-                    // 如果系统中已启用但实例不存在，尝试触发连接
-                    if (!running && ServiceDebugHelper.isAccessibilityServiceEnabledInSystem(this)) {
-                        FileLogger.e(TAG, "系统中已启用但实例不存在，尝试触发连接")
+                    // 使用增强的看门狗状态检测
+                    val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
+                    val running = watchdogStatus.isReallyRunning
+                    
+                    FileLogger.i(TAG, AccessibilityServiceWatchdog.getStatusSummary(this))
+                    
+                    // 如果系统中已启用但实际不运行，记录详细信息并尝试触发连接
+                    if (watchdogStatus.needsRestart) {
+                        FileLogger.e(TAG, "检测到服务需要重启，状态详情：")
+                        FileLogger.e(TAG, "- 系统启用: ${watchdogStatus.isSystemEnabled}")
+                        FileLogger.e(TAG, "- 实例存在: ${watchdogStatus.isInstanceExists}")
+                        FileLogger.e(TAG, "- 进程存活: ${watchdogStatus.isProcessAlive}")
+                        FileLogger.e(TAG, "- 心跳有效: ${watchdogStatus.isHeartbeatValid}")
+                        FileLogger.e(TAG, "- 功能正常: ${watchdogStatus.isFunctional}")
+                        
                         triggerAccessibilityServiceConnection()
                     }
+                    
                     result.success(running)
                 }
                 "startForegroundService" -> {
@@ -186,18 +198,49 @@ class MainActivity : FlutterActivity() {
                     result.success(testAutoStartPermission())
                 }
                 "isServiceRunning" -> {
-                    val running = isServiceRunning()
-                    // 如果系统中已启用但实例不存在，尝试触发连接
-                    if (!running && ServiceDebugHelper.isAccessibilityServiceEnabledInSystem(this)) {
-                        FileLogger.e(TAG, "系统中已启用但实例不存在，尝试触发连接")
+                    // 使用增强的看门狗状态检测
+                    val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
+                    val running = watchdogStatus.isReallyRunning
+                    
+                    FileLogger.i(TAG, AccessibilityServiceWatchdog.getStatusSummary(this))
+                    
+                    // 如果系统中已启用但实际不运行，记录详细信息并尝试触发连接
+                    if (watchdogStatus.needsRestart) {
+                        FileLogger.e(TAG, "检测到服务需要重启，状态详情：")
+                        FileLogger.e(TAG, "- 系统启用: ${watchdogStatus.isSystemEnabled}")
+                        FileLogger.e(TAG, "- 实例存在: ${watchdogStatus.isInstanceExists}")
+                        FileLogger.e(TAG, "- 进程存活: ${watchdogStatus.isProcessAlive}")
+                        FileLogger.e(TAG, "- 心跳有效: ${watchdogStatus.isHeartbeatValid}")
+                        FileLogger.e(TAG, "- 功能正常: ${watchdogStatus.isFunctional}")
+                        
                         triggerAccessibilityServiceConnection()
                     }
+                    
                     result.success(running)
                 }
                 "getExternalFilesDir" -> {
                     val subDir = call.argument<String>("subDir")
                     val path = getExternalFilesDirPath(subDir)
                     result.success(path)
+                }
+                "checkServiceHealth" -> {
+                    // 手动触发看门狗健康检查
+                    val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
+                    val statusSummary = AccessibilityServiceWatchdog.getStatusSummary(this)
+                    
+                    FileLogger.i(TAG, "手动健康检查结果：")
+                    FileLogger.i(TAG, statusSummary)
+                    
+                    result.success(mapOf(
+                        "isReallyRunning" to watchdogStatus.isReallyRunning,
+                        "needsRestart" to watchdogStatus.needsRestart,
+                        "isSystemEnabled" to watchdogStatus.isSystemEnabled,
+                        "isInstanceExists" to watchdogStatus.isInstanceExists,
+                        "isProcessAlive" to watchdogStatus.isProcessAlive,
+                        "isHeartbeatValid" to watchdogStatus.isHeartbeatValid,
+                        "isFunctional" to watchdogStatus.isFunctional,
+                        "statusSummary" to statusSummary
+                    ))
                 }
                 else -> {
                     result.notImplemented()

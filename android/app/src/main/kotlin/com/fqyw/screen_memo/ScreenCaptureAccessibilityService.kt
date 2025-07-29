@@ -125,6 +125,11 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             ServiceStateManager.printAllStates(this)
 
+            // 启动看门狗监控
+            AccessibilityServiceWatchdog.startWatchdog(this)
+            AccessibilityServiceWatchdog.updateHeartbeat()
+            FileLogger.e(TAG, "看门狗监控已启动")
+
             // 延迟初始化其他功能，避免阻塞服务启动
             handler.postDelayed({
                 try {
@@ -143,6 +148,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     // 启动前台应用检测
                     startForegroundAppDetection()
                     FileLogger.e(TAG, "前台应用检测已启动")
+
+                    // 更新心跳
+                    AccessibilityServiceWatchdog.updateHeartbeat()
 
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "延迟初始化过程中发生错误", e)
@@ -185,6 +193,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         FileLogger.writeSeparator("AccessibilityService onDestroy - 服务销毁")
         FileLogger.e(TAG, "=== 无障碍服务正在销毁 ===")
         FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
+
+        // 停止看门狗监控
+        AccessibilityServiceWatchdog.stopWatchdog()
+        FileLogger.e(TAG, "看门狗监控已停止")
 
         instance = null
         isServiceRunning = false
@@ -255,6 +267,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
     
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 更新看门狗心跳
+        AccessibilityServiceWatchdog.updateHeartbeat()
+        
         // 处理无障碍事件，检测当前前台应用
         event?.let {
             if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {

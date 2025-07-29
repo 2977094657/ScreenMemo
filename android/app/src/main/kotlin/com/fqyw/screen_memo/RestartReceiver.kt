@@ -47,17 +47,17 @@ class RestartReceiver : BroadcastReceiver() {
         try {
             FileLogger.e(TAG, "准备重启AccessibilityService")
             
-            // 检查AccessibilityService是否在系统中启用
-            val isSystemEnabled = ServiceDebugHelper.isAccessibilityServiceEnabledInSystem(context)
-            FileLogger.e(TAG, "系统中AccessibilityService启用状态: $isSystemEnabled")
+            // 使用看门狗进行状态检查
+            val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(context)
+            FileLogger.e(TAG, "看门狗状态检查结果:")
+            FileLogger.e(TAG, "- 系统启用: ${watchdogStatus.isSystemEnabled}")
+            FileLogger.e(TAG, "- 实例存在: ${watchdogStatus.isInstanceExists}")
+            FileLogger.e(TAG, "- 进程存活: ${watchdogStatus.isProcessAlive}")
+            FileLogger.e(TAG, "- 需要重启: ${watchdogStatus.needsRestart}")
             
-            if (isSystemEnabled) {
-                // 如果系统中已启用，但实例不存在，说明服务被杀死了
-                val instanceExists = ScreenCaptureAccessibilityService.instance != null
-                FileLogger.e(TAG, "服务实例存在状态: $instanceExists")
-                
-                if (!instanceExists) {
-                    FileLogger.e(TAG, "服务实例不存在，尝试启动前台服务来触发重启")
+            if (watchdogStatus.isSystemEnabled) {
+                if (watchdogStatus.needsRestart) {
+                    FileLogger.e(TAG, "检测到服务需要重启，开始重启流程")
                     
                     // 启动前台服务来保持应用活跃
                     try {
@@ -80,8 +80,17 @@ class RestartReceiver : BroadcastReceiver() {
                     } catch (e: Exception) {
                         FileLogger.e(TAG, "启动状态监听器失败", e)
                     }
+                    
+                    // 启动看门狗监控
+                    try {
+                        AccessibilityServiceWatchdog.startWatchdog(context)
+                        FileLogger.e(TAG, "看门狗监控已启动")
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "启动看门狗监控失败", e)
+                    }
+                    
                 } else {
-                    FileLogger.e(TAG, "服务实例已存在，无需重启")
+                    FileLogger.e(TAG, "服务状态正常，无需重启")
                 }
             } else {
                 FileLogger.w(TAG, "AccessibilityService在系统中未启用，无法自动重启")
