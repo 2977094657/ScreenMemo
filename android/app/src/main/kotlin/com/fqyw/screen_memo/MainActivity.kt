@@ -473,7 +473,11 @@ class MainActivity : FlutterActivity() {
             }
             
             val filter = IntentFilter("com.fqyw.screen_memo.REQUEST_MEDIA_PROJECTION")
-            registerReceiver(mediaProjectionRequestReceiver, filter)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(mediaProjectionRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(mediaProjectionRequestReceiver, filter)
+            }
             FileLogger.e(TAG, "MediaProjection权限请求广播接收器已注册")
         } catch (e: Exception) {
             FileLogger.e(TAG, "设置MediaProjection权限请求广播接收器失败", e)

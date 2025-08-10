@@ -152,6 +152,19 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     // 更新心跳
                     AccessibilityServiceWatchdog.updateHeartbeat()
 
+                    // 如之前定时截屏在运行，自动恢复
+                    try {
+                        val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        val wasRunning = sharedPrefs.getBoolean("timed_screenshot_was_running", false)
+                        val lastInterval = sharedPrefs.getInt("timed_screenshot_interval", 5)
+                        if (wasRunning && !isTimedScreenshotRunning) {
+                            FileLogger.e(TAG, "检测到定时截屏之前在运行，自动恢复，间隔: ${lastInterval}秒")
+                            startTimedScreenshot(lastInterval)
+                        }
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "恢复定时截屏状态失败", e)
+                    }
+
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "延迟初始化过程中发生错误", e)
                 }
@@ -496,6 +509,18 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // 立即持久化运行状态，便于崩溃/被杀后自动恢复
+            try {
+                val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit().apply {
+                    putBoolean("timed_screenshot_was_running", true)
+                    putInt("timed_screenshot_interval", screenshotInterval)
+                    apply()
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "持久化定时截屏状态失败", e)
+            }
+
             FileLogger.e(TAG, "=== 定时截屏启动成功，间隔: ${intervalSeconds}秒 ===")
             return true
         } catch (e: Exception) {
@@ -516,8 +541,31 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             screenshotTimer = null
             
             FileLogger.i(TAG, "定时截屏已停止")
+            // 清理持久化的运行标记，避免误恢复
+            try {
+                val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit().apply {
+                    putBoolean("timed_screenshot_was_running", false)
+                }.apply()
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "清理定时截屏持久化状态失败", e)
+            }
         } catch (e: Exception) {
             FileLogger.e(TAG, "停止定时截屏失败", e)
+        }
+    }
+
+    /**
+     * 仅用于系统回收/销毁时取消定时器，不更改“正在运行”的持久化标记。
+     */
+    private fun cancelTimedScreenshotSilently() {
+        try {
+            isTimedScreenshotRunning = false
+            screenshotTimer?.cancel()
+            screenshotTimer = null
+            FileLogger.i(TAG, "定时截屏计时器已取消(静默)")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "静默取消定时截屏失败", e)
         }
     }
 
@@ -642,9 +690,22 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.i(TAG, "截图已保存，绝对路径: ${file.absolutePath}")
             FileLogger.i(TAG, "返回给Flutter的相对路径: $relativePath")
             
-            // 通知Flutter端更新数据库
+            // 先在原生侧实时入库（Flutter未就绪时也能写入）
             try {
-                notifyScreenshotSaved(packageName, appName, relativePath) // <--- 使用相对路径
+                ScreenshotDatabaseHelper.insertIfNotExists(
+                    this@ScreenCaptureAccessibilityService,
+                    packageName,
+                    appName,
+                    file.absolutePath,
+                    System.currentTimeMillis()
+                )
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "原生侧入库失败: ${e.message}")
+            }
+
+            // 通知Flutter端更新数据库（作为第二路径，方便UI即刻刷新）
+            try {
+                notifyScreenshotSaved(packageName, appName, relativePath)
             } catch (e: Exception) {
                 FileLogger.w(TAG, "通知Flutter更新数据库失败: ${e.message}")
             }
