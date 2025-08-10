@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'permission_service.dart';
@@ -231,6 +233,11 @@ class ScreenshotService {
     });
     print('=== ScreenshotService Method Channel Handler设置完成 ===');
   }
+
+  /// 允许其他服务（如 PermissionService）转发平台事件至此处统一处理
+  Future<void> handleScreenshotSavedFromPlatform(Map<String, dynamic> data) async {
+    await _handleScreenshotSaved(data);
+  }
   
   // 用于跟踪正在处理的文件路径，防止重复处理
   final Set<String> _processingPaths = <String>{};
@@ -279,10 +286,11 @@ class ScreenshotService {
           final id = await _database.insertScreenshotIfNotExists(record);
           if (id != null) {
             print('截图记录已插入数据库，ID: $id');
-            _screenshotStreamController.add(null); // 通知监听器
           } else {
             print('截图记录已存在，未重复插入');
           }
+          // 无论是否新插入，都通知监听器刷新统计与界面，确保首页实时更新
+          _screenshotStreamController.add(null);
         } finally {
           // 从处理中集合移除
           _processingPaths.remove(absolutePath);
@@ -298,6 +306,9 @@ class ScreenshotService {
   /// 获取截屏统计信息
   Future<Map<String, dynamic>> getScreenshotStats() async {
     try {
+      // 同步文件系统与数据库，确保漏报的截图也能入库
+      await syncDatabaseWithFiles();
+
       final totalCount = await _database.getTotalScreenshotCount();
       final todayCount = await _database.getTodayScreenshotCount();
       final statistics = await _database.getScreenshotStatistics();
@@ -333,6 +344,8 @@ class ScreenshotService {
   /// 根据应用包名获取截屏记录
   Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit}) async {
     try {
+      // 先做一次增量同步，确保本地文件已入库
+      await syncDatabaseWithFiles(packageName: appPackageName);
       return await _database.getScreenshotsByApp(appPackageName, limit: limit);
     } catch (e) {
       print('获取应用截屏记录失败: $e');
@@ -347,6 +360,70 @@ class ScreenshotService {
     } catch (e) {
       print('删除截屏记录失败: $e');
       return false;
+    }
+  }
+
+  /// 扫描本地截图目录，将未入库的图片补录到数据库
+  Future<int> syncDatabaseWithFiles({String? packageName}) async {
+    try {
+      final baseDir = await PathService.getExternalFilesDir(null);
+      if (baseDir == null) {
+        return 0;
+      }
+
+      final screenRoot = Directory(p.join(baseDir.path, 'output', 'screen'));
+      if (!await screenRoot.exists()) {
+        return 0;
+      }
+
+      int inserted = 0;
+      final List<Directory> appDirs = [];
+      if (packageName != null) {
+        final dir = Directory(p.join(screenRoot.path, packageName));
+        if (await dir.exists()) appDirs.add(dir);
+      } else {
+        for (final entity in await screenRoot.list(followLinks: false).toList()) {
+          if (entity is Directory) appDirs.add(entity);
+        }
+      }
+
+      for (final appDir in appDirs) {
+        final pkg = p.basename(appDir.path);
+        final files = await appDir
+            .list(followLinks: false)
+            .where((e) => e is File && (e.path.toLowerCase().endsWith('.jpg') || e.path.toLowerCase().endsWith('.png')))
+            .toList();
+
+        for (final entity in files) {
+          final file = entity as File;
+          final absolutePath = file.path;
+          final exists = await _database.isFilePathExists(absolutePath);
+          if (exists) continue;
+
+          final stat = await file.stat();
+          final record = ScreenshotRecord(
+            appPackageName: pkg,
+            appName: pkg, // 无法可靠获取时用包名占位
+            filePath: absolutePath, // 数据库存绝对路径
+            captureTime: stat.modified,
+            fileSize: stat.size,
+          );
+
+          final id = await _database.insertScreenshotIfNotExists(record);
+          if (id != null) {
+            inserted++;
+          }
+        }
+      }
+
+      if (inserted > 0) {
+        // 通知监听者有新数据
+        _screenshotStreamController.add(null);
+      }
+      return inserted;
+    } catch (e) {
+      print('同步截图文件到数据库失败: $e');
+      return 0;
     }
   }
 }

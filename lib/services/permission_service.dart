@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'screenshot_service.dart';
 
 /// 权限管理服务
 class PermissionService with WidgetsBindingObserver {
@@ -34,6 +35,18 @@ class PermissionService with WidgetsBindingObserver {
           final enabled = call.arguments['enabled'] as bool;
           await _saveAccessibilityStatus(enabled);
           onAccessibilityChanged?.call(enabled);
+          break;
+        case 'onScreenshotSaved':
+          try {
+            // 将截图保存事件转发给 ScreenshotService 处理并入库
+            final Map<String, dynamic> args =
+                Map<String, dynamic>.from(call.arguments as Map);
+            await ScreenshotService.instance
+                .handleScreenshotSavedFromPlatform(args);
+          } catch (e) {
+            // 忽略异常，避免阻断其他事件
+            // print('转发onScreenshotSaved失败: $e');
+          }
           break;
         case 'onMediaProjectionResult':
           // 废弃的MediaProjection处理，现在不再需要

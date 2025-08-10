@@ -73,15 +73,18 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
       print('应用包名: $_packageName');
       print('基础目录: ${_baseDir?.path}');
 
+      // 先触发一次同步，确保本地新增文件入库
+      await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
       final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
       print('从数据库获取到 ${screenshots.length} 张截图');
 
       // 检查实际文件是否存在
       for (int i = 0; i < screenshots.length; i++) {
         final screenshot = screenshots[i];
-        final file = File(screenshot.filePath);
+        final absolutePath = screenshot.filePath;
+        final file = File(absolutePath);
         final exists = await file.exists();
-        print('截图 ${i + 1}: ${screenshot.filePath} - 文件存在: $exists');
+        print('截图 ${i + 1}: $absolutePath - 文件存在: $exists');
       }
 
       // 同时检查预期的截图目录
