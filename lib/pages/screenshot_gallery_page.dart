@@ -134,7 +134,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           side: const BorderSide(color: AppTheme.border, width: 1),
@@ -199,7 +199,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -237,7 +237,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
             ),
           ],
         ),
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
           IconButton(
@@ -331,6 +331,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
     return Padding(
       padding: const EdgeInsets.all(AppTheme.spacing1), // 减少外边距
       child: GridView.builder(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+        ),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: AppTheme.spacing1, // 减少间距

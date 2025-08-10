@@ -68,26 +68,27 @@ class AppTheme {
   // 阴影（shadcn/ui风格不使用阴影，但保留定义以备需要）
   static const List<BoxShadow> shadowNone = [];
   
-  // 黑夜模式颜色配置
-  static const Color darkPrimary = Color(0xFFFAFAFA);
-  static const Color darkPrimaryForeground = Color(0xFF09090B);
-  static const Color darkSecondary = Color(0xFF27272A);
-  static const Color darkSecondaryForeground = Color(0xFFFAFAFA);
-  static const Color darkMuted = Color(0xFF27272A);
-  static const Color darkMutedForeground = Color(0xFFA1A1AA);
-  static const Color darkAccent = Color(0xFF27272A);
-  static const Color darkAccentForeground = Color(0xFFFAFAFA);
-  static const Color darkDestructive = Color(0xFFDC2626);
-  static const Color darkDestructiveForeground = Color(0xFFFAFAFA);
-  static const Color darkBorder = Color(0xFF27272A);
-  static const Color darkInput = Color(0xFF27272A);
-  static const Color darkRing = Color(0xFFD4D4D8);
-  static const Color darkBackground = Color(0xFF09090B);
-  static const Color darkForeground = Color(0xFFFAFAFA);
-  static const Color darkCard = Color(0xFF09090B);
-  static const Color darkCardForeground = Color(0xFFFAFAFA);
-  static const Color darkPopover = Color(0xFF09090B);
-  static const Color darkPopoverForeground = Color(0xFFFAFAFA);
+  // 黑夜模式颜色配置（自定义要求）
+  // 背景: #232427（稍深但非纯黑），文本/图标: #A9B7C6
+  static const Color darkPrimary = Color(0xFFA9B7C6);
+  static const Color darkPrimaryForeground = Color(0xFF3C3F41);
+  static const Color darkSecondary = Color(0xFF4A4D4F);
+  static const Color darkSecondaryForeground = Color(0xFFA9B7C6);
+  static const Color darkMuted = Color(0xFF4A4D4F);
+  static const Color darkMutedForeground = Color(0xFFA9B7C6);
+  static const Color darkAccent = Color(0xFF4A4D4F);
+  static const Color darkAccentForeground = Color(0xFFA9B7C6);
+  static const Color darkDestructive = Color(0xFFB55454);
+  static const Color darkDestructiveForeground = Color(0xFFA9B7C6);
+  static const Color darkBorder = Color(0xFF56595B);
+  static const Color darkInput = Color(0xFF4A4D4F);
+  static const Color darkRing = Color(0xFFA9B7C6);
+  static const Color darkBackground = Color(0xFF232427);
+  static const Color darkForeground = Color(0xFFA9B7C6);
+  static const Color darkCard = Color(0xFF2A2D30);
+  static const Color darkCardForeground = Color(0xFFA9B7C6);
+  static const Color darkPopover = Color(0xFF2A2D30);
+  static const Color darkPopoverForeground = Color(0xFFA9B7C6);
   
   /// 获取主题数据
   static ThemeData get lightTheme {
@@ -268,13 +269,21 @@ class AppTheme {
         onPrimary: darkPrimaryForeground,
         secondary: darkSecondary,
         onSecondary: darkSecondaryForeground,
-        surface: darkBackground,
+        surface: darkCard,
         onSurface: darkForeground,
         error: darkDestructive,
         onError: darkDestructiveForeground,
         outline: darkBorder,
+        surfaceVariant: darkInput,
       ),
       scaffoldBackgroundColor: darkBackground,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: darkBackground,
+        foregroundColor: darkForeground,
+        iconTheme: IconThemeData(color: darkForeground),
+        elevation: 0,
+      ),
+      iconTheme: const IconThemeData(color: darkForeground),
       cardTheme: const CardThemeData(
         color: darkCard,
         elevation: 0,
@@ -282,6 +291,23 @@ class AppTheme {
           borderRadius: BorderRadius.all(Radius.circular(radiusLg)),
           side: BorderSide(color: darkBorder, width: 1),
         ),
+      ),
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(color: darkForeground),
+        displayMedium: TextStyle(color: darkForeground),
+        displaySmall: TextStyle(color: darkForeground),
+        headlineLarge: TextStyle(color: darkForeground),
+        headlineMedium: TextStyle(color: darkForeground),
+        headlineSmall: TextStyle(color: darkForeground),
+        titleLarge: TextStyle(color: darkForeground),
+        titleMedium: TextStyle(color: darkForeground),
+        titleSmall: TextStyle(color: darkForeground),
+        bodyLarge: TextStyle(color: darkForeground),
+        bodyMedium: TextStyle(color: darkForeground),
+        bodySmall: TextStyle(color: darkMutedForeground),
+        labelLarge: TextStyle(color: darkForeground),
+        labelMedium: TextStyle(color: darkForeground),
+        labelSmall: TextStyle(color: darkMutedForeground),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -346,84 +372,10 @@ class AppTheme {
           borderSide: const BorderSide(color: darkDestructive, width: 2),
         ),
         filled: true,
-        fillColor: darkBackground,
+        fillColor: darkCard,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: spacing3,
           vertical: spacing2,
-        ),
-      ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          fontSize: fontSize4xl,
-          fontWeight: FontWeight.bold,
-          color: darkForeground,
-        ),
-        displayMedium: TextStyle(
-          fontSize: fontSize3xl,
-          fontWeight: FontWeight.bold,
-          color: darkForeground,
-        ),
-        displaySmall: TextStyle(
-          fontSize: fontSize2xl,
-          fontWeight: FontWeight.bold,
-          color: darkForeground,
-        ),
-        headlineLarge: TextStyle(
-          fontSize: fontSize2xl,
-          fontWeight: FontWeight.w600,
-          color: darkForeground,
-        ),
-        headlineMedium: TextStyle(
-          fontSize: fontSizeXl,
-          fontWeight: FontWeight.w600,
-          color: darkForeground,
-        ),
-        headlineSmall: TextStyle(
-          fontSize: fontSizeLg,
-          fontWeight: FontWeight.w600,
-          color: darkForeground,
-        ),
-        titleLarge: TextStyle(
-          fontSize: fontSizeBase,
-          fontWeight: FontWeight.w600,
-          color: darkForeground,
-        ),
-        titleMedium: TextStyle(
-          fontSize: fontSizeSm,
-          fontWeight: FontWeight.w500,
-          color: darkForeground,
-        ),
-        titleSmall: TextStyle(
-          fontSize: fontSizeXs,
-          fontWeight: FontWeight.w500,
-          color: darkForeground,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: fontSizeBase,
-          color: darkForeground,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
-          color: darkForeground,
-        ),
-        bodySmall: TextStyle(
-          fontSize: fontSizeXs,
-          color: darkMutedForeground,
-        ),
-        labelLarge: TextStyle(
-          fontSize: fontSizeSm,
-          fontWeight: FontWeight.w500,
-          color: darkForeground,
-        ),
-        labelMedium: TextStyle(
-          fontSize: fontSizeXs,
-          fontWeight: FontWeight.w500,
-          color: darkForeground,
-        ),
-        labelSmall: TextStyle(
-          fontSize: 10.0,
-          fontWeight: FontWeight.w500,
-          color: darkMutedForeground,
         ),
       ),
     );

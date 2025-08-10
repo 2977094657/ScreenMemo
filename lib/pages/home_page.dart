@@ -6,6 +6,7 @@ import '../services/screenshot_service.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/app_selection_widget.dart';
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -188,8 +189,8 @@ class _HomePageState extends State<HomePage> {
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: AppTheme.background,
+              builder: (context) => AlertDialog(
+                backgroundColor: Theme.of(context).colorScheme.surface,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusLg),
                 side: const BorderSide(color: AppTheme.border, width: 1),
@@ -291,7 +292,7 @@ class _HomePageState extends State<HomePage> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           side: const BorderSide(color: AppTheme.border, width: 1),
@@ -333,7 +334,7 @@ class _HomePageState extends State<HomePage> {
               // 输入框
               Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   border: Border.all(color: AppTheme.border),
                 ),
@@ -575,8 +576,8 @@ class _HomePageState extends State<HomePage> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => Dialog(
-            backgroundColor: AppTheme.background,
+            builder: (context) => Dialog(
+              backgroundColor: Theme.of(context).colorScheme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppTheme.radiusLg),
               side: const BorderSide(color: AppTheme.border, width: 1),
@@ -718,10 +719,44 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('屏幕备忘录'),
+        title: null,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
+          // 添加应用（选择监控应用）
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: '选择监控应用',
+            onPressed: () async {
+              // 进入引导中的应用选择页风格，但作为独立页面弹出
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(
+                      title: const Text('选择监控应用'),
+                      actions: [
+                        TextButton(
+                          onPressed: () async {
+                            // 保存并关闭
+                            await _appService.saveSelectedApps(_selectedApps);
+                            if (mounted) Navigator.of(context).pop();
+                            await _loadData();
+                          },
+                          child: const Text('完成'),
+                        ),
+                      ],
+                    ),
+                    body: AppSelectionWidget(
+                      displayAsList: true,
+                      onSelectionChanged: (apps) {
+                        _selectedApps = apps;
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           // 截屏间隔设置
           GestureDetector(
             onTap: _showIntervalDialog,

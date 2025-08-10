@@ -77,7 +77,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           side: const BorderSide(color: AppTheme.border, width: 1),
@@ -154,7 +154,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           side: const BorderSide(color: AppTheme.border, width: 1),
@@ -220,11 +220,15 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? Theme.of(context).scaffoldBackgroundColor
+          : Colors.black,
       extendBodyBehindAppBar: true,
       appBar: _showAppBar
           ? AppBar(
-              backgroundColor: Colors.black.withValues(alpha: 0.7),
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85)
+                  : Colors.black.withValues(alpha: 0.7),
               elevation: 0,
               title: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -316,8 +320,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           loadingBuilder: (context, event) => const Center(
             child: CircularProgressIndicator(color: Colors.white),
           ),
-          backgroundDecoration: const BoxDecoration(
-            color: Colors.black,
+          backgroundDecoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).scaffoldBackgroundColor
+                : Colors.black,
           ),
           pageController: _pageController,
           onPageChanged: (index) {
