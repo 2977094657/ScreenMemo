@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import '../theme/app_theme.dart';
@@ -16,12 +17,24 @@ class ScreenshotViewerPage extends StatefulWidget {
 }
 
 class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
+  static const MethodChannel _platform = MethodChannel('com.fqyw.screen_memo/accessibility');
   late List<ScreenshotRecord> _screenshots;
   late int _currentIndex;
   late String _appName;
   late AppInfo _appInfo;
   late PageController _pageController;
   bool _showAppBar = true;
+
+  // 移除调试日志
+
+  @override
+  void initState() {
+    super.initState();
+    // Android：通过原生方法通道隐藏状态栏（仅顶部）
+    if (Platform.isAndroid) {
+      _platform.invokeMethod('hideStatusBar');
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -36,10 +49,16 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       _appInfo = args['appInfo'] as AppInfo;
       _pageController = PageController(initialPage: _currentIndex);
     }
+
+    // 去除额外 dump
   }
 
   @override
   void dispose() {
+    // Android：恢复状态栏
+    if (Platform.isAndroid) {
+      _platform.invokeMethod('showStatusBar');
+    }
     _pageController.dispose();
     super.dispose();
   }

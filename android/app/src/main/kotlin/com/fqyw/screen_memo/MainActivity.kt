@@ -24,6 +24,12 @@ import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.view.View
+import android.graphics.Color
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import androidx.core.view.WindowCompat
 
 class MainActivity : FlutterActivity() {
 
@@ -75,6 +81,14 @@ class MainActivity : FlutterActivity() {
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "hideStatusBar" -> {
+                    hideStatusBar()
+                    result.success(true)
+                }
+                "showStatusBar" -> {
+                    showStatusBar()
+                    result.success(true)
+                }
                 "checkAccessibilityPermission" -> {
                     result.success(isAccessibilityServiceEnabled())
                 }
@@ -298,6 +312,82 @@ class MainActivity : FlutterActivity() {
 
         FileLogger.e(TAG, "=== MainActivity configureFlutterEngine 完成 ===")
     }
+
+    // 移除额外日志输出，保留默认生命周期
+
+    /**
+     * 仅隐藏状态栏，保留底部导航栏；并启用 edge-to-edge，避免内容区域尺寸变化
+     */
+    private fun hideStatusBar() {
+        try {
+            // 透明状态栏，内容绘制到状态栏区域
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                window.statusBarColor = Color.TRANSPARENT
+            }
+
+            // 全屏时允许内容进入刘海区域
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                window.attributes = lp
+            }
+
+            // 保持内容与系统栏重叠（edge-to-edge），避免布局高度变化
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.let { controller ->
+                    controller.hide(WindowInsets.Type.statusBars())
+                    controller.systemBarsBehavior =
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val flags = (
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                )
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = flags
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "隐藏状态栏失败", e)
+        }
+    }
+
+    /**
+     * 恢复状态栏显示，并恢复 decorFitsSystemWindows 以回到默认行为
+     */
+    private fun showStatusBar() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.show(WindowInsets.Type.statusBars())
+            } else {
+                @Suppress("DEPRECATION")
+                val flags = (
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    // 不设置 LAYOUT_FULLSCREEN/ FULLSCREEN，恢复状态栏可见
+                )
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = flags
+            }
+
+            // 退出全屏时恢复默认的刘海区域策略
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                window.attributes = lp
+            }
+
+            // 恢复为系统默认：内容不与系统栏重叠
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "显示状态栏失败", e)
+        }
+    }
+
+    // 调试日志已移除
 
     /**
      * 检查无障碍服务是否已启用
