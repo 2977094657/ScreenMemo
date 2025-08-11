@@ -429,7 +429,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
                     _formatFileSize(screenshot.fileSize),
                     style: TextStyle(
                       fontSize: 11,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white.withOpacity(0.85)
+                          : Colors.white,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -437,7 +439,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
                     _formatDateTime(screenshot.captureTime),
                     style: TextStyle(
                       fontSize: 11,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white.withOpacity(0.85)
+                          : Colors.white,
                       fontWeight: FontWeight.w500,
                     ),
                   ),

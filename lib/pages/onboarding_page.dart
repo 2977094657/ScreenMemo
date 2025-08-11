@@ -104,23 +104,9 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
           if (oldBatteryStatus != newBatteryStatus) {
             if (newBatteryStatus) {
-              // 如果电池优化状态从未授权变为已授权，显示提示
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('电池优化白名单权限已成功授权'),
-                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
+              // 授权完成后不再显示底部通知
             } else {
-              // 如果从已授权变为未授权，也显示提示
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('电池优化白名单权限状态已更新'),
-                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
+              // 状态变更为未授权时也不弹出通知，交由页面状态体现
             }
           }
         });
@@ -465,20 +451,27 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 应用图标
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-            ),
-            child: const Icon(
-              Icons.memory,
-              size: 40,
-              color: AppTheme.primaryForeground,
-            ),
-          ),
+          // 应用图标（亮色 primary；暗色与完成页一致：secondaryContainer）
+          Builder(builder: (context) {
+            final isLight = Theme.of(context).brightness == Brightness.light;
+            return Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: isLight
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+              ),
+              child: Icon(
+                Icons.memory,
+                size: 40,
+                color: isLight
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+            );
+          }),
 
           const SizedBox(height: AppTheme.spacing4),
           
@@ -629,14 +622,15 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                   isGranted: _appState.notificationPermissionGranted,
                   onRequest: () async {
                     await _permissionService.requestNotificationPermission();
+                    // 给系统权限弹窗/页面一些时间，避免立刻重建导致跳页
+                    await Future.delayed(const Duration(milliseconds: 500));
                     final permissions = await _permissionService.checkAllPermissions();
                     _appState.updatePermissions(
                       notification: permissions['notification'],
                     );
-                    // 强制UI重建
-                    if (mounted) {
-                      setState(() {});
-                    }
+                    if (!mounted) return;
+                    // 仅在当前页时刷新，避免页面重置
+                    setState(() {});
                   },
                 ),
 
@@ -731,13 +725,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                         await _loadKeepAlivePermissions();
 
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('自启动权限已标记为已授权'),
-                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                          // 授权完成后不再显示底部通知
                         }
                       }
                     }
@@ -907,20 +895,27 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 成功图标
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-            ),
-            child: const Icon(
-              Icons.check,
-              size: 60,
-              color: AppTheme.successForeground,
-            ),
-          ),
+          // 成功图标（白天模式与第一页一致：primary 背景；夜间保持柔和容器色）
+          Builder(builder: (context) {
+            final isLight = Theme.of(context).brightness == Brightness.light;
+            return Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: isLight
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+              ),
+              child: Icon(
+                Icons.check,
+                size: 60,
+                color: isLight
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+            );
+          }),
           
           const SizedBox(height: AppTheme.spacing8),
           
