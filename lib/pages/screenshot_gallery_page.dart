@@ -137,7 +137,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          side: const BorderSide(color: AppTheme.border, width: 1),
         ),
         title: const Text('确认删除'),
         content: const Text('确定要删除这张截图吗？此操作无法撤销。'),
@@ -240,6 +239,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '共${_screenshots.length}张',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadScreenshots,
@@ -365,14 +375,27 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
           // 图片直接显示，无容器包装
           ClipRRect(
             borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            child: Image.file(
-              file,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover, // 使用cover填满容器
-              errorBuilder: (context, error, stackTrace) {
-                print("图片加载失败: $error, path: ${file.path}");
-                return _buildErrorItem('图片丢失或损坏');
+            child: Builder(
+              builder: (context) {
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                final imageWidget = Image.file(
+                  file,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fit: BoxFit.cover, // 使用cover填满容器
+                  errorBuilder: (context, error, stackTrace) {
+                    print("图片加载失败: $error, path: ${file.path}");
+                    return _buildErrorItem('图片丢失或损坏');
+                  },
+                );
+                if (!isDark) return imageWidget;
+                return ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    Colors.black.withValues(alpha: 0.5),
+                    BlendMode.darken,
+                  ),
+                  child: imageWidget,
+                );
               },
             ),
           ),
@@ -404,17 +427,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
                 children: [
                   Text(
                     _formatFileSize(screenshot.fileSize),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Colors.white,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   Text(
                     _formatDateTime(screenshot.captureTime),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Colors.white,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                       fontWeight: FontWeight.w500,
                     ),
                   ),

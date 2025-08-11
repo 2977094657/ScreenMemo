@@ -198,10 +198,9 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
       barrierDismissible: false, // 不允许点击外部关闭
       builder: (BuildContext context) {
         return Dialog(
-          backgroundColor: AppTheme.background,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-            side: const BorderSide(color: AppTheme.border, width: 1),
           ),
           child: Container(
             padding: const EdgeInsets.all(AppTheme.spacing6),
@@ -397,7 +396,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -872,9 +871,10 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           ),
         ),
 
-        // 应用选择组件 - 全屏显示
+        // 应用选择组件 - 列表显示（与首页风格一致）
         Expanded(
           child: AppSelectionWidget(
+            displayAsList: true,
             onSelectionChanged: _onAppSelectionChanged,
           ),
         ),

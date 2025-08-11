@@ -293,21 +293,78 @@ class AppTheme {
         ),
       ),
       textTheme: const TextTheme(
-        displayLarge: TextStyle(color: darkForeground),
-        displayMedium: TextStyle(color: darkForeground),
-        displaySmall: TextStyle(color: darkForeground),
-        headlineLarge: TextStyle(color: darkForeground),
-        headlineMedium: TextStyle(color: darkForeground),
-        headlineSmall: TextStyle(color: darkForeground),
-        titleLarge: TextStyle(color: darkForeground),
-        titleMedium: TextStyle(color: darkForeground),
-        titleSmall: TextStyle(color: darkForeground),
-        bodyLarge: TextStyle(color: darkForeground),
-        bodyMedium: TextStyle(color: darkForeground),
-        bodySmall: TextStyle(color: darkMutedForeground),
-        labelLarge: TextStyle(color: darkForeground),
-        labelMedium: TextStyle(color: darkForeground),
-        labelSmall: TextStyle(color: darkMutedForeground),
+        displayLarge: TextStyle(
+          fontSize: fontSize4xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        displayMedium: TextStyle(
+          fontSize: fontSize3xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        displaySmall: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        headlineLarge: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: fontSizeXl,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        headlineSmall: TextStyle(
+          fontSize: fontSizeLg,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        titleLarge: TextStyle(
+          fontSize: fontSizeBase,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        titleMedium: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        titleSmall: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: fontSizeBase,
+          color: darkForeground,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: fontSizeSm,
+          color: darkForeground,
+        ),
+        bodySmall: TextStyle(
+          fontSize: fontSizeXs,
+          color: darkMutedForeground,
+        ),
+        labelLarge: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        labelMedium: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        labelSmall: TextStyle(
+          fontSize: 10.0,
+          fontWeight: FontWeight.w500,
+          color: darkMutedForeground,
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(

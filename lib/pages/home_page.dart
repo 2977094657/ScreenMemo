@@ -7,6 +7,7 @@ import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/app_selection_widget.dart';
+import 'settings_page.dart';
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -193,7 +194,6 @@ class _HomePageState extends State<HomePage> {
                 backgroundColor: Theme.of(context).colorScheme.surface,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-                side: const BorderSide(color: AppTheme.border, width: 1),
               ),
               title: Row(
                 children: [
@@ -212,9 +212,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(
                     errorMessage,
-                    style: const TextStyle(
-                      color: AppTheme.foreground,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -236,10 +234,7 @@ class _HomePageState extends State<HomePage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    '确定',
-                    style: TextStyle(color: AppTheme.primary),
-                  ),
+                  child: const Text('确定'),
                 ),
               ],
             ),
@@ -295,7 +290,6 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          side: const BorderSide(color: AppTheme.border, width: 1),
         ),
         child: Container(
           padding: const EdgeInsets.all(AppTheme.spacing6),
@@ -336,7 +330,6 @@ class _HomePageState extends State<HomePage> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  border: Border.all(color: AppTheme.border),
                 ),
                 child: TextField(
                   controller: controller,
@@ -576,11 +569,10 @@ class _HomePageState extends State<HomePage> {
         showDialog(
           context: context,
           barrierDismissible: false,
-            builder: (context) => Dialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => Dialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              side: const BorderSide(color: AppTheme.border, width: 1),
             ),
             child: Container(
               padding: const EdgeInsets.all(AppTheme.spacing6),
@@ -624,23 +616,6 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: AppTheme.spacing4),
 
-                  // 提示文本
-                  Container(
-                    padding: const EdgeInsets.all(AppTheme.spacing3),
-                    decoration: BoxDecoration(
-                      color: AppTheme.muted,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    ),
-                    child: Text(
-                      '如需完整权限设置，请前往设置页面进行配置',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.mutedForeground,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: AppTheme.spacing4),
-
                   // 按钮
                   Row(
                     children: [
@@ -649,16 +624,15 @@ class _HomePageState extends State<HomePage> {
                           text: '前往设置',
                           onPressed: () {
                             Navigator.of(context).pop();
-                            // 显示提示，引导用户点击底部设置按钮
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('请点击底部"设置"按钮进行权限配置'),
-                                backgroundColor: AppTheme.info,
-                                behavior: SnackBarBehavior.floating,
+                            // 直接切换到底部导航的“设置”页
+                            // 通过通知上层Tab切换（使用Navigator推到MainNavigationPage时可传参，这里直接push一个到设置页的路由）
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => SettingsPage(themeService: widget.themeService),
                               ),
                             );
                           },
-                          variant: UIButtonVariant.outline,
+                          variant: UIButtonVariant.ghost,
                         ),
                       ),
                       const SizedBox(width: AppTheme.spacing3),
@@ -694,18 +668,34 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(
-            granted ? Icons.check_circle : Icons.cancel,
-            color: granted ? AppTheme.success : AppTheme.destructive,
-            size: 20,
-          ),
+          granted
+              ? Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: AppTheme.success.withValues(alpha: 0.25),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    size: 14,
+                    color: AppTheme.successForeground,
+                  ),
+                )
+              : const Icon(
+                  Icons.cancel,
+                  color: AppTheme.destructive,
+                  size: 20,
+                ),
           const SizedBox(width: 8),
           Text(name),
           const Spacer(),
           Text(
             granted ? '已授权' : '未授权',
             style: TextStyle(
-              color: granted ? AppTheme.success : AppTheme.destructive,
+              color: granted
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : AppTheme.destructive,
               fontWeight: FontWeight.bold,
             ),
           ),

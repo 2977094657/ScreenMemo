@@ -80,7 +80,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          side: const BorderSide(color: AppTheme.border, width: 1),
         ),
         title: const Text('确认删除'),
         content: const Text('确定要删除这张截图吗？此操作无法撤销。'),
@@ -157,7 +156,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          side: const BorderSide(color: AppTheme.border, width: 1),
         ),
         title: const Text('截图信息'),
         content: Column(
@@ -183,7 +181,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('确定', style: TextStyle(color: AppTheme.primary)),
+            child: const Text('确定'),
           ),
         ],
       ),
@@ -284,7 +282,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           : null,
       body: GestureDetector(
         onTap: _toggleAppBar,
-        child: PhotoViewGallery.builder(
+        child: Stack(
+          children: [
+            PhotoViewGallery.builder(
           scrollPhysics: const BouncingScrollPhysics(),
           builder: (BuildContext context, int index) {
             final screenshot = _screenshots[index];
@@ -331,6 +331,14 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               _currentIndex = index;
             });
           },
+            ),
+            if (Theme.of(context).brightness == Brightness.dark)
+              IgnorePointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.5),
+                ),
+              ),
+          ],
         ),
       ),
     );
