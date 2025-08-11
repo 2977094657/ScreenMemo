@@ -48,7 +48,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('统计'),
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
           IconButton(
@@ -57,7 +57,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
           ),
         ],
       ),
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
