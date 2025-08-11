@@ -171,13 +171,17 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                       vertical: AppTheme.spacing1,
                     ),
                     decoration: BoxDecoration(
-                      color: _selectedApps.isNotEmpty ? AppTheme.primary : AppTheme.secondary,
+                      color: _selectedApps.isNotEmpty
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.secondaryContainer,
                       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                     ),
                     child: Text(
                       '已选择 ${_selectedApps.length} 个',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _selectedApps.isNotEmpty ? AppTheme.primaryForeground : AppTheme.foreground,
+                        color: _selectedApps.isNotEmpty
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onSecondaryContainer,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

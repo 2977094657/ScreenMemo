@@ -106,19 +106,19 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             if (newBatteryStatus) {
               // 如果电池优化状态从未授权变为已授权，显示提示
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('电池优化白名单权限已成功授权'),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
+                SnackBar(
+                  content: const Text('电池优化白名单权限已成功授权'),
+                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                  duration: const Duration(seconds: 2),
                 ),
               );
             } else {
               // 如果从已授权变为未授权，也显示提示
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('电池优化白名单权限状态已更新'),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 2),
+                SnackBar(
+                  content: const Text('电池优化白名单权限状态已更新'),
+                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                  duration: const Duration(seconds: 2),
                 ),
               );
             }
@@ -140,13 +140,13 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
         });
 
         // 显示错误提示
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载权限状态失败: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('加载权限状态失败: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              duration: const Duration(seconds: 3),
+            ),
+          );
       }
     }
   }
@@ -240,7 +240,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                 Text(
                   '您是否已经在系统设置中完成了"自启动权限"的配置？',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.foreground,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
 
@@ -470,7 +470,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: AppTheme.primary,
+              color: Theme.of(context).colorScheme.primary,
               borderRadius: BorderRadius.circular(AppTheme.radiusXl),
             ),
             child: const Icon(
@@ -732,10 +732,10 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('自启动权限已标记为已授权'),
-                              backgroundColor: Colors.green,
-                              duration: Duration(seconds: 2),
+                            SnackBar(
+                              content: const Text('自启动权限已标记为已授权'),
+                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                              duration: const Duration(seconds: 2),
                             ),
                           );
                         }
@@ -749,12 +749,12 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             ),
           ),
           
-          // 权限说明
+          // 权限说明（使用主题色，避免硬编码浅色）
           Container(
             margin: const EdgeInsets.only(top: AppTheme.spacing2),
             padding: const EdgeInsets.all(AppTheme.spacing2),
             decoration: BoxDecoration(
-              color: AppTheme.muted,
+              color: Theme.of(context).colorScheme.surfaceVariant,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Row(
@@ -769,7 +769,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                   child: Text(
                     '权限授权后将持久保存，可随时在系统设置中修改',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppTheme.mutedForeground,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -789,6 +789,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
     required VoidCallback onRequest,
   }) {
     return UICard(
+      showBorder: false,
       padding: const EdgeInsets.all(AppTheme.spacing2), // 大幅缩小内边距
       child: Row(
         children: [
@@ -796,12 +797,16 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             width: 36, // 缩小图标容器
             height: 36,
             decoration: BoxDecoration(
-              color: isGranted ? AppTheme.success : AppTheme.secondary,
+              color: isGranted
+                  ? AppTheme.success.withValues(alpha: 0.25)
+                  : Theme.of(context).colorScheme.surfaceVariant,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(
               isGranted ? Icons.check : icon,
-              color: isGranted ? AppTheme.successForeground : AppTheme.foreground,
+              color: isGranted
+                  ? AppTheme.successForeground
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
               size: 18, // 缩小图标大小
             ),
           ),
@@ -831,9 +836,23 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(width: AppTheme.spacing2), // 缩小间距
 
           if (isGranted)
-            const UIBadge(
-              text: '已授权',
-              variant: UIBadgeVariant.success,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing2,
+                vertical: AppTheme.spacing1,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: Text(
+                '已授权',
+                style: TextStyle(
+                  fontSize: AppTheme.fontSizeXs,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
             )
           else
             UIButton(
@@ -893,7 +912,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             width: 120,
             height: 120,
             decoration: BoxDecoration(
-              color: AppTheme.success,
+              color: Theme.of(context).colorScheme.secondaryContainer,
               borderRadius: BorderRadius.circular(AppTheme.radiusXl),
             ),
             child: const Icon(

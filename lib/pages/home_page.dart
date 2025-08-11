@@ -334,19 +334,22 @@ class _HomePageState extends State<HomePage> {
                 child: TextField(
                   controller: controller,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: '间隔时间（秒）',
                     hintText: '请输入大于等于1的数字',
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(AppTheme.spacing3),
                     floatingLabelBehavior: FloatingLabelBehavior.always,
                     labelStyle: TextStyle(
-                      color: AppTheme.foreground,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w500,
+                    ),
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   style: TextStyle(
-                    color: AppTheme.foreground,
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: AppTheme.fontSizeBase,
                   ),
                 ),
@@ -709,9 +712,48 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: null,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 左侧：间隔展示与设置（可点，有下划线提示）
+            GestureDetector(
+              onTap: _showIntervalDialog,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.timer, size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$_screenshotInterval秒',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Container(
+                    height: 1,
+                    width: 48,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing4),
+            // 左侧：截屏开关（去掉文案，仅保留开关）
+            Switch(
+              value: _screenshotEnabled,
+              onChanged: (value) => _toggleScreenshotEnabled(),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ],
+        ),
         actions: [
           // 添加应用（选择监控应用）
           IconButton(
@@ -747,41 +789,6 @@ class _HomePageState extends State<HomePage> {
               );
             },
           ),
-          // 截屏间隔设置
-          GestureDetector(
-            onTap: _showIntervalDialog,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '$_screenshotInterval秒',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Container(
-                    height: 1,
-                    width: 30,
-                    color: AppTheme.primary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(width: AppTheme.spacing2),
-
-          // 截屏开关
-          Switch(
-            value: _screenshotEnabled,
-            onChanged: (value) => _toggleScreenshotEnabled(),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-
-          const SizedBox(width: AppTheme.spacing2),
-
           // 权限检查按钮 - 只在有权限问题时显示警告图标
           if (_hasPermissionIssues)
             IconButton(
