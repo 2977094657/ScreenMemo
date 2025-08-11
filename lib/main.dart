@@ -118,7 +118,7 @@ class _AppInitializerState extends State<AppInitializer> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        backgroundColor: AppTheme.background,
+        // 跟随主题
         body: Center(
           child: CircularProgressIndicator(),
         ),
