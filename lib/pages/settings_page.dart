@@ -161,10 +161,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
-          backgroundColor: AppTheme.background,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-            side: const BorderSide(color: AppTheme.border, width: 1),
           ),
           child: Container(
             padding: const EdgeInsets.all(AppTheme.spacing6),
@@ -354,7 +353,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       ],
                     ),
                     const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
+                     _buildPermissionCard(
                       icon: Icons.folder,
                       title: '存储权限',
                       description: '保存截图文件到设备存储',
@@ -362,7 +361,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       onRequest: () => _requestPermission('storage'),
                     ),
                     const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
+                     _buildPermissionCard(
                       icon: Icons.notifications,
                       title: '通知权限',
                       description: '显示服务状态通知',
@@ -370,7 +369,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       onRequest: () => _requestPermission('notification'),
                     ),
                     const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
+                     _buildPermissionCard(
                       icon: Icons.accessibility,
                       title: '无障碍服务',
                       description: '检测应用切换和执行截屏',
@@ -378,7 +377,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       onRequest: () => _requestPermission('accessibility'),
                     ),
                     const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
+                     _buildPermissionCard(
                       icon: Icons.analytics,
                       title: '使用统计权限',
                       description: '准确检测前台应用',
@@ -429,41 +428,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
                 const SizedBox(height: AppTheme.spacing4),
 
-                // 权限说明
-                UICard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: AppTheme.info),
-                          const SizedBox(width: AppTheme.spacing2),
-                          Text(
-                            '权限说明',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppTheme.spacing3),
-                      Text(
-                        '基础权限：\n'
-                        '• 存储权限：用于保存截图文件到设备存储空间\n'
-                        '• 通知权限：用于显示截屏服务运行状态\n'
-                        '• 无障碍服务：用于检测应用切换和执行自动截屏\n'
-                        '• 屏幕录制权限：用于截取屏幕画面\n\n'
-                        '保活权限：\n'
-                        '• 电池优化白名单：防止系统杀死截屏服务\n'
-                        '• 自启动权限：允许应用在后台自动重启',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.mutedForeground,
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // 移除冗余的权限说明
               ],
             ),
     );
@@ -479,19 +444,24 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     required VoidCallback onRequest,
   }) {
     return UICard(
-      padding: const EdgeInsets.all(AppTheme.spacing2), // 大幅缩小内边距
+      showBorder: false,
+      padding: const EdgeInsets.all(AppTheme.spacing2),
       child: Row(
         children: [
           Container(
             width: 36, // 缩小图标容器
             height: 36,
             decoration: BoxDecoration(
-              color: isGranted ? AppTheme.success : AppTheme.secondary,
+              color: isGranted
+                  ? AppTheme.success.withValues(alpha: 0.25) // 绿色更柔和
+                  : Theme.of(context).colorScheme.surfaceVariant, // 未授权更柔和灰
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(
               isGranted ? Icons.check : icon,
-              color: isGranted ? AppTheme.successForeground : AppTheme.foreground,
+              color: isGranted
+                  ? AppTheme.successForeground
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
               size: 18, // 缩小图标大小
             ),
           ),
@@ -521,15 +491,30 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           const SizedBox(width: AppTheme.spacing2), // 缩小间距
 
           if (isGranted)
-            const UIBadge(
-              text: '已授权',
-              variant: UIBadgeVariant.success,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing2,
+                vertical: AppTheme.spacing1,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withValues(alpha: 0.12), // 更浅的绿底
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: Text(
+                '已授权',
+                style: TextStyle(
+                  fontSize: AppTheme.fontSizeXs,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
             )
           else
             UIButton(
               text: '授权',
               onPressed: onRequest,
               size: UIButtonSize.small,
+              variant: UIButtonVariant.secondary, // 未授权按钮使用柔和灰背景
             ),
         ],
       ),

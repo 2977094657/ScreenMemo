@@ -6,10 +6,12 @@ import '../services/app_selection_service.dart';
 /// 应用选择组件
 class AppSelectionWidget extends StatefulWidget {
   final Function(List<AppInfo>)? onSelectionChanged;
+  final bool displayAsList;
   
   const AppSelectionWidget({
     super.key,
     this.onSelectionChanged,
+    this.displayAsList = false,
   });
 
   @override
@@ -129,11 +131,8 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
             AppTheme.spacing4, // right
             AppTheme.spacing2, // bottom
           ),
-          decoration: const BoxDecoration(
-            color: AppTheme.card,
-            border: Border(
-              bottom: BorderSide(color: AppTheme.border, width: 1),
-            ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
           ),
           child: Column(
             children: [
@@ -198,7 +197,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
           ),
         ),
 
-        // 应用网格列表
+        // 应用列表（支持网格或列表样式）
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -222,25 +221,38 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                         ],
                       ),
                     )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTheme.spacing3, // left
-                        AppTheme.spacing2, // top - 减少顶部间距
-                        AppTheme.spacing3, // right
-                        AppTheme.spacing3, // bottom
-                      ),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4, // 4列紧凑布局
-                        crossAxisSpacing: AppTheme.spacing2,
-                        mainAxisSpacing: AppTheme.spacing3, // 稍微增加垂直间距
-                        childAspectRatio: 0.8, // 调整高宽比，给文字更多空间
-                      ),
-                      itemCount: _filteredApps.length,
-                      itemBuilder: (context, index) {
-                        final app = _filteredApps[index];
-                        return _buildAppGridItem(app);
-                      },
-                    ),
+                  : (widget.displayAsList
+                      ? ListView.separated(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.spacing2,
+                            vertical: AppTheme.spacing1,
+                          ),
+                          itemCount: _filteredApps.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: AppTheme.spacing1),
+                          itemBuilder: (context, index) {
+                            final app = _filteredApps[index];
+                            return _buildAppListItem(app);
+                          },
+                        )
+                      : GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.spacing3, // left
+                            AppTheme.spacing2, // top - 减少顶部间距
+                            AppTheme.spacing3, // right
+                            AppTheme.spacing3, // bottom
+                          ),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4, // 4列紧凑布局
+                            crossAxisSpacing: AppTheme.spacing2,
+                            mainAxisSpacing: AppTheme.spacing3, // 稍微增加垂直间距
+                            childAspectRatio: 0.8, // 调整高宽比，给文字更多空间
+                          ),
+                          itemCount: _filteredApps.length,
+                          itemBuilder: (context, index) {
+                            final app = _filteredApps[index];
+                            return _buildAppGridItem(app);
+                          },
+                        )),
         ),
       ],
     );
@@ -287,13 +299,13 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                   Positioned(
                     right: 0,
                     bottom: 0,
-                    child: Container(
+            child: Container(
                       width: 16,
                       height: 16,
                       decoration: BoxDecoration(
                         color: AppTheme.primary,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.0),
+                // 去掉白色描边
                       ),
                       child: const Icon(
                         Icons.check,
@@ -322,6 +334,53 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppListItem(AppInfo app) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _toggleAppSelection(app),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing4,
+            vertical: AppTheme.spacing2,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: app.icon != null
+                    ? Image.memory(
+                        app.icon!,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                      )
+                    : const Icon(
+                        Icons.android,
+                        color: AppTheme.mutedForeground,
+                        size: 28,
+                      ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Text(
+                  app.appName,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Checkbox(
+                value: app.isSelected,
+                onChanged: (_) => _toggleAppSelection(app),
+              ),
+            ],
+          ),
         ),
       ),
     );

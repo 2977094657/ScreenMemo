@@ -52,80 +52,95 @@ class UIButton extends StatelessWidget {
   }
   
   Widget _buildPrimaryButton() {
-    return ElevatedButton(
-      onPressed: loading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppTheme.primary,
-        foregroundColor: AppTheme.primaryForeground,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return ElevatedButton(
+        onPressed: loading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: cs.primary,
+          foregroundColor: cs.onPrimary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          padding: _getPadding(),
         ),
-        padding: _getPadding(),
-      ),
-      child: _buildButtonContent(),
-    );
+        child: _buildButtonContent(),
+      );
+    });
   }
   
   Widget _buildSecondaryButton() {
-    return ElevatedButton(
-      onPressed: loading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppTheme.secondary,
-        foregroundColor: AppTheme.secondaryForeground,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return ElevatedButton(
+        onPressed: loading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: cs.surfaceVariant,
+          foregroundColor: cs.onSurfaceVariant,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          padding: _getPadding(),
         ),
-        padding: _getPadding(),
-      ),
-      child: _buildButtonContent(),
-    );
+        child: _buildButtonContent(),
+      );
+    });
   }
   
   Widget _buildOutlineButton() {
-    return OutlinedButton(
-      onPressed: loading ? null : onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppTheme.foreground,
-        side: const BorderSide(color: AppTheme.border, width: 1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(builder: (context) {
+      final theme = Theme.of(context);
+      return OutlinedButton(
+        onPressed: loading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurface,
+          side: BorderSide(color: theme.colorScheme.outline, width: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          padding: _getPadding(),
         ),
-        padding: _getPadding(),
-      ),
-      child: _buildButtonContent(),
-    );
+        child: _buildButtonContent(),
+      );
+    });
   }
   
   Widget _buildGhostButton() {
-    return TextButton(
-      onPressed: loading ? null : onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor: AppTheme.foreground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return TextButton(
+        onPressed: loading ? null : onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: cs.onSurface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          padding: _getPadding(),
         ),
-        padding: _getPadding(),
-      ),
-      child: _buildButtonContent(),
-    );
+        child: _buildButtonContent(),
+      );
+    });
   }
   
   Widget _buildDestructiveButton() {
-    return ElevatedButton(
-      onPressed: loading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppTheme.destructive,
-        foregroundColor: AppTheme.destructiveForeground,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return ElevatedButton(
+        onPressed: loading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: cs.error,
+          foregroundColor: cs.onError,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          padding: _getPadding(),
         ),
-        padding: _getPadding(),
-      ),
-      child: _buildButtonContent(),
-    );
+        child: _buildButtonContent(),
+      );
+    });
   }
   
   Widget _buildButtonContent() {
@@ -220,25 +235,32 @@ class UICard extends StatelessWidget {
   final Widget child;
   final EdgeInsets? padding;
   final VoidCallback? onTap;
+  final bool showBorder;
 
   const UICard({
     super.key,
     required this.child,
     this.padding,
     this.onTap,
+    this.showBorder = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    Widget card = Container(
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(color: AppTheme.border, width: 1),
-      ),
-      padding: padding ?? const EdgeInsets.all(AppTheme.spacing6),
-      child: child,
-    );
+    Widget card = Builder(builder: (context) {
+      final theme = Theme.of(context);
+      final cardColor = theme.cardTheme.color ?? theme.colorScheme.surface;
+      final borderColor = theme.colorScheme.outline;
+      return Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: showBorder ? Border.all(color: borderColor, width: 1) : null,
+        ),
+        padding: padding ?? const EdgeInsets.all(AppTheme.spacing6),
+        child: child,
+      );
+    });
     
     if (onTap != null) {
       return InkWell(
@@ -269,23 +291,26 @@ class UIProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? AppTheme.secondary,
-        borderRadius: BorderRadius.circular(height / 2),
-      ),
-      child: FractionallySizedBox(
-        alignment: Alignment.centerLeft,
-        widthFactor: value.clamp(0.0, 1.0),
-        child: Container(
-          decoration: BoxDecoration(
-            color: valueColor ?? AppTheme.primary,
-            borderRadius: BorderRadius.circular(height / 2),
+    return Builder(builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      return Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: backgroundColor ?? cs.surfaceVariant,
+          borderRadius: BorderRadius.circular(height / 2),
+        ),
+        child: FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: value.clamp(0.0, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: valueColor ?? cs.primary,
+              borderRadius: BorderRadius.circular(height / 2),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 }
 
@@ -302,29 +327,30 @@ class UIBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     Color backgroundColor;
     Color textColor;
     
     switch (variant) {
       case UIBadgeVariant.primary:
-        backgroundColor = AppTheme.primary;
-        textColor = AppTheme.primaryForeground;
+        backgroundColor = cs.primary;
+        textColor = cs.onPrimary;
         break;
       case UIBadgeVariant.secondary:
-        backgroundColor = AppTheme.secondary;
-        textColor = AppTheme.secondaryForeground;
+        backgroundColor = cs.secondaryContainer;
+        textColor = cs.onSecondaryContainer;
         break;
       case UIBadgeVariant.success:
         backgroundColor = AppTheme.success;
         textColor = AppTheme.successForeground;
         break;
       case UIBadgeVariant.destructive:
-        backgroundColor = AppTheme.destructive;
-        textColor = AppTheme.destructiveForeground;
+        backgroundColor = cs.error;
+        textColor = cs.onError;
         break;
       case UIBadgeVariant.outline:
         backgroundColor = Colors.transparent;
-        textColor = AppTheme.foreground;
+        textColor = cs.onSurface;
         break;
     }
     
@@ -375,10 +401,13 @@ class UISeparator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height ?? 1,
-      width: width,
-      color: color ?? AppTheme.border,
-    );
+    return Builder(builder: (context) {
+      final outline = Theme.of(context).colorScheme.outline;
+      return Container(
+        height: height ?? 1,
+        width: width,
+        color: color ?? outline,
+      );
+    });
   }
 }
