@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
+import '../services/screenshot_database.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -18,6 +19,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver {
   final PermissionService _permissionService = PermissionService.instance;
+  final ScreenshotDatabase _screenshotDatabase = ScreenshotDatabase.instance;
 
   Map<String, bool> _permissions = {};
   Map<String, bool> _keepAlivePermissions = {};
@@ -27,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
+  bool _exportingDb = false;
 
   @override
   void initState() {
@@ -40,6 +43,184 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     _stopBatteryPermissionCheck();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// 导出数据库到下载目录
+  Future<void> _exportDatabase() async {
+    if (_exportingDb) return;
+    setState(() { _exportingDb = true; });
+
+    try {
+      final result = await _screenshotDatabase.exportDatabaseToDownloads();
+      if (!mounted) return;
+      if (result != null) {
+        final displayPath = (result['humanPath'] as String?) ?? (result['absolutePath'] as String?) ?? (result['displayPath'] as String?) ?? 'Download/ScreenMemo/screenshot_memo.db';
+
+        // 成功对话框：中文提示 + 可复制路径
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return Dialog(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(AppTheme.spacing6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppTheme.success.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                          ),
+                          child: const Icon(Icons.check_circle_outline, color: AppTheme.success, size: 18),
+                        ),
+                        const SizedBox(width: AppTheme.spacing3),
+                        Text(
+                          '导出完成',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.spacing4),
+                    Text('文件已导出至：'),
+                    const SizedBox(height: AppTheme.spacing2),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppTheme.spacing3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      child: Text(
+                        displayPath,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.spacing4),
+                    Row(
+                      children: [
+                        UIButton(
+                          text: '复制路径',
+                          variant: UIButtonVariant.outline,
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: displayPath));
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('已复制路径')),
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(width: AppTheme.spacing3),
+                        UIButton(
+                          text: '确定',
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      } else {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Dialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+            child: Container(
+              padding: const EdgeInsets.all(AppTheme.spacing6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: AppTheme.destructive.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                        ),
+                        child: const Icon(Icons.error_outline, color: AppTheme.destructive, size: 18),
+                      ),
+                      const SizedBox(width: AppTheme.spacing3),
+                      Text('导出失败', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.spacing4),
+                  const Text('请稍后重试'),
+                  const SizedBox(height: AppTheme.spacing4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: UIButton(text: '确定', onPressed: () => Navigator.of(context).pop()),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+          child: Container(
+            padding: const EdgeInsets.all(AppTheme.spacing6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppTheme.destructive.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      child: const Icon(Icons.error_outline, color: AppTheme.destructive, size: 18),
+                    ),
+                    const SizedBox(width: AppTheme.spacing3),
+                    Text('导出失败', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing4),
+                Text('$e'),
+                const SizedBox(height: AppTheme.spacing4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: UIButton(text: '确定', onPressed: () => Navigator.of(context).pop()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() { _exportingDb = false; });
+      }
+    }
   }
 
   @override
@@ -340,17 +521,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.security, color: AppTheme.primary),
-                        const SizedBox(width: AppTheme.spacing2),
-                        Text(
-                          '基础权限',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '基础权限',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: AppTheme.spacing3),
                      _buildPermissionCard(
@@ -395,17 +570,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.battery_saver, color: AppTheme.primary),
-                        const SizedBox(width: AppTheme.spacing2),
-                        Text(
-                          '保活权限',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '保活权限',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: AppTheme.spacing3),
                     _buildPermissionCard(
@@ -422,6 +591,46 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       description: '允许应用在后台自动重启',
                       isGranted: _keepAlivePermissions['autostart'] ?? false,
                       onRequest: () => _requestPermission('autostart'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: AppTheme.spacing4),
+
+                // 数据与备份
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '数据与备份',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: AppTheme.spacing3),
+                    UICard(
+                      showBorder: false,
+                      padding: const EdgeInsets.all(AppTheme.spacing2),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.file_download_outlined, size: 20),
+                          const SizedBox(width: AppTheme.spacing3),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('导出数据库到 Download/ScreenMemo'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.spacing3),
+                          UIButton(
+                            text: _exportingDb ? '导出中...' : '导出',
+                            onPressed: _exportingDb ? null : _exportDatabase,
+                            size: UIButtonSize.small,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

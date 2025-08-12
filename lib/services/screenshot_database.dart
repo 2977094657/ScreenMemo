@@ -2,12 +2,14 @@ import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 import '../models/screenshot_record.dart';
 
 /// 截屏数据库服务
 class ScreenshotDatabase {
   static ScreenshotDatabase? _instance;
   static Database? _database;
+  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
 
   static ScreenshotDatabase get instance => _instance ??= ScreenshotDatabase._();
 
@@ -363,6 +365,43 @@ class ScreenshotDatabase {
     if (db != null) {
       await db.close();
       _database = null;
+    }
+  }
+
+  /// 导出数据库到公共下载目录（Download/ScreenMemo）
+  /// 返回导出结果（包含 displayPath 等），失败返回 null
+  Future<Map<String, dynamic>?> exportDatabaseToDownloads() async {
+    try {
+      // 确保数据库已创建，并获得路径
+      final db = await database;
+      final dbPath = db.path;
+
+      // 临时关闭以避免正在写入时复制
+      await db.close();
+      _database = null;
+
+      // 通过原生侧写入到下载目录（兼容 Android 10+/Scoped Storage）
+      final result = await _channel.invokeMethod('exportFileToDownloads', {
+        'sourcePath': dbPath,
+        'displayName': 'screenshot_memo.db',
+        'subDir': 'ScreenMemo',
+      });
+
+      // 复制完成后重新打开数据库
+      await database;
+
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        // 统一补充一个humanPath用于展示：优先absolutePath
+        map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
+        return map;
+      }
+      return null;
+    } catch (e) {
+      // 尝试在失败情况下也确保数据库被重新打开
+      try { await database; } catch (_) {}
+      print('导出数据库到下载目录失败: $e');
+      return null;
     }
   }
 }
