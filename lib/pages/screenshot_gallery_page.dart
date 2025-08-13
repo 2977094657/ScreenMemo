@@ -201,37 +201,25 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            // 应用图标
             if (_appInfo.icon != null)
               Container(
-                width: 28,
-                height: 28,
-                margin: const EdgeInsets.only(right: 12),
-                child: Image.memory(
-                  _appInfo.icon!,
-                  width: 28,
-                  height: 28,
-                  fit: BoxFit.contain,
-                ),
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(right: 8),
+                child: Image.memory(_appInfo.icon!, fit: BoxFit.contain),
               )
             else
-              Container(
-                width: 28,
-                height: 28,
-                margin: const EdgeInsets.only(right: 12),
-                child: const Icon(
-                  Icons.android,
-                  color: AppTheme.foreground,
-                  size: 24,
-                ),
-              ),
-            // 应用名称
-            Flexible(
+              const Icon(Icons.android, size: 20, color: AppTheme.foreground),
+            const SizedBox(width: 6),
+            Expanded(
               child: Text(
                 _appInfo.appName,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ),
           ],
@@ -243,9 +231,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '共${_screenshots.length}张',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                '${_screenshots.length}张 · ${_formatTotalSizeMBGBTB(_screenshots.fold<int>(0, (sum, r) => sum + r.fileSize))}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w400,
                     ),
               ),
             ),
@@ -500,6 +488,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
       return '${(bytes / 1024).toStringAsFixed(1)}KB';
     } else {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+  }
+
+  /// 将字节格式化为最小MB，然后GB/TB
+  String _formatTotalSizeMBGBTB(int bytes) {
+    const double kb = 1024;
+    const double mb = kb * 1024;
+    const double gb = mb * 1024;
+    const double tb = gb * 1024;
+
+    if (bytes >= tb) {
+      return (bytes / tb).toStringAsFixed(2) + 'TB';
+    } else if (bytes >= gb) {
+      return (bytes / gb).toStringAsFixed(2) + 'GB';
+    } else {
+      // 最小单位MB（包含 <1MB 的情况）
+      return (bytes / mb).toStringAsFixed(2) + 'MB';
     }
   }
 }

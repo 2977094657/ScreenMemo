@@ -965,11 +965,12 @@ class _HomePageState extends State<HomePage> {
     final stat = appStats[packageName];
     
     if (stat == null) {
-      return '截图数量: 0 | 最后截图: 暂无';
+      return '截图数量: 0 | 总大小: 0.00MB | 最后截图: 暂无';
     }
     
     final count = stat['totalCount'] as int? ?? 0;
     final lastTime = stat['lastCaptureTime'] as DateTime?;
+    final totalBytes = stat['totalSize'] as int? ?? 0;
     
     String timeStr = '暂无';
     if (lastTime != null) {
@@ -987,6 +988,23 @@ class _HomePageState extends State<HomePage> {
       }
     }
     
-    return '截图数量: $count | 最后截图: $timeStr';
+    return '$count张 · ${_formatTotalSizeMBGBTB(totalBytes)} · $timeStr';
+  }
+
+  /// 将字节格式化为最小MB，然后GB/TB
+  String _formatTotalSizeMBGBTB(int bytes) {
+    const double kb = 1024;
+    const double mb = kb * 1024;
+    const double gb = mb * 1024;
+    const double tb = gb * 1024;
+
+    if (bytes >= tb) {
+      return (bytes / tb).toStringAsFixed(2) + 'TB';
+    } else if (bytes >= gb) {
+      return (bytes / gb).toStringAsFixed(2) + 'GB';
+    } else {
+      // 最小单位MB（包含 <1MB 的情况）
+      return (bytes / mb).toStringAsFixed(2) + 'MB';
+    }
   }
 }
