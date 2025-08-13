@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.fqyw" "\0"
-            VALUE "FileDescription", "screen_memo" "\0"
+            VALUE "FileDescription", "屏幕记忆" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "screen_memo" "\0"
+            VALUE "InternalName", "屏幕记忆" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.fqyw. All rights reserved." "\0"
-            VALUE "OriginalFilename", "screen_memo.exe" "\0"
-            VALUE "ProductName", "screen_memo" "\0"
+            VALUE "OriginalFilename", "屏幕记忆.exe" "\0"
+            VALUE "ProductName", "屏幕记忆" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

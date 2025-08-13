@@ -21,6 +21,9 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.os.Environment
+import android.content.ContentValues
+import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -30,6 +33,9 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
 
@@ -190,6 +196,31 @@ class MainActivity : FlutterActivity() {
                 "getDeviceInfo" -> {
                     result.success(OEMCompatibilityHelper.getDeviceInfo())
                 }
+                "exportFileToDownloads" -> {
+                    try {
+                        val sourcePath = call.argument<String>("sourcePath")
+                        val displayName = call.argument<String>("displayName")
+                        val subDir = call.argument<String>("subDir")
+
+                        if (sourcePath.isNullOrEmpty()) {
+                            result.error("invalid_args", "sourcePath is required", null)
+                            return@setMethodCallHandler
+                        }
+
+                        val src = File(sourcePath)
+                        if (!src.exists()) {
+                            result.error("source_not_found", "Source file not found", sourcePath)
+                            return@setMethodCallHandler
+                        }
+
+                        val name = if (!displayName.isNullOrEmpty()) displayName else src.name
+                        val exportResult = exportFileToDownloadsInternal(src, name, subDir)
+                        result.success(exportResult)
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "导出文件到下载目录失败", e)
+                        result.error("export_failed", e.message, null)
+                    }
+                }
                 "insertScreenshotRecord" -> {
                     val packageName = call.argument<String>("packageName") ?: ""
                     val appName = call.argument<String>("appName") ?: ""
@@ -304,10 +335,11 @@ class MainActivity : FlutterActivity() {
         // 绑定AccessibilityService
         bindAccessibilityService()
         
-        // 检查是否是静默启动
+        // 保留兼容：若是仅检查服务的启动，立即结束，避免叠加界面
         if (intent?.getBooleanExtra("check_service_only", false) == true) {
             FileLogger.e(TAG, "静默启动模式，仅检查服务")
             finish()
+            return
         }
 
         FileLogger.e(TAG, "=== MainActivity configureFlutterEngine 完成 ===")
@@ -1021,5 +1053,66 @@ class MainActivity : FlutterActivity() {
 
         // 停止辅助功能状态监听
         accessibilityStateMonitor?.stopMonitoring()
+    }
+
+    /**
+     * 将源文件复制到公共下载目录（Download/【subDir】/displayName）
+     * 返回 Map，包括：contentUri、displayPath、absolutePath、fileName、size
+     */
+    private fun exportFileToDownloadsInternal(sourceFile: File, displayName: String, subDir: String?): Map<String, Any?> {
+        val resolver = contentResolver
+        val size = sourceFile.length()
+        val targetSubDir = (subDir ?: "").trim('/').ifEmpty { "ScreenMemory" }
+        val displayPath = if (targetSubDir.isNotEmpty()) "Download/$targetSubDir/$displayName" else "Download/$displayName"
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, if (targetSubDir.isNotEmpty()) Environment.DIRECTORY_DOWNLOADS + "/" + targetSubDir else Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Failed to create item in MediaStore")
+
+            resolver.openOutputStream(uri)?.use { out ->
+                FileInputStream(sourceFile).use { input -> input.copyTo(out) }
+            } ?: throw IllegalStateException("Failed to open output stream")
+
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+
+            @Suppress("DEPRECATION")
+            val absDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val absolutePath = if (targetSubDir.isNotEmpty()) File(absDownloads, "$targetSubDir/$displayName").absolutePath else File(absDownloads, displayName).absolutePath
+
+            mapOf(
+                "contentUri" to uri.toString(),
+                "displayPath" to displayPath,
+                "absolutePath" to absolutePath,
+                "fileName" to displayName,
+                "size" to size
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDir = if (targetSubDir.isNotEmpty()) File(downloadsDir, targetSubDir) else downloadsDir
+            if (!targetDir.exists()) targetDir.mkdirs()
+            val dest = File(targetDir, displayName)
+
+            FileInputStream(sourceFile).use { input ->
+                FileOutputStream(dest).use { output -> input.copyTo(output) }
+            }
+
+            mapOf(
+                "contentUri" to dest.absolutePath,
+                "displayPath" to displayPath,
+                "absolutePath" to dest.absolutePath,
+                "fileName" to displayName,
+                "size" to size
+            )
+        }
     }
 }

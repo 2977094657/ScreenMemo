@@ -43,7 +43,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '屏幕备忘录',
+      title: '屏幕记忆',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _themeService.themeMode,

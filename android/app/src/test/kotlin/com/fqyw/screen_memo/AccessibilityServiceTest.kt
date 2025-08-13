@@ -83,7 +83,7 @@ class AccessibilityServiceTest {
         // 测试WakeLock管理
         val wakeLock = mockPowerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "ScreenMemo:AccessibilityWakeLock"
+            "ScreenMemory:AccessibilityWakeLock"
         )
         
         wakeLock.acquire()

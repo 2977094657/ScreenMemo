@@ -619,7 +619,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('导出数据库到 Download/ScreenMemo'),
+                                Text('导出数据库到 Download/ScreenMemory'),
                               ],
                             ),
                           ),

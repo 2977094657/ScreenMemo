@@ -124,7 +124,7 @@ class DaemonService : Service() {
     
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("屏幕备忘录守护服务")
+            .setContentTitle("屏幕记忆守护服务")
             .setContentText("正在保护截屏服务稳定运行")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
@@ -193,12 +193,8 @@ class DaemonService : Service() {
             // 方法1：发送广播触发重连
             sendBroadcast(Intent("com.fqyw.screen_memo.TRIGGER_ACCESSIBILITY_RECONNECT"))
             
-            // 方法2：启动MainActivity（不显示界面）
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION
-                putExtra("silent_start", true)
-            }
-            startActivity(intent)
+            // 方法2：不再启动Activity，避免打断当前前台界面
+            // 仅依赖广播与服务重连来恢复
             
             // 方法3：重新绑定服务
             try {

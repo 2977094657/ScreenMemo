@@ -368,7 +368,7 @@ class ScreenshotDatabase {
     }
   }
 
-  /// 导出数据库到公共下载目录（Download/ScreenMemo）
+  /// 导出数据库到公共下载目录（Download/ScreenMemory）
   /// 返回导出结果（包含 displayPath 等），失败返回 null
   Future<Map<String, dynamic>?> exportDatabaseToDownloads() async {
     try {
@@ -384,7 +384,7 @@ class ScreenshotDatabase {
       final result = await _channel.invokeMethod('exportFileToDownloads', {
         'sourcePath': dbPath,
         'displayName': 'screenshot_memo.db',
-        'subDir': 'ScreenMemo',
+        'subDir': 'ScreenMemory',
       });
 
       // 复制完成后重新打开数据库

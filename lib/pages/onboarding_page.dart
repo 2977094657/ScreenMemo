@@ -451,33 +451,22 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 应用图标（亮色 primary；暗色与完成页一致：secondaryContainer）
-          Builder(builder: (context) {
-            final isLight = Theme.of(context).brightness == Brightness.light;
-            return Container(
+          // 顶部使用应用Logo
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+            child: Image.asset(
+              'logo.png',
               width: 80,
               height: 80,
-              decoration: BoxDecoration(
-                color: isLight
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-              ),
-              child: Icon(
-                Icons.memory,
-                size: 40,
-                color: isLight
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : Theme.of(context).colorScheme.onSecondaryContainer,
-              ),
-            );
-          }),
+              fit: BoxFit.cover,
+            ),
+          ),
 
           const SizedBox(height: AppTheme.spacing4),
           
           // 标题
           Text(
-            '欢迎使用 ScreenMemo',
+            '欢迎使用 屏幕记忆',
             style: Theme.of(context).textTheme.displaySmall,
             textAlign: TextAlign.center,
           ),
@@ -928,7 +917,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(height: AppTheme.spacing4),
           
           Text(
-            '所有权限已成功授权，您现在可以开始使用屏幕截图功能了。',
+            '所有权限已成功授权，您现在可以开始使用屏幕记忆的截图功能了。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppTheme.mutedForeground,
             ),

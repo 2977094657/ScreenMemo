@@ -790,10 +790,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "屏幕备忘录服务",
+                    "屏幕记忆服务",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "用于显示屏幕备忘录辅助功能服务状态"
+                    description = "用于显示屏幕记忆辅助功能服务状态"
                     setShowBadge(false)
                     // 设置为不可关闭，提高保活能力
                     setBypassDnd(false)
@@ -866,17 +866,17 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             )
 
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("屏幕备忘录服务")
-                .setContentText("辅助功能服务正在运行，点击打开应用")
+                .setContentTitle("屏幕截图服务")
+                .setContentText("正在后台运行，确保截图功能可用")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setContentIntent(pendingIntent)
-                .setOngoing(true) // 设置为持续通知，不可滑动删除
-                .setAutoCancel(false) // 点击后不自动取消
+                .setOngoing(true)
+                .setAutoCancel(false)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setShowWhen(false)
-                .setLocalOnly(true) // 不在穿戴设备上显示
+                .setLocalOnly(true)
                 .build()
 
             FileLogger.e(TAG, "前台服务通知创建成功")
@@ -887,8 +887,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             // 创建一个简单的备用通知
             return NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("屏幕备忘录服务")
-                .setContentText("服务运行中")
+                .setContentTitle("屏幕截图服务")
+                .setContentText("正在后台运行，确保截图功能可用")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -901,19 +901,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun startForegroundService() {
         try {
-            FileLogger.e(TAG, "准备启动前台服务")
+            FileLogger.e(TAG, "准备启动前台服务（仅保持独立前台服务，避免重复通知）")
 
-            // 创建通知渠道
-            createNotificationChannel()
-
-            // 创建持久通知
-            val notification = createNotification()
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, notification)
-            FileLogger.e(TAG, "AccessibilityService通知已创建")
-
-            // 启动独立的前台服务来保持应用活跃
-            try {
+            // 仅确保独立的前台服务运行，所有通知由 ScreenCaptureService 负责
+            if (!ScreenCaptureService.isServiceRunning) {
                 val serviceIntent = Intent(this, ScreenCaptureService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(serviceIntent)
@@ -921,13 +912,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     startService(serviceIntent)
                 }
                 FileLogger.e(TAG, "独立前台服务启动成功")
-            } catch (e: Exception) {
-                FileLogger.e(TAG, "启动独立前台服务失败", e)
+            } else {
+                FileLogger.e(TAG, "独立前台服务已在运行，跳过重复启动")
             }
-
-            // 更新前台服务状态
-            ServiceStateManager.setForegroundServiceRunning(this, true)
-
         } catch (e: Exception) {
             FileLogger.e(TAG, "启动前台服务失败", e)
         }
@@ -941,7 +928,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
-                "ScreenMemo:AccessibilityWakeLock"
+                "ScreenMemory:AccessibilityWakeLock"
             )
             wakeLock?.acquire()
             FileLogger.e(TAG, "WakeLock已获取")
