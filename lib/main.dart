@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'services/app_selection_service.dart';
+import 'services/startup_profiler.dart';
 import 'theme/app_theme.dart';
 import 'services/permission_service.dart';
 import 'services/screenshot_service.dart';
@@ -12,11 +12,12 @@ import 'pages/debug_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 预加载已选择应用到内存，避免首页首帧出现空状态
-  try {
-    await AppSelectionService.instance.getSelectedApps();
-  } catch (_) {}
+  StartupProfiler.mark('main.ensureInitialized.done');
+  // 立刻构建首帧，避免阻塞到 runApp 之前
+  StartupProfiler.begin('runApp');
   runApp(const ScreenMemoApp());
+  StartupProfiler.end('runApp');
+  // 取消首帧前的预加载，避免重复耗时；首页将按需加载
 }
 
 class ScreenMemoApp extends StatefulWidget {
@@ -32,6 +33,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
   @override
   void initState() {
     super.initState();
+    StartupProfiler.mark('ScreenMemoAppState.initState');
     _themeService.addListener(_onThemeChanged);
   }
 
@@ -48,6 +50,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
 
   @override
   Widget build(BuildContext context) {
+    StartupProfiler.mark('ScreenMemoAppState.build');
     return MaterialApp(
       title: '屏忆',
       theme: AppTheme.lightTheme,
@@ -81,19 +84,30 @@ class _AppInitializerState extends State<AppInitializer> {
   @override
   void initState() {
     super.initState();
+    StartupProfiler.begin('AppInitializer.initState');
     _checkFirstLaunch();
+    // 首帧回调
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      StartupProfiler.mark('firstFrame.displayed');
+    });
+    StartupProfiler.end('AppInitializer.initState');
   }
 
   Future<void> _checkFirstLaunch() async {
+    StartupProfiler.begin('AppInitializer._checkFirstLaunch');
     try {
       final permissionService = PermissionService.instance;
+      StartupProfiler.mark('AppInitializer.permissionService.ready');
 
       // 初始化ScreenshotService以确保Method Channel Handler被设置
+      StartupProfiler.begin('AppInitializer.init.ScreenshotService');
       ScreenshotService.instance;
-      print('ScreenshotService已初始化');
+      StartupProfiler.end('AppInitializer.init.ScreenshotService');
 
       // 首先检查引导是否已完成
+      StartupProfiler.begin('AppInitializer.check.onboardingCompleted');
       final onboardingCompleted = await permissionService.isOnboardingCompleted();
+      StartupProfiler.end('AppInitializer.check.onboardingCompleted');
 
       if (onboardingCompleted) {
         // 如果引导已完成，直接进入主页，不再检查权限
@@ -101,11 +115,14 @@ class _AppInitializerState extends State<AppInitializer> {
           _showOnboarding = false;
           _isLoading = false;
         });
+        StartupProfiler.end('AppInitializer._checkFirstLaunch');
         return;
       }
 
       // 如果引导未完成，检查是否首次启动
+      StartupProfiler.begin('AppInitializer.check.isFirstLaunch');
       final isFirstLaunch = await permissionService.isFirstLaunch();
+      StartupProfiler.end('AppInitializer.check.isFirstLaunch');
 
       setState(() {
         _showOnboarding = isFirstLaunch;
@@ -118,21 +135,19 @@ class _AppInitializerState extends State<AppInitializer> {
         _showOnboarding = true;
       });
     }
+    StartupProfiler.end('AppInitializer._checkFirstLaunch');
   }
 
   @override
   Widget build(BuildContext context) {
+    StartupProfiler.mark('AppInitializer.build');
+    // 冷启动阶段直接进入主页面（原生冷启动已展示品牌页）
     if (_isLoading) {
-      return const Scaffold(
-        // 跟随主题
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return MainNavigationPage(themeService: widget.themeService);
     }
 
-    return _showOnboarding 
-        ? OnboardingPage(themeService: widget.themeService) 
+    return _showOnboarding
+        ? OnboardingPage(themeService: widget.themeService)
         : MainNavigationPage(themeService: widget.themeService);
   }
 }
