@@ -27,12 +27,22 @@ import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.embedding.engine.FlutterEngineCache
 import android.view.View
 import android.graphics.Color
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ImageView
+import android.widget.TextView
+import android.view.Gravity
+import androidx.core.content.ContextCompat
+import android.util.TypedValue
+import android.app.Dialog
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -54,6 +64,9 @@ class MainActivity : FlutterActivity() {
     private var mediaProjectionRequestReceiver: BroadcastReceiver? = null
     private var screenshotSavedReceiver: BroadcastReceiver? = null
     private var accessibilityServiceBinder: IAccessibilityServiceAidl? = null
+    private var didRunPostFirstFrameInit: Boolean = false
+    private var activityCreateTs: Long = 0L
+    private var splashDialog: Dialog? = null
     
     private val accessibilityServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -70,15 +83,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // 初始化文件日志
-        FileLogger.init(this)
-        FileLogger.writeSystemInfo(this)
-
-        // 添加基础日志输出
-        FileLogger.e(TAG, "=== MainActivity configureFlutterEngine 开始 ===")
-        FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
-        FileLogger.e(TAG, "当前时间: ${System.currentTimeMillis()}")
-        FileLogger.e(TAG, "日志文件路径: ${FileLogger.getLogFilePath()}")
+        // 仅做必要初始化，避免阻塞首帧
+        Log.d(TAG, "configureFlutterEngine: minimal init start")
 
         // 初始化媒体投影管理器
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -293,56 +299,99 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // 设置无障碍权限监听
-        setupAccessibilityObserver()
+        // 其余重任务延迟到首帧后执行
+        Log.d(TAG, "configureFlutterEngine: minimal init done, waiting first frame")
 
-        // 设置MediaProjection权限请求广播接收器
-        setupMediaProjectionRequestReceiver()
-
-        // 设置截图保存通知广播接收器
-        setupScreenshotSavedReceiver()
-
-        // 启动辅助功能状态监听
-        accessibilityStateMonitor = AccessibilityStateMonitor(this)
-        accessibilityStateMonitor?.startMonitoring()
-
-        // 启动调试监控
-        FileLogger.e(TAG, "=== 准备启动调试监控 ===")
-        try {
-            ServiceDebugHelper.performFullStatusCheck(this)
-
-            // 检查AccessibilityService是否在系统中启用
-            if (!ServiceDebugHelper.isAccessibilityServiceEnabledInSystem(this)) {
-                FileLogger.e(TAG, "=== AccessibilityService未在系统中启用，需要手动启用 ===")
-                // 只记录日志，不自动打开设置页面
-                FileLogger.e(TAG, "=== 请手动在设置中启用AccessibilityService ===")
-            } else {
-                FileLogger.e(TAG, "=== AccessibilityService已在系统中启用 ===")
-            }
-
-            FileLogger.e(TAG, "=== 调试监控启动成功 ===")
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "=== 调试监控启动失败 ===", e)
-        }
-        // ServiceDebugHelper.startStatusMonitoring(this, 30000) // 每30秒检查一次（可选）
-        
-        // 调度JobService保活
-        scheduleKeepAliveJob()
-        
-        // 启动守护服务
-        startDaemonService()
-        
-        // 绑定AccessibilityService
-        bindAccessibilityService()
-        
         // 保留兼容：若是仅检查服务的启动，立即结束，避免叠加界面
         if (intent?.getBooleanExtra("check_service_only", false) == true) {
-            FileLogger.e(TAG, "静默启动模式，仅检查服务")
+            Log.e(TAG, "静默启动模式，仅检查服务")
             finish()
             return
         }
 
-        FileLogger.e(TAG, "=== MainActivity configureFlutterEngine 完成 ===")
+        Log.d(TAG, "configureFlutterEngine: completed")
+    }
+
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        // 使用预热的引擎以缩短首帧时间
+        return FlutterEngineCache.getInstance().get(ScreenMemoApplication.ENGINE_ID)
+    }
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        activityCreateTs = System.currentTimeMillis()
+        super.onCreate(savedInstanceState)
+        showSplashDialog()
+    }
+
+    override fun onFlutterUiDisplayed() {
+        super.onFlutterUiDisplayed()
+        if (didRunPostFirstFrameInit) return
+        didRunPostFirstFrameInit = true
+        val delta = System.currentTimeMillis() - activityCreateTs
+        Log.d(TAG, "onFlutterUiDisplayed: first frame delta since onCreate = ${delta}ms; runPostFirstFrameInit start")
+        try { FileLogger.e(TAG, "首帧耗时(自onCreate): ${delta}ms") } catch (_: Exception) {}
+        dismissSplashDialog()
+        runPostFirstFrameInit()
+    }
+
+    private fun runPostFirstFrameInit() {
+        val startMs = System.currentTimeMillis()
+        try {
+            FileLogger.e(TAG, "=== PostFirstFrame 初始化开始 ===")
+
+            val t1 = System.currentTimeMillis()
+            FileLogger.init(this)
+            FileLogger.writeSystemInfo(this)
+            FileLogger.e(TAG, "步骤: FileLogger.init + writeSystemInfo -> ${System.currentTimeMillis() - t1}ms")
+
+            // 设置无障碍权限监听
+            val t2 = System.currentTimeMillis()
+            setupAccessibilityObserver()
+            FileLogger.e(TAG, "步骤: setupAccessibilityObserver -> ${System.currentTimeMillis() - t2}ms")
+
+            // 设置广播接收器
+            val t3 = System.currentTimeMillis()
+            setupMediaProjectionRequestReceiver()
+            FileLogger.e(TAG, "步骤: setupMediaProjectionRequestReceiver -> ${System.currentTimeMillis() - t3}ms")
+            val t4 = System.currentTimeMillis()
+            setupScreenshotSavedReceiver()
+            FileLogger.e(TAG, "步骤: setupScreenshotSavedReceiver -> ${System.currentTimeMillis() - t4}ms")
+
+            // 启动辅助功能状态监听
+            val t5 = System.currentTimeMillis()
+            accessibilityStateMonitor = AccessibilityStateMonitor(this)
+            accessibilityStateMonitor?.startMonitoring()
+            FileLogger.e(TAG, "步骤: AccessibilityStateMonitor.startMonitoring -> ${System.currentTimeMillis() - t5}ms")
+
+            // 调试监控与状态检查
+            try {
+                val t6 = System.currentTimeMillis()
+                ServiceDebugHelper.performFullStatusCheck(this)
+                FileLogger.e(TAG, "步骤: ServiceDebugHelper.performFullStatusCheck -> ${System.currentTimeMillis() - t6}ms")
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "调试监控执行失败", e)
+            }
+
+            // 调度JobService保活
+            val t7 = System.currentTimeMillis()
+            scheduleKeepAliveJob()
+            FileLogger.e(TAG, "步骤: scheduleKeepAliveJob -> ${System.currentTimeMillis() - t7}ms")
+
+            // 启动守护服务
+            val t8 = System.currentTimeMillis()
+            startDaemonService()
+            FileLogger.e(TAG, "步骤: startDaemonService -> ${System.currentTimeMillis() - t8}ms")
+
+            // 绑定AccessibilityService
+            val t9 = System.currentTimeMillis()
+            bindAccessibilityService()
+            FileLogger.e(TAG, "步骤: bindAccessibilityService -> ${System.currentTimeMillis() - t9}ms")
+
+            FileLogger.e(TAG, "=== PostFirstFrame 初始化完成，耗时: ${System.currentTimeMillis() - startMs}ms ===")
+        } catch (e: Exception) {
+            Log.e(TAG, "PostFirstFrame 初始化失败", e)
+            try { FileLogger.e(TAG, "PostFirstFrame 初始化失败", e) } catch (_: Exception) {}
+        }
     }
 
     // 移除额外日志输出，保留默认生命周期
@@ -1053,6 +1102,67 @@ class MainActivity : FlutterActivity() {
 
         // 停止辅助功能状态监听
         accessibilityStateMonitor?.stopMonitoring()
+    }
+
+    private fun dp(value: Int): Int {
+        return (resources.displayMetrics.density * value).toInt()
+    }
+
+    private fun showSplashDialog() {
+        try {
+            if (splashDialog?.isShowing == true) return
+            val dialog = Dialog(this, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+            val root = FrameLayout(this).apply {
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.splash_background))
+            }
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            }
+            val logo = ImageView(this).apply {
+                setImageResource(R.drawable.splash_logo)
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                // 更保守的宽度，避免过大：屏宽的 32%
+                val widthPx = (resources.displayMetrics.widthPixels * 0.32f).toInt()
+                layoutParams = LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+            }
+            val slogan = TextView(this).apply {
+                text = "屏幕无痕，记忆有痕"
+                setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.darker_gray))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                letterSpacing = 0.02f
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = dp(12)
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+            }
+            container.addView(logo)
+            container.addView(slogan)
+            root.addView(container)
+            dialog.setContentView(root)
+            dialog.setCancelable(false)
+            dialog.show()
+            splashDialog = dialog
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "显示开屏对话框失败", e)
+        }
+    }
+
+    private fun dismissSplashDialog() {
+        try {
+            val dialog = splashDialog ?: return
+            dialog.window?.decorView?.animate()?.alpha(0f)?.setDuration(150)?.withEndAction {
+                try { dialog.dismiss() } catch (_: Exception) {}
+                splashDialog = null
+            }?.start()
+        } catch (e: Exception) {
+            try { splashDialog?.dismiss() } catch (_: Exception) {}
+            splashDialog = null
+        }
     }
 
     /**
