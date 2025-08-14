@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 夜间模式下的冷启动背景色，避免白屏闪烁 -->
+    <color name="splash_background">#FF232427</color>
+    
+</resources>
+
+

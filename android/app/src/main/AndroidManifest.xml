@@ -35,8 +35,16 @@
 
     <application
         android:label="@string/app_name"
-        android:name="${applicationName}"
+        android:name=".ScreenMemoApplication"
         android:icon="@mipmap/ic_launcher">
+        <!-- 禁用 Impeller，回退到 Skia 以避免部分设备冷启动首帧缓慢/驱动异常 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
+        <!-- 可选：强制使用 OpenGL ES 渲染 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.Impeller.Renderer"
+            android:value="opengles" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
