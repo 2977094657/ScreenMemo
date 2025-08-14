@@ -23,6 +23,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
   String? _error;
   Directory? _baseDir;
 
+  /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
+  String _buildHeaderStatsText() {
+    final count = _screenshots.length;
+    final totalBytes = _screenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+    String timeStr = '暂无';
+    if (_screenshots.isNotEmpty) {
+      // 使用最新一张截图的时间作为“时间”展示
+      final latest = _screenshots.reduce((a, b) => a.captureTime.isAfter(b.captureTime) ? a : b);
+      timeStr = _formatDateTime(latest.captureTime);
+    }
+    return '$count张 · ${_formatTotalSizeMBGBTB(totalBytes)} · $timeStr';
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -231,7 +244,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '${_screenshots.length}张 · ${_formatTotalSizeMBGBTB(_screenshots.fold<int>(0, (sum, r) => sum + r.fileSize))}',
+                _buildHeaderStatsText(),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w400,
                     ),

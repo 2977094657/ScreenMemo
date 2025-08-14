@@ -965,7 +965,7 @@ class _HomePageState extends State<HomePage> {
     final stat = appStats[packageName];
     
     if (stat == null) {
-      return '截图数量: 0 | 总大小: 0.00MB | 最后截图: 暂无';
+      return '0张 · 0.00MB · 暂无';
     }
     
     final count = stat['totalCount'] as int? ?? 0;

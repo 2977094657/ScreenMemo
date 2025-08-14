@@ -66,6 +66,80 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var currentSessionApp: String? = null  // 当前会话中的应用
     private var sessionStartTime: Long = 0         // 会话开始时间
 
+    // 前台应用“稳定目标”与“遮罩容错”控制
+    private val transientOverlayPackages = setOf(
+        "com.android.systemui",
+        "com.miui.systemui",
+        "com.google.android.systemui",
+        "com.samsung.android.systemui",
+        "com.oppo.systemui",
+        "com.coloros.systemui",
+        "com.vivo.systemui",
+        "com.huawei.systemui"
+    )
+    private val FOREGROUND_STABLE_MS = 800L   // 前台应用切换稳定时间阈值
+    private val OVERLAY_GRACE_MS = 5000L      // 系统遮罩期间沿用上次稳定应用的宽限时长
+    private var lastStableMonitoredApp: String? = null
+    private var lastStableSeenAt: Long = 0L
+    private var pendingCandidateApp: String? = null
+    private var pendingCandidateSince: Long = 0L
+
+    /**
+     * 处理前台应用候选，只有在持续稳定一段时间后才认定为稳定前台应用；
+     * 对于系统遮罩（通知栏、系统UI），不改变稳定应用，仅更新宽限期内沿用。
+     */
+    private fun onForegroundCandidateDetected(candidatePackage: String?) {
+        val now = System.currentTimeMillis()
+        if (candidatePackage.isNullOrEmpty()) {
+            return
+        }
+
+        // 桌面/Launcher：认为用户已回到桌面/后台 -> 立即清空稳定会话并暂停截屏
+        if (launcherApps.contains(candidatePackage)) {
+            FileLogger.i(TAG, "检测到桌面/Launcher: $candidatePackage，清除稳定会话并暂停截屏")
+            lastStableMonitoredApp = null
+            lastStableSeenAt = 0L
+            pendingCandidateApp = null
+            pendingCandidateSince = 0L
+            return
+        }
+
+        // 系统遮罩：沿用上次稳定应用，不更新候选
+        if (transientOverlayPackages.contains(candidatePackage) || isMiuiSystemApp(candidatePackage)) {
+            // 宽限期内保持 lastStableMonitoredApp 可用
+            FileLogger.d(TAG, "检测到系统遮罩/系统UI: $candidatePackage，沿用上次稳定应用: $lastStableMonitoredApp")
+            return
+        }
+
+        // 非监控列表应用：完全忽略，不作为候选，不影响稳定目标/锁定
+        if (!isAppInMonitorList(candidatePackage)) {
+            FileLogger.d(TAG, "忽略非监控应用: $candidatePackage")
+            return
+        }
+
+        // 相同于当前稳定应用：刷新最近出现时间
+        if (lastStableMonitoredApp == candidatePackage) {
+            lastStableSeenAt = now
+            pendingCandidateApp = null
+            FileLogger.d(TAG, "稳定前台应用保持: $lastStableMonitoredApp")
+            return
+        }
+
+        // 候选稳定化判定
+        if (pendingCandidateApp == candidatePackage) {
+            if (now - pendingCandidateSince >= FOREGROUND_STABLE_MS) {
+                lastStableMonitoredApp = candidatePackage
+                lastStableSeenAt = now
+                pendingCandidateApp = null
+                FileLogger.i(TAG, "前台应用稳定化: $lastStableMonitoredApp (阈值 ${FOREGROUND_STABLE_MS}ms)")
+            }
+        } else {
+            pendingCandidateApp = candidatePackage
+            pendingCandidateSince = now
+            FileLogger.d(TAG, "检测到新的前台候选: $candidatePackage，开始稳定计时")
+        }
+    }
+
 
 
     // 简化的处理器（仅用于基本操作）
@@ -282,16 +356,20 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // 更新看门狗心跳
         AccessibilityServiceWatchdog.updateHeartbeat()
-        
-        // 处理无障碍事件，检测当前前台应用
+
+        // 处理无障碍事件，检测当前前台应用（引入稳定化与遮罩容错）
         event?.let {
             if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                val packageName = it.packageName?.toString()
-                if (packageName != null && packageName != currentForegroundApp) {
-                    // 直接更新前台应用，不需要稳定性验证
-                    currentForegroundApp = packageName
-                    FileLogger.d(TAG, "AccessibilityEvent检测到前台应用变化: $packageName")
-                    updateAppSession(packageName)
+                val candidate = it.packageName?.toString()
+                val prevStable = lastStableMonitoredApp
+                onForegroundCandidateDetected(candidate)
+                val stable = lastStableMonitoredApp
+
+                // 仅在稳定目标发生变化时更新会话
+                if (stable != null && stable != prevStable) {
+                    currentForegroundApp = stable
+                    FileLogger.d(TAG, "稳定前台应用(AccessibilityEvent): $stable")
+                    updateAppSession(stable)
                 }
             }
         }
@@ -601,22 +679,33 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      * 简化逻辑：直接根据前台应用判断，不依赖会话管理
      */
     private fun getScreenshotTargetApp(): String? {
-        // 优先使用UsageStats获取的前台应用（更准确）
-        val usageStatsApp = getForegroundAppUsingUsageStats()
-        if (usageStatsApp != null && isAppInMonitorList(usageStatsApp)) {
-            FileLogger.d(TAG, "UsageStats检测到监控应用: $usageStatsApp")
-            return usageStatsApp
+        val now = System.currentTimeMillis()
+
+        // 稳定前台（仅在监控列表中才有效）
+        val stable = lastStableMonitoredApp
+        if (stable == null || !isAppInMonitorList(stable)) {
+            FileLogger.d(TAG, "无有效稳定前台或不在监控列表，暂停截屏")
+            return null
         }
 
-        // 备用：使用AccessibilityEvent检测的前台应用
-        val currentApp = currentForegroundApp
-        if (currentApp != null && isAppInMonitorList(currentApp)) {
-            FileLogger.d(TAG, "AccessibilityEvent检测到监控应用: $currentApp")
-            return currentApp
+        // 当前可见顶层应用（尽量用UsageStats，其次AccessibilityEvent）
+        val visibleTop = getForegroundAppUsingUsageStats() ?: currentForegroundApp
+
+        // 系统遮罩/系统UI：继续把截图归属到稳定前台
+        if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop))) {
+            FileLogger.d(TAG, "顶层为系统遮罩/系统UI($visibleTop)，继续使用稳定前台: $stable")
+            return stable
         }
 
-        FileLogger.d(TAG, "当前前台应用不在监控列表中 - UsageStats: $usageStatsApp, Accessibility: $currentApp")
-        return null
+        // 桌面/Launcher：暂停截屏并等待新会话
+        if (visibleTop != null && launcherApps.contains(visibleTop)) {
+            FileLogger.d(TAG, "顶层为桌面/Launcher($visibleTop)，暂停截屏，等待新会话")
+            return null
+        }
+
+        // 顶层为监控应用（可能与stable相同或不同），在未解锁前仍归属stable
+        FileLogger.d(TAG, "顶层为监控应用($visibleTop)，归属稳定前台: $stable")
+        return stable
     }
 
     /**
@@ -1171,11 +1260,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun detectForegroundAppPeriodically() {
         try {
-            val foregroundApp = getForegroundAppUsingUsageStats()
-            if (foregroundApp != null && foregroundApp != currentForegroundApp) {
-                FileLogger.d(TAG, "定时检测到前台应用变化: $currentForegroundApp -> $foregroundApp")
-                currentForegroundApp = foregroundApp
-                updateAppSession(foregroundApp)
+            val candidate = getForegroundAppUsingUsageStats()
+            val prevStable = lastStableMonitoredApp
+            if (candidate != null) {
+                onForegroundCandidateDetected(candidate)
+            }
+            val stable = lastStableMonitoredApp
+            if (stable != null && stable != prevStable) {
+                FileLogger.d(TAG, "定时检测稳定前台变化: $prevStable -> $stable")
+                currentForegroundApp = stable
+                updateAppSession(stable)
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "定时检测前台应用失败", e)
@@ -1189,21 +1283,24 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         try {
             val usageStats = usageStatsManager ?: return null
             val currentTime = System.currentTimeMillis()
-            val startTime = currentTime - 2000 // 查询最近2秒的使用情况
+            val startTime = currentTime - 6000 // 放宽到最近6秒，兼容事件延迟
 
             // 获取使用事件
             val usageEvents = usageStats.queryEvents(startTime, currentTime)
             var lastEvent: UsageEvents.Event? = null
             var eventCount = 0
 
-            // 遍历事件，找到最近的前台事件
+            // 遍历事件，找到最近的前台事件（前台/恢复皆可）
             while (usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
                 eventCount++
 
-                if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                    if (lastEvent == null || event.timeStamp > lastEvent.timeStamp) {
+                val isForegroundLike = (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+                        || event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+
+                if (isForegroundLike) {
+                    if (lastEvent == null || event.timeStamp > lastEvent!!.timeStamp) {
                         lastEvent = event
                     }
                 }
