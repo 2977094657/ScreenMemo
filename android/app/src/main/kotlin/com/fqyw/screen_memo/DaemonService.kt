@@ -124,7 +124,7 @@ class DaemonService : Service() {
     
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("屏幕记忆守护服务")
+            .setContentTitle("屏忆守护服务")
             .setContentText("正在保护截屏服务稳定运行")
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)

@@ -466,7 +466,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           
           // 标题
           Text(
-            '欢迎使用 屏幕记忆',
+            '欢迎使用 屏忆',
             style: Theme.of(context).textTheme.displaySmall,
             textAlign: TextAlign.center,
           ),
@@ -917,7 +917,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(height: AppTheme.spacing4),
           
           Text(
-            '所有权限已成功授权，您现在可以开始使用屏幕记忆的截图功能了。',
+            '所有权限已成功授权，您现在可以开始使用屏忆的截图功能了。',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppTheme.mutedForeground,
             ),

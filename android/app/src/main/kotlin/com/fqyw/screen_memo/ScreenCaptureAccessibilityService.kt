@@ -790,10 +790,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "屏幕记忆服务",
+                    "屏忆服务",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "用于显示屏幕记忆辅助功能服务状态"
+                    description = "用于显示屏忆辅助功能服务状态"
                     setShowBadge(false)
                     // 设置为不可关闭，提高保活能力
                     setBypassDnd(false)

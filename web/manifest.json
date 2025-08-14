@@ -1,6 +1,6 @@
 {
-    "name": "屏幕记忆",
-    "short_name": "屏幕记忆",
+    "name": "屏忆",
+    "short_name": "屏忆",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
