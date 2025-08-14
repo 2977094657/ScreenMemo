@@ -14,6 +14,9 @@ class AppSelectionService {
   static const String _sortModeKey = 'sort_mode';
   static const String _screenshotIntervalKey = 'screenshot_interval';
   static const String _screenshotEnabledKey = 'screenshot_enabled';
+  static const String _appsCacheKey = 'all_apps_cache';
+  static const String _appsCacheTsKey = 'all_apps_cache_ts';
+  static const int _appsCacheTtlSeconds = 28800; // 8小时TTL（秒）
 
   List<AppInfo> _allApps = [];
   List<AppInfo> _selectedApps = [];
@@ -22,9 +25,45 @@ class AppSelectionService {
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
 
-  /// 获取所有已安装的应用
-  Future<List<AppInfo>> getAllInstalledApps() async {
+  /// 获取所有已安装的应用（带内存/本地缓存，避免每次进入都全量扫描）
+  Future<List<AppInfo>> getAllInstalledApps({bool forceRefresh = false}) async {
     try {
+      // 1) 首选内存缓存
+      if (!forceRefresh && _allApps.isNotEmpty) {
+        return _allApps;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+
+      // 2) 本地缓存（带TTL）
+      if (!forceRefresh) {
+        final ts = prefs.getInt(_appsCacheTsKey) ?? 0;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final isFresh = ts > 0 && (now - ts) <= _appsCacheTtlSeconds * 1000;
+        final cached = prefs.getString(_appsCacheKey);
+        if (isFresh && cached != null && cached.isNotEmpty) {
+          try {
+            final List<dynamic> list = jsonDecode(cached);
+            _allApps = list
+                .whereType<Map<String, dynamic>>()
+                .map((m) => AppInfo.fromJson(m))
+                .toList();
+            // 确保排序一致
+            _allApps.sort((a, b) => a.appName.compareTo(b.appName));
+            // 如果即将过期（<60秒），提前后台续期
+            final remainingMs = _appsCacheTtlSeconds * 1000 - (now - ts);
+            if (remainingMs <= 60000) {
+              // ignore: unawaited_futures
+              getAllInstalledApps(forceRefresh: true).catchError((_) {});
+            }
+            return _allApps;
+          } catch (e) {
+            // 缓存解析失败，继续走全量扫描
+          }
+        }
+      }
+
+      // 3) 全量扫描（较慢）
       final apps = await InstalledApps.getInstalledApps(
         true, // excludeSystemApps
         true, // withIcon
@@ -32,15 +71,43 @@ class AppSelectionService {
       );
 
       _allApps = apps.map((app) => AppInfo.fromInstalledApp(app)).toList();
-      
-      // 按应用名称排序
       _allApps.sort((a, b) => a.appName.compareTo(b.appName));
-      
+
+      // 4) 保存至本地缓存
+      try {
+        final encoded = jsonEncode(_allApps.map((a) => a.toJson()).toList());
+        await prefs.setString(_appsCacheKey, encoded);
+        await prefs.setInt(_appsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
+      } catch (e) {
+        // 忽略缓存失败
+      }
+
       return _allApps;
     } catch (e) {
       print('获取应用列表失败: $e');
-      return [];
+      return _allApps; // 返回已有内存数据，尽量不中断
     }
+  }
+
+  /// 如果缓存过期则在后台刷新应用列表（不影响当前UI）
+  Future<void> refreshAppsInBackgroundIfStale() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ts = prefs.getInt(_appsCacheTsKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final isFresh = ts > 0 && (now - ts) <= _appsCacheTtlSeconds * 1000;
+      if (!isFresh) {
+        // 后台刷新，但不抛出异常
+        // ignore: unawaited_futures
+        getAllInstalledApps(forceRefresh: true).catchError((_) {});
+      }
+    } catch (_) {}
+  }
+
+  /// 快速获取已选择应用（优先返回内存缓存）
+  Future<List<AppInfo>> getSelectedAppsFast() async {
+    if (_selectedApps.isNotEmpty) return _selectedApps;
+    return getSelectedApps();
   }
 
   /// 搜索应用

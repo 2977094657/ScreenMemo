@@ -15,13 +15,15 @@ class ScreenshotGalleryPage extends StatefulWidget {
   State<ScreenshotGalleryPage> createState() => _ScreenshotGalleryPageState();
 }
 
-class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
+class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with AutomaticKeepAliveClientMixin {
   late AppInfo _appInfo;
   late String _packageName;
   List<ScreenshotRecord> _screenshots = [];
   bool _isLoading = true;
   String? _error;
   Directory? _baseDir;
+  final ScrollController _scrollController = ScrollController();
+  bool _initialized = false; // 避免返回时重复触发初始化加载
 
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
   String _buildHeaderStatsText() {
@@ -39,13 +41,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       _appInfo = args['appInfo'] as AppInfo;
       _packageName = args['packageName'] as String;
       _loadInitialData();
     } else {
-       setState(() {
+      setState(() {
         _error = '参数错误';
         _isLoading = false;
       });
@@ -210,6 +214,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -342,6 +347,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
     return Padding(
       padding: const EdgeInsets.all(AppTheme.spacing1), // 减少外边距
       child: GridView.builder(
+        key: PageStorageKey<String>('screenshot_gallery_grid_$_packageName'),
+        controller: _scrollController,
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
         ),
@@ -358,6 +365,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> {
         },
       ),
     );
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Widget _buildScreenshotItem(ScreenshotRecord screenshot, int index) {

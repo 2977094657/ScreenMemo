@@ -19,14 +19,15 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin {
   final AppSelectionService _appService = AppSelectionService.instance;
 
-  List<AppInfo> _selectedApps = [];
+  List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
   String _sortMode = 'lastScreenshot';
   bool _screenshotEnabled = false;
   int _screenshotInterval = 5;
-  bool _isLoading = true; // 初始显示加载状态，避免闪烁
+  bool _isLoading = false; // 不显示全屏加载动画
+  bool _initialized = true; // 直接认为已初始化，避免首屏Loading
   bool _hasPermissionIssues = false; // 权限问题状态
   Map<String, dynamic> _screenshotStats = {}; // 截图统计数据
 
@@ -52,7 +53,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadStats() async {
-    final stats = await ScreenshotService.instance.getScreenshotStats();
+    // 优先从缓存读取，避免首帧全为0
+    final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
     if (mounted) {
       setState(() {
         _screenshotStats = stats;
@@ -61,13 +63,8 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _loadData() async {
-    // 设置加载状态，显示加载动画
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-      });
-    }
+  Future<void> _loadData({bool soft = true}) async {
+    // 始终走软刷新：不触发全屏加载动画
 
     try {
       // 加载用户设置
@@ -85,7 +82,7 @@ class _HomePageState extends State<HomePage> {
           _sortMode = sortMode;
           _screenshotEnabled = screenshotEnabled;
           _screenshotInterval = screenshotInterval;
-          _isLoading = false; // 加载完成，隐藏加载动画
+          _isLoading = false;
         });
 
         // 根据排序模式排序应用
@@ -99,11 +96,7 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       print('加载数据失败: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false; // 即使出错也要隐藏加载动画
-        });
-      }
+      // 出错也不显示全屏加载
     }
   }
 
@@ -709,6 +702,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -772,7 +766,7 @@ class _HomePageState extends State<HomePage> {
                             // 保存并关闭
                             await _appService.saveSelectedApps(_selectedApps);
                             if (mounted) Navigator.of(context).pop();
-                            await _loadData();
+                            await _loadData(soft: true); // 软刷新，避免全屏加载动画
                           },
                           child: const Text('完成'),
                         ),
@@ -805,7 +799,7 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.refresh),
             onPressed: () async {
               await _refreshPermissions();
-              await _loadData();
+              await _loadData(soft: true); // 避免全屏加载动画
             },
             tooltip: '刷新数据和权限状态',
           ),
@@ -821,31 +815,14 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadData,
+        onRefresh: () => _loadData(soft: true),
         child: _buildAppsList(),
       ),
     );
   }
 
   Widget _buildAppsList() {
-    // 如果正在加载，显示加载动画
-    if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: AppTheme.spacing4),
-            Text(
-              '正在加载应用列表...',
-              style: TextStyle(
-                color: AppTheme.mutedForeground,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    // 不显示全屏加载动画，直接展示当前数据
 
     // 加载完成后，如果没有选中的应用，显示空状态
     if (_selectedApps.isEmpty) {
@@ -1007,4 +984,7 @@ class _HomePageState extends State<HomePage> {
       return (bytes / mb).toStringAsFixed(2) + 'MB';
     }
   }
+
+  @override
+  bool get wantKeepAlive => true;
 }

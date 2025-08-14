@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/app_selection_service.dart';
 import 'theme/app_theme.dart';
 import 'services/permission_service.dart';
 import 'services/screenshot_service.dart';
@@ -9,7 +10,12 @@ import 'pages/screenshot_gallery_page.dart';
 import 'pages/screenshot_viewer_page.dart';
 import 'pages/debug_page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 预加载已选择应用到内存，避免首页首帧出现空状态
+  try {
+    await AppSelectionService.instance.getSelectedApps();
+  } catch (_) {}
   runApp(const ScreenMemoApp());
 }
 

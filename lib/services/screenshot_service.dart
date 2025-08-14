@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,12 +37,40 @@ class ScreenshotService {
   
   bool _isRunning = false;
   int _currentInterval = 5;
+  // 统计缓存键与节流
+  static const String _statsCacheKey = 'stats_cache';
+  static const String _statsCacheTsKey = 'stats_cache_ts';
+  static const String _statsCacheTtlSecondsKey = 'stats_cache_ttl';
+  static const int _statsCacheTtlSecondsDefault = 600; // 10分钟
+  static const String _lastSyncTsKey = 'stats_last_sync_ts';
+  static const int _syncThrottleSeconds = 120; // 2分钟
   
   /// 检查截屏服务是否正在运行
   bool get isRunning => _isRunning;
   
   /// 获取当前截屏间隔
   int get currentInterval => _currentInterval;
+
+  /// 优先返回缓存（如有），同时后台刷新
+  Future<Map<String, dynamic>> getScreenshotStatsCachedFirst() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_statsCacheKey);
+      final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
+      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (cached != null && ts > 0 && (now - ts) <= ttl * 1000) {
+        final map = _deserializeStats(cached);
+        // 异步后台刷新
+        // ignore: unawaited_futures
+        _refreshStatsCacheIfStale();
+        return map;
+      }
+    } catch (_) {}
+    // 无缓存则正常获取并写入
+    final stats = await getScreenshotStats();
+    return stats;
+  }
   
   /// 启动截屏服务
   Future<bool> startScreenshotService(int intervalSeconds) async {
@@ -291,6 +320,9 @@ class ScreenshotService {
           }
           // 无论是否新插入，都通知监听器刷新统计与界面，确保首页实时更新
           _screenshotStreamController.add(null);
+          // 刷新统计缓存
+          // ignore: unawaited_futures
+          _refreshStatsCache(force: true);
         } finally {
           // 从处理中集合移除
           _processingPaths.remove(absolutePath);
@@ -306,8 +338,14 @@ class ScreenshotService {
   /// 获取截屏统计信息
   Future<Map<String, dynamic>> getScreenshotStats() async {
     try {
-      // 同步文件系统与数据库，确保漏报的截图也能入库
-      await syncDatabaseWithFiles();
+      // 节流同步，避免每次都全量扫目录
+      final prefs = await SharedPreferences.getInstance();
+      final lastSync = prefs.getInt(_lastSyncTsKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (lastSync == 0 || (now - lastSync) > _syncThrottleSeconds * 1000) {
+        await syncDatabaseWithFiles();
+        await prefs.setInt(_lastSyncTsKey, now);
+      }
 
       final totalCount = await _database.getTotalScreenshotCount();
       final todayCount = await _database.getTodayScreenshotCount();
@@ -324,12 +362,16 @@ class ScreenshotService {
         }
       }
       
-      return {
+      final stats = {
         'totalScreenshots': totalCount,
         'todayScreenshots': todayCount,
         'lastScreenshotTime': lastScreenshotTime?.millisecondsSinceEpoch,
         'appStatistics': statistics,
       };
+      // 保存缓存
+      // ignore: unawaited_futures
+      _saveStatsCache(stats);
+      return stats;
     } catch (e) {
       print('获取截屏统计信息失败: $e');
       return {
@@ -419,11 +461,76 @@ class ScreenshotService {
       if (inserted > 0) {
         // 通知监听者有新数据
         _screenshotStreamController.add(null);
+        // 刷新统计缓存
+        // ignore: unawaited_futures
+        _refreshStatsCache(force: true);
       }
       return inserted;
     } catch (e) {
       print('同步截图文件到数据库失败: $e');
       return 0;
     }
+  }
+
+  // ===== 统计缓存实现 =====
+  String _serializeStats(Map<String, dynamic> stats) {
+    final copy = Map<String, dynamic>.from(stats);
+    final appStats = copy['appStatistics'] as Map<String, dynamic>?;
+    if (appStats != null) {
+      final out = <String, dynamic>{};
+      appStats.forEach((pkg, map) {
+        final m = Map<String, dynamic>.from(map as Map);
+        final dt = m['lastCaptureTime'];
+        if (dt is DateTime) m['lastCaptureTime'] = dt.millisecondsSinceEpoch;
+        out[pkg] = m;
+      });
+      copy['appStatistics'] = out;
+    }
+    return jsonEncode(copy);
+  }
+
+  Map<String, dynamic> _deserializeStats(String jsonStr) {
+    final map = Map<String, dynamic>.from(jsonDecode(jsonStr) as Map);
+    final appStats = map['appStatistics'] as Map<String, dynamic>?;
+    if (appStats != null) {
+      final out = <String, Map<String, dynamic>>{};
+      appStats.forEach((pkg, val) {
+        final m = Map<String, dynamic>.from(val as Map);
+        final ts = m['lastCaptureTime'];
+        if (ts is int) m['lastCaptureTime'] = DateTime.fromMillisecondsSinceEpoch(ts);
+        out[pkg] = m;
+      });
+      map['appStatistics'] = out;
+    }
+    return map;
+  }
+
+  Future<void> _refreshStatsCache({bool force = false}) async {
+    try {
+      if (!force) {
+        final prefs = await SharedPreferences.getInstance();
+        final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
+        final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (ts > 0 && (now - ts) <= ttl * 1000) return;
+      }
+      final stats = await getScreenshotStats();
+      await _saveStatsCache(stats);
+    } catch (_) {}
+  }
+
+  Future<void> _saveStatsCache(Map<String, dynamic> stats) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_statsCacheKey, _serializeStats(stats));
+      await prefs.setInt(_statsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
+      if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
+        await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshStatsCacheIfStale() async {
+    await _refreshStatsCache();
   }
 }

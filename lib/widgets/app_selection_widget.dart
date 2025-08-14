@@ -54,8 +54,11 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     });
 
     try {
-      // 获取所有应用
+      // 获取所有应用（优先缓存，必要时后台刷新）
       _allApps = await _appService.getAllInstalledApps();
+      // 触发过期时的后台刷新，不阻塞当前UI
+      // ignore: unawaited_futures
+      _appService.refreshAppsInBackgroundIfStale();
       
       // 获取之前选中的应用
       final selectedApps = await _appService.getSelectedApps();
@@ -187,6 +190,31 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                     ),
                   ),
                   const Spacer(),
+                  // 刷新按钮：强制刷新应用列表
+                  IconButton(
+                    tooltip: '刷新应用列表',
+                    icon: const Icon(Icons.refresh, size: 18),
+                    onPressed: () async {
+                      setState(() { _isLoading = true; });
+                      try {
+                        _allApps = await _appService.getAllInstalledApps(forceRefresh: true);
+                        final selectedApps = await _appService.getSelectedApps();
+                        for (final app in _allApps) {
+                          app.isSelected = selectedApps.any((s) => s.packageName == app.packageName);
+                        }
+                        _selectedApps = _allApps.where((a) => a.isSelected).toList();
+                        _filteredApps = _searchController.text.isEmpty
+                            ? _allApps
+                            : _appService.searchApps(_searchController.text);
+                      } catch (e) {
+                        // ignore
+                      } finally {
+                        if (mounted) {
+                          setState(() { _isLoading = false; });
+                        }
+                      }
+                    },
+                  ),
                   TextButton(
                     onPressed: _selectAll,
                     child: const Text('全选', style: TextStyle(fontSize: 14)),
