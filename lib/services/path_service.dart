@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
+import 'startup_profiler.dart';
 
 /// 路径服务，提供跨平台的文件路径获取功能
 class PathService {
@@ -11,6 +12,7 @@ class PathService {
   /// 在其他平台上，使用path_provider的相应方法
   static Future<Directory?> getExternalFilesDir([String? subDir]) async {
     try {
+      StartupProfiler.begin('PathService.getExternalFilesDir');
       if (Platform.isAndroid) {
         // Android平台：使用Method Channel调用原生getExternalFilesDir
         final String? path = await _channel.invokeMethod('getExternalFilesDir', {
@@ -19,20 +21,27 @@ class PathService {
         
         if (path != null) {
           print('PathService: Android getExternalFilesDir($subDir) = $path');
+          StartupProfiler.end('PathService.getExternalFilesDir');
           return Directory(path);
         } else {
           print('PathService: Android getExternalFilesDir返回null，使用备选方案');
           // 如果失败，使用备选方案
-          return await _getFallbackDirectory();
+          final dir = await _getFallbackDirectory();
+          StartupProfiler.end('PathService.getExternalFilesDir');
+          return dir;
         }
       } else {
         // 其他平台：使用path_provider
-        return await _getFallbackDirectory();
+        final dir = await _getFallbackDirectory();
+        StartupProfiler.end('PathService.getExternalFilesDir');
+        return dir;
       }
     } catch (e) {
       print('PathService: 获取外部文件目录失败: $e');
       // 出错时使用备选方案
-      return await _getFallbackDirectory();
+      final dir = await _getFallbackDirectory();
+      StartupProfiler.end('PathService.getExternalFilesDir');
+      return dir;
     }
   }
 

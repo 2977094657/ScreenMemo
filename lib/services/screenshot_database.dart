@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import '../models/screenshot_record.dart';
+import 'startup_profiler.dart';
 
 /// 截屏数据库服务
 class ScreenshotDatabase {
@@ -24,6 +25,7 @@ class ScreenshotDatabase {
   /// 初始化数据库
   Future<Database> _initDatabase() async {
     try {
+      StartupProfiler.begin('ScreenshotDatabase._initDatabase');
       // 获取应用的外部存储目录
       final externalDir = await _getExternalFilesDir();
       if (externalDir != null) {
@@ -37,24 +39,28 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         print('数据库路径: $path');
         
-        return await openDatabase(
+        final db = await openDatabase(
           path,
           version: 1,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
+        StartupProfiler.end('ScreenshotDatabase._initDatabase');
+        return db;
       } else {
         // 备选方案：使用默认数据库路径
         print('无法获取外部存储目录，使用默认数据库路径');
         final databasesPath = await getDatabasesPath();
         final path = join(databasesPath, 'screenshot_memo.db');
         
-        return await openDatabase(
+        final db = await openDatabase(
           path,
           version: 1,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
+        StartupProfiler.end('ScreenshotDatabase._initDatabase');
+        return db;
       }
     } catch (e) {
       print('初始化数据库失败，使用默认路径: $e');
@@ -62,12 +68,14 @@ class ScreenshotDatabase {
       final databasesPath = await getDatabasesPath();
       final path = join(databasesPath, 'screenshot_memo.db');
       
-      return await openDatabase(
+      final db = await openDatabase(
         path,
         version: 1,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
+      StartupProfiler.end('ScreenshotDatabase._initDatabase');
+      return db;
     }
   }
 
@@ -200,6 +208,7 @@ class ScreenshotDatabase {
 
   /// 获取所有应用的截屏统计
   Future<Map<String, Map<String, dynamic>>> getScreenshotStatistics() async {
+    StartupProfiler.begin('ScreenshotDatabase.getScreenshotStatistics');
     final db = await database;
     try {
       final maps = await db.rawQuery('''
@@ -232,10 +241,14 @@ class ScreenshotDatabase {
       print('获取截屏统计失败: $e');
       return {};
     }
+    finally {
+      StartupProfiler.end('ScreenshotDatabase.getScreenshotStatistics');
+    }
   }
 
   /// 获取今日截屏数量
   Future<int> getTodayScreenshotCount() async {
+    StartupProfiler.begin('ScreenshotDatabase.getTodayScreenshotCount');
     final db = await database;
     try {
       final today = DateTime.now();
@@ -253,10 +266,14 @@ class ScreenshotDatabase {
       print('获取今日截屏数量失败: $e');
       return 0;
     }
+    finally {
+      StartupProfiler.end('ScreenshotDatabase.getTodayScreenshotCount');
+    }
   }
 
   /// 获取总截屏数量
   Future<int> getTotalScreenshotCount() async {
+    StartupProfiler.begin('ScreenshotDatabase.getTotalScreenshotCount');
     final db = await database;
     try {
       final result = await db.rawQuery('SELECT COUNT(*) as count FROM screenshots');
@@ -264,6 +281,9 @@ class ScreenshotDatabase {
     } catch (e) {
       print('获取总截屏数量失败: $e');
       return 0;
+    }
+    finally {
+      StartupProfiler.end('ScreenshotDatabase.getTotalScreenshotCount');
     }
   }
 

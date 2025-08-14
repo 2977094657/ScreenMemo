@@ -5,6 +5,7 @@ import '../services/app_selection_service.dart';
 import '../services/screenshot_service.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
+import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/app_selection_widget.dart';
 import 'settings_page.dart';
@@ -34,7 +35,20 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    StartupProfiler.begin('HomePage.initState+loadData');
+    // 将数据加载与权限检查延后到首帧之后，避免阻塞首帧
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadData();
+      // 首帧后后台刷新应用列表（如缓存过期）
+      // ignore: unawaited_futures
+      AppSelectionService.instance.refreshAppsInBackgroundIfStale();
+      // 权限相关检查稍后执行，避免与首帧竞争
+      Future.delayed(const Duration(milliseconds: 600), () {
+        PermissionService.instance.startMonitoring();
+        _checkPermissionIssues();
+        _checkScreenshotToggleState();
+      });
+    });
     ScreenshotService.instance.onScreenshotSaved.listen((_) {
       _loadStats();
     });
@@ -53,6 +67,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
   }
 
   Future<void> _loadStats() async {
+    StartupProfiler.begin('HomePage._loadStats');
     // 优先从缓存读取，避免首帧全为0
     final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
     if (mounted) {
@@ -61,9 +76,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
       });
       _sortApps();
     }
+    StartupProfiler.end('HomePage._loadStats');
   }
 
   Future<void> _loadData({bool soft = true}) async {
+    StartupProfiler.begin('HomePage._loadData');
     // 始终走软刷新：不触发全屏加载动画
 
     try {
@@ -98,6 +115,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
       print('加载数据失败: $e');
       // 出错也不显示全屏加载
     }
+    StartupProfiler.end('HomePage._loadData');
   }
 
   void _sortApps() {

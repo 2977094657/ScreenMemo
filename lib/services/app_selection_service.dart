@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_info.dart';
+import 'startup_profiler.dart';
 
 /// 应用选择服务
 class AppSelectionService {
@@ -28,8 +29,10 @@ class AppSelectionService {
   /// 获取所有已安装的应用（带内存/本地缓存，避免每次进入都全量扫描）
   Future<List<AppInfo>> getAllInstalledApps({bool forceRefresh = false}) async {
     try {
+      StartupProfiler.begin('AppSelectionService.getAllInstalledApps');
       // 1) 首选内存缓存
       if (!forceRefresh && _allApps.isNotEmpty) {
+        StartupProfiler.end('AppSelectionService.getAllInstalledApps');
         return _allApps;
       }
 
@@ -56,6 +59,7 @@ class AppSelectionService {
               // ignore: unawaited_futures
               getAllInstalledApps(forceRefresh: true).catchError((_) {});
             }
+            StartupProfiler.end('AppSelectionService.getAllInstalledApps');
             return _allApps;
           } catch (e) {
             // 缓存解析失败，继续走全量扫描
@@ -64,11 +68,13 @@ class AppSelectionService {
       }
 
       // 3) 全量扫描（较慢）
+      StartupProfiler.begin('InstalledApps.getInstalledApps');
       final apps = await InstalledApps.getInstalledApps(
         true, // excludeSystemApps
         true, // withIcon
         '', // packageNamePrefix
       );
+      StartupProfiler.end('InstalledApps.getInstalledApps');
 
       _allApps = apps.map((app) => AppInfo.fromInstalledApp(app)).toList();
       _allApps.sort((a, b) => a.appName.compareTo(b.appName));
@@ -82,9 +88,11 @@ class AppSelectionService {
         // 忽略缓存失败
       }
 
+      StartupProfiler.end('AppSelectionService.getAllInstalledApps');
       return _allApps;
     } catch (e) {
       print('获取应用列表失败: $e');
+      StartupProfiler.end('AppSelectionService.getAllInstalledApps');
       return _allApps; // 返回已有内存数据，尽量不中断
     }
   }
@@ -136,6 +144,7 @@ class AppSelectionService {
   /// 获取选中的应用
   Future<List<AppInfo>> getSelectedApps() async {
     try {
+      StartupProfiler.begin('AppSelectionService.getSelectedApps');
       final prefs = await SharedPreferences.getInstance();
       final appsJsonString = prefs.getString(_selectedAppsKey);
       
@@ -143,10 +152,11 @@ class AppSelectionService {
         final appsJson = jsonDecode(appsJsonString) as List;
         _selectedApps = appsJson.map((json) => AppInfo.fromJson(json)).toList();
       }
-      
+      StartupProfiler.end('AppSelectionService.getSelectedApps');
       return _selectedApps;
     } catch (e) {
       print('获取选中应用失败: $e');
+      StartupProfiler.end('AppSelectionService.getSelectedApps');
       return [];
     }
   }

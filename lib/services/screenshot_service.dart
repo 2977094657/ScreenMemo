@@ -8,6 +8,7 @@ import 'permission_service.dart';
 import 'screenshot_database.dart';
 import 'path_service.dart';
 import '../models/screenshot_record.dart';
+import 'startup_profiler.dart';
 
 /// 截屏服务异常类
 class ScreenshotServiceException implements Exception {
@@ -53,6 +54,7 @@ class ScreenshotService {
 
   /// 优先返回缓存（如有），同时后台刷新
   Future<Map<String, dynamic>> getScreenshotStatsCachedFirst() async {
+    StartupProfiler.begin('ScreenshotService.getScreenshotStatsCachedFirst');
     try {
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString(_statsCacheKey);
@@ -69,6 +71,7 @@ class ScreenshotService {
     } catch (_) {}
     // 无缓存则正常获取并写入
     final stats = await getScreenshotStats();
+    StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
     return stats;
   }
   
@@ -337,6 +340,7 @@ class ScreenshotService {
   
   /// 获取截屏统计信息
   Future<Map<String, dynamic>> getScreenshotStats() async {
+    StartupProfiler.begin('ScreenshotService.getScreenshotStats');
     try {
       // 节流同步，避免每次都全量扫目录
       final prefs = await SharedPreferences.getInstance();
@@ -380,6 +384,9 @@ class ScreenshotService {
         'lastScreenshotTime': null,
         'appStatistics': <String, Map<String, dynamic>>{},
       };
+    }
+    finally {
+      StartupProfiler.end('ScreenshotService.getScreenshotStats');
     }
   }
   

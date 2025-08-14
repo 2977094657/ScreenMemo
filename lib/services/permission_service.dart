@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'screenshot_service.dart';
+import 'startup_profiler.dart';
 
 /// 权限管理服务
 class PermissionService with WidgetsBindingObserver {
@@ -19,7 +20,7 @@ class PermissionService with WidgetsBindingObserver {
   PermissionService._() {
     _setupMethodCallHandler();
     WidgetsBinding.instance.addObserver(this);
-    _startPermissionMonitoring();
+    // 监控改为延后启动，避免冷启动时频繁检查
   }
 
   // 权限状态回调
@@ -57,6 +58,7 @@ class PermissionService with WidgetsBindingObserver {
   
   /// 检查所有必要权限
   Future<Map<String, bool>> checkAllPermissions() async {
+    StartupProfiler.begin('PermissionService.checkAllPermissions');
     final results = <String, bool>{};
 
     // 检查基础权限
@@ -69,6 +71,7 @@ class PermissionService with WidgetsBindingObserver {
     // 检查使用统计权限
     results['usage_stats'] = await checkUsageStatsPermission();
 
+    StartupProfiler.end('PermissionService.checkAllPermissions');
     return results;
   }
   
@@ -193,15 +196,13 @@ class PermissionService with WidgetsBindingObserver {
   }
 
   /// 开始权限状态监听
-  void _startPermissionMonitoring() {
+  /// 显式启动权限状态监听（降低为每3秒，且由调用方按需触发）
+  void startMonitoring({Duration interval = const Duration(seconds: 3)}) {
     if (_isMonitoring) return;
-
     _isMonitoring = true;
-    // 每1秒检查一次权限状态（提高检测频率）
-    _permissionCheckTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _permissionCheckTimer = Timer.periodic(interval, (timer) {
       _checkPermissionChanges();
     });
-
     print('权限状态监听已启动');
   }
 
@@ -292,10 +293,13 @@ class PermissionService with WidgetsBindingObserver {
   /// 检查服务是否运行
   Future<bool> isServiceRunning() async {
     try {
+      StartupProfiler.begin('PermissionService.isServiceRunning');
       final result = await _channel.invokeMethod('isServiceRunning');
+      StartupProfiler.end('PermissionService.isServiceRunning');
       return result as bool;
     } catch (e) {
       print('检查服务状态失败: $e');
+      StartupProfiler.end('PermissionService.isServiceRunning');
       return false;
     }
   }
