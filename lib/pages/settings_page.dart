@@ -518,75 +518,67 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               padding: const EdgeInsets.all(AppTheme.spacing4),
               children: [
                 // 基础权限
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                _buildSection(
+                  context: context,
+                  title: '基础权限',
                   children: [
-                    Text(
-                      '基础权限',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.spacing3),
-                     _buildPermissionCard(
-                      icon: Icons.folder,
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.folder_outlined,
                       title: '存储权限',
                       description: '保存截图文件到设备存储',
                       isGranted: _permissions['storage'] ?? false,
                       onRequest: () => _requestPermission('storage'),
                     ),
-                    const SizedBox(height: AppTheme.spacing3),
-                     _buildPermissionCard(
-                      icon: Icons.notifications,
+                    const SizedBox(height: AppTheme.spacing2),
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.notifications_outlined,
                       title: '通知权限',
                       description: '显示服务状态通知',
                       isGranted: _permissions['notification'] ?? false,
                       onRequest: () => _requestPermission('notification'),
                     ),
-                    const SizedBox(height: AppTheme.spacing3),
-                     _buildPermissionCard(
-                      icon: Icons.accessibility,
+                    const SizedBox(height: AppTheme.spacing2),
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.accessibility_new_outlined,
                       title: '无障碍服务',
                       description: '检测应用切换和执行截屏',
                       isGranted: _permissions['accessibility'] ?? false,
                       onRequest: () => _requestPermission('accessibility'),
                     ),
-                    const SizedBox(height: AppTheme.spacing3),
-                     _buildPermissionCard(
-                      icon: Icons.analytics,
+                    const SizedBox(height: AppTheme.spacing2),
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.analytics_outlined,
                       title: '使用统计权限',
                       description: '准确检测前台应用',
                       isGranted: _permissions['usage_stats'] ?? false,
                       onRequest: () => _requestPermission('usage_stats'),
                     ),
-                    const SizedBox(height: AppTheme.spacing3),
-                    // 屏幕录制权限已移除 - 使用无障碍服务截屏
                   ],
                 ),
 
-                const SizedBox(height: AppTheme.spacing4),
+                const SizedBox(height: AppTheme.spacing6),
 
                 // 保活权限
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                _buildSection(
+                  context: context,
+                  title: '保活权限',
                   children: [
-                    Text(
-                      '保活权限',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
-                      icon: Icons.battery_saver,
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.battery_saver_outlined,
                       title: '电池优化白名单',
                       description: '确保截屏服务稳定运行',
                       isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
                       onRequest: () => _requestPermission('battery_optimization'),
                     ),
-                    const SizedBox(height: AppTheme.spacing3),
-                    _buildPermissionCard(
-                      icon: Icons.power_settings_new,
+                    const SizedBox(height: AppTheme.spacing2),
+                    _buildPermissionItem(
+                      context: context,
+                      icon: Icons.power_settings_new_outlined,
                       title: '自启动权限',
                       description: '允许应用在后台自动重启',
                       isGranted: _keepAlivePermissions['autostart'] ?? false,
@@ -595,110 +587,115 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   ],
                 ),
 
-                const SizedBox(height: AppTheme.spacing4),
+                const SizedBox(height: AppTheme.spacing6),
 
                 // 数据与备份
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                _buildSection(
+                  context: context,
+                  title: '数据与备份',
                   children: [
-                    Text(
-                      '数据与备份',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: AppTheme.spacing3),
-                    UICard(
-                      showBorder: false,
-                      padding: const EdgeInsets.all(AppTheme.spacing2),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.file_download_outlined, size: 20),
-                          const SizedBox(width: AppTheme.spacing3),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('导出数据库到 Download/ScreenMemory'),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.spacing3),
-                          UIButton(
-                            text: _exportingDb ? '导出中...' : '导出',
-                            onPressed: _exportingDb ? null : _exportDatabase,
-                            size: UIButtonSize.small,
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildExportItem(context),
                   ],
                 ),
-
-                const SizedBox(height: AppTheme.spacing4),
-
-                // 移除冗余的权限说明
               ],
             ),
     );
   }
 
+  Widget _buildSection({
+    required BuildContext context,
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: AppTheme.spacing1, bottom: AppTheme.spacing3),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.8),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
 
-
-  Widget _buildPermissionCard({
+  Widget _buildPermissionItem({
+    required BuildContext context,
     required IconData icon,
     required String title,
     required String description,
     required bool isGranted,
     required VoidCallback onRequest,
   }) {
-    return UICard(
-      showBorder: false,
-      padding: const EdgeInsets.all(AppTheme.spacing2),
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Container(
-            width: 36, // 缩小图标容器
+            width: 36,
             height: 36,
             decoration: BoxDecoration(
               color: isGranted
-                  ? AppTheme.success.withValues(alpha: 0.25) // 绿色更柔和
-                  : Theme.of(context).colorScheme.surfaceVariant, // 未授权更柔和灰
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surfaceVariant,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(
               isGranted ? Icons.check : icon,
               color: isGranted
-                  ? AppTheme.successForeground
+                  ? Theme.of(context).colorScheme.onPrimaryContainer
                   : Theme.of(context).colorScheme.onSurfaceVariant,
-              size: 18, // 缩小图标大小
+              size: 18,
             ),
           ),
-
-          const SizedBox(width: AppTheme.spacing2), // 缩小间距
-
+          const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith( // 缩小标题字体
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   description,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.mutedForeground,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
-
-          const SizedBox(width: AppTheme.spacing2), // 缩小间距
-
+          const SizedBox(width: AppTheme.spacing2),
           if (isGranted)
             Container(
               padding: const EdgeInsets.symmetric(
@@ -706,7 +703,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 vertical: AppTheme.spacing1,
               ),
               decoration: BoxDecoration(
-                color: AppTheme.success.withValues(alpha: 0.12), // 更浅的绿底
+                color: Theme.of(context).colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
               ),
               child: Text(
@@ -714,19 +711,93 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 style: TextStyle(
                   fontSize: AppTheme.fontSizeXs,
                   fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
               ),
             )
           else
-            UIButton(
-              text: '授权',
+            TextButton(
               onPressed: onRequest,
-              size: UIButtonSize.small,
-              variant: UIButtonVariant.secondary, // 未授权按钮使用柔和灰背景
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing3,
+                  vertical: AppTheme.spacing1,
+                ),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: Size.zero,
+              ),
+              child: const Text('授权'),
             ),
         ],
       ),
     );
   }
+
+  Widget _buildExportItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.file_download_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '导出数据库',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '导出到 Download/ScreenMemory',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _exportingDb ? null : _exportDatabase,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: _exportingDb
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text('导出'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
 }
