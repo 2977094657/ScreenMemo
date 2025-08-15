@@ -23,6 +23,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   String? _error;
   Directory? _baseDir;
   final ScrollController _scrollController = ScrollController();
+  // 多选状态
+  bool _selectionMode = false;
+  final Set<int> _selectedIds = <int>{};
+  final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
+  // 取消滑动选择
   bool _initialized = false; // 避免返回时重复触发初始化加载
 
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
@@ -177,6 +182,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
           setState(() {
             _screenshots.removeWhere((s) => s.id == screenshot.id);
           });
+          // 删除后失效首页统计缓存
+          await ScreenshotService.instance.invalidateStatsCache();
           
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -231,36 +238,76 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
               const Icon(Icons.android, size: 20, color: AppTheme.foreground),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                _appInfo.appName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
+              child: _selectionMode
+                  ? Text(
+                      '已选择 ${_selectedIds.length} 项',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    )
+                  : Text(
+                      _appInfo.appName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                     ),
-              ),
             ),
           ],
         ),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                _buildHeaderStatsText(),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w400,
-                    ),
+          if (!_selectionMode) ...[
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  _buildHeaderStatsText(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w400,
+                      ),
+                ),
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadScreenshots,
-            tooltip: '刷新',
-          ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadScreenshots,
+              tooltip: '刷新',
+            ),
+          ] else ...[
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectionMode = false;
+                  _selectedIds.clear();
+                });
+              },
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  if (_selectedIds.length == _screenshots.length) {
+                    _selectedIds.clear();
+                  } else {
+                    _selectedIds
+                      ..clear()
+                      ..addAll(_screenshots.where((s) => s.id != null).map((s) => s.id!));
+                  }
+                });
+              },
+              child: const Text('全选'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '删除所选',
+              onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
+            ),
+          ],
         ],
       ),
       body: _buildBody(),
@@ -360,8 +407,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         ),
         itemCount: _screenshots.length,
         itemBuilder: (context, index) {
-          final screenshot = _screenshots[index];
-          return _buildScreenshotItem(screenshot, index);
+            final screenshot = _screenshots[index];
+            return _buildScreenshotItem(screenshot, index);
         },
       ),
     );
@@ -384,9 +431,21 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     final absolutePath = path.join(_baseDir!.path, screenshot.filePath);
     final file = File(absolutePath);
 
+    final isSelected = _selectionMode && screenshot.id != null && _selectedIds.contains(screenshot.id);
     return GestureDetector(
-      onTap: () => _viewScreenshot(screenshot, index),
-      onLongPress: () => _deleteScreenshot(screenshot),
+      onTap: () {
+        if (_selectionMode) {
+          _toggleSelect(index);
+        } else {
+          _viewScreenshot(screenshot, index);
+        }
+      },
+      onLongPress: () {
+        if (!_selectionMode) {
+          setState(() => _selectionMode = true);
+        }
+        _toggleSelect(index);
+      },
       child: Stack(
         children: [
           // 图片直接显示，无容器包装
@@ -416,6 +475,26 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
               },
             ),
           ),
+          // 选择矩形“复选框”叠加（仅多选模式显示，右上角白色边框，浅灰底，选中打勾）
+          if (_selectionMode)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.black : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: isSelected ? Colors.black : Colors.white, width: 2),
+                ),
+                alignment: Alignment.center,
+                child: isSelected
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : null,
+              ),
+            ),
+          // 去除之前的全图遮罩，仅保留底部信息遮罩
           // 底部信息遮罩
           Positioned(
             bottom: 0,
@@ -469,6 +548,88 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         ],
       ),
     );
+  }
+
+  void _toggleSelect(int index) {
+    if (index < 0 || index >= _screenshots.length) return;
+    final id = _screenshots[index].id;
+    if (id == null) return;
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) _selectionMode = false;
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _hitSelectAtPosition(Offset globalPosition) {
+    // 命中检测：遍历可见项，若指针在其区域内则选中
+    _itemKeys.forEach((index, key) {
+      final context = key.currentContext;
+      if (context == null) return;
+      final render = context.findRenderObject();
+      if (render is! RenderBox) return;
+      final topLeft = render.localToGlobal(Offset.zero);
+      final rect = topLeft & render.size;
+      if (rect.contains(globalPosition)) {
+        _toggleSelect(index);
+      }
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
+        title: const Text('确认删除'),
+        content: Text('将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除', style: TextStyle(color: AppTheme.destructive)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    int successCount = 0;
+    final ids = List<int>.from(_selectedIds);
+    for (final id in ids) {
+      final ok = await ScreenshotService.instance.deleteScreenshot(id);
+      if (ok) successCount++;
+    }
+
+    // 本地移除
+    setState(() {
+      _screenshots.removeWhere((s) => s.id != null && _selectedIds.contains(s.id));
+      _selectedIds.clear();
+      _selectionMode = false;
+    });
+
+    // 失效统计缓存并提示
+    await ScreenshotService.instance.invalidateStatsCache();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已删除 $successCount 张截图'),
+          backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Widget _buildErrorItem(String message) {

@@ -88,3 +88,5 @@ get_log_file.sh
 CLAUDE.md
 CRITICAL_TEST.md
 screenmemo_tech_selection.html
+/.claude/
+/.kiro/

@@ -52,24 +52,9 @@ class ScreenshotService {
   /// 获取当前截屏间隔
   int get currentInterval => _currentInterval;
 
-  /// 优先返回缓存（如有），同时后台刷新
+  /// 兼容方法名：直接返回最新统计（不再使用缓存优先）
   Future<Map<String, dynamic>> getScreenshotStatsCachedFirst() async {
     StartupProfiler.begin('ScreenshotService.getScreenshotStatsCachedFirst');
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString(_statsCacheKey);
-      final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
-      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (cached != null && ts > 0 && (now - ts) <= ttl * 1000) {
-        final map = _deserializeStats(cached);
-        // 异步后台刷新
-        // ignore: unawaited_futures
-        _refreshStatsCacheIfStale();
-        return map;
-      }
-    } catch (_) {}
-    // 无缓存则正常获取并写入
     final stats = await getScreenshotStats();
     StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
     return stats;
@@ -321,11 +306,9 @@ class ScreenshotService {
           } else {
             print('截图记录已存在，未重复插入');
           }
-          // 无论是否新插入，都通知监听器刷新统计与界面，确保首页实时更新
+          // 刷新统计缓存后再通知监听者，避免先读到旧缓存
+          await _refreshStatsCache(force: true);
           _screenshotStreamController.add(null);
-          // 刷新统计缓存
-          // ignore: unawaited_futures
-          _refreshStatsCache(force: true);
         } finally {
           // 从处理中集合移除
           _processingPaths.remove(absolutePath);
@@ -372,9 +355,7 @@ class ScreenshotService {
         'lastScreenshotTime': lastScreenshotTime?.millisecondsSinceEpoch,
         'appStatistics': statistics,
       };
-      // 保存缓存
-      // ignore: unawaited_futures
-      _saveStatsCache(stats);
+      // 不再写入缓存，始终以实时计算为准
       return stats;
     } catch (e) {
       print('获取截屏统计信息失败: $e');
@@ -405,7 +386,13 @@ class ScreenshotService {
   /// 删除截屏记录
   Future<bool> deleteScreenshot(int id) async {
     try {
-      return await _database.deleteScreenshot(id);
+      final ok = await _database.deleteScreenshot(id);
+      if (ok) {
+        // 先刷新统计缓存，再通知监听者，确保读取到新缓存
+        await _refreshStatsCache(force: true);
+        _screenshotStreamController.add(null);
+      }
+      return ok;
     } catch (e) {
       print('删除截屏记录失败: $e');
       return false;
@@ -466,11 +453,9 @@ class ScreenshotService {
       }
 
       if (inserted > 0) {
-        // 通知监听者有新数据
+        // 刷新统计缓存后再通知监听者
+        await _refreshStatsCache(force: true);
         _screenshotStreamController.add(null);
-        // 刷新统计缓存
-        // ignore: unawaited_futures
-        _refreshStatsCache(force: true);
       }
       return inserted;
     } catch (e) {
@@ -513,31 +498,22 @@ class ScreenshotService {
   }
 
   Future<void> _refreshStatsCache({bool force = false}) async {
-    try {
-      if (!force) {
-        final prefs = await SharedPreferences.getInstance();
-        final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
-        final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (ts > 0 && (now - ts) <= ttl * 1000) return;
-      }
-      final stats = await getScreenshotStats();
-      await _saveStatsCache(stats);
-    } catch (_) {}
+    // 缓存刷新逻辑已废弃，保留空实现以兼容旧调用
+    await Future<void>.value();
   }
 
   Future<void> _saveStatsCache(Map<String, dynamic> stats) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_statsCacheKey, _serializeStats(stats));
-      await prefs.setInt(_statsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
-      if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
-        await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
-      }
-    } catch (_) {}
+    // 已禁用缓存持久化
+    await Future<void>.value();
   }
 
   Future<void> _refreshStatsCacheIfStale() async {
     await _refreshStatsCache();
+  }
+
+  /// 主动失效统计缓存（用于手动刷新）
+  Future<void> invalidateStatsCache() async {
+    // 缓存已停用，此方法保留为空以兼容调用方
+    await Future<void>.value();
   }
 }
