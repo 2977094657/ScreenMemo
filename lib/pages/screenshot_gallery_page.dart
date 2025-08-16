@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
@@ -29,6 +31,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
   // 取消滑动选择
   bool _initialized = false; // 避免返回时重复触发初始化加载
+  
+  // 缓存相关
+  static const String _screenshotsCacheKeyPrefix = 'screenshots_cache_';
+  static const String _screenshotsCacheTsKeyPrefix = 'screenshots_cache_ts_';
+  static const int _screenshotsCacheTtlSeconds = 300; // 仅影响截图列表，不影响首页统计
 
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
   String _buildHeaderStatsText() {
@@ -95,47 +102,140 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       print('应用包名: $_packageName');
       print('基础目录: ${_baseDir?.path}');
 
-      // 先触发一次同步，确保本地新增文件入库
-      await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
-      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
-      print('从数据库获取到 ${screenshots.length} 张截图');
-
-      // 检查实际文件是否存在
-      for (int i = 0; i < screenshots.length; i++) {
-        final screenshot = screenshots[i];
-        final absolutePath = screenshot.filePath;
-        final file = File(absolutePath);
-        final exists = await file.exists();
-        print('截图 ${i + 1}: $absolutePath - 文件存在: $exists');
+      // 尝试从缓存加载（仅用于提升进入速度，不影响首页统计）
+      final cachedScreenshots = await _loadScreenshotsFromCache();
+      if (cachedScreenshots != null) {
+        print('从缓存加载到 ${cachedScreenshots.length} 张截图');
+        setState(() {
+          _screenshots = cachedScreenshots;
+          _isLoading = false;
+        });
+        // 后台刷新缓存
+        _refreshScreenshotsCache();
+        return;
       }
 
-      // 同时检查预期的截图目录
-      if (_baseDir != null) {
-        final expectedDir = Directory('${_baseDir!.path}/output/screen/$_packageName');
-        print('检查预期目录: ${expectedDir.path}');
-        if (await expectedDir.exists()) {
-          final files = await expectedDir.list().toList();
-          print('目录中实际文件数量: ${files.length}');
-          for (final file in files) {
-            if (file is File && file.path.toLowerCase().endsWith('.png')) {
-              print('发现PNG文件: ${file.path}');
-            }
-          }
-        } else {
-          print('预期目录不存在');
-        }
-      }
-
-      setState(() {
-        _screenshots = screenshots;
-        _isLoading = false;
-      });
+      // 缓存不存在或已过期，从数据库加载
+      await _loadScreenshotsFromDatabase();
     } catch (e) {
       print('加载截图失败: $e');
       setState(() {
         _error = '加载截图失败: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  /// 从数据库加载截图数据
+  Future<void> _loadScreenshotsFromDatabase() async {
+    // 先触发一次同步，确保本地新增文件入库
+    await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
+    final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
+    print('从数据库获取到 ${screenshots.length} 张截图');
+
+    // 检查实际文件是否存在
+    for (int i = 0; i < screenshots.length; i++) {
+      final screenshot = screenshots[i];
+      final absolutePath = screenshot.filePath;
+      final file = File(absolutePath);
+      final exists = await file.exists();
+      print('截图 ${i + 1}: $absolutePath - 文件存在: $exists');
+    }
+
+    // 同时检查预期的截图目录
+    if (_baseDir != null) {
+      final expectedDir = Directory('${_baseDir!.path}/output/screen/$_packageName');
+      print('检查预期目录: ${expectedDir.path}');
+      if (await expectedDir.exists()) {
+        final files = await expectedDir.list().toList();
+        print('目录中实际文件数量: ${files.length}');
+        for (final file in files) {
+          if (file is File && file.path.toLowerCase().endsWith('.png')) {
+            print('发现PNG文件: ${file.path}');
+          }
+        }
+      } else {
+        print('预期目录不存在');
+      }
+    }
+
+    setState(() {
+      _screenshots = screenshots;
+      _isLoading = false;
+    });
+
+    // 保存到缓存
+    await _saveScreenshotsToCache(screenshots);
+  }
+
+  /// 从缓存加载截图数据
+  Future<List<ScreenshotRecord>?> _loadScreenshotsFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
+      final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
+      
+      final cachedJson = prefs.getString(cacheKey);
+      final ts = prefs.getInt(tsKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      
+      if (cachedJson != null && ts > 0 && (now - ts) <= _screenshotsCacheTtlSeconds * 1000) {
+        final List<dynamic> decoded = jsonDecode(cachedJson);
+        return decoded.map((item) => ScreenshotRecord.fromMap(item)).toList();
+      }
+      return null;
+    } catch (e) {
+      print('从缓存加载截图失败: $e');
+      return null;
+    }
+  }
+
+  /// 保存截图数据到缓存
+  Future<void> _saveScreenshotsToCache(List<ScreenshotRecord> screenshots) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
+      final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
+      
+      final jsonList = screenshots.map((s) => s.toMap()).toList();
+      await prefs.setString(cacheKey, jsonEncode(jsonList));
+      await prefs.setInt(tsKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      print('保存截图到缓存失败: $e');
+    }
+  }
+
+  /// 后台刷新截图缓存
+  Future<void> _refreshScreenshotsCache() async {
+    try {
+      // 先触发一次同步，确保本地新增文件入库
+      await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
+      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
+      await _saveScreenshotsToCache(screenshots);
+      
+      // 如果有新数据，更新UI
+      if (screenshots.length != _screenshots.length) {
+        setState(() {
+          _screenshots = screenshots;
+        });
+      }
+    } catch (e) {
+      print('后台刷新截图缓存失败: $e');
+    }
+  }
+
+  /// 使截图缓存失效
+  Future<void> _invalidateScreenshotsCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
+      final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
+      
+      await prefs.remove(cacheKey);
+      await prefs.remove(tsKey);
+      print('已使截图缓存失效: $cacheKey');
+    } catch (e) {
+      print('使截图缓存失效失败: $e');
     }
   }
 
@@ -184,6 +284,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
           });
           // 删除后失效首页统计缓存
           await ScreenshotService.instance.invalidateStatsCache();
+          // 删除后失效截图列表缓存
+          await _invalidateScreenshotsCache();
           
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

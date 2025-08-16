@@ -52,9 +52,25 @@ class ScreenshotService {
   /// 获取当前截屏间隔
   int get currentInterval => _currentInterval;
 
-  /// 兼容方法名：直接返回最新统计（不再使用缓存优先）
+  /// 兼容方法名：优先使用缓存，缓存失效则重新计算
   Future<Map<String, dynamic>> getScreenshotStatsCachedFirst() async {
     StartupProfiler.begin('ScreenshotService.getScreenshotStatsCachedFirst');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_statsCacheKey);
+      final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
+      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (cached != null && ts > 0 && (now - ts) <= ttl * 1000) {
+        final map = _deserializeStats(cached);
+        // 后台异步刷新缓存
+        // ignore: unawaited_futures
+        _refreshStatsCacheIfStale();
+        StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
+        return map;
+      }
+    } catch (_) {}
+    // 缓存不存在或已过期，重新计算
     final stats = await getScreenshotStats();
     StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
     return stats;
@@ -355,7 +371,9 @@ class ScreenshotService {
         'lastScreenshotTime': lastScreenshotTime?.millisecondsSinceEpoch,
         'appStatistics': statistics,
       };
-      // 不再写入缓存，始终以实时计算为准
+      // 保存到缓存
+      // ignore: unawaited_futures
+      _saveStatsCache(stats);
       return stats;
     } catch (e) {
       print('获取截屏统计信息失败: $e');
@@ -368,6 +386,48 @@ class ScreenshotService {
     }
     finally {
       StartupProfiler.end('ScreenshotService.getScreenshotStats');
+    }
+  }
+
+  /// 获取最新统计（不使用统计缓存，可选择强制全量文件同步）
+  Future<Map<String, dynamic>> getScreenshotStatsFresh({bool forceFullSync = true}) async {
+    StartupProfiler.begin('ScreenshotService.getScreenshotStatsFresh');
+    try {
+      if (forceFullSync) {
+        // 无视节流，强制与文件系统同步，确保数据库为最新
+        await syncDatabaseWithFiles();
+      }
+
+      final totalCount = await _database.getTotalScreenshotCount();
+      final todayCount = await _database.getTodayScreenshotCount();
+      final statistics = await _database.getScreenshotStatistics();
+
+      DateTime? lastScreenshotTime;
+      if (statistics.isNotEmpty) {
+        for (final stat in statistics.values) {
+          final time = stat['lastCaptureTime'] as DateTime?;
+          if (time != null && (lastScreenshotTime == null || time.isAfter(lastScreenshotTime))) {
+            lastScreenshotTime = time;
+          }
+        }
+      }
+
+      return {
+        'totalScreenshots': totalCount,
+        'todayScreenshots': todayCount,
+        'lastScreenshotTime': lastScreenshotTime?.millisecondsSinceEpoch,
+        'appStatistics': statistics,
+      };
+    } catch (e) {
+      print('获取最新截屏统计失败: $e');
+      return {
+        'totalScreenshots': 0,
+        'todayScreenshots': 0,
+        'lastScreenshotTime': null,
+        'appStatistics': <String, Map<String, dynamic>>{},
+      };
+    } finally {
+      StartupProfiler.end('ScreenshotService.getScreenshotStatsFresh');
     }
   }
   
@@ -498,13 +558,33 @@ class ScreenshotService {
   }
 
   Future<void> _refreshStatsCache({bool force = false}) async {
-    // 缓存刷新逻辑已废弃，保留空实现以兼容旧调用
-    await Future<void>.value();
+    try {
+      if (!force) {
+        final prefs = await SharedPreferences.getInstance();
+        final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
+        final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (ts > 0 && (now - ts) <= ttl * 1000) return;
+      }
+      final stats = await getScreenshotStats();
+      await _saveStatsCache(stats);
+    } catch (_) {}
   }
 
   Future<void> _saveStatsCache(Map<String, dynamic> stats) async {
-    // 已禁用缓存持久化
-    await Future<void>.value();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_statsCacheKey, _serializeStats(stats));
+      await prefs.setInt(_statsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
+      if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
+        await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
+      }
+    } catch (_) {}
+  }
+
+  /// 对外暴露：立即将传入的统计结果写入缓存（用于首页比对后同步缓存，避免下次看到旧缓存）
+  Future<void> updateStatsCache(Map<String, dynamic> stats) async {
+    await _saveStatsCache(stats);
   }
 
   Future<void> _refreshStatsCacheIfStale() async {
@@ -513,7 +593,10 @@ class ScreenshotService {
 
   /// 主动失效统计缓存（用于手动刷新）
   Future<void> invalidateStatsCache() async {
-    // 缓存已停用，此方法保留为空以兼容调用方
-    await Future<void>.value();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_statsCacheKey);
+      await prefs.remove(_statsCacheTsKey);
+    } catch (_) {}
   }
 }

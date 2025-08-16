@@ -20,7 +20,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin {
+class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final AppSelectionService _appService = AppSelectionService.instance;
 
   List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
@@ -37,6 +37,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     StartupProfiler.begin('HomePage.initState+loadData');
     // 将数据加载与权限检查延后到首帧之后，避免阻塞首帧
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -69,15 +70,39 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
     };
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // 应用从后台返回前台：强制同步文件到数据库并刷新统计，避免节流导致读到旧数据
+      Future.delayed(const Duration(milliseconds: 300), () async {
+        try {
+          await ScreenshotService.instance.syncDatabaseWithFiles();
+        } catch (_) {}
+        await _loadStatsFresh();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   Future<void> _loadStats() async {
     StartupProfiler.begin('HomePage._loadStats');
-    // 刷新时强制失效缓存，首帧仍可走缓存
+    // 首页允许首帧走统计缓存
     final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
     if (mounted) {
       setState(() {
         _screenshotStats = stats;
       });
       _sortApps();
+      // 首帧后立刻做一次数据库对比校验，若不一致则自动刷新
+      // 不依赖统计缓存，也不受同步节流影响
+      // ignore: unawaited_futures
+      _verifyAndRefreshStatsIfStale();
     }
     StartupProfiler.end('HomePage._loadStats');
   }
@@ -85,16 +110,64 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
   /// 强制从数据库计算并刷新缓存，然后更新UI
   Future<void> _loadStatsFresh() async {
     StartupProfiler.begin('HomePage._loadStatsFresh');
-    // 清除缓存，强制走计算
-    await ScreenshotService.instance.invalidateStatsCache();
-    final stats = await ScreenshotService.instance.getScreenshotStats();
+    // 不再依赖统计缓存，也不受文件同步节流影响
+    final stats = await ScreenshotService.instance.getScreenshotStatsFresh();
     if (mounted) {
       setState(() {
         _screenshotStats = stats;
       });
       _sortApps();
+      // 刷新后同步更新首页统计缓存
+      // ignore: unawaited_futures
+      ScreenshotService.instance.updateStatsCache(stats);
     }
     StartupProfiler.end('HomePage._loadStatsFresh');
+  }
+
+  /// 计算当前统计数据的签名，用于快速判断是否需要刷新UI
+  String _computeStatsSignature(Map<String, dynamic> stats) {
+    final int total = (stats['totalScreenshots'] as int?) ?? 0;
+    final int today = (stats['todayScreenshots'] as int?) ?? 0;
+    final int lastTs = (stats['lastScreenshotTime'] as int?) ?? 0;
+    final appStats = stats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
+
+    int appsCount = appStats.length;
+    int sumCount = 0;
+    int sumSize = 0;
+    int maxLast = 0;
+
+    for (final entry in appStats.entries) {
+      final map = entry.value;
+      final int c = (map['totalCount'] as int?) ?? 0;
+      final int s = (map['totalSize'] as int?) ?? 0;
+      final DateTime? t = map['lastCaptureTime'] as DateTime?;
+      final int ts = t?.millisecondsSinceEpoch ?? 0;
+      sumCount += c;
+      sumSize += s;
+      if (ts > maxLast) maxLast = ts;
+    }
+
+    return '$total|$today|$lastTs|$appsCount|$sumCount|$sumSize|$maxLast';
+  }
+
+  /// 校验当前展示与数据库最新统计是否一致，不一致则用最新统计刷新
+  Future<void> _verifyAndRefreshStatsIfStale() async {
+    try {
+      final String currentSig = _computeStatsSignature(_screenshotStats);
+      final fresh = await ScreenshotService.instance.getScreenshotStatsFresh();
+      final String freshSig = _computeStatsSignature(fresh);
+      if (currentSig != freshSig && mounted) {
+        setState(() {
+          _screenshotStats = fresh;
+        });
+        _sortApps();
+        // 同步更新首页统计缓存，避免下次冷启动或返回时先看到旧缓存
+        // ignore: unawaited_futures
+        ScreenshotService.instance.updateStatsCache(fresh);
+      }
+    } catch (e) {
+      // 静默失败，不打断首帧体验
+    }
   }
 
   Future<void> _loadData({bool soft = true}) async {
@@ -473,9 +546,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
         'packageName': app.packageName,
       },
     );
-    // 返回后刷新统计，确保首页数字最新
-    await ScreenshotService.instance.invalidateStatsCache();
-    await _loadStats();
+    // 返回后强制获取最新统计（不走缓存，不受节流影响）
+    await _loadStatsFresh();
   }
 
 
@@ -752,139 +824,149 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin 
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!_selectionMode) ...[
-              GestureDetector(
-                onTap: _showIntervalDialog,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.timer, size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          '$_screenshotInterval秒',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
-                              ),
+        title: _selectionMode
+          ? Text(
+              '已选择 ${_selectedPackages.length} 项',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            )
+          : Row(
+              children: [
+                // 搜索框左侧的图标：刷新和主题切换
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () async {
+                    await _refreshPermissions();
+                    await _loadData(soft: true);
+                  },
+                  tooltip: '刷新数据和权限状态',
+                ),
+                IconButton(
+                  icon: Icon(widget.themeService.themeModeIcon),
+                  onPressed: () async {
+                    await widget.themeService.toggleTheme();
+                  },
+                  tooltip: widget.themeService.themeModeDescription,
+                ),
+                
+                // 搜索框
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.grey.withOpacity(0.5), // 使用更明显的灰色边框
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05), // 添加轻微阴影使边框更明显
+                          blurRadius: 1,
+                          spreadRadius: 0,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Container(
-                      height: 1,
-                      width: 48,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing4),
-              Switch(
-                value: _screenshotEnabled,
-                onChanged: (value) => _toggleScreenshotEnabled(),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ] else ...[
-              Text(
-                '已选择 ${_selectedPackages.length} 项',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          if (!_selectionMode) ...[
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: '选择监控应用',
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(
-                        title: const Text('选择监控应用'),
-                        actions: [
-                          TextButton(
-                            onPressed: () async {
-                              await _appService.saveSelectedApps(_selectedApps);
-                              if (mounted) Navigator.of(context).pop();
-                              await _loadData(soft: true);
-                            },
-                            child: const Text('完成'),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        Icon(
+                          Icons.search,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '搜索截图...',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            fontSize: 16,
                           ),
-                        ],
-                      ),
-                      body: AppSelectionWidget(
-                        displayAsList: true,
-                        onSelectionChanged: (apps) {
-                          _selectedApps = apps;
-                        },
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-            if (_hasPermissionIssues)
-              IconButton(
-                icon: const Icon(
-                  Icons.warning,
-                  color: AppTheme.destructive,
                 ),
-                onPressed: _showPermissionStatus,
-                tooltip: '权限缺失',
-              ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () async {
-                await _refreshPermissions();
-                await _loadData(soft: true);
-              },
-              tooltip: '刷新数据和权限状态',
+                
+                // 搜索框右侧的图标：加号和开关按钮（或权限不足时的三角感叹图标）
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: '选择监控应用',
+                  onPressed: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(
+                            title: const Text('选择监控应用'),
+                            actions: [
+                              TextButton(
+                                onPressed: () async {
+                                  await _appService.saveSelectedApps(_selectedApps);
+                                  if (mounted) Navigator.of(context).pop();
+                                  await _loadData(soft: true);
+                                },
+                                child: const Text('完成'),
+                              ),
+                            ],
+                          ),
+                          body: AppSelectionWidget(
+                            displayAsList: true,
+                            onSelectionChanged: (apps) {
+                              _selectedApps = apps;
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                if (_hasPermissionIssues)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.warning,
+                      color: AppTheme.destructive,
+                    ),
+                    onPressed: _showPermissionStatus,
+                    tooltip: '权限缺失',
+                  )
+                else
+                  Switch(
+                    value: _screenshotEnabled,
+                    onChanged: (value) => _toggleScreenshotEnabled(),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+              ],
             ),
-            IconButton(
-              icon: Icon(widget.themeService.themeModeIcon),
-              onPressed: () async {
-                await widget.themeService.toggleTheme();
-              },
-              tooltip: widget.themeService.themeModeDescription,
-            ),
-          ] else ...[
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _selectionMode = false;
+        actions: _selectionMode ? [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _selectionMode = false;
+                _selectedPackages.clear();
+              });
+            },
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                if (_selectedPackages.length == _selectedApps.length) {
                   _selectedPackages.clear();
-                });
-              },
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  if (_selectedPackages.length == _selectedApps.length) {
-                    _selectedPackages.clear();
-                  } else {
-                    _selectedPackages
-                      ..clear()
-                      ..addAll(_selectedApps.map((a) => a.packageName));
-                  }
-                });
-              },
-              child: const Text('全选'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline),
-              tooltip: '移除监测',
-              onPressed: _selectedPackages.isEmpty ? null : _removeSelectedApps,
-            ),
-          ],
-        ],
+                } else {
+                  _selectedPackages
+                    ..clear()
+                    ..addAll(_selectedApps.map((a) => a.packageName));
+                }
+              });
+            },
+            child: const Text('全选'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            tooltip: '移除监测',
+            onPressed: _selectedPackages.isEmpty ? null : _removeSelectedApps,
+          ),
+        ] : null,
       ),
       body: RefreshIndicator(
         onRefresh: () => _loadData(soft: true),

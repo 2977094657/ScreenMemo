@@ -6,6 +6,7 @@ import '../widgets/ui_components.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../services/screenshot_database.dart';
+import '../services/app_selection_service.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -20,11 +21,13 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver {
   final PermissionService _permissionService = PermissionService.instance;
   final ScreenshotDatabase _screenshotDatabase = ScreenshotDatabase.instance;
+  final AppSelectionService _appService = AppSelectionService.instance;
 
   Map<String, bool> _permissions = {};
   Map<String, bool> _keepAlivePermissions = {};
   bool _isLoading = true;
   bool _isLoadingKeepAlive = true;
+  int _screenshotInterval = 5;
 
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
@@ -36,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadAllPermissions();
+    _loadScreenshotInterval();
   }
 
   @override
@@ -589,6 +593,17 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
                 const SizedBox(height: AppTheme.spacing6),
 
+                // 截屏设置
+                _buildSection(
+                  context: context,
+                  title: '截屏设置',
+                  children: [
+                    _buildScreenshotIntervalItem(context),
+                  ],
+                ),
+
+                const SizedBox(height: AppTheme.spacing6),
+
                 // 数据与备份
                 _buildSection(
                   context: context,
@@ -798,6 +813,231 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     );
   }
 
+  Widget _buildScreenshotIntervalItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.timer,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '截屏间隔',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '当前间隔：$_screenshotInterval秒',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showIntervalDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Future<void> _loadScreenshotInterval() async {
+    final interval = await _appService.getScreenshotInterval();
+    if (mounted) {
+      setState(() {
+        _screenshotInterval = interval;
+      });
+    }
+  }
 
+  Future<void> _updateScreenshotInterval(int interval) async {
+    await _appService.saveScreenshotInterval(interval);
+    setState(() {
+      _screenshotInterval = interval;
+    });
+  }
+
+  void _showIntervalDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _screenshotInterval.toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(AppTheme.spacing6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    ),
+                    child: const Icon(
+                      Icons.timer,
+                      color: AppTheme.primary,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Text(
+                    '设置截屏间隔',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: AppTheme.spacing4),
+
+              // 输入框
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: '间隔时间（秒）',
+                    hintText: '请输入大于等于1的数字',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    labelStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: AppTheme.fontSizeBase,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppTheme.spacing3),
+
+              // 提示信息
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacing3),
+                decoration: BoxDecoration(
+                  color: AppTheme.info.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: AppTheme.info,
+                      size: 16,
+                    ),
+                    const SizedBox(width: AppTheme.spacing2),
+                    const Expanded(
+                      child: Text(
+                        '最小值为1秒，无最大值限制',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.info,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppTheme.spacing5),
+
+              // 按钮
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  UIButton(
+                    text: '取消',
+                    variant: UIButtonVariant.outline,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  UIButton(
+                    text: '确定',
+                    onPressed: () async {
+                      final input = controller.text.trim();
+                      final interval = int.tryParse(input);
+
+                      if (interval == null || interval < 1) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('请输入大于等于1的有效数字'),
+                            backgroundColor: AppTheme.destructive,
+                          ),
+                        );
+                        return;
+                      }
+
+                      await _updateScreenshotInterval(interval);
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('截屏间隔已设置为 $interval秒'),
+                            backgroundColor: AppTheme.success,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
