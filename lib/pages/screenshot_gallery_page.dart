@@ -37,6 +37,24 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   static const String _screenshotsCacheTsKeyPrefix = 'screenshots_cache_ts_';
   static const int _screenshotsCacheTtlSeconds = 300; // 仅影响截图列表，不影响首页统计
 
+  // 时间线滚动条交互状态
+  bool _timelineActive = false; // 是否正在与时间线交互（长按或拖拽）
+  double _timelineFraction = 0.0; // 拖动时的归一化位置 0..1
+  final GlobalKey _gridKey = GlobalKey(); // 获取网格可见区域以计算首个可见项
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScrollChanged);
+  }
+
+  void _onScrollChanged() {
+    // 非交互状态下，同步刷新以更新时间线拇指位置
+    if (!_timelineActive && mounted) {
+      setState(() {});
+    }
+  }
+
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
   String _buildHeaderStatsText() {
     final count = _screenshots.length;
@@ -109,6 +127,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         setState(() {
           _screenshots = cachedScreenshots;
           _isLoading = false;
+          _itemKeys.clear();
         });
         // 后台刷新缓存
         _refreshScreenshotsCache();
@@ -162,6 +181,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     setState(() {
       _screenshots = screenshots;
       _isLoading = false;
+      _itemKeys.clear();
     });
 
     // 保存到缓存
@@ -217,6 +237,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       if (screenshots.length != _screenshots.length) {
         setState(() {
           _screenshots = screenshots;
+          _itemKeys.clear();
         });
       }
     } catch (e) {
@@ -493,26 +514,34 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   }
 
   Widget _buildGalleryGrid() {
-    return Padding(
-      padding: const EdgeInsets.all(AppTheme.spacing1), // 减少外边距
-      child: GridView.builder(
-        key: PageStorageKey<String>('screenshot_gallery_grid_$_packageName'),
-        controller: _scrollController,
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppTheme.spacing1), // 减少外边距
+          child: Container(
+            key: _gridKey,
+            child: GridView.builder(
+              key: PageStorageKey<String>('screenshot_gallery_grid_$_packageName'),
+              controller: _scrollController,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+              ),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: AppTheme.spacing1, // 减少间距
+                mainAxisSpacing: AppTheme.spacing1, // 减少间距
+                childAspectRatio: 0.45, // 显著增加图片高度，确保图片显示完整
+              ),
+              itemCount: _screenshots.length,
+              itemBuilder: (context, index) {
+                final screenshot = _screenshots[index];
+                return _buildScreenshotItem(screenshot, index);
+              },
+            ),
+          ),
         ),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: AppTheme.spacing1, // 减少间距
-          mainAxisSpacing: AppTheme.spacing1, // 减少间距
-          childAspectRatio: 0.45, // 显著增加图片高度，确保图片显示完整
-        ),
-        itemCount: _screenshots.length,
-        itemBuilder: (context, index) {
-            final screenshot = _screenshots[index];
-            return _buildScreenshotItem(screenshot, index);
-        },
-      ),
+        _buildTimelineOverlay(),
+      ],
     );
   }
 
@@ -534,7 +563,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     final file = File(absolutePath);
 
     final isSelected = _selectionMode && screenshot.id != null && _selectedIds.contains(screenshot.id);
-    return GestureDetector(
+    final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
+    final item = GestureDetector(
       onTap: () {
         if (_selectionMode) {
           _toggleSelect(index);
@@ -650,6 +680,200 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         ],
       ),
     );
+    return KeyedSubtree(key: itemKey, child: item);
+  }
+
+  // 构建右侧时间线滚动条与时间提示
+  Widget _buildTimelineOverlay() {
+    // 仅在有数据时展示时间线
+    if (_screenshots.isEmpty) return const SizedBox.shrink();
+    const double gestureWidth = 44; // 右侧可交互区域宽度
+    const double trackWidth = 3; // 可见轨道宽度
+    const double thumbHeight = 32; // 拇指高度
+    const double labelHeight = 28; // 时间标签高度（用于定位）
+
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double viewHeight = constraints.maxHeight;
+          // 与网格保持一致的底部边距：外层 Padding + GridView 的 bottom padding
+          final double bottomMargin = MediaQuery.of(context).padding.bottom + AppTheme.spacing6 + AppTheme.spacing1;
+          final double trackHeight = (viewHeight - bottomMargin).clamp(0, viewHeight);
+          final double currentFraction = _timelineActive ? _timelineFraction : _currentScrollFraction();
+          final double clampedFraction = currentFraction < 0 ? 0 : (currentFraction > 1 ? 1 : currentFraction);
+          final double thumbTop = clampedFraction * (trackHeight - thumbHeight);
+
+          final int firstVisibleIndex = _getFirstVisibleIndex();
+          final String timeLabel = firstVisibleIndex >= 0 && firstVisibleIndex < _screenshots.length
+              ? _formatTimelineTime(_screenshots[firstVisibleIndex].captureTime)
+              : '';
+
+          return Stack(
+            children: [
+              // 交互区域
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: bottomMargin,
+                width: gestureWidth,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragStart: (details) {
+                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                  },
+                  onVerticalDragUpdate: (details) {
+                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                  },
+                  onVerticalDragEnd: (_) {
+                    setState(() {
+                      _timelineActive = false;
+                    });
+                  },
+                  onLongPressStart: (details) {
+                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                  },
+                  onLongPressMoveUpdate: (details) {
+                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                  },
+                  onLongPressEnd: (_) {
+                    setState(() {
+                      _timelineActive = false;
+                    });
+                  },
+                  child: Stack(
+                    children: [
+                      // 轨道
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          width: trackWidth,
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.25),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      // 拇指（与轨道右对齐）
+                      Positioned(
+                        right: 0,
+                        top: thumbTop,
+                        child: Container(
+                          width: trackWidth,
+                          height: thumbHeight,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade600,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_timelineActive)
+                Positioned(
+                  right: gestureWidth + 8,
+                  top: (clampedFraction * (trackHeight - labelHeight)).clamp(0, trackHeight - labelHeight),
+                  child: Container(
+                    height: labelHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(6), // 小圆角，无阴影
+                      border: Border.all(color: Theme.of(context).dividerColor, width: 1),
+                    ),
+                    child: Text(
+                      timeLabel,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // 激活时间线并根据手指位置滚动
+  void _activateTimelineWithLocalY(double localY, double viewHeight) {
+    final double raw = localY / (viewHeight <= 0 ? 1 : viewHeight);
+    final double fraction = raw < 0 ? 0 : (raw > 1 ? 1 : raw);
+    setState(() {
+      _timelineActive = true;
+      _timelineFraction = fraction;
+    });
+    _scrollToFraction(fraction);
+  }
+
+  // 当前滚动位置归一化 [0,1]
+  double _currentScrollFraction() {
+    if (!_scrollController.hasClients) return 0.0;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    if (maxExtent <= 0) return 0.0;
+    final pixels = _scrollController.position.pixels;
+    final double f = pixels / maxExtent;
+    return f < 0 ? 0 : (f > 1 ? 1 : f);
+  }
+
+  // 滚动到对应归一化位置
+  void _scrollToFraction(double fraction) {
+    if (!_scrollController.hasClients) return;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    final target = (fraction < 0 ? 0 : (fraction > 1 ? 1 : fraction)) * maxExtent;
+    _scrollController.jumpTo(target);
+  }
+
+  // 获取网格视口矩形（全局坐标）
+  Rect? _getGridViewportRect() {
+    final ctx = _gridKey.currentContext;
+    if (ctx == null) return null;
+    final render = ctx.findRenderObject();
+    if (render is! RenderBox) return null;
+    final topLeft = render.localToGlobal(Offset.zero);
+    return topLeft & render.size;
+  }
+
+  // 计算当前视口内第一张可见截图的索引
+  int _getFirstVisibleIndex() {
+    final viewport = _getGridViewportRect();
+    if (viewport == null) return 0;
+    int? firstIdx;
+    double? minTop;
+    _itemKeys.forEach((index, key) {
+      final context = key.currentContext;
+      if (context == null) return;
+      final render = context.findRenderObject();
+      if (render is! RenderBox) return;
+      final rect = render.localToGlobal(Offset.zero) & render.size;
+      final bool visible = rect.bottom > viewport.top && rect.top < viewport.bottom;
+      if (!visible) return;
+      if (minTop == null || rect.top < minTop!) {
+        minTop = rect.top;
+        firstIdx = index;
+      }
+    });
+    return firstIdx ?? 0;
+  }
+
+  // 时间线标签格式化（当天/本年/跨年）
+  String _formatTimelineTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final bool sameDay = now.year == dateTime.year && now.month == dateTime.month && now.day == dateTime.day;
+    final bool sameYear = now.year == dateTime.year;
+    String hh = dateTime.hour.toString().padLeft(2, '0');
+    String mm = dateTime.minute.toString().padLeft(2, '0');
+    if (sameDay) {
+      return '$hh:$mm';
+    } else if (sameYear) {
+      return '${dateTime.month}月${dateTime.day}日 $hh:$mm';
+    } else {
+      return '${dateTime.year}年${dateTime.month}月${dateTime.day}日 $hh:$mm';
+    }
   }
 
   void _toggleSelect(int index) {
