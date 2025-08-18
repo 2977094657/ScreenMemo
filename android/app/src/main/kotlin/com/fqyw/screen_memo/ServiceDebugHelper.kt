@@ -5,6 +5,9 @@ import android.content.Context
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -21,58 +24,82 @@ object ServiceDebugHelper {
      */
     fun isAccessibilityServiceEnabledInSystem(context: Context): Boolean {
         return try {
-            // 检查辅助功能是否总体启用
+            // 1) 检查辅助功能总开关
             val accessibilityEnabled = Settings.Secure.getInt(
                 context.contentResolver,
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 0
             ) == 1
-
             FileLogger.d(TAG, "系统辅助功能启用状态: $accessibilityEnabled")
-
             if (!accessibilityEnabled) {
                 FileLogger.d(TAG, "系统辅助功能未启用")
                 return false
             }
 
-            // 检查我们的服务是否在已启用的服务列表中
-            val enabledServices = Settings.Secure.getString(
+            val targetPkg = context.packageName
+            val targetCls = ScreenCaptureAccessibilityService::class.java.name
+
+            // 2) 从 Settings 读取并“规范化”每个条目后再比对
+            val enabledServicesRaw = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            )
+            ) ?: ""
+            FileLogger.d(TAG, "已启用的服务列表: $enabledServicesRaw")
 
-            FileLogger.d(TAG, "已启用的服务列表: $enabledServices")
-
-            if (enabledServices.isNullOrEmpty()) {
-                FileLogger.d(TAG, "没有启用的辅助功能服务")
-                return false
-            }
-
-            val serviceName = "${context.packageName}/${ScreenCaptureAccessibilityService::class.java.name}"
-            FileLogger.d(TAG, "我们的服务名: $serviceName")
-
-            val colonSplitter = TextUtils.SimpleStringSplitter(':')
-            colonSplitter.setString(enabledServices)
-
-            while (colonSplitter.hasNext()) {
-                val componentName = colonSplitter.next()
-                FileLogger.d(TAG, "检查服务组件: $componentName")
-                if (componentName.equals(serviceName, ignoreCase = true)) {
-                    FileLogger.d(TAG, "AccessibilityService在系统中已启用: $serviceName")
-                    return true
+            var isEnabledInSettings = false
+            if (enabledServicesRaw.isNotEmpty()) {
+                val colonSplitter = TextUtils.SimpleStringSplitter(':')
+                colonSplitter.setString(enabledServicesRaw)
+                while (colonSplitter.hasNext()) {
+                    val entry = colonSplitter.next()
+                    // 使用 ComponentName 解析：可自动处理诸如 ".Class" 的短类名
+                    val cn = ComponentName.unflattenFromString(entry)
+                    if (cn != null) {
+                        val pkg = cn.packageName
+                        val cls = cn.className // 若为短类名将被还原为完整限定名
+                        FileLogger.d(TAG, "检查服务组件: $entry -> 规范化: ${pkg}/${cls}")
+                        if (pkg.equals(targetPkg, true) && cls.equals(targetCls, true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    } else {
+                        // 兜底：直接比较可能存在的两种字符串形式
+                        val expectedFull = "$targetPkg/$targetCls"
+                        val expectedShort = "$targetPkg/.${ScreenCaptureAccessibilityService::class.java.simpleName}"
+                        if (entry.equals(expectedFull, ignoreCase = true) || entry.equals(expectedShort, ignoreCase = true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    }
                 }
             }
 
-            FileLogger.d(TAG, "AccessibilityService在系统中未启用")
-            FileLogger.d(TAG, "完整对比 - 期望: $serviceName")
-            FileLogger.d(TAG, "完整对比 - 实际: $enabledServices")
-            return false
+            // 3) 通过 AccessibilityManager 再次核对
+            var isEnabledInManager = false
+            try {
+                val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+                val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                isEnabledInManager = list.any { info ->
+                    val si = info.resolveInfo.serviceInfo
+                    si.packageName.equals(targetPkg, true) && si.name.equals(targetCls, true)
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "通过AccessibilityManager检查失败: ${e.message}")
+            }
+
+            val result = isEnabledInSettings || isEnabledInManager
+            FileLogger.d(TAG, "系统启用检查 - Settings: $isEnabledInSettings, Manager: $isEnabledInManager, 最终: $result")
+            if (!result) {
+                FileLogger.d(TAG, "完整对比 - 期望: $targetPkg/$targetCls")
+                FileLogger.d(TAG, "完整对比 - 实际: $enabledServicesRaw")
+            }
+            result
         } catch (e: Exception) {
             FileLogger.e(TAG, "检查AccessibilityService系统状态失败", e)
-            return false
+            false
         }
     }
-    
+
     /**
      * 检查服务进程是否在运行
      */

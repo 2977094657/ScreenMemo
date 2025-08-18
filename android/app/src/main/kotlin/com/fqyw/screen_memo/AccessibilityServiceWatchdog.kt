@@ -171,14 +171,40 @@ object AccessibilityServiceWatchdog {
                 return false
             }
             
-            val enabledServices = Settings.Secure.getString(
+            val enabledServicesRaw = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: ""
-            
-            val serviceName = "${context.packageName}/${ScreenCaptureAccessibilityService::class.java.name}"
-            val isEnabledInSettings = enabledServices.contains(serviceName)
-            
+
+            val targetPkg = context.packageName
+            val targetCls = ScreenCaptureAccessibilityService::class.java.name
+
+            // 对 Settings 中的条目进行规范化后再比对，避免短类名误判
+            var isEnabledInSettings = false
+            if (enabledServicesRaw.isNotEmpty()) {
+                val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+                colonSplitter.setString(enabledServicesRaw)
+                while (colonSplitter.hasNext()) {
+                    val entry = colonSplitter.next()
+                    val cn = ComponentName.unflattenFromString(entry)
+                    if (cn != null) {
+                        val pkg = cn.packageName
+                        val cls = cn.className
+                        if (pkg.equals(targetPkg, true) && cls.equals(targetCls, true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    } else {
+                        val expectedFull = "$targetPkg/$targetCls"
+                        val expectedShort = "$targetPkg/.${ScreenCaptureAccessibilityService::class.java.simpleName}"
+                        if (entry.equals(expectedFull, true) || entry.equals(expectedShort, true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    }
+                }
+            }
+
             // 方法2: 通过AccessibilityManager验证
             val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
             val enabledServicesList = accessibilityManager.getEnabledAccessibilityServiceList(
