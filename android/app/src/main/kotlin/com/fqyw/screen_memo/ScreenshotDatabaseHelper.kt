@@ -49,6 +49,19 @@ object ScreenshotDatabaseHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_app_package_name ON screenshots(app_package_name)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_capture_time ON screenshots(capture_time)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_is_deleted ON screenshots(is_deleted)")
+        // 聚合统计表
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS app_stats (
+              app_package_name TEXT PRIMARY KEY,
+              app_name TEXT NOT NULL,
+              total_count INTEGER NOT NULL DEFAULT 0,
+              total_size INTEGER NOT NULL DEFAULT 0,
+              last_capture_time INTEGER
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_app_stats_last ON app_stats(last_capture_time)")
     }
 
     private fun isFilePathExists(db: SQLiteDatabase, filePath: String): Boolean {
@@ -100,6 +113,23 @@ object ScreenshotDatabaseHelper {
             }
 
             db.insert("screenshots", null, values)
+            // 增量维护 app_stats（SQLite 3.24+支持UPSERT；老设备忽略）
+            try {
+                db.execSQL(
+                    """
+                    INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
+                    VALUES (?, ?, 1, ?, ?)
+                    ON CONFLICT(app_package_name) DO UPDATE SET
+                      app_name=excluded.app_name,
+                      total_count=app_stats.total_count + 1,
+                      total_size=app_stats.total_size + excluded.total_size,
+                      last_capture_time=CASE WHEN excluded.last_capture_time > app_stats.last_capture_time THEN excluded.last_capture_time ELSE app_stats.last_capture_time END
+                    """.trimIndent(),
+                    arrayOf(appPackageName, appName, fileSize, captureTimeMillis)
+                )
+            } catch (_: Exception) {
+                // 忽略
+            }
             db.close()
         } catch (_: Exception) {
             // 忽略原生侧入库异常，不影响截屏主流程

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_dialog.dart';
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
 import '../services/screenshot_service.dart';
@@ -152,32 +153,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
     print('从数据库获取到 ${screenshots.length} 张截图');
 
-    // 检查实际文件是否存在
-    for (int i = 0; i < screenshots.length; i++) {
-      final screenshot = screenshots[i];
-      final absolutePath = screenshot.filePath;
-      final file = File(absolutePath);
-      final exists = await file.exists();
-      print('截图 ${i + 1}: $absolutePath - 文件存在: $exists');
-    }
-
-    // 同时检查预期的截图目录
-    if (_baseDir != null) {
-      final expectedDir = Directory('${_baseDir!.path}/output/screen/$_packageName');
-      print('检查预期目录: ${expectedDir.path}');
-      if (await expectedDir.exists()) {
-        final files = await expectedDir.list().toList();
-        print('目录中实际文件数量: ${files.length}');
-        for (final file in files) {
-          if (file is File && file.path.toLowerCase().endsWith('.png')) {
-            print('发现PNG文件: ${file.path}');
-          }
-        }
-      } else {
-        print('预期目录不存在');
-      }
-    }
-
     setState(() {
       _screenshots = screenshots;
       _isLoading = false;
@@ -274,26 +249,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   }
 
   Future<void> _deleteScreenshot(ScreenshotRecord screenshot) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showUIDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: const Text('确认删除'),
-        content: const Text('确定要删除这张截图吗？此操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消', style: TextStyle(color: AppTheme.mutedForeground)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除', style: TextStyle(color: AppTheme.destructive)),
-          ),
-        ],
-      ),
+      title: '确认删除',
+      message: '确定要删除这张截图吗？此操作无法撤销。',
+      actions: const [
+        UIDialogAction<bool>(text: '取消', result: false),
+        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+      ],
+      barrierDismissible: false,
     );
 
     if (confirmed == true && screenshot.id != null) {
@@ -586,11 +550,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
             child: Builder(
               builder: (context) {
                 final isDark = Theme.of(context).brightness == Brightness.dark;
-                final imageWidget = Image.file(
-                  file,
+                // 使用按视口尺寸下采样的缩略图以提升快速拖动时的首帧显示速度
+                final screenWidth = MediaQuery.of(context).size.width;
+                // 计算两列网格每项的近似逻辑宽度（外边距+列间距近似处理）
+                final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
+                final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
+                final imageProvider = ResizeImage(FileImage(file), width: targetWidth);
+                final imageWidget = Image(
+                  image: imageProvider,
                   width: double.infinity,
                   height: double.infinity,
-                  fit: BoxFit.cover, // 使用cover填满容器
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) {
                     print("图片加载失败: $error, path: ${file.path}");
                     return _buildErrorItem('图片丢失或损坏');
@@ -907,26 +879,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showUIDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: const Text('确认删除'),
-        content: Text('将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除', style: TextStyle(color: AppTheme.destructive)),
-          ),
-        ],
-      ),
+      title: '确认删除',
+      message: '将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？',
+      actions: const [
+        UIDialogAction<bool>(text: '取消', result: false),
+        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+      ],
+      barrierDismissible: false,
     );
 
     if (confirmed != true) return;

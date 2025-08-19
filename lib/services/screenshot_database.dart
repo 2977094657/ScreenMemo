@@ -41,7 +41,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 1,
+          version: 2,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -55,7 +55,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 1,
+          version: 2,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -70,7 +70,7 @@ class ScreenshotDatabase {
       
       final db = await openDatabase(
         path,
-        version: 1,
+        version: 2,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -119,12 +119,43 @@ class ScreenshotDatabase {
     await db.execute('CREATE INDEX idx_app_package_name ON screenshots(app_package_name)');
     await db.execute('CREATE INDEX idx_capture_time ON screenshots(capture_time)');
     await db.execute('CREATE INDEX idx_is_deleted ON screenshots(is_deleted)');
+
+    // 聚合统计表（每个应用一行，避免首页实时 SUM/COUNT）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_stats (
+        app_package_name TEXT PRIMARY KEY,
+        app_name TEXT NOT NULL,
+        total_count INTEGER NOT NULL DEFAULT 0,
+        total_size INTEGER NOT NULL DEFAULT 0,
+        last_capture_time INTEGER
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_app_stats_last ON app_stats(last_capture_time)');
   }
 
   /// 升级数据库
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // 未来版本升级时的处理逻辑
     print('数据库从版本 $oldVersion 升级到 $newVersion');
+    if (oldVersion < 2) {
+      // 新增 app_stats 表并用历史数据回填
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS app_stats (
+          app_package_name TEXT PRIMARY KEY,
+          app_name TEXT NOT NULL,
+          total_count INTEGER NOT NULL DEFAULT 0,
+          total_size INTEGER NOT NULL DEFAULT 0,
+          last_capture_time INTEGER
+        )
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_app_stats_last ON app_stats(last_capture_time)');
+      await db.execute('DELETE FROM app_stats');
+      await db.execute('''
+        INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
+        SELECT app_package_name, app_name, COUNT(*), COALESCE(SUM(file_size),0), MAX(capture_time)
+        FROM screenshots
+        GROUP BY app_package_name, app_name
+      ''');
+    }
   }
 
   /// 检查文件路径是否已存在于数据库中
@@ -161,6 +192,14 @@ class ScreenshotDatabase {
 
       final recordWithSize = record.copyWith(fileSize: actualFileSize);
       final id = await db.insert('screenshots', recordWithSize.toMap());
+      // 增量维护聚合表
+      await _upsertAppStatOnInsert(
+        db,
+        recordWithSize.appPackageName,
+        recordWithSize.appName,
+        actualFileSize,
+        recordWithSize.captureTime.millisecondsSinceEpoch,
+      );
       print('截屏记录已插入数据库: ${record.appName} - ${record.filePath}');
       return id;
     } catch (e) {
@@ -179,6 +218,13 @@ class ScreenshotDatabase {
 
       final recordWithSize = record.copyWith(fileSize: actualFileSize);
       final id = await db.insert('screenshots', recordWithSize.toMap());
+      await _upsertAppStatOnInsert(
+        db,
+        recordWithSize.appPackageName,
+        recordWithSize.appName,
+        actualFileSize,
+        recordWithSize.captureTime.millisecondsSinceEpoch,
+      );
       print('截屏记录已插入数据库: ${record.appName} - ${record.filePath}');
       return id;
     } catch (e) {
@@ -211,15 +257,10 @@ class ScreenshotDatabase {
     StartupProfiler.begin('ScreenshotDatabase.getScreenshotStatistics');
     final db = await database;
     try {
+      // 优先读取聚合表，避免每次实时聚合
       final maps = await db.rawQuery('''
-        SELECT
-          app_package_name,
-          app_name,
-          COUNT(*) as total_count,
-          MAX(capture_time) as last_capture_time,
-          SUM(file_size) as total_size
-        FROM screenshots
-        GROUP BY app_package_name, app_name
+        SELECT app_package_name, app_name, total_count, last_capture_time, total_size
+        FROM app_stats
         ORDER BY last_capture_time DESC
       ''');
 
@@ -239,7 +280,35 @@ class ScreenshotDatabase {
       return statistics;
     } catch (e) {
       print('获取截屏统计失败: $e');
-      return {};
+      // 兼容回退：如聚合表不存在则走旧逻辑
+      try {
+        final fallback = await db.rawQuery('''
+          SELECT
+            app_package_name,
+            app_name,
+            COUNT(*) as total_count,
+            MAX(capture_time) as last_capture_time,
+            SUM(file_size) as total_size
+          FROM screenshots
+          GROUP BY app_package_name, app_name
+          ORDER BY last_capture_time DESC
+        ''');
+        final statistics = <String, Map<String, dynamic>>{};
+        for (final map in fallback) {
+          final packageName = map['app_package_name'] as String;
+          statistics[packageName] = {
+            'appName': map['app_name'] as String,
+            'totalCount': map['total_count'] as int,
+            'lastCaptureTime': map['last_capture_time'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(map['last_capture_time'] as int)
+                : null,
+            'totalSize': map['total_size'] as int,
+          };
+        }
+        return statistics;
+      } catch (_) {
+        return {};
+      }
     }
     finally {
       StartupProfiler.end('ScreenshotDatabase.getScreenshotStatistics');
@@ -294,7 +363,7 @@ class ScreenshotDatabase {
       // 首先获取文件路径
       final maps = await db.query(
         'screenshots',
-        columns: ['file_path'],
+        columns: ['file_path', 'app_package_name'],
         where: 'id = ?',
         whereArgs: [id],
         limit: 1,
@@ -306,6 +375,7 @@ class ScreenshotDatabase {
       }
 
       final filePath = maps.first['file_path'] as String;
+      final packageName = maps.first['app_package_name'] as String;
 
       // 删除数据库记录
       final result = await db.delete(
@@ -328,6 +398,8 @@ class ScreenshotDatabase {
           // 文件删除失败不影响数据库删除的成功状态
           print('删除文件失败，但数据库记录已删除: $fileError');
         }
+        // 重新计算该应用的聚合统计
+        await _recomputeAppStatForPackage(db, packageName);
         return true;
       } else {
         return false;
@@ -385,6 +457,51 @@ class ScreenshotDatabase {
     if (db != null) {
       await db.close();
       _database = null;
+    }
+  }
+
+  // ======= 聚合表维护辅助 =======
+  Future<void> _upsertAppStatOnInsert(Database db, String package, String appName, int fileSize, int captureTime) async {
+    try {
+      await db.execute('''
+        INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
+        VALUES (?, ?, 1, ?, ?)
+        ON CONFLICT(app_package_name) DO UPDATE SET
+          app_name=excluded.app_name,
+          total_count=app_stats.total_count + 1,
+          total_size=app_stats.total_size + excluded.total_size,
+          last_capture_time=CASE WHEN excluded.last_capture_time > app_stats.last_capture_time THEN excluded.last_capture_time ELSE app_stats.last_capture_time END
+      ''', [package, appName, fileSize, captureTime]);
+    } catch (e) {
+      // 如设备SQLite不支持UPSERT，退化为全量重算
+      await _recomputeAppStatForPackage(db, package);
+    }
+  }
+
+  Future<void> _recomputeAppStatForPackage(Database db, String package) async {
+    try {
+      final rows = await db.rawQuery(
+        'SELECT app_package_name, MAX(app_name) as app_name, COUNT(*) as c, COALESCE(SUM(file_size),0) as s, MAX(capture_time) as t FROM screenshots WHERE app_package_name = ? GROUP BY app_package_name',
+        [package],
+      );
+      if (rows.isEmpty) {
+        await db.delete('app_stats', where: 'app_package_name = ?', whereArgs: [package]);
+        return;
+      }
+      final r = rows.first;
+      await db.execute(
+        '''INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(app_package_name) DO UPDATE SET app_name=excluded.app_name, total_count=excluded.total_count, total_size=excluded.total_size, last_capture_time=excluded.last_capture_time''',
+        [
+          r['app_package_name'],
+          r['app_name'],
+          r['c'],
+          r['s'],
+          r['t'],
+        ],
+      );
+    } catch (e) {
+      // 忽略
     }
   }
 
