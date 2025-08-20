@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/ui_dialog.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../services/screenshot_database.dart';
@@ -61,164 +62,65 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         final displayPath = (result['humanPath'] as String?) ?? (result['absolutePath'] as String?) ?? (result['displayPath'] as String?) ?? 'Download/ScreenMemo/screenshot_memo.db';
 
         // 成功对话框：中文提示 + 可复制路径
-        await showDialog(
+        await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (context) {
-            return Dialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AppTheme.spacing6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: AppTheme.success.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                          ),
-                          child: const Icon(Icons.check_circle_outline, color: AppTheme.success, size: 18),
-                        ),
-                        const SizedBox(width: AppTheme.spacing3),
-                        Text(
-                          '导出完成',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppTheme.spacing4),
-                    Text('文件已导出至：'),
-                    const SizedBox(height: AppTheme.spacing2),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(AppTheme.spacing3),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: Text(
-                        displayPath,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.spacing4),
-                    Row(
-                      children: [
-                        UIButton(
-                          text: '复制路径',
-                          variant: UIButtonVariant.outline,
-                          onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: displayPath));
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('已复制路径')),
-                              );
-                            }
-                          },
-                        ),
-                        const SizedBox(width: AppTheme.spacing3),
-                        UIButton(
-                          text: '确定',
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    )
-                  ],
+          title: '导出完成',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('文件已导出至：'),
+              const SizedBox(height: AppTheme.spacing2),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppTheme.spacing3),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Text(
+                  displayPath,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
-            );
-          },
+            ],
+          ),
+          actions: [
+            UIDialogAction(
+              text: '复制路径',
+              style: UIDialogActionStyle.normal,
+              closeOnPress: false,
+              onPressed: (ctx) async {
+                await Clipboard.setData(ClipboardData(text: displayPath));
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop();
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('已复制路径')),
+                  );
+                }
+              },
+            ),
+            const UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          ],
         );
       } else {
-        await showDialog(
+        await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (context) => Dialog(
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
-            child: Container(
-              padding: const EdgeInsets.all(AppTheme.spacing6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppTheme.destructive.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                        ),
-                        child: const Icon(Icons.error_outline, color: AppTheme.destructive, size: 18),
-                      ),
-                      const SizedBox(width: AppTheme.spacing3),
-                      Text('导出失败', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.spacing4),
-                  const Text('请稍后重试'),
-                  const SizedBox(height: AppTheme.spacing4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: UIButton(text: '确定', onPressed: () => Navigator.of(context).pop()),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          title: '导出失败',
+          message: '请稍后重试',
+          actions: const [UIDialogAction(text: '确定', style: UIDialogActionStyle.primary)],
         );
       }
     } catch (e) {
       if (!mounted) return;
-      await showDialog(
+      await showUIDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
-          child: Container(
-            padding: const EdgeInsets.all(AppTheme.spacing6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppTheme.destructive.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: const Icon(Icons.error_outline, color: AppTheme.destructive, size: 18),
-                    ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    Text('导出失败', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.spacing4),
-                Text('$e'),
-                const SizedBox(height: AppTheme.spacing4),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: UIButton(text: '确定', onPressed: () => Navigator.of(context).pop()),
-                ),
-              ],
-            ),
-          ),
-        ),
+        title: '导出失败',
+        content: Text('$e'),
+        actions: const [UIDialogAction(text: '确定', style: UIDialogActionStyle.primary)],
       );
     } finally {
       if (mounted) {
@@ -341,74 +243,15 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
   /// 显示自启动权限确认对话框
   Future<bool> _showAutoStartConfirmDialog() async {
-    return await showDialog<bool>(
+    return await showUIDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(AppTheme.spacing6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppTheme.info.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: const Icon(
-                        Icons.help_outline,
-                        color: AppTheme.info,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    Text(
-                      '确认权限设置',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.spacing4),
-                Text(
-                  '请确认您已在系统设置中完成自启动权限的配置。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppTheme.spacing4),
-                Row(
-                  children: [
-                    Expanded(
-                      child: UIButton(
-                        text: '未完成',
-                        onPressed: () => Navigator.of(context).pop(false),
-                        variant: UIButtonVariant.outline,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    Expanded(
-                      child: UIButton(
-                        text: '已完成',
-                        onPressed: () => Navigator.of(context).pop(true),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      title: '确认权限设置',
+      message: '请确认您已在系统设置中完成自启动权限的配置。',
+      actions: const [
+        UIDialogAction<bool>(text: '未完成', result: false),
+        UIDialogAction<bool>(text: '已完成', style: UIDialogActionStyle.primary, result: true),
+      ],
     ) ?? false;
   }
 
@@ -712,23 +555,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           ),
           const SizedBox(width: AppTheme.spacing2),
           if (isGranted)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing2,
-                vertical: AppTheme.spacing1,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: Text(
-                '已授权',
-                style: TextStyle(
-                  fontSize: AppTheme.fontSizeXs,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-              ),
+            Text(
+              '已授权',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             )
           else
             TextButton(
@@ -891,153 +722,89 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       text: _screenshotInterval.toString(),
     );
 
-    showDialog(
+    showUIDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(AppTheme.spacing6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    ),
-                    child: const Icon(
-                      Icons.timer,
-                      color: AppTheme.primary,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: AppTheme.spacing3),
-                  Text(
-                    '设置截屏间隔',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: AppTheme.spacing4),
-
-              // 输入框
-              Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      title: '设置截屏间隔',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: '间隔时间（秒）',
+                hintText: '请输入大于等于1的数字',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: '间隔时间（秒）',
-                    hintText: '请输入大于等于1的数字',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                    labelStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    hintStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: AppTheme.fontSizeBase,
-                  ),
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-
-              const SizedBox(height: AppTheme.spacing3),
-
-              // 提示信息
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacing3),
-                decoration: BoxDecoration(
-                  color: AppTheme.info.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: AppTheme.info,
-                      size: 16,
-                    ),
-                    const SizedBox(width: AppTheme.spacing2),
-                    const Expanded(
-                      child: Text(
-                        '最小值为1秒，无最大值限制',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.info,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: AppTheme.fontSizeBase,
               ),
-
-              const SizedBox(height: AppTheme.spacing5),
-
-              // 按钮
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  UIButton(
-                    text: '取消',
-                    variant: UIButtonVariant.outline,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: AppTheme.spacing3),
-                  UIButton(
-                    text: '确定',
-                    onPressed: () async {
-                      final input = controller.text.trim();
-                      final interval = int.tryParse(input);
-
-                      if (interval == null || interval < 1) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('请输入大于等于1的有效数字'),
-                            backgroundColor: AppTheme.destructive,
-                          ),
-                        );
-                        return;
-                      }
-
-                      await _updateScreenshotInterval(interval);
-                      if (mounted) {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('截屏间隔已设置为 $interval秒'),
-                            backgroundColor: AppTheme.success,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: const Text(
+              '最小值为1秒，默认值：5秒。',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.info,
+              ),
+            ),
+          ),
+        ],
       ),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final input = controller.text.trim();
+            final interval = int.tryParse(input);
+            if (interval == null || interval < 1) {
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(
+                  content: Text('请输入大于等于1的有效数字'),
+                  backgroundColor: AppTheme.destructive,
+                ),
+              );
+              return;
+            }
+            await _updateScreenshotInterval(interval);
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(
+                  content: Text('截屏间隔已设置为 $interval秒'),
+                  backgroundColor: AppTheme.success,
+                ),
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 }

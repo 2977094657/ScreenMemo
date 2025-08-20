@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_dialog.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/app_selection_widget.dart';
 import '../models/app_state.dart';
@@ -179,109 +180,52 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
   /// 显示自启动权限确认对话框
   Future<bool> _showAutoStartConfirmDialog() async {
-    return await showDialog<bool>(
+    return await showUIDialog<bool>(
       context: context,
-      barrierDismissible: false, // 不允许点击外部关闭
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      barrierDismissible: false,
+      title: '确认权限设置',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '您是否已经在系统设置中完成了"自启动权限"的配置？',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
-          child: Container(
-            padding: const EdgeInsets.all(AppTheme.spacing6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: AppTheme.spacing2),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Row(
               children: [
-                // 标题
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppTheme.info.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                      child: const Icon(
-                        Icons.help_outline,
-                        color: AppTheme.info,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    Text(
-                      '确认权限设置',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                const Icon(
+                  Icons.info_outline,
+                  color: AppTheme.info,
+                  size: 16,
                 ),
-
-                const SizedBox(height: AppTheme.spacing4),
-
-                // 内容
-                Text(
-                  '您是否已经在系统设置中完成了"自启动权限"的配置？',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-
-                const SizedBox(height: AppTheme.spacing2),
-
-                // 提示信息
-                Container(
-                  padding: const EdgeInsets.all(AppTheme.spacing3),
-                  decoration: BoxDecoration(
-                    color: AppTheme.info.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.info_outline,
-                        color: AppTheme.info,
-                        size: 16,
-                      ),
-                      const SizedBox(width: AppTheme.spacing2),
-                      Expanded(
-                        child: Text(
-                          '自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.info,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: AppTheme.spacing5),
-
-                // 按钮
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    UIButton(
-                      text: '还没有',
-                      variant: UIButtonVariant.outline,
-                      onPressed: () => Navigator.of(context).pop(false),
+                const SizedBox(width: AppTheme.spacing2),
+                Expanded(
+                  child: Text(
+                    '自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppTheme.info,
                     ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    UIButton(
-                      text: '已完成',
-                      onPressed: () => Navigator.of(context).pop(true),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ],
+      ),
+      actions: const [
+        UIDialogAction<bool>(text: '还没有', result: false),
+        UIDialogAction<bool>(text: '已完成', style: UIDialogActionStyle.primary, result: true),
+      ],
     ) ?? false;
   }
 
@@ -813,23 +757,11 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(width: AppTheme.spacing2), // 缩小间距
 
           if (isGranted)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing2,
-                vertical: AppTheme.spacing1,
-              ),
-              decoration: BoxDecoration(
-                color: AppTheme.success.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: Text(
-                '已授权',
-                style: TextStyle(
-                  fontSize: AppTheme.fontSizeXs,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+            Text(
+              '已授权',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             )
           else
             UIButton(

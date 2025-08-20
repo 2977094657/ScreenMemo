@@ -213,6 +213,8 @@ class AppSelectionService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_screenshotIntervalKey, interval);
       _screenshotInterval = interval;
+      // 同步写入原生读取的偏好，避免跨端读取不一致
+      await prefs.setInt('timed_screenshot_interval', interval);
     } catch (e) {
       print('保存截屏间隔失败: $e');
     }
@@ -222,7 +224,10 @@ class AppSelectionService {
   Future<int> getScreenshotInterval() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _screenshotInterval = prefs.getInt(_screenshotIntervalKey) ?? 5;
+      // 优先读通用键，确保与原生一致
+      _screenshotInterval = prefs.getInt(_screenshotIntervalKey)
+          ?? prefs.getInt('timed_screenshot_interval')
+          ?? 5;
       return _screenshotInterval;
     } catch (e) {
       print('获取截屏间隔失败: $e');

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_dialog.dart';
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../services/screenshot_service.dart';
@@ -74,26 +75,15 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   Future<void> _deleteCurrentImage() async {
     final screenshot = _screenshots[_currentIndex];
     
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showUIDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: const Text('确认删除'),
-        content: const Text('确定要删除这张截图吗？此操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消', style: TextStyle(color: AppTheme.mutedForeground)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除', style: TextStyle(color: AppTheme.destructive)),
-          ),
-        ],
-      ),
+      title: '确认删除',
+      message: '确定要删除这张截图吗？此操作无法撤销。',
+      actions: const [
+        UIDialogAction<bool>(text: '取消', result: false),
+        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+      ],
+      barrierDismissible: false,
     );
 
     if (confirmed == true && screenshot.id != null) {
@@ -150,41 +140,30 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     final screenshot = _screenshots[_currentIndex];
     final file = File(screenshot.filePath);
 
-    showDialog(
+    showUIDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: const Text('截图信息'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInfoRow('应用名称', screenshot.appName),
-            _buildInfoRow('截图时间', _formatDateTime(screenshot.captureTime)),
-            _buildInfoRow('文件路径', screenshot.filePath),
-            if (screenshot.fileSize > 0)
-              _buildInfoRow('文件大小', _formatFileSize(screenshot.fileSize)),
-            FutureBuilder<bool>(
-              future: file.exists(),
-              builder: (context, snapshot) {
-                return _buildInfoRow(
-                  '文件状态',
-                  snapshot.data == true ? '存在' : '不存在',
-                );
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('确定'),
+      title: '截图信息',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoRow('应用名称', screenshot.appName),
+          _buildInfoRow('截图时间', _formatDateTime(screenshot.captureTime)),
+          _buildInfoRow('文件路径', screenshot.filePath),
+          if (screenshot.fileSize > 0)
+            _buildInfoRow('文件大小', _formatFileSize(screenshot.fileSize)),
+          FutureBuilder<bool>(
+            future: file.exists(),
+            builder: (context, snapshot) {
+              return _buildInfoRow(
+                '文件状态',
+                snapshot.data == true ? '存在' : '不存在',
+              );
+            },
           ),
         ],
       ),
+      actions: const [UIDialogAction(text: '确定')],
     );
   }
 

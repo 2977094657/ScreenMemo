@@ -127,6 +127,11 @@ class ScreenshotService {
 
       // 直接尝试启动截屏服务（使用无障碍截屏，无需MediaProjection权限）
       print('尝试启动定时截屏服务...');
+      // 启动前先持久化一次间隔，确保原生端读取到一致值
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('timed_screenshot_interval', intervalSeconds);
+      } catch (_) {}
       final success = await _permissionService.startTimedScreenshot(intervalSeconds);
       
       if (success) {
@@ -163,6 +168,11 @@ class ScreenshotService {
       if (_isRunning) {
         // 重新启动服务以应用新间隔
         await _permissionService.stopTimedScreenshot();
+        // 启动前先持久化一次间隔，避免原生侧读到旧值
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('timed_screenshot_interval', intervalSeconds);
+        } catch (_) {}
         final success = await _permissionService.startTimedScreenshot(intervalSeconds);
         if (success) {
           _currentInterval = intervalSeconds;
@@ -172,6 +182,10 @@ class ScreenshotService {
       } else {
         _currentInterval = intervalSeconds;
         await _saveServiceState();
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('timed_screenshot_interval', intervalSeconds);
+        } catch (_) {}
         return true;
       }
     } catch (e) {

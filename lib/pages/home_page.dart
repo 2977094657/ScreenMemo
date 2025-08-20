@@ -7,6 +7,7 @@ import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/ui_dialog.dart';
 import '../widgets/app_selection_widget.dart';
 import 'settings_page.dart';
 
@@ -257,7 +258,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
       // 启动定时截屏
       try {
-        final success = await screenshotService.startScreenshotService(_screenshotInterval);
+        // 为避免初始值竞争，启用前总是读取一次持久化的间隔
+        final persistedInterval = await _appService.getScreenshotInterval();
+        if (mounted) {
+          setState(() {
+            _screenshotInterval = persistedInterval;
+          });
+        }
+        final success = await screenshotService.startScreenshotService(persistedInterval);
         if (!success) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -288,58 +296,39 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         }
 
         if (mounted) {
-          // 显示详细错误对话框
-          showDialog(
+          // 统一风格错误对话框
+          await showUIDialog<void>(
             context: context,
             barrierDismissible: false,
-              builder: (context) => AlertDialog(
-                backgroundColor: Theme.of(context).colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              ),
-              title: Row(
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: AppTheme.destructive,
-                    size: 24,
+            title: '启动失败',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  errorMessage,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.info.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  const SizedBox(width: 8),
-                  const Text('启动失败'),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    errorMessage,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.info.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      '提示：如果问题持续，请尝试重新启动应用或重新配置权限',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.info,
-                      ),
+                  child: const Text(
+                    '提示：如果问题持续，请尝试重新启动应用或重新配置权限',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.info,
                     ),
                   ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('确定'),
                 ),
               ],
             ),
+            actions: const [
+              UIDialogAction(text: '确定'),
+            ],
           );
         }
         return;
@@ -386,153 +375,89 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       text: _screenshotInterval.toString(),
     );
 
-    showDialog(
+    showUIDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(AppTheme.spacing6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    ),
-                    child: const Icon(
-                      Icons.timer,
-                      color: AppTheme.primary,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: AppTheme.spacing3),
-                  Text(
-                    '设置截屏间隔',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: AppTheme.spacing4),
-
-              // 输入框
-              Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      title: '设置截屏间隔',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: '间隔时间（秒）',
+                hintText: '请输入大于等于1的数字',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
                 ),
-                child: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: '间隔时间（秒）',
-                    hintText: '请输入大于等于1的数字',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                    labelStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    hintStyle: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: AppTheme.fontSizeBase,
-                  ),
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-
-              const SizedBox(height: AppTheme.spacing3),
-
-              // 提示信息
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacing3),
-                decoration: BoxDecoration(
-                  color: AppTheme.info.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: AppTheme.info,
-                      size: 16,
-                    ),
-                    const SizedBox(width: AppTheme.spacing2),
-                    const Expanded(
-                      child: Text(
-                        '最小值为1秒，无最大值限制',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.info,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: AppTheme.fontSizeBase,
               ),
-
-              const SizedBox(height: AppTheme.spacing5),
-
-              // 按钮
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  UIButton(
-                    text: '取消',
-                    variant: UIButtonVariant.outline,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: AppTheme.spacing3),
-                  UIButton(
-                    text: '确定',
-                    onPressed: () async {
-                      final input = controller.text.trim();
-                      final interval = int.tryParse(input);
-
-                      if (interval == null || interval < 1) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('请输入大于等于1的有效数字'),
-                            backgroundColor: AppTheme.destructive,
-                          ),
-                        );
-                        return;
-                      }
-
-                      await _updateScreenshotInterval(interval);
-                      if (mounted) {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('截屏间隔已设置为 $interval秒'),
-                            backgroundColor: AppTheme.success,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: const Text(
+              '最小值为1秒，默认值：5秒。',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.info,
+              ),
+            ),
+          ),
+        ],
       ),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final input = controller.text.trim();
+            final interval = int.tryParse(input);
+            if (interval == null || interval < 1) {
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(
+                  content: Text('请输入大于等于1的有效数字'),
+                  backgroundColor: AppTheme.destructive,
+                ),
+              );
+              return;
+            }
+            await _updateScreenshotInterval(interval);
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(
+                  content: Text('截屏间隔已设置为 $interval秒'),
+                  backgroundColor: AppTheme.success,
+                ),
+              );
+            }
+          },
+        ),
+      ],
     );
   }
 
@@ -678,89 +603,34 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       final permissions = await permissionService.checkAllPermissions();
 
       if (mounted) {
-        showDialog(
+        final action = await showUIDialog<String>(
           context: context,
           barrierDismissible: false,
-      builder: (context) => Dialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(AppTheme.spacing6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 标题
-                  Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppTheme.info.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                        ),
-                        child: const Icon(
-                          Icons.security,
-                          color: AppTheme.info,
-                          size: 18,
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.spacing3),
-                      Text(
-                        '权限状态检查',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: AppTheme.spacing4),
-
-                  // 权限列表
-                  _buildPermissionStatusItem('存储权限', permissions['storage'] ?? false),
-                  _buildPermissionStatusItem('通知权限', permissions['notification'] ?? false),
-                  _buildPermissionStatusItem('无障碍服务', permissions['accessibility'] ?? false),
-                  _buildPermissionStatusItem('屏幕录制权限', true), // 总是显示为已授权
-
-                  const SizedBox(height: AppTheme.spacing4),
-
-                  // 按钮
-                  Row(
-                    children: [
-                      Expanded(
-                        child: UIButton(
-                          text: '前往设置',
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            // 直接切换到底部导航的“设置”页
-                            // 通过通知上层Tab切换（使用Navigator推到MainNavigationPage时可传参，这里直接push一个到设置页的路由）
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => SettingsPage(themeService: widget.themeService),
-                              ),
-                            );
-                          },
-                          variant: UIButtonVariant.ghost,
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.spacing3),
-                      Expanded(
-                        child: UIButton(
-                          text: '确定',
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          title: '权限状态检查',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPermissionStatusItem('存储权限', permissions['storage'] ?? false),
+              _buildPermissionStatusItem('通知权限', permissions['notification'] ?? false),
+              _buildPermissionStatusItem('无障碍服务', permissions['accessibility'] ?? false),
+              _buildPermissionStatusItem('屏幕录制权限', true),
+            ],
           ),
+          actions: const [
+            UIDialogAction<String>(text: '前往设置', result: 'go_settings'),
+            UIDialogAction<String>(text: '确定', style: UIDialogActionStyle.primary, result: 'ok'),
+          ],
         );
+        if (!mounted) return;
+        if (action == 'go_settings') {
+          // 使用页面上下文进行导航，避免在对话框上下文已销毁时导航卡住
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => SettingsPage(themeService: widget.themeService),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -804,12 +674,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           const Spacer(),
           Text(
             granted ? '已授权' : '未授权',
-            style: TextStyle(
-              color: granted
-                  ? Theme.of(context).colorScheme.onSurfaceVariant
-                  : AppTheme.destructive,
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: granted
+                      ? Theme.of(context).colorScheme.onSurfaceVariant
+                      : AppTheme.destructive,
+                ),
           ),
         ],
       ),
@@ -1182,20 +1051,15 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   Future<void> _removeSelectedApps() async {
     final count = _selectedPackages.length;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showUIDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: const Text('移除监测'),
-        content: const Text('仅移除监测，不会删除对应图片。是否继续？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('移除')),
-        ],
-      ),
+      title: '移除监测',
+      message: '仅移除监测，不会删除对应图片。是否继续？',
+      actions: const [
+        UIDialogAction<bool>(text: '取消', result: false),
+        UIDialogAction<bool>(text: '移除', style: UIDialogActionStyle.destructive, result: true),
+      ],
+      barrierDismissible: false,
     );
     if (confirmed != true) return;
 
