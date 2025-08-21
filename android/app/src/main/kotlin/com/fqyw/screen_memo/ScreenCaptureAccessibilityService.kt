@@ -288,8 +288,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         instance = null
         isServiceRunning = false
 
-        // 停止截屏相关服务
-        stopTimedScreenshot()
+        // 停止截屏相关服务（保持持久化运行标记，不要清除以便自动恢复）
+        cancelTimedScreenshotSilently()
 
         // 停止前台应用检测
         stopForegroundAppDetection()

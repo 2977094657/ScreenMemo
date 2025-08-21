@@ -156,7 +156,12 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "startTimedScreenshot" -> {
-                    val interval = call.argument<Int>("interval") ?: 5
+                    // 统一从 SharedPreferences 读取一次持久化间隔，避免调用方传参不同步
+                    val intervalPersisted = try {
+                        val prefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        prefs.getInt("timed_screenshot_interval", 5)
+                    } catch (_: Exception) { 5 }
+                    val interval = call.argument<Int>("interval") ?: intervalPersisted
                     FileLogger.e(TAG, "=== 收到startTimedScreenshot请求，间隔: ${interval}秒 ===")
                     val success = startTimedScreenshot(interval)
                     FileLogger.e(TAG, "=== startTimedScreenshot结果: $success ===")
