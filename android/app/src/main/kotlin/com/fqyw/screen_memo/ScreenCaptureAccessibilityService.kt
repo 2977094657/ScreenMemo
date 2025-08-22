@@ -15,6 +15,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.Rect
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +27,10 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.Surface
+import android.hardware.display.DisplayManager
+import android.view.Display
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import java.io.File
 import java.io.FileOutputStream
@@ -230,7 +237,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     try {
                         val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
                         val wasRunning = sharedPrefs.getBoolean("timed_screenshot_was_running", false)
-                        val lastInterval = sharedPrefs.getInt("timed_screenshot_interval", 5)
+                        // 多键兜底恢复，避免某些路径只写了其一
+                        val lastInterval = run {
+                            val a = sharedPrefs.getInt("timed_screenshot_interval", -1)
+                            val b = sharedPrefs.getInt("screenshot_interval", -1)
+                            if (a != -1) a else if (b != -1) b else 5
+                        }
                         if (wasRunning && !isTimedScreenshotRunning) {
                             FileLogger.e(TAG, "检测到定时截屏之前在运行，自动恢复，间隔: ${lastInterval}秒")
                             startTimedScreenshot(lastInterval)
@@ -769,9 +781,59 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             val file = File(outputDir, fileName)
 
+            // 纯图像维度与方向判定，避免依赖窗口API带来的不稳定
+            val rotatedOrOriginal = try {
+                val rotation = try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        display?.rotation ?: Surface.ROTATION_0
+                    } else {
+                        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                        @Suppress("DEPRECATION")
+                        wm.defaultDisplay.rotation
+                    }
+                } catch (_: Exception) { Surface.ROTATION_0 }
+
+                // 确保可编辑位图（硬件位图需要拷贝为软件位图）
+                val swBitmap = try {
+                    if (bitmap.config == Bitmap.Config.HARDWARE || bitmap.config == null) {
+                        FileLogger.d(TAG, "位图为硬件配置，拷贝为ARGB_8888以便旋转处理")
+                        bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    } else bitmap
+                } catch (_: Exception) { bitmap }
+
+                val w = swBitmap.width
+                val h = swBitmap.height
+                val aspect = if (h != 0) (w.toFloat() / h.toFloat()) else 0f
+                val isLandscapeDevice = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+                        rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+                val isWide = w > h && aspect > 1.2f // 1.2 作为宽高阈值容差，规避状态栏/导航栏干扰
+
+                val shouldRotate = isLandscapeDevice && isWide
+                if (FileLogger.isDebugEnabled()) {
+                    FileLogger.d(TAG, "截图旋转判定 -> size: ${w}x${h}, aspect: ${"%.2f".format(aspect)}, rotation: ${rotation}, deviceLandscape: ${isLandscapeDevice}, shouldRotate: ${shouldRotate}")
+                }
+
+                if (shouldRotate) {
+                    val m = Matrix()
+                    // 将横屏图片旋回竖屏：默认顺时针90度；按 rotation 精细化
+                    val degrees = when (rotation) {
+                        Surface.ROTATION_90 -> 270f // 设备向左横置，图像需逆时针旋回
+                        Surface.ROTATION_270 -> 90f  // 设备向右横置，图像需顺时针旋回
+                        else -> 90f
+                    }
+                    m.postRotate(degrees)
+                    try {
+                        Bitmap.createBitmap(swBitmap, 0, 0, w, h, m, true)
+                    } catch (e: Exception) {
+                        FileLogger.w(TAG, "位图旋转失败，回退使用原图: ${e.message}")
+                        swBitmap
+                    }
+                } else swBitmap
+            } catch (_: Exception) { bitmap }
+
             // 保存图片
             FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                (rotatedOrOriginal ?: bitmap).compress(Bitmap.CompressFormat.JPEG, 85, out)
             }
 
             // 关键修改：只返回相对路径给Flutter端
@@ -803,6 +865,49 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             FileLogger.e(TAG, "保存截图失败", e)
             null
+        }
+    }
+
+    /**
+     * 判断当前目标应用是否处于“全屏”
+     * 策略：存在 TYPE_APPLICATION 窗口且其 root 节点 bounds 覆盖全屏，或窗口层级仅一层 APP 窗口
+     */
+    private fun isCurrentAppFullScreen(): Boolean {
+        return try {
+            val dispWidth = resources.displayMetrics.widthPixels
+            val dispHeight = resources.displayMetrics.heightPixels
+            val screenRect = Rect(0, 0, dispWidth, dispHeight)
+
+            val ws = windows ?: return false
+            var hasAppWindow = false
+            var fullCover = false
+            for (w in ws) {
+                if (w.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                    hasAppWindow = true
+                    val root = w.root ?: continue
+                    val nodeRect = Rect()
+                    try {
+                        root.getBoundsInScreen(nodeRect)
+                        // 允许 2px 容差
+                        if (nodeRect.left <= screenRect.left + 2 &&
+                            nodeRect.top <= screenRect.top + 2 &&
+                            nodeRect.right >= screenRect.right - 2 &&
+                            nodeRect.bottom >= screenRect.bottom - 2) {
+                            fullCover = true
+                            root.recycle()
+                            break
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        try { root.recycle() } catch (_: Exception) {}
+                    }
+                }
+            }
+            // 如果只有一个应用窗口，也可认为是全屏应用
+            val onlyOneApp = ws.count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } == 1
+            (hasAppWindow && fullCover) || onlyOneApp
+        } catch (_: Exception) {
+            false
         }
     }
 

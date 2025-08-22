@@ -19,6 +19,19 @@ object FileLogger {
     private const val LOG_FILE_NAME = "screen_memo_debug.log"
     private var logFile: File? = null
     private var isInitialized = false
+    // 日志级别：NONE(0) ERROR(1) WARN(2) INFO(3) DEBUG(4)
+    private const val LEVEL_NONE = 0
+    private const val LEVEL_ERROR = 1
+    private const val LEVEL_WARNING = 2
+    private const val LEVEL_INFO = 3
+    private const val LEVEL_DEBUG = 4
+    // 安全的 DEBUG 判定：基于构建类型/ro.build.type
+    private val isDebugBuild: Boolean = try {
+        val type = android.os.Build.TYPE?.lowercase(Locale.getDefault()) ?: ""
+        type.contains("debug") || type.contains("eng")
+    } catch (_: Exception) { false }
+    private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_ERROR
+    private var writeFileEnabled = isDebugBuild
     
     /**
      * 初始化文件日志
@@ -40,12 +53,14 @@ object FileLogger {
             
             isInitialized = true
             
-            // 写入初始化信息
-            writeToFile("=== FileLogger 初始化成功 ===")
-            writeToFile("日志文件路径: ${logFile?.absolutePath}")
-            writeToFile("初始化时间: ${getCurrentTimestamp()}")
-            writeToFile("进程ID: ${android.os.Process.myPid()}")
-            writeToFile("===============================")
+            // 写入初始化信息（仅在启用文件写入时）
+            if (writeFileEnabled) {
+                writeToFile("=== FileLogger 初始化成功 ===")
+                writeToFile("日志文件路径: ${logFile?.absolutePath}")
+                writeToFile("初始化时间: ${getCurrentTimestamp()}")
+                writeToFile("进程ID: ${android.os.Process.myPid()}")
+                writeToFile("===============================")
+            }
             
             Log.e(TAG, "FileLogger 初始化成功，日志文件: ${logFile?.absolutePath}")
         } catch (e: Exception) {
@@ -57,6 +72,7 @@ object FileLogger {
      * 记录调试日志
      */
     fun d(tag: String, message: String) {
+        if (logLevel < LEVEL_DEBUG) return
         Log.d(tag, message)
         writeLog("D", tag, message)
     }
@@ -65,6 +81,7 @@ object FileLogger {
      * 记录信息日志
      */
     fun i(tag: String, message: String) {
+        if (logLevel < LEVEL_INFO) return
         Log.i(tag, message)
         writeLog("I", tag, message)
     }
@@ -73,6 +90,7 @@ object FileLogger {
      * 记录警告日志
      */
     fun w(tag: String, message: String) {
+        if (logLevel < LEVEL_WARNING) return
         Log.w(tag, message)
         writeLog("W", tag, message)
     }
@@ -81,6 +99,7 @@ object FileLogger {
      * 记录错误日志
      */
     fun e(tag: String, message: String, throwable: Throwable? = null) {
+        if (logLevel < LEVEL_ERROR) return
         Log.e(tag, message, throwable)
         val fullMessage = if (throwable != null) {
             "$message\n${Log.getStackTraceString(throwable)}"
@@ -91,10 +110,31 @@ object FileLogger {
     }
     
     /**
+     * 是否开启调试级别
+     */
+    fun isDebugEnabled(): Boolean {
+        return logLevel >= LEVEL_DEBUG
+    }
+    
+    /**
+     * 设置日志级别
+     */
+    fun setLevel(level: Int) {
+        logLevel = level
+    }
+    
+    /**
+     * 启用/禁用写入文件
+     */
+    fun enableFileLogging(enable: Boolean) {
+        writeFileEnabled = enable
+    }
+    
+    /**
      * 写入日志到文件
      */
     private fun writeLog(level: String, tag: String, message: String) {
-        if (!isInitialized) return
+        if (!isInitialized || !writeFileEnabled) return
         
         val timestamp = getCurrentTimestamp()
         val logEntry = "$timestamp [$level] $tag: $message"
