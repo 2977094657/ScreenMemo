@@ -233,8 +233,8 @@ class ScreenshotDatabase {
     }
   }
 
-  /// 根据应用包名获取截屏记录列表
-  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit}) async {
+  /// 根据应用包名获取截屏记录列表（支持分页）
+  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit, int? offset}) async {
     final db = await database;
     try {
       final maps = await db.query(
@@ -243,12 +243,28 @@ class ScreenshotDatabase {
         whereArgs: [appPackageName],
         orderBy: 'capture_time DESC',
         limit: limit,
+        offset: offset,
       );
 
       return maps.map((map) => ScreenshotRecord.fromMap(map)).toList();
     } catch (e) {
       print('查询截屏记录失败: $e');
       return [];
+    }
+  }
+
+  /// 获取指定应用的截屏总数量
+  Future<int> getScreenshotCountByApp(String appPackageName) async {
+    final db = await database;
+    try {
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM screenshots WHERE app_package_name = ?',
+        [appPackageName],
+      );
+      return (result.first['count'] as int?) ?? 0;
+    } catch (e) {
+      print('获取应用截屏数量失败: $e');
+      return 0;
     }
   }
 

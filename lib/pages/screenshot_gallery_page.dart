@@ -22,7 +22,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   late AppInfo _appInfo;
   late String _packageName;
   List<ScreenshotRecord> _screenshots = [];
-  bool _isLoading = true;
+  bool _isLoading = false;  // 默认不显示加载，直接显示内容
   String? _error;
   Directory? _baseDir;
   final ScrollController _scrollController = ScrollController();
@@ -43,6 +43,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   double _timelineFraction = 0.0; // 拖动时的归一化位置 0..1
   final GlobalKey _gridKey = GlobalKey(); // 获取网格可见区域以计算首个可见项
 
+  // 分页与懒加载
+  static const int _initialPageSize = 8; // 首屏项数（用户一屏可见4个，初始加载8个确保体验）
+  static const int _pageSize = 16; // 后续每次追加项数
+  bool _isLoadingMore = false; // 是否正在加载更多
+  bool _hasMore = true; // 是否还有更多数据
+  List<ScreenshotRecord> _allScreenshots = []; // 所有截图数据（从缓存或数据库加载）
+  int _currentDisplayCount = 0; // 当前已显示的数量
+
+  // 头部统计（使用全量数据计算，避免分页导致统计不准确）
+  int _totalCount = 0;
+  int _totalSize = 0;
+  DateTime? _latestTime;
+
   @override
   void initState() {
     super.initState();
@@ -54,19 +67,54 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     if (!_timelineActive && mounted) {
       setState(() {});
     }
+    
+    // 检查是否需要加载更多
+    if (_hasMore && !_isLoadingMore && _scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      final currentScroll = _scrollController.position.pixels;
+      final threshold = maxScroll * 0.8; // 滚动到80%时触发加载
+      
+      if (currentScroll >= threshold && _currentDisplayCount < _allScreenshots.length) {
+        _loadMoreScreenshots();
+      }
+    }
+  }
+  
+  /// 加载更多截图到显示列表
+  void _loadMoreScreenshots() {
+    if (_isLoadingMore || _currentDisplayCount >= _allScreenshots.length) return;
+    
+    // 设置加载状态，防止重复加载
+    _isLoadingMore = true;
+    
+    // 直接加载，无需延迟
+    if (!mounted) return;
+    
+    final nextBatch = _currentDisplayCount + _pageSize;
+    final endIndex = nextBatch > _allScreenshots.length ? _allScreenshots.length : nextBatch;
+    
+    setState(() {
+      // 添加下一批数据到显示列表
+      _screenshots = _allScreenshots.sublist(0, endIndex);
+      _currentDisplayCount = endIndex;
+      
+      // 检查是否还有更多
+      _hasMore = _currentDisplayCount < _allScreenshots.length;
+      _isLoadingMore = false;
+      
+      // 清理不在显示范围内的键
+      _itemKeys.removeWhere((index, _) => index >= _screenshots.length);
+    });
   }
 
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
   String _buildHeaderStatsText() {
-    final count = _screenshots.length;
-    final totalBytes = _screenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+    // 使用全量数据的统计信息，而不是当前显示的部分数据
     String timeStr = '暂无';
-    if (_screenshots.isNotEmpty) {
-      // 使用最新一张截图的时间作为“时间”展示
-      final latest = _screenshots.reduce((a, b) => a.captureTime.isAfter(b.captureTime) ? a : b);
-      timeStr = _formatDateTime(latest.captureTime);
+    if (_latestTime != null) {
+      timeStr = _formatDateTime(_latestTime!);
     }
-    return '$count张 · ${_formatTotalSizeMBGBTB(totalBytes)} · $timeStr';
+    return '$_totalCount张 · ${_formatTotalSizeMBGBTB(_totalSize)} · $timeStr';
   }
 
   @override
@@ -103,33 +151,30 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       });
       await _loadScreenshots();
     } catch (e) {
-       setState(() {
-        _error = '初始化失败: $e';
-        _isLoading = false;
-      });
-    }
+      setState(() {
+       _error = '初始化失败: $e';
+     });
+   }
   }
 
   Future<void> _loadScreenshots() async {
     try {
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
-
       print('=== 开始加载截图 ===');
       print('应用包名: $_packageName');
       print('基础目录: ${_baseDir?.path}');
+
+      // 先设置加载状态，防止显示空状态
+      if (_screenshots.isEmpty) {
+        setState(() {
+          _isLoading = true;
+        });
+      }
 
       // 尝试从缓存加载（仅用于提升进入速度，不影响首页统计）
       final cachedScreenshots = await _loadScreenshotsFromCache();
       if (cachedScreenshots != null) {
         print('从缓存加载到 ${cachedScreenshots.length} 张截图');
-        setState(() {
-          _screenshots = cachedScreenshots;
-          _isLoading = false;
-          _itemKeys.clear();
-        });
+        _processLoadedScreenshots(cachedScreenshots);
         // 后台刷新缓存
         _refreshScreenshotsCache();
         return;
@@ -145,6 +190,36 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       });
     }
   }
+  
+  /// 处理加载的截图数据，实现分页显示
+  void _processLoadedScreenshots(List<ScreenshotRecord> allScreenshots) {
+    // 保存全量数据
+    _allScreenshots = allScreenshots;
+    
+    // 计算统计信息
+    _totalCount = allScreenshots.length;
+    _totalSize = allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+    if (allScreenshots.isNotEmpty) {
+      final latest = allScreenshots.reduce((a, b) =>
+        a.captureTime.isAfter(b.captureTime) ? a : b);
+      _latestTime = latest.captureTime;
+    }
+    
+    // 初始只显示前面一部分
+    final initialCount = _initialPageSize > allScreenshots.length
+        ? allScreenshots.length
+        : _initialPageSize;
+    
+    setState(() {
+      _screenshots = allScreenshots.sublist(0, initialCount);
+      _currentDisplayCount = initialCount;
+      _hasMore = initialCount < allScreenshots.length;
+      _isLoading = false;  // 数据加载完成，取消加载状态
+      _itemKeys.clear();
+    });
+    
+    print('初始加载 $_currentDisplayCount/${_totalCount} 张截图');
+  }
 
   /// 从数据库加载截图数据
   Future<void> _loadScreenshotsFromDatabase() async {
@@ -153,11 +228,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
     print('从数据库获取到 ${screenshots.length} 张截图');
 
-    setState(() {
-      _screenshots = screenshots;
-      _isLoading = false;
-      _itemKeys.clear();
-    });
+    _processLoadedScreenshots(screenshots);
 
     // 保存到缓存
     await _saveScreenshotsToCache(screenshots);
@@ -209,11 +280,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       await _saveScreenshotsToCache(screenshots);
       
       // 如果有新数据，更新UI
-      if (screenshots.length != _screenshots.length) {
-        setState(() {
-          _screenshots = screenshots;
-          _itemKeys.clear();
-        });
+      if (screenshots.length != _allScreenshots.length) {
+        _processLoadedScreenshots(screenshots);
       }
     } catch (e) {
       print('后台刷新截图缓存失败: $e');
@@ -236,12 +304,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   }
 
   void _viewScreenshot(ScreenshotRecord screenshot, int index) {
+    // 查看时使用全量数据，确保可以滑动查看所有图片
     Navigator.pushNamed(
       context,
       '/screenshot_viewer',
       arguments: {
-        'screenshots': _screenshots,
-        'initialIndex': index,
+        'screenshots': _allScreenshots.isEmpty ? _screenshots : _allScreenshots,
+        'initialIndex': _allScreenshots.isEmpty ? index : _allScreenshots.indexOf(screenshot),
         'appName': _appInfo.appName,
         'appInfo': _appInfo, // 传递完整的appInfo对象，包含图标
       },
@@ -402,22 +471,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: AppTheme.spacing4),
-            Text(
-              '正在加载截图...',
-              style: TextStyle(color: AppTheme.mutedForeground),
-            ),
-          ],
-        ),
-      );
-    }
-
+    // 优先显示错误状态
     if (_error != null) {
       return Center(
         child: Column(
@@ -445,32 +499,48 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       );
     }
 
-    if (_screenshots.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.photo_library_outlined,
-              size: 64,
-              color: AppTheme.mutedForeground,
-            ),
-            SizedBox(height: AppTheme.spacing4),
-            Text(
-              '暂无截图',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.mutedForeground,
+    // 如果有数据就直接显示网格，即使数据正在加载
+    if (_screenshots.isNotEmpty || _isLoading) {
+      return _buildGalleryGrid();
+    }
+
+    // 只有在确实没有数据且不在加载时才显示空状态
+    if (_screenshots.isEmpty && !_isLoading) {
+      // 延迟显示空状态，给缓存加载一点时间
+      return FutureBuilder(
+        future: Future.delayed(const Duration(milliseconds: 300)),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done && _screenshots.isEmpty) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.photo_library_outlined,
+                    size: 64,
+                    color: AppTheme.mutedForeground,
+                  ),
+                  SizedBox(height: AppTheme.spacing4),
+                  Text(
+                    '暂无截图',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.mutedForeground,
+                    ),
+                  ),
+                  SizedBox(height: AppTheme.spacing2),
+                  Text(
+                    '开启截图监控后，截图将显示在这里',
+                    style: TextStyle(color: AppTheme.mutedForeground),
+                  ),
+                ],
               ),
-            ),
-            SizedBox(height: AppTheme.spacing2),
-            Text(
-              '开启截图监控后，截图将显示在这里',
-              style: TextStyle(color: AppTheme.mutedForeground),
-            ),
-          ],
-        ),
+            );
+          }
+          // 加载中时显示空白，避免闪烁
+          return const SizedBox.shrink();
+        },
       );
     }
 
@@ -657,8 +727,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
   // 构建右侧时间线滚动条与时间提示
   Widget _buildTimelineOverlay() {
-    // 仅在有数据时展示时间线
-    if (_screenshots.isEmpty) return const SizedBox.shrink();
+    // 只有在所有数据都加载完毕时才显示时间线
+    if (_screenshots.isEmpty || _hasMore) return const SizedBox.shrink();
+    
     const double gestureWidth = 44; // 右侧可交互区域宽度
     const double trackWidth = 3; // 可见轨道宽度
     const double thumbHeight = 32; // 拇指高度
@@ -899,15 +970,30 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       if (ok) successCount++;
     }
 
-    // 本地移除
+    // 本地移除（从全量数据和显示数据中删除）
     setState(() {
+      _allScreenshots.removeWhere((s) => s.id != null && _selectedIds.contains(s.id));
       _screenshots.removeWhere((s) => s.id != null && _selectedIds.contains(s.id));
+      // 更新统计信息
+      _totalCount = _allScreenshots.length;
+      _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+      if (_allScreenshots.isNotEmpty) {
+        final latest = _allScreenshots.reduce((a, b) =>
+          a.captureTime.isAfter(b.captureTime) ? a : b);
+        _latestTime = latest.captureTime;
+      } else {
+        _latestTime = null;
+      }
+      _currentDisplayCount = _screenshots.length;
+      _hasMore = _currentDisplayCount < _allScreenshots.length;
       _selectedIds.clear();
       _selectionMode = false;
     });
 
     // 失效统计缓存并提示
     await ScreenshotService.instance.invalidateStatsCache();
+    // 失效截图列表缓存
+    await _invalidateScreenshotsCache();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

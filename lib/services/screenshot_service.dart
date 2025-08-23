@@ -9,6 +9,7 @@ import 'screenshot_database.dart';
 import 'path_service.dart';
 import '../models/screenshot_record.dart';
 import 'startup_profiler.dart';
+import 'flutter_logger.dart';
 
 /// 截屏服务异常类
 class ScreenshotServiceException implements Exception {
@@ -62,6 +63,13 @@ class ScreenshotService {
       final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
       final now = DateTime.now().millisecondsSinceEpoch;
       if (cached != null && ts > 0 && (now - ts) <= ttl * 1000) {
+        // 访问即续期：读缓存的同时刷新时间戳，避免频繁过期导致首页闪烁
+        try {
+          await prefs.setInt(_statsCacheTsKey, now);
+        } catch (_) {}
+        // 日志：观察续期是否生效
+        // ignore: unawaited_futures
+        FlutterLogger.log('stats cache hit, renewed ts=$now, ttl=$ttl');
         final map = _deserializeStats(cached);
         // 后台异步刷新缓存
         // ignore: unawaited_futures
@@ -69,8 +77,25 @@ class ScreenshotService {
         StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
         return map;
       }
+      // 若存在缓存但已过期：先返回陈旧缓存以避免首屏空白，再后台强制刷新
+      if (cached != null && ts > 0 && (now - ts) > ttl * 1000) {
+        final stale = _deserializeStats(cached);
+        // ignore: unawaited_futures
+        FlutterLogger.log('stats cache stale -> serve stale and refresh, ageMs=${now - ts}, ttl=$ttl');
+        // ignore: unawaited_futures
+        _refreshStatsCache(force: true);
+        StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
+        return stale;
+      }
     } catch (_) {}
     // 缓存不存在或已过期，重新计算
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
+      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      // ignore: unawaited_futures
+      FlutterLogger.log('stats cache miss -> compute fresh, now-ts=${DateTime.now().millisecondsSinceEpoch - ts}ms, ttl=$ttl');
+    } catch (_) {}
     final stats = await getScreenshotStats();
     StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
     return stats;
@@ -172,6 +197,8 @@ class ScreenshotService {
         try {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('timed_screenshot_interval', intervalSeconds);
+          // 同步写入UI侧读取的键，避免不同键值不同步
+          await prefs.setInt('screenshot_interval', intervalSeconds);
         } catch (_) {}
         final success = await _permissionService.startTimedScreenshot(intervalSeconds);
         if (success) {
@@ -185,6 +212,7 @@ class ScreenshotService {
         try {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('timed_screenshot_interval', intervalSeconds);
+          await prefs.setInt('screenshot_interval', intervalSeconds);
         } catch (_) {}
         return true;
       }
@@ -578,10 +606,16 @@ class ScreenshotService {
         final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
         final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (ts > 0 && (now - ts) <= ttl * 1000) return;
+        if (ts > 0 && (now - ts) <= ttl * 1000) {
+          // ignore: unawaited_futures
+          FlutterLogger.log('stats cache refresh skipped, fresh window: now-ts=${now - ts}ms, ttl=$ttl');
+          return;
+        }
       }
       final stats = await getScreenshotStats();
       await _saveStatsCache(stats);
+      // ignore: unawaited_futures
+      FlutterLogger.log('stats cache refreshed and saved');
     } catch (_) {}
   }
 
@@ -593,7 +627,17 @@ class ScreenshotService {
       if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
         await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
       }
+      // ignore: unawaited_futures
+      FlutterLogger.log('stats cache saved (ttl=${await _readTtl(prefs)})');
     } catch (_) {}
+  }
+
+  Future<int> _readTtl(SharedPreferences prefs) async {
+    try {
+      return prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+    } catch (_) {
+      return _statsCacheTtlSecondsDefault;
+    }
   }
 
   /// 对外暴露：立即将传入的统计结果写入缓存（用于首页比对后同步缓存，避免下次看到旧缓存）
