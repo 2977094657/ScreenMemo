@@ -8,6 +8,7 @@ import '../widgets/ui_dialog.dart';
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../services/screenshot_service.dart';
+import '../widgets/ui_components.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -25,6 +26,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   late AppInfo _appInfo;
   late PageController _pageController;
   bool _showAppBar = true;
+  bool _initialized = false;
 
   // 移除调试日志
 
@@ -41,7 +43,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // 获取路由参数
+    if (_initialized) return;
+
+    // 获取路由参数（仅初始化一次，避免后续依赖变化导致索引重置）
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       _screenshots = args['screenshots'] as List<ScreenshotRecord>;
@@ -49,6 +53,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       _appName = args['appName'] as String;
       _appInfo = args['appInfo'] as AppInfo;
       _pageController = PageController(initialPage: _currentIndex);
+      _initialized = true;
     }
 
     // 去除额外 dump
@@ -103,34 +108,16 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           });
           
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('截图已删除'),
-                backgroundColor: AppTheme.success,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            UINotifier.success(context, '截图已删除');
           }
         } else {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('删除失败'),
-                backgroundColor: AppTheme.destructive,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            UINotifier.error(context, '删除失败');
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('删除失败: $e'),
-              backgroundColor: AppTheme.destructive,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          UINotifier.error(context, '删除失败: $e');
         }
       }
     }
@@ -168,6 +155,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   }
 
   Widget _buildInfoRow(String label, String value) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final labelColor = onSurface.withOpacity(0.7);
+    final valueColor = onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -177,16 +168,16 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             width: 80,
             child: Text(
               '$label:',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w500,
-                color: AppTheme.mutedForeground,
+                color: labelColor,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: AppTheme.foreground),
+              style: TextStyle(color: valueColor),
             ),
           ),
         ],
