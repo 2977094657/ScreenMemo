@@ -212,26 +212,23 @@ class _DebugPageState extends State<DebugPage> {
         buffer.writeln('数据库表: ${tables.map((t) => t['name']).join(', ')}');
         
         // 获取截图记录总数
-        final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM screenshots');
-        final totalCount = countResult.first['count'] as int;
-        buffer.writeln('截图记录总数: $totalCount');
+        final totalCount = await db.rawQuery('SELECT SUM(total_count) as count FROM app_stats');
+        final count = (totalCount.first['count'] as int?) ?? 0;
+        buffer.writeln('截图记录总数: $count');
         
         // 获取按应用分组的统计
         final appStats = await db.rawQuery('''
-          SELECT app_package_name, app_name, COUNT(*) as count, 
-                 MAX(capture_time) as last_capture
-          FROM screenshots 
-          WHERE is_deleted = 0 
-          GROUP BY app_package_name 
-          ORDER BY count DESC
+          SELECT app_package_name, app_name, total_count, last_capture_time
+          FROM app_stats
+          ORDER BY total_count DESC
         ''');
         
         buffer.writeln('按应用统计:');
         for (final stat in appStats) {
           final packageName = stat['app_package_name'];
           final appName = stat['app_name'];
-          final count = stat['count'];
-          final lastCapture = stat['last_capture'] as int?;
+          final count = stat['total_count'];
+          final lastCapture = stat['last_capture_time'] as int?;
           final lastTime = lastCapture != null 
             ? DateTime.fromMillisecondsSinceEpoch(lastCapture)
             : null;
@@ -240,19 +237,14 @@ class _DebugPageState extends State<DebugPage> {
         
         // 获取最近的10条记录
         buffer.writeln();
-        buffer.writeln('最近10条记录:');
-        final recentRecords = await db.rawQuery('''
-          SELECT * FROM screenshots 
-          WHERE is_deleted = 0 
-          ORDER BY capture_time DESC 
-          LIMIT 10
-        ''');
-        
-        for (final record in recentRecords) {
-          final captureTime = DateTime.fromMillisecondsSinceEpoch(record['capture_time'] as int);
-          final filePath = record['file_path'];
-          final fileExists = await File(filePath as String).exists();
-          buffer.writeln('  ${record['app_name']}: $filePath (存在: $fileExists) - $captureTime');
+        buffer.writeln('分表架构统计:');
+        final appTables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'screenshots_%'");
+        buffer.writeln('应用表数量: ${appTables.length}');
+        for (final table in appTables) {
+          final tableName = table['name'] as String;
+          final tableCount = await db.rawQuery('SELECT COUNT(*) as count FROM $tableName');
+          final count = (tableCount.first['count'] as int?) ?? 0;
+          buffer.writeln('  $tableName: $count 条记录');
         }
         
       } catch (e) {

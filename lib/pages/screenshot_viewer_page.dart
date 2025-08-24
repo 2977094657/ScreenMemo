@@ -88,7 +88,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
 
     if (confirmed == true && screenshot.id != null) {
       try {
-        final success = await ScreenshotService.instance.deleteScreenshot(screenshot.id!);
+        final success = await ScreenshotService.instance.deleteScreenshot(screenshot.id!, _appInfo.packageName);
         if (success) {
           setState(() {
             _screenshots.removeAt(_currentIndex);

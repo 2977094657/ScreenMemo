@@ -18,21 +18,24 @@ class ScreenshotGalleryPage extends StatefulWidget {
   State<ScreenshotGalleryPage> createState() => _ScreenshotGalleryPageState();
 }
 
-class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with AutomaticKeepAliveClientMixin {
+class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
+    with AutomaticKeepAliveClientMixin {
   late AppInfo _appInfo;
   late String _packageName;
   List<ScreenshotRecord> _screenshots = [];
-  bool _isLoading = false;  // 默认不显示加载，直接显示内容
+  bool _isLoading = false; // 默认不显示加载，直接显示内容
   String? _error;
   Directory? _baseDir;
   final ScrollController _scrollController = ScrollController();
+
   // 多选状态
   bool _selectionMode = false;
   final Set<int> _selectedIds = <int>{};
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
+  bool _isFullySelected = false; // 标记是否已经全选所有数据
   // 取消滑动选择
   bool _initialized = false; // 避免返回时重复触发初始化加载
-  
+
   // 缓存相关
   static const String _screenshotsCacheKeyPrefix = 'screenshots_cache_';
   static const String _screenshotsCacheTsKeyPrefix = 'screenshots_cache_ts_';
@@ -67,41 +70,54 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     if (!_timelineActive && mounted) {
       setState(() {});
     }
-    
+
     // 检查是否需要加载更多
     if (_hasMore && !_isLoadingMore && _scrollController.hasClients) {
       final maxScroll = _scrollController.position.maxScrollExtent;
       final currentScroll = _scrollController.position.pixels;
       final threshold = maxScroll * 0.8; // 滚动到80%时触发加载
-      
-      if (currentScroll >= threshold && _currentDisplayCount < _allScreenshots.length) {
+
+      if (currentScroll >= threshold &&
+          _currentDisplayCount < _allScreenshots.length) {
         _loadMoreScreenshots();
       }
     }
   }
-  
+
   /// 加载更多截图到显示列表
   void _loadMoreScreenshots() {
-    if (_isLoadingMore || _currentDisplayCount >= _allScreenshots.length) return;
-    
+    if (_isLoadingMore || _currentDisplayCount >= _allScreenshots.length)
+      return;
+
     // 设置加载状态，防止重复加载
     _isLoadingMore = true;
-    
+
     // 直接加载，无需延迟
     if (!mounted) return;
-    
+
     final nextBatch = _currentDisplayCount + _pageSize;
-    final endIndex = nextBatch > _allScreenshots.length ? _allScreenshots.length : nextBatch;
-    
+    final endIndex = nextBatch > _allScreenshots.length
+        ? _allScreenshots.length
+        : nextBatch;
+
     setState(() {
       // 添加下一批数据到显示列表
       _screenshots = _allScreenshots.sublist(0, endIndex);
       _currentDisplayCount = endIndex;
-      
+
+      // 如果是全选状态，将新加载的项也加入选择
+      if (_isFullySelected) {
+        final newIds = _screenshots
+            .where((s) => s.id != null && !_selectedIds.contains(s.id))
+            .map((s) => s.id!)
+            .toSet();
+        _selectedIds.addAll(newIds);
+      }
+
       // 检查是否还有更多
       _hasMore = _currentDisplayCount < _allScreenshots.length;
       _isLoadingMore = false;
-      
+
       // 清理不在显示范围内的键
       _itemKeys.removeWhere((index, _) => index >= _screenshots.length);
     });
@@ -122,7 +138,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     super.didChangeDependencies();
     if (_initialized) return;
     _initialized = true;
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       _appInfo = args['appInfo'] as AppInfo;
       _packageName = args['packageName'] as String;
@@ -152,9 +169,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       await _loadScreenshots();
     } catch (e) {
       setState(() {
-       _error = '初始化失败: $e';
-     });
-   }
+        _error = '初始化失败: $e';
+      });
+    }
   }
 
   Future<void> _loadScreenshots() async {
@@ -192,35 +209,36 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       });
     }
   }
-  
+
   /// 处理加载的截图数据，实现分页显示
   void _processLoadedScreenshots(List<ScreenshotRecord> allScreenshots) {
     // 保存全量数据
     _allScreenshots = allScreenshots;
-    
+
     // 计算统计信息
     _totalCount = allScreenshots.length;
     _totalSize = allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
     if (allScreenshots.isNotEmpty) {
-      final latest = allScreenshots.reduce((a, b) =>
-        a.captureTime.isAfter(b.captureTime) ? a : b);
+      final latest = allScreenshots.reduce(
+        (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
+      );
       _latestTime = latest.captureTime;
     }
-    
+
     // 初始只显示前面一部分
     final initialCount = _initialPageSize > allScreenshots.length
         ? allScreenshots.length
         : _initialPageSize;
-    
+
     setState(() {
       _screenshots = allScreenshots.sublist(0, initialCount);
       _currentDisplayCount = initialCount;
       // 修复：确保 _hasMore 逻辑正确
       _hasMore = initialCount < allScreenshots.length;
-      _isLoading = false;  // 数据加载完成，取消加载状态
+      _isLoading = false; // 数据加载完成，取消加载状态
       _itemKeys.clear();
     });
-    
+
     print('初始加载 $_currentDisplayCount/${_totalCount} 张截图，hasMore: $_hasMore');
   }
 
@@ -228,7 +246,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   Future<void> _loadScreenshotsFromDatabase() async {
     try {
       // 直接从数据库查询，后台同步已在ScreenshotService中处理
-      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
+      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(
+        _packageName,
+      );
       print('从数据库获取到 ${screenshots.length} 张截图');
 
       _processLoadedScreenshots(screenshots);
@@ -250,12 +270,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       final prefs = await SharedPreferences.getInstance();
       final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
       final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
-      
+
       final cachedJson = prefs.getString(cacheKey);
       final ts = prefs.getInt(tsKey) ?? 0;
       final now = DateTime.now().millisecondsSinceEpoch;
-      
-      if (cachedJson != null && ts > 0 && (now - ts) <= _screenshotsCacheTtlSeconds * 1000) {
+
+      if (cachedJson != null &&
+          ts > 0 &&
+          (now - ts) <= _screenshotsCacheTtlSeconds * 1000) {
         final List<dynamic> decoded = jsonDecode(cachedJson);
         return decoded.map((item) => ScreenshotRecord.fromMap(item)).toList();
       }
@@ -267,12 +289,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   }
 
   /// 保存截图数据到缓存
-  Future<void> _saveScreenshotsToCache(List<ScreenshotRecord> screenshots) async {
+  Future<void> _saveScreenshotsToCache(
+    List<ScreenshotRecord> screenshots,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
       final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
-      
+
       final jsonList = screenshots.map((s) => s.toMap()).toList();
       await prefs.setString(cacheKey, jsonEncode(jsonList));
       await prefs.setInt(tsKey, DateTime.now().millisecondsSinceEpoch);
@@ -285,9 +309,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   Future<void> _refreshScreenshotsCache() async {
     try {
       // 直接查询数据库，后台同步已在ScreenshotService中处理
-      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
+      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(
+        _packageName,
+      );
       await _saveScreenshotsToCache(screenshots);
-      
+
       // 如果有新数据，更新UI
       if (screenshots.length != _allScreenshots.length) {
         _processLoadedScreenshots(screenshots);
@@ -303,7 +329,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       final prefs = await SharedPreferences.getInstance();
       final cacheKey = '$_screenshotsCacheKeyPrefix$_packageName';
       final tsKey = '$_screenshotsCacheTsKeyPrefix$_packageName';
-      
+
       await prefs.remove(cacheKey);
       await prefs.remove(tsKey);
       print('已使截图缓存失效: $cacheKey');
@@ -319,7 +345,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       '/screenshot_viewer',
       arguments: {
         'screenshots': _allScreenshots.isEmpty ? _screenshots : _allScreenshots,
-        'initialIndex': _allScreenshots.isEmpty ? index : _allScreenshots.indexOf(screenshot),
+        'initialIndex': _allScreenshots.isEmpty
+            ? index
+            : _allScreenshots.indexOf(screenshot),
         'appName': _appInfo.appName,
         'appInfo': _appInfo, // 传递完整的appInfo对象，包含图标
       },
@@ -333,14 +361,21 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       message: '确定要删除这张截图吗？此操作无法撤销。',
       actions: const [
         UIDialogAction<bool>(text: '取消', result: false),
-        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+        UIDialogAction<bool>(
+          text: '删除',
+          style: UIDialogActionStyle.destructive,
+          result: true,
+        ),
       ],
       barrierDismissible: false,
     );
 
     if (confirmed == true && screenshot.id != null) {
       try {
-        final success = await ScreenshotService.instance.deleteScreenshot(screenshot.id!);
+        final success = await ScreenshotService.instance.deleteScreenshot(
+          screenshot.id!,
+          _appInfo.packageName,
+        );
         if (success) {
           setState(() {
             _screenshots.removeWhere((s) => s.id == screenshot.id);
@@ -349,7 +384,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
           await ScreenshotService.instance.invalidateStatsCache();
           // 删除后失效截图列表缓存
           await _invalidateScreenshotsCache();
-          
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -409,16 +444,16 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     )
                   : Text(
                       _appInfo.appName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
             ),
           ],
@@ -432,9 +467,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
                   _buildHeaderStatsText(),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w400,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w400),
                 ),
               ),
             ),
@@ -449,6 +484,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                 setState(() {
                   _selectionMode = false;
                   _selectedIds.clear();
+                  _isFullySelected = false; // 重置全选状态
                 });
               },
               child: const Text('取消'),
@@ -456,16 +492,26 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
             TextButton(
               onPressed: () {
                 setState(() {
-                  if (_selectedIds.length == _screenshots.length) {
+                  // 获取所有数据库中的有效ID
+                  final allIds = _allScreenshots
+                      .where((s) => s.id != null)
+                      .map((s) => s.id!)
+                      .toSet();
+
+                  if (_isFullySelected) {
+                    // 已全选，清空选择
                     _selectedIds.clear();
+                    _isFullySelected = false;
                   } else {
+                    // 未全选，全选所有数据
                     _selectedIds
                       ..clear()
-                      ..addAll(_screenshots.where((s) => s.id != null).map((s) => s.id!));
+                      ..addAll(allIds);
+                    _isFullySelected = true;
                   }
                 });
               },
-              child: const Text('全选'),
+              child: Text(_getSelectAllButtonText()),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -519,7 +565,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       return FutureBuilder(
         future: Future.delayed(const Duration(milliseconds: 300)),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done && _screenshots.isEmpty) {
+          if (snapshot.connectionState == ConnectionState.done &&
+              _screenshots.isEmpty) {
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -564,10 +611,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
           child: Container(
             key: _gridKey,
             child: GridView.builder(
-              key: PageStorageKey<String>('screenshot_gallery_grid_$_packageName'),
+              key: PageStorageKey<String>(
+                'screenshot_gallery_grid_$_packageName',
+              ),
               controller: _scrollController,
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                bottom:
+                    MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
               ),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
@@ -605,7 +655,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     final absolutePath = path.join(_baseDir!.path, screenshot.filePath);
     final file = File(absolutePath);
 
-    final isSelected = _selectionMode && screenshot.id != null && _selectedIds.contains(screenshot.id);
+    final isSelected =
+        _selectionMode &&
+        screenshot.id != null &&
+        _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
     final item = GestureDetector(
       onTap: () {
@@ -632,9 +685,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                 // 使用按视口尺寸下采样的缩略图以提升快速拖动时的首帧显示速度
                 final screenWidth = MediaQuery.of(context).size.width;
                 // 计算两列网格每项的近似逻辑宽度（外边距+列间距近似处理）
-                final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
-                final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
-                final imageProvider = ResizeImage(FileImage(file), width: targetWidth);
+                final double logicalTileWidth =
+                    (screenWidth - AppTheme.spacing1 * 3) / 2;
+                final int targetWidth =
+                    (logicalTileWidth * MediaQuery.of(context).devicePixelRatio)
+                        .round();
+                final imageProvider = ResizeImage(
+                  FileImage(file),
+                  width: targetWidth,
+                );
                 final imageWidget = Image(
                   image: imageProvider,
                   width: double.infinity,
@@ -669,7 +728,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                 decoration: BoxDecoration(
                   color: isSelected ? Colors.black : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: isSelected ? Colors.black : Colors.white, width: 2),
+                  border: Border.all(
+                    color: isSelected ? Colors.black : Colors.white,
+                    width: 2,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: isSelected
@@ -740,7 +802,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     if (_screenshots.isEmpty || _hasMore || _screenshots.length < 2) {
       return const SizedBox.shrink();
     }
-    
+
     const double gestureWidth = 44; // 右侧可交互区域宽度
     const double trackWidth = 3; // 可见轨道宽度
     const double thumbHeight = 32; // 拇指高度
@@ -751,21 +813,33 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         builder: (context, constraints) {
           final double viewHeight = constraints.maxHeight;
           // 与网格保持一致的底部边距：外层 Padding + GridView 的 bottom padding
-          final double bottomMargin = MediaQuery.of(context).padding.bottom + AppTheme.spacing6 + AppTheme.spacing1;
-          final double trackHeight = (viewHeight - bottomMargin).clamp(0, viewHeight);
-          
+          final double bottomMargin =
+              MediaQuery.of(context).padding.bottom +
+              AppTheme.spacing6 +
+              AppTheme.spacing1;
+          final double trackHeight = (viewHeight - bottomMargin).clamp(
+            0,
+            viewHeight,
+          );
+
           // 增加安全检查，避免异常计算
           if (trackHeight <= 0 || !_scrollController.hasClients) {
             return const SizedBox.shrink();
           }
-          
-          final double currentFraction = _timelineActive ? _timelineFraction : _currentScrollFraction();
+
+          final double currentFraction = _timelineActive
+              ? _timelineFraction
+              : _currentScrollFraction();
           final double clampedFraction = currentFraction.clamp(0.0, 1.0);
-          final double thumbTop = clampedFraction * (trackHeight - thumbHeight).clamp(0, trackHeight);
+          final double thumbTop =
+              clampedFraction *
+              (trackHeight - thumbHeight).clamp(0, trackHeight);
 
           // 安全获取第一个可见索引
           final int firstVisibleIndex = _getFirstVisibleIndex();
-          final String timeLabel = (firstVisibleIndex >= 0 && firstVisibleIndex < _screenshots.length)
+          final String timeLabel =
+              (firstVisibleIndex >= 0 &&
+                  firstVisibleIndex < _screenshots.length)
               ? _formatTimelineTime(_screenshots[firstVisibleIndex].captureTime)
               : '';
 
@@ -782,12 +856,18 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                   // 防止手势冲突，增加边界检查
                   onVerticalDragStart: (details) {
                     if (trackHeight > thumbHeight) {
-                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                      _activateTimelineWithLocalY(
+                        details.localPosition.dy,
+                        trackHeight,
+                      );
                     }
                   },
                   onVerticalDragUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
-                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                      _activateTimelineWithLocalY(
+                        details.localPosition.dy,
+                        trackHeight,
+                      );
                     }
                   },
                   onVerticalDragEnd: (_) {
@@ -799,12 +879,18 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                   },
                   onLongPressStart: (details) {
                     if (trackHeight > thumbHeight) {
-                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                      _activateTimelineWithLocalY(
+                        details.localPosition.dy,
+                        trackHeight,
+                      );
                     }
                   },
                   onLongPressMoveUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
-                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                      _activateTimelineWithLocalY(
+                        details.localPosition.dy,
+                        trackHeight,
+                      );
                     }
                   },
                   onLongPressEnd: (_) {
@@ -848,7 +934,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
               if (_timelineActive)
                 Positioned(
                   right: gestureWidth + 8,
-                  top: (clampedFraction * (trackHeight - labelHeight)).clamp(0, trackHeight - labelHeight),
+                  top: (clampedFraction * (trackHeight - labelHeight)).clamp(
+                    0,
+                    trackHeight - labelHeight,
+                  ),
                   child: Container(
                     height: labelHeight,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -856,13 +945,16 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(6), // 小圆角，无阴影
-                      border: Border.all(color: Theme.of(context).dividerColor, width: 1),
+                      border: Border.all(
+                        color: Theme.of(context).dividerColor,
+                        width: 1,
+                      ),
                     ),
                     child: Text(
                       timeLabel,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -877,10 +969,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   void _activateTimelineWithLocalY(double localY, double viewHeight) {
     // 增加安全检查
     if (viewHeight <= 0 || !_scrollController.hasClients || !mounted) return;
-    
+
     final double raw = localY / viewHeight;
     final double fraction = raw.clamp(0.0, 1.0);
-    
+
     setState(() {
       _timelineActive = true;
       _timelineFraction = fraction;
@@ -921,28 +1013,29 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   // 计算当前视口内第一张可见截图的索引
   int _getFirstVisibleIndex() {
     if (!mounted || _screenshots.isEmpty || _itemKeys.isEmpty) return 0;
-    
+
     final viewport = _getGridViewportRect();
     if (viewport == null) return 0;
-    
+
     int? firstIdx;
     double? minTop;
-    
+
     _itemKeys.forEach((index, key) {
       // 增加边界检查
       if (index >= _screenshots.length) return;
-      
+
       final context = key.currentContext;
       if (context == null) return;
-      
+
       final render = context.findRenderObject();
       if (render is! RenderBox || !render.hasSize) return;
-      
+
       try {
         final rect = render.localToGlobal(Offset.zero) & render.size;
-        final bool visible = rect.bottom > viewport.top && rect.top < viewport.bottom;
+        final bool visible =
+            rect.bottom > viewport.top && rect.top < viewport.bottom;
         if (!visible) return;
-        
+
         if (minTop == null || rect.top < minTop!) {
           minTop = rect.top;
           firstIdx = index;
@@ -952,14 +1045,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         return;
       }
     });
-    
-    return (firstIdx != null && firstIdx! < _screenshots.length) ? firstIdx! : 0;
+
+    return (firstIdx != null && firstIdx! < _screenshots.length)
+        ? firstIdx!
+        : 0;
   }
 
   // 时间线标签格式化（当天/本年/跨年）
   String _formatTimelineTime(DateTime dateTime) {
     final now = DateTime.now();
-    final bool sameDay = now.year == dateTime.year && now.month == dateTime.month && now.day == dateTime.day;
+    final bool sameDay =
+        now.year == dateTime.year &&
+        now.month == dateTime.month &&
+        now.day == dateTime.day;
     final bool sameYear = now.year == dateTime.year;
     String hh = dateTime.hour.toString().padLeft(2, '0');
     String mm = dateTime.minute.toString().padLeft(2, '0');
@@ -972,6 +1070,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     }
   }
 
+  /// 获取全选按钮文本
+  String _getSelectAllButtonText() {
+    return _isFullySelected ? '取消全选' : '全选';
+  }
+
   void _toggleSelect(int index) {
     if (index < 0 || index >= _screenshots.length) return;
     final id = _screenshots[index].id;
@@ -980,8 +1083,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       if (_selectedIds.contains(id)) {
         _selectedIds.remove(id);
         if (_selectedIds.isEmpty) _selectionMode = false;
+        // 如果取消选择了某项，就不再是全选状态
+        _isFullySelected = false;
       } else {
         _selectedIds.add(id);
+        // 检查是否现在已经选中了所有项
+        final totalCount = _allScreenshots.where((s) => s.id != null).length;
+        if (_selectedIds.length == totalCount && totalCount > 0) {
+          _isFullySelected = true;
+        }
       }
     });
   }
@@ -1003,58 +1113,127 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
+
+    // 检查是否选择了所有截图（全删除模式）
+    final totalCount = _allScreenshots.where((s) => s.id != null).length;
+    final isSelectAll = _selectedIds.length == totalCount && totalCount > 0;
+
+    final String title = isSelectAll ? '确认删除所有截图' : '确认删除';
+    final String message = isSelectAll
+        ? '将删除此应用的所有 $totalCount 张截图及其文件夹，此操作不可恢复。'
+        : '将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？';
+
     final confirmed = await showUIDialog<bool>(
       context: context,
-      title: '确认删除',
-      message: '将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？',
+      title: title,
+      message: message,
       actions: const [
         UIDialogAction<bool>(text: '取消', result: false),
-        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+        UIDialogAction<bool>(
+          text: '删除',
+          style: UIDialogActionStyle.destructive,
+          result: true,
+        ),
       ],
       barrierDismissible: false,
     );
 
     if (confirmed != true) return;
 
-    int successCount = 0;
-    final ids = List<int>.from(_selectedIds);
-    for (final id in ids) {
-      final ok = await ScreenshotService.instance.deleteScreenshot(id);
-      if (ok) successCount++;
-    }
+    if (isSelectAll) {
+      // 全删除模式：使用高效的文件夹删除
+      final success = await ScreenshotService.instance
+          .deleteAllScreenshotsForApp(_packageName);
 
-    // 本地移除（从全量数据和显示数据中删除）
-    setState(() {
-      _allScreenshots.removeWhere((s) => s.id != null && _selectedIds.contains(s.id));
-      _screenshots.removeWhere((s) => s.id != null && _selectedIds.contains(s.id));
-      // 更新统计信息
-      _totalCount = _allScreenshots.length;
-      _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
-      if (_allScreenshots.isNotEmpty) {
-        final latest = _allScreenshots.reduce((a, b) =>
-          a.captureTime.isAfter(b.captureTime) ? a : b);
-        _latestTime = latest.captureTime;
+      if (success) {
+        // 清空本地数据
+        setState(() {
+          _allScreenshots.clear();
+          _screenshots.clear();
+          _selectedIds.clear();
+          _selectionMode = false;
+          _isFullySelected = false; // 重置全选状态
+          _totalCount = 0;
+          _totalSize = 0;
+          _latestTime = null;
+          _currentDisplayCount = 0;
+          _hasMore = false;
+        });
+
+        // 失效缓存
+        await ScreenshotService.instance.invalidateStatsCache();
+        await _invalidateScreenshotsCache();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('已删除所有 $totalCount 张截图'),
+              backgroundColor: AppTheme.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       } else {
-        _latestTime = null;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('删除失败，请重试'),
+              backgroundColor: AppTheme.destructive,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
-      _currentDisplayCount = _screenshots.length;
-      _hasMore = _currentDisplayCount < _allScreenshots.length;
-      _selectedIds.clear();
-      _selectionMode = false;
-    });
+    } else {
+      // 部分删除模式：使用原来的逐个删除逻辑
+      int successCount = 0;
+      final ids = List<int>.from(_selectedIds);
+      for (final id in ids) {
+        final ok = await ScreenshotService.instance.deleteScreenshot(
+          id,
+          _appInfo.packageName,
+        );
+        if (ok) successCount++;
+      }
 
-    // 失效统计缓存并提示
-    await ScreenshotService.instance.invalidateStatsCache();
-    // 失效截图列表缓存
-    await _invalidateScreenshotsCache();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('已删除 $successCount 张截图'),
-          backgroundColor: AppTheme.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      // 本地移除（从全量数据和显示数据中删除）
+      setState(() {
+        _allScreenshots.removeWhere(
+          (s) => s.id != null && _selectedIds.contains(s.id),
+        );
+        _screenshots.removeWhere(
+          (s) => s.id != null && _selectedIds.contains(s.id),
+        );
+        // 更新统计信息
+        _totalCount = _allScreenshots.length;
+        _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+        if (_allScreenshots.isNotEmpty) {
+          final latest = _allScreenshots.reduce(
+            (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
+          );
+          _latestTime = latest.captureTime;
+        } else {
+          _latestTime = null;
+        }
+        _currentDisplayCount = _screenshots.length;
+        _hasMore = _currentDisplayCount < _allScreenshots.length;
+        _selectedIds.clear();
+        _selectionMode = false;
+        _isFullySelected = false; // 重置全选状态
+      });
+
+      // 失效统计缓存并提示
+      await ScreenshotService.instance.invalidateStatsCache();
+      await _invalidateScreenshotsCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已删除 $successCount 张截图'),
+            backgroundColor: AppTheme.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -1068,7 +1247,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppTheme.destructive, size: 32),
+            const Icon(
+              Icons.error_outline,
+              color: AppTheme.destructive,
+              size: 32,
+            ),
             const SizedBox(height: 4),
             Text(
               message,
@@ -1083,7 +1266,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   String _formatDateTime(DateTime dateTime) {
     final now = DateTime.now();
     final diff = now.difference(dateTime);
-    
+
     if (diff.inMinutes < 1) {
       return '刚刚';
     } else if (diff.inHours < 1) {

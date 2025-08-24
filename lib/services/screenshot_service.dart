@@ -484,10 +484,42 @@ class ScreenshotService {
     }
   }
   
-  /// 删除截屏记录
-  Future<bool> deleteScreenshot(int id) async {
+  /// 删除整个应用的所有截图（高效文件夹删除）
+  Future<bool> deleteAllScreenshotsForApp(String appPackageName) async {
     try {
-      final ok = await _database.deleteScreenshot(id);
+      final baseDir = await PathService.getExternalFilesDir(null);
+      if (baseDir == null) {
+        return false;
+      }
+
+      // 删除应用文件夹
+      final appDir = Directory(p.join(baseDir.path, 'output', 'screen', appPackageName));
+      if (await appDir.exists()) {
+        await appDir.delete(recursive: true);
+        print('已删除应用文件夹: ${appDir.path}');
+      }
+
+      // 清理数据库中的记录
+      final deletedCount = await _database.deleteAllScreenshotsForApp(appPackageName);
+      print('已从数据库删除 $deletedCount 条记录');
+
+      if (deletedCount > 0) {
+        // 刷新统计缓存
+        await _refreshStatsCache(force: true);
+        _screenshotStreamController.add(null);
+      }
+
+      return true;
+    } catch (e) {
+      print('删除应用所有截图失败: $e');
+      return false;
+    }
+  }
+
+  /// 删除截屏记录
+  Future<bool> deleteScreenshot(int id, String packageName) async {
+    try {
+      final ok = await _database.deleteScreenshot(id, packageName);
       if (ok) {
         // 先刷新统计缓存，再通知监听者，确保读取到新缓存
         await _refreshStatsCache(force: true);

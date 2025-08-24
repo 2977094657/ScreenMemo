@@ -42,7 +42,7 @@ Future<T?> showUIDialog<T>({
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: 'Dialog',
-    barrierColor: Colors.black.withOpacity(0.2),
+    barrierColor: Colors.black.withOpacity(0.5),
     pageBuilder: (ctx, _, __) {
       return SafeArea(
         child: Center(
