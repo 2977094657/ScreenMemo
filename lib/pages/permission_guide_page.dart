@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../widgets/ui_components.dart';
 
 class PermissionGuidePage extends StatefulWidget {
   const PermissionGuidePage({super.key});
@@ -45,53 +46,37 @@ class _PermissionGuidePageState extends State<PermissionGuidePage> {
   Future<void> _openAppDetailsSettings() async {
     try {
       await platform.invokeMethod('openAppDetailsSettings');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已打开应用设置页面，请按照指南进行设置')),
-      );
+      UINotifier.info(context, '已打开应用设置页面，请按照指南进行设置');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开设置页面失败: $e')),
-      );
+      UINotifier.error(context, '打开设置页面失败: $e');
     }
   }
 
   Future<void> _openBatteryOptimizationSettings() async {
     try {
       await platform.invokeMethod('openBatteryOptimizationSettings');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已打开电池优化设置页面')),
-      );
+      UINotifier.info(context, '已打开电池优化设置页面');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开电池优化设置失败: $e')),
-      );
+      UINotifier.error(context, '打开电池优化设置失败: $e');
     }
   }
 
   Future<void> _openAutoStartSettings() async {
     try {
       await platform.invokeMethod('openAutoStartSettings');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已打开自启动设置页面')),
-      );
+      UINotifier.info(context, '已打开自启动设置页面');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开自启动设置失败: $e')),
-      );
+      UINotifier.error(context, '打开自启动设置失败: $e');
     }
   }
 
   Future<void> _markPermissionConfigured() async {
     try {
       await platform.invokeMethod('markPermissionConfigured', {'type': 'all'});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('权限设置已标记为完成')),
-      );
+      UINotifier.success(context, '权限设置已标记为完成');
       Navigator.of(context).pop();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('标记权限设置失败: $e')),
-      );
+      UINotifier.error(context, '标记权限设置失败: $e');
     }
   }
 

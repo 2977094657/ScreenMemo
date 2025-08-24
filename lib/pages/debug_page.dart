@@ -6,6 +6,7 @@ import '../services/screenshot_database.dart';
 import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
 import '../services/flutter_logger.dart';
+import '../widgets/ui_components.dart';
 
 class DebugPage extends StatefulWidget {
   const DebugPage({super.key});
@@ -65,9 +66,7 @@ class _DebugPageState extends State<DebugPage> {
                   final data = _debugInfo;
                   await Clipboard.setData(ClipboardData(text: data));
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('日志已复制到剪贴板'), behavior: SnackBarBehavior.floating),
-                  );
+                  UINotifier.success(context, '日志已复制到剪贴板');
                 },
                 child: const Text('复制当前显示内容'),
               ),

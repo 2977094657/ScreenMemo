@@ -260,14 +260,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     if (newValue) {
       // 显示启动提示
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正在启动截屏服务...'),
-            backgroundColor: AppTheme.info,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        UINotifier.info(context, '正在启动截屏服务...');
       }
 
       // 启动定时截屏
@@ -282,14 +275,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         final success = await screenshotService.startScreenshotService(persistedInterval);
         if (!success) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('启动截屏服务失败，请检查权限设置'),
-                backgroundColor: AppTheme.destructive,
-                behavior: SnackBarBehavior.floating,
-                duration: Duration(seconds: 3),
-              ),
-            );
+            UINotifier.error(context, '启动截屏服务失败，请检查权限设置', duration: const Duration(seconds: 3));
           }
           return;
         }
@@ -373,14 +359,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       setState(() {
         _screenshotEnabled = newValue;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(newValue ? '截屏已启用' : '截屏已停用'),
-          backgroundColor: newValue ? AppTheme.success : AppTheme.info,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (newValue) {
+        UINotifier.success(context, '截屏已启用');
+      } else {
+        UINotifier.info(context, '截屏已停用');
+      }
     }
   }
 
@@ -464,23 +447,13 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 1) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(
-                  content: Text('请输入大于等于1的有效数字'),
-                  backgroundColor: AppTheme.destructive,
-                ),
-              );
+              UINotifier.error(ctx, '请输入大于等于1的有效数字');
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                SnackBar(
-                  content: Text('截屏间隔已设置为 $interval秒'),
-                  backgroundColor: AppTheme.success,
-                ),
-              );
+              UINotifier.success(ctx, '截屏间隔已设置为 $interval秒');
             }
           },
         ),
@@ -557,14 +530,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             _screenshotEnabled = false;
           });
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('由于权限不足，截屏功能已自动关闭'),
-              backgroundColor: AppTheme.warning,
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 3),
-            ),
-          );
+          UINotifier.info(context, '由于权限不足，截屏功能已自动关闭', duration: const Duration(seconds: 3));
         }
       }
     } catch (e) {
@@ -579,14 +545,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
       // 显示加载提示
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正在刷新权限状态...'),
-            backgroundColor: AppTheme.info,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 1),
-          ),
-        );
+        UINotifier.info(context, '正在刷新权限状态...', duration: const Duration(seconds: 1));
       }
 
       // 强制刷新权限状态
@@ -601,24 +560,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       await _checkPermissionIssues();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('权限状态已刷新'),
-            backgroundColor: AppTheme.success,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 1),
-          ),
-        );
+        UINotifier.success(context, '权限状态已刷新', duration: const Duration(seconds: 1));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('刷新权限状态失败: $e'),
-            backgroundColor: AppTheme.destructive,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        UINotifier.error(context, '刷新权限状态失败: $e');
       }
     }
   }
@@ -661,13 +607,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('检查权限状态失败: $e'),
-            backgroundColor: AppTheme.destructive,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        UINotifier.error(context, '检查权限状态失败: $e');
       }
     }
   }
@@ -1098,12 +1038,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       _selectionMode = false;
       _selectedPackages.clear();
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已移除监测 $count 个应用（不删除图片）'),
-        backgroundColor: AppTheme.info,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    UINotifier.info(context, '已移除监测 $count 个应用（不删除图片）');
   }
 }

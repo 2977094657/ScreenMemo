@@ -127,13 +127,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
         });
 
         // 显示错误提示
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('加载权限状态失败: $e'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          UINotifier.error(context, '加载权限状态失败: $e', duration: const Duration(seconds: 3));
       }
     }
   }
@@ -621,12 +615,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                   onRequest: () async {
                     // 先显示提示
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('请在系统设置中完成授权，然后返回应用'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
+                      UINotifier.info(context, '请在系统设置中完成授权，然后返回应用', duration: const Duration(seconds: 2));
                     }
 
                     // 打开设置页面

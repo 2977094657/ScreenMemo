@@ -95,9 +95,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 await Clipboard.setData(ClipboardData(text: displayPath));
                 if (ctx.mounted) {
                   Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(content: Text('已复制路径')),
-                  );
+                  UINotifier.success(ctx, '已复制路径');
                 }
               },
             ),
@@ -274,21 +272,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           break;
         case 'mediaProjection':
           // 不再需要MediaProjection权限
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('已使用无障碍服务截屏，无需屏幕录制权限'),
-              backgroundColor: AppTheme.success,
-            ),
-          );
+          UINotifier.info(context, '已使用无障碍服务截屏，无需屏幕录制权限');
           break;
         case 'battery_optimization':
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('请在系统设置中完成授权，然后返回应用'),
-                duration: Duration(seconds: 2),
-              ),
-            );
+            UINotifier.info(context, '请在系统设置中完成授权，然后返回应用', duration: const Duration(seconds: 2));
           }
           await platform.invokeMethod('openBatteryOptimizationSettings');
           _startBatteryPermissionCheck();
@@ -301,14 +289,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             if (confirmed) {
               await platform.invokeMethod('markPermissionConfigured', {'type': 'autostart'});
               await _loadKeepAlivePermissions();
+
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('自启动权限已标记为已授权'),
-                    backgroundColor: AppTheme.success,
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                UINotifier.success(context, '自启动权限已标记为已授权', duration: const Duration(seconds: 2));
               }
             }
           }
@@ -322,13 +305,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('请求权限失败: $e'),
-            backgroundColor: AppTheme.destructive,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        UINotifier.error(context, '请求权限失败: $e');
       }
     }
   }
@@ -784,23 +761,13 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 1) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                const SnackBar(
-                  content: Text('请输入大于等于1的有效数字'),
-                  backgroundColor: AppTheme.destructive,
-                ),
-              );
+              UINotifier.error(ctx, '请输入大于等于1的有效数字');
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                SnackBar(
-                  content: Text('截屏间隔已设置为 $interval秒'),
-                  backgroundColor: AppTheme.success,
-                ),
-              );
+              UINotifier.success(ctx, '截屏间隔已设置为 $interval秒');
             }
           },
         ),

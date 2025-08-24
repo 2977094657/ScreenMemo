@@ -1,5 +1,273 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../theme/app_theme.dart';
+
+/// 统一的顶部吐司（Overlay）助手 - shadcn风格：扁平、细线框/无线框、小圆角、无阴影
+class UINotifier {
+  static OverlayEntry? _currentEntry;
+
+  static void _removeCurrent() {
+    try {
+      _currentEntry?.remove();
+    } catch (_) {}
+    _currentEntry = null;
+  }
+
+  static void _showTopToast(
+    BuildContext context, {
+    required String message,
+    required Color textColor,
+    required Color backgroundColor,
+    Color? borderColor,
+    bool outlined = true,
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    // 移除已有吐司，避免堆叠
+    _removeCurrent();
+
+    final overlay = Overlay.of(context);
+    if (overlay == null) return;
+
+    final entry = OverlayEntry(
+      builder: (ctx) => _TopToast(
+        message: message,
+        textColor: textColor,
+        backgroundColor: backgroundColor,
+        borderColor: borderColor,
+        outlined: outlined,
+        displayDuration: duration ?? const Duration(seconds: 3),
+        actionLabel: actionLabel,
+        onAction: onAction,
+        onClosed: () {
+          _removeCurrent();
+        },
+      ),
+    );
+
+    overlay.insert(entry);
+    _currentEntry = entry;
+  }
+
+  static void success(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+    final theme = Theme.of(context);
+    const Color base = Color(0xFF67C23A); // Element success
+    const Color bgLight = Color(0xFFF0F9EB);
+    const Color brLight = Color(0xFFE1F3D8);
+    final bool isDark = theme.brightness == Brightness.dark;
+    _showTopToast(
+      context,
+      message: message,
+      textColor: base,
+      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
+      borderColor: isDark ? base.withOpacity(0.6) : brLight,
+      outlined: true,
+      duration: duration ?? const Duration(seconds: 2),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void info(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+    final theme = Theme.of(context);
+    const Color base = Color(0xFF909399); // Element info
+    const Color bgLight = Color(0xFFF4F4F5);
+    const Color brLight = Color(0xFFE9E9EB);
+    final bool isDark = theme.brightness == Brightness.dark;
+    _showTopToast(
+      context,
+      message: message,
+      textColor: base,
+      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
+      borderColor: isDark ? base.withOpacity(0.6) : brLight,
+      outlined: true,
+      duration: duration ?? const Duration(seconds: 2),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void error(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+    final theme = Theme.of(context);
+    const Color base = Color(0xFFF56C6C); // Element error
+    const Color bgLight = Color(0xFFFEF0F0);
+    const Color brLight = Color(0xFFFDE2E2);
+    final bool isDark = theme.brightness == Brightness.dark;
+    _showTopToast(
+      context,
+      message: message,
+      textColor: base,
+      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
+      borderColor: isDark ? base.withOpacity(0.6) : brLight,
+      outlined: true,
+      duration: duration ?? const Duration(seconds: 4),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void warning(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+    final theme = Theme.of(context);
+    const Color base = Color(0xFFE6A23C); // Element warning
+    const Color bgLight = Color(0xFFFDF6EC);
+    const Color brLight = Color(0xFFFAECD8);
+    final bool isDark = theme.brightness == Brightness.dark;
+    _showTopToast(
+      context,
+      message: message,
+      textColor: base,
+      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
+      borderColor: isDark ? base.withOpacity(0.6) : brLight,
+      outlined: true,
+      duration: duration ?? const Duration(seconds: 3),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+}
+
+/// 内部组件：带进出场动画与自动消失的顶部吐司
+class _TopToast extends StatefulWidget {
+  final String message;
+  final Color textColor;
+  final Color backgroundColor;
+  final Color? borderColor;
+  final bool outlined;
+  final Duration displayDuration;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final VoidCallback onClosed;
+
+  const _TopToast({
+    required this.message,
+    required this.textColor,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.outlined,
+    required this.displayDuration,
+    required this.onClosed,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  State<_TopToast> createState() => _TopToastState();
+}
+
+class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _slide = Tween<Offset>(begin: const Offset(0, -0.08), end: Offset.zero).animate(_fade);
+    _controller.forward();
+    _timer = Timer(widget.displayDuration, _startDismiss);
+  }
+
+  void _startDismiss() async {
+    try {
+      await _controller.reverse();
+    } catch (_) {}
+    if (mounted) widget.onClosed();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final borderSide = widget.outlined && widget.borderColor != null
+        ? Border.all(color: widget.borderColor!, width: 1)
+        : null;
+    final interactive = widget.actionLabel != null && widget.onAction != null;
+
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: IgnorePointer(
+        ignoring: !interactive,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
+            child: SlideTransition(
+              position: _slide,
+              child: FadeTransition(
+                opacity: _fade,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                        vertical: AppTheme.spacing2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: widget.backgroundColor,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        border: borderSide,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              widget.message,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: widget.textColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (interactive) ...[
+                            const SizedBox(width: AppTheme.spacing2),
+                            TextButton(
+                              onPressed: () {
+                                widget.onAction?.call();
+                                _startDismiss();
+                              },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(
+                                widget.actionLabel!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: widget.textColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// shadcn/ui风格的按钮组件
 class UIButton extends StatelessWidget {
