@@ -7,6 +7,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.util.Log
 
 /**
@@ -97,39 +100,60 @@ class AccessibilityStateMonitor(private val context: Context) {
      */
     private fun isAccessibilityServiceEnabled(): Boolean {
         try {
-            // 检查辅助功能是否总体启用
+            // 1) 检查辅助功能总开关
             val accessibilityEnabled = Settings.Secure.getInt(
                 context.contentResolver,
                 Settings.Secure.ACCESSIBILITY_ENABLED,
                 0
             ) == 1
-            
             if (!accessibilityEnabled) {
                 return false
             }
-            
-            // 检查我们的服务是否在已启用的服务列表中
-            val enabledServices = Settings.Secure.getString(
+
+            val targetPkg = context.packageName
+            val targetCls = ScreenCaptureAccessibilityService::class.java.name
+
+            // 2) 从 Settings 读取并“规范化”每个条目后再比对，兼容短类名
+            val enabledServicesRaw = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            )
-            
-            if (enabledServices.isNullOrEmpty()) {
-                return false
-            }
-            
-            val serviceName = "${context.packageName}/${ScreenCaptureAccessibilityService::class.java.name}"
-            val colonSplitter = TextUtils.SimpleStringSplitter(':')
-            colonSplitter.setString(enabledServices)
-            
-            while (colonSplitter.hasNext()) {
-                val componentName = colonSplitter.next()
-                if (componentName.equals(serviceName, ignoreCase = true)) {
-                    return true
+            ) ?: ""
+
+            var isEnabledInSettings = false
+            if (enabledServicesRaw.isNotEmpty()) {
+                val colonSplitter = TextUtils.SimpleStringSplitter(':')
+                colonSplitter.setString(enabledServicesRaw)
+                while (colonSplitter.hasNext()) {
+                    val entry = colonSplitter.next()
+                    val cn = ComponentName.unflattenFromString(entry)
+                    if (cn != null) {
+                        if (cn.packageName.equals(targetPkg, true) && cn.className.equals(targetCls, true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    } else {
+                        val expectedFull = "$targetPkg/$targetCls"
+                        val expectedShort = "$targetPkg/.${ScreenCaptureAccessibilityService::class.java.simpleName}"
+                        if (entry.equals(expectedFull, true) || entry.equals(expectedShort, true)) {
+                            isEnabledInSettings = true
+                            break
+                        }
+                    }
                 }
             }
-            
-            return false
+
+            // 3) 通过 AccessibilityManager 再次核对
+            var isEnabledInManager = false
+            try {
+                val am = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+                val list = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                isEnabledInManager = list.any { info ->
+                    val si = info.resolveInfo.serviceInfo
+                    si.packageName.equals(targetPkg, true) && si.name.equals(targetCls, true)
+                }
+            } catch (_: Exception) {}
+
+            return isEnabledInSettings || isEnabledInManager
         } catch (e: Exception) {
             Log.e(TAG, "检查辅助功能服务状态失败", e)
             return false

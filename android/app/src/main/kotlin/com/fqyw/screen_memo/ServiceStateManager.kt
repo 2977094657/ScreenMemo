@@ -19,6 +19,7 @@ object ServiceStateManager {
     private const val KEY_FOREGROUND_SERVICE_RUNNING = "foreground_service_running"
     private const val KEY_LAST_UPDATE_TIME = "last_update_time"
     private const val KEY_PROCESS_ID = "process_id"
+    private const val KEY_ACCESSIBILITY_PROCESS_NAME = "accessibility_process_name"
     
     /**
      * 获取SharedPreferences实例
@@ -33,10 +34,16 @@ object ServiceStateManager {
     fun setAccessibilityServiceRunning(context: Context, isRunning: Boolean) {
         try {
             val prefs = getPrefs(context)
+            val procName = try {
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                val pid = android.os.Process.myPid()
+                am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: ""
+            } catch (_: Exception) { "" }
             prefs.edit()
                 .putBoolean(KEY_ACCESSIBILITY_SERVICE_RUNNING, isRunning)
                 .putLong(KEY_LAST_UPDATE_TIME, System.currentTimeMillis())
                 .putInt(KEY_PROCESS_ID, android.os.Process.myPid())
+                .putString(KEY_ACCESSIBILITY_PROCESS_NAME, procName)
                 .apply()
             
             FileLogger.d(TAG, "AccessibilityService状态已更新: $isRunning, PID: ${android.os.Process.myPid()}")
@@ -134,7 +141,8 @@ object ServiceStateManager {
                 "accessibilityServiceEnabled" to prefs.getBoolean(KEY_ACCESSIBILITY_SERVICE_ENABLED, false),
                 "foregroundServiceRunning" to prefs.getBoolean(KEY_FOREGROUND_SERVICE_RUNNING, false),
                 "lastUpdateTime" to prefs.getLong(KEY_LAST_UPDATE_TIME, 0),
-                "processId" to prefs.getInt(KEY_PROCESS_ID, -1)
+                "processId" to prefs.getInt(KEY_PROCESS_ID, -1),
+                "accessibilityProcessName" to (prefs.getString(KEY_ACCESSIBILITY_PROCESS_NAME, "") ?: "")
             )
         } catch (e: Exception) {
             Log.e(TAG, "获取所有状态失败", e)

@@ -760,10 +760,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         return try {
             val appName = getAppName(packageName) ?: packageName
 
-            // 定义相对路径的根目录和文件名
-            // 使用packageName作为文件夹名，确保与数据库查询一致
-            val relativeDir = "output/screen/$packageName"
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+            // 新的目录结构：应用+时间 (output/screen/包名/年月/日期/)
+            val now = Date()
+            val yearMonth = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(now)
+            val day = SimpleDateFormat("dd", Locale.getDefault()).format(now)
+            val relativeDir = "output/screen/$packageName/$yearMonth/$day"
+            val timestamp = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(now)
             val fileName = "${timestamp}.jpg"
             
             // 使用应用专属的外部存储目录

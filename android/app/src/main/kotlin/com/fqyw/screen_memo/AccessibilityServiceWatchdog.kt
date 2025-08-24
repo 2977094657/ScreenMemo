@@ -44,10 +44,10 @@ object AccessibilityServiceWatchdog {
         val isFunctional: Boolean           // 功能是否正常
     ) {
         val isReallyRunning: Boolean
-            get() = isSystemEnabled && isInstanceExists && isProcessAlive && isHeartbeatValid && isFunctional
+            get() = isSystemEnabled && (isFunctional || isHeartbeatValid)
             
         val needsRestart: Boolean
-            get() = isSystemEnabled && (!isInstanceExists || !isProcessAlive || !isHeartbeatValid || !isFunctional)
+            get() = isSystemEnabled && !(isFunctional || isHeartbeatValid)
     }
     
     /**
@@ -232,12 +232,6 @@ object AccessibilityServiceWatchdog {
      */
     private fun checkProcessAlive(context: Context): Boolean {
         return try {
-            val service = ScreenCaptureAccessibilityService.instance
-            if (service == null) {
-                FileLogger.d(TAG, "服务实例不存在，进程可能已死亡")
-                return false
-            }
-            
             // 获取保存的PID
             val states = ServiceStateManager.getAllStates(context)
             val savedPid = states["processId"] as? Int ?: -1
@@ -249,17 +243,18 @@ object AccessibilityServiceWatchdog {
             
             // 检查当前进程PID是否匹配
             val currentPid = Process.myPid()
-            if (savedPid != currentPid) {
-                FileLogger.w(TAG, "PID不匹配 - 保存: $savedPid, 当前: $currentPid")
-                return false
-            }
             
             // 通过ActivityManager验证进程存在
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val runningProcesses = activityManager.runningAppProcesses ?: emptyList()
             
             val processExists = runningProcesses.any { processInfo ->
-                processInfo.pid == savedPid && processInfo.processName.contains(context.packageName)
+                processInfo.pid == savedPid && processInfo.processName.startsWith(context.packageName)
+            }
+            
+            // 如果保存的PID与当前PID不一致但进程存在，记录但不直接判死
+            if (savedPid != currentPid && processExists) {
+                FileLogger.w(TAG, "PID不一致但进程存在 - 保存: $savedPid, 当前: $currentPid")
             }
             
             FileLogger.d(TAG, "进程存活检查 - PID: $savedPid, 存在: $processExists")
