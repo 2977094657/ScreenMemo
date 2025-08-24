@@ -104,6 +104,7 @@ class AppTheme {
         error: destructive,
         onError: destructiveForeground,
         outline: border,
+        surfaceVariant: muted,  // 添加surfaceVariant定义，使用muted色作为背景
       ),
       scaffoldBackgroundColor: background,
       cardTheme: const CardThemeData(

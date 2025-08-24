@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/theme_service.dart';
 import 'home_page.dart';
 import 'settings_page.dart';
+import 'debug_page.dart';
 
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
@@ -23,6 +24,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     super.initState();
     _pages = [
       HomePage(themeService: widget.themeService),
+      const DebugPage(),
       SettingsPage(themeService: widget.themeService),
     ];
   }
@@ -30,6 +32,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   final List<BottomNavigationBarItem> _navigationItems = [
     const BottomNavigationBarItem(
       icon: Icon(Icons.home),
+      label: '',
+    ),
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.article_outlined),
       label: '',
     ),
     const BottomNavigationBarItem(
