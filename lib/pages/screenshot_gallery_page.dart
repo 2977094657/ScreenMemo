@@ -386,34 +386,16 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           await _invalidateScreenshotsCache();
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('截图已删除'),
-                backgroundColor: AppTheme.success,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            UINotifier.success(context, '截图已删除');
           }
         } else {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('删除失败'),
-                backgroundColor: AppTheme.destructive,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
+            UINotifier.error(context, '删除失败');
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('删除失败: $e'),
-              backgroundColor: AppTheme.destructive,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          UINotifier.error(context, '删除失败: $e');
         }
       }
     }
@@ -1165,74 +1147,97 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         await _invalidateScreenshotsCache();
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('已删除所有 $totalCount 张截图'),
-              backgroundColor: AppTheme.success,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          UINotifier.success(context, '已删除所有 $totalCount 张截图');
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('删除失败，请重试'),
-              backgroundColor: AppTheme.destructive,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          UINotifier.error(context, '删除失败，请重试');
         }
       }
     } else {
-      // 部分删除模式：使用原来的逐个删除逻辑
-      int successCount = 0;
-      final ids = List<int>.from(_selectedIds);
-      for (final id in ids) {
-        final ok = await ScreenshotService.instance.deleteScreenshot(
-          id,
-          _appInfo.packageName,
+      // 部分删除模式：根据保留比例触发“仅保留”快速删除
+      final totalCount = _allScreenshots.where((s) => s.id != null).length;
+      final keepCount = totalCount - _selectedIds.length;
+      final keepRatio = totalCount == 0 ? 1.0 : (keepCount / totalCount);
+
+      // 阈值可后续做成设置项，这里先固定为10%
+      const double thresholdKeepRatio = 0.1;
+
+      bool usedFastKeepOnly = false;
+      if (keepCount >= 0 && keepRatio <= thresholdKeepRatio) {
+        // 选择删除大多数，仅保留极少数 -> 使用快速“仅保留”策略
+        final keepIds = _allScreenshots
+            .where((s) => s.id != null && !_selectedIds.contains(s.id))
+            .map((s) => s.id!)
+            .toList(growable: false);
+
+        usedFastKeepOnly = await ScreenshotService.instance.fastDeleteKeepOnly(
+          packageName: _packageName,
+          keepIds: keepIds,
+          thresholdKeepRatio: thresholdKeepRatio,
         );
-        if (ok) successCount++;
       }
 
-      // 本地移除（从全量数据和显示数据中删除）
-      setState(() {
-        _allScreenshots.removeWhere(
-          (s) => s.id != null && _selectedIds.contains(s.id),
-        );
-        _screenshots.removeWhere(
-          (s) => s.id != null && _selectedIds.contains(s.id),
-        );
-        // 更新统计信息
-        _totalCount = _allScreenshots.length;
-        _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
-        if (_allScreenshots.isNotEmpty) {
-          final latest = _allScreenshots.reduce(
-            (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
+      if (!usedFastKeepOnly) {
+        // 回退到逐个删除
+        int successCount = 0;
+        final ids = List<int>.from(_selectedIds);
+        for (final id in ids) {
+          final ok = await ScreenshotService.instance.deleteScreenshot(
+            id,
+            _appInfo.packageName,
           );
-          _latestTime = latest.captureTime;
-        } else {
-          _latestTime = null;
+          if (ok) successCount++;
         }
-        _currentDisplayCount = _screenshots.length;
-        _hasMore = _currentDisplayCount < _allScreenshots.length;
-        _selectedIds.clear();
-        _selectionMode = false;
-        _isFullySelected = false; // 重置全选状态
-      });
 
-      // 失效统计缓存并提示
-      await ScreenshotService.instance.invalidateStatsCache();
-      await _invalidateScreenshotsCache();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已删除 $successCount 张截图'),
-            backgroundColor: AppTheme.success,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        // 本地移除（从全量数据和显示数据中删除）
+        setState(() {
+          _allScreenshots.removeWhere(
+            (s) => s.id != null && _selectedIds.contains(s.id),
+          );
+          _screenshots.removeWhere(
+            (s) => s.id != null && _selectedIds.contains(s.id),
+          );
+          // 更新统计信息
+          _totalCount = _allScreenshots.length;
+          _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
+          if (_allScreenshots.isNotEmpty) {
+            final latest = _allScreenshots.reduce(
+              (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
+            );
+            _latestTime = latest.captureTime;
+          } else {
+            _latestTime = null;
+          }
+          _currentDisplayCount = _screenshots.length;
+          _hasMore = _currentDisplayCount < _allScreenshots.length;
+          _selectedIds.clear();
+          _selectionMode = false;
+          _isFullySelected = false; // 重置全选状态
+        });
+
+        // 失效统计缓存
+        await ScreenshotService.instance.invalidateStatsCache();
+        await _invalidateScreenshotsCache();
+        if (mounted) {
+          UINotifier.success(context, '已删除 $successCount 张截图');
+        }
+      } else {
+        // 使用了“仅保留”快速删除：直接重载数据
+        await ScreenshotService.instance.invalidateStatsCache();
+        await _invalidateScreenshotsCache();
+
+        // 重新加载当前应用截图
+        await _loadScreenshotsFromDatabase();
+        setState(() {
+          _selectedIds.clear();
+          _selectionMode = false;
+          _isFullySelected = false;
+        });
+
+        if (mounted) {
+          UINotifier.success(context, '已保留 $keepCount 张，删除 ${totalCount - keepCount} 张');
+        }
       }
     }
   }

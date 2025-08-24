@@ -499,6 +499,62 @@ class ScreenshotDatabase {
 
 
 
+  /// 按ID列表获取记录的简要信息（用于快速删除/保留算法）
+  Future<List<Map<String, dynamic>>> getRecordsByIds(String packageName, List<int> ids) async {
+    final db = await database;
+    try {
+      if (ids.isEmpty) return [];
+
+      final tableName = _getAppTableName(packageName);
+      if (!await _checkTableExists(db, tableName)) {
+        return [];
+      }
+
+      final placeholders = List.filled(ids.length, '?').join(',');
+      final rows = await db.query(
+        tableName,
+        columns: ['id', 'file_path', 'capture_time', 'file_size'],
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+      return rows;
+    } catch (e) {
+      print('按ID获取记录失败: $e');
+      return [];
+    }
+  }
+
+  /// 删除除保留ID外的所有记录，并重算统计
+  Future<int> deleteAllExcept(String packageName, List<int> keepIds) async {
+    final db = await database;
+    try {
+      final tableName = _getAppTableName(packageName);
+      if (!await _checkTableExists(db, tableName)) {
+        return 0;
+      }
+
+      if (keepIds.isEmpty) {
+        // 无需保留任何记录，等价于删除所有
+        final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM $tableName');
+        final recordCount = (countResult.first['count'] as int?) ?? 0;
+        await db.execute('DROP TABLE IF EXISTS $tableName');
+        await db.delete('app_registry', where: 'app_package_name = ?', whereArgs: [packageName]);
+        await db.delete('app_stats', where: 'app_package_name = ?', whereArgs: [packageName]);
+        return recordCount;
+      }
+
+      final placeholders = List.filled(keepIds.length, '?').join(',');
+      final deleted = await db.rawDelete('DELETE FROM $tableName WHERE id NOT IN ($placeholders)', keepIds);
+
+      // 重算统计
+      await _recomputeAppStatForPackage(db, packageName);
+      return deleted;
+    } catch (e) {
+      print('删除非保留记录失败: $e');
+      return 0;
+    }
+  }
+
   /// 根据文件路径查找记录（用于检查重复）
   Future<ScreenshotRecord?> getScreenshotByPath(String filePath) async {
     final db = await database;

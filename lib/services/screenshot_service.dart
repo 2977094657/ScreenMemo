@@ -532,6 +532,120 @@ class ScreenshotService {
     }
   }
 
+  /// 基于“仅保留所选”的高速删除：
+  /// - keepIds: 要保留的数据库ID集合
+  /// - packageName: 应用包名
+  /// - thresholdKeepRatio: 触发该策略的保留占比阈值（例如 0.1 表示保留比例 <=10% 时启用）
+  /// 返回：是否采用并完成了“仅保留”策略；若未达阈值则返回false（应回退到普通逐条删除）
+  Future<bool> fastDeleteKeepOnly({
+    required String packageName,
+    required List<int> keepIds,
+    double thresholdKeepRatio = 0.1,
+  }) async {
+    try {
+      // 预检查：总数 & 比例
+      final totalCount = await _database.getScreenshotCountByApp(packageName);
+      if (totalCount <= 0) return false;
+      final keepCount = keepIds.length;
+      final keepRatio = keepCount / totalCount;
+      if (keepRatio <= 0 || keepRatio > thresholdKeepRatio) {
+        // 不满足阈值条件，由上层走普通删除
+        return false;
+      }
+
+      final baseDir = await PathService.getExternalFilesDir(null);
+      if (baseDir == null) return false;
+      final appDir = Directory(p.join(baseDir.path, 'output', 'screen', packageName));
+      if (!await appDir.exists()) {
+        // 若文件夹不存在，仅做DB侧删除非保留记录即可
+        await _database.deleteAllExcept(packageName, keepIds);
+        await _refreshStatsCache(force: true);
+        _screenshotStreamController.add(null);
+        return true;
+      }
+
+      // 查询保留记录以获得文件路径
+      final keepRows = await _database.getRecordsByIds(packageName, keepIds);
+      if (keepRows.isEmpty && keepCount > 0) {
+        // DB未查到，回退
+        return false;
+      }
+
+      // 1) 将保留文件复制到临时目录（仅复制少量保留文件）
+      final tempDir = Directory(p.join(appDir.parent.path, '${packageName}_keep_tmp_${DateTime.now().millisecondsSinceEpoch}'));
+      if (!await tempDir.exists()) {
+        await tempDir.create(recursive: true);
+      }
+
+      // 建立原路径 -> 临时路径的映射，便于后续按原路径还原
+      final Map<String, String> originalToTempPath = <String, String>{};
+      for (final row in keepRows) {
+        final filePath = row['file_path'] as String?;
+        if (filePath == null || filePath.isEmpty) continue;
+        final src = File(filePath);
+        if (!await src.exists()) continue;
+        final dest = File(p.join(tempDir.path, p.basename(filePath)));
+        try {
+          await src.copy(dest.path);
+          originalToTempPath[filePath] = dest.path;
+        } catch (e) {
+          // 若单个复制失败，不中断整体流程
+          print('复制保留文件失败: $e, ${src.path}');
+        }
+      }
+
+      // 2) 删除整个应用目录（极快）
+      if (await appDir.exists()) {
+        await appDir.delete(recursive: true);
+      }
+
+      // 3) 仅保留数据库记录：删除除 keepIds 外的全部行
+      await _database.deleteAllExcept(packageName, keepIds);
+
+      // 4) 逐个将临时文件按原绝对路径还原（保持与DB中的file_path一致）
+      for (final entry in originalToTempPath.entries) {
+        final originalPath = entry.key;
+        final tempPath = entry.value;
+        final originalParent = Directory(p.dirname(originalPath));
+        try {
+          if (!await originalParent.exists()) {
+            await originalParent.create(recursive: true);
+          }
+        } catch (e) {
+          print('创建原目录失败: $e, $originalParent');
+        }
+
+        final tempFile = File(tempPath);
+        if (!await tempFile.exists()) continue;
+        try {
+          await tempFile.rename(originalPath);
+        } catch (e) {
+          try {
+            await tempFile.copy(originalPath);
+            await tempFile.delete();
+          } catch (e2) {
+            print('还原保留文件失败: $e2, $originalPath');
+          }
+        }
+      }
+
+      // 5) 清理临时目录
+      try {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      } catch (_) {}
+
+      // 6) 刷新统计缓存并通知
+      await _refreshStatsCache(force: true);
+      _screenshotStreamController.add(null);
+      return true;
+    } catch (e) {
+      print('fastDeleteKeepOnly 失败: $e');
+      return false;
+    }
+  }
+
   /// 扫描本地截图目录，将未入库的图片补录到数据库
   Future<int> syncDatabaseWithFiles({String? packageName}) async {
     try {
