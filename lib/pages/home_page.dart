@@ -10,6 +10,7 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../widgets/app_selection_widget.dart';
 import 'settings_page.dart';
+import '../services/flutter_logger.dart';
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -95,6 +96,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     StartupProfiler.begin('HomePage._loadStats');
     // 首页允许首帧走统计缓存
     final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
+    // 日志：记录缓存签名与缓存来源
+    // ignore: unawaited_futures
+    FlutterLogger.log('home.loadStats cachedFirst -> total=${stats['totalScreenshots']}, today=${stats['todayScreenshots']}');
     if (mounted) {
       setState(() {
         _screenshotStats = stats;
@@ -181,10 +185,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       final sortMode = await _appService.getSortMode();
       final screenshotEnabled = await _appService.getScreenshotEnabled();
       final screenshotInterval = await _appService.getScreenshotInterval();
-      
-      // 加载截图统计数据
-      await _loadStats();
 
+      // 先更新轻量数据，避免出现短暂空状态
       if (mounted) {
         setState(() {
           _selectedApps = selectedApps;
@@ -193,16 +195,19 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           _screenshotInterval = screenshotInterval;
           _isLoading = false;
         });
-
-        // 根据排序模式排序应用
-        _sortApps();
-
-        // 检查权限状态
-        _checkPermissionIssues();
-
-        // 检查截屏开关状态是否需要自动关闭
-        _checkScreenshotToggleState();
       }
+
+      // 再加载统计数据（缓存优先），不阻塞应用列表
+      await _loadStats();
+
+      // 根据排序模式排序应用
+      _sortApps();
+
+      // 检查权限状态
+      _checkPermissionIssues();
+
+      // 检查截屏开关状态是否需要自动关闭
+      _checkScreenshotToggleState();
     } catch (e) {
       print('加载数据失败: $e');
       // 出错也不显示全屏加载
@@ -218,20 +223,29 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         _selectedApps.sort((a, b) {
           final aLastTime = appStats[a.packageName]?['lastCaptureTime'] as DateTime?;
           final bLastTime = appStats[b.packageName]?['lastCaptureTime'] as DateTime?;
-          
-          // 没有截图的排在后面
-          if (aLastTime == null && bLastTime == null) return 0;
-          if (aLastTime == null) return 1;
-          if (bLastTime == null) return -1;
-          
-          return bLastTime.compareTo(aLastTime); // 最近的在前面
+          // 主键：最近截图时间；次键：应用名；三键：包名，确保稳定
+          final c1 = () {
+            if (aLastTime == null && bLastTime == null) return 0;
+            if (aLastTime == null) return 1;
+            if (bLastTime == null) return -1;
+            return bLastTime.compareTo(aLastTime);
+          }();
+          if (c1 != 0) return c1;
+          final c2 = a.appName.compareTo(b.appName);
+          if (c2 != 0) return c2;
+          return a.packageName.compareTo(b.packageName);
         });
         break;
       case 'screenshotCount':
         _selectedApps.sort((a, b) {
           final aCount = appStats[a.packageName]?['totalCount'] as int? ?? 0;
           final bCount = appStats[b.packageName]?['totalCount'] as int? ?? 0;
-          return bCount.compareTo(aCount); // 数量多的在前面
+          // 主键：数量；次键：应用名；三键：包名
+          final c1 = bCount.compareTo(aCount);
+          if (c1 != 0) return c1;
+          final c2 = a.appName.compareTo(b.appName);
+          if (c2 != 0) return c2;
+          return a.packageName.compareTo(b.packageName);
         });
         break;
     }
@@ -279,6 +293,19 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           }
           return;
         }
+
+        // 成功开启后，主动刷新一次统计并更新缓存，稳定列表排序
+        try {
+          await ScreenshotService.instance.syncDatabaseWithFiles();
+          final stats = await ScreenshotService.instance.getScreenshotStatsFresh();
+          await ScreenshotService.instance.updateStatsCache(stats);
+          if (mounted) {
+            setState(() {
+              _screenshotStats = stats;
+            });
+            _sortApps();
+          }
+        } catch (_) {}
       } catch (e) {
         String errorMessage = '启动失败: 未知错误';
         

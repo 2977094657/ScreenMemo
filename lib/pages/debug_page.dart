@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import '../services/screenshot_database.dart';
 import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
+import '../services/flutter_logger.dart';
 
 class DebugPage extends StatefulWidget {
   const DebugPage({super.key});
@@ -29,16 +31,61 @@ class _DebugPageState extends State<DebugPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ElevatedButton(
-              onPressed: _isLoading ? null : _startDebug,
-              child: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('开始调试'),
-            ),
+            Wrap(spacing: 12, runSpacing: 8, children: [
+              ElevatedButton(
+                onPressed: _isLoading ? null : _startDebug,
+                child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('开始调试'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  final path = await FlutterLogger.getLogFilePath();
+                  final tail = await FlutterLogger.readTail(200);
+                  setState(() {
+                    _debugInfo = '=== 日志文件路径 ===\n${path ?? "(未知)"}\n\n=== 最近200行日志 ===\n$tail';
+                  });
+                },
+                child: const Text('查看日志(尾200行)'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  final all = await FlutterLogger.readAll();
+                  setState(() { _debugInfo = all.isEmpty ? '(无日志)' : all; });
+                },
+                child: const Text('加载完整日志'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  if (!mounted) return;
+                  final data = _debugInfo;
+                  await Clipboard.setData(ClipboardData(text: data));
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('日志已复制到剪贴板'), behavior: SnackBarBehavior.floating),
+                  );
+                },
+                child: const Text('复制当前显示内容'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  await FlutterLogger.clear();
+                  setState(() { _debugInfo = '日志已清空'; });
+                },
+                child: const Text('清空日志'),
+              ),
+              OutlinedButton(
+                onPressed: () async {
+                  final path = await FlutterLogger.getLogFilePath();
+                  setState(() { _debugInfo = '日志路径:\n${path ?? '(未知)'}\n请用文件管理器复制源日志'; });
+                },
+                child: const Text('复制路径'),
+              ),
+            ]),
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
@@ -110,23 +157,39 @@ class _DebugPageState extends State<DebugPage> {
             final appDirs = await screenDir.list().toList();
             buffer.writeln('应用目录数量: ${appDirs.length}');
             
+            int totalFiles = 0;
             for (final appDir in appDirs) {
               if (appDir is Directory) {
                 final appName = appDir.path.split('/').last;
-                final files = await appDir.list().where((f) => f is File && f.path.toLowerCase().endsWith('.png')).toList();
-                buffer.writeln('  $appName: ${files.length} 张截图');
+                int appFileCount = 0;
                 
-                // 显示前3个文件的详细信息
-                for (int i = 0; i < files.length && i < 3; i++) {
-                  final file = files[i] as File;
-                  final stat = await file.stat();
-                  buffer.writeln('    ${file.path.split('/').last}: ${stat.size} bytes, ${stat.modified}');
+                // 扫描应用目录下的所有子目录（年月/日期结构）
+                final yearMonthDirs = await appDir.list().toList();
+                for (final yearMonthDir in yearMonthDirs) {
+                  if (yearMonthDir is Directory) {
+                    final dayDirs = await yearMonthDir.list().toList();
+                    for (final dayDir in dayDirs) {
+                      if (dayDir is Directory) {
+                        final files = await dayDir.list()
+                            .where((f) => f is File && (f.path.toLowerCase().endsWith('.jpg') || f.path.toLowerCase().endsWith('.png')))
+                            .toList();
+                        appFileCount += files.length;
+                      }
+                    }
+                  } else if (yearMonthDir is File) {
+                    // 兼容旧的扁平结构
+                    if (yearMonthDir.path.toLowerCase().endsWith('.jpg') || yearMonthDir.path.toLowerCase().endsWith('.png')) {
+                      appFileCount++;
+                    }
+                  }
                 }
-                if (files.length > 3) {
-                  buffer.writeln('    ... 还有 ${files.length - 3} 个文件');
-                }
+                
+                buffer.writeln('  - $appName: $appFileCount 个文件');
+                totalFiles += appFileCount;
               }
             }
+            
+            buffer.writeln('总文件数: $totalFiles');
           }
         }
       } catch (e) {

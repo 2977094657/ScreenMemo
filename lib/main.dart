@@ -9,9 +9,12 @@ import 'pages/main_navigation_page.dart';
 import 'pages/screenshot_gallery_page.dart';
 import 'pages/screenshot_viewer_page.dart';
 import 'pages/debug_page.dart';
+import 'services/flutter_logger.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 简易 Flutter 侧日志初始化
+  await FlutterLogger.log('app start');
   StartupProfiler.mark('main.ensureInitialized.done');
   // 立刻构建首帧，避免阻塞到 runApp 之前
   StartupProfiler.begin('runApp');

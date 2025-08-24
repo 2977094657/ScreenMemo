@@ -51,6 +51,8 @@ class AppSelectionService {
                 .whereType<Map<String, dynamic>>()
                 .map((m) => AppInfo.fromJson(m))
                 .toList();
+            // 排除本应用自身
+            _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
             // 确保排序一致
             _allApps.sort((a, b) => a.appName.compareTo(b.appName));
             // 如果即将过期（<60秒），提前后台续期
@@ -77,6 +79,8 @@ class AppSelectionService {
       StartupProfiler.end('InstalledApps.getInstalledApps');
 
       _allApps = apps.map((app) => AppInfo.fromInstalledApp(app)).toList();
+      // 排除本应用自身
+      _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
       _allApps.sort((a, b) => a.appName.compareTo(b.appName));
 
       // 4) 保存至本地缓存
@@ -133,9 +137,11 @@ class AppSelectionService {
   Future<void> saveSelectedApps(List<AppInfo> selectedApps) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final appsJson = selectedApps.map((app) => app.toJson()).toList();
+      // 保存前排除本应用自身
+      final filtered = selectedApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+      final appsJson = filtered.map((app) => app.toJson()).toList();
       await prefs.setString(_selectedAppsKey, jsonEncode(appsJson));
-      _selectedApps = selectedApps;
+      _selectedApps = filtered;
     } catch (e) {
       print('保存选中应用失败: $e');
     }
@@ -215,6 +221,7 @@ class AppSelectionService {
       _screenshotInterval = interval;
       // 同步写入原生读取的偏好，避免跨端读取不一致
       await prefs.setInt('timed_screenshot_interval', interval);
+      await prefs.setInt('screenshot_interval', interval);
     } catch (e) {
       print('保存截屏间隔失败: $e');
     }
@@ -225,9 +232,11 @@ class AppSelectionService {
     try {
       final prefs = await SharedPreferences.getInstance();
       // 优先读通用键，确保与原生一致
-      _screenshotInterval = prefs.getInt(_screenshotIntervalKey)
-          ?? prefs.getInt('timed_screenshot_interval')
-          ?? 5;
+      _screenshotInterval =
+          prefs.getInt('timed_screenshot_interval') ??
+          prefs.getInt('screenshot_interval') ??
+          prefs.getInt(_screenshotIntervalKey) ??
+          5;
       return _screenshotInterval;
     } catch (e) {
       print('获取截屏间隔失败: $e');

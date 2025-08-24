@@ -476,8 +476,7 @@ class ScreenshotService {
   /// 根据应用包名获取截屏记录
   Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit}) async {
     try {
-      // 先做一次增量同步，确保本地文件已入库
-      await syncDatabaseWithFiles(packageName: appPackageName);
+      // 直接从数据库查询，不再进行任何文件系统同步
       return await _database.getScreenshotsByApp(appPackageName, limit: limit);
     } catch (e) {
       print('获取应用截屏记录失败: $e');
@@ -516,6 +515,7 @@ class ScreenshotService {
 
       int inserted = 0;
       final List<Directory> appDirs = [];
+      
       if (packageName != null) {
         final dir = Directory(p.join(screenRoot.path, packageName));
         if (await dir.exists()) appDirs.add(dir);
@@ -527,31 +527,7 @@ class ScreenshotService {
 
       for (final appDir in appDirs) {
         final pkg = p.basename(appDir.path);
-        final files = await appDir
-            .list(followLinks: false)
-            .where((e) => e is File && (e.path.toLowerCase().endsWith('.jpg') || e.path.toLowerCase().endsWith('.png')))
-            .toList();
-
-        for (final entity in files) {
-          final file = entity as File;
-          final absolutePath = file.path;
-          final exists = await _database.isFilePathExists(absolutePath);
-          if (exists) continue;
-
-          final stat = await file.stat();
-          final record = ScreenshotRecord(
-            appPackageName: pkg,
-            appName: pkg, // 无法可靠获取时用包名占位
-            filePath: absolutePath, // 数据库存绝对路径
-            captureTime: stat.modified,
-            fileSize: stat.size,
-          );
-
-          final id = await _database.insertScreenshotIfNotExists(record);
-          if (id != null) {
-            inserted++;
-          }
-        }
+        inserted += await _scanAppDirectory(appDir, pkg);
       }
 
       if (inserted > 0) {
@@ -564,6 +540,78 @@ class ScreenshotService {
       print('同步截图文件到数据库失败: $e');
       return 0;
     }
+  }
+
+  /// 递归扫描应用目录（包含年月/日期子目录）
+  Future<int> _scanAppDirectory(Directory appDir, String packageName) async {
+    int inserted = 0;
+    
+    try {
+      final entities = await appDir.list(followLinks: false).toList();
+      
+      for (final entity in entities) {
+        if (entity is Directory) {
+          // 这是年月目录（如 2024-01）
+          final yearMonthEntities = await entity.list(followLinks: false).toList();
+          
+          for (final dayEntity in yearMonthEntities) {
+            if (dayEntity is Directory) {
+              // 这是日期目录（如 15）
+              final files = await dayEntity
+                  .list(followLinks: false)
+                  .where((e) => e is File && (e.path.toLowerCase().endsWith('.jpg') || e.path.toLowerCase().endsWith('.png')))
+                  .toList();
+
+              for (final fileEntity in files) {
+                final file = fileEntity as File;
+                final absolutePath = file.path;
+                final exists = await _database.isFilePathExists(absolutePath);
+                if (exists) continue;
+
+                final stat = await file.stat();
+                final record = ScreenshotRecord(
+                  appPackageName: packageName,
+                  appName: packageName, // 无法可靠获取时用包名占位
+                  filePath: absolutePath, // 数据库存绝对路径
+                  captureTime: stat.modified,
+                  fileSize: stat.size,
+                );
+
+                final id = await _database.insertScreenshotIfNotExists(record);
+                if (id != null) {
+                  inserted++;
+                }
+              }
+            }
+          }
+        } else if (entity is File) {
+          // 兼容旧的扁平结构文件
+          if (entity.path.toLowerCase().endsWith('.jpg') || entity.path.toLowerCase().endsWith('.png')) {
+            final absolutePath = entity.path;
+            final exists = await _database.isFilePathExists(absolutePath);
+            if (!exists) {
+              final stat = await entity.stat();
+              final record = ScreenshotRecord(
+                appPackageName: packageName,
+                appName: packageName,
+                filePath: absolutePath,
+                captureTime: stat.modified,
+                fileSize: stat.size,
+              );
+
+              final id = await _database.insertScreenshotIfNotExists(record);
+              if (id != null) {
+                inserted++;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('扫描应用目录失败: ${appDir.path}, 错误: $e');
+    }
+    
+    return inserted;
   }
 
   // ===== 统计缓存实现 =====
