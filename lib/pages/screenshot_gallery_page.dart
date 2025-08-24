@@ -162,6 +162,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
       print('=== 开始加载截图 ===');
       print('应用包名: $_packageName');
       print('基础目录: ${_baseDir?.path}');
+      print('当前截图数量: ${_screenshots.length}');
 
       // 先设置加载状态，防止显示空状态
       if (_screenshots.isEmpty) {
@@ -172,7 +173,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
       // 尝试从缓存加载（仅用于提升进入速度，不影响首页统计）
       final cachedScreenshots = await _loadScreenshotsFromCache();
-      if (cachedScreenshots != null) {
+      if (cachedScreenshots != null && cachedScreenshots.isNotEmpty) {
         print('从缓存加载到 ${cachedScreenshots.length} 张截图');
         _processLoadedScreenshots(cachedScreenshots);
         // 后台刷新缓存
@@ -180,7 +181,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
         return;
       }
 
-      // 缓存不存在或已过期，从数据库加载
+      // 缓存不存在或为空，从数据库加载
+      print('缓存为空，从数据库加载');
       await _loadScreenshotsFromDatabase();
     } catch (e) {
       print('加载截图失败: $e');
@@ -213,25 +215,33 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     setState(() {
       _screenshots = allScreenshots.sublist(0, initialCount);
       _currentDisplayCount = initialCount;
+      // 修复：确保 _hasMore 逻辑正确
       _hasMore = initialCount < allScreenshots.length;
       _isLoading = false;  // 数据加载完成，取消加载状态
       _itemKeys.clear();
     });
     
-    print('初始加载 $_currentDisplayCount/${_totalCount} 张截图');
+    print('初始加载 $_currentDisplayCount/${_totalCount} 张截图，hasMore: $_hasMore');
   }
 
   /// 从数据库加载截图数据
   Future<void> _loadScreenshotsFromDatabase() async {
-    // 先触发一次同步，确保本地新增文件入库
-    await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
-    final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
-    print('从数据库获取到 ${screenshots.length} 张截图');
+    try {
+      // 直接从数据库查询，后台同步已在ScreenshotService中处理
+      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
+      print('从数据库获取到 ${screenshots.length} 张截图');
 
-    _processLoadedScreenshots(screenshots);
+      _processLoadedScreenshots(screenshots);
 
-    // 保存到缓存
-    await _saveScreenshotsToCache(screenshots);
+      // 保存到缓存
+      await _saveScreenshotsToCache(screenshots);
+    } catch (e) {
+      print('从数据库加载截图失败: $e');
+      setState(() {
+        _error = '数据库查询失败: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   /// 从缓存加载截图数据
@@ -274,8 +284,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
   /// 后台刷新截图缓存
   Future<void> _refreshScreenshotsCache() async {
     try {
-      // 先触发一次同步，确保本地新增文件入库
-      await ScreenshotService.instance.syncDatabaseWithFiles(packageName: _packageName);
+      // 直接查询数据库，后台同步已在ScreenshotService中处理
       final screenshots = await ScreenshotService.instance.getScreenshotsByApp(_packageName);
       await _saveScreenshotsToCache(screenshots);
       
@@ -727,8 +736,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
   // 构建右侧时间线滚动条与时间提示
   Widget _buildTimelineOverlay() {
-    // 只有在所有数据都加载完毕时才显示时间线
-    if (_screenshots.isEmpty || _hasMore) return const SizedBox.shrink();
+    // 修复显示条件：只有在有数据且所有数据都加载完毕时才显示时间线
+    if (_screenshots.isEmpty || _hasMore || _screenshots.length < 2) {
+      return const SizedBox.shrink();
+    }
     
     const double gestureWidth = 44; // 右侧可交互区域宽度
     const double trackWidth = 3; // 可见轨道宽度
@@ -742,18 +753,25 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
           // 与网格保持一致的底部边距：外层 Padding + GridView 的 bottom padding
           final double bottomMargin = MediaQuery.of(context).padding.bottom + AppTheme.spacing6 + AppTheme.spacing1;
           final double trackHeight = (viewHeight - bottomMargin).clamp(0, viewHeight);
+          
+          // 增加安全检查，避免异常计算
+          if (trackHeight <= 0 || !_scrollController.hasClients) {
+            return const SizedBox.shrink();
+          }
+          
           final double currentFraction = _timelineActive ? _timelineFraction : _currentScrollFraction();
-          final double clampedFraction = currentFraction < 0 ? 0 : (currentFraction > 1 ? 1 : currentFraction);
-          final double thumbTop = clampedFraction * (trackHeight - thumbHeight);
+          final double clampedFraction = currentFraction.clamp(0.0, 1.0);
+          final double thumbTop = clampedFraction * (trackHeight - thumbHeight).clamp(0, trackHeight);
 
+          // 安全获取第一个可见索引
           final int firstVisibleIndex = _getFirstVisibleIndex();
-          final String timeLabel = firstVisibleIndex >= 0 && firstVisibleIndex < _screenshots.length
+          final String timeLabel = (firstVisibleIndex >= 0 && firstVisibleIndex < _screenshots.length)
               ? _formatTimelineTime(_screenshots[firstVisibleIndex].captureTime)
               : '';
 
           return Stack(
             children: [
-              // 交互区域
+              // 交互区域 - 只占右侧44像素，避免影响主要内容区域
               Positioned(
                 right: 0,
                 top: 0,
@@ -761,27 +779,40 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
                 width: gestureWidth,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
+                  // 防止手势冲突，增加边界检查
                   onVerticalDragStart: (details) {
-                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                    if (trackHeight > thumbHeight) {
+                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                    }
                   },
                   onVerticalDragUpdate: (details) {
-                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                    if (trackHeight > thumbHeight && _timelineActive) {
+                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                    }
                   },
                   onVerticalDragEnd: (_) {
-                    setState(() {
-                      _timelineActive = false;
-                    });
+                    if (mounted) {
+                      setState(() {
+                        _timelineActive = false;
+                      });
+                    }
                   },
                   onLongPressStart: (details) {
-                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                    if (trackHeight > thumbHeight) {
+                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                    }
                   },
                   onLongPressMoveUpdate: (details) {
-                    _activateTimelineWithLocalY(details.localPosition.dy, trackHeight.toDouble());
+                    if (trackHeight > thumbHeight && _timelineActive) {
+                      _activateTimelineWithLocalY(details.localPosition.dy, trackHeight);
+                    }
                   },
                   onLongPressEnd: (_) {
-                    setState(() {
-                      _timelineActive = false;
-                    });
+                    if (mounted) {
+                      setState(() {
+                        _timelineActive = false;
+                      });
+                    }
                   },
                   child: Stack(
                     children: [
@@ -844,8 +875,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
 
   // 激活时间线并根据手指位置滚动
   void _activateTimelineWithLocalY(double localY, double viewHeight) {
-    final double raw = localY / (viewHeight <= 0 ? 1 : viewHeight);
-    final double fraction = raw < 0 ? 0 : (raw > 1 ? 1 : raw);
+    // 增加安全检查
+    if (viewHeight <= 0 || !_scrollController.hasClients || !mounted) return;
+    
+    final double raw = localY / viewHeight;
+    final double fraction = raw.clamp(0.0, 1.0);
+    
     setState(() {
       _timelineActive = true;
       _timelineFraction = fraction;
@@ -860,47 +895,65 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage> with Auto
     if (maxExtent <= 0) return 0.0;
     final pixels = _scrollController.position.pixels;
     final double f = pixels / maxExtent;
-    return f < 0 ? 0 : (f > 1 ? 1 : f);
+    return f.clamp(0.0, 1.0);
   }
 
   // 滚动到对应归一化位置
   void _scrollToFraction(double fraction) {
-    if (!_scrollController.hasClients) return;
+    if (!_scrollController.hasClients || !mounted) return;
     final maxExtent = _scrollController.position.maxScrollExtent;
-    final target = (fraction < 0 ? 0 : (fraction > 1 ? 1 : fraction)) * maxExtent;
+    if (maxExtent <= 0) return;
+    final target = fraction.clamp(0.0, 1.0) * maxExtent;
     _scrollController.jumpTo(target);
   }
 
   // 获取网格视口矩形（全局坐标）
   Rect? _getGridViewportRect() {
+    if (!mounted) return null;
     final ctx = _gridKey.currentContext;
     if (ctx == null) return null;
     final render = ctx.findRenderObject();
-    if (render is! RenderBox) return null;
+    if (render is! RenderBox || !render.hasSize) return null;
     final topLeft = render.localToGlobal(Offset.zero);
     return topLeft & render.size;
   }
 
   // 计算当前视口内第一张可见截图的索引
   int _getFirstVisibleIndex() {
+    if (!mounted || _screenshots.isEmpty || _itemKeys.isEmpty) return 0;
+    
     final viewport = _getGridViewportRect();
     if (viewport == null) return 0;
+    
     int? firstIdx;
     double? minTop;
+    
     _itemKeys.forEach((index, key) {
+      // 增加边界检查
+      if (index >= _screenshots.length) return;
+      
       final context = key.currentContext;
       if (context == null) return;
+      
       final render = context.findRenderObject();
-      if (render is! RenderBox) return;
-      final rect = render.localToGlobal(Offset.zero) & render.size;
-      final bool visible = rect.bottom > viewport.top && rect.top < viewport.bottom;
-      if (!visible) return;
-      if (minTop == null || rect.top < minTop!) {
-        minTop = rect.top;
-        firstIdx = index;
+      if (render is! RenderBox || !render.hasSize) return;
+      
+      try {
+        final rect = render.localToGlobal(Offset.zero) & render.size;
+        final bool visible = rect.bottom > viewport.top && rect.top < viewport.bottom;
+        if (!visible) return;
+        
+        if (minTop == null || rect.top < minTop!) {
+          minTop = rect.top;
+          firstIdx = index;
+        }
+      } catch (e) {
+        // 忽略布局异常，继续处理其他项
+        return;
       }
     });
-    return firstIdx ?? 0;
+    
+    return (firstIdx != null && firstIdx! < _screenshots.length) ? firstIdx! : 0;
   }
 
   // 时间线标签格式化（当天/本年/跨年）
