@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 
-/// 统一的顶部吐司（Overlay）助手 - shadcn风格：扁平、细线框/无线框、小圆角、无阴影
+/// 统一的底部吐司（Overlay）助手 - shadcn风格：扁平、细线框/无线框、小圆角、无阴影
 class UINotifier {
   static OverlayEntry? _currentEntry;
 
@@ -166,7 +166,7 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _slide = Tween<Offset>(begin: const Offset(0, -0.08), end: Offset.zero).animate(_fade);
+    _slide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(_fade);
     _controller.forward();
     _timer = Timer(widget.displayDuration, _startDismiss);
   }
@@ -194,14 +194,14 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
     final interactive = widget.actionLabel != null && widget.onAction != null;
 
     return SafeArea(
-      top: true,
-      bottom: false,
+      top: false,
+      bottom: true,
       child: IgnorePointer(
         ignoring: !interactive,
         child: Align(
-          alignment: Alignment.topCenter,
+          alignment: Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
+            padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
             child: SlideTransition(
               position: _slide,
               child: FadeTransition(

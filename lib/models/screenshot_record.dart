@@ -3,7 +3,7 @@ class ScreenshotRecord {
   final int? id;
   final String appPackageName;
   final String appName;
-  final String filePath; // This will now store the relative path
+  final String filePath; // 存储绝对路径；兼容旧数据时可能为相对路径
   final DateTime captureTime;
   final int fileSize; // 文件大小（字节）
   final bool isDeleted; // 软删除标记

@@ -634,8 +634,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       return _buildErrorItem("应用目录未初始化");
     }
 
-    final absolutePath = path.join(_baseDir!.path, screenshot.filePath);
-    final file = File(absolutePath);
+    // 统一使用绝对路径；兼容旧数据为相对路径时再与基础目录拼接
+    final file = path.isAbsolute(screenshot.filePath)
+        ? File(screenshot.filePath)
+        : File(path.join(_baseDir!.path, screenshot.filePath));
 
     final isSelected =
         _selectionMode &&

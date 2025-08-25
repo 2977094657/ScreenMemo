@@ -771,12 +771,20 @@ class ScreenshotDatabase {
   
   /// 从文件路径推断应用包名
   String? _extractPackageNameFromPath(String filePath) {
-    // 假设路径格式为 .../packageName/screenshots/filename
+    // 适配新旧目录结构：
+    // 新: .../output/screen/<package>/<yyyy-MM>/<dd>/<file>
+    // 旧: .../<package>/screenshots/<file>
     final parts = filePath.split('/');
     if (parts.length >= 3) {
-      for (int i = 0; i < parts.length - 2; i++) {
-        if (parts[i+1] == 'screenshots' || parts[i+1] == 'output') {
-          return parts[i];
+      for (int i = 0; i < parts.length - 1; i++) {
+        final seg = parts[i];
+        if (seg == 'output' && i + 2 < parts.length && parts[i + 1] == 'screen') {
+          // output/screen/<package>
+          return parts[i + 2];
+        }
+        if (i + 1 < parts.length && parts[i + 1] == 'screenshots') {
+          // <package>/screenshots
+          return seg;
         }
       }
     }
