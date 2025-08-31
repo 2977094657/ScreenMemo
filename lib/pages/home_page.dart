@@ -78,9 +78,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     if (state == AppLifecycleState.resumed) {
       // 应用从后台返回前台：强制同步文件到数据库并刷新统计，避免节流导致读到旧数据
       Future.delayed(const Duration(milliseconds: 300), () async {
-        try {
-          await ScreenshotService.instance.syncDatabaseWithFiles();
-        } catch (_) {}
         await _loadStatsFresh();
       });
     }
@@ -282,7 +279,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
         // 成功开启后，主动刷新一次统计并更新缓存，稳定列表排序
         try {
-          await ScreenshotService.instance.syncDatabaseWithFiles();
           final stats = await ScreenshotService.instance.getScreenshotStatsFresh();
           await ScreenshotService.instance.updateStatsCache(stats);
           if (mounted) {
@@ -402,7 +398,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: '间隔时间（秒）',
-                hintText: '请输入大于等于1的数字',
+                hintText: '请输入5-60的整数',
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -428,7 +424,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
             child: const Text(
-              '最小值为1秒，默认值：5秒。',
+              '范围：5-60秒，默认值：5秒。',
               style: TextStyle(
                 fontSize: 12,
                 color: AppTheme.info,
@@ -446,8 +442,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           onPressed: (ctx) async {
             final input = controller.text.trim();
             final interval = int.tryParse(input);
-            if (interval == null || interval < 1) {
-              UINotifier.error(ctx, '请输入大于等于1的有效数字');
+            if (interval == null || interval < 5 || interval > 60) {
+              UINotifier.error(ctx, '请输入5-60的有效整数');
               return;
             }
             await _updateScreenshotInterval(interval);

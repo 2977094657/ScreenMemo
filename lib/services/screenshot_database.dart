@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import '../models/screenshot_record.dart';
 import 'startup_profiler.dart';
+import 'flutter_logger.dart';
 
 /// 截屏数据库服务
 class ScreenshotDatabase {
@@ -130,9 +131,9 @@ class ScreenshotDatabase {
     // 不需要处理升级逻辑
   }
 
-  /// 检查文件路径是否已存在于数据库中
-  Future<bool> isFilePathExists(String filePath) async {
-    final db = await database;
+  /// 检查文件路径是否已存在于数据库中（可选指定执行器，以便在事务中调用）
+  Future<bool> isFilePathExists(String filePath, {DatabaseExecutor? exec}) async {
+    final DatabaseExecutor db = exec ?? await database;
     try {
       // 从文件路径推断应用包名
       final packageName = _extractPackageNameFromPath(filePath);
@@ -239,6 +240,109 @@ class ScreenshotDatabase {
       print('插入截屏记录失败: $e');
       rethrow;
     }
+  }
+
+  /// 批量插入（去重）：输入为记录列表，返回成功插入的数量
+  Future<int> insertScreenshotsIfNotExistsBatch(List<ScreenshotRecord> records) async {
+    if (records.isEmpty) return 0;
+    final db = await database;
+    int inserted = 0;
+    try {
+      await db.transaction((txn) async {
+        for (final record in records) {
+          // 逐项去重插入，避免UNIQUE冲突中断事务
+          final exists = await isFilePathExists(record.filePath, exec: txn);
+          if (exists) continue;
+          await _ensureAppTableExists(txn, record.appPackageName, record.appName);
+          final tableName = _getAppTableName(record.appPackageName);
+          final file = File(record.filePath);
+          final actualFileSize = await file.exists() ? await file.length() : 0;
+          final recordWithSize = record.copyWith(fileSize: actualFileSize);
+          final insertMap = {...recordWithSize.toMap()};
+          insertMap.remove('app_package_name');
+          insertMap.remove('app_name');
+          await txn.insert(tableName, insertMap);
+          await _upsertAppStatOnInsert(
+            txn,
+            recordWithSize.appPackageName,
+            recordWithSize.appName,
+            actualFileSize,
+            recordWithSize.captureTime.millisecondsSinceEpoch,
+          );
+          inserted++;
+        }
+      });
+    } catch (e) {
+      print('批量插入截图记录失败: $e');
+    }
+    return inserted;
+  }
+
+  /// 高速批量插入：
+  /// - 使用单事务 + Batch + INSERT OR IGNORE，避免逐条去重查询
+  /// - 以包维度预建表，一次性提交
+  /// - 结尾对每个包做一次聚合重算，代替逐条增量更新
+  Future<int> insertScreenshotsFast(List<ScreenshotRecord> records) async {
+    if (records.isEmpty) return 0;
+    final db = await database;
+    int totalInserted = 0;
+    try {
+      // 按包分组（减少表切换开销）
+      final Map<String, List<ScreenshotRecord>> byPkg = <String, List<ScreenshotRecord>>{};
+      for (final r in records) {
+        byPkg.putIfAbsent(r.appPackageName, () => <ScreenshotRecord>[]).add(r);
+      }
+
+      await db.transaction((txn) async {
+        for (final entry in byPkg.entries) {
+          final String packageName = entry.key;
+          final List<ScreenshotRecord> list = entry.value;
+          if (list.isEmpty) continue;
+
+          // 确保表存在（用第一条的 appName 进行注册）
+          final String appName = list.first.appName;
+          await _ensureAppTableExists(txn, packageName, appName);
+          final String tableName = _getAppTableName(packageName);
+
+          // 统计插入前数量，用于估算本次新增条数
+          int beforeCount = 0;
+          try {
+            final rows = await txn.rawQuery('SELECT COUNT(*) as c FROM $tableName');
+            beforeCount = (rows.first['c'] as int?) ?? 0;
+          } catch (_) {}
+
+          final batch = txn.batch();
+          for (final r in list) {
+            // 直接信任传入的 fileSize 以减少磁盘 stat；为空则回退为0
+            final map = {...r.toMap()};
+            map.remove('app_package_name');
+            map.remove('app_name');
+            batch.insert(
+              tableName,
+              map,
+              conflictAlgorithm: ConflictAlgorithm.ignore, // 去重依赖 file_path UNIQUE
+            );
+          }
+          // 提升性能：无需逐条返回 id
+          await batch.commit(noResult: true, continueOnError: true);
+
+          // 统计插入后数量
+          int afterCount = beforeCount;
+          try {
+            final rows = await txn.rawQuery('SELECT COUNT(*) as c FROM $tableName');
+            afterCount = (rows.first['c'] as int?) ?? beforeCount;
+          } catch (_) {}
+          final inserted = (afterCount - beforeCount).clamp(0, list.length);
+          totalInserted += inserted;
+
+          // 统一重算聚合（单次 O(1) 聚合查询），避免逐条 upsert 开销
+          await _recomputeAppStatForPackage(txn, packageName);
+        }
+      });
+    } catch (e) {
+      print('快速批量插入失败: $e');
+    }
+    return totalInserted;
   }
 
   /// 根据应用包名获取截屏记录列表（支持分页）
@@ -403,6 +507,9 @@ class ScreenshotDatabase {
   Future<bool> deleteScreenshot(int id, String packageName) async {
     final db = await database;
     try {
+      // 在DB层记录删除开始
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('DB', 'deleteScreenshot start id='+id.toString()+', package='+packageName);
       // 构建应用特定的表名
       final tableName = _getAppTableName(packageName);
       
@@ -417,6 +524,8 @@ class ScreenshotDatabase {
 
       if (maps.isEmpty) {
         print('未找到ID为$id的截屏记录在应用$packageName的表中');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeWarn('DB', 'deleteScreenshot not found id='+id.toString()+', package='+packageName);
         return false;
       }
 
@@ -436,22 +545,229 @@ class ScreenshotDatabase {
           if (await file.exists()) {
             await file.delete();
             print('成功删除文件: $filePath');
+            // ignore: unawaited_futures
+            FlutterLogger.nativeInfo('FS', 'deleted file: '+filePath);
           } else {
             print('文件不存在，跳过删除: $filePath');
+            // ignore: unawaited_futures
+            FlutterLogger.nativeWarn('FS', 'file not exists, skip delete: '+filePath);
           }
         } catch (fileError) {
           // 文件删除失败不影响数据库删除的成功状态
           print('删除文件失败，但数据库记录已删除: $fileError');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeError('FS', 'delete file failed but DB removed: '+fileError.toString());
         }
         // 重新计算该应用的聚合统计
         await _recomputeAppStatForPackage(db, packageName);
+        // ignore: unawaited_futures
+        FlutterLogger.nativeInfo('DB', 'recompute stats after delete id='+id.toString());
         return true;
       } else {
         return false;
       }
     } catch (e) {
       print('删除截屏记录失败: $e');
+      // ignore: unawaited_futures
+      FlutterLogger.nativeError('DB', 'deleteScreenshot exception: '+e.toString());
       return false;
+    }
+  }
+
+  /// 批量删除指定ID的截屏记录（高效，带增量统计更新与并发文件删除）
+  /// 返回实际删除的数据库记录数
+  Future<int> deleteScreenshotsByIds(String packageName, List<int> ids) async {
+    final db = await database;
+    try {
+      if (ids.isEmpty) return 0;
+
+      final tableName = _getAppTableName(packageName);
+      // 检查表是否存在
+      if (!await _checkTableExists(db, tableName)) {
+        return 0;
+      }
+
+      final totalSw = Stopwatch()..start();
+      final swQuery = Stopwatch()..start();
+      // 先查询待删记录的文件信息与统计信息（一次性取出，避免删除后丢失）
+      final records = await getRecordsByIds(packageName, ids);
+      swQuery.stop();
+      // 同时写入到原生日志，便于你在 screen_memo_debug.log 看到
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('DB', '批量删除-查询耗时 ${swQuery.elapsedMilliseconds}ms，待删ID数=${ids.length}，命中记录数=${records.length}');
+      if (records.isEmpty) {
+        return 0;
+      }
+
+      // 预计算删除集合的统计
+      final int deletedSizeSum = records.fold<int>(0, (sum, r) => sum + ((r['file_size'] as int?) ?? 0));
+      final int maxDeletedCapture = records.fold<int>(0, (max, r) {
+        final t = (r['capture_time'] as int?) ?? 0;
+        return t > max ? t : max;
+      });
+
+      int deletedTotal = 0;
+
+      bool needsRecomputeFallback = false;
+      final swTxn = Stopwatch()..start();
+      await db.transaction((txn) async {
+        // 1) 分片删除（规避SQLite参数上限999）
+        const int chunk = 900;
+        final swChunks = <int>[];
+        for (int i = 0; i < ids.length; i += chunk) {
+          final sub = ids.sublist(i, i + chunk > ids.length ? ids.length : i + chunk);
+          if (sub.isEmpty) continue;
+          final ph = List.filled(sub.length, '?').join(',');
+          final sw = Stopwatch()..start();
+          final count = await txn.rawDelete('DELETE FROM $tableName WHERE id IN ($ph)', sub);
+          sw.stop();
+          swChunks.add(sw.elapsedMilliseconds);
+          deletedTotal += count;
+        }
+        if (swChunks.isNotEmpty) {
+          final sum = swChunks.reduce((a, b) => a + b);
+          final max = swChunks.reduce((a, b) => a > b ? a : b);
+          final avg = sum / swChunks.length;
+          // ignore: unawaited_futures
+          FlutterLogger.nativeInfo('DB', '批量删除-分片=${swChunks.length}，平均每片=${avg.toStringAsFixed(1)}ms，最大=${max}ms');
+        }
+
+        // 2) 增量更新聚合统计
+        // 读取当前 app_stats
+        int currentCount = 0;
+        int currentSize = 0;
+        int currentLast = 0;
+        try {
+          final stats = await txn.query(
+            'app_stats',
+            columns: ['total_count', 'total_size', 'last_capture_time'],
+            where: 'app_package_name = ?',
+            whereArgs: [packageName],
+            limit: 1,
+          );
+          if (stats.isNotEmpty) {
+            currentCount = (stats.first['total_count'] as int?) ?? 0;
+            currentSize = (stats.first['total_size'] as int?) ?? 0;
+            currentLast = (stats.first['last_capture_time'] as int?) ?? 0;
+          }
+        } catch (_) {}
+
+        final int newCount = currentCount - deletedTotal <= 0 ? 0 : (currentCount - deletedTotal);
+        final int newSize = currentSize - deletedSizeSum <= 0 ? 0 : (currentSize - deletedSizeSum);
+
+        if (newCount == 0) {
+          // 所有记录被删空，直接移除统计
+          await txn.delete('app_stats', where: 'app_package_name = ?', whereArgs: [packageName]);
+        } else {
+          // 需要判断是否需要重算最大时间
+          int newLast = currentLast;
+          if (maxDeletedCapture >= currentLast) {
+            try {
+              final swMax = Stopwatch()..start();
+              final rows = await txn.rawQuery('SELECT MAX(capture_time) as t FROM $tableName');
+              swMax.stop();
+              // ignore: unawaited_futures
+              FlutterLogger.nativeInfo('DB', '重算最大时间(capture_time)耗时 ${swMax.elapsedMilliseconds}ms');
+              newLast = (rows.first['t'] as int?) ?? 0;
+            } catch (_) {
+              newLast = 0;
+            }
+          }
+
+          // 写回统计（使用UPSERT保障存在即更新）
+          try {
+            // 从注册表取 app_name（避免丢失）
+            String appName = packageName;
+            try {
+              final appInfo = await txn.query(
+                'app_registry',
+                columns: ['app_name'],
+                where: 'app_package_name = ?',
+                whereArgs: [packageName],
+                limit: 1,
+              );
+              if (appInfo.isNotEmpty) {
+                appName = (appInfo.first['app_name'] as String?) ?? packageName;
+              }
+            } catch (_) {}
+
+            final swUpsert = Stopwatch()..start();
+            await txn.execute(
+              '''
+              INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(app_package_name) DO UPDATE SET
+                app_name=excluded.app_name,
+                total_count=excluded.total_count,
+                total_size=excluded.total_size,
+                last_capture_time=excluded.last_capture_time
+              ''',
+              [packageName, appName, newCount, newSize, newLast],
+            );
+            swUpsert.stop();
+            // ignore: unawaited_futures
+            FlutterLogger.nativeInfo('DB', '更新统计表(app_stats)耗时 ${swUpsert.elapsedMilliseconds}ms');
+          } catch (_) {
+            // 失败则退化为全量重算，确保一致性（事务结束后再执行）
+            needsRecomputeFallback = true;
+          }
+        }
+      });
+      swTxn.stop();
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('DB', '事务总耗时 ${swTxn.elapsedMilliseconds}ms');
+
+      if (needsRecomputeFallback) {
+        final swRe = Stopwatch()..start();
+        await _recomputeAppStatForPackage(db, packageName);
+        swRe.stop();
+        // ignore: unawaited_futures
+        FlutterLogger.nativeInfo('DB', 'fallback recompute took ${swRe.elapsedMilliseconds}ms');
+      }
+
+      // 3) 事务外并发删除文件，避免长事务
+      final List<String> paths = records
+          .map((r) => (r['file_path'] as String?))
+          .whereType<String>()
+          .toList(growable: false);
+
+      final swFs = Stopwatch()..start();
+      await _deleteFilesConcurrently(paths, maxConcurrent: 6);
+      swFs.stop();
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('FS', '并发删除文件耗时 ${swFs.elapsedMilliseconds}ms，文件数=${paths.length}');
+
+      totalSw.stop();
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('TOTAL', '批量删除总耗时 ${totalSw.elapsedMilliseconds}ms');
+      return deletedTotal;
+    } catch (e) {
+      print('批量删除截屏记录失败: $e');
+      return 0;
+    }
+  }
+
+  /// 受限并发删除物理文件，降低I/O抖动
+  Future<void> _deleteFilesConcurrently(List<String> paths, {int maxConcurrent = 6}) async {
+    if (paths.isEmpty) return;
+    // 分批并发执行，控制并发度
+    const int batch = 24; // 单批文件数
+    for (int i = 0; i < paths.length; i += batch) {
+      final sub = paths.sublist(i, i + batch > paths.length ? paths.length : i + batch);
+      // 将子批次再按并发度切分执行
+      for (int j = 0; j < sub.length; j += maxConcurrent) {
+        final chunk = sub.sublist(j, j + maxConcurrent > sub.length ? sub.length : j + maxConcurrent);
+        await Future.wait(chunk.map((p) async {
+          try {
+            final f = File(p);
+            if (await f.exists()) {
+              await f.delete();
+            }
+          } catch (e) {
+            print('批量删除文件失败: $e, $p');
+          }
+        }));
+      }
     }
   }
 
@@ -650,7 +966,7 @@ class ScreenshotDatabase {
   }
 
   // ======= 聚合表维护辅助 =======
-  Future<void> _upsertAppStatOnInsert(Database db, String package, String appName, int fileSize, int captureTime) async {
+  Future<void> _upsertAppStatOnInsert(DatabaseExecutor db, String package, String appName, int fileSize, int captureTime) async {
     try {
       await db.execute('''
         INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
@@ -667,7 +983,7 @@ class ScreenshotDatabase {
     }
   }
 
-  Future<void> _recomputeAppStatForPackage(Database db, String package) async {
+  Future<void> _recomputeAppStatForPackage(DatabaseExecutor db, String package) async {
     try {
       final tableName = _getAppTableName(package);
       
@@ -792,7 +1108,7 @@ class ScreenshotDatabase {
   }
   
   /// 检查表是否存在
-  Future<bool> _checkTableExists(Database db, String tableName) async {
+  Future<bool> _checkTableExists(DatabaseExecutor db, String tableName) async {
     final result = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
       [tableName]
@@ -801,7 +1117,7 @@ class ScreenshotDatabase {
   }
   
   /// 确保应用表存在
-  Future<void> _ensureAppTableExists(Database db, String packageName, String appName) async {
+  Future<void> _ensureAppTableExists(DatabaseExecutor db, String packageName, String appName) async {
     final tableName = _getAppTableName(packageName);
     
     // 检查表是否存在
@@ -822,7 +1138,7 @@ class ScreenshotDatabase {
   }
 
   /// 创建应用表
-  Future<void> _createAppTable(Database db, String tableName) async {
+  Future<void> _createAppTable(DatabaseExecutor db, String tableName) async {
     await db.execute('''
         CREATE TABLE IF NOT EXISTS $tableName (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

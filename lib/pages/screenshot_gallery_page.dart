@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
+import '../utils/gen_image_isolate.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
@@ -10,6 +15,9 @@ import '../models/screenshot_record.dart';
 import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
 import '../widgets/ui_components.dart';
+import '../services/app_selection_service.dart';
+import '../services/screenshot_database.dart';
+import '../services/flutter_logger.dart';
 
 class ScreenshotGalleryPage extends StatefulWidget {
   const ScreenshotGalleryPage({super.key});
@@ -371,12 +379,21 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     );
 
     if (confirmed == true && screenshot.id != null) {
+      // 记录UI层删除请求日志（文件与原生）
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.删除单图-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}');
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('UI', 'deleteScreenshot id=${screenshot.id} package=${_appInfo.packageName}');
       try {
         final success = await ScreenshotService.instance.deleteScreenshot(
           screenshot.id!,
           _appInfo.packageName,
         );
         if (success) {
+          // ignore: unawaited_futures
+          FlutterLogger.info('UI.删除单图-成功 id=${screenshot.id} 包=${_appInfo.packageName}');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeInfo('UI', 'deleteScreenshot success id=${screenshot.id}');
           setState(() {
             _screenshots.removeWhere((s) => s.id == screenshot.id);
           });
@@ -389,11 +406,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             UINotifier.success(context, '截图已删除');
           }
         } else {
+          // ignore: unawaited_futures
+          FlutterLogger.warn('UI.删除单图-失败 id=${screenshot.id} 包=${_appInfo.packageName}');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeWarn('UI', 'deleteScreenshot failed id=${screenshot.id}');
           if (mounted) {
             UINotifier.error(context, '删除失败');
           }
         }
       } catch (e) {
+        // ignore: unawaited_futures
+        FlutterLogger.error('UI.删除单图-异常: $e');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeError('UI', 'deleteScreenshot exception: $e');
         if (mounted) {
           UINotifier.error(context, '删除失败: $e');
         }
@@ -454,6 +479,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w400),
                 ),
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              tooltip: '生成截图',
+              onPressed: _showGenerateDialog,
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -1124,12 +1154,22 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
     if (confirmed != true) return;
 
+    // 记录UI层批量删除请求日志
+    // ignore: unawaited_futures
+    FlutterLogger.info('UI.批量删除-发起 包=$_packageName 选择=${_selectedIds.length} 是否全删=$isSelectAll');
+    // ignore: unawaited_futures
+    FlutterLogger.nativeInfo('UI', 'deleteSelected start count=${_selectedIds.length} isAll=$isSelectAll');
+
     if (isSelectAll) {
       // 全删除模式：使用高效的文件夹删除
       final success = await ScreenshotService.instance
           .deleteAllScreenshotsForApp(_packageName);
 
       if (success) {
+        // ignore: unawaited_futures
+        FlutterLogger.info('UI.全删-成功 包=$_packageName 总数=$totalCount');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeInfo('UI', 'deleteAll success total=$totalCount');
         // 清空本地数据
         setState(() {
           _allScreenshots.clear();
@@ -1152,6 +1192,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           UINotifier.success(context, '已删除所有 $totalCount 张截图');
         }
       } else {
+        // ignore: unawaited_futures
+        FlutterLogger.warn('UI.全删-失败 包=$_packageName');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeWarn('UI', 'deleteAll failed');
         if (mounted) {
           UINotifier.error(context, '删除失败，请重试');
         }
@@ -1173,6 +1217,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             .map((s) => s.id!)
             .toList(growable: false);
 
+        // ignore: unawaited_futures
+        FlutterLogger.info('UI.fastDeleteKeepOnly start package=$_packageName keep=${keepIds.length} delete=${_selectedIds.length}');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeInfo('UI', 'fastDeleteKeepOnly start keep=${keepIds.length}');
         usedFastKeepOnly = await ScreenshotService.instance.fastDeleteKeepOnly(
           packageName: _packageName,
           keepIds: keepIds,
@@ -1181,15 +1229,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       }
 
       if (!usedFastKeepOnly) {
-        // 回退到逐个删除
-        int successCount = 0;
+        // 使用批量删除API，显示进度
         final ids = List<int>.from(_selectedIds);
-        for (final id in ids) {
-          final ok = await ScreenshotService.instance.deleteScreenshot(
-            id,
-            _appInfo.packageName,
-          );
-          if (ok) successCount++;
+        // ignore: unawaited_futures
+        FlutterLogger.info('UI.批量删除-开始 包=${_appInfo.packageName} 数量=${ids.length}');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeInfo('UI', 'deleteBatch start ids=${ids.length}');
+        if (mounted) {
+          UINotifier.showProgress(context, message: '正在删除...', progress: null);
+        }
+
+        // 为表现更流畅，这里分批提交给批量删除（数据库侧已分片），我们主要更新UI进度
+        final successCount = await ScreenshotService.instance.deleteScreenshotsBatch(
+          _appInfo.packageName,
+          ids,
+        );
+        if (mounted) {
+          UINotifier.updateProgress(message: '正在清理缓存...', progress: 0.9);
         }
 
         // 本地移除（从全量数据和显示数据中删除）
@@ -1218,10 +1274,16 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _isFullySelected = false; // 重置全选状态
         });
 
-        // 失效统计缓存
-        await ScreenshotService.instance.invalidateStatsCache();
+        // 缓存已在批量删除后统一刷新，这里只需失效本页面的截图缓存
         await _invalidateScreenshotsCache();
         if (mounted) {
+          UINotifier.hideProgress();
+        }
+        if (mounted) {
+          // ignore: unawaited_futures
+          FlutterLogger.info('UI.批量删除-成功 删除数=$successCount');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeInfo('UI', 'deleteBatch success deleted=$successCount');
           UINotifier.success(context, '已删除 $successCount 张截图');
         }
       } else {
@@ -1238,6 +1300,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         });
 
         if (mounted) {
+          // ignore: unawaited_futures
+          FlutterLogger.info('UI.仅保留-完成 保留=$keepCount 删除=${totalCount - keepCount}');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeInfo('UI', 'fastDeleteKeepOnly finished');
           UINotifier.success(context, '已保留 $keepCount 张，删除 ${totalCount - keepCount} 张');
         }
       }
@@ -1312,5 +1378,208 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       // 最小单位MB（包含 <1MB 的情况）
       return (bytes / mb).toStringAsFixed(2) + 'MB';
     }
+  }
+
+  // ============ 测试数据生成 ============
+
+  void _showGenerateDialog() {
+    final TextEditingController controller = TextEditingController(text: '10');
+    final TextEditingController ccController = TextEditingController();
+    showUIDialog<void>(
+      context: context,
+      title: '生成测试截图',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '生成数量',
+              hintText: '请输入大于等于1的整数（无上限，谨慎设置）',
+              border: InputBorder.none,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: ccController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '并发上限(可选)',
+              hintText: '留空=自动(按CPU核数建议)，建议范围 2~16',
+              border: InputBorder.none,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '说明：将按当前截屏间隔依次生成到未来时间点，并写入真实图片文件与数据库记录。',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '开始',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final n = int.tryParse(controller.text.trim());
+            if (n == null || n < 1) {
+              UINotifier.error(ctx, '请输入大于等于1的有效整数');
+              return;
+            }
+            final cc = int.tryParse(ccController.text.trim());
+            Navigator.of(ctx).pop();
+            await _generateTestScreenshots(count: n, overrideConcurrency: cc);
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _generateTestScreenshots({required int count, int? overrideConcurrency}) async {
+    try {
+      UINotifier.showProgress(context, message: '正在生成...', progress: null);
+
+      // 读取截屏间隔
+      final intervalSec = await AppSelectionService.instance.getScreenshotInterval();
+      final db = ScreenshotDatabase.instance;
+
+      // 确定根目录与目标路径分层：output/screen/<package>/<yyyy-MM>/<dd>/
+      final baseDir = await PathService.getExternalFilesDir(null);
+      if (baseDir == null) {
+        UINotifier.error(context, '无法获取外部存储目录');
+        UINotifier.hideProgress();
+        return;
+      }
+
+      DateTime current = DateTime.now();
+      final rnd = math.Random();
+
+      // 动态并发：可由用户覆盖，否则按设备建议
+      final int maxConcurrent = await _determineGenerationConcurrency(overrideConcurrency: overrideConcurrency);
+      // 记录一次并发参数
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.生成并发设置 并发=$maxConcurrent 覆盖=${overrideConcurrency ?? 0}');
+      int index = 0;
+      final List<Map<String, dynamic>> generatedMeta = [];
+      while (index < count) {
+        final end = (index + maxConcurrent) > count ? count : (index + maxConcurrent);
+        final futures = <Future<Map<String, dynamic>>>[];
+        for (int i = index; i < end; i++) {
+          final ts = current.add(Duration(seconds: intervalSec * i));
+          futures.add(compute<GenParams, Map<String, dynamic>>(generateOneIsolate, GenParams(
+            baseDirPath: baseDir.path,
+            packageName: _packageName,
+            appName: _appInfo.appName,
+            seq: i + 1,
+            timestampMs: ts.millisecondsSinceEpoch,
+          )));
+        }
+        final results = await Future.wait(futures);
+        // 生成阶段分批可视化进度
+        if (mounted) {
+          final produced = generatedMeta.length + results.length;
+          UINotifier.updateProgress(message: '已生成 $produced/$count', progress: null);
+        }
+        generatedMeta.addAll(results);
+        index = end;
+      }
+
+      // 将生成结果批量写入数据库
+      final List<ScreenshotRecord> toInsert = generatedMeta.map((m) {
+        return ScreenshotRecord(
+          id: null,
+          appPackageName: m['packageName'] as String,
+          appName: m['appName'] as String,
+          filePath: m['filePath'] as String,
+          captureTime: DateTime.fromMillisecondsSinceEpoch(m['timestampMs'] as int),
+          fileSize: (m['fileSize'] as int?) ?? 0,
+        );
+      }).toList(growable: false);
+      // 优先使用高速批量插入（IGNORE冲突 + 末尾统一重算），提升2k+规模效率
+      final inserted = await db.insertScreenshotsFast(toInsert);
+      // 入库完成进度
+      if (mounted) {
+        UINotifier.updateProgress(message: '入库完成 $inserted/$count', progress: null);
+      }
+
+      // 失效统计缓存并仅DB刷新列表
+      await ScreenshotService.instance.invalidateStatsCache();
+      await _loadScreenshotsFromDatabase();
+      if (mounted) {
+        UINotifier.hideProgress();
+        UINotifier.success(context, '已生成 $count 张测试截图，入库 $inserted 条');
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.hideProgress();
+        UINotifier.error(context, '生成失败: $e');
+      }
+    }
+  }
+
+  Future<int> _determineGenerationConcurrency({int? overrideConcurrency}) async {
+    if (overrideConcurrency != null && overrideConcurrency > 0) {
+      return overrideConcurrency.clamp(2, 16);
+    }
+    // 基于CPU核数的建议并发
+    final int cores = Platform.numberOfProcessors;
+    int suggested;
+    if (cores <= 4) {
+      suggested = 3;
+    } else if (cores <= 6) {
+      suggested = 4;
+    } else if (cores <= 8) {
+      suggested = 6;
+    } else if (cores <= 12) {
+      suggested = 8;
+    } else {
+      suggested = 10;
+    }
+    return suggested.clamp(2, 16);
+  }
+
+  Future<Uint8List> _buildTestPng({
+    required int width,
+    required int height,
+    required int seq,
+    required DateTime timestamp,
+    required Color primary,
+  }) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // 背景渐变
+    final rect = Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, 0),
+        Offset(width.toDouble(), height.toDouble()),
+        [primary, primary.withOpacity(0.6)],
+      );
+    canvas.drawRect(rect, paint);
+
+    // 文本：应用名、序号、时间
+    final paragraphStyle = ui.ParagraphStyle(
+      textAlign: TextAlign.left,
+      maxLines: 3,
+      fontSize: 48,
+      fontWeight: FontWeight.w700,
+    );
+    final textStyle = ui.TextStyle(color: Colors.white);
+    final pb = ui.ParagraphBuilder(paragraphStyle)..pushStyle(textStyle);
+    final timeStr = '${timestamp.year}-${timestamp.month.toString().padLeft(2,'0')}-${timestamp.day.toString().padLeft(2,'0')} '
+        '${timestamp.hour.toString().padLeft(2,'0')}:${timestamp.minute.toString().padLeft(2,'0')}:${timestamp.second.toString().padLeft(2,'0')}';
+    pb.addText('${_appInfo.appName}\nTEST #$seq\n$timeStr');
+    final paragraph = pb.build()..layout(ui.ParagraphConstraints(width: width - 120));
+    canvas.drawParagraph(paragraph, const Offset(60, 200));
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width, height);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 }
