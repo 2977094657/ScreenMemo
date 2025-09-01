@@ -26,7 +26,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   final AppSelectionService _appService = AppSelectionService.instance;
 
   List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
-  String _sortMode = 'lastScreenshot';
+  String _sortMode = 'timeDesc';
   bool _screenshotEnabled = false;
   int _screenshotInterval = 5;
   bool _isLoading = false; // 不显示全屏加载动画
@@ -57,6 +57,15 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     ScreenshotService.instance.onScreenshotSaved.listen((_) {
       // 收到新增/删除事件，直接拉取最新统计（不走缓存）
       _loadStatsFresh();
+    });
+
+    // 订阅排序模式变更，自动刷新排序
+    AppSelectionService.instance.onSortModeChanged.listen((mode) {
+      if (!mounted) return;
+      setState(() {
+        _sortMode = mode;
+      });
+      _sortApps();
     });
 
     // 设置权限状态监听
@@ -214,37 +223,107 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   void _sortApps() {
     final appStats = _screenshotStats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
-    
-    switch (_sortMode) {
-      case 'lastScreenshot':
-        _selectedApps.sort((a, b) {
-          final aLastTime = appStats[a.packageName]?['lastCaptureTime'] as DateTime?;
-          final bLastTime = appStats[b.packageName]?['lastCaptureTime'] as DateTime?;
-          // 主键：最近截图时间；次键：应用名；三键：包名，确保稳定
-          final c1 = () {
-            if (aLastTime == null && bLastTime == null) return 0;
-            if (aLastTime == null) return 1;
-            if (bLastTime == null) return -1;
-            return bLastTime.compareTo(aLastTime);
-          }();
-          if (c1 != 0) return c1;
-          final c2 = a.appName.compareTo(b.appName);
-          if (c2 != 0) return c2;
-          return a.packageName.compareTo(b.packageName);
-        });
+
+    // 兼容旧排序键
+    String mode = _sortMode;
+    if (mode == 'lastScreenshot') mode = 'timeDesc';
+    if (mode == 'screenshotCount') mode = 'countDesc';
+
+    // 仅对“有截图的应用”排序，无截图的应用保持在后面，且内部按应用名升序稳定显示
+    final List<AppInfo> appsWithShots = [];
+    final List<AppInfo> appsWithoutShots = [];
+    for (final app in _selectedApps) {
+      final stat = appStats[app.packageName];
+      final hasAny = (stat != null) && (((stat['totalCount'] as int?) ?? 0) > 0);
+      if (hasAny) {
+        appsWithShots.add(app);
+      } else {
+        appsWithoutShots.add(app);
+      }
+    }
+
+    int compareByTime(AppInfo a, AppInfo b, {required bool desc}) {
+      final aLast = appStats[a.packageName]?['lastCaptureTime'] as DateTime?;
+      final bLast = appStats[b.packageName]?['lastCaptureTime'] as DateTime?;
+      int c;
+      if (aLast == null && bLast == null) {
+        c = 0;
+      } else if (aLast == null) {
+        c = 1;
+      } else if (bLast == null) {
+        c = -1;
+      } else {
+        c = aLast.compareTo(bLast);
+      }
+      if (desc) c = -c;
+      if (c != 0) return c;
+      final c2 = a.appName.compareTo(b.appName);
+      if (c2 != 0) return c2;
+      return a.packageName.compareTo(b.packageName);
+    }
+
+    int compareByCount(AppInfo a, AppInfo b, {required bool desc}) {
+      final aCount = appStats[a.packageName]?['totalCount'] as int? ?? 0;
+      final bCount = appStats[b.packageName]?['totalCount'] as int? ?? 0;
+      int c = aCount.compareTo(bCount);
+      if (desc) c = -c;
+      if (c != 0) return c;
+      final c2 = a.appName.compareTo(b.appName);
+      if (c2 != 0) return c2;
+      return a.packageName.compareTo(b.packageName);
+    }
+
+    int compareBySize(AppInfo a, AppInfo b, {required bool desc}) {
+      final aSize = appStats[a.packageName]?['totalSize'] as int? ?? 0;
+      final bSize = appStats[b.packageName]?['totalSize'] as int? ?? 0;
+      int c = aSize.compareTo(bSize);
+      if (desc) c = -c;
+      if (c != 0) return c;
+      final c2 = a.appName.compareTo(b.appName);
+      if (c2 != 0) return c2;
+      return a.packageName.compareTo(b.packageName);
+    }
+
+    switch (mode) {
+      case 'timeAsc':
+        appsWithShots.sort((a, b) => compareByTime(a, b, desc: false));
         break;
-      case 'screenshotCount':
-        _selectedApps.sort((a, b) {
-          final aCount = appStats[a.packageName]?['totalCount'] as int? ?? 0;
-          final bCount = appStats[b.packageName]?['totalCount'] as int? ?? 0;
-          // 主键：数量；次键：应用名；三键：包名
-          final c1 = bCount.compareTo(aCount);
-          if (c1 != 0) return c1;
-          final c2 = a.appName.compareTo(b.appName);
-          if (c2 != 0) return c2;
-          return a.packageName.compareTo(b.packageName);
-        });
+      case 'timeDesc':
+        appsWithShots.sort((a, b) => compareByTime(a, b, desc: true));
         break;
+      case 'countAsc':
+        appsWithShots.sort((a, b) => compareByCount(a, b, desc: false));
+        break;
+      case 'countDesc':
+        appsWithShots.sort((a, b) => compareByCount(a, b, desc: true));
+        break;
+      case 'sizeAsc':
+        appsWithShots.sort((a, b) => compareBySize(a, b, desc: false));
+        break;
+      case 'sizeDesc':
+        appsWithShots.sort((a, b) => compareBySize(a, b, desc: true));
+        break;
+      default:
+        appsWithShots.sort((a, b) => compareByTime(a, b, desc: true));
+        break;
+    }
+
+    // 无截图应用按应用名升序，固定排在后面
+    appsWithoutShots.sort((a, b) => a.appName.compareTo(b.appName));
+
+    _selectedApps = [
+      ...appsWithShots,
+      ...appsWithoutShots,
+    ];
+  }
+
+  void _onSelectSort(String mode) async {
+    await _appService.saveSortMode(mode);
+    if (mounted) {
+      setState(() {
+        _sortMode = mode;
+      });
+      _sortApps();
     }
   }
 
@@ -656,6 +735,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
+        toolbarHeight: 48,
         title: _selectionMode
           ? Text(
               '已选择 ${_selectedPackages.length} 项',
@@ -663,66 +743,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             )
           : Row(
               children: [
-                // 搜索框左侧的图标：刷新和主题切换
+                // 左侧：加号 与 排序
                 IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: () async {
-                    await _refreshPermissions();
-                    await _loadData(soft: true);
-                  },
-                  tooltip: '刷新数据和权限状态',
-                ),
-                IconButton(
-                  icon: Icon(widget.themeService.themeModeIcon),
-                  onPressed: () async {
-                    await widget.themeService.toggleTheme();
-                  },
-                  tooltip: widget.themeService.themeModeDescription,
-                ),
-                
-                // 搜索框
-                Expanded(
-                  child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.grey.withOpacity(0.5), // 使用更明显的灰色边框
-                        width: 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05), // 添加轻微阴影使边框更明显
-                          blurRadius: 1,
-                          spreadRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.search,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '搜索截图...',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                
-                // 搜索框右侧的图标：加号和开关按钮（或权限不足时的三角感叹图标）
-                IconButton(
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.add, size: 20),
                   tooltip: '选择监控应用',
                   onPressed: () async {
                     await Navigator.of(context).push(
@@ -752,6 +775,49 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                     );
                   },
                 ),
+                // 首页不再显示排序图标，排序在设置页调整
+
+                // 搜索框
+                Expanded(
+                  child: Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.grey.withOpacity(0.5), // 使用更明显的灰色边框
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05), // 添加轻微阴影使边框更明显
+                          blurRadius: 1,
+                          spreadRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.search,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '搜索截图...',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                
+                // 搜索框右侧：权限提示 或 开关（与搜索框保持间距且同高）
                 if (_hasPermissionIssues)
                   IconButton(
                     icon: const Icon(
@@ -762,10 +828,22 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                     tooltip: '权限缺失',
                   )
                 else
-                  Switch(
-                    value: _screenshotEnabled,
-                    onChanged: (value) => _toggleScreenshotEnabled(),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: IconButton(
+                      tooltip: _screenshotEnabled ? '停止截屏' : '开始截屏',
+                      iconSize: 22,
+                      onPressed: _toggleScreenshotEnabled,
+                      icon: _screenshotEnabled
+                          ? Icon(
+                              Icons.camera_alt,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : const Icon(
+                              Icons.no_photography_outlined,
+                              color: AppTheme.destructive,
+                            ),
+                    ),
                   ),
               ],
             ),

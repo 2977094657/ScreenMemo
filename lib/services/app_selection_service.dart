@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_info.dart';
@@ -22,9 +23,13 @@ class AppSelectionService {
   List<AppInfo> _allApps = [];
   List<AppInfo> _selectedApps = [];
   String _displayMode = 'grid'; // 'grid' or 'list'
-  String _sortMode = 'lastScreenshot'; // 'lastScreenshot' or 'screenshotCount'
+  String _sortMode = 'timeDesc'; // 新排序键：timeAsc/timeDesc, sizeAsc/sizeDesc, countAsc/countDesc
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
+
+  // 排序模式变更广播（用于通知首页自动刷新排序）
+  static final StreamController<String> _sortModeController = StreamController<String>.broadcast();
+  Stream<String> get onSortModeChanged => _sortModeController.stream;
 
   /// 获取所有已安装的应用（带内存/本地缓存，避免每次进入都全量扫描）
   Future<List<AppInfo>> getAllInstalledApps({bool forceRefresh = false}) async {
@@ -196,6 +201,8 @@ class AppSelectionService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sortModeKey, mode);
       _sortMode = mode;
+      // 广播变更
+      _sortModeController.add(mode);
     } catch (e) {
       print('保存排序模式失败: $e');
     }
@@ -205,23 +212,37 @@ class AppSelectionService {
   Future<String> getSortMode() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _sortMode = prefs.getString(_sortModeKey) ?? 'lastScreenshot';
-      return _sortMode;
+      final stored = prefs.getString(_sortModeKey);
+      // 兼容旧值：'lastScreenshot' -> 'timeDesc'；'screenshotCount' -> 'countDesc'
+      String resolved;
+      if (stored == null) {
+        resolved = 'timeDesc';
+      } else if (stored == 'lastScreenshot') {
+        resolved = 'timeDesc';
+      } else if (stored == 'screenshotCount') {
+        resolved = 'countDesc';
+      } else {
+        resolved = stored;
+      }
+      _sortMode = resolved;
+      return resolved;
     } catch (e) {
       print('获取排序模式失败: $e');
-      return 'lastScreenshot';
+      return 'timeDesc';
     }
   }
 
   /// 保存截屏间隔
   Future<void> saveScreenshotInterval(int interval) async {
     try {
+      // 统一约束：5-60 秒
+      final int clamped = interval < 5 ? 5 : (interval > 60 ? 60 : interval);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_screenshotIntervalKey, interval);
-      _screenshotInterval = interval;
+      await prefs.setInt(_screenshotIntervalKey, clamped);
+      _screenshotInterval = clamped;
       // 同步写入原生读取的偏好，避免跨端读取不一致
-      await prefs.setInt('timed_screenshot_interval', interval);
-      await prefs.setInt('screenshot_interval', interval);
+      await prefs.setInt('timed_screenshot_interval', clamped);
+      await prefs.setInt('screenshot_interval', clamped);
     } catch (e) {
       print('保存截屏间隔失败: $e');
     }
@@ -232,11 +253,12 @@ class AppSelectionService {
     try {
       final prefs = await SharedPreferences.getInstance();
       // 优先读通用键，确保与原生一致
-      _screenshotInterval =
-          prefs.getInt('timed_screenshot_interval') ??
+      final raw = prefs.getInt('timed_screenshot_interval') ??
           prefs.getInt('screenshot_interval') ??
           prefs.getInt(_screenshotIntervalKey) ??
           5;
+      // 统一约束：5-60 秒
+      _screenshotInterval = raw < 5 ? 5 : (raw > 60 ? 60 : raw);
       return _screenshotInterval;
     } catch (e) {
       print('获取截屏间隔失败: $e');

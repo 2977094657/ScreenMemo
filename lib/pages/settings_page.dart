@@ -29,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   bool _isLoading = true;
   bool _isLoadingKeepAlive = true;
   int _screenshotInterval = 5;
+  String _sortMode = 'timeDesc';
 
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
@@ -41,6 +42,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _loadAllPermissions();
     _loadScreenshotInterval();
+    _loadSortMode();
   }
 
   @override
@@ -386,6 +388,17 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
                 const SizedBox(height: AppTheme.spacing6),
 
+                // 显示与排序
+                _buildSection(
+                  context: context,
+                  title: '显示与排序',
+                  children: [
+                    _buildSortModeItem(context),
+                  ],
+                ),
+
+                const SizedBox(height: AppTheme.spacing6),
+
                 // 保活权限
                 _buildSection(
                   context: context,
@@ -621,6 +634,63 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     );
   }
 
+  Widget _buildSortModeItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.sort,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '首页排序',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _sortModeLabel(_sortMode),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showSortModeDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScreenshotIntervalItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -716,7 +786,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: '间隔时间（秒）',
-                hintText: '请输入大于等于1的数字',
+                hintText: '请输入5-60的整数',
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -742,7 +812,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
             child: const Text(
-              '最小值为1秒，默认值：5秒。',
+              '范围：5-60秒，默认值：5秒。',
               style: TextStyle(
                 fontSize: 12,
                 color: AppTheme.info,
@@ -760,8 +830,8 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           onPressed: (ctx) async {
             final input = controller.text.trim();
             final interval = int.tryParse(input);
-            if (interval == null || interval < 1) {
-              UINotifier.error(ctx, '请输入大于等于1的有效数字');
+            if (interval == null || interval < 5 || interval > 60) {
+              UINotifier.error(ctx, '请输入5-60的有效整数');
               return;
             }
             await _updateScreenshotInterval(interval);
@@ -773,5 +843,76 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         ),
       ],
     );
+  }
+
+  Future<void> _loadSortMode() async {
+    final mode = await _appService.getSortMode();
+    if (mounted) {
+      setState(() {
+        _sortMode = mode;
+      });
+    }
+  }
+
+  String _sortModeLabel(String mode) {
+    switch (mode) {
+      case 'timeAsc':
+        return '时间(旧→新)';
+      case 'timeDesc':
+        return '时间(新→旧)';
+      case 'sizeAsc':
+        return '大小(小→大)';
+      case 'sizeDesc':
+        return '大小(大→小)';
+      case 'countAsc':
+        return '数量(少→多)';
+      case 'countDesc':
+        return '数量(多→少)';
+      case 'lastScreenshot':
+        return '时间(新→旧)';
+      case 'screenshotCount':
+        return '数量(多→少)';
+      default:
+        return '时间(新→旧)';
+    }
+  }
+
+  Future<void> _updateSortMode(String mode) async {
+    await _appService.saveSortMode(mode);
+    if (mounted) {
+      setState(() {
+        _sortMode = mode;
+      });
+      UINotifier.success(context, '首页排序已设置为 ${_sortModeLabel(mode)}');
+    }
+  }
+
+  void _showSortModeDialog() async {
+    final selected = await showUIDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      title: '选择首页排序',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('当前：${_sortModeLabel(_sortMode)}'),
+        ],
+      ),
+      actions: const [
+        UIDialogAction<String>(text: '时间(新→旧)', result: 'timeDesc', style: UIDialogActionStyle.primary),
+        UIDialogAction<String>(text: '时间(旧→新)', result: 'timeAsc'),
+        UIDialogAction<String>(text: '大小(大→小)', result: 'sizeDesc'),
+        UIDialogAction<String>(text: '大小(小→大)', result: 'sizeAsc'),
+        UIDialogAction<String>(text: '数量(多→少)', result: 'countDesc'),
+        UIDialogAction<String>(text: '数量(少→多)', result: 'countAsc'),
+        UIDialogAction<String>(text: '取消', result: 'cancel'),
+      ],
+    );
+
+    if (!mounted) return;
+    if (selected != null && selected != 'cancel') {
+      await _updateSortMode(selected);
+    }
   }
 }
