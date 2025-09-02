@@ -105,7 +105,8 @@ object ScreenshotDatabaseHelper {
                   app_name TEXT NOT NULL,
                   total_count INTEGER NOT NULL DEFAULT 0,
                   total_size INTEGER NOT NULL DEFAULT 0,
-                  last_capture_time INTEGER
+                  last_capture_time INTEGER,
+                  last_dhash INTEGER
                 )
                 """.trimIndent()
             )
@@ -202,6 +203,68 @@ object ScreenshotDatabaseHelper {
         } catch (_: Exception) {
             // 回退：全量重算该应用的聚合统计
             recomputeAppStatForPackage(db, packageName)
+        }
+    }
+
+    /**
+     * 读取指定应用的 last_dhash（可能为 null）
+     */
+    fun getLastDHash(context: Context, packageName: String): Long? {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            val dbPath = resolveDatabasePath(context) ?: return null
+            db = SQLiteDatabase.openDatabase(
+                dbPath,
+                null,
+                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY
+            )
+            ensureSchema(db)
+            cursor = db.rawQuery("SELECT last_dhash FROM app_stats WHERE app_package_name = ? LIMIT 1", arrayOf(packageName))
+            if (cursor.moveToFirst()) {
+                if (cursor.isNull(0)) null else cursor.getLong(0)
+            } else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 设置/更新指定应用的 last_dhash；若记录不存在将插入一条记录（保持其他聚合列为默认值）
+     */
+    fun setLastDHash(context: Context, packageName: String, appNameOrNull: String?, value: Long) {
+        var db: SQLiteDatabase? = null
+        try {
+            val dbPath = resolveDatabasePath(context) ?: return
+            db = SQLiteDatabase.openDatabase(
+                dbPath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY
+            )
+            ensureSchema(db)
+
+            val appName = appNameOrNull ?: packageName
+
+            // 尝试 UPDATE；若影响行数为0则 INSERT
+            val cv = ContentValues().apply { put("last_dhash", value) }
+            val updated = db.update("app_stats", cv, "app_package_name = ?", arrayOf(packageName))
+            if (updated <= 0) {
+                val values = ContentValues().apply {
+                    put("app_package_name", packageName)
+                    put("app_name", appName)
+                    put("total_count", 0)
+                    put("total_size", 0)
+                    put("last_capture_time", null as Long?)
+                    put("last_dhash", value)
+                }
+                db.insert("app_stats", null, values)
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
         }
     }
 

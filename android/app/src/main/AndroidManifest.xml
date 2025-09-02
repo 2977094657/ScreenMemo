@@ -8,6 +8,7 @@
     <!-- 无障碍服务截屏不需要媒体投影权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 存储权限 -->
@@ -88,12 +89,15 @@
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse" />
             
-        <!-- 守护服务 -->
+        <!-- 守护服务（已禁用，避免重复前台通知） -->
+        <!--
         <service
             android:name=".DaemonService"
             android:process=":daemon"
             android:exported="false"
-            android:stopWithTask="false" />
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+        -->
             
         <!-- AccessibilityService桥接服务 -->
         <service
@@ -145,6 +149,8 @@
                 <action android:name="android.intent.action.USER_PRESENT" />
                 <!-- 屏幕亮起 -->
                 <action android:name="android.intent.action.SCREEN_ON" />
+                <!-- 屏幕熄灭 -->
+                <action android:name="android.intent.action.SCREEN_OFF" />
                 <!-- 电源连接 -->
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
                 <!-- 时间变化 -->

@@ -25,12 +25,22 @@ class SystemEventReceiver : BroadcastReceiver() {
             Intent.ACTION_USER_PRESENT -> {
                 FileLogger.e(TAG, "用户解锁屏幕")
                 checkAndRestartServices(context)
+                // 解锁恢复定时截屏
+                tryResumeTimedScreenshot()
             }
             
             // 屏幕亮起
             Intent.ACTION_SCREEN_ON -> {
                 FileLogger.e(TAG, "屏幕亮起")
                 checkAndRestartServices(context)
+                // 亮屏恢复定时截屏
+                tryResumeTimedScreenshot()
+            }
+            
+            // 屏幕熄灭
+            Intent.ACTION_SCREEN_OFF -> {
+                FileLogger.e(TAG, "屏幕熄灭")
+                tryPauseTimedScreenshot()
             }
             
             // 网络连接变化
@@ -79,9 +89,6 @@ class SystemEventReceiver : BroadcastReceiver() {
             if (isSystemEnabled && !instanceExists) {
                 FileLogger.e(TAG, "检测到服务异常，尝试修复")
                 
-                // 启动守护服务
-                startDaemonService(context)
-                
                 // 启动前台服务
                 startForegroundServiceCompat(context)
                 
@@ -89,11 +96,32 @@ class SystemEventReceiver : BroadcastReceiver() {
                 triggerAccessibilityReconnect(context)
             }
             
-            // 确保守护服务运行
-            startDaemonService(context)
+            // 不再单独启动守护服务，仅依赖前台服务
             
         } catch (e: Exception) {
             FileLogger.e(TAG, "检查服务状态失败", e)
+        }
+    }
+
+    /**
+     * 尝试暂停定时截屏（灭屏）
+     */
+    private fun tryPauseTimedScreenshot() {
+        try {
+            ScreenCaptureAccessibilityService.instance?.pauseTimedScreenshotForScreenOff()
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "暂停定时截屏失败", e)
+        }
+    }
+
+    /**
+     * 尝试恢复定时截屏（亮屏/解锁）
+     */
+    private fun tryResumeTimedScreenshot() {
+        try {
+            ScreenCaptureAccessibilityService.instance?.resumeTimedScreenshotIfPaused()
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "恢复定时截屏失败", e)
         }
     }
     

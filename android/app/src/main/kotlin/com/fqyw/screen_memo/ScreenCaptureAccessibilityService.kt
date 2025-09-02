@@ -2,6 +2,7 @@ package com.fqyw.screen_memo
 
 import android.accessibilityservice.AccessibilityService
 import android.app.Activity
+import android.app.KeyguardManager
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -17,6 +18,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
@@ -52,6 +57,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         var isServiceRunning = false
     }
     
+    // 去重：记录每个应用的上一张截图的 dHash（64-bit）
+    private val lastDHashByApp: MutableMap<String, Long> = mutableMapOf()
+    private val DEDUP_HASH_THRESHOLD = 5 // Hamming 距离阈值（<=5 视为重复）
+
     // 添加WakeLock防止Doze模式
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -59,6 +68,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var screenshotTimer: Timer? = null
     private var screenshotInterval: Int = 5 // 默认5秒
     private var isTimedScreenshotRunning = false
+    @Volatile private var pausedByScreenOff: Boolean = false
 
     // 前台应用检测定时器
     private var foregroundAppTimer: Timer? = null
@@ -498,6 +508,11 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun takeScreenshotUsingAccessibility(callback: (Boolean, String?) -> Unit) {
         try {
+            // 在截屏前检查屏幕/锁屏状态，避免息屏状态下产生黑图
+            if (shouldPauseForScreenState()) {
+                callback(false, null)
+                return
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 FileLogger.d(TAG, "使用无障碍服务takeScreenshot API截屏")
                 
@@ -515,6 +530,19 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                 
                                 if (bitmap != null) {
                                     val targetApp = getScreenshotTargetApp() ?: "unknown"
+
+                                    // 保存前进行“自动裁剪系统栏 + dHash 去重”判断（仍保存完整图）
+                                    try {
+                                        if (isDuplicateScreenshot(bitmap, targetApp)) {
+                                            FileLogger.i(TAG, "检测到重复截图（基于系统栏裁剪 + dHash），已跳过保存: $targetApp")
+                                            // 视为成功但无新文件
+                                            callback(true, null)
+                                            return
+                                        }
+                                    } catch (e: Exception) {
+                                        FileLogger.w(TAG, "重复判定失败，忽略并继续保存: ${e.message}")
+                                    }
+
                                     val savedPath = saveScreenshotBitmap(bitmap, targetApp)
                                     callback(true, savedPath)
                                 } else {
@@ -542,6 +570,146 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             callback(false, null)
         }
     }
+
+    /**
+     * 基于“自动裁剪系统栏”的 dHash 去重：仅用于判定，不影响最终保存的完整截图
+     */
+    private fun isDuplicateScreenshot(originalBitmap: Bitmap, packageName: String): Boolean {
+        // 1) 归一化方向，并确保为可读写（非硬件）位图
+        val normalized = try { normalizeBitmapOrientationForHash(originalBitmap) } catch (_: Exception) { originalBitmap }
+
+        val w = normalized.width
+        val h = normalized.height
+        if (w <= 0 || h <= 0) return false
+
+        // 2) 自动计算系统栏高度（px）。若设备隐藏系统栏，则可能返回 0。
+        val statusBarPx = getStatusBarHeight().coerceAtLeast(0)
+        val navBarPx = getNavigationBarHeight().coerceAtLeast(0)
+
+        // 为了稳妥：系统栏裁剪不超过画面 1/3；若裁剪后过小，退化为仅裁顶部 5% 的容错。
+        val cropTop = statusBarPx.coerceAtMost(h / 3)
+        val cropBottom = navBarPx.coerceAtMost(h / 3)
+        var roiY = cropTop
+        var roiH = h - cropTop - cropBottom
+        if (roiH < 16) {
+            // 退化策略：避免 ROI 过小导致哈希不稳定
+            roiY = (h * 0.05f).toInt().coerceIn(0, h - 1)
+            roiH = (h * 0.90f).toInt().coerceAtLeast(16).coerceAtMost(h - roiY)
+        }
+
+        val roi = try { Bitmap.createBitmap(normalized, 0, roiY, w, roiH) } catch (_: Exception) { normalized }
+
+        // 3) 计算 64-bit dHash
+        val curHash = computeDHash64FromBitmap(roi)
+
+        // 4) 读取上一张哈希（内存优先，其次持久化）
+        val prevHash = lastDHashByApp[packageName]
+            ?: ScreenshotDatabaseHelper.getLastDHash(this, packageName)
+        if (prevHash != null) {
+            val dist = java.lang.Long.bitCount(curHash xor prevHash)
+            if (dist <= DEDUP_HASH_THRESHOLD) {
+                return true
+            }
+        }
+
+        // 5) 更新哈希
+        lastDHashByApp[packageName] = curHash
+        // DB 持久化 last_dhash；appName 可为 null，Helper 内部会兜底为包名
+        ScreenshotDatabaseHelper.setLastDHash(this, packageName, null, curHash)
+        return false
+    }
+
+    /**
+     * 将位图标准化为便于计算哈希的方向与格式（复制为 ARGB_8888，依据设备旋转做最小必要旋转）。
+     */
+    private fun normalizeBitmapOrientationForHash(bitmap: Bitmap): Bitmap {
+        val swBitmap = try {
+            if (bitmap.config == Bitmap.Config.HARDWARE || bitmap.config == null) {
+                FileLogger.d(TAG, "位图为硬件配置，拷贝为ARGB_8888用于哈希计算")
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            } else bitmap
+        } catch (_: Exception) { bitmap }
+
+        val rotation = try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                display?.rotation ?: Surface.ROTATION_0
+            } else {
+                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.rotation
+            }
+        } catch (_: Exception) { Surface.ROTATION_0 }
+
+        val w = swBitmap.width
+        val h = swBitmap.height
+        val aspect = if (h != 0) (w.toFloat() / h.toFloat()) else 0f
+        val isLandscapeDevice = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+                rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+        val isWide = w > h && aspect > 1.2f
+        val shouldRotate = isLandscapeDevice && isWide
+
+        if (!shouldRotate) return swBitmap
+
+        val m = Matrix()
+        val degrees = when (rotation) {
+            Surface.ROTATION_90 -> 270f
+            Surface.ROTATION_270 -> 90f
+            else -> 90f
+        }
+        m.postRotate(degrees)
+        return try {
+            Bitmap.createBitmap(swBitmap, 0, 0, w, h, m, true)
+        } catch (_: Exception) {
+            swBitmap
+        }
+    }
+
+    /**
+     * 计算 64-bit dHash（9x8 灰度差分）。
+     */
+    private fun computeDHash64FromBitmap(src: Bitmap): Long {
+        val resized = try { Bitmap.createScaledBitmap(src, 9, 8, true) } catch (_: Exception) { src }
+        var bitIndex = 0
+        var hash = 0L
+
+        fun luminance(x: Int, y: Int): Int {
+            val c = resized.getPixel(x, y)
+            val r = (c shr 16) and 0xFF
+            val g = (c shr 8) and 0xFF
+            val b = (c) and 0xFF
+            return (r + g + b) / 3
+        }
+
+        for (y in 0 until 8) {
+            for (x in 0 until 8) {
+                val left = luminance(x, y)
+                val right = luminance(x + 1, y)
+                if (left > right) {
+                    hash = hash or (1L shl bitIndex)
+                }
+                bitIndex++
+            }
+        }
+        return hash
+    }
+
+    private fun getStatusBarHeight(): Int {
+        return try {
+            val resId = resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resId > 0) resources.getDimensionPixelSize(resId) else 0
+        } catch (_: Exception) { 0 }
+    }
+
+    private fun getNavigationBarHeight(): Int {
+        return try {
+            val orientation = resources.configuration.orientation
+            val name = if (orientation == Configuration.ORIENTATION_LANDSCAPE) "navigation_bar_height_landscape" else "navigation_bar_height"
+            val resId = resources.getIdentifier(name, "dimen", "android")
+            if (resId > 0) resources.getDimensionPixelSize(resId) else 0
+        } catch (_: Exception) { 0 }
+    }
+
+    // 已移除 SharedPreferences 方案，改为数据库 app_stats.last_dhash 持久化
 
     /**
      * 设置媒体投影权限结果 (已废弃，仅为兼容保留)
@@ -591,6 +759,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.e(TAG, "开始启动定时截屏服务...")
             screenshotInterval = intervalSeconds
             isTimedScreenshotRunning = true
+            pausedByScreenOff = false
 
             // 启动定时器
             screenshotTimer = timer(name = "ScreenshotTimer", daemon = true, period = (intervalSeconds * 1000).toLong()) {
@@ -646,6 +815,43 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * 灭屏时的暂停：仅取消计时器，不清理“正在运行”持久化标记，以便亮屏后自动恢复
+     */
+    fun pauseTimedScreenshotForScreenOff() {
+        try {
+            if (!isTimedScreenshotRunning && screenshotTimer == null) {
+                // 已不在运行，无需处理
+                pausedByScreenOff = false
+                return
+            }
+            pausedByScreenOff = true
+            screenshotTimer?.cancel()
+            screenshotTimer = null
+            isTimedScreenshotRunning = false
+            FileLogger.i(TAG, "定时截屏因灭屏已暂停")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "暂停定时截屏失败", e)
+        }
+    }
+
+    /**
+     * 亮屏/解锁后恢复：仅当因灭屏被暂停过时恢复
+     */
+    fun resumeTimedScreenshotIfPaused() {
+        try {
+            if (!pausedByScreenOff) {
+                return
+            }
+            pausedByScreenOff = false
+            val interval = if (screenshotInterval > 0) screenshotInterval else 5
+            FileLogger.i(TAG, "尝试从灭屏暂停中恢复定时截屏，间隔: ${interval}秒")
+            startTimedScreenshot(interval)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "恢复定时截屏失败", e)
+        }
+    }
+
+    /**
      * 仅用于系统回收/销毁时取消定时器，不更改“正在运行”的持久化标记。
      */
     private fun cancelTimedScreenshotSilently() {
@@ -664,6 +870,11 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun performTimedScreenshot() {
         try {
+            // 息屏/锁屏或者显示不可见时跳过
+            if (shouldPauseForScreenState()) {
+                FileLogger.d(TAG, "屏幕不可交互或处于锁屏/息屏状态，本次定时截屏跳过")
+                return
+            }
             // 确定要截图的应用
             val targetApp = getScreenshotTargetApp()
             if (targetApp == null) {
@@ -675,14 +886,88 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             // 使用无障碍服务截屏
             takeScreenshotUsingAccessibility { success, filePath ->
-                if (success && filePath != null) {
-                    FileLogger.i(TAG, "定时截屏成功：$filePath")
+                if (success) {
+                    if (filePath != null) {
+                        FileLogger.i(TAG, "定时截屏成功：$filePath")
+                    } else {
+                        // 重复判定命中：成功但无新文件
+                        FileLogger.i(TAG, "定时截屏：重复判定命中，已跳过保存")
+                    }
                 } else {
                     FileLogger.e(TAG, "定时截屏失败")
                 }
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "执行定时截屏失败", e)
+        }
+    }
+
+    /**
+     * 是否因屏幕状态而应暂停截屏：
+     * - 设备不可交互（息屏/休眠）
+     * - 锁屏界面（Keyguard）
+     * - 显示状态为OFF/DOZE/DOZE_SUSPEND
+     */
+    private fun shouldPauseForScreenState(): Boolean {
+        return try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val isInteractive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                powerManager.isInteractive
+            } else {
+                @Suppress("DEPRECATION")
+                powerManager.isScreenOn
+            }
+
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            val isLocked = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    keyguardManager.isDeviceLocked || keyguardManager.isKeyguardLocked
+                } else {
+                    keyguardManager.isKeyguardLocked
+                }
+            } catch (_: Exception) { keyguardManager.isKeyguardLocked }
+
+            val isDisplayOn = isDisplayReallyOn()
+
+            val pause = (!isInteractive) || isLocked || (!isDisplayOn)
+            if (FileLogger.isDebugEnabled()) {
+                FileLogger.d(TAG, "屏幕状态 -> interactive: ${isInteractive}, locked: ${isLocked}, displayOn: ${isDisplayOn}, pause: ${pause}")
+            }
+            pause
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "检查屏幕状态失败，出于保守策略将跳过截屏", e)
+            true
+        }
+    }
+
+    /**
+     * 判断显示是否真正点亮：Display.STATE_ON 视为点亮，其它（OFF/DOZE/DOZE_SUSPEND）视为未点亮。
+     */
+    private fun isDisplayReallyOn(): Boolean {
+        return try {
+            val state = try {
+                val disp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    display
+                } else {
+                    val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                    @Suppress("DEPRECATION")
+                    dm.getDisplay(Display.DEFAULT_DISPLAY)
+                }
+                disp?.state ?: Display.STATE_UNKNOWN
+            } catch (_: Exception) { Display.STATE_UNKNOWN }
+
+            when (state) {
+                Display.STATE_ON -> true
+                Display.STATE_UNKNOWN -> {
+                    // 回退：以 PowerManager.isInteractive 作为近似
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) pm.isInteractive else @Suppress("DEPRECATION") pm.isScreenOn
+                }
+                else -> false // 包括 OFF/DOZE/DOZE_SUSPEND
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "检测显示状态失败，按未点亮处理", e)
+            false
         }
     }
 
@@ -766,7 +1051,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val day = SimpleDateFormat("dd", Locale.getDefault()).format(now)
             val relativeDir = "output/screen/$packageName/$yearMonth/$day"
             val timestamp = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(now)
-            val fileName = "${timestamp}.jpg"
+            // 最终文件名后缀依据实际编码格式决定
+            val baseName = timestamp
             
             // 使用应用专属的外部存储目录
             val baseDir = this.getExternalFilesDir(null)
@@ -781,7 +1067,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 outputDir.mkdirs()
             }
 
-            val file = File(outputDir, fileName)
+            // 先完成旋转与可编辑位图
+            var finalExt = "jpg" // 临时占位，稍后依据编码结果修正
+            var file = File(outputDir, baseName + "." + finalExt)
 
             // 纯图像维度与方向判定，避免依赖窗口API带来的不稳定
             val rotatedOrOriginal = try {
@@ -833,13 +1121,25 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 } else swBitmap
             } catch (_: Exception) { bitmap }
 
-            // 保存图片
-            FileOutputStream(file).use { out ->
-                (rotatedOrOriginal ?: bitmap).compress(Bitmap.CompressFormat.JPEG, 85, out)
+            // 应用压缩设置（不改变分辨率，仅通过编码质量/格式控制大小；可选灰度）
+            val encodeResult = encodeToBytesAccordingToSettings(rotatedOrOriginal ?: bitmap)
+            val bytes = encodeResult.first
+            finalExt = encodeResult.second
+            if (bytes == null) {
+                FileLogger.e(TAG, "编码失败：返回空字节流")
+                return null
+            }
+            // 用实际后缀重建文件并写入
+            file = File(outputDir, baseName + "." + finalExt)
+            try {
+                FileOutputStream(file).use { it.write(bytes) }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "写入文件失败", e)
+                return null
             }
 
             // 关键修改：只返回相对路径给Flutter端
-            val relativePath = File(relativeDir, fileName).path 
+            val relativePath = File(relativeDir, baseName + "." + finalExt).path 
             FileLogger.i(TAG, "截图已保存，绝对路径: ${file.absolutePath}")
             FileLogger.i(TAG, "返回给Flutter的相对路径: $relativePath")
             
@@ -868,6 +1168,148 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.e(TAG, "保存截图失败", e)
             null
         }
+    }
+
+    /**
+     * 根据用户设置进行编码（格式/质量/目标大小/灰度），不改变分辨率。
+     * FlutterSharedPreferences 键：
+     *  - flutter.image_format: jpeg | png | webp_lossy | webp_lossless (默认 webp_lossy)
+     *  - flutter.image_quality: Int 1..100（默认 90，仅对 lossy 生效）
+     *  - flutter.use_target_size: Bool（默认 true，仅对 lossy 生效）
+     *  - flutter.target_size_kb: Int（默认 200，仅对 lossy 生效）
+     *  - flutter.grayscale: Bool（默认 false）
+     */
+    // 返回 Pair<字节数组, 扩展名>
+    private fun encodeToBytesAccordingToSettings(src: Bitmap): Pair<ByteArray?, String> {
+        val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val format = (sp.getString("flutter.image_format", null)
+            ?: (sp.all["flutter.image_format"] as? String)
+            ?: "webp_lossy")
+        val quality = spGetIntCompat(sp, "flutter.image_quality", 90).coerceIn(1, 100)
+        val useTarget = spGetBoolCompat(sp, "flutter.use_target_size", true)
+        val targetKb = spGetIntCompat(sp, "flutter.target_size_kb", 50).coerceAtLeast(50)
+
+        // 可选灰度转换（不改变尺寸）
+        val bitmap = src // 灰度已移除
+
+        // 选择编码器
+        val (cf, isLossy, isLossless, ext) = when (format) {
+            "jpeg" -> Quad(Bitmap.CompressFormat.JPEG, true, false, "jpg")
+            "png" -> Quad(Bitmap.CompressFormat.PNG, false, true, "png")
+            "webp_lossless" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Quad(Bitmap.CompressFormat.WEBP_LOSSLESS, false, true, "webp")
+            } else {
+                // 退化到 PNG 以确保无损
+                Quad(Bitmap.CompressFormat.PNG, false, true, "png")
+            }
+            else -> { // webp_lossy
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Quad(Bitmap.CompressFormat.WEBP_LOSSY, true, false, "webp")
+                } else {
+                    Quad(Bitmap.CompressFormat.WEBP, true, false, "webp")
+                }
+            }
+        }
+
+        FileLogger.i(TAG, "编码设置 -> format=${format}, lossy=${isLossy}, lossless=${isLossless}, quality=${quality}, useTarget=${useTarget}, targetKb=${targetKb}")
+
+        // 目标大小仅在有损编码时生效
+        if (isLossy && useTarget) {
+            val bytes = compressToTargetSize(bitmap, cf, targetKb * 1024, minQ = 1, maxQ = 100)
+                ?: compressOnce(bitmap, cf, 1)
+            FileLogger.i(TAG, "目标大小编码完成 -> 实际字节=${bytes.size}, 目标字节=${targetKb * 1024}")
+            return Pair(bytes, ext)
+        }
+
+        // 否则按质量单次压缩；无损忽略质量
+        return try {
+            val data = compressOnce(bitmap, cf, if (isLossless) 100 else quality)
+            FileLogger.i(TAG, "单次编码完成 -> 实际字节=${data.size}, 格式=${format}, 质量=${quality}")
+            Pair(data, ext)
+        } catch (e: Exception) { Pair(null, ext) }
+    }
+
+    private data class Quad<A,B,C,D>(val a: A, val b: B, val c: C, val d: D)
+
+    private fun compressOnce(bm: Bitmap, cf: Bitmap.CompressFormat, q: Int): ByteArray {
+        val baos = java.io.ByteArrayOutputStream()
+        bm.compress(cf, q.coerceIn(1,100), baos)
+        return baos.toByteArray()
+    }
+
+    /**
+     * 二分质量以尽量接近目标大小（仅 lossy）。
+     */
+    private fun compressToTargetSize(bm: Bitmap, cf: Bitmap.CompressFormat, targetBytes: Int, minQ: Int, maxQ: Int): ByteArray? {
+        var lo = minQ.coerceIn(1, 100)
+        var hi = maxQ.coerceIn(lo, 100)
+        var bestUnder: ByteArray? = null
+        var bestOver: ByteArray? = null
+        var iterations = 0
+        while (lo <= hi && iterations < 12) {
+            iterations++
+            val mid = (lo + hi) / 2
+            val data = compressOnce(bm, cf, mid)
+            FileLogger.d(TAG, "压缩二分 -> 第${iterations}次, q=${mid}, size=${data.size}, target=${targetBytes}")
+            if (data.size <= targetBytes) {
+                // 记录当前最接近目标的“不过线”方案，继续提高质量以更接近目标
+                if (bestUnder == null || data.size > bestUnder.size) bestUnder = data
+                lo = mid + 1
+            } else {
+                // 记录当前最小的“超过目标”方案，降低质量
+                if (bestOver == null || data.size < bestOver.size) bestOver = data
+                hi = mid - 1
+            }
+        }
+        val result = bestUnder ?: bestOver
+        if (result != null) {
+            FileLogger.i(TAG, "压缩二分完成 -> 最终size=${result.size}, 目标=${targetBytes}")
+        } else {
+            FileLogger.w(TAG, "压缩二分未找到合适质量")
+        }
+        return result
+    }
+
+    private fun spGetIntCompat(sp: android.content.SharedPreferences, key: String, def: Int): Int {
+        return try {
+            val any = sp.all[key]
+            when (any) {
+                is Int -> any
+                is Long -> {
+                    if (any > Int.MAX_VALUE) Int.MAX_VALUE else if (any < Int.MIN_VALUE) Int.MIN_VALUE else any.toInt()
+                }
+                is String -> any.toIntOrNull() ?: def
+                else -> try { sp.getInt(key, def) } catch (_: Exception) { def }
+            }
+        } catch (_: Exception) { def }
+    }
+
+    private fun spGetBoolCompat(sp: android.content.SharedPreferences, key: String, def: Boolean): Boolean {
+        return try {
+            val any = sp.all[key]
+            when (any) {
+                is Boolean -> any
+                is String -> any.equals("true", ignoreCase = true)
+                is Int -> any != 0
+                is Long -> any != 0L
+                else -> sp.getBoolean(key, def)
+            }
+        } catch (_: Exception) { def }
+    }
+
+    private fun toGrayscale(src: Bitmap): Bitmap {
+        return try {
+            val w = src.width
+            val h = src.height
+            val gray = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val c = Canvas(gray)
+            val paint = Paint()
+            val cm = ColorMatrix()
+            cm.setSaturation(0f)
+            paint.colorFilter = ColorMatrixColorFilter(cm)
+            c.drawBitmap(src, 0f, 0f, paint)
+            gray
+        } catch (_: Exception) { src }
     }
 
     /**

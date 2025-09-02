@@ -30,8 +30,10 @@ object FileLogger {
         val type = android.os.Build.TYPE?.lowercase(Locale.getDefault()) ?: ""
         type.contains("debug") || type.contains("eng")
     } catch (_: Exception) { false }
-    private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_ERROR
-    private var writeFileEnabled = isDebugBuild
+    // 默认：Debug 构建使用 DEBUG；Release 构建使用 INFO，便于发布版本排查
+    private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_INFO
+    // 在 Release 也启用文件写入，方便查看构建版本日志
+    private var writeFileEnabled = true
     
     /**
      * 初始化文件日志

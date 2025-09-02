@@ -136,6 +136,22 @@ class MainActivity : FlutterActivity() {
                     
                     result.success(running)
                 }
+                "nativeLog" -> {
+                    try {
+                        val level = call.argument<String>("level") ?: "info"
+                        val tag = call.argument<String>("tag") ?: "Flutter"
+                        val msg = call.argument<String>("message") ?: ""
+                        when (level.lowercase()) {
+                            "debug" -> FileLogger.d(tag, msg)
+                            "warn" -> FileLogger.w(tag, msg)
+                            "error" -> FileLogger.e(tag, msg)
+                            else -> FileLogger.i(tag, msg)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("log_error", e.message, null)
+                    }
+                }
                 "startForegroundService" -> {
                     startForegroundService()
                     result.success(null)
@@ -386,10 +402,10 @@ class MainActivity : FlutterActivity() {
             scheduleKeepAliveJob()
             FileLogger.e(TAG, "步骤: scheduleKeepAliveJob -> ${System.currentTimeMillis() - t7}ms")
 
-            // 启动守护服务
-            val t8 = System.currentTimeMillis()
-            startDaemonService()
-            FileLogger.e(TAG, "步骤: startDaemonService -> ${System.currentTimeMillis() - t8}ms")
+            // 已取消：守护服务前台通知会造成重复提示，仅保留前台截图服务通知
+            // val t8 = System.currentTimeMillis()
+            // startDaemonService()
+            // FileLogger.e(TAG, "步骤: startDaemonService -> ${System.currentTimeMillis() - t8}ms")
 
             // 绑定AccessibilityService
             val t9 = System.currentTimeMillis()

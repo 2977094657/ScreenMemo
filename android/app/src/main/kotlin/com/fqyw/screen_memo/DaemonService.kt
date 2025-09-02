@@ -20,6 +20,7 @@ import java.util.TimerTask
  * 守护服务，用于监控和维护AccessibilityService的运行状态
  * 运行在独立进程中
  */
+// 已弃用：避免重复前台通知，调试需要可临时恢复
 class DaemonService : Service() {
     
     companion object {
@@ -49,14 +50,14 @@ class DaemonService : Service() {
         FileLogger.init(this)
         FileLogger.e(TAG, "守护服务创建，进程ID: ${Process.myPid()}")
         
-        // 启动前台服务
-        startForegroundService()
+        // 已禁用前台通知，避免状态栏重复
+        // startForegroundService()
         
         // 绑定AccessibilityService
         bindAccessibilityService()
         
-        // 开始定期检查
-        startChecking()
+        // 停止定期检查，交由前台服务与系统事件维持
+        // startChecking()
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
