@@ -9,6 +9,8 @@ import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../services/screenshot_service.dart';
 import '../widgets/ui_components.dart';
+import '../services/flutter_logger.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -37,6 +39,75 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     if (Platform.isAndroid) {
       _platform.invokeMethod('hideStatusBar');
     }
+  }
+
+  Future<void> _openCurrentLink() async {
+    if (_screenshots.isEmpty) return;
+    final url = _screenshots[_currentIndex].pageUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      // 记录点击打开链接的日志（Flutter 与原生）
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.查看器-打开链接 url='+url);
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('UI', 'viewer open link: '+url);
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showLinkDialog() async {
+    if (_screenshots.isEmpty) return;
+    final url = _screenshots[_currentIndex].pageUrl;
+    if (url == null || url.isEmpty) return;
+    await showUIDialog<void>(
+      context: context,
+      title: '链接',
+      content: SelectableText(url, textAlign: TextAlign.center),
+      barrierDismissible: true,
+      actions: [
+        UIDialogAction<void>(
+          text: '复制',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: true,
+          onPressed: (ctx) async {
+            try {
+              await Clipboard.setData(ClipboardData(text: url));
+              // ignore: unawaited_futures
+              FlutterLogger.info('UI.查看器-复制链接 成功');
+              // ignore: unawaited_futures
+              FlutterLogger.nativeInfo('UI', 'viewer copy link success');
+              if (mounted) {
+                UINotifier.success(context, 'Copied');
+              }
+            } catch (e) {
+              // ignore: unawaited_futures
+              FlutterLogger.error('UI.查看器-复制链接 失败: '+e.toString());
+              // ignore: unawaited_futures
+              FlutterLogger.nativeError('UI', 'viewer copy link failed: '+e.toString());
+              if (mounted) {
+                UINotifier.error(context, 'Copy failed');
+              }
+            }
+          },
+        ),
+        UIDialogAction<void>(
+          text: '打开',
+          style: UIDialogActionStyle.normal,
+          closeOnPress: true,
+          onPressed: (ctx) async {
+            await _openCurrentLink();
+          },
+        ),
+        const UIDialogAction<void>(
+          text: '取消',
+          style: UIDialogActionStyle.normal,
+          closeOnPress: true,
+        ),
+      ],
+    );
   }
 
   @override
@@ -92,9 +163,18 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     );
 
     if (confirmed == true && screenshot.id != null) {
+      // 记录UI删除操作日志
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.查看器-删除当前-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}');
+      // ignore: unawaited_futures
+      FlutterLogger.nativeInfo('UI', 'viewer delete start id=${screenshot.id}');
       try {
         final success = await ScreenshotService.instance.deleteScreenshot(screenshot.id!, _appInfo.packageName);
         if (success) {
+          // ignore: unawaited_futures
+          FlutterLogger.info('UI.查看器-删除当前-成功 id=${screenshot.id}');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeInfo('UI', 'viewer delete success id=${screenshot.id}');
           setState(() {
             _screenshots.removeAt(_currentIndex);
             
@@ -111,11 +191,19 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             UINotifier.success(context, '截图已删除');
           }
         } else {
+          // ignore: unawaited_futures
+          FlutterLogger.warn('UI.查看器-删除当前-失败 id=${screenshot.id}');
+          // ignore: unawaited_futures
+          FlutterLogger.nativeWarn('UI', 'viewer delete failed id=${screenshot.id}');
           if (mounted) {
             UINotifier.error(context, '删除失败');
           }
         }
       } catch (e) {
+        // ignore: unawaited_futures
+        FlutterLogger.error('UI.查看器-删除当前-异常: $e');
+        // ignore: unawaited_futures
+        FlutterLogger.nativeError('UI', 'viewer delete exception: $e');
         if (mounted) {
           UINotifier.error(context, '删除失败: $e');
         }
@@ -137,6 +225,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           _buildInfoRow('应用名称', screenshot.appName),
           _buildInfoRow('截图时间', _formatDateTime(screenshot.captureTime)),
           _buildInfoRow('文件路径', screenshot.filePath),
+          if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
+            _buildInfoRow('页面链接', screenshot.pageUrl!),
           if (screenshot.fileSize > 0)
             _buildInfoRow('文件大小', _formatFileSize(screenshot.fileSize)),
           FutureBuilder<bool>(
@@ -242,6 +332,14 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   onPressed: _showImageInfo,
                   tooltip: '图片信息',
                 ),
+                if (_screenshots.isNotEmpty &&
+                    _screenshots[_currentIndex].pageUrl != null &&
+                    _screenshots[_currentIndex].pageUrl!.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.link),
+                    onPressed: _showLinkDialog,
+                    tooltip: '链接',
+                  ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _deleteCurrentImage,
@@ -302,6 +400,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             });
           },
             ),
+            // 按需求：大图查看页不显示顶部链接遮罩，仅保留右上角链接图标
             if (Theme.of(context).brightness == Brightness.dark)
               IgnorePointer(
                 child: Container(

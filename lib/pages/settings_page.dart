@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
@@ -31,6 +32,13 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   int _screenshotInterval = 5;
   String _sortMode = 'timeDesc';
 
+  // 截图质量设置（仅通过编码压缩，不修改分辨率）
+  String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
+  int _imageQuality = 90; // 预留（隐藏），由目标大小策略接管
+  bool _useTargetSize = false; // 默认不开启
+  int _targetSizeKb = 50; // 默认50KB（最低50KB，上不封顶）
+  bool _grayscale = false; // 已移除，保持固定为 false
+
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
@@ -43,6 +51,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     _loadAllPermissions();
     _loadScreenshotInterval();
     _loadSortMode();
+    _loadScreenshotQualitySettings();
   }
 
   @override
@@ -432,6 +441,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   title: '截屏设置',
                   children: [
                     _buildScreenshotIntervalItem(context),
+                    _buildScreenshotQualityItem(context),
                   ],
                 ),
 
@@ -694,6 +704,14 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   Widget _buildScreenshotIntervalItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Container(
@@ -743,6 +761,115 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             ),
             child: const Text('设置'),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScreenshotQualityItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Stack(
+                  children: [
+                    // 文本区域右侧预留空间，避免与右上角开关重叠
+                    Padding(
+                      padding: const EdgeInsets.only(right: 72),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '截图质量',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          // 说明行（根据开关禁用/启用与灰化）
+                          IgnorePointer(
+                            ignoring: !_useTargetSize,
+                            child: Opacity(
+                              opacity: _useTargetSize ? 1.0 : 0.5,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    '当前大小：',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppTheme.spacing1),
+                                  GestureDetector(
+                                    onTap: _useTargetSize ? _showTargetSizeDialog : null,
+                                    child: Text(
+                                      '${_targetSizeKb}KB',
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: _useTargetSize
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                                        decoration: _useTargetSize ? TextDecoration.underline : TextDecoration.none,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppTheme.spacing1),
+                                  Flexible(
+                                    child: Text(
+                                      '（点击数字可修改）',
+                                      softWrap: false,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 右上角悬浮圆形开关（不占据垂直排布空间）
+                    Positioned(
+                      top: -1,
+                      right: 0,
+                      child: Transform.scale(
+                        scale: 0.9,
+                        child: Switch(
+                          value: _useTargetSize,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onChanged: (v) async {
+                            setState(() { _useTargetSize = v; });
+                            await _saveScreenshotQualitySettings();
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // 与“截屏间隔”项保持一致的内边距与间距（去除多余的底部空隙）
         ],
       ),
     );
@@ -845,12 +972,128 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     );
   }
 
+  void _showTargetSizeDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _targetSizeKb.toString(),
+    );
+
+    showUIDialog<void>(
+      context: context,
+      title: '设置目标大小(单位KB)',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: '目标大小（KB）',
+                hintText: '请输入 >= 50 的整数',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: AppTheme.fontSizeBase,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: const Text(
+              '为保证 OCR 质量，最低仅支持 50KB；系统会在不改变分辨率的情况下尽量逼近该大小。',
+              style: TextStyle(fontSize: 12, color: AppTheme.info),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final input = controller.text.trim();
+            final kb = int.tryParse(input);
+            if (kb == null || kb < 50) {
+              UINotifier.error(ctx, '请输入 >= 50 的有效整数');
+              return;
+            }
+            setState(() {
+              _useTargetSize = true;
+              _targetSizeKb = kb;
+            });
+            await _saveScreenshotQualitySettings();
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(ctx, '目标大小已设置为 $kb KB');
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   Future<void> _loadSortMode() async {
     final mode = await _appService.getSortMode();
     if (mounted) {
       setState(() {
         _sortMode = mode;
       });
+    }
+  }
+
+  Future<void> _loadScreenshotQualitySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _imageFormat = prefs.getString('image_format') ?? 'webp_lossless';
+        _imageQuality = (prefs.getInt('image_quality') ?? 90).clamp(1, 100);
+        _useTargetSize = prefs.getBool('use_target_size') ?? false;
+        final tkb = prefs.getInt('target_size_kb') ?? 50;
+        _targetSizeKb = tkb < 50 ? 50 : tkb;
+        _grayscale = false; // 灰度已移除
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveScreenshotQualitySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
+      await prefs.setString('image_format', _useTargetSize ? 'webp_lossy' : 'webp_lossless');
+      await prefs.setInt('image_quality', _imageQuality);
+      await prefs.setBool('use_target_size', _useTargetSize);
+      await prefs.setInt('target_size_kb', _targetSizeKb < 50 ? 50 : _targetSizeKb);
+      // 不再保存灰度
+      if (mounted) {
+        UINotifier.success(context, '截图质量设置已保存');
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(context, '保存失败: $e');
+      }
     }
   }
 

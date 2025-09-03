@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../utils/gen_image_isolate.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
@@ -690,9 +692,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       },
       child: Stack(
         children: [
-          // 图片直接显示，无容器包装
+          // 图片直接显示，减小圆角以与整体风格协调
           ClipRRect(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             child: Builder(
               builder: (context) {
                 final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -731,6 +733,63 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               },
             ),
           ),
+          // 顶部链接信息遮罩（仅当存在 pageUrl 时显示，点击弹出复制/打开对话框）
+          if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showLinkDialogFromGrid(screenshot.pageUrl!),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(AppTheme.radiusSm),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.link,
+                        size: 14,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white.withOpacity(0.85)
+                            : Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          screenshot.pageUrl!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withOpacity(0.9)
+                                : Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // 选择矩形“复选框”叠加（仅多选模式显示，右上角白色边框，浅灰底，选中打勾）
           if (_selectionMode)
             Positioned(
@@ -754,7 +813,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               ),
             ),
           // 去除之前的全图遮罩，仅保留底部信息遮罩
-          // 底部信息遮罩
+          // 底部信息遮罩（同步减小底边圆角）
           Positioned(
             bottom: 0,
             left: 0,
@@ -774,7 +833,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   ],
                 ),
                 borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(AppTheme.radiusMd),
+                  bottom: Radius.circular(AppTheme.radiusSm),
                 ),
               ),
               child: Row(
@@ -808,6 +867,60 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       ),
     );
     return KeyedSubtree(key: itemKey, child: item);
+  }
+
+  Future<void> _showLinkDialogFromGrid(String url) async {
+    await showUIDialog<void>(
+      context: context,
+      title: '链接',
+      content: SelectableText(url, textAlign: TextAlign.center),
+      barrierDismissible: true,
+      actions: [
+        UIDialogAction<void>(
+          text: '复制',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: true,
+          onPressed: (ctx) async {
+            try {
+              await Clipboard.setData(ClipboardData(text: url));
+              // ignore: unawaited_futures
+              FlutterLogger.info('UI.网格-复制链接 成功');
+              // ignore: unawaited_futures
+              FlutterLogger.nativeInfo('UI', 'grid copy link success');
+              if (mounted) {
+                UINotifier.success(context, 'Copied');
+              }
+            } catch (e) {
+              // ignore: unawaited_futures
+              FlutterLogger.error('UI.网格-复制链接 失败: '+e.toString());
+              // ignore: unawaited_futures
+              FlutterLogger.nativeError('UI', 'grid copy link failed: '+e.toString());
+              if (mounted) {
+                UINotifier.error(context, 'Copy failed');
+              }
+            }
+          },
+        ),
+        UIDialogAction<void>(
+          text: '打开',
+          style: UIDialogActionStyle.normal,
+          closeOnPress: true,
+          onPressed: (ctx) async {
+            try {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            } catch (_) {}
+          },
+        ),
+        const UIDialogAction<void>(
+          text: '取消',
+          style: UIDialogActionStyle.normal,
+          closeOnPress: true,
+        ),
+      ],
+    );
   }
 
   // 构建右侧时间线滚动条与时间提示

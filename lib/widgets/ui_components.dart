@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 
-/// 统一的底部吐司（Overlay）助手 - shadcn风格：扁平、细线框/无线框、小圆角、无阴影
+/// 统一的底部吐司（Overlay）助手 - Android Toast 风格：底部、深色背景、白字、轻圆角、无阴影
 class UINotifier {
   static OverlayEntry? _currentEntry;
+  static OverlayEntry? _progressEntry;
+  static ValueNotifier<_ProgressState>? _progressNotifier;
 
   static void _removeCurrent() {
     try {
       _currentEntry?.remove();
     } catch (_) {}
     _currentEntry = null;
+  }
+
+  static void _removeProgress() {
+    try {
+      _progressEntry?.remove();
+    } catch (_) {}
+    _progressEntry = null;
+    _progressNotifier = null;
   }
 
   static void _showTopToast(
@@ -51,18 +62,15 @@ class UINotifier {
   }
 
   static void success(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
-    final theme = Theme.of(context);
-    const Color base = Color(0xFF67C23A); // Element success
-    const Color bgLight = Color(0xFFF0F9EB);
-    const Color brLight = Color(0xFFE1F3D8);
-    final bool isDark = theme.brightness == Brightness.dark;
+    // 统一 Toast 样式（更透明的半透明背景）
+    const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
       message: message,
-      textColor: base,
-      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
-      borderColor: isDark ? base.withOpacity(0.6) : brLight,
-      outlined: true,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -70,18 +78,14 @@ class UINotifier {
   }
 
   static void info(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
-    final theme = Theme.of(context);
-    const Color base = Color(0xFF909399); // Element info
-    const Color bgLight = Color(0xFFF4F4F5);
-    const Color brLight = Color(0xFFE9E9EB);
-    final bool isDark = theme.brightness == Brightness.dark;
+    const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
       message: message,
-      textColor: base,
-      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
-      borderColor: isDark ? base.withOpacity(0.6) : brLight,
-      outlined: true,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -89,41 +93,68 @@ class UINotifier {
   }
 
   static void error(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
-    final theme = Theme.of(context);
-    const Color base = Color(0xFFF56C6C); // Element error
-    const Color bgLight = Color(0xFFFEF0F0);
-    const Color brLight = Color(0xFFFDE2E2);
-    final bool isDark = theme.brightness == Brightness.dark;
+    const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
       message: message,
-      textColor: base,
-      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
-      borderColor: isDark ? base.withOpacity(0.6) : brLight,
-      outlined: true,
-      duration: duration ?? const Duration(seconds: 4),
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
+      duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
     );
   }
 
   static void warning(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
-    final theme = Theme.of(context);
-    const Color base = Color(0xFFE6A23C); // Element warning
-    const Color bgLight = Color(0xFFFDF6EC);
-    const Color brLight = Color(0xFFFAECD8);
-    final bool isDark = theme.brightness == Brightness.dark;
+    const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
       message: message,
-      textColor: base,
-      backgroundColor: isDark ? theme.colorScheme.surface : bgLight,
-      borderColor: isDark ? base.withOpacity(0.6) : brLight,
-      outlined: true,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
       duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
     );
+  }
+
+  // ===== 持续进度吐司（手动更新与关闭） =====
+  static void showProgress(BuildContext context, {required String message, double? progress}) {
+    final overlay = Overlay.of(context);
+    if (overlay == null) return;
+
+    final initial = _ProgressState(message: message, progress: progress);
+    if (_progressNotifier == null) {
+      _progressNotifier = ValueNotifier<_ProgressState>(initial);
+      final entry = OverlayEntry(
+        builder: (ctx) => _ProgressToast(
+          stateListenable: _progressNotifier!,
+          onClosed: _removeProgress,
+        ),
+      );
+      overlay.insert(entry);
+      _progressEntry = entry;
+    } else {
+      _progressNotifier!.value = initial;
+    }
+  }
+
+  static void updateProgress({String? message, double? progress}) {
+    final notifier = _progressNotifier;
+    if (notifier == null) return;
+    final current = notifier.value;
+    notifier.value = _ProgressState(
+      message: message ?? current.message,
+      progress: progress ?? current.progress,
+    );
+  }
+
+  static void hideProgress() {
+    _removeProgress();
   }
 }
 
@@ -259,6 +290,87 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressState {
+  final String message;
+  final double? progress; // 0.0 - 1.0，null 表示不确定
+  const _ProgressState({required this.message, this.progress});
+}
+
+class _ProgressToast extends StatefulWidget {
+  final ValueListenable<_ProgressState> stateListenable;
+  final VoidCallback onClosed;
+
+  const _ProgressToast({required this.stateListenable, required this.onClosed});
+
+  @override
+  State<_ProgressToast> createState() => _ProgressToastState();
+}
+
+class _ProgressToastState extends State<_ProgressToast> {
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      bottom: true,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
+          child: Material(
+            type: MaterialType.transparency,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing4,
+                  vertical: AppTheme.spacing3,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xCC323232),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: ValueListenableBuilder<_ProgressState>(
+                  valueListenable: widget.stateListenable,
+                  builder: (context, state, _) {
+                    final message = state.message;
+                    final prog = state.progress;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          message,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        if (prog != null)
+                          UIProgress(value: prog, backgroundColor: Colors.white24, valueColor: Colors.white, height: 6)
+                        else
+                          const SizedBox(
+                            height: 6,
+                            child: LinearProgressIndicator(
+                              value: null,
+                              color: Colors.white,
+                              backgroundColor: Colors.white24,
+                              minHeight: 6,
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -677,5 +789,73 @@ class UISeparator extends StatelessWidget {
         color: color ?? outline,
       );
     });
+  }
+}
+
+/// 矩形开关组件：小圆角轨道 + 矩形滑块（用于替代默认圆形拇指）
+class UIRectSwitch extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final double width;
+  final double height;
+  final Duration duration;
+
+  const UIRectSwitch({
+    super.key,
+    required this.value,
+    this.onChanged,
+    this.width = 56,
+    this.height = 36,
+    this.duration = const Duration(milliseconds: 160),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final Color trackColor = value ? cs.primary : cs.surface;
+    final Color thumbColor = value ? cs.onPrimary : cs.onSurface;
+    final Color outline = cs.outline.withOpacity(0.8);
+
+    // 内边距用于给滑块留出边界
+    const double padding = 2.0;
+    final double innerWidth = width - padding * 2;
+    final double innerHeight = height - padding * 2;
+    const double thumbMargin = 3.0;
+    final double thumbHeight = innerHeight - thumbMargin * 2;
+    final double thumbWidth = (thumbHeight * 0.8).clamp(thumbHeight * 0.7, innerWidth / 2.6);
+
+    return GestureDetector(
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        width: width,
+        height: height,
+        padding: const EdgeInsets.all(padding),
+        decoration: BoxDecoration(
+          color: trackColor,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(color: outline, width: 1),
+        ),
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: thumbWidth,
+                height: thumbHeight,
+                decoration: BoxDecoration(
+                  color: thumbColor,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
