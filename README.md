@@ -23,6 +23,10 @@
 - **深色/浅色主题**: 自适应主题切换
 - **响应式布局**: 适配不同屏幕尺寸
 - **流畅动画**: 优雅的交互体验
+ - **首页排序与导航优化**:
+   - 默认按“最后截图时间”倒序展示监控应用
+   - 支持按 时间/大小/数量 的升序与降序切换（设置页可配置，首页可快速切换）
+   - 首页导航：移除顶部刷新与主题切换；“+” 移至搜索框左侧；右侧为圆角矩形开关，风格与搜索框一致
 
 ## 技术架构
 
@@ -166,3 +170,20 @@ cd android && ./gradlew test
 - ✅ 多平台支持
 - ✅ 权限管理系统
 - ✅ OEM厂商兼容
+
+### v1.0.1 (2025-08-31)
+- 🧭 首页排序：新增 时间/大小/数量 升降序选项，默认按最后截图时间倒序
+- 🧰 设置项：新增“首页排序”入口，持久化偏好
+- 🧼 导航优化：首页移除刷新与主题按钮，“+”移至搜索框左侧，右侧替换为圆角矩形开关
+- 🖼️ UI 细节：缩略图圆角减小为小圆角，视觉更协调
+
+### v1.0.2 (2025-09-02)
+- 🌐 URL 提取仅限浏览器：原生无障碍服务现在只在“浏览器白名单”内的包名时才启用页面 URL 启发式提取，避免在非浏览器应用中误识别文本为链接。
+- 🔒 浏览器白名单：内置常见国内外浏览器包名（如 `com.android.chrome`、`org.mozilla.firefox`、`com.microsoft.emmx`、`com.tencent.mtt`、`com.UCMobile` 等）。
+- ⚙️ 扩展方式：如需新增或移除某浏览器，可在 `ScreenCaptureAccessibilityService.kt` 的 `browserWhitelist` 集合中编辑；后续版本将提供设置项在应用内管理。
+
+#### 相关实现
+- 文件：`android/app/src/main/kotlin/com/fqyw/screen_memo/ScreenCaptureAccessibilityService.kt`
+- 关键点：
+  - 新增 `browserWhitelist` 与 `isBrowserPackage(pkg)`
+  - 仅当 `isBrowserPackage(packageName)` 为 true 时调用 `extractCurrentPageUrlSafe()`

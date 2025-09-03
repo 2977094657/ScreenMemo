@@ -48,9 +48,11 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.8.3
   path_provider: ^2.1.5
+  image: ^4.1.7
 
   # 图片查看器，支持缩放和手势操作
   photo_view: ^0.15.0
+  url_launcher: ^6.3.1
 
 
 dev_dependencies:
