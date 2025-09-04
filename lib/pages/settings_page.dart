@@ -29,6 +29,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   Map<String, bool> _keepAlivePermissions = {};
   bool _isLoading = true;
   bool _isLoadingKeepAlive = true;
+  bool _permissionsExpanded = true; // 权限下拉菜单展开状态：默认展开，全部授权后自动收起
   int _screenshotInterval = 5;
   String _sortMode = 'timeDesc';
 
@@ -43,6 +44,157 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
   bool _exportingDb = false;
+
+  bool _allPermissionsGranted() {
+    try {
+      final basicKeys = ['storage', 'notification', 'accessibility', 'usage_stats'];
+      final keepKeys = ['battery_optimization', 'autostart'];
+      for (final k in basicKeys) {
+        if (!(_permissions[k] ?? false)) return false;
+      }
+      for (final k in keepKeys) {
+        if (!(_keepAlivePermissions[k] ?? false)) return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Widget _buildPermissionsDropdown(BuildContext context) {
+    final basicItems = [
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.folder_outlined,
+        title: '存储权限',
+        description: '保存截图文件到设备存储',
+        isGranted: _permissions['storage'] ?? false,
+        onRequest: () => _requestPermission('storage'),
+      ),
+      const SizedBox(height: AppTheme.spacing2),
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.notifications_outlined,
+        title: '通知权限',
+        description: '显示服务状态通知',
+        isGranted: _permissions['notification'] ?? false,
+        onRequest: () => _requestPermission('notification'),
+      ),
+      const SizedBox(height: AppTheme.spacing2),
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.accessibility_new_outlined,
+        title: '无障碍服务',
+        description: '检测应用切换和执行截屏',
+        isGranted: _permissions['accessibility'] ?? false,
+        onRequest: () => _requestPermission('accessibility'),
+      ),
+      const SizedBox(height: AppTheme.spacing2),
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.analytics_outlined,
+        title: '使用统计权限',
+        description: '准确检测前台应用',
+        isGranted: _permissions['usage_stats'] ?? false,
+        onRequest: () => _requestPermission('usage_stats'),
+      ),
+    ];
+
+    final keepAliveItems = [
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.battery_saver_outlined,
+        title: '电池优化白名单',
+        description: '确保截屏服务稳定运行',
+        isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
+        onRequest: () => _requestPermission('battery_optimization'),
+      ),
+      const SizedBox(height: AppTheme.spacing2),
+      _buildPermissionItem(
+        context: context,
+        icon: Icons.power_settings_new_outlined,
+        title: '自启动权限',
+        description: '允许应用在后台自动重启',
+        isGranted: _keepAlivePermissions['autostart'] ?? false,
+        onRequest: () => _requestPermission('autostart'),
+      ),
+    ];
+
+    int missingCount = 0;
+    final allPairs = <bool>[];
+    allPairs.add(_permissions['storage'] ?? false);
+    allPairs.add(_permissions['notification'] ?? false);
+    allPairs.add(_permissions['accessibility'] ?? false);
+    allPairs.add(_permissions['usage_stats'] ?? false);
+    allPairs.add(_keepAlivePermissions['battery_optimization'] ?? false);
+    allPairs.add(_keepAlivePermissions['autostart'] ?? false);
+    for (final g in allPairs) {
+      if (!g) missingCount++;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              setState(() { _permissionsExpanded = !_permissionsExpanded; });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Icon(
+                    _allPermissionsGranted() ? Icons.verified_user : Icons.lock_open,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.spacing3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '权限设置',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _allPermissionsGranted() ? '已全部授权' : '尚缺少 $missingCount 项权限',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppTheme.spacing2),
+                Icon(_permissionsExpanded ? Icons.expand_less : Icons.expand_more),
+              ],
+            ),
+          ),
+          if (_permissionsExpanded) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            // 基础权限
+            ...basicItems,
+            const SizedBox(height: AppTheme.spacing3),
+            // 保活权限
+            ...keepAliveItems,
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -156,6 +308,11 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       _loadPermissions(),
       _loadKeepAlivePermissions(),
     ]);
+    if (mounted) {
+      setState(() {
+        _permissionsExpanded = !_allPermissionsGranted();
+      });
+    }
   }
 
   Future<void> _loadPermissions() async {
@@ -165,6 +322,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         setState(() {
           _permissions = permissions;
           _isLoading = false;
+        });
+        // 全部授权后自动收起
+        setState(() {
+          _permissionsExpanded = !_allPermissionsGranted();
         });
       }
     } catch (e) {
@@ -193,6 +354,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           _keepAlivePermissions = Map<String, bool>.from(result ?? {});
           _isLoadingKeepAlive = false;
         });
+        // 全部授权后自动收起
+        setState(() {
+          _permissionsExpanded = !_allPermissionsGranted();
+        });
       }
       print('保活权限状态更新完成: $_keepAlivePermissions');
     } catch (e) {
@@ -206,6 +371,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             'battery_whitelist_actual': false,
           };
           _isLoadingKeepAlive = false;
+        });
+        setState(() {
+          _permissionsExpanded = !_allPermissionsGranted();
         });
       }
     }
@@ -352,50 +520,16 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           : ListView(
               padding: const EdgeInsets.all(AppTheme.spacing4),
               children: [
-                // 基础权限
+                // 统一权限下拉菜单
                 _buildSection(
                   context: context,
-                  title: '基础权限',
+                  title: '权限设置',
                   children: [
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.folder_outlined,
-                      title: '存储权限',
-                      description: '保存截图文件到设备存储',
-                      isGranted: _permissions['storage'] ?? false,
-                      onRequest: () => _requestPermission('storage'),
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.notifications_outlined,
-                      title: '通知权限',
-                      description: '显示服务状态通知',
-                      isGranted: _permissions['notification'] ?? false,
-                      onRequest: () => _requestPermission('notification'),
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.accessibility_new_outlined,
-                      title: '无障碍服务',
-                      description: '检测应用切换和执行截屏',
-                      isGranted: _permissions['accessibility'] ?? false,
-                      onRequest: () => _requestPermission('accessibility'),
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.analytics_outlined,
-                      title: '使用统计权限',
-                      description: '准确检测前台应用',
-                      isGranted: _permissions['usage_stats'] ?? false,
-                      onRequest: () => _requestPermission('usage_stats'),
-                    ),
+                    _buildPermissionsDropdown(context),
                   ],
                 ),
 
-                const SizedBox(height: AppTheme.spacing6),
+                const SizedBox(height: AppTheme.spacing4),
 
                 // 显示与排序
                 _buildSection(
@@ -406,34 +540,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   ],
                 ),
 
-                const SizedBox(height: AppTheme.spacing6),
-
-                // 保活权限
-                _buildSection(
-                  context: context,
-                  title: '保活权限',
-                  children: [
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.battery_saver_outlined,
-                      title: '电池优化白名单',
-                      description: '确保截屏服务稳定运行',
-                      isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
-                      onRequest: () => _requestPermission('battery_optimization'),
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    _buildPermissionItem(
-                      context: context,
-                      icon: Icons.power_settings_new_outlined,
-                      title: '自启动权限',
-                      description: '允许应用在后台自动重启',
-                      isGranted: _keepAlivePermissions['autostart'] ?? false,
-                      onRequest: () => _requestPermission('autostart'),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: AppTheme.spacing6),
+                const SizedBox(height: AppTheme.spacing4),
 
                 // 截屏设置
                 _buildSection(
@@ -445,7 +552,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   ],
                 ),
 
-                const SizedBox(height: AppTheme.spacing6),
+                const SizedBox(height: AppTheme.spacing4),
 
                 // 数据与备份
                 _buildSection(

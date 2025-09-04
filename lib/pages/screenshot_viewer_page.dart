@@ -229,15 +229,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             _buildInfoRow('页面链接', screenshot.pageUrl!),
           if (screenshot.fileSize > 0)
             _buildInfoRow('文件大小', _formatFileSize(screenshot.fileSize)),
-          FutureBuilder<bool>(
-            future: file.exists(),
-            builder: (context, snapshot) {
-              return _buildInfoRow(
-                '文件状态',
-                snapshot.data == true ? '存在' : '不存在',
-              );
-            },
-          ),
         ],
       ),
       actions: const [UIDialogAction(text: '确定')],

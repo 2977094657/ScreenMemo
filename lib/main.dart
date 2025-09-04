@@ -8,7 +8,6 @@ import 'pages/onboarding_page.dart';
 import 'pages/main_navigation_page.dart';
 import 'pages/screenshot_gallery_page.dart';
 import 'pages/screenshot_viewer_page.dart';
-import 'pages/debug_page.dart';
 import 'services/flutter_logger.dart';
 
 Future<void> main() async {
@@ -64,7 +63,6 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
       routes: {
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
-        '/debug': (context) => const DebugPage(),
       },
     );
   }

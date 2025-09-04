@@ -76,50 +76,7 @@ class FlutterLogger {
     } catch (_) {}
   }
 
-  /// 读取全部日志
-  static Future<String> readAll() async {
-    try {
-      final file = await _ensureFile();
-      if (await file.exists()) {
-        return await file.readAsString();
-      }
-      return '';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  /// 读取日志尾部 N 行（简易实现：按行拆分后截尾）
-  static Future<String> readTail(int lines) async {
-    try {
-      final all = await readAll();
-      final arr = all.split('\n');
-      if (arr.length <= lines) return all;
-      return arr.sublist(arr.length - lines).join('\n');
-    } catch (_) {
-      return '';
-    }
-  }
-
-  /// 返回日志文件绝对路径
-  static Future<String?> getLogFilePath() async {
-    try {
-      final f = await _ensureFile();
-      return f.path;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 清空日志文件
-  static Future<void> clear() async {
-    try {
-      final f = await _ensureFile();
-      if (await f.exists()) {
-        await f.writeAsString('');
-      }
-    } catch (_) {}
-  }
+  // 保留日志功能与等级；移除仅供日志页面使用的读取/清空接口
 
   static Future<File> _ensureFile() async {
     if (_logFile != null) return _logFile!;

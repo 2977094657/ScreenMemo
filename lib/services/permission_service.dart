@@ -42,6 +42,7 @@ class PermissionService with WidgetsBindingObserver {
             // 将截图保存事件转发给 ScreenshotService 处理并入库
             final Map<String, dynamic> args =
                 Map<String, dynamic>.from(call.arguments as Map);
+            // 允许包含可选的 pageUrl 字段
             await ScreenshotService.instance
                 .handleScreenshotSavedFromPlatform(args);
           } catch (e) {
