@@ -94,6 +94,55 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         "com.vivo.systemui",
         "com.huawei.systemui"
     )
+    // 系统级浏览器包名（用于“模糊名称”兜底判断）
+    private val systemBrowserPackages: Set<String> = setOf(
+        "com.android.browser", // AOSP 浏览器（常见名：Browser/浏览器）
+        "com.miui.browser", "com.mi.globalbrowser", // 小米/MIUI 浏览器（常见名：Mi 浏览器/小米浏览器）
+        "com.sec.android.app.sbrowser", // 三星浏览器（Samsung Internet/三星浏览器）
+        "com.huawei.browser", // 华为浏览器
+        "com.heytap.browser", "com.coloros.browser", // OPPO/ColorOS 浏览器
+        "com.vivo.browser" // vivo 浏览器
+    )
+
+    // 浏览器“名称关键字”（优先按应用名匹配；忽略空格/大小写）
+    private val browserNameKeywords: Set<String> = setOf(
+        // 国际常见
+        "chrome", "googlechrome", "firefox", "edge", "opera", "operamini", "operatouch",
+        "brave", "vivaldi", "duckduckgo", "kiwi", "yandex", "torbrowser",
+        // 国内常见
+        "qq浏览器", "uc浏览器", "夸克", "百度浏览器", "搜狗浏览器",
+        "华为浏览器", "小米浏览器", "mibrowser", "oppo浏览器", "vivo浏览器",
+        // 厂商/特色
+        "samsunginternet", "三星浏览器", "naverwhale", "palemoon", "avastsecure",
+        // 小众/轻量
+        "via", "x浏览器", "米侠", "百分浏览器", "ecosia", "ucturbo",
+        "operagx", "puffin", "lightning", "bromite", "aloha", "phoenix", "maxthon", "傲游"
+    )
+
+    // 含糊/泛化名称（如“浏览器/Internet”）——仅当包名属于 systemBrowserPackages 时判为浏览器
+    private val ambiguousBrowserNameKeywords: Set<String> = setOf(
+        "浏览器", "internet", "browser"
+    )
+
+    private fun isBrowserByNameOrSystemPackage(packageName: String): Boolean {
+        val appLabel = try { getAppName(packageName) } catch (_: Exception) { null }
+        val normalized = appLabel?.lowercase(Locale.ROOT)?.replace(" ", "")
+        if (normalized.isNullOrBlank()) {
+            // 名称不可用：仅对系统级浏览器按包名兜底
+            return systemBrowserPackages.contains(packageName)
+        }
+        // 强匹配：名称包含任一浏览器关键字
+        for (kw in browserNameKeywords) {
+            if (normalized.contains(kw)) return true
+        }
+        // 模糊匹配：仅系统级浏览器放行
+        for (kw in ambiguousBrowserNameKeywords) {
+            if (normalized == kw || normalized.contains(kw)) {
+                return systemBrowserPackages.contains(packageName)
+            }
+        }
+        return false
+    }
     private val FOREGROUND_STABLE_MS = 800L   // 前台应用切换稳定时间阈值
     private val OVERLAY_GRACE_MS = 5000L      // 系统遮罩期间沿用上次稳定应用的宽限时长
     private var lastStableMonitoredApp: String? = null
@@ -1143,6 +1192,26 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.i(TAG, "截图已保存，绝对路径: ${file.absolutePath}")
             FileLogger.i(TAG, "返回给Flutter的相对路径: $relativePath")
             
+            // 仅当应用识别为浏览器（名称优先，系统包兜底）时，才尝试提取并复用 URL
+            val pageUrl = if (isBrowserByNameOrSystemPackage(packageName)) {
+                try {
+                    FileLogger.d(TAG, "浏览器匹配，准备提取页面URL（启发式，顶部区域+BFS）: $packageName")
+                    val u = extractCurrentPageUrlSafe()
+                    if (u.isNullOrBlank()) {
+                        FileLogger.i(TAG, "URL提取完成：无匹配结果（浏览器）")
+                    } else {
+                        FileLogger.i(TAG, "URL提取完成：$u（浏览器）")
+                    }
+                    u
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "URL提取异常（浏览器）", e)
+                    null
+                }
+            } else {
+                FileLogger.d(TAG, "非浏览器应用，跳过URL提取: $packageName")
+                null
+            }
+
             // 先在原生侧实时入库（Flutter未就绪时也能写入）
             try {
                 ScreenshotDatabaseHelper.insertIfNotExists(
@@ -1150,7 +1219,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     packageName,
                     appName,
                     file.absolutePath,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    pageUrl
                 )
             } catch (e: Exception) {
                 FileLogger.w(TAG, "原生侧入库失败: ${e.message}")
@@ -1158,7 +1228,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
             // 通知Flutter端更新数据库（作为第二路径，方便UI即刻刷新）
             try {
-                notifyScreenshotSaved(packageName, appName, relativePath)
+                notifyScreenshotSaved(packageName, appName, relativePath, pageUrl)
             } catch (e: Exception) {
                 FileLogger.w(TAG, "通知Flutter更新数据库失败: ${e.message}")
             }
@@ -1173,10 +1243,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 根据用户设置进行编码（格式/质量/目标大小/灰度），不改变分辨率。
      * FlutterSharedPreferences 键：
-     *  - flutter.image_format: jpeg | png | webp_lossy | webp_lossless (默认 webp_lossy)
+     *  - flutter.image_format: jpeg | png | webp_lossy | webp_lossless (默认 webp_lossless)
      *  - flutter.image_quality: Int 1..100（默认 90，仅对 lossy 生效）
-     *  - flutter.use_target_size: Bool（默认 true，仅对 lossy 生效）
-     *  - flutter.target_size_kb: Int（默认 200，仅对 lossy 生效）
+     *  - flutter.use_target_size: Bool（默认 false，仅对 lossy 生效）
+     *  - flutter.target_size_kb: Int（默认 50，仅对 lossy 生效）
      *  - flutter.grayscale: Bool（默认 false）
      */
     // 返回 Pair<字节数组, 扩展名>
@@ -1184,9 +1254,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val format = (sp.getString("flutter.image_format", null)
             ?: (sp.all["flutter.image_format"] as? String)
-            ?: "webp_lossy")
+            ?: "webp_lossless")
         val quality = spGetIntCompat(sp, "flutter.image_quality", 90).coerceIn(1, 100)
-        val useTarget = spGetBoolCompat(sp, "flutter.use_target_size", true)
+        val useTarget = spGetBoolCompat(sp, "flutter.use_target_size", false)
         val targetKb = spGetIntCompat(sp, "flutter.target_size_kb", 50).coerceAtLeast(50)
 
         // 可选灰度转换（不改变尺寸）
@@ -1223,8 +1293,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 否则按质量单次压缩；无损忽略质量
         return try {
-            val data = compressOnce(bitmap, cf, if (isLossless) 100 else quality)
-            FileLogger.i(TAG, "单次编码完成 -> 实际字节=${data.size}, 格式=${format}, 质量=${quality}")
+            val appliedQ = if (isLossless) 100 else quality
+            val data = compressOnce(bitmap, cf, appliedQ)
+            FileLogger.i(TAG, "单次编码完成 -> 实际字节=${data.size}, 格式=${format}, 质量=${appliedQ}")
             Pair(data, ext)
         } catch (e: Exception) { Pair(null, ext) }
     }
@@ -1358,7 +1429,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 通知Flutter端更新数据库
      */
-    private fun notifyScreenshotSaved(packageName: String, appName: String, filePath: String) {
+    private fun notifyScreenshotSaved(packageName: String, appName: String, filePath: String, pageUrl: String?) {
         try {
             // 发送广播通知MainActivity
             val intent = Intent("com.fqyw.screen_memo.SCREENSHOT_SAVED").apply {
@@ -1367,6 +1438,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 putExtra("appName", appName)
                 putExtra("filePath", filePath)
                 putExtra("captureTime", System.currentTimeMillis())
+                if (!pageUrl.isNullOrBlank()) putExtra("pageUrl", pageUrl)
             }
             sendBroadcast(intent)
             FileLogger.d(TAG, "已发送截图保存通知广播")
@@ -1866,6 +1938,114 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             FileLogger.e(TAG, "使用UsageStats获取前台应用失败", e)
             return null
+        }
+    }
+
+    /**
+     * 安全提取当前页面URL（启发式）：
+     * - 遍历无障碍树，查找位于屏幕上方区域的文本节点/可编辑节点；
+     * - 使用URL正则匹配 http/https；
+     * - 不进行浏览器包名硬编码。
+     */
+    private fun extractCurrentPageUrlSafe(): String? {
+        return try {
+            val root = rootInActiveWindow
+            if (root == null) {
+                FileLogger.d(TAG, "extractURL: rootInActiveWindow 为 null")
+                return null
+            }
+            val display = resources.displayMetrics
+            val screenH = display.heightPixels
+            val topThreshold = (screenH * 0.25f).toInt() // 仅在顶部四分之一区域查找
+            FileLogger.d(TAG, "extractURL: screenH=${screenH}, topThreshold=${topThreshold}")
+
+            val queue: ArrayDeque<AccessibilityNodeInfo> = ArrayDeque()
+            queue.add(root)
+            var bestUrl: String? = null
+            var bestY = Int.MAX_VALUE
+            var visited = 0
+            var matched = 0
+            var loggedSamples = 0
+
+            fun candidateText(node: AccessibilityNodeInfo): String? {
+                val sb = StringBuilder()
+                try {
+                    val t = node.text?.toString()
+                    if (!t.isNullOrBlank()) sb.append(t)
+                } catch (_: Exception) {}
+                try {
+                    val cd = node.contentDescription?.toString()
+                    if (!cd.isNullOrBlank()) {
+                        if (sb.isNotEmpty()) sb.append(' ')
+                        sb.append(cd)
+                    }
+                } catch (_: Exception) {}
+                val s = sb.toString().trim()
+                return if (s.isEmpty()) null else s
+            }
+
+            // 主要匹配：显式 http/https 链接（更稳健，避免字符类嵌套导致转义问题）
+            val urlRegex = Regex("(?i)\\bhttps?://[^\\s\"<>]+")
+
+            // 回退匹配：无 scheme 的域名（如 example.com/path），命中则默认补全为 https://
+            val domainFallback = Regex("(?i)\\b((?:[a-z0-9-]+\\.)+[a-z]{2,})(?:/[\\S]*)?")
+
+            while (queue.isNotEmpty()) {
+                val n = queue.removeFirst()
+                visited++
+                try {
+                    val rect = android.graphics.Rect()
+                    n.getBoundsInScreen(rect)
+                    val y = rect.top
+                    if (y in 0..topThreshold) {
+                        val text = candidateText(n)
+                        if (!text.isNullOrEmpty()) {
+                            val m = urlRegex.find(text)
+                            if (m != null) {
+                                matched++
+                                if (loggedSamples < 5) {
+                                    val snippet = if (text.length > 120) text.substring(0, 120) + "…" else text
+                                    FileLogger.d(TAG, "extractURL: 命中候选 y=${y}, url='${m.value}', text='${snippet}'")
+                                    loggedSamples++
+                                }
+                                if (y < bestY) {
+                                    bestY = y
+                                    bestUrl = m.value
+                                }
+                            } else if (bestUrl == null) {
+                                // 仅在尚未命中显式URL时，尝试域名回退
+                                val dm = domainFallback.find(text)
+                                if (dm != null) {
+                                    val reconstructed = "https://" + dm.value
+                                    if (loggedSamples < 5) {
+                                        val snippet = if (text.length > 120) text.substring(0, 120) + "…" else text
+                                        FileLogger.d(TAG, "extractURL: 回退命中 y=${y}, domain='${dm.value}', url='${reconstructed}', text='${snippet}'")
+                                        loggedSamples++
+                                    }
+                                    if (y < bestY) {
+                                        bestY = y
+                                        bestUrl = reconstructed
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for (i in 0 until (n.childCount ?: 0)) {
+                        val c = n.getChild(i)
+                        if (c != null) queue.add(c)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            if (bestUrl != null) {
+                FileLogger.i(TAG, "extractURL: 选定最优 url='${bestUrl}', y=${bestY}, visited=${visited}, matched=${matched}")
+            } else {
+                FileLogger.i(TAG, "extractURL: 未找到URL, visited=${visited}, matched=${matched}")
+            }
+            bestUrl
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "extractURL 异常", e)
+            null
         }
     }
 }

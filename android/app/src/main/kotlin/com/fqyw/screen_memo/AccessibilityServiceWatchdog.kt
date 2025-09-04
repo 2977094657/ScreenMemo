@@ -109,14 +109,16 @@ object AccessibilityServiceWatchdog {
         try {
             val status = checkServiceStatus(context)
             
-            FileLogger.i(TAG, "=== 服务健康检查 ===")
-            FileLogger.i(TAG, "系统启用: ${status.isSystemEnabled}")
-            FileLogger.i(TAG, "实例存在: ${status.isInstanceExists}")
-            FileLogger.i(TAG, "进程存活: ${status.isProcessAlive}")
-            FileLogger.i(TAG, "心跳有效: ${status.isHeartbeatValid}")
-            FileLogger.i(TAG, "功能正常: ${status.isFunctional}")
-            FileLogger.i(TAG, "真实运行: ${status.isReallyRunning}")
-            FileLogger.i(TAG, "需要重启: ${status.needsRestart}")
+            // 精简日志，去掉冗长的健康检查明细打印
+            // 如果需要调试，可临时打开下面的详细日志
+            // FileLogger.i(TAG, "=== 服务健康检查 ===")
+            // FileLogger.i(TAG, "系统启用: ${status.isSystemEnabled}")
+            // FileLogger.i(TAG, "实例存在: ${status.isInstanceExists}")
+            // FileLogger.i(TAG, "进程存活: ${status.isProcessAlive}")
+            // FileLogger.i(TAG, "心跳有效: ${status.isHeartbeatValid}")
+            // FileLogger.i(TAG, "功能正常: ${status.isFunctional}")
+            // FileLogger.i(TAG, "真实运行: ${status.isReallyRunning}")
+            // FileLogger.i(TAG, "需要重启: ${status.needsRestart}")
             
             // 更新状态到ServiceStateManager
             ServiceStateManager.setAccessibilityServiceRunning(context, status.isReallyRunning)

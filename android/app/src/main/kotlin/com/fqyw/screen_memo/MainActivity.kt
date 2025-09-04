@@ -693,15 +693,22 @@ class MainActivity : FlutterActivity() {
                         val appName = intent.getStringExtra("appName") ?: ""
                         val filePath = intent.getStringExtra("filePath") ?: ""
                         val captureTime = intent.getLongExtra("captureTime", System.currentTimeMillis())
+                        val pageUrl = intent.getStringExtra("pageUrl")
                         
                         FileLogger.i(TAG, "收到截图保存通知: $appName - $filePath")
+                        if (!pageUrl.isNullOrBlank()) {
+                            FileLogger.i(TAG, "收到URL: ${pageUrl}")
+                        } else {
+                            FileLogger.d(TAG, "本次通知未附带URL")
+                        }
                         
                         // 通知Flutter端更新数据库
                         methodChannel.invokeMethod("onScreenshotSaved", mapOf(
                             "packageName" to packageName,
                             "appName" to appName,
                             "filePath" to filePath,
-                            "captureTime" to captureTime
+                            "captureTime" to captureTime,
+                            "pageUrl" to pageUrl
                         ))
                     }
                 }
