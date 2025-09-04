@@ -61,8 +61,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   static const int _pageSize = 16; // 后续每次追加项数
   bool _isLoadingMore = false; // 是否正在加载更多
   bool _hasMore = true; // 是否还有更多数据
-  List<ScreenshotRecord> _allScreenshots = []; // 所有截图数据（从缓存或数据库加载）
+  // 旧：全量列表 _allScreenshots 已弃用（真分页改为仅维护已加载页的列表）
   int _currentDisplayCount = 0; // 当前已显示的数量
+  int _pageOffset = 0; // 真分页：已加载偏移量
 
   // 头部统计（使用全量数据计算，避免分页导致统计不准确）
   int _totalCount = 0;
@@ -87,55 +88,71 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       final currentScroll = _scrollController.position.pixels;
       final threshold = maxScroll * 0.8; // 滚动到80%时触发加载
 
-      if (currentScroll >= threshold &&
-          _currentDisplayCount < _allScreenshots.length) {
+      if (currentScroll >= threshold) {
         _loadMoreScreenshots();
       }
     }
   }
 
   /// 加载更多截图到显示列表
-  void _loadMoreScreenshots() {
-    if (_isLoadingMore || _currentDisplayCount >= _allScreenshots.length)
-      return;
-
-    // 设置加载状态，防止重复加载
-    _isLoadingMore = true;
-
-    // 直接加载，无需延迟
+  Future<void> _loadMoreScreenshots() async {
+    if (_isLoadingMore || !_hasMore) return;
     if (!mounted) return;
 
-    final nextBatch = _currentDisplayCount + _pageSize;
-    final endIndex = nextBatch > _allScreenshots.length
-        ? _allScreenshots.length
-        : nextBatch;
-
     setState(() {
-      // 添加下一批数据到显示列表
-      _screenshots = _allScreenshots.sublist(0, endIndex);
-      _currentDisplayCount = endIndex;
-
-      // 如果是全选状态，将新加载的项也加入选择
-      if (_isFullySelected) {
-        final newIds = _screenshots
-            .where((s) => s.id != null && !_selectedIds.contains(s.id))
-            .map((s) => s.id!)
-            .toSet();
-        _selectedIds.addAll(newIds);
-      }
-
-      // 检查是否还有更多
-      _hasMore = _currentDisplayCount < _allScreenshots.length;
-      _isLoadingMore = false;
-
-      // 清理不在显示范围内的键
-      _itemKeys.removeWhere((index, _) => index >= _screenshots.length);
+      _isLoadingMore = true;
     });
+
+    try {
+      final int limit = _currentDisplayCount == 0 ? _initialPageSize : _pageSize;
+      final List<ScreenshotRecord> batch = await ScreenshotService.instance.getScreenshotsByApp(
+        _packageName,
+        limit: limit,
+        offset: _pageOffset,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        if (batch.isEmpty) {
+          _hasMore = false;
+        } else {
+          // 追加并去重（按 id 去重）
+          final existingIds = _screenshots.where((e) => e.id != null).map((e) => e.id!).toSet();
+          for (final r in batch) {
+            final id = r.id;
+            if (id != null && existingIds.contains(id)) continue;
+            _screenshots.add(r);
+          }
+          _pageOffset += batch.length;
+          _currentDisplayCount = _screenshots.length;
+          _hasMore = _currentDisplayCount < _totalCount;
+
+          // 如果是全选状态，将新加载的项也加入选择
+          if (_isFullySelected) {
+            final newIds = _screenshots
+                .where((s) => s.id != null && !_selectedIds.contains(s.id))
+                .map((s) => s.id!)
+                .toSet();
+            _selectedIds.addAll(newIds);
+          }
+
+          // 清理不在显示范围内的键
+          _itemKeys.removeWhere((index, _) => index >= _screenshots.length);
+        }
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+        _error = '加载更多失败: $e';
+      });
+    }
   }
 
   /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
   String _buildHeaderStatsText() {
-    // 使用全量数据的统计信息，而不是当前显示的部分数据
+    // 使用统计的总量/总大小与最近时间（非依赖已加载列表）
     String timeStr = '暂无';
     if (_latestTime != null) {
       timeStr = _formatDateTime(_latestTime!);
@@ -198,19 +215,45 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         });
       }
 
-      // 尝试从缓存加载（仅用于提升进入速度，不影响首页统计）
-      final cachedScreenshots = await _loadScreenshotsFromCache();
-      if (cachedScreenshots != null && cachedScreenshots.isNotEmpty) {
-        print('从缓存加载到 ${cachedScreenshots.length} 张截图');
-        _processLoadedScreenshots(cachedScreenshots);
-        // 后台刷新缓存
-        _refreshScreenshotsCache();
-        return;
+      // 先获取统计，确定总量和最近时间、总大小
+      try {
+        final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
+        final appStatsMap = stats['appStatistics'];
+        if (appStatsMap is Map) {
+          final dynamic raw = appStatsMap[_packageName];
+          if (raw is Map) {
+            _totalCount = (raw['totalCount'] as int?) ?? 0;
+            final lc = raw['lastCaptureTime'];
+            if (lc is DateTime) {
+              _latestTime = lc;
+            } else if (lc is int) {
+              _latestTime = DateTime.fromMillisecondsSinceEpoch(lc);
+            }
+            _totalSize = (raw['totalSize'] as int?) ?? 0;
+          }
+        }
+        if (_totalCount <= 0) {
+          _totalCount = await ScreenshotService.instance.getScreenshotCountByApp(_packageName);
+        }
+      } catch (_) {
+        // 统计失败不阻塞首屏，后续展示用默认值
       }
 
-      // 缓存不存在或为空，从数据库加载
-      print('缓存为空，从数据库加载');
-      await _loadScreenshotsFromDatabase();
+      // 重置分页并加载第一页
+      setState(() {
+        _screenshots.clear();
+        _currentDisplayCount = 0;
+        _pageOffset = 0;
+        _hasMore = _totalCount > 0;
+      });
+
+      await _loadMoreScreenshots();
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       print('加载截图失败: $e');
       setState(() {
@@ -220,59 +263,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     }
   }
 
-  /// 处理加载的截图数据，实现分页显示
-  void _processLoadedScreenshots(List<ScreenshotRecord> allScreenshots) {
-    // 保存全量数据
-    _allScreenshots = allScreenshots;
+  // 旧的全量处理逻辑移除，统计在 _loadScreenshots 首次加载时已设置
 
-    // 计算统计信息
-    _totalCount = allScreenshots.length;
-    _totalSize = allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
-    if (allScreenshots.isNotEmpty) {
-      final latest = allScreenshots.reduce(
-        (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
-      );
-      _latestTime = latest.captureTime;
-    }
-
-    // 初始只显示前面一部分
-    final initialCount = _initialPageSize > allScreenshots.length
-        ? allScreenshots.length
-        : _initialPageSize;
-
-    setState(() {
-      _screenshots = allScreenshots.sublist(0, initialCount);
-      _currentDisplayCount = initialCount;
-      // 修复：确保 _hasMore 逻辑正确
-      _hasMore = initialCount < allScreenshots.length;
-      _isLoading = false; // 数据加载完成，取消加载状态
-      _itemKeys.clear();
-    });
-
-    print('初始加载 $_currentDisplayCount/${_totalCount} 张截图，hasMore: $_hasMore');
-  }
-
-  /// 从数据库加载截图数据
-  Future<void> _loadScreenshotsFromDatabase() async {
-    try {
-      // 直接从数据库查询，后台同步已在ScreenshotService中处理
-      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(
-        _packageName,
-      );
-      print('从数据库获取到 ${screenshots.length} 张截图');
-
-      _processLoadedScreenshots(screenshots);
-
-      // 保存到缓存
-      await _saveScreenshotsToCache(screenshots);
-    } catch (e) {
-      print('从数据库加载截图失败: $e');
-      setState(() {
-        _error = '数据库查询失败: $e';
-        _isLoading = false;
-      });
-    }
-  }
+  // 旧的“全量加载”函数已移除，改为真分页按需加载
 
   /// 从缓存加载截图数据
   Future<List<ScreenshotRecord>?> _loadScreenshotsFromCache() async {
@@ -318,16 +311,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   /// 后台刷新截图缓存
   Future<void> _refreshScreenshotsCache() async {
     try {
-      // 直接查询数据库，后台同步已在ScreenshotService中处理
-      final screenshots = await ScreenshotService.instance.getScreenshotsByApp(
-        _packageName,
-      );
-      await _saveScreenshotsToCache(screenshots);
-
-      // 如果有新数据，更新UI
-      if (screenshots.length != _allScreenshots.length) {
-        _processLoadedScreenshots(screenshots);
-      }
+      // 分页场景：仅缓存当前已加载的前若干项，避免过大
+      await _saveScreenshotsToCache(_screenshots);
     } catch (e) {
       print('后台刷新截图缓存失败: $e');
     }
@@ -354,10 +339,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       context,
       '/screenshot_viewer',
       arguments: {
-        'screenshots': _allScreenshots.isEmpty ? _screenshots : _allScreenshots,
-        'initialIndex': _allScreenshots.isEmpty
-            ? index
-            : _allScreenshots.indexOf(screenshot),
+        // 真分页：仅传当前已加载的截图集合
+        'screenshots': _screenshots,
+        'initialIndex': index,
         'appName': _appInfo.appName,
         'appInfo': _appInfo, // 传递完整的appInfo对象，包含图标
       },
@@ -398,6 +382,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           FlutterLogger.nativeInfo('UI', 'deleteScreenshot success id=${screenshot.id}');
           setState(() {
             _screenshots.removeWhere((s) => s.id == screenshot.id);
+            _currentDisplayCount = _screenshots.length;
+            if (_totalCount > 0) _totalCount -= 1;
           });
           // 删除后失效首页统计缓存
           await ScreenshotService.instance.invalidateStatsCache();
@@ -506,21 +492,20 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             TextButton(
               onPressed: () {
                 setState(() {
-                  // 获取所有数据库中的有效ID
-                  final allIds = _allScreenshots
+                  // 仅对当前已加载的项目执行全选/取消全选
+                  final loadedIds = _screenshots
                       .where((s) => s.id != null)
                       .map((s) => s.id!)
                       .toSet();
 
-                  if (_isFullySelected) {
-                    // 已全选，清空选择
-                    _selectedIds.clear();
+                  final bool allLoadedSelected = loadedIds.isNotEmpty && loadedIds.every((id) => _selectedIds.contains(id));
+                  if (allLoadedSelected) {
+                    // 取消选择当前已加载的
+                    _selectedIds.removeWhere((id) => loadedIds.contains(id));
                     _isFullySelected = false;
                   } else {
-                    // 未全选，全选所有数据
-                    _selectedIds
-                      ..clear()
-                      ..addAll(allIds);
+                    // 选择当前已加载的
+                    _selectedIds.addAll(loadedIds);
                     _isFullySelected = true;
                   }
                 });
@@ -767,7 +752,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         Icons.link,
                         size: 14,
                         color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white.withOpacity(0.85)
+                            ? (Theme.of(context).textTheme.bodySmall?.color ?? Colors.white)
                             : Colors.white,
                       ),
                       const SizedBox(width: 6),
@@ -776,13 +761,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                           screenshot.pageUrl!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white.withOpacity(0.9)
-                                : Colors.white,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontSize: 11,
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? Theme.of(context).textTheme.bodySmall?.color
+                                    : Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ) ?? const TextStyle(fontSize: 11, color: Colors.white),
                         ),
                       ),
                     ],
@@ -841,23 +826,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                 children: [
                   Text(
                     _formatFileSize(screenshot.fileSize),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white.withOpacity(0.85)
-                          : Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Theme.of(context).textTheme.bodySmall?.color
+                              : Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                   Text(
                     _formatDateTime(screenshot.captureTime),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white.withOpacity(0.85)
-                          : Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Theme.of(context).textTheme.bodySmall?.color
+                              : Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ],
               ),
@@ -1105,6 +1090,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _timelineFraction = fraction;
     });
     _scrollToFraction(fraction);
+    // 若滚到末尾且还有更多，尝试触发加载
+    if (_timelineFraction >= 0.98 && _hasMore && !_isLoadingMore) {
+      // ignore: unawaited_futures
+      _loadMoreScreenshots();
+    }
   }
 
   // 当前滚动位置归一化 [0,1]
@@ -1214,9 +1204,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         _isFullySelected = false;
       } else {
         _selectedIds.add(id);
-        // 检查是否现在已经选中了所有项
-        final totalCount = _allScreenshots.where((s) => s.id != null).length;
-        if (_selectedIds.length == totalCount && totalCount > 0) {
+        // 简化：仅基于当前已加载的可见集合判断
+        final totalLoaded = _screenshots.where((s) => s.id != null).length;
+        if (_selectedIds.length >= totalLoaded && totalLoaded > 0) {
           _isFullySelected = true;
         }
       }
@@ -1241,9 +1231,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
 
-    // 检查是否选择了所有截图（全删除模式）
-    final totalCount = _allScreenshots.where((s) => s.id != null).length;
-    final isSelectAll = _selectedIds.length == totalCount && totalCount > 0;
+    // 检查是否选择了全部（基于统计数量）
+    final totalCount = _totalCount;
+    final isSelectAll = _selectedIds.length >= totalCount && totalCount > 0;
 
     final String title = isSelectAll ? '确认删除所有截图' : '确认删除';
     final String message = isSelectAll
@@ -1285,7 +1275,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         FlutterLogger.nativeInfo('UI', 'deleteAll success total=$totalCount');
         // 清空本地数据
         setState(() {
-          _allScreenshots.clear();
           _screenshots.clear();
           _selectedIds.clear();
           _selectionMode = false;
@@ -1315,7 +1304,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       }
     } else {
       // 部分删除模式：根据保留比例触发“仅保留”快速删除
-      final totalCount = _allScreenshots.where((s) => s.id != null).length;
+      final totalCount = _totalCount;
       final keepCount = totalCount - _selectedIds.length;
       final keepRatio = totalCount == 0 ? 1.0 : (keepCount / totalCount);
 
@@ -1325,10 +1314,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       bool usedFastKeepOnly = false;
       if (keepCount >= 0 && keepRatio <= thresholdKeepRatio) {
         // 选择删除大多数，仅保留极少数 -> 使用快速“仅保留”策略
-        final keepIds = _allScreenshots
-            .where((s) => s.id != null && !_selectedIds.contains(s.id))
-            .map((s) => s.id!)
-            .toList(growable: false);
+        // 真分页模式无法可靠计算全量 keepIds，这里禁用快速“仅保留”路径
+        final List<int> keepIds = const <int>[];
 
         // ignore: unawaited_futures
         FlutterLogger.info('UI.fastDeleteKeepOnly start package=$_packageName keep=${keepIds.length} delete=${_selectedIds.length}');
@@ -1363,25 +1350,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
         // 本地移除（从全量数据和显示数据中删除）
         setState(() {
-          _allScreenshots.removeWhere(
-            (s) => s.id != null && _selectedIds.contains(s.id),
-          );
           _screenshots.removeWhere(
             (s) => s.id != null && _selectedIds.contains(s.id),
           );
-          // 更新统计信息
-          _totalCount = _allScreenshots.length;
-          _totalSize = _allScreenshots.fold<int>(0, (sum, r) => sum + r.fileSize);
-          if (_allScreenshots.isNotEmpty) {
-            final latest = _allScreenshots.reduce(
-              (a, b) => a.captureTime.isAfter(b.captureTime) ? a : b,
-            );
-            _latestTime = latest.captureTime;
-          } else {
-            _latestTime = null;
-          }
+          // 更新统计信息（数量级修正）
+          _totalCount = (_totalCount - _selectedIds.length).clamp(0, 1 << 31);
           _currentDisplayCount = _screenshots.length;
-          _hasMore = _currentDisplayCount < _allScreenshots.length;
+          _hasMore = _currentDisplayCount < _totalCount;
           _selectedIds.clear();
           _selectionMode = false;
           _isFullySelected = false; // 重置全选状态
@@ -1404,8 +1379,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         await ScreenshotService.instance.invalidateStatsCache();
         await _invalidateScreenshotsCache();
 
-        // 重新加载当前应用截图
-        await _loadScreenshotsFromDatabase();
+        // 重新加载当前应用截图（真分页）
+        await _loadScreenshots();
         setState(() {
           _selectedIds.clear();
           _selectionMode = false;
@@ -1619,9 +1594,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         UINotifier.updateProgress(message: '入库完成 $inserted/$count', progress: null);
       }
 
-      // 失效统计缓存并仅DB刷新列表
+      // 失效统计缓存并刷新首屏（重新分页加载）
       await ScreenshotService.instance.invalidateStatsCache();
-      await _loadScreenshotsFromDatabase();
+      await _loadScreenshots();
       if (mounted) {
         UINotifier.hideProgress();
         UINotifier.success(context, '已生成 $count 张测试截图，入库 $inserted 条');

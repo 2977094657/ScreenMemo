@@ -334,6 +334,7 @@ class ScreenshotService {
       final packageName = data['packageName'] as String? ?? '';
       final appName = data['appName'] as String? ?? '';
       final relativePath = data['filePath'] as String? ?? '';
+      final pageUrl = data['pageUrl'] as String?;
       final captureTime = data['captureTime'] as int? ?? DateTime.now().millisecondsSinceEpoch;
 
       print('收到截图保存通知: $appName - $relativePath');
@@ -366,6 +367,7 @@ class ScreenshotService {
             filePath: absolutePath,
             captureTime: DateTime.fromMillisecondsSinceEpoch(captureTime),
             fileSize: 0, // 文件大小将在数据库服务中计算
+            pageUrl: pageUrl,
           );
 
           // 使用新的去重插入方法
@@ -517,14 +519,24 @@ class ScreenshotService {
     FlutterLogger.log('统计缓存已快速刷新(DB)并保存，用时 ${sw.elapsedMilliseconds}ms');
   }
   
-  /// 根据应用包名获取截屏记录
-  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit}) async {
+  /// 根据应用包名获取截屏记录（支持分页）
+  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit, int? offset}) async {
     try {
       // 直接从数据库查询，不再进行任何文件系统同步
-      return await _database.getScreenshotsByApp(appPackageName, limit: limit);
+      return await _database.getScreenshotsByApp(appPackageName, limit: limit, offset: offset);
     } catch (e) {
       print('获取应用截屏记录失败: $e');
       return [];
+    }
+  }
+
+  /// 获取指定应用的截屏总数量
+  Future<int> getScreenshotCountByApp(String appPackageName) async {
+    try {
+      return await _database.getScreenshotCountByApp(appPackageName);
+    } catch (e) {
+      print('获取应用截屏数量失败: $e');
+      return 0;
     }
   }
   
