@@ -11,6 +11,7 @@ import '../services/screenshot_service.dart';
 import '../widgets/ui_components.dart';
 import '../services/flutter_logger.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../widgets/nsfw_guard.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -391,6 +392,27 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             });
           },
             ),
+            // 当当前图片被识别为 NSFW 时，初始以信息栏提示+点击空白即可查看（此处不做强制遮挡避免与缩放手势冲突）
+            if (_screenshots.isNotEmpty &&
+                NsfwDetector.isNsfwUrl(_screenshots[_currentIndex].pageUrl))
+              Positioned(
+                bottom: 24,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      '内容警告：成人内容 · 轻触继续',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
             // 按需求：大图查看页不显示顶部链接遮罩，仅保留右上角链接图标
             if (Theme.of(context).brightness == Brightness.dark)
               IgnorePointer(

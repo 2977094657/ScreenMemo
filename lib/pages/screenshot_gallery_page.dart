@@ -20,6 +20,7 @@ import '../widgets/ui_components.dart';
 import '../services/app_selection_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
+import '../widgets/nsfw_guard.dart';
 
 /// 内部：日期Tab信息（一天为单位）
 class _DayTabInfo {
@@ -654,6 +655,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             _screenshots.removeWhere((s) => s.id == screenshot.id);
             _currentDisplayCount = _screenshots.length;
             if (_totalCount > 0) _totalCount -= 1;
+            // 同步更新当前日期Tab计数
+            if (_dayTabs.isNotEmpty && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
+              final cur = _dayTabs[_currentTabIndex].count;
+              _dayTabs[_currentTabIndex].count = (cur - 1).clamp(0, 1 << 31);
+            }
           });
           // 删除后失效首页统计缓存
           await ScreenshotService.instance.invalidateStatsCache();
@@ -986,7 +992,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     final file = path.isAbsolute(screenshot.filePath)
         ? File(screenshot.filePath)
         : File(path.join(_baseDir!.path, screenshot.filePath));
-    return ClipRRect(
+    final base = ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       child: Builder(
         builder: (context) {
@@ -1014,6 +1020,15 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           );
         },
       ),
+    );
+    final bool isNsfw = NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    if (!isNsfw) return base;
+    return NsfwBlurGuard(
+      child: base,
+      masked: true,
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      onReveal: null, // 预览项仅显示遮罩，无点击
+      showButton: false,
     );
   }
 
@@ -1045,12 +1060,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final item = GestureDetector(
+    final bool nsfwMasked = NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final itemContent = GestureDetector(
       onTap: () {
         if (_selectionMode) {
           _toggleSelect(index);
         } else {
-          _viewScreenshot(screenshot, index);
+          if (nsfwMasked) {
+            _confirmRevealAndOpen(screenshot, index);
+          } else {
+            _viewScreenshot(screenshot, index);
+          }
         }
       },
       onLongPress: () {
@@ -1102,8 +1122,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               },
             ),
           ),
-          // 顶部链接信息遮罩（仅当存在 pageUrl 时显示，点击弹出复制/打开对话框）
-          if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
+          // NSFW 遮罩：放在图片之上、选择框之下，确保不遮挡多选复选框
+          if (nsfwMasked)
+            Positioned.fill(
+              child: NsfwBackdropOverlay(
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                onReveal: () => _viewScreenshot(screenshot, index),
+                showButton: true,
+              ),
+            ),
+          // 顶部链接信息遮罩：NSFW 时隐藏，避免露出网址
+          if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
             Positioned(
               top: 0,
               left: 0,
@@ -1235,7 +1264,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         ],
       ),
     );
-    return KeyedSubtree(key: itemKey, child: item);
+    return KeyedSubtree(key: itemKey, child: itemContent);
+  }
+
+  Future<void> _confirmRevealAndOpen(ScreenshotRecord screenshot, int index) async {
+    final confirmed = await showUIDialog<bool>(
+      context: context,
+      title: '内容警告',
+      message: '该截图来源的链接被识别为可能含有成人内容，是否继续查看？',
+      actions: const [
+        UIDialogAction<bool>(text: '取消', result: false),
+        UIDialogAction<bool>(text: '继续', style: UIDialogActionStyle.primary, result: true),
+      ],
+      barrierDismissible: true,
+    );
+    if (confirmed == true) {
+      _viewScreenshot(screenshot, index);
+    }
   }
 
   Future<void> _showLinkDialogFromGrid(String url) async {
@@ -1318,8 +1363,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             viewHeight,
           );
 
-          // 增加安全检查，避免异常计算
-          if (trackHeight <= 0 || !_scrollController.hasClients) {
+          // 增加安全检查，避免异常计算（使用当前Tab的controller）
+          final ctrl = _controllerForTab(_currentTabIndex);
+          if (trackHeight <= 0 || !ctrl.hasClients) {
             return const SizedBox.shrink();
           }
 
@@ -1464,7 +1510,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   // 激活时间线并根据手指位置滚动
   void _activateTimelineWithLocalY(double localY, double viewHeight) {
     // 增加安全检查
-    if (viewHeight <= 0 || !_scrollController.hasClients || !mounted) return;
+    final ctrl = _controllerForTab(_currentTabIndex);
+    if (viewHeight <= 0 || !ctrl.hasClients || !mounted) return;
 
     final double raw = localY / viewHeight;
     final double fraction = raw.clamp(0.0, 1.0);
@@ -1483,21 +1530,23 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
   // 当前滚动位置归一化 [0,1]
   double _currentScrollFraction() {
-    if (!_scrollController.hasClients) return 0.0;
-    final maxExtent = _scrollController.position.maxScrollExtent;
+    final ctrl = _controllerForTab(_currentTabIndex);
+    if (!ctrl.hasClients) return 0.0;
+    final maxExtent = ctrl.position.maxScrollExtent;
     if (maxExtent <= 0) return 0.0;
-    final pixels = _scrollController.position.pixels;
+    final pixels = ctrl.position.pixels;
     final double f = pixels / maxExtent;
     return f.clamp(0.0, 1.0);
   }
 
   // 滚动到对应归一化位置
   void _scrollToFraction(double fraction) {
-    if (!_scrollController.hasClients || !mounted) return;
-    final maxExtent = _scrollController.position.maxScrollExtent;
+    final ctrl = _controllerForTab(_currentTabIndex);
+    if (!ctrl.hasClients || !mounted) return;
+    final maxExtent = ctrl.position.maxScrollExtent;
     if (maxExtent <= 0) return;
     final target = fraction.clamp(0.0, 1.0) * maxExtent;
-    _scrollController.jumpTo(target);
+    ctrl.jumpTo(target);
   }
 
   // 获取网格视口矩形（全局坐标）
@@ -1669,6 +1718,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _currentDisplayCount = 0;
           _hasMore = false;
         });
+        // 重新构建日期 Tabs
+        await _prepareDayTabs(days: 14);
 
         // 失效缓存
         await ScreenshotService.instance.invalidateStatsCache();
@@ -1744,6 +1795,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _selectedIds.clear();
           _selectionMode = false;
           _isFullySelected = false; // 重置全选状态
+          // 更新当前日期Tab计数
+          if (_dayTabs.isNotEmpty && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
+            final cur = _dayTabs[_currentTabIndex].count;
+            _dayTabs[_currentTabIndex].count = (cur - successCount).clamp(0, 1 << 31);
+          }
         });
 
         // 缓存已在批量删除后统一刷新，这里只需失效本页面的截图缓存
