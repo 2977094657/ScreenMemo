@@ -1238,4 +1238,133 @@ class ScreenshotDatabase {
       return [];
     }
   }
+  
+  // ======= 日期范围查询辅助 =======
+  List<List<int>> _listYearMonthBetween(DateTime start, DateTime end) {
+    final DateTime s = DateTime(start.year, start.month, 1);
+    final DateTime e = DateTime(end.year, end.month, 1);
+    final List<List<int>> result = <List<int>>[];
+    DateTime cur = s;
+    while (!DateTime(cur.year, cur.month, 1).isAfter(e)) {
+      result.add(<int>[cur.year, cur.month]);
+      // 增加一个月
+      final int nextMonth = cur.month == 12 ? 1 : cur.month + 1;
+      final int nextYear = cur.month == 12 ? cur.year + 1 : cur.year;
+      cur = DateTime(nextYear, nextMonth, 1);
+    }
+    return result;
+  }
+
+  /// 获取指定应用在给定时间戳范围内的截图数量（包含边界，毫秒）
+  Future<int> getScreenshotCountByAppBetween(String appPackageName, {required int startMillis, required int endMillis}) async {
+    final db = await database; // 主库
+    try {
+      if (endMillis < startMillis) return 0;
+      int total = 0;
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return 0;
+      final List<List<int>> ymList = _listYearMonthBetween(s, e);
+      for (final ym in ymList) {
+        final int y = ym[0];
+        final int m = ym[1];
+        if (!years.contains(y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        final String t = _monthTableName(y, m);
+        if (!await _tableExists(shardDb, t)) continue;
+        try {
+          final rows = await shardDb.rawQuery(
+            'SELECT COUNT(*) as c FROM $t WHERE capture_time >= ? AND capture_time <= ?',
+            [startMillis, endMillis],
+          );
+          total += (rows.first['c'] as int?) ?? 0;
+        } catch (_) {}
+      }
+      return total;
+    } catch (e) {
+      print('getScreenshotCountByAppBetween 失败: $e');
+      return 0;
+    }
+  }
+
+  /// 获取指定应用在给定时间戳范围内的截图列表（按时间倒序，支持分页 offset/limit）
+  Future<List<ScreenshotRecord>> getScreenshotsByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database; // 主库
+    try {
+      if (endMillis < startMillis) return <ScreenshotRecord>[];
+      // 读取 app_name
+      String appName = appPackageName;
+      try {
+        final appInfo = await db.query(
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [appPackageName],
+          limit: 1,
+        );
+        if (appInfo.isNotEmpty) {
+          appName = (appInfo.first['app_name'] as String?) ?? appPackageName;
+        }
+      } catch (_) {}
+
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return <ScreenshotRecord>[];
+      final List<List<int>> ymList = _listYearMonthBetween(
+        DateTime.fromMillisecondsSinceEpoch(startMillis),
+        DateTime.fromMillisecondsSinceEpoch(endMillis),
+      );
+
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+      for (final ym in ymList) {
+        final int y = ym[0];
+        final int m = ym[1];
+        if (!years.contains(y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        final String t = _monthTableName(y, m);
+        if (!await _tableExists(shardDb, t)) continue;
+        try {
+          final maps = await shardDb.query(
+            t,
+            where: 'capture_time >= ? AND capture_time <= ?',
+            whereArgs: [startMillis, endMillis],
+            orderBy: 'capture_time DESC',
+          );
+          for (final map in maps) {
+            final full = Map<String, dynamic>.from(map);
+            full['app_package_name'] = appPackageName;
+            full['app_name'] = appName;
+            final localId = (map['id'] as int?) ?? 0;
+            full['id'] = _encodeGid(y, m, localId);
+            rows.add(full);
+          }
+        } catch (_) {}
+      }
+
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (e) {
+      print('getScreenshotsByAppBetween 查询失败: $e');
+      return <ScreenshotRecord>[];
+    }
+  }
 }

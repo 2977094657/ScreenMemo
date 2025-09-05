@@ -21,6 +21,29 @@ import '../services/app_selection_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 
+/// 内部：日期Tab信息（一天为单位）
+class _DayTabInfo {
+  final DateTime day;
+  final int startMillis;
+  final int endMillis;
+  int count;
+
+  _DayTabInfo({required this.day, required this.startMillis, required this.endMillis, this.count = 0});
+
+  static bool _isSameYMD(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static bool _isToday(DateTime d) => _isSameYMD(d, DateTime.now());
+  static bool _isYesterday(DateTime d) => _isSameYMD(d, DateTime.now().subtract(const Duration(days: 1)));
+
+  String buildLabel() {
+    if (_isToday(day)) return '今天 $count';
+    if (_isYesterday(day)) return '昨天 $count';
+    return '${day.month}月${day.day}日 $count';
+  }
+}
+
 class ScreenshotGalleryPage extends StatefulWidget {
   const ScreenshotGalleryPage({super.key});
 
@@ -29,7 +52,7 @@ class ScreenshotGalleryPage extends StatefulWidget {
 }
 
 class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   late AppInfo _appInfo;
   late String _packageName;
   List<ScreenshotRecord> _screenshots = [];
@@ -70,10 +93,239 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   int _totalSize = 0;
   DateTime? _latestTime;
 
+  // 日期Tab/过滤
+  TabController? _tabController;
+  final List<_DayTabInfo> _dayTabs = <_DayTabInfo>[];
+  int _currentTabIndex = 0;
+  int? _dateFilterStartMillis;
+  int? _dateFilterEndMillis;
+  // 简单的每Tab数据缓存，避免切换瞬时显示上一个Tab内容
+  final Map<int, List<ScreenshotRecord>> _tabCache = <int, List<ScreenshotRecord>>{};
+  final Map<int, int> _tabOffset = <int, int>{};
+  final Map<int, bool> _tabHasMore = <int, bool>{};
+  final Map<int, double> _tabScrollOffset = <int, double>{};
+  final Map<int, ScrollController> _tabControllers = <int, ScrollController>{};
+
+  ScrollController _controllerForTab(int index) {
+    if (index < 0) index = 0;
+    final existing = _tabControllers[index];
+    if (existing != null) return existing;
+    final initial = _tabScrollOffset[index] ?? 0.0;
+    final ctrl = ScrollController(initialScrollOffset: initial);
+    ctrl.addListener(() => _onScrollChangedForTab(ctrl, index));
+    _tabControllers[index] = ctrl;
+    return ctrl;
+  }
+
+  void _onScrollChangedForTab(ScrollController ctrl, int index) {
+    // 刷新时间线位置（仅当前Tab）
+    if (!_timelineActive && mounted && index == _currentTabIndex) {
+      setState(() {});
+    }
+    // 仅当前Tab触发加载更多
+    if (index == _currentTabIndex && _hasMore && !_isLoadingMore && ctrl.hasClients) {
+      final maxScroll = ctrl.position.maxScrollExtent;
+      final currentScroll = ctrl.position.pixels;
+      final threshold = maxScroll * 0.8;
+      if (currentScroll >= threshold) {
+        _loadMoreScreenshots();
+      }
+    }
+    // 记录滚动偏移
+    try {
+      if (ctrl.hasClients) {
+        final double pos = ctrl.position.pixels;
+        final double max = ctrl.position.hasPixels ? ctrl.position.maxScrollExtent : pos;
+        final double clamped = pos.clamp(0.0, max);
+        _tabScrollOffset[index] = clamped;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _prefetchFirstPageForTab(int index) async {
+    if (!mounted) return;
+    if (index < 0 || index >= _dayTabs.length) return;
+    if ((_tabCache[index]?.isNotEmpty ?? false)) return;
+    final day = _dayTabs[index];
+    if (day.count <= 0) return;
+    try {
+      final batch = await ScreenshotService.instance.getScreenshotsByAppBetween(
+        _packageName,
+        startMillis: day.startMillis,
+        endMillis: day.endMillis,
+        limit: _initialPageSize,
+        offset: 0,
+      );
+      // 二次过滤：严格限定同一天，且最多取 _initialPageSize
+      final filtered = batch
+          .where((r) => _DayTabInfo._isSameYMD(r.captureTime, day.day))
+          .take(_initialPageSize)
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _tabCache[index] = List<ScreenshotRecord>.from(filtered);
+        _tabOffset[index] = filtered.length;
+        _tabHasMore[index] = filtered.length < day.count;
+        if (index == _currentTabIndex && _screenshots.isEmpty) {
+          _screenshots = List<ScreenshotRecord>.from(filtered);
+          _currentDisplayCount = _screenshots.length;
+          _pageOffset = _tabOffset[index] ?? _screenshots.length;
+          _hasMore = _tabHasMore[index] ?? false;
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _prefetchAllTabsFirst8() async {
+    for (int i = 0; i < _dayTabs.length; i++) {
+      // 顺序预取，避免并发压力
+      await _prefetchFirstPageForTab(i);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScrollChanged);
+    // 主控制器用于当前Tab，其他Tab使用各自controller
+  }
+
+  /// 生成最近若干天的Tab（默认14天），并计算每日数量
+  Future<void> _prepareDayTabs({int days = 14}) async {
+    if (!mounted) return;
+    final DateTime today = DateTime.now();
+    final DateTime base = DateTime(today.year, today.month, today.day);
+    final List<_DayTabInfo> tabs = <_DayTabInfo>[];
+
+    // 预生成天范围
+    for (int i = 0; i < days; i++) {
+      final DateTime d = base.subtract(Duration(days: i));
+      final int start = DateTime(d.year, d.month, d.day).millisecondsSinceEpoch;
+      final int end = DateTime(d.year, d.month, d.day, 23, 59, 59).millisecondsSinceEpoch;
+      tabs.add(_DayTabInfo(day: d, startMillis: start, endMillis: end));
+    }
+
+    // 并行获取每日数量（顺序更新，避免阻塞UI过久）
+    for (int i = 0; i < tabs.length; i++) {
+      try {
+        final c = await ScreenshotService.instance.getScreenshotCountByAppBetween(
+          _packageName,
+          startMillis: tabs[i].startMillis,
+          endMillis: tabs[i].endMillis,
+        );
+        tabs[i].count = c;
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {}); // 渐进刷新计数
+    }
+
+    if (!mounted) return;
+    // 仅保留有截图的日期
+    final List<_DayTabInfo> available = tabs.where((t) => t.count > 0).toList();
+    setState(() {
+      _dayTabs
+        ..clear()
+        ..addAll(available);
+      _tabController?.removeListener(_onTabControllerChanged);
+      _tabController?.dispose();
+      if (_dayTabs.isNotEmpty) {
+        // 默认选择最近一天（可为“今天”若有数据，否则为最近有数据的日期）
+        _currentTabIndex = 0;
+        _dateFilterStartMillis = _dayTabs[0].startMillis;
+        _dateFilterEndMillis = _dayTabs[0].endMillis;
+        _tabController = TabController(length: _dayTabs.length, vsync: this);
+        _tabController!.addListener(_onTabControllerChanged);
+      } else {
+        _currentTabIndex = 0;
+        _dateFilterStartMillis = null;
+        _dateFilterEndMillis = null;
+        _tabController = null;
+      }
+    });
+    // 预取所有Tab的前8张，并显示当前Tab的首屏缓存
+    if (_dayTabs.isNotEmpty) {
+      await _prefetchAllTabsFirst8();
+      await _onTabIndexSelected(0);
+    }
+  }
+
+  void _onTabControllerChanged() {
+    if (_tabController == null) return;
+    if (_tabController!.indexIsChanging) return; // 避免重复
+    final int idx = _tabController!.index;
+    // 优先确保相邻Tab也有首屏缓存，提升滑动预览体验
+    // ignore: unawaited_futures
+    _prefetchFirstPageForTab(idx - 1);
+    // ignore: unawaited_futures
+    _prefetchFirstPageForTab(idx + 1);
+    _onTabIndexSelected(idx);
+  }
+
+  Future<void> _onTabIndexSelected(int index) async {
+    if (index < 0 || index >= _dayTabs.length) return;
+    if (_currentTabIndex == index && _screenshots.isNotEmpty) return;
+    // 切换前保存旧Tab的滚动偏移
+    try {
+      if (_scrollController.hasClients) {
+        _tabScrollOffset[_currentTabIndex] = _scrollController.position.pixels;
+      }
+    } catch (_) {}
+    setState(() {
+      _currentTabIndex = index;
+      _dateFilterStartMillis = _dayTabs[index].startMillis;
+      _dateFilterEndMillis = _dayTabs[index].endMillis;
+      // 切换时先从缓存展示，避免闪现上一页内容
+      final cached = _tabCache[index];
+      if (cached != null) {
+        _screenshots = List<ScreenshotRecord>.from(cached);
+        _currentDisplayCount = _screenshots.length;
+        _hasMore = _tabHasMore[index] ?? false;
+        _pageOffset = _tabOffset[index] ?? _screenshots.length;
+      } else {
+        _screenshots.clear();
+        _currentDisplayCount = 0;
+        _hasMore = true;
+      }
+      _selectedIds.clear();
+      _isFullySelected = false;
+    });
+    await _refreshCurrentTabCount();
+    // 若缺少首屏缓存，补一次加载；否则按需继续加载更多
+    if ((_tabCache[index]?.isEmpty ?? true)) {
+      await _loadScreenshots();
+    } else if (_hasMore) {
+      // 不阻塞UI，后台加载下一页
+      // ignore: unawaited_futures
+      _loadMoreScreenshots();
+    }
+    // 恢复新Tab的滚动偏移（若存在）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final ctrl = _controllerForTab(index);
+        if (ctrl.hasClients) {
+          final double restoreRaw = _tabScrollOffset[index] ?? 0.0;
+          final double max = ctrl.position.maxScrollExtent;
+          final double restore = restoreRaw.clamp(0.0, max);
+          if (restore > 0) {
+            ctrl.jumpTo(restore);
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  Future<void> _refreshCurrentTabCount() async {
+    if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) return;
+    try {
+      final c = await ScreenshotService.instance.getScreenshotCountByAppBetween(
+        _packageName,
+        startMillis: _dayTabs[_currentTabIndex].startMillis,
+        endMillis: _dayTabs[_currentTabIndex].endMillis,
+      );
+      if (!mounted) return;
+      setState(() {
+        _dayTabs[_currentTabIndex].count = c;
+      });
+    } catch (_) {}
   }
 
   void _onScrollChanged() {
@@ -83,15 +335,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     }
 
     // 检查是否需要加载更多
-    if (_hasMore && !_isLoadingMore && _scrollController.hasClients) {
-      final maxScroll = _scrollController.position.maxScrollExtent;
-      final currentScroll = _scrollController.position.pixels;
-      final threshold = maxScroll * 0.8; // 滚动到80%时触发加载
-
-      if (currentScroll >= threshold) {
-        _loadMoreScreenshots();
-      }
-    }
+    // 主控制器不再统一承载滚动监听（每Tab独立监听）
   }
 
   /// 加载更多截图到显示列表
@@ -105,11 +349,25 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
     try {
       final int limit = _currentDisplayCount == 0 ? _initialPageSize : _pageSize;
-      final List<ScreenshotRecord> batch = await ScreenshotService.instance.getScreenshotsByApp(
-        _packageName,
-        limit: limit,
-        offset: _pageOffset,
-      );
+      List<ScreenshotRecord> batch = <ScreenshotRecord>[];
+      if (_dateFilterStartMillis != null && _dateFilterEndMillis != null) {
+        batch = await ScreenshotService.instance.getScreenshotsByAppBetween(
+          _packageName,
+          startMillis: _dateFilterStartMillis!,
+          endMillis: _dateFilterEndMillis!,
+          limit: limit,
+          offset: _pageOffset,
+        );
+        // 二次过滤，避免跨日混入
+        final day = _dayTabs[_currentTabIndex].day;
+        batch = batch.where((r) => _DayTabInfo._isSameYMD(r.captureTime, day)).toList();
+      } else {
+        batch = await ScreenshotService.instance.getScreenshotsByApp(
+          _packageName,
+          limit: limit,
+          offset: _pageOffset,
+        );
+      }
 
       if (!mounted) return;
       setState(() {
@@ -125,7 +383,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           }
           _pageOffset += batch.length;
           _currentDisplayCount = _screenshots.length;
-          _hasMore = _currentDisplayCount < _totalCount;
+          // 依据当前筛选（天）或全量决定是否还有更多
+          int expectedTotal = _totalCount;
+          if (_dateFilterStartMillis != null && _dateFilterEndMillis != null && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
+            expectedTotal = _dayTabs[_currentTabIndex].count;
+          }
+          _hasMore = _currentDisplayCount < expectedTotal;
 
           // 如果是全选状态，将新加载的项也加入选择
           if (_isFullySelected) {
@@ -136,6 +399,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             _selectedIds.addAll(newIds);
           }
 
+          // 缓存当前Tab内容，避免切换时回显旧页
+          _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(_screenshots);
+          _tabOffset[_currentTabIndex] = _pageOffset;
+          _tabHasMore[_currentTabIndex] = _hasMore;
           // 清理不在显示范围内的键
           _itemKeys.removeWhere((index, _) => index >= _screenshots.length);
         }
@@ -171,6 +438,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _appInfo = args['appInfo'] as AppInfo;
       _packageName = args['packageName'] as String;
       _loadInitialData();
+      // 准备日期Tabs（异步）
+      // ignore: unawaited_futures
+      _prepareDayTabs(days: 14);
     } else {
       setState(() {
         _error = '参数错误';
@@ -553,9 +823,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       );
     }
 
-    // 如果有数据就直接显示网格，即使数据正在加载
+    // 如果有数据就直接显示网格+Tab栏，即使数据正在加载
     if (_screenshots.isNotEmpty || _isLoading) {
-      return _buildGalleryGrid();
+      return _buildTabsAndGrid();
     }
 
     // 只有在确实没有数据且不在加载时才显示空状态
@@ -599,43 +869,155 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       );
     }
 
-    return _buildGalleryGrid();
+    return _buildTabsAndGrid();
   }
 
-  Widget _buildGalleryGrid() {
+  /// 构建顶部日期Tab栏 + 下方网格
+  Widget _buildTabsAndGrid() {
+    final Color selectedColor = Theme.of(context).brightness == Brightness.dark
+        ? AppTheme.darkForeground
+        : AppTheme.foreground;
+    final Color unselectedColor = Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 与 AppBar 内容左对齐：TabBar 自身通过 padding 控制左内边距
+        Padding(
+          padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
+          child: _dayTabs.isEmpty || _tabController == null
+              ? const SizedBox(height: 40)
+              : TabBar(
+      controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  padding: const EdgeInsets.only(left: AppTheme.spacing4),
+                  labelPadding: const EdgeInsets.only(right: AppTheme.spacing6),
+                  labelColor: selectedColor,
+                  unselectedLabelColor: unselectedColor,
+                  labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  indicator: UnderlineTabIndicator(
+                    borderSide: BorderSide(width: 2.0, color: selectedColor),
+                    insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                  ),
+                  tabs: _dayTabs
+                      .map((t) => Tab(text: t.buildLabel()))
+                      .toList(),
+                ),
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Expanded(
+          child: _tabController == null
+              ? _buildGalleryGrid()
+              : TabBarView(
+                  controller: _tabController,
+                  physics: const ClampingScrollPhysics(),
+                  children: _dayTabs.isEmpty
+                      ? [
+                          _buildGalleryGridForIndex(0),
+                        ]
+                      : _dayTabs
+                          .asMap()
+                          .entries
+                          .map((entry) => _buildGalleryGridForIndex(entry.key))
+                          .toList(),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 渲染指定索引Tab的网格：当前页使用主数据，非当前页使用缓存数据与独立控制器
+  Widget _buildGalleryGridForIndex(int tabIndex) {
+    final bool isCurrent = tabIndex == _currentTabIndex;
+    final List<ScreenshotRecord> data = isCurrent
+        ? _screenshots
+        : List<ScreenshotRecord>.from(_tabCache[tabIndex] ?? const <ScreenshotRecord>[]);
+    if (!isCurrent && data.isEmpty) {
+      // 若缓存尚未就绪，展示轻量占位
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.all(AppTheme.spacing1), // 减少外边距
+          padding: const EdgeInsets.all(AppTheme.spacing1),
           child: Container(
-            key: _gridKey,
+            key: isCurrent ? _gridKey : null,
             child: GridView.builder(
-              key: PageStorageKey<String>(
-                'screenshot_gallery_grid_$_packageName',
-              ),
-              controller: _scrollController,
+              key: PageStorageKey<String>('screenshot_gallery_grid_${_packageName}_tab_$tabIndex'),
+              controller: _controllerForTab(tabIndex),
+              physics: const ClampingScrollPhysics(),
               padding: EdgeInsets.only(
-                bottom:
-                    MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
               ),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                crossAxisSpacing: AppTheme.spacing1, // 减少间距
-                mainAxisSpacing: AppTheme.spacing1, // 减少间距
-                childAspectRatio: 0.45, // 显著增加图片高度，确保图片显示完整
+                crossAxisSpacing: AppTheme.spacing1,
+                mainAxisSpacing: AppTheme.spacing1,
+                childAspectRatio: 0.45,
               ),
-              itemCount: _screenshots.length,
+              itemCount: data.length,
               itemBuilder: (context, index) {
-                final screenshot = _screenshots[index];
-                return _buildScreenshotItem(screenshot, index);
+                final s = data[index];
+                return isCurrent ? _buildScreenshotItem(s, index) : _buildPreviewItem(s);
               },
             ),
           ),
         ),
-        _buildTimelineOverlay(),
+        if (isCurrent) _buildTimelineOverlay(),
       ],
     );
   }
+
+  /// 预览项：非交互，仅用于滑动时提前可见
+  Widget _buildPreviewItem(ScreenshotRecord screenshot) {
+    if (_baseDir == null) {
+      return _buildErrorItem("应用目录未初始化");
+    }
+    final file = path.isAbsolute(screenshot.filePath)
+        ? File(screenshot.filePath)
+        : File(path.join(_baseDir!.path, screenshot.filePath));
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      child: Builder(
+        builder: (context) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final screenWidth = MediaQuery.of(context).size.width;
+          final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
+          final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
+          final imageProvider = ResizeImage(FileImage(file), width: targetWidth);
+          final imageWidget = Image(
+            image: imageProvider,
+            width: double.infinity,
+            height: double.infinity,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.low,
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) => _buildErrorItem('图片丢失或损坏'),
+          );
+          if (!isDark) return imageWidget;
+          return ColorFiltered(
+            colorFilter: ColorFilter.mode(
+              Colors.black.withValues(alpha: 0.5),
+              BlendMode.darken,
+            ),
+            child: imageWidget,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGalleryGrid() => _buildGalleryGridForIndex(_currentTabIndex);
 
   @override
   bool get wantKeepAlive => true;
@@ -643,6 +1025,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   @override
   void dispose() {
     _scrollController.dispose();
+    _tabController?.removeListener(_onTabControllerChanged);
+    _tabController?.dispose();
     super.dispose();
   }
 

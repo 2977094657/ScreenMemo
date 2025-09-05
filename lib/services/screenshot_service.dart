@@ -530,6 +530,46 @@ class ScreenshotService {
     }
   }
 
+  /// 获取指定应用在时间范围内的截屏数量（包含边界，毫秒）
+  Future<int> getScreenshotCountByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    try {
+      return await _database.getScreenshotCountByAppBetween(
+        appPackageName,
+        startMillis: startMillis,
+        endMillis: endMillis,
+      );
+    } catch (e) {
+      print('获取区间截图数量失败: $e');
+      return 0;
+    }
+  }
+
+  /// 获取指定应用在时间范围内的截图列表（按时间倒序，支持分页）
+  Future<List<ScreenshotRecord>> getScreenshotsByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+    int? limit,
+    int? offset,
+  }) async {
+    try {
+      return await _database.getScreenshotsByAppBetween(
+        appPackageName,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        limit: limit,
+        offset: offset,
+      );
+    } catch (e) {
+      print('获取区间截图列表失败: $e');
+      return [];
+    }
+  }
+
   /// 获取指定应用的截屏总数量
   Future<int> getScreenshotCountByApp(String appPackageName) async {
     try {
