@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -32,6 +34,20 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Inject Umeng placeholders from local.properties/env for manifest
+        val props = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        val umengAppKey = (props.getProperty("UMENG_APPKEY")
+            ?: System.getenv("UMENG_APPKEY")
+            ?: "")
+        val umengChannel = (props.getProperty("UMENG_CHANNEL")
+            ?: System.getenv("UMENG_CHANNEL")
+            ?: "official")
+        manifestPlaceholders["UMENG_APPKEY"] = umengAppKey
+        manifestPlaceholders["UMENG_CHANNEL"] = umengChannel
     }
 
     buildTypes {
@@ -56,4 +72,12 @@ flutter {
 dependencies {
     // Satisfy Flutter deferred components references during R8 shrinking
     implementation("com.google.android.play:core:1.10.3")
+
+    // Umeng Common SDK (Analytics base) + ASMS + APM (Crash/ANR/卡顿/性能)
+    implementation("com.umeng.umsdk:common:9.8.5")
+    implementation("com.umeng.umsdk:asms:1.8.7.2")
+    implementation("com.umeng.umsdk:apm:2.0.4")
+
+    // OkHttp (required by Umeng APM's EFS net monitor classes referenced at runtime)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

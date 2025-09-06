@@ -46,6 +46,8 @@ import android.app.Dialog
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import com.fqyw.screen_memo.UmengLogger
+import com.fqyw.screen_memo.OutputFileLogger
 
 class MainActivity : FlutterActivity() {
 
@@ -151,6 +153,33 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         result.error("log_error", e.message, null)
                     }
+                }
+                "umengSetUserId" -> {
+                    val userId = call.argument<String>("userId")
+                    if (!userId.isNullOrBlank()) {
+                        UmengLogger.setUserId(userId)
+                    }
+                    result.success(true)
+                }
+                "umengBreadcrumb" -> {
+                    val tag = call.argument<String>("tag") ?: "Flutter"
+                    val msg = call.argument<String>("message") ?: ""
+                    UmengLogger.breadcrumb(msg, tag)
+                    result.success(true)
+                }
+                "umengReportError" -> {
+                    val msg = call.argument<String>("message") ?: "FlutterError"
+                    val stack = call.argument<String>("stack") ?: ""
+                    if (stack.isNotBlank()) {
+                        // 将堆栈也写入 error 文件，保证错误相关信息集中
+                        OutputFileLogger.error(this, "Flutter", "Stack:\n$stack")
+                    }
+                    UmengLogger.reportError(RuntimeException(msg), attachRecent = true)
+                    result.success(true)
+                }
+                "getOutputLogsDirToday" -> {
+                    val dir = OutputFileLogger.getTodayDir(this)
+                    result.success(dir?.absolutePath)
                 }
                 "startForegroundService" -> {
                     startForegroundService()

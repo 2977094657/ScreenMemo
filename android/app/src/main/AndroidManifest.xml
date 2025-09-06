@@ -38,6 +38,13 @@
         android:label="@string/app_name"
         android:name=".ScreenMemoApplication"
         android:icon="@mipmap/ic_launcher">
+        <!-- Umeng configuration (AppKey/Channel injected via manifestPlaceholders) -->
+        <meta-data
+            android:name="UMENG_APPKEY"
+            android:value="${UMENG_APPKEY}" />
+        <meta-data
+            android:name="UMENG_CHANNEL"
+            android:value="${UMENG_CHANNEL}" />
         <!-- 禁用 Impeller，回退到 Skia 以避免部分设备冷启动首帧缓慢/驱动异常 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
