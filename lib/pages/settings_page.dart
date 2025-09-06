@@ -32,6 +32,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   bool _permissionsExpanded = true; // 权限下拉菜单展开状态：默认展开，全部授权后自动收起
   int _screenshotInterval = 5;
   String _sortMode = 'timeDesc';
+  bool _privacyMode = true; // 隐私模式，默认开启
 
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
@@ -203,6 +204,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     _loadAllPermissions();
     _loadScreenshotInterval();
     _loadSortMode();
+    _loadPrivacyMode();
     _loadScreenshotQualitySettings();
   }
 
@@ -536,6 +538,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   context: context,
                   title: '显示与排序',
                   children: [
+                    _buildPrivacyModeItem(context),
                     _buildSortModeItem(context),
                   ],
                 ),
@@ -802,6 +805,69 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               minimumSize: Size.zero,
             ),
             child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrivacyModeItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.privacy_tip_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '隐私模式',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '对可疑成人内容自动模糊遮挡',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: _privacyMode,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) => _updatePrivacyMode(v),
+            ),
           ),
         ],
       ),
@@ -1183,6 +1249,23 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         _grayscale = false; // 灰度已移除
       });
     } catch (_) {}
+  }
+
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await _appService.getPrivacyModeEnabled();
+      if (mounted) {
+        setState(() { _privacyMode = enabled; });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updatePrivacyMode(bool enabled) async {
+    await _appService.savePrivacyModeEnabled(enabled);
+    if (mounted) {
+      setState(() { _privacyMode = enabled; });
+      UINotifier.success(context, enabled ? '已开启隐私模式' : '已关闭隐私模式');
+    }
   }
 
   Future<void> _saveScreenshotQualitySettings() async {

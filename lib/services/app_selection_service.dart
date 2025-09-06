@@ -19,6 +19,7 @@ class AppSelectionService {
   static const String _appsCacheKey = 'all_apps_cache';
   static const String _appsCacheTsKey = 'all_apps_cache_ts';
   static const int _appsCacheTtlSeconds = 28800; // 8小时TTL（秒）
+  static const String _privacyModeKey = 'privacy_mode_enabled';
 
   List<AppInfo> _allApps = [];
   List<AppInfo> _selectedApps = [];
@@ -26,10 +27,15 @@ class AppSelectionService {
   String _sortMode = 'timeDesc'; // 新排序键：timeAsc/timeDesc, sizeAsc/sizeDesc, countAsc/countDesc
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
+  bool _privacyModeEnabled = true; // 默认开启
 
   // 排序模式变更广播（用于通知首页自动刷新排序）
   static final StreamController<String> _sortModeController = StreamController<String>.broadcast();
   Stream<String> get onSortModeChanged => _sortModeController.stream;
+
+  // 隐私模式变更广播
+  static final StreamController<bool> _privacyModeController = StreamController<bool>.broadcast();
+  Stream<bool> get onPrivacyModeChanged => _privacyModeController.stream;
 
   /// 获取所有已安装的应用（带内存/本地缓存，避免每次进入都全量扫描）
   Future<List<AppInfo>> getAllInstalledApps({bool forceRefresh = false}) async {
@@ -296,4 +302,30 @@ class AppSelectionService {
   String get sortMode => _sortMode;
   int get screenshotInterval => _screenshotInterval;
   bool get screenshotEnabled => _screenshotEnabled;
+  bool get privacyModeEnabled => _privacyModeEnabled;
+
+  /// 保存隐私模式开关
+  Future<void> savePrivacyModeEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_privacyModeKey, enabled);
+      _privacyModeEnabled = enabled;
+      // 广播变更
+      _privacyModeController.add(enabled);
+    } catch (e) {
+      print('保存隐私模式失败: $e');
+    }
+  }
+
+  /// 获取隐私模式开关（默认开启）
+  Future<bool> getPrivacyModeEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _privacyModeEnabled = prefs.getBool(_privacyModeKey) ?? true;
+      return _privacyModeEnabled;
+    } catch (e) {
+      print('获取隐私模式失败: $e');
+      return true;
+    }
+  }
 }

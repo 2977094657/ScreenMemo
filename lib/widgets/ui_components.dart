@@ -122,6 +122,26 @@ class UINotifier {
     );
   }
 
+  /// 居中吐司：用于误触提示等场景，扁平无阴影，轻圆角
+  static void center(BuildContext context, String message, {Duration? duration}) {
+    // 移除已有吐司，避免堆叠
+    _removeCurrent();
+
+    final overlay = Overlay.of(context);
+    if (overlay == null) return;
+
+    final entry = OverlayEntry(
+      builder: (ctx) => _CenterToast(
+        message: message,
+        displayDuration: duration ?? const Duration(milliseconds: 1500),
+        onClosed: _removeCurrent,
+      ),
+    );
+
+    overlay.insert(entry);
+    _currentEntry = entry;
+  }
+
   // ===== 持续进度吐司（手动更新与关闭） =====
   static void showProgress(BuildContext context, {required String message, double? progress}) {
     final overlay = Overlay.of(context);
@@ -289,6 +309,88 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
                         ],
                       ),
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 内部组件：居中吐司（仅渐隐显示，自动消失）
+class _CenterToast extends StatefulWidget {
+  final String message;
+  final Duration displayDuration;
+  final VoidCallback onClosed;
+
+  const _CenterToast({
+    required this.message,
+    required this.displayDuration,
+    required this.onClosed,
+  });
+
+  @override
+  State<_CenterToast> createState() => _CenterToastState();
+}
+
+class _CenterToastState extends State<_CenterToast> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 160));
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _controller.forward();
+    _timer = Timer(widget.displayDuration, _startDismiss);
+  }
+
+  void _startDismiss() async {
+    try {
+      await _controller.reverse();
+    } catch (_) {}
+    if (mounted) widget.onClosed();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: IgnorePointer(
+        child: Center(
+          child: FadeTransition(
+            opacity: _fade,
+            child: Material(
+              type: MaterialType.transparency,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing4,
+                    vertical: AppTheme.spacing2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCC323232),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Text(
+                    widget.message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
               ),

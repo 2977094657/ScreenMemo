@@ -69,6 +69,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   bool _isFullySelected = false; // 标记是否已经全选所有数据
   // 取消滑动选择
   bool _initialized = false; // 避免返回时重复触发初始化加载
+  bool _privacyMode = true; // 默认开启
 
   // 缓存相关
   static const String _screenshotsCacheKeyPrefix = 'screenshots_cache_';
@@ -188,6 +189,19 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   void initState() {
     super.initState();
     // 主控制器用于当前Tab，其他Tab使用各自controller
+    _loadPrivacyMode();
+    // 订阅隐私模式变更
+    AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
+      if (!mounted) return;
+      setState(() { _privacyMode = enabled; });
+    });
+  }
+
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      if (mounted) setState(() { _privacyMode = enabled; });
+    } catch (_) {}
   }
 
   /// 生成最近若干天的Tab（默认14天），并计算每日数量
@@ -1021,7 +1035,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         },
       ),
     );
-    final bool isNsfw = NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final bool isNsfw = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
     if (!isNsfw) return base;
     return NsfwBlurGuard(
       child: base,
@@ -1060,7 +1074,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool nsfwMasked = NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
     final itemContent = GestureDetector(
       onTap: () {
         if (_selectionMode) {
@@ -1132,7 +1146,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               ),
             ),
           // 顶部链接信息遮罩：NSFW 时隐藏，避免露出网址
-          if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
+          if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty && !nsfwMasked)
             Positioned(
               top: 0,
               left: 0,

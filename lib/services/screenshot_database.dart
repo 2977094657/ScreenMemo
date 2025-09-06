@@ -656,6 +656,143 @@ class ScreenshotDatabase {
     }
   }
 
+  /// 全局：获取给定日期范围内的截图总数（所有应用，包含边界，毫秒）
+  Future<int> getGlobalScreenshotCountBetween({
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    final db = await database; // 主库
+    try {
+      if (endMillis < startMillis) return 0;
+      int total = 0;
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      // 遍历分库注册表，找出涉及的年份与包名
+      final rows = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      if (rows.isEmpty) return 0;
+      // 需要的年月列表
+      final ymList = _listYearMonthBetween(s, e);
+      for (final row in rows) {
+        final String pkg = row['app_package_name'] as String;
+        final int y = row['year'] as int;
+        // 仅处理日期范围涉及到的年份
+        final containsYear = ymList.any((ym) => ym[0] == y);
+        if (!containsYear) continue;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        for (final ym in ymList) {
+          final int year = ym[0];
+          final int month = ym[1];
+          if (year != y) continue;
+          final table = _monthTableName(year, month);
+          if (!await _tableExists(shardDb, table)) continue;
+          try {
+            final res = await shardDb.rawQuery(
+              'SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ?',
+              [startMillis, endMillis],
+            );
+            total += (res.first['c'] as int?) ?? 0;
+          } catch (_) {}
+        }
+      }
+      return total;
+    } catch (e) {
+      print('getGlobalScreenshotCountBetween 失败: $e');
+      return 0;
+    }
+  }
+
+  /// 全局：获取给定日期范围内的截图列表（所有应用，按时间倒序，支持分页）
+  Future<List<ScreenshotRecord>> getGlobalScreenshotsBetween({
+    required int startMillis,
+    required int endMillis,
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database; // 主库
+    try {
+      if (endMillis < startMillis) return <ScreenshotRecord>[];
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final ymList = _listYearMonthBetween(s, e);
+
+      // 遍历所有已注册的 (package, year)
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      // 预读 app 名称以减少重复查询
+      final Map<String, String> appNameCache = <String, String>{};
+      try {
+        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        for (final r in reg) {
+          final pkg = r['app_package_name'] as String;
+          final name = (r['app_name'] as String?) ?? pkg;
+          appNameCache[pkg] = name;
+        }
+      } catch (_) {}
+
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        // 仅处理涉及到的年份
+        final containsYear = ymList.any((ym) => ym[0] == y);
+        if (!containsYear) continue;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final String appName = appNameCache[pkg] ?? pkg;
+        for (final ym in ymList) {
+          final int year = ym[0];
+          final int month = ym[1];
+          if (year != y) continue;
+          final t = _monthTableName(year, month);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final maps = await shardDb.query(
+              t,
+              where: 'capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
+              whereArgs: [startMillis, endMillis],
+              orderBy: 'capture_time DESC',
+            );
+            for (final m in maps) {
+              final full = Map<String, dynamic>.from(m);
+              full['app_package_name'] = pkg;
+              full['app_name'] = appName;
+              final localId = (m['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(year, month, localId);
+              rows.add(full);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 全局排序
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+
+      // 分页
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (e) {
+      print('getGlobalScreenshotsBetween 失败: $e');
+      return <ScreenshotRecord>[];
+    }
+  }
+
   /// 获取总截屏数量
   Future<int> getTotalScreenshotCount() async {
     StartupProfiler.begin('ScreenshotDatabase.getTotalScreenshotCount');
