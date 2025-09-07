@@ -606,6 +606,46 @@ class ScreenshotService {
     }
   }
 
+  /// 获取 OCR 匹配框（原图坐标系）
+  Future<Map<String, dynamic>?> getOcrMatchBoxes({
+    required String filePath,
+    required String query,
+  }) async {
+    try {
+      final res = await _channel.invokeMethod('getOcrMatchBoxes', {
+        'filePath': filePath,
+        'query': query,
+      });
+      if (res is Map) {
+        return Map<String, dynamic>.from(res);
+      }
+      return null;
+    } catch (e) {
+      print('getOcrMatchBoxes 调用失败: $e');
+      return null;
+    }
+  }
+
+  /// 全局按 OCR 文本搜索
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcr(String query, {int? limit, int? offset}) async {
+    try {
+      return await _database.searchScreenshotsByOcr(query, limit: limit, offset: offset);
+    } catch (e) {
+      print('OCR 搜索失败: $e');
+      return [];
+    }
+  }
+
+  /// 指定应用按 OCR 文本搜索
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrForApp(String appPackageName, String query, {int? limit, int? offset}) async {
+    try {
+      return await _database.searchScreenshotsByOcrForApp(appPackageName, query, limit: limit, offset: offset);
+    } catch (e) {
+      print('应用内 OCR 搜索失败: $e');
+      return [];
+    }
+  }
+
   /// 获取指定应用的截屏总数量
   Future<int> getScreenshotCountByApp(String appPackageName) async {
     try {

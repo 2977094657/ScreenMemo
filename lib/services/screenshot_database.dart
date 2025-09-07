@@ -165,6 +165,7 @@ class ScreenshotDatabase {
         capture_time INTEGER NOT NULL,
         file_size INTEGER NOT NULL DEFAULT 0,
         page_url TEXT,
+        ocr_text TEXT,
         is_deleted INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
@@ -172,6 +173,8 @@ class ScreenshotDatabase {
     ''');
     await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_capture_time ON $table(capture_time)');
     await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)');
+    // 兜底：老表添加缺失列
+    try { await shardDb.execute("ALTER TABLE $table ADD COLUMN ocr_text TEXT"); } catch (_) {}
   }
 
   int _encodeGid(int year, int month, int localId) {
@@ -1093,8 +1096,14 @@ class ScreenshotDatabase {
           final t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final maps = await shardDb.query(t, where: 'file_path = ?', whereArgs: [filePath], limit: 1);
-      if (maps.isNotEmpty) {
+            final maps = await shardDb.query(
+              t,
+              columns: ['id','file_path','capture_time','file_size','page_url','ocr_text','is_deleted'],
+              where: 'file_path = ?',
+              whereArgs: [filePath],
+              limit: 1,
+            );
+            if (maps.isNotEmpty) {
               final full = Map<String, dynamic>.from(maps.first);
               full['app_package_name'] = packageName;
               full['app_name'] = appName;
@@ -1501,6 +1510,186 @@ class ScreenshotDatabase {
       return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
     } catch (e) {
       print('getScreenshotsByAppBetween 查询失败: $e');
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  /// 全局按 OCR 文本搜索（跨应用、跨年份分库，按时间倒序，支持分页）
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcr(
+    String query, {
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return <ScreenshotRecord>[];
+
+      // 预读 app 名称，减少重复查询
+      final Map<String, String> appNameCache = <String, String>{};
+      try {
+        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        for (final r in reg) {
+          final pkg = r['app_package_name'] as String;
+          final name = (r['app_name'] as String?) ?? pkg;
+          appNameCache[pkg] = name;
+        }
+      } catch (_) {}
+
+      // 请求规模估算
+      final int requested = ((offset ?? 0) + (limit ?? 100));
+      final int target = (requested <= 0 ? 400 : requested * 4);
+      final int perTableLimit = (() {
+        final int base = requested <= 0 ? 400 : requested * 2;
+        if (base < 200) return 200;
+        if (base > 5000) return 5000;
+        return base;
+      })();
+
+      final String lowerQuery = '%${q.toLowerCase()}%';
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+
+      // 遍历所有已注册的 (package, year)
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+
+      outer:
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final String appName = appNameCache[pkg] ?? pkg;
+        for (int m = 12; m >= 1; m--) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final maps = await shardDb.query(
+              t,
+              where: "is_deleted = 0 AND ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0 AND LOWER(ocr_text) LIKE ?",
+              whereArgs: [lowerQuery],
+              orderBy: 'capture_time DESC',
+              limit: perTableLimit,
+            );
+            for (final mapp in maps) {
+              final full = Map<String, dynamic>.from(mapp);
+              full['app_package_name'] = pkg;
+              full['app_name'] = appName;
+              final localId = (mapp['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(y, m, localId);
+              rows.add(full);
+              if (rows.length >= target) break outer;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 全局排序
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+
+      // 分页
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (e) {
+      print('searchScreenshotsByOcr 失败: $e');
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  /// 按应用按 OCR 文本搜索（限定包名，按时间倒序，支持分页）
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrForApp(
+    String appPackageName,
+    String query, {
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return <ScreenshotRecord>[];
+
+      // 读取 app_name
+      String appName = appPackageName;
+      try {
+        final r = await db.query(
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [appPackageName],
+          limit: 1,
+        );
+        if (r.isNotEmpty) appName = (r.first['app_name'] as String?) ?? appPackageName;
+      } catch (_) {}
+
+      final int requested = ((offset ?? 0) + (limit ?? 100));
+      final int target = (requested <= 0 ? 400 : requested * 4);
+      final int perTableLimit = (() {
+        final int base = requested <= 0 ? 400 : requested * 2;
+        if (base < 200) return 200;
+        if (base > 5000) return 5000;
+        return base;
+      })();
+
+      final String lowerQuery = '%${q.toLowerCase()}%';
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return <ScreenshotRecord>[];
+      outer:
+      for (final y in years) {
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        for (int m = 12; m >= 1; m--) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final maps = await shardDb.query(
+              t,
+              where: "is_deleted = 0 AND ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0 AND LOWER(ocr_text) LIKE ?",
+              whereArgs: [lowerQuery],
+              orderBy: 'capture_time DESC',
+              limit: perTableLimit,
+            );
+            for (final mapp in maps) {
+              final full = Map<String, dynamic>.from(mapp);
+              full['app_package_name'] = appPackageName;
+              full['app_name'] = appName;
+              final localId = (mapp['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(y, m, localId);
+              rows.add(full);
+              if (rows.length >= target) break outer;
+            }
+          } catch (_) {}
+        }
+      }
+
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (e) {
+      print('searchScreenshotsByOcrForApp 失败: $e');
       return <ScreenshotRecord>[];
     }
   }

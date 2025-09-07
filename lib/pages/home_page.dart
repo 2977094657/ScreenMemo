@@ -779,40 +779,37 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
                 // 搜索框
                 Expanded(
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.grey.withOpacity(0.5), // 使用更明显的灰色边框
-                        width: 1.0,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => Navigator.pushNamed(context, '/search'),
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.grey.withOpacity(0.5),
+                          width: 1.0,
+                        ),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05), // 添加轻微阴影使边框更明显
-                          blurRadius: 1,
-                          spreadRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 10),
-                        Icon(
-                          Icons.search,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '搜索截图...',
-                          style: TextStyle(
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 10),
+                          Icon(
+                            Icons.search,
                             color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                            fontSize: 14,
+                            size: 18,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text(
+                            '搜索截图...',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

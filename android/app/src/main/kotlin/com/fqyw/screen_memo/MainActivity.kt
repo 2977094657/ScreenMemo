@@ -43,6 +43,11 @@ import android.view.Gravity
 import androidx.core.content.ContextCompat
 import android.util.TypedValue
 import android.app.Dialog
+import android.graphics.BitmapFactory
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -346,6 +351,58 @@ class MainActivity : FlutterActivity() {
                         "isFunctional" to watchdogStatus.isFunctional,
                         "statusSummary" to statusSummary
                     ))
+                }
+                "getOcrMatchBoxes" -> {
+                    try {
+                        val filePath = call.argument<String>("filePath")
+                        val query = call.argument<String>("query")
+                        if (filePath.isNullOrBlank() || query.isNullOrBlank()) {
+                            result.error("invalid_args", "filePath and query are required", null)
+                            return@setMethodCallHandler
+                        }
+
+                        Thread {
+                            try {
+                                val bmp = BitmapFactory.decodeFile(filePath)
+                                if (bmp == null) {
+                                    runOnUiThread { result.error("decode_failed", "decode image failed", null) }
+                                    return@Thread
+                                }
+                                val image = InputImage.fromBitmap(bmp, 0)
+                                val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+                                val vt = Tasks.await(recognizer.process(image))
+                                val q = query.lowercase()
+                                val boxes = mutableListOf<Map<String, Int>>()
+                                for (block in vt.textBlocks) {
+                                    for (line in block.lines) {
+                                        val t = (line.text ?: "").trim().lowercase()
+                                        if (t.contains(q)) {
+                                            val rect = line.boundingBox
+                                            if (rect != null) {
+                                                boxes.add(mapOf(
+                                                    "left" to rect.left,
+                                                    "top" to rect.top,
+                                                    "right" to rect.right,
+                                                    "bottom" to rect.bottom
+                                                ))
+                                            }
+                                        }
+                                    }
+                                }
+                                val out = mapOf(
+                                    "width" to bmp.width,
+                                    "height" to bmp.height,
+                                    "boxes" to boxes
+                                )
+                                try { bmp.recycle() } catch (_: Exception) {}
+                                runOnUiThread { result.success(out) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("ocr_failed", e.message, null) }
+                            }
+                        }.start()
+                    } catch (e: Exception) {
+                        result.error("ocr_error", e.message, null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
