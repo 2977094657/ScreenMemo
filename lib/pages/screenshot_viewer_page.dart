@@ -12,6 +12,7 @@ import '../widgets/ui_components.dart';
 import '../services/flutter_logger.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/nsfw_guard.dart';
+import '../services/screenshot_database.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -41,6 +42,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       _platform.invokeMethod('hideStatusBar');
     }
   }
+
+  
 
   Future<void> _openCurrentLink() async {
     if (_screenshots.isEmpty) return;
