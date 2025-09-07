@@ -80,4 +80,7 @@ dependencies {
 
     // OkHttp (required by Umeng APM's EFS net monitor classes referenced at runtime)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // ML Kit: 中文文本识别（离线模型随 APK 打包）
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
 }

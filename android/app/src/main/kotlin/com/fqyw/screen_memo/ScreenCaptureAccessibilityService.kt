@@ -43,6 +43,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.concurrent.timer
 import android.os.IBinder
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.common.InputImage
+import com.google.android.gms.tasks.Tasks
 
 class ScreenCaptureAccessibilityService : AccessibilityService() {
     
@@ -1226,6 +1230,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 FileLogger.w(TAG, "原生侧入库失败: ${e.message}")
             }
 
+            // 在“原图（未压缩）”上执行 OCR，并将结果异步写回数据库
+            try {
+                val forOcr = rotatedOrOriginal ?: bitmap
+                runOcrAsyncAndPersist(forOcr, file.absolutePath)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "启动OCR失败: ${e.message}")
+            }
+
             // 通知Flutter端更新数据库（作为第二路径，方便UI即刻刷新）
             try {
                 notifyScreenshotSaved(packageName, appName, relativePath, pageUrl)
@@ -1238,6 +1250,177 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.e(TAG, "保存截图失败", e)
             null
         }
+    }
+
+    /**
+     * 使用 ML Kit 中文文本识别在原始位图上执行 OCR，并将结果写入对应记录（按文件路径更新）。
+     * 离线：模型将随依赖一起打包入 APK；无网络也可识别。
+     */
+    private fun runOcrAsyncAndPersist(srcBitmap: Bitmap, absolutePath: String) {
+        try {
+            val options = ChineseTextRecognizerOptions.Builder().build()
+            val recognizer = TextRecognition.getClient(options)
+            Thread {
+                try {
+                    val portrait = try { srcBitmap.height >= srcBitmap.width } catch (_: Exception) { true }
+                    val base = if (portrait) {
+                        val topCropped = cropTopStatusBarPortrait(srcBitmap)
+                        val bothCropped = cropBottomNavBarPortrait(topCropped)
+                        preprocessForOcrPortrait(bothCropped)
+                    } else srcBitmap
+                    val text = if (portrait) {
+                        recognizePortraitBySlices(recognizer, base)
+                    } else {
+                        // 横屏暂用整图识别
+                        val img = InputImage.fromBitmap(base, 0)
+                        try { Tasks.await(recognizer.process(img)).text ?: "" } catch (e: Exception) { "" }
+                    }
+                    val finalText = text.trim().ifEmpty { null }
+                    ScreenshotDatabaseHelper.updateOcrTextByFilePath(
+                        this@ScreenCaptureAccessibilityService,
+                        absolutePath,
+                        finalText
+                    )
+                    FileLogger.i(TAG, "OCR完成(切片=${portrait}), 长度=${finalText?.length ?: 0}")
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "OCR线程异常: ${e.message}")
+                }
+            }.start()
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "启动OCR异常: ${e.message}")
+        }
+    }
+
+    /**
+     * 裁剪竖屏截图顶部状态栏区域，避免无关内容参与识别。
+     */
+    private fun cropTopStatusBarPortrait(src: Bitmap): Bitmap {
+        return try {
+            val w = src.width
+            val h = src.height
+            val status = getStatusBarHeight().coerceAtLeast(0)
+            val cropTop = status.coerceAtMost(h / 6)
+            if (cropTop <= 0 || cropTop >= h - 16) return src
+            Bitmap.createBitmap(src, 0, cropTop, w, h - cropTop)
+        } catch (_: Exception) { src }
+    }
+
+    /**
+     * 竖屏：对比度增强 + 轻锐化（不旋转、不改分辨率）。
+     */
+    private fun preprocessForOcrPortrait(src: Bitmap): Bitmap {
+        return try {
+            val w = src.width
+            val h = src.height
+            val safe = if (src.config != Bitmap.Config.ARGB_8888) src.copy(Bitmap.Config.ARGB_8888, true) else src.copy(Bitmap.Config.ARGB_8888, true)
+            val pixels = IntArray(w * h)
+            safe.getPixels(pixels, 0, w, 0, 0, w, h)
+            // 简单对比度增强（可配置：flutter.ocr_contrast_1e2，默认118 => 1.18）
+            val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val cVal = spGetIntCompat(sp, "flutter.ocr_contrast_1e2", 118).coerceIn(100, 140)
+            val contrast = cVal / 100f
+            val brightness = 0f
+            for (i in pixels.indices) {
+                val c = pixels[i]
+                val a = c ushr 24 and 0xFF
+                var r = c ushr 16 and 0xFF
+                var g = c ushr 8 and 0xFF
+                var b = c and 0xFF
+                r = clamp255(((r - 128) * contrast + 128 + brightness).toInt())
+                g = clamp255(((g - 128) * contrast + 128 + brightness).toInt())
+                b = clamp255(((b - 128) * contrast + 128 + brightness).toInt())
+                pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            safe.setPixels(pixels, 0, w, 0, 0, w, h)
+            safe
+        } catch (_: Exception) { src }
+    }
+
+    private fun clamp255(v: Int): Int = if (v < 0) 0 else if (v > 255) 255 else v
+
+    /**
+     * 竖屏切片 + 小字放大：纵向步进切片，重叠15%，宽度不足则放大至1080。
+     */
+    private fun recognizePortraitBySlices(recognizer: com.google.mlkit.vision.text.TextRecognizer, bmp: Bitmap): String {
+        val w = bmp.width
+        val h = bmp.height
+        val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val sliceTarget = spGetIntCompat(sp, "flutter.ocr_slice_height", 1900).coerceIn(900, 2600)
+        val overlapPct = spGetIntCompat(sp, "flutter.ocr_slice_overlap_percent", 22).coerceIn(8, 35)
+        val overlapRatio = overlapPct / 100f
+        val step = (sliceTarget * (1 - overlapRatio)).toInt().coerceAtLeast(500)
+        val slices = mutableListOf<Bitmap>()
+        var y = 0
+        while (y < h) {
+            val sh = if (y + sliceTarget <= h) sliceTarget else (h - y)
+            if (sh <= 0) break
+            try {
+                val sub = Bitmap.createBitmap(bmp, 0, y, w, sh)
+                val scaled = upscaleIfNeeded(sub)
+                if (scaled !== sub) sub.recycle()
+                slices.add(scaled)
+            } catch (_: Exception) {}
+            y += step
+        }
+        if (slices.isEmpty()) {
+            val img = InputImage.fromBitmap(bmp, 0)
+            return try { Tasks.await(recognizer.process(img)).text ?: "" } catch (e: Exception) { "" }
+        }
+        val seen = LinkedHashSet<String>()
+        for (s in slices) {
+            try {
+                val text = Tasks.await(recognizer.process(InputImage.fromBitmap(s, 0)))
+                for (block in text.textBlocks) {
+                    for (line in block.lines) {
+                        val t = line.text?.trim() ?: ""
+                        if (t.isNotEmpty() && !seen.contains(t)) {
+                            seen.add(t)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                try { s.recycle() } catch (_: Exception) {}
+            }
+        }
+        if (seen.isEmpty()) {
+            // 回退：整图一次
+            val img = InputImage.fromBitmap(bmp, 0)
+            return try { Tasks.await(recognizer.process(img)).text ?: "" } catch (e: Exception) { "" }
+        }
+        val sb = StringBuilder()
+        for (l in seen) {
+            if (sb.isNotEmpty()) sb.append('\n')
+            sb.append(l)
+        }
+        return sb.toString()
+    }
+
+    private fun upscaleIfNeeded(bm: Bitmap): Bitmap {
+        return try {
+            val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val minWidth = spGetIntCompat(sp, "flutter.ocr_upscale_min_width", 1440).coerceIn(900, 2000)
+            if (bm.width >= minWidth) bm else {
+                val scale = minWidth.toFloat() / bm.width.toFloat()
+                val tw = (bm.width * scale).toInt()
+                val th = (bm.height * scale).toInt()
+                Bitmap.createScaledBitmap(bm, tw, th, true)
+            }
+        } catch (_: Exception) { bm }
+    }
+
+    /**
+     * 裁剪竖屏截图底部导航栏区域，减少无关误检。
+     */
+    private fun cropBottomNavBarPortrait(src: Bitmap): Bitmap {
+        return try {
+            val w = src.width
+            val h = src.height
+            val nav = getNavigationBarHeight().coerceAtLeast(0)
+            val cropBottom = nav.coerceAtMost(h / 6)
+            if (cropBottom <= 0 || cropBottom >= h - 16) return src
+            Bitmap.createBitmap(src, 0, 0, w, h - cropBottom)
+        } catch (_: Exception) { src }
     }
 
     /**

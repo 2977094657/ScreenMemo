@@ -8,6 +8,7 @@ class ScreenshotRecord {
   final int fileSize; // 文件大小（字节）
   final bool isDeleted; // 软删除标记
   final String? pageUrl; // 截图对应的网页链接（如存在）
+  final String? ocrText; // OCR 识别文本
 
   const ScreenshotRecord({
     this.id,
@@ -18,6 +19,7 @@ class ScreenshotRecord {
     required this.fileSize,
     this.isDeleted = false,
     this.pageUrl,
+    this.ocrText,
   });
 
   /// 从数据库映射创建实例
@@ -31,6 +33,7 @@ class ScreenshotRecord {
       fileSize: map['file_size'] as int,
       isDeleted: (map['is_deleted'] as int) == 1,
       pageUrl: map.containsKey('page_url') ? map['page_url'] as String? : null,
+      ocrText: map.containsKey('ocr_text') ? map['ocr_text'] as String? : null,
     );
   }
 
@@ -45,6 +48,7 @@ class ScreenshotRecord {
       'file_size': fileSize,
       'is_deleted': isDeleted ? 1 : 0,
       'page_url': pageUrl,
+      'ocr_text': ocrText,
     };
   }
 
@@ -58,6 +62,7 @@ class ScreenshotRecord {
     int? fileSize,
     bool? isDeleted,
     String? pageUrl,
+    String? ocrText,
   }) {
     return ScreenshotRecord(
       id: id ?? this.id,
@@ -68,6 +73,7 @@ class ScreenshotRecord {
       fileSize: fileSize ?? this.fileSize,
       isDeleted: isDeleted ?? this.isDeleted,
       pageUrl: pageUrl ?? this.pageUrl,
+      ocrText: ocrText ?? this.ocrText,
     );
   }
 
@@ -98,6 +104,7 @@ class ScreenshotRecord {
         captureTime.hashCode ^
         fileSize.hashCode ^
         isDeleted.hashCode ^
-        (pageUrl?.hashCode ?? 0);
+        (pageUrl?.hashCode ?? 0) ^
+        (ocrText?.hashCode ?? 0);
   }
 }

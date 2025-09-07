@@ -70,6 +70,63 @@ object ScreenshotDatabaseHelper {
         }
     }
 
+    /**
+     * 更新指定文件的 OCR 文本（按绝对路径定位）。
+     * 路径格式示例：.../output/screen/<package>/<yyyy-MM>/<dd>/<filename>
+     * 通过路径解析出包名与年月，直接定位到对应的分库月表进行更新。
+     */
+    fun updateOcrTextByFilePath(context: Context, absoluteFilePath: String, ocrText: String?) {
+        var shardDb: SQLiteDatabase? = null
+        try {
+            val pkg = extractPackageFromPath(absoluteFilePath) ?: return
+            val ym = extractYearMonthFromPath(absoluteFilePath) ?: return
+            val year = ym.first
+            val month = ym.second
+
+            shardDb = openShardDb(context, pkg, year)
+            if (shardDb == null) return
+            val table = monthTableName(year, month)
+            ensureMonthTable(shardDb!!, year, month)
+            // 幂等添加列（老表可能缺列）
+            try { shardDb!!.execSQL("ALTER TABLE $table ADD COLUMN ocr_text TEXT") } catch (_: Exception) {}
+            try { shardDb!!.execSQL("ALTER TABLE $table ADD COLUMN updated_at INTEGER") } catch (_: Exception) {}
+
+            val cv = ContentValues().apply {
+                put("ocr_text", ocrText)
+                put("updated_at", System.currentTimeMillis())
+            }
+            shardDb!!.update(table, cv, "file_path = ?", arrayOf(absoluteFilePath))
+        } catch (_: Exception) {
+        } finally {
+            try { shardDb?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun extractPackageFromPath(path: String): String? {
+        // 适配新旧结构：.../output/screen/<package>/... 或 .../<package>/screenshots/...
+        val parts = path.replace('\\', '/').split('/')
+        for (i in 0 until parts.size - 1) {
+            val seg = parts[i]
+            if (seg == "output" && i + 2 < parts.size && parts[i + 1] == "screen") {
+                return parts[i + 2]
+            }
+            if (i + 1 < parts.size && parts[i + 1] == "screenshots") {
+                return seg
+            }
+        }
+        return null
+    }
+
+    private fun extractYearMonthFromPath(path: String): Pair<Int, Int>? {
+        // 解析 yyyy-MM 片段
+        val normalized = path.replace('\\', '/')
+        val regex = Regex("/(\\d{4})-(\\d{2})/")
+        val m = regex.find(normalized) ?: return null
+        val year = m.groupValues[1].toIntOrNull() ?: return null
+        val month = m.groupValues[2].toIntOrNull() ?: return null
+        return Pair(year, month)
+    }
+
     private fun resolveMasterDbPath(context: Context): String? {
         return try {
             val base = context.getExternalFilesDir(null)?.absolutePath ?: return null
@@ -177,6 +234,7 @@ object ScreenshotDatabaseHelper {
                   capture_time INTEGER NOT NULL,
                   file_size INTEGER NOT NULL DEFAULT 0,
                   page_url TEXT,
+                  ocr_text TEXT,
                   is_deleted INTEGER NOT NULL DEFAULT 0,
                   created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
                   updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
@@ -185,6 +243,9 @@ object ScreenshotDatabaseHelper {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_${table}_capture_time ON $table(capture_time)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)")
+            // 兜底为旧表添加缺失列
+            try { db.execSQL("ALTER TABLE $table ADD COLUMN ocr_text TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE $table ADD COLUMN updated_at INTEGER") } catch (_: Exception) {}
         } catch (_: Exception) {}
     }
 
