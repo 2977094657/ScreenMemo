@@ -195,6 +195,7 @@ class _TimelinePageState extends State<TimelinePage>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 40,
         title: const Text('时间线'),
         centerTitle: true,
         elevation: 0,
@@ -210,34 +211,39 @@ class _TimelinePageState extends State<TimelinePage>
                     Padding(
                       padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
                       child: _dayTabs.isEmpty || _tabController == null
-                          ? const SizedBox(height: 40)
-                          : TabBar(
-                              controller: _tabController,
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              padding: const EdgeInsets.only(left: AppTheme.spacing4),
-                              labelPadding: const EdgeInsets.only(right: AppTheme.spacing6),
-                              labelColor: (Theme.of(context).brightness == Brightness.dark
-                                  ? AppTheme.darkForeground
-                                  : AppTheme.foreground),
-                              unselectedLabelColor: Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground,
-                              labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                              unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                              dividerColor: Colors.transparent,
-                              indicatorSize: TabBarIndicatorSize.label,
-                              indicator: UnderlineTabIndicator(
-                                borderSide: BorderSide(
-                                  width: 2.0,
-                                  color: (Theme.of(context).brightness == Brightness.dark
-                                      ? AppTheme.darkForeground
-                                      : AppTheme.foreground),
+                          ? const SizedBox(height: 32)
+                          : SizedBox(
+                              height: 32,
+                              child: TabBar(
+                                controller: _tabController,
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                                // 增加时间线日期Tab的左右间距（仅时间线页）
+                                labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                                labelColor: (Theme.of(context).brightness == Brightness.dark
+                                    ? AppTheme.darkForeground
+                                    : AppTheme.foreground),
+                                unselectedLabelColor: Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground,
+                                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                                unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                                dividerColor: Colors.transparent,
+                                indicatorSize: TabBarIndicatorSize.label,
+                                indicator: UnderlineTabIndicator(
+                                  borderSide: BorderSide(
+                                    width: 2.0,
+                                    color: (Theme.of(context).brightness == Brightness.dark
+                                        ? AppTheme.darkForeground
+                                        : AppTheme.foreground),
+                                  ),
+                                  insets: const EdgeInsets.symmetric(horizontal: 4.0),
                                 ),
-                                insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                                tabs: _dayTabs.map((t) => Tab(text: t.buildLabel())).toList(),
                               ),
-                              tabs: _dayTabs.map((t) => Tab(text: t.buildLabel())).toList(),
                             ),
                     ),
-                    const SizedBox(height: AppTheme.spacing2),
+                    // 日期Tab与内容之间增加1px底部外边距
+                    const SizedBox(height: 1),
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
@@ -272,7 +278,7 @@ class _TimelinePageState extends State<TimelinePage>
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.all(AppTheme.spacing1),
+          padding: const EdgeInsets.fromLTRB(AppTheme.spacing1, 0, AppTheme.spacing1, AppTheme.spacing1),
           child: Container(
             key: isCurrent ? _gridKey : null,
             child: NotificationListener<ScrollNotification>(
@@ -405,7 +411,7 @@ class _TimelinePageState extends State<TimelinePage>
                         alignment: Alignment.centerRight,
                         child: Container(
                           width: trackWidth,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          margin: EdgeInsets.zero,
                           decoration: BoxDecoration(
                             color: Colors.grey.withOpacity(0.25),
                             borderRadius: BorderRadius.circular(2),
@@ -551,13 +557,23 @@ class _TimelinePageState extends State<TimelinePage>
   Widget _buildItem(ScreenshotRecord screenshot, int index) {
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
     final file = File(screenshot.filePath);
-    final image = ClipRRect(
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseImage = Image.file(
+      file,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _buildErrorItem('图片丢失或损坏'),
+    );
+    final Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      child: Image.file(
-        file,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildErrorItem('图片丢失或损坏'),
-      ),
+      child: isDark
+          ? ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.5),
+                BlendMode.darken,
+              ),
+              child: baseImage,
+            )
+          : baseImage,
     );
     final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
     final content = GestureDetector(
@@ -669,9 +685,11 @@ class _TimelinePageState extends State<TimelinePage>
                       _formatFileSize(screenshot.fileSize),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Theme.of(context).textTheme.bodySmall?.color
+                            : Colors.white,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -679,9 +697,11 @@ class _TimelinePageState extends State<TimelinePage>
                 ),
                 Text(
                   _formatTime(screenshot.captureTime),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: Colors.white,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Theme.of(context).textTheme.bodySmall?.color
+                        : Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -833,5 +853,3 @@ class _DayTabInfo {
     return '${day.month}月${day.day}日 $count';
   }
 }
-
-

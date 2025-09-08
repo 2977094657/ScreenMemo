@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
-import '../theme/app_theme.dart';
-import '../models/screenshot_record.dart';
-import '../services/screenshot_service.dart';
-import '../services/path_service.dart';
+
 import '../models/app_info.dart';
+import '../models/screenshot_record.dart';
+import '../services/app_selection_service.dart';
+import '../services/path_service.dart';
+import '../services/screenshot_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/nsfw_guard.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -18,31 +22,60 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+
+  final Map<String, Future<Map<String, dynamic>?>> _boxesFutureCache = <String, Future<Map<String, dynamic>?>>{};
+  final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
+
   List<ScreenshotRecord> _results = <ScreenshotRecord>[];
   bool _isLoading = false;
   String? _error;
   Timer? _debounce;
   Directory? _baseDir;
+  bool _privacyMode = true;
 
   static const int _pageSize = 120; // 单次获取数量
   int _offset = 0;
   bool _hasMore = false;
   bool _loadingMore = false;
   String _lastQuery = '';
-  final ScrollController _scrollController = ScrollController();
-  final Map<String, Future<Map<String, dynamic>?>> _boxesFutureCache = <String, Future<Map<String, dynamic>?>>{};
 
   @override
   void initState() {
     super.initState();
     _initBaseDir();
     _scrollController.addListener(_onScroll);
+    _loadAppInfos();
+    _loadPrivacyMode();
+    AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
+      if (!mounted) return;
+      setState(() => _privacyMode = enabled);
+    });
   }
 
   Future<void> _initBaseDir() async {
     try {
       final dir = await PathService.getExternalFilesDir(null);
-      if (mounted) setState(() { _baseDir = dir; });
+      if (mounted) setState(() => _baseDir = dir);
+    } catch (_) {}
+  }
+
+  Future<void> _loadAppInfos() async {
+    try {
+      final apps = await AppSelectionService.instance.getAllInstalledApps();
+      if (!mounted) return;
+      setState(() {
+        _appInfoByPackage
+          ..clear()
+          ..addEntries(apps.map((a) => MapEntry(a.packageName, a)));
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      if (mounted) setState(() => _privacyMode = enabled);
     } catch (_) {}
   }
 
@@ -69,6 +102,7 @@ class _SearchPageState extends State<SearchPage> {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
       _search(text.trim());
+      if (mounted) setState(() {}); // 更新清除按钮显隐（虽然已禁用 actions）
     });
   }
 
@@ -84,12 +118,13 @@ class _SearchPageState extends State<SearchPage> {
     });
 
     if (query.isEmpty) {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
 
     try {
-      final list = await ScreenshotService.instance.searchScreenshotsByOcr(query, limit: _pageSize, offset: 0);
+      final list = await ScreenshotService.instance
+          .searchScreenshotsByOcr(query, limit: _pageSize, offset: 0);
       if (!mounted) return;
       setState(() {
         _results = list;
@@ -108,9 +143,10 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _loadMore() async {
     if (_lastQuery.isEmpty) return;
-    setState(() { _loadingMore = true; });
+    setState(() => _loadingMore = true);
     try {
-      final more = await ScreenshotService.instance.searchScreenshotsByOcr(_lastQuery, limit: _pageSize, offset: _offset);
+      final more = await ScreenshotService.instance
+          .searchScreenshotsByOcr(_lastQuery, limit: _pageSize, offset: _offset);
       if (!mounted) return;
       setState(() {
         if (more.isEmpty) {
@@ -124,7 +160,10 @@ class _SearchPageState extends State<SearchPage> {
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _loadingMore = false; _hasMore = false; });
+      setState(() {
+        _loadingMore = false;
+        _hasMore = false;
+      });
     }
   }
 
@@ -132,14 +171,15 @@ class _SearchPageState extends State<SearchPage> {
     if (_lastQuery.isEmpty) return null;
     final key = '$filePath|$_lastQuery';
     final fut = _boxesFutureCache.putIfAbsent(key, () {
-      return ScreenshotService.instance.getOcrMatchBoxes(filePath: filePath, query: _lastQuery);
+      return ScreenshotService.instance
+          .getOcrMatchBoxes(filePath: filePath, query: _lastQuery);
     });
     return fut;
   }
 
   void _openViewer(ScreenshotRecord record, int index) {
-    // 以“同应用且匹配OCR”的局部集合进入查看器，保证查看器上下文一致
-    final List<ScreenshotRecord> sameApp = _results.where((r) => r.appPackageName == record.appPackageName).toList();
+    final List<ScreenshotRecord> sameApp =
+        _results.where((r) => r.appPackageName == record.appPackageName).toList();
     final int initialIndex = sameApp.indexWhere((r) => r.id == record.id);
     final appInfo = AppInfo(
       packageName: record.appPackageName,
@@ -164,30 +204,85 @@ class _SearchPageState extends State<SearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入关键词搜索 OCR 文本...',
-            border: InputBorder.none,
-          ),
-          textInputAction: TextInputAction.search,
-          onChanged: _onQueryChanged,
-          onSubmitted: (v) => _search(v.trim()),
-        ),
-        actions: [
-          if (_controller.text.isNotEmpty)
-            IconButton(
-              tooltip: '清除',
-              icon: const Icon(Icons.clear),
-              onPressed: () {
-                _controller.clear();
-                _onQueryChanged('');
-                setState(() { _results = <ScreenshotRecord>[]; _hasMore = false; _offset = 0; });
-              },
+        automaticallyImplyLeading: false,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        elevation: 0,
+        toolbarHeight: 48,
+        title: Row(
+          children: [
+            Expanded(
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  highlightColor: Colors.transparent,
+                  splashColor: Colors.transparent,
+                  hoverColor: Colors.transparent,
+                  focusColor: Colors.transparent,
+                  inputDecorationTheme: const InputDecorationTheme(
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                  ),
+                ),
+                child: Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.grey.withOpacity(0.5),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 10),
+                      Icon(
+                        Icons.search,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.5),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            hintText: '搜索截图...',
+                            hintStyle: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.5),
+                              fontSize: 14,
+                            ),
+                            border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                          ),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 14,
+                          ),
+                          textInputAction: TextInputAction.search,
+                          onChanged: _onQueryChanged,
+                          onSubmitted: (v) => _search(v.trim()),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-        ],
+          ],
+        ),
+        actions: const [],
       ),
       body: _buildBody(),
     );
@@ -196,7 +291,10 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildBody() {
     if (_error != null) {
       return Center(
-        child: Text(_error!, style: const TextStyle(color: AppTheme.destructive)),
+        child: Text(
+          _error!,
+          style: const TextStyle(color: AppTheme.destructive),
+        ),
       );
     }
 
@@ -207,8 +305,11 @@ class _SearchPageState extends State<SearchPage> {
     if (_controller.text.trim().isEmpty) {
       return Center(
         child: Text(
-          '在此输入关键词，按 OCR 文本检索截图',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
+          '在此输入关键词，以 OCR 文本检索截图',
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     }
@@ -217,13 +318,19 @@ class _SearchPageState extends State<SearchPage> {
       return Center(
         child: Text(
           '没有匹配的截图',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     }
 
     return NotificationListener<ScrollEndNotification>(
-      onNotification: (_) { _onScroll(); return false; },
+      onNotification: (_) {
+        _onScroll();
+        return false;
+      },
       child: GridView.builder(
         controller: _scrollController,
         padding: EdgeInsets.only(
@@ -241,30 +348,53 @@ class _SearchPageState extends State<SearchPage> {
         itemCount: _results.length + (_loadingMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (_loadingMore && index == _results.length) {
-            return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+            return const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
           }
           final s = _results[index];
           final File file = _resolveFile(s.filePath);
+          final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(s.pageUrl);
           return GestureDetector(
-            onTap: () => _openViewer(s, index),
+            onTap: nsfwMasked ? null : () => _openViewer(s, index),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final double tileW = constraints.maxWidth;
                 final double tileH = constraints.maxHeight;
+                final bool isDark = Theme.of(context).brightness == Brightness.dark;
+                final Image baseImage = Image(
+                  image: ResizeImage(
+                    FileImage(file),
+                    width: _targetThumbWidth(context),
+                  ),
+                  width: tileW,
+                  height: tileH,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
+                  errorBuilder: (context, error, stackTrace) =>
+                      _buildErrorTile('图片丢失或损坏'),
+                );
+                final Widget imageWidget = isDark
+                    ? ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withOpacity(0.5),
+                          BlendMode.darken,
+                        ),
+                        child: baseImage,
+                      )
+                    : baseImage;
+
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image(
-                        image: ResizeImage(FileImage(file), width: _targetThumbWidth(context)),
-                        width: tileW,
-                        height: tileH,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.low,
-                        gaplessPlayback: true,
-                        errorBuilder: (context, error, stackTrace) => _buildErrorTile('图片丢失或损坏'),
-                      ),
+                      imageWidget,
                       if (_lastQuery.isNotEmpty)
                         FutureBuilder<Map<String, dynamic>?>(
                           future: _ensureBoxes(s.filePath),
@@ -273,8 +403,11 @@ class _SearchPageState extends State<SearchPage> {
                             if (data == null) return const SizedBox.shrink();
                             final int srcW = (data['width'] as int?) ?? 0;
                             final int srcH = (data['height'] as int?) ?? 0;
-                            final List<dynamic> raw = (data['boxes'] as List?) ?? const [];
-                            if (srcW <= 0 || srcH <= 0 || raw.isEmpty) return const SizedBox.shrink();
+                            final List<dynamic> raw =
+                                (data['boxes'] as List?) ?? const [];
+                            if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
                             final List<Rect> rects = <Rect>[];
                             for (final item in raw) {
                               if (item is Map) {
@@ -296,6 +429,136 @@ class _SearchPageState extends State<SearchPage> {
                             );
                           },
                         ),
+                      if (!nsfwMasked && s.pageUrl != null && s.pageUrl!.isNotEmpty)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.spacing2,
+                              vertical: AppTheme.spacing1,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withOpacity(0.7),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(AppTheme.radiusSm),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.link,
+                                  size: 14,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.color
+                                      : Colors.white,
+                                ),
+                                const SizedBox(width: AppTheme.spacing1),
+                                Expanded(
+                                  child: Text(
+                                    s.pageUrl!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          fontSize: 11,
+                                          color: Theme.of(context)
+                                                      .brightness ==
+                                                  Brightness.dark
+                                              ? Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.color
+                                              : Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.spacing2,
+                            vertical: AppTheme.spacing1,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.7),
+                              ],
+                            ),
+                            borderRadius: const BorderRadius.vertical(
+                              bottom: Radius.circular(AppTheme.radiusSm),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _buildAppIcon(s.appPackageName),
+                              Expanded(
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Text(
+                                    _formatFileSize(s.fileSize),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(context).brightness == Brightness.dark
+                                          ? Theme.of(context).textTheme.bodySmall?.color
+                                          : Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _formatTime(s.captureTime),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context).brightness == Brightness.dark
+                                      ? Theme.of(context).textTheme.bodySmall?.color
+                                      : Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (nsfwMasked)
+                        Positioned.fill(
+                          child: NsfwBackdropOverlay(
+                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                            onReveal: () => _openViewer(s, index),
+                            showButton: true,
+                          ),
+                        ),
                     ],
                   ),
                 );
@@ -309,7 +572,8 @@ class _SearchPageState extends State<SearchPage> {
 
   int _targetThumbWidth(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
+    final double logicalTileWidth =
+        (screenWidth - AppTheme.spacing1 * 3) / 2;
     return (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
   }
 
@@ -324,7 +588,59 @@ class _SearchPageState extends State<SearchPage> {
     return Container(
       color: AppTheme.muted,
       alignment: Alignment.center,
-      child: Text(message, style: const TextStyle(color: AppTheme.destructive, fontSize: 12)),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppTheme.destructive, fontSize: 12),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) {
+      return '${bytes}B';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    } else {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+  }
+
+  Widget _buildAppIcon(String packageName) {
+    final app = _appInfoByPackage[packageName];
+    if (app != null && app.icon != null && app.icon!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.memory(
+          app.icon!,
+          width: 18,
+          height: 18,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    final parts = packageName.split('.');
+    final head = parts.isNotEmpty ? parts.last : packageName;
+    final leading = head.isNotEmpty ? head[0].toUpperCase() : '?';
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        leading,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: Colors.black,
+        ),
+      ),
     );
   }
 }
@@ -379,5 +695,4 @@ class _OcrBoxesPainter extends CustomPainter {
         oldDelegate.boxes != boxes;
   }
 }
-
 

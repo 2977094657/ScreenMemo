@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'dart:ui' as ui;
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
-import '../utils/gen_image_isolate.dart';
+import 'dart:ui' as ui show PictureRecorder, Gradient, ParagraphStyle, TextStyle, ParagraphBuilder, ParagraphConstraints, ImageByteFormat;
+import 'dart:ui' show Canvas, Size, Offset, Rect;
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -61,6 +62,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   String? _error;
   Directory? _baseDir;
   final ScrollController _scrollController = ScrollController();
+  // 搜索
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
+  List<ScreenshotRecord> _searchResults = <ScreenshotRecord>[];
+  Timer? _searchDebounce;
+  final Map<String, Future<Map<String, dynamic>?>> _boxesFutureCache = <String, Future<Map<String, dynamic>?>>{};
 
   // 多选状态
   bool _selectionMode = false;
@@ -107,6 +115,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   final Map<int, bool> _tabHasMore = <int, bool>{};
   final Map<int, double> _tabScrollOffset = <int, double>{};
   final Map<int, ScrollController> _tabControllers = <int, ScrollController>{};
+  
+  // OCR 标注绘制器（复用全局搜索样式）
+  
 
   ScrollController _controllerForTab(int index) {
     if (index < 0) index = 0;
@@ -195,6 +206,44 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       if (!mounted) return;
       setState(() { _privacyMode = enabled; });
     });
+    // 搜索框焦点变化用于切换内嵌统计显示
+    _searchFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _onSearchChanged(String text) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(text);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    final q = query.trim();
+    if (!mounted) return;
+    setState(() {
+      _searchQuery = q;
+      _searchResults = <ScreenshotRecord>[];
+    });
+    if (q.isEmpty) return;
+    try {
+      final results = await ScreenshotService.instance
+          .searchScreenshotsByOcrForApp(_packageName, q, limit: 400, offset: 0);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+      });
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?> _ensureBoxes(String filePath) async {
+    if (_searchQuery.isEmpty) return null;
+    final key = '$filePath|$_searchQuery';
+    final fut = _boxesFutureCache.putIfAbsent(key, () {
+      return ScreenshotService.instance.getOcrMatchBoxes(filePath: filePath, query: _searchQuery);
+    });
+    return fut;
   }
 
   Future<void> _loadPrivacyMode() async {
@@ -619,14 +668,32 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   }
 
   void _viewScreenshot(ScreenshotRecord screenshot, int index) {
+    // 选择正确的数据集与索引（搜索模式使用搜索结果集）
+    final List<ScreenshotRecord> data =
+        _searchQuery.isNotEmpty ? _searchResults : _screenshots;
+    int initialIndex = index;
+    if (initialIndex < 0 || initialIndex >= data.length ||
+        (data[initialIndex].id != screenshot.id)) {
+      final byId = data.indexWhere((s) => s.id == screenshot.id);
+      if (byId >= 0) {
+        initialIndex = byId;
+      } else {
+        final byPath = data.indexWhere((s) => s.filePath == screenshot.filePath);
+        if (byPath >= 0) {
+          initialIndex = byPath;
+        } else {
+          initialIndex = 0;
+        }
+      }
+    }
     // 查看时使用全量数据，确保可以滑动查看所有图片
     Navigator.pushNamed(
       context,
       '/screenshot_viewer',
       arguments: {
         // 真分页：仅传当前已加载的截图集合
-        'screenshots': _screenshots,
-        'initialIndex': index,
+        'screenshots': data,
+        'initialIndex': initialIndex,
         'appName': _appInfo.appName,
         'appInfo': _appInfo, // 传递完整的appInfo对象，包含图标
       },
@@ -712,16 +779,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       appBar: AppBar(
         title: Row(
           children: [
-            if (_appInfo.icon != null)
-              Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(right: 8),
-                child: Image.memory(_appInfo.icon!, fit: BoxFit.contain),
-              )
-            else
-              const Icon(Icons.android, size: 20, color: AppTheme.foreground),
-            const SizedBox(width: 6),
+            // 左侧独立logo移除：搜索框已内嵌应用图标
             Expanded(
               child: _selectionMode
                   ? Text(
@@ -732,12 +790,69 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         fontWeight: FontWeight.w600,
                       ),
                     )
-                  : Text(
-                      _appInfo.appName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
+                  : Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.grey.withOpacity(0.5),
+                          width: 1.0,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: TextField(
+                        focusNode: _searchFocusNode,
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        onSubmitted: _performSearch,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          hintText: '搜索截图...',
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          filled: false,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          prefixIcon: (_appInfo.icon != null)
+                              ? Padding(
+                                  padding: const EdgeInsets.only(left: 8, right: 6),
+                                  child: Image.memory(
+                                    _appInfo.icon!,
+                                    width: 18,
+                                    height: 18,
+                                    fit: BoxFit.contain,
+                                  ),
+                                )
+                              : const Padding(
+                                  padding: EdgeInsets.only(left: 8, right: 6),
+                                  child: Icon(Icons.android, size: 18),
+                                ),
+                          prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                          // 取消聚焦时的高亮边框
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          focusedErrorBorder: InputBorder.none,
+                          // 去掉右侧搜索图标，仅在有文本时显示清除
+                          suffixIcon: (_searchQuery.isNotEmpty || _searchController.text.isNotEmpty)
+                              ? IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  tooltip: '清除',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _performSearch('');
+                                  },
+                                )
+                              : null,
+                        ),
+                        ),
                       ),
                     ),
             ),
@@ -747,22 +862,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         elevation: 0,
         actions: [
           if (!_selectionMode) ...[
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  _buildHeaderStatsText(),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w400),
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              tooltip: '生成截图',
-              onPressed: _showGenerateDialog,
-            ),
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _loadScreenshots,
@@ -780,24 +879,38 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               child: const Text('取消'),
             ),
             TextButton(
-              onPressed: () {
-                setState(() {
-                  // 仅对当前已加载的项目执行全选/取消全选
-                  final loadedIds = _screenshots
-                      .where((s) => s.id != null)
-                      .map((s) => s.id!)
-                      .toSet();
-
-                  final bool allLoadedSelected = loadedIds.isNotEmpty && loadedIds.every((id) => _selectedIds.contains(id));
-                  if (allLoadedSelected) {
-                    // 取消选择当前已加载的
-                    _selectedIds.removeWhere((id) => loadedIds.contains(id));
+              onPressed: () async {
+                if (_isFullySelected) {
+                  setState(() {
+                    _selectedIds.clear();
                     _isFullySelected = false;
+                  });
+                  return;
+                }
+                // 依据当前筛选（天Tab）决定全选范围
+                List<int> allIds = <int>[];
+                try {
+                  if (_dateFilterStartMillis != null &&
+                      _dateFilterEndMillis != null &&
+                      _currentTabIndex >= 0 &&
+                      _currentTabIndex < _dayTabs.length) {
+                    final day = _dayTabs[_currentTabIndex];
+                    allIds = await ScreenshotService.instance.getScreenshotIdsByAppBetween(
+                      _packageName,
+                      startMillis: day.startMillis,
+                      endMillis: day.endMillis,
+                    );
                   } else {
-                    // 选择当前已加载的
-                    _selectedIds.addAll(loadedIds);
-                    _isFullySelected = true;
+                    allIds = await ScreenshotService.instance.getAllScreenshotIdsForApp(_packageName);
                   }
+                } catch (_) {}
+                if (!mounted) return;
+                setState(() {
+                  _selectedIds
+                    ..clear()
+                    ..addAll(allIds);
+                  _isFullySelected = true;
+                  _selectionMode = true;
                 });
               },
               child: Text(_getSelectAllButtonText()),
@@ -815,6 +928,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   }
 
   Widget _buildBody() {
+    // 搜索模式：优先显示搜索结果
+    if (_searchQuery.isNotEmpty) {
+      return _buildSearchResultGrid();
+    }
     // 优先显示错误状态
     if (_error != null) {
       return Center(
@@ -892,6 +1009,73 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     return _buildTabsAndGrid();
   }
 
+  Widget _buildSearchResultGrid() {
+    final data = _searchResults;
+    if (data.isEmpty) {
+      return const Center(child: Text('无匹配结果'));
+    }
+    return Padding(
+      padding: const EdgeInsets.all(AppTheme.spacing1),
+      child: GridView.builder(
+        key: PageStorageKey<String>('screenshot_gallery_search_${_packageName}'),
+        physics: const ClampingScrollPhysics(),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+        ),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: AppTheme.spacing1,
+          mainAxisSpacing: AppTheme.spacing1,
+          childAspectRatio: 0.45,
+        ),
+        itemCount: data.length,
+        itemBuilder: (context, index) {
+          final s = data[index];
+          return Stack(
+            children: [
+              _buildScreenshotItem(s, index),
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _ensureBoxes(s.filePath),
+                builder: (context, snap) {
+                  final d = snap.data;
+                  if (d == null) return const SizedBox.shrink();
+                  final int srcW = (d['width'] as int?) ?? 0;
+                  final int srcH = (d['height'] as int?) ?? 0;
+                  final List<dynamic> raw = (d['boxes'] as List?) ?? const [];
+                  if (srcW <= 0 || srcH <= 0 || raw.isEmpty) return const SizedBox.shrink();
+                  final List<Rect> rects = <Rect>[];
+                  for (final item in raw) {
+                    if (item is Map) {
+                      final m = Map<String, dynamic>.from(item);
+                      final l = (m['left'] as num?)?.toDouble() ?? 0;
+                      final t = (m['top'] as num?)?.toDouble() ?? 0;
+                      final r = (m['right'] as num?)?.toDouble() ?? 0;
+                      final b = (m['bottom'] as num?)?.toDouble() ?? 0;
+                      rects.add(Rect.fromLTRB(l, t, r, b));
+                    }
+                  }
+                  if (rects.isEmpty) return const SizedBox.shrink();
+                  return Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: CustomPaint(
+                        painter: _OcrBoxesPainter(
+                          originalWidth: srcW.toDouble(),
+                          originalHeight: srcH.toDouble(),
+                          boxes: rects,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// 构建顶部日期Tab栏 + 下方网格
   Widget _buildTabsAndGrid() {
     final Color selectedColor = Theme.of(context).brightness == Brightness.dark
@@ -906,29 +1090,33 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         Padding(
           padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
           child: _dayTabs.isEmpty || _tabController == null
-              ? const SizedBox(height: 40)
-              : TabBar(
-      controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  padding: const EdgeInsets.only(left: AppTheme.spacing4),
-                  labelPadding: const EdgeInsets.only(right: AppTheme.spacing6),
-                  labelColor: selectedColor,
-                  unselectedLabelColor: unselectedColor,
-                  labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                  unselectedLabelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                  dividerColor: Colors.transparent,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  indicator: UnderlineTabIndicator(
-                    borderSide: BorderSide(width: 2.0, color: selectedColor),
-                    insets: const EdgeInsets.symmetric(horizontal: 8.0),
+              ? const SizedBox(height: 32)
+              : SizedBox(
+                  height: 32,
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    padding: const EdgeInsets.only(left: AppTheme.spacing4),
+                    labelPadding: const EdgeInsets.only(right: AppTheme.spacing6),
+                    labelColor: selectedColor,
+                    unselectedLabelColor: unselectedColor,
+                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                    unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    indicator: UnderlineTabIndicator(
+                      borderSide: BorderSide(width: 2.0, color: selectedColor),
+                      insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                    ),
+                    tabs: _dayTabs
+                        .map((t) => Tab(text: t.buildLabel()))
+                        .toList(),
                   ),
-                  tabs: _dayTabs
-                      .map((t) => Tab(text: t.buildLabel()))
-                      .toList(),
                 ),
         ),
-        const SizedBox(height: AppTheme.spacing2),
+        // 日期Tab与内容之间增加1px底部外边距
+        const SizedBox(height: 1),
         Expanded(
           child: _tabController == null
               ? _buildGalleryGrid()
@@ -1054,6 +1242,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchDebounce?.cancel();
     _tabController?.removeListener(_onTabControllerChanged);
     _tabController?.dispose();
     super.dispose();
@@ -1463,7 +1654,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         alignment: Alignment.centerRight,
                         child: Container(
                           width: trackWidth,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          margin: EdgeInsets.zero,
                           decoration: BoxDecoration(
                             color: Colors.grey.withOpacity(0.25),
                             borderRadius: BorderRadius.circular(2),
@@ -1651,11 +1842,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         _isFullySelected = false;
       } else {
         _selectedIds.add(id);
-        // 简化：仅基于当前已加载的可见集合判断
-        final totalLoaded = _screenshots.where((s) => s.id != null).length;
-        if (_selectedIds.length >= totalLoaded && totalLoaded > 0) {
-          _isFullySelected = true;
+        // 基于当前筛选范围（当日或全量）判断是否达到“全选”
+        int expectedTotal = _totalCount;
+        if (_dateFilterStartMillis != null && _dateFilterEndMillis != null &&
+            _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
+          expectedTotal = _dayTabs[_currentTabIndex].count;
         }
+        _isFullySelected = expectedTotal > 0 && _selectedIds.length >= expectedTotal;
       }
     });
   }
@@ -1678,13 +1871,18 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
 
-    // 检查是否选择了全部（基于统计数量）
-    final totalCount = _totalCount;
-    final isSelectAll = _selectedIds.length >= totalCount && totalCount > 0;
+    // 检查是否选择了全部（基于当前筛选范围：当日或全量）
+    int expectedTotal = _totalCount;
+    if (_dateFilterStartMillis != null && _dateFilterEndMillis != null &&
+        _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
+      expectedTotal = _dayTabs[_currentTabIndex].count;
+    }
+    final isSelectAll = _selectedIds.length >= expectedTotal && expectedTotal > 0;
+    final int totalCount = expectedTotal;
 
     final String title = isSelectAll ? '确认删除所有截图' : '确认删除';
     final String message = isSelectAll
-        ? '将删除此应用的所有 $totalCount 张截图及其文件夹，此操作不可恢复。'
+        ? '将删除当前范围内的所有 $expectedTotal 张截图及其文件夹，此操作不可恢复。'
         : '将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？';
 
     final confirmed = await showUIDialog<bool>(
@@ -1710,7 +1908,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     // ignore: unawaited_futures
     FlutterLogger.nativeInfo('UI', 'deleteSelected start count=${_selectedIds.length} isAll=$isSelectAll');
 
-    if (isSelectAll) {
+    final bool inDayScope = _dateFilterStartMillis != null &&
+        _dateFilterEndMillis != null &&
+        _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length;
+
+    if (isSelectAll && !inDayScope) {
       // 全删除模式：使用高效的文件夹删除
       final success = await ScreenshotService.instance
           .deleteAllScreenshotsForApp(_packageName);
@@ -2011,14 +2213,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         final end = (index + maxConcurrent) > count ? count : (index + maxConcurrent);
         final futures = <Future<Map<String, dynamic>>>[];
         for (int i = index; i < end; i++) {
-          final ts = current.add(Duration(seconds: intervalSec * i));
-          futures.add(compute<GenParams, Map<String, dynamic>>(generateOneIsolate, GenParams(
-            baseDirPath: baseDir.path,
-            packageName: _packageName,
-            appName: _appInfo.appName,
-            seq: i + 1,
-            timestampMs: ts.millisecondsSinceEpoch,
-          )));
+          // 已移除生成逻辑
         }
         final results = await Future.wait(futures);
         // 生成阶段分批可视化进度
@@ -2123,5 +2318,56 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     final image = await picture.toImage(width, height);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
+  }
+}
+
+class _OcrBoxesPainter extends CustomPainter {
+  final double originalWidth;
+  final double originalHeight;
+  final List<Rect> boxes;
+
+  _OcrBoxesPainter({
+    required this.originalWidth,
+    required this.originalHeight,
+    required this.boxes,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (originalWidth <= 0 || originalHeight <= 0) return;
+    final double scale = (size.width / originalWidth) > (size.height / originalHeight)
+        ? (size.width / originalWidth)
+        : (size.height / originalHeight);
+    final double drawW = originalWidth * scale;
+    final double drawH = originalHeight * scale;
+    final double offsetX = (size.width - drawW) / 2.0;
+    final double offsetY = (size.height - drawH) / 2.0;
+
+    final Paint stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Colors.amberAccent.withOpacity(0.95)
+      ..strokeWidth = 2.0;
+    final Paint fill = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.amberAccent.withOpacity(0.18);
+
+    for (final r in boxes) {
+      final Rect mapped = Rect.fromLTRB(
+        offsetX + r.left * scale,
+        offsetY + r.top * scale,
+        offsetX + r.right * scale,
+        offsetY + r.bottom * scale,
+      ).intersect(Offset.zero & size);
+      if (mapped.isEmpty) continue;
+      canvas.drawRect(mapped, fill);
+      canvas.drawRect(mapped, stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OcrBoxesPainter oldDelegate) {
+    return oldDelegate.originalWidth != originalWidth ||
+        oldDelegate.originalHeight != originalHeight ||
+        oldDelegate.boxes != boxes;
   }
 }

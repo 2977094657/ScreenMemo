@@ -1038,4 +1038,32 @@ class ScreenshotService {
       await prefs.remove(_statsCacheTsKey);
     } catch (_) {}
   }
+
+  /// 获取某应用所有截图的全局ID（不分页）
+  Future<List<int>> getAllScreenshotIdsForApp(String appPackageName) async {
+    try {
+      return await _database.getAllScreenshotIdsForApp(appPackageName);
+    } catch (e) {
+      print('获取应用全部截图ID失败: $e');
+      return <int>[];
+    }
+  }
+
+  /// 获取某应用在日期范围内的截图全局ID（不分页）
+  Future<List<int>> getScreenshotIdsByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    try {
+      return await _database.getScreenshotIdsByAppBetween(
+        appPackageName,
+        startMillis: startMillis,
+        endMillis: endMillis,
+      );
+    } catch (e) {
+      print('按日期范围获取截图ID失败: $e');
+      return <int>[];
+    }
+  }
 }

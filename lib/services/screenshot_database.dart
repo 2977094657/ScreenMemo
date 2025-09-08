@@ -557,6 +557,82 @@ class ScreenshotDatabase {
     }
   }
 
+  /// 获取某应用所有截图的全局ID列表（不分页）
+  Future<List<int>> getAllScreenshotIdsForApp(String appPackageName) async {
+    final db = await database; // 主库
+    try {
+      final List<int> ids = <int>[];
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return ids;
+      for (final y in years) {
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        for (int m = 12; m >= 1; m--) {
+          final t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final rows = await shardDb.query(
+              t,
+              columns: ['id'],
+            );
+            for (final r in rows) {
+              final localId = (r['id'] as int?) ?? 0;
+              if (localId > 0) ids.add(_encodeGid(y, m, localId));
+            }
+          } catch (_) {}
+        }
+      }
+      return ids;
+    } catch (e) {
+      print('getAllScreenshotIdsForApp 失败: $e');
+      return <int>[];
+    }
+  }
+
+  /// 获取某应用在指定时间范围内的所有截图全局ID（不分页）
+  Future<List<int>> getScreenshotIdsByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final List<int> ids = <int>[];
+      if (endMillis < startMillis) return ids;
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return ids;
+      final List<List<int>> ymList = _listYearMonthBetween(
+        DateTime.fromMillisecondsSinceEpoch(startMillis),
+        DateTime.fromMillisecondsSinceEpoch(endMillis),
+      );
+      for (final ym in ymList) {
+        final int y = ym[0];
+        final int m = ym[1];
+        if (!years.contains(y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        final String t = _monthTableName(y, m);
+        if (!await _tableExists(shardDb, t)) continue;
+        try {
+          final rows = await shardDb.query(
+            t,
+            columns: ['id'],
+            where: 'capture_time >= ? AND capture_time <= ?',
+            whereArgs: [startMillis, endMillis],
+          );
+          for (final r in rows) {
+            final localId = (r['id'] as int?) ?? 0;
+            if (localId > 0) ids.add(_encodeGid(y, m, localId));
+          }
+        } catch (_) {}
+      }
+      return ids;
+    } catch (e) {
+      print('getScreenshotIdsByAppBetween 失败: $e');
+      return <int>[];
+    }
+  }
+
   /// 获取指定应用的截屏总数量
   Future<int> getScreenshotCountByApp(String appPackageName) async {
     final db = await database; // 主库
