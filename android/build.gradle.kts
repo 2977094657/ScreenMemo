@@ -42,6 +42,10 @@ allprojects {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/maven-public") }
     }
+    // Ensure UTF-8 for all Java compile tasks
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
 }
 
 rootProject.layout.buildDirectory = rootProject.layout.projectDirectory.dir("../build")
