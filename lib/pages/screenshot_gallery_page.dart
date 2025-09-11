@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math' as math;
@@ -88,6 +88,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   bool _timelineActive = false; // 是否正在与时间线交互（长按或拖拽）
   double _timelineFraction = 0.0; // 拖动时的归一化位置 0..1
   final GlobalKey _gridKey = GlobalKey(); // 获取网格可见区域以计算首个可见项
+  // 时间线拖动时的逐帧节流标记，避免频繁 jumpTo 造成抖动
+  bool _scrubJumpScheduled = false;
 
   // 分页与懒加载
   static const int _initialPageSize = 8; // 首屏项数（用户一屏可见4个，初始加载8个确保体验）
@@ -1550,8 +1552,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
   // 构建右侧时间线滚动条与时间提示
   Widget _buildTimelineOverlay() {
-    // 修复显示条件：只有在有数据且所有数据都加载完毕时才显示时间线
-    if (_screenshots.isEmpty || _hasMore || _screenshots.length < 2) {
+    if (_screenshots.isEmpty || _screenshots.length < 2) {
       return const SizedBox.shrink();
     }
 
@@ -1588,8 +1589,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               clampedFraction *
               (trackHeight - thumbHeight).clamp(0, trackHeight);
 
-          // 安全获取第一个可见索引
-          final int firstVisibleIndex = _getFirstVisibleIndex();
+          final int firstVisibleIndex = _timelineActive
+              ? _approxIndexFromFraction()
+              : _getFirstVisibleIndex();
           final String timeLabel =
               (firstVisibleIndex >= 0 &&
                   firstVisibleIndex < _screenshots.length)
@@ -1629,6 +1631,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         _timelineActive = false;
                       });
                     }
+                    _maybeLoadAfterScrub();
                   },
                   onLongPressStart: (details) {
                     if (trackHeight > thumbHeight) {
@@ -1652,6 +1655,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         _timelineActive = false;
                       });
                     }
+                    _maybeLoadAfterScrub();
                   },
                   child: Stack(
                     children: [
@@ -1731,12 +1735,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _timelineActive = true;
       _timelineFraction = fraction;
     });
-    _scrollToFraction(fraction);
-    // 若滚到末尾且还有更多，尝试触发加载
-    if (_timelineFraction >= 0.98 && _hasMore && !_isLoadingMore) {
-      // ignore: unawaited_futures
-      _loadMoreScreenshots();
-    }
+    _scheduleScrubJump();
   }
 
   // 当前滚动位置归一化 [0,1]
@@ -1760,7 +1759,43 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     ctrl.jumpTo(target);
   }
 
-  // 获取网格视口矩形（全局坐标）
+  // 拖动时用 fraction 近似当前索引，避免在大量 GlobalKey 上做布局查询
+  int _approxIndexFromFraction() {
+    if (_screenshots.isEmpty) return 0;
+    final double f = _timelineFraction.clamp(0.0, 1.0);
+    final int last = _screenshots.length - 1;
+    final int idx = (f * last).round();
+    return idx.clamp(0, last);
+  }
+
+  // 将 jumpTo 合并到每帧一次，降低拖动过程中的重排与抖动
+  void _scheduleScrubJump() {
+    if (_scrubJumpScheduled) return;
+    _scrubJumpScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrubJumpScheduled = false;
+      if (!mounted) return;
+      final ctrl = _controllerForTab(_currentTabIndex);
+      if (!ctrl.hasClients) return;
+      final maxExtent = ctrl.position.maxScrollExtent;
+      if (maxExtent <= 0) return;
+      final double f = _timelineFraction.clamp(0.0, 1.0);
+      final double target = f * maxExtent;
+      if ((ctrl.position.pixels - target).abs() > 0.5) {
+        ctrl.jumpTo(target);
+      }
+    });
+  }
+
+  // 拖动结束后按需加载一批，避免在拖动过程中频繁 setState 卡顿
+  void _maybeLoadAfterScrub() {
+    if (!mounted) return;
+    if (_hasMore && !_isLoadingMore && _timelineFraction >= 0.98) {
+      // ignore: unawaited_futures
+      _loadMoreScreenshots();
+    }
+  }
+
   Rect? _getGridViewportRect() {
     if (!mounted) return null;
     final ctx = _gridKey.currentContext;
