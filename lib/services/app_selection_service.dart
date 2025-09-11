@@ -4,6 +4,7 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_info.dart';
 import 'startup_profiler.dart';
+import 'ime_exclusion_service.dart';
 
 /// 应用选择服务
 class AppSelectionService {
@@ -64,6 +65,7 @@ class AppSelectionService {
                 .toList();
             // 排除本应用自身
             _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+            _allApps = await ImeExclusionService.filterOutImeApps(_allApps);
             // 确保排序一致
             _allApps.sort((a, b) => a.appName.compareTo(b.appName));
             // 如果即将过期（<60秒），提前后台续期
@@ -92,6 +94,7 @@ class AppSelectionService {
       _allApps = apps.map((app) => AppInfo.fromInstalledApp(app)).toList();
       // 排除本应用自身
       _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+      _allApps = await ImeExclusionService.filterOutImeApps(_allApps);
       _allApps.sort((a, b) => a.appName.compareTo(b.appName));
 
       // 4) 保存至本地缓存

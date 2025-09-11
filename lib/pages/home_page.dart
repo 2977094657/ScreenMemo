@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
@@ -8,7 +8,9 @@ import '../services/theme_service.dart';
 import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
+import '../services/ime_exclusion_service.dart';
 import '../widgets/app_selection_widget.dart';
+import 'exclusion_help_page.dart';
 import 'settings_page.dart';
 import '../services/flutter_logger.dart';
 
@@ -402,7 +404,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppTheme.info.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: const BorderRadius.all(Radius.circular(8.0)),
                   ),
                   child: const Text(
                     '提示：如果问题持续，请尝试重新启动应用或重新配置权限',
@@ -730,12 +732,47 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 构建 AppBar 的 actions（选择模式时显示批量操作）
+    final List<Widget>? appBarActions = _selectionMode
+        ? <Widget>[
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectionMode = false;
+                  _selectedPackages.clear();
+                });
+              },
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  if (_selectedPackages.length == _selectedApps.length) {
+                    _selectedPackages.clear();
+                  } else {
+                    _selectedPackages
+                      ..clear()
+                      ..addAll(_selectedApps.map((a) => a.packageName));
+                  }
+                });
+              },
+              child: const Text('全选'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline),
+              tooltip: '移除监测',
+              onPressed: _selectedPackages.isEmpty ? null : _removeSelectedApps,
+            ),
+          ]
+        : null;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         toolbarHeight: 48,
+        actions: appBarActions,
         title: _selectionMode
           ? Text(
               '已选择 ${_selectedPackages.length} 项',
@@ -754,6 +791,57 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                           appBar: AppBar(
                             title: const Text('选择监控应用'),
                             actions: [
+                              IconButton(
+                                tooltip: '为什么有些应用不显示？',
+                                icon: const Icon(Icons.help_outline),
+                                onPressed: () async {
+                                  // 收集已启用输入法及默认输入法
+                                  final imeList = await ImeExclusionService.getEnabledImeList();
+                                  final defaultIme = await ImeExclusionService.getDefaultImeInfo();
+
+                                  final lines = <Widget>[];
+                                  lines.add(Text(
+                                    '以下应用会被排除，不能选择：',
+                                    style: Theme.of(context).textTheme.bodyMedium,
+                                  ));
+                                  lines.add(const SizedBox(height: 8));
+                                  // 本应用
+                                  lines.add(Text('· 本应用（避免自我干扰）'));
+                                  // 输入法应用
+                                  if (imeList.isNotEmpty) {
+                                    lines.add(const SizedBox(height: 8));
+                                    lines.add(Text('· 输入法（键盘）应用：'));
+                                    for (final m in imeList) {
+                                      final name = m['appName'] ?? '';
+                                      final pkg = m['packageName'] ?? '';
+                                      lines.add(Text('  - ${name.isNotEmpty ? name : '未知输入法'}'));
+                                    }
+                                  } else {
+                                    lines.add(const SizedBox(height: 8));
+                                    lines.add(const Text('· 输入法（键盘）应用（已自动过滤）'));
+                                  }
+                                  if (defaultIme != null && (defaultIme['packageName']?.isNotEmpty ?? false)) {
+                                    lines.add(const SizedBox(height: 8));
+                                    lines.add(Text("当前默认输入法：${defaultIme['appName'] ?? ''} (${defaultIme['packageName']})"));
+                                  }
+                                  lines.add(const SizedBox(height: 12));
+                                  lines.add(Text(
+                                    '说明：当你在其它应用中弹出键盘时，系统会切换到输入法窗口。如果不排除，会被误认为正在使用输入法，从而导致截图浮窗判断错误。我们已自动排除输入法应用，并在检测到输入法时，仍会将浮窗移到弹出输入法之前的应用。',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ));
+
+                                  await showUIDialog<void>(
+                                    context: context,
+                                    title: '已排除的应用',
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: lines,
+                                    ),
+                                    actions: const [UIDialogAction(text: '知道了')],
+                                  );
+                                },
+                              ),
                               TextButton(
                                 onPressed: () async {
                                   await _appService.saveSelectedApps(_selectedApps);
@@ -778,106 +866,77 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 // 首页不再显示排序图标，排序在设置页调整
 
                 // 搜索框
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => Navigator.pushNamed(context, '/search'),
-                    child: Container(
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.grey.withOpacity(0.5),
-                          width: 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 10),
-                          Icon(
-                            Icons.search,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                            size: 18,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '搜索截图...',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                Expanded(child: _buildSearchBar(context)),
                 
                 // 搜索框右侧：权限提示 或 开关（与搜索框保持间距且同高）
-                if (_hasPermissionIssues)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.warning,
-                      color: AppTheme.destructive,
-                    ),
-                    onPressed: _showPermissionStatus,
-                    tooltip: '权限缺失',
-                  )
-                else
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton(
-                      tooltip: _screenshotEnabled ? '停止截屏' : '开始截屏',
-                      iconSize: 22,
-                      onPressed: _toggleScreenshotEnabled,
-                      icon: _screenshotEnabled
-                          ? Icon(
-                              Icons.camera_alt,
-                              color: Theme.of(context).colorScheme.primary,
-                            )
-                          : const Icon(
-                              Icons.no_photography_outlined,
-                              color: AppTheme.destructive,
-                            ),
-                    ),
-                  ),
+                _hasPermissionIssues
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.warning,
+                          color: AppTheme.destructive,
+                        ),
+                        onPressed: _showPermissionStatus,
+                        tooltip: '权限缺失',
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: IconButton(
+                          tooltip: _screenshotEnabled ? '停止截屏' : '开始截屏',
+                          iconSize: 22,
+                          onPressed: _toggleScreenshotEnabled,
+                          icon: _screenshotEnabled
+                              ? Icon(
+                                  Icons.camera_alt,
+                                  color: Theme.of(context).colorScheme.primary,
+                                )
+                              : const Icon(
+                                  Icons.no_photography_outlined,
+                                  color: AppTheme.destructive,
+                                ),
+                        ),
+                      ),
               ],
             ),
-        actions: _selectionMode ? [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _selectionMode = false;
-                _selectedPackages.clear();
-              });
-            },
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                if (_selectedPackages.length == _selectedApps.length) {
-                  _selectedPackages.clear();
-                } else {
-                  _selectedPackages
-                    ..clear()
-                    ..addAll(_selectedApps.map((a) => a.packageName));
-                }
-              });
-            },
-            child: const Text('全选'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.remove_circle_outline),
-            tooltip: '移除监测',
-            onPressed: _selectedPackages.isEmpty ? null : _removeSelectedApps,
-          ),
-        ] : null,
       ),
       body: RefreshIndicator(
         onRefresh: () => _loadData(soft: true),
         child: _buildAppsList(),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(BuildContext context) {
+    return InkWell(
+      borderRadius: const BorderRadius.all(Radius.circular(8.0)),
+      onTap: () => Navigator.pushNamed(context, '/search'),
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.all(Radius.circular(8.0)),
+          border: Border.all(
+            color: Colors.grey.withOpacity(0.5),
+            width: 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 10),
+            Icon(
+              Icons.search,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              size: 18,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '搜索截图...',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1009,7 +1068,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 height: 22,
                 decoration: BoxDecoration(
                   color: isSelected ? Colors.black : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: const BorderRadius.all(Radius.circular(4.0)),
                   border: Border.all(color: isSelected ? Colors.black : Colors.white, width: 2),
                 ),
                 alignment: Alignment.center,

@@ -154,6 +154,44 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var pendingCandidateApp: String? = null
     private var pendingCandidateSince: Long = 0L
 
+    // 启用输入法(IME)集合与正则兜底，用于排除键盘被误判为前台应用
+    @Volatile private var imePackages: Set<String> = emptySet()
+    @Volatile private var lastImeRefreshAt: Long = 0L
+    private val imeRegexes: List<Regex> = listOf(
+        Regex("inputmethod", RegexOption.IGNORE_CASE),
+        Regex("(^|\\.)ime(\\.|$)", RegexOption.IGNORE_CASE),
+        Regex("keyboard", RegexOption.IGNORE_CASE),
+        Regex("pinyin", RegexOption.IGNORE_CASE),
+        Regex("sogou", RegexOption.IGNORE_CASE),
+        Regex("baidu\\.input", RegexOption.IGNORE_CASE),
+        Regex("iflytek", RegexOption.IGNORE_CASE),
+        Regex("swiftkey", RegexOption.IGNORE_CASE),
+        Regex("qq(input|\\.input)", RegexOption.IGNORE_CASE),
+        Regex("google\\.android\\.inputmethod", RegexOption.IGNORE_CASE)
+    )
+
+    private fun isImePackage(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        if (imePackages.contains(pkg)) return true
+        return imeRegexes.any { it.containsMatchIn(pkg) }
+    }
+
+    private fun refreshImePackages(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && (now - lastImeRefreshAt) < 10 * 60_000) return
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val list = imm.enabledInputMethodList?.map { it.packageName } ?: emptyList()
+            imePackages = list.toSet()
+            lastImeRefreshAt = now
+            if (FileLogger.isDebugEnabled()) {
+                FileLogger.d(TAG, "IME包集合已刷新: ${imePackages}")
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "刷新IME包集合失败: ${e.message}")
+        }
+    }
+
     /**
      * 处理前台应用候选，只有在持续稳定一段时间后才认定为稳定前台应用；
      * 对于系统遮罩（通知栏、系统UI），不改变稳定应用，仅更新宽限期内沿用。
@@ -161,6 +199,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun onForegroundCandidateDetected(candidatePackage: String?) {
         val now = System.currentTimeMillis()
         if (candidatePackage.isNullOrEmpty()) {
+            return
+        }
+
+        // 输入法：忽略，不参与稳定候选
+        if (isImePackage(candidatePackage)) {
+            FileLogger.d(TAG, "检测到输入法窗口 $candidatePackage，忽略该候选")
             return
         }
 
@@ -288,6 +332,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     // 初始化UsageStatsManager
                     usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
                     FileLogger.e(TAG, "UsageStatsManager已初始化")
+
+                    // 刷新启用的输入法集合，避免输入法被判为前台
+                    refreshImePackages(force = true)
 
                     // 启动前台应用检测
                     startForegroundAppDetection()
@@ -1039,10 +1086,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
 
         // 当前可见顶层应用（尽量用UsageStats，其次AccessibilityEvent）
+        // 偶尔刷新IME集合
+        refreshImePackages(force = false)
         val visibleTop = getForegroundAppUsingUsageStats() ?: currentForegroundApp
 
         // 系统遮罩/系统UI：继续把截图归属到稳定前台
-        if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop))) {
+        if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop) || isImePackage(visibleTop))) {
             FileLogger.d(TAG, "顶层为系统遮罩/系统UI($visibleTop)，继续使用稳定前台: $stable")
             return stable
         }
@@ -2110,7 +2159,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
             }
 
-            val result = lastEvent?.packageName
+            var result = lastEvent?.packageName
             if (result != null) {
                 FileLogger.d(TAG, "UsageStats检测到前台应用: $result (共${eventCount}个事件)")
             } else {

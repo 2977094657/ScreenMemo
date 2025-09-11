@@ -20,6 +20,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.view.inputmethod.InputMethodInfo
+import android.view.inputmethod.InputMethodManager
 import android.util.Log
 import android.os.Environment
 import android.content.ContentValues
@@ -260,6 +262,49 @@ class MainActivity : FlutterActivity() {
                 }
                 "getDeviceInfo" -> {
                     result.success(OEMCompatibilityHelper.getDeviceInfo())
+                }
+                "getEnabledImeList" -> {
+                    try {
+                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        val pms = packageManager
+                        val list = imm.enabledInputMethodList?.map { imi ->
+                            val pkg = imi.packageName
+                            val label = try { imi.loadLabel(pms)?.toString() ?: pkg } catch (_: Exception) { pkg }
+                            mapOf(
+                                "packageName" to pkg,
+                                "appName" to label,
+                            )
+                        } ?: emptyList()
+                        result.success(list)
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "获取启用的输入法列表失败", e)
+                        result.success(emptyList<Map<String, String>>())
+                    }
+                }
+                "getDefaultInputMethod" -> {
+                    try {
+                        val id = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+                        if (id.isNullOrBlank()) {
+                            result.success(null)
+                        } else {
+                            // id like: com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
+                            val pkg = id.substringBefore('/')
+                            val pms = packageManager
+                            val appName = try {
+                                val ai = pms.getApplicationInfo(pkg, 0)
+                                pms.getApplicationLabel(ai)?.toString() ?: pkg
+                            } catch (_: Exception) { pkg }
+                            result.success(mapOf(
+                                "id" to id,
+                                // UI 不展示包名，避免对用户造成困惑
+                                "packageName" to "",
+                                "appName" to appName,
+                            ))
+                        }
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "读取默认输入法失败", e)
+                        result.success(null)
+                    }
                 }
                 "exportFileToDownloads" -> {
                     try {
