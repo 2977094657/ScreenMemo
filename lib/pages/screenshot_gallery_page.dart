@@ -1018,6 +1018,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       padding: const EdgeInsets.all(AppTheme.spacing1),
       child: GridView.builder(
         key: PageStorageKey<String>('screenshot_gallery_search_${_packageName}'),
+        // 仅缓存当前视窗上下各一屏，超出即回收
+        cacheExtent: MediaQuery.of(context).size.height,
+        addAutomaticKeepAlives: false,
         physics: const ClampingScrollPhysics(),
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
@@ -1163,6 +1166,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             child: GridView.builder(
               key: PageStorageKey<String>('screenshot_gallery_grid_${_packageName}_tab_$tabIndex'),
               controller: _controllerForTab(tabIndex),
+              // 仅缓存当前视窗上下各一屏，超出即回收
+              cacheExtent: MediaQuery.of(context).size.height,
+              addAutomaticKeepAlives: false,
               physics: const ClampingScrollPhysics(),
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
