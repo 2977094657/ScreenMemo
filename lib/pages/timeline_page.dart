@@ -326,7 +326,7 @@ class _TimelinePageState extends State<TimelinePage>
   // 右侧时间线滚动条（与截图列表样式与显示时机保持一致）
   Widget _buildTimelineOverlay() {
     // 与截图列表一致：有数据、已加载完毕且数量>=2时才显示
-    if (_screenshots.isEmpty || _hasMore || _screenshots.length < 2) {
+    if (_screenshots.isEmpty || _screenshots.length < 2) {
       return const SizedBox.shrink();
     }
 
