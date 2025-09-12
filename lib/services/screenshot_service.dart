@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
@@ -15,7 +15,7 @@ import 'flutter_logger.dart';
 class ScreenshotServiceException implements Exception {
   final String message;
   const ScreenshotServiceException(this.message);
-  
+
   @override
   String toString() => message;
 }
@@ -24,22 +24,25 @@ class ScreenshotServiceException implements Exception {
 class ScreenshotService {
   static ScreenshotService? _instance;
   static ScreenshotService get instance => _instance ??= ScreenshotService._();
-  
+
   ScreenshotService._() {
     _setupMethodChannelHandlers();
   }
-  
+
   final PermissionService _permissionService = PermissionService.instance;
   final ScreenshotDatabase _database = ScreenshotDatabase.instance;
-  
+
   static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
 
   final _screenshotStreamController = StreamController<void>.broadcast();
   Stream<void> get onScreenshotSaved => _screenshotStreamController.stream;
-  
+
   bool _isRunning = false;
   int _currentInterval = 5;
-  // 统计缓存键与节流
+  static const String _expireEnabledKey = 'screenshot_expire_enabled';
+  static const String _expireDaysKey = 'screenshot_expire_days';
+  static const String _expireLastTsKey = 'screenshot_expire_last_ts';
+  bool _cleanupRunning = false;
   static const String _statsCacheKey = 'stats_cache';
   static const String _statsCacheTsKey = 'stats_cache_ts';
   static const String _statsCacheTtlSecondsKey = 'stats_cache_ttl';
@@ -47,10 +50,10 @@ class ScreenshotService {
   // 移除全量扫描相关：不再维护文件系统与DB的强制同步节流
   // static const String _lastSyncTsKey = 'stats_last_sync_ts';
   // static const int _syncThrottleSeconds = 120; // 2分钟
-  
+
   /// 检查截屏服务是否正在运行
   bool get isRunning => _isRunning;
-  
+
   /// 获取当前截屏间隔
   int get currentInterval => _currentInterval;
 
@@ -101,7 +104,7 @@ class ScreenshotService {
     StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
     return stats;
   }
-  
+
   /// 启动截屏服务
   Future<bool> startScreenshotService(int intervalSeconds) async {
     try {
@@ -112,7 +115,7 @@ class ScreenshotService {
         print('截屏间隔超出范围，自动调整为: $clampedInterval秒 (原输入: $intervalSeconds)');
       }
       print('截屏间隔: $clampedInterval秒');
-      
+
       // 首先检查权限
       final permissions = await _permissionService.checkAllPermissions();
       final accessibilityEnabled = permissions['accessibility'] ?? false;
@@ -135,11 +138,11 @@ class ScreenshotService {
       // 检查服务是否运行
       bool serviceRunning = await _permissionService.isServiceRunning();
       print('- 服务运行状态: $serviceRunning');
-      
+
       // 如果服务未运行，但系统中已启用，尝试等待服务启动
       if (!serviceRunning && accessibilityEnabled) {
         print('服务在系统中已启用但实例未就绪，等待服务启动...');
-        
+
         // 等待最多3秒，检查服务状态
         for (int i = 0; i < 6; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
@@ -151,7 +154,7 @@ class ScreenshotService {
           }
         }
       }
-      
+
       if (!serviceRunning) {
         throw ScreenshotServiceException('无障碍服务未运行，请尝试重新启动应用或重新启用无障碍服务');
       }
@@ -166,7 +169,7 @@ class ScreenshotService {
         await prefs.setInt('screenshot_interval', clampedInterval);
       } catch (_) {}
       final success = await _permissionService.startTimedScreenshot(clampedInterval);
-      
+
       if (success) {
         _isRunning = true;
         _currentInterval = clampedInterval;
@@ -183,7 +186,7 @@ class ScreenshotService {
       throw ScreenshotServiceException('启动截屏服务时发生未知错误：$e');
     }
   }
-  
+
   /// 停止截屏服务
   Future<void> stopScreenshotService() async {
     try {
@@ -194,7 +197,7 @@ class ScreenshotService {
       print('停止截屏服务失败: $e');
     }
   }
-  
+
   /// 更新截屏间隔
   Future<bool> updateInterval(int intervalSeconds) async {
     try {
@@ -231,7 +234,7 @@ class ScreenshotService {
       return false;
     }
   }
-  
+
   /// 手动截屏
   Future<String?> captureScreenManually() async {
     try {
@@ -241,7 +244,7 @@ class ScreenshotService {
       return null;
     }
   }
-  
+
   /// 保存服务状态
   Future<void> _saveServiceState() async {
     try {
@@ -252,7 +255,7 @@ class ScreenshotService {
       print('保存截屏服务状态失败: $e');
     }
   }
-  
+
   /// 恢复服务状态
   Future<void> restoreServiceState() async {
     try {
@@ -260,7 +263,7 @@ class ScreenshotService {
       _isRunning = prefs.getBool('screenshot_service_running') ?? false;
       final saved = prefs.getInt('screenshot_interval') ?? 5;
       _currentInterval = saved < 5 ? 5 : (saved > 60 ? 60 : saved);
-      
+
       // 如果之前服务在运行，尝试重新启动
       if (_isRunning) {
         final success = await startScreenshotService(_currentInterval);
@@ -273,7 +276,7 @@ class ScreenshotService {
       print('恢复截屏服务状态失败: $e');
     }
   }
-  
+
   /// 设置方法通道处理器
   void _setupMethodChannelHandlers() {
     print('=== 设置ScreenshotService Method Channel Handler ===');
@@ -324,7 +327,7 @@ class ScreenshotService {
   Future<void> handleScreenshotSavedFromPlatform(Map<String, dynamic> data) async {
     await _handleScreenshotSaved(data);
   }
-  
+
   // 用于跟踪正在处理的文件路径，防止重复处理
   final Set<String> _processingPaths = <String>{};
 
@@ -380,6 +383,7 @@ class ScreenshotService {
           // 刷新统计缓存后再通知监听者，避免先读到旧缓存
           await _refreshStatsCache(force: true);
           _screenshotStreamController.add(null);
+          cleanupExpiredScreenshotsIfNeeded();
         } finally {
           // 从处理中集合移除
           _processingPaths.remove(absolutePath);
@@ -391,7 +395,7 @@ class ScreenshotService {
       print('处理截图保存通知失败: $e');
     }
   }
-  
+
   /// 获取截屏统计信息
   Future<Map<String, dynamic>> getScreenshotStats() async {
     StartupProfiler.begin('ScreenshotService.getScreenshotStats');
@@ -401,7 +405,7 @@ class ScreenshotService {
       final totalCount = await _database.getTotalScreenshotCount();
       final todayCount = await _database.getTodayScreenshotCount();
       final statistics = await _database.getScreenshotStatistics();
-      
+
       // 获取最近的截图时间
       DateTime? lastScreenshotTime;
       if (statistics.isNotEmpty) {
@@ -412,7 +416,7 @@ class ScreenshotService {
           }
         }
       }
-      
+
       final stats = {
         'totalScreenshots': totalCount,
         'todayScreenshots': todayCount,
@@ -518,7 +522,7 @@ class ScreenshotService {
     // ignore: unawaited_futures
     FlutterLogger.log('统计缓存已快速刷新(DB)并保存，用时 ${sw.elapsedMilliseconds}ms');
   }
-  
+
   /// 根据应用包名获取截屏记录（支持分页）
   Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit, int? offset}) async {
     try {
@@ -655,7 +659,7 @@ class ScreenshotService {
       return 0;
     }
   }
-  
+
   /// 删除整个应用的所有截图（高效文件夹删除）
   Future<bool> deleteAllScreenshotsForApp(String appPackageName) async {
     try {
@@ -878,15 +882,15 @@ class ScreenshotService {
   /// 递归扫描应用目录（包含年月/日期子目录）
   Future<int> _scanAppDirectory(Directory appDir, String packageName) async {
     int inserted = 0;
-    
+
     try {
       final entities = await appDir.list(followLinks: false).toList();
-      
+
       for (final entity in entities) {
         if (entity is Directory) {
           // 这是年月目录（如 2024-01）
           final yearMonthEntities = await entity.list(followLinks: false).toList();
-          
+
           for (final dayEntity in yearMonthEntities) {
             if (dayEntity is Directory) {
               // 这是日期目录（如 15）
@@ -943,7 +947,7 @@ class ScreenshotService {
     } catch (e) {
       print('扫描应用目录失败: ${appDir.path}, 错误: $e');
     }
-    
+
     return inserted;
   }
 
@@ -1039,7 +1043,56 @@ class ScreenshotService {
     } catch (_) {}
   }
 
-  /// 获取某应用所有截图的全局ID（不分页）
+  Future<void> cleanupExpiredScreenshotsIfNeeded({bool force = false}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool(_expireEnabledKey) ?? false;
+      if (!enabled) return;
+      int days = prefs.getInt(_expireDaysKey) ?? 30;
+      if (days < 1) days = 1;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final last = prefs.getInt(_expireLastTsKey) ?? 0;
+      // 节流：12 小时内最多执行一次
+      const int throttleMs = 12 * 60 * 60 * 1000;
+      if (!force && last > 0 && (now - last) < throttleMs) {
+        return;
+      }
+      if (_cleanupRunning) return;
+      _cleanupRunning = true;
+      final threshold = now - days * 24 * 60 * 60 * 1000;
+      // 读取数据库 app_stats 统计，遍历所有包名
+      final stats = await _database.getScreenshotStatistics();
+      final packages = stats.keys.toList();
+      int totalDeleted = 0;
+      for (final pkg in packages) {
+        try {
+          final ids = await _database.getScreenshotIdsByAppBetween(
+            pkg,
+            startMillis: 0,
+            endMillis: threshold,
+          );
+          if (ids.isEmpty) continue;
+          final deleted = await deleteScreenshotsBatch(pkg, ids);
+          totalDeleted += deleted;
+        } catch (e) {
+        }
+      }
+
+      await _refreshStatsCache(force: true);
+      try {
+        await prefs.setInt(_expireLastTsKey, now);
+      } catch (_) {}
+      // 通知 UI 刷新
+      if (totalDeleted > 0) {
+        _screenshotStreamController.add(null);
+      }
+      FlutterLogger.info('SERVICE.cleanupExpired done: days=' + days.toString() + ' deleted=' + totalDeleted.toString());
+    } catch (e) {
+    } finally {
+      _cleanupRunning = false;
+    }
+  }
+
   Future<List<int>> getAllScreenshotIdsForApp(String appPackageName) async {
     try {
       return await _database.getAllScreenshotIdsForApp(appPackageName);
@@ -1049,7 +1102,7 @@ class ScreenshotService {
     }
   }
 
-  /// 获取某应用在日期范围内的截图全局ID（不分页）
+  /// 获取某个应用在日期范围内的截图ID（不分页）
   Future<List<int>> getScreenshotIdsByAppBetween(
     String appPackageName, {
     required int startMillis,

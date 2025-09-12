@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'services/startup_profiler.dart';
 import 'theme/app_theme.dart';
 import 'services/permission_service.dart';
@@ -105,6 +105,7 @@ class _AppInitializerState extends State<AppInitializer> {
       // 初始化ScreenshotService以确保Method Channel Handler被设置
       StartupProfiler.begin('AppInitializer.init.ScreenshotService');
       ScreenshotService.instance;
+      await ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded();
       StartupProfiler.end('AppInitializer.init.ScreenshotService');
 
       // 首先检查引导是否已完成

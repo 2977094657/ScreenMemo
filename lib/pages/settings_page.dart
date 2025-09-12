@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
@@ -8,23 +8,23 @@ import '../widgets/ui_dialog.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../services/screenshot_database.dart';
+import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
   final ThemeService themeService;
-  
-  const SettingsPage({super.key, required this.themeService});
 
+  const SettingsPage({super.key, required this.themeService});
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver {
+class _SettingsPageState extends State<SettingsPage>
+    with WidgetsBindingObserver {
   final PermissionService _permissionService = PermissionService.instance;
   final ScreenshotDatabase _screenshotDatabase = ScreenshotDatabase.instance;
   final AppSelectionService _appService = AppSelectionService.instance;
-
   Map<String, bool> _permissions = {};
   Map<String, bool> _keepAlivePermissions = {};
   bool _isLoading = true;
@@ -33,22 +33,27 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   int _screenshotInterval = 5;
   String _sortMode = 'timeDesc';
   bool _privacyMode = true; // 隐私模式，默认开启
-
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
-  int _imageQuality = 90; // 预留（隐藏），由目标大小策略接管
-  bool _useTargetSize = false; // 默认不开启
-  int _targetSizeKb = 50; // 默认50KB（最低50KB，上不封顶）
-  bool _grayscale = false; // 已移除，保持固定为 false
-
+  int _imageQuality = 90; // 备用项，已被“目标大小”策略覆盖
+  bool _useTargetSize = false; // 默认关闭
+  int _targetSizeKb = 50; // 默认 50KB（最低仅支持 50KB）
+  bool _grayscale = false; // 已移除，保持为 false
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
   bool _exportingDb = false;
-
+  // 截图过期清理设置
+  bool _expireEnabled = false; // 是否启用过期自动删除
+  int _expireDays = 30; // 过期天数，下限 1
   bool _allPermissionsGranted() {
     try {
-      final basicKeys = ['storage', 'notification', 'accessibility', 'usage_stats'];
+      final basicKeys = [
+        'storage',
+        'notification',
+        'accessibility',
+        'usage_stats',
+      ];
       final keepKeys = ['battery_optimization', 'autostart'];
       for (final k in basicKeys) {
         if (!(_permissions[k] ?? false)) return false;
@@ -86,7 +91,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         context: context,
         icon: Icons.accessibility_new_outlined,
         title: '无障碍服务',
-        description: '检测应用切换和执行截屏',
+        description: '监听应用切换并执行截图',
         isGranted: _permissions['accessibility'] ?? false,
         onRequest: () => _requestPermission('accessibility'),
       ),
@@ -95,18 +100,17 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         context: context,
         icon: Icons.analytics_outlined,
         title: '使用统计权限',
-        description: '准确检测前台应用',
+        description: '确保检测前台应用',
         isGranted: _permissions['usage_stats'] ?? false,
         onRequest: () => _requestPermission('usage_stats'),
       ),
     ];
-
     final keepAliveItems = [
       _buildPermissionItem(
         context: context,
         icon: Icons.battery_saver_outlined,
         title: '电池优化白名单',
-        description: '确保截屏服务稳定运行',
+        description: '确保截图服务常驻运行',
         isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
         onRequest: () => _requestPermission('battery_optimization'),
       ),
@@ -120,7 +124,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         onRequest: () => _requestPermission('autostart'),
       ),
     ];
-
     int missingCount = 0;
     final allPairs = <bool>[];
     allPairs.add(_permissions['storage'] ?? false);
@@ -132,7 +135,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     for (final g in allPairs) {
       if (!g) missingCount++;
     }
-
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       child: Column(
@@ -140,7 +142,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         children: [
           GestureDetector(
             onTap: () {
-              setState(() { _permissionsExpanded = !_permissionsExpanded; });
+              setState(() {
+                _permissionsExpanded = !_permissionsExpanded;
+              });
             },
             behavior: HitTestBehavior.opaque,
             child: Row(
@@ -153,7 +157,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                     borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   ),
                   child: Icon(
-                    _allPermissionsGranted() ? Icons.verified_user : Icons.lock_open,
+                    _allPermissionsGranted()
+                        ? Icons.verified_user
+                        : Icons.lock_open,
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                     size: 18,
                   ),
@@ -166,21 +172,25 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                       Text(
                         '权限设置',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _allPermissionsGranted() ? '已全部授权' : '尚缺少 $missingCount 项权限',
+                        _allPermissionsGranted()
+                            ? '已全部授权'
+                            : '尚有 $missingCount 项权限未授权',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: AppTheme.spacing2),
-                Icon(_permissionsExpanded ? Icons.expand_less : Icons.expand_more),
+                Icon(
+                  _permissionsExpanded ? Icons.expand_less : Icons.expand_more,
+                ),
               ],
             ),
           ),
@@ -206,6 +216,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     _loadSortMode();
     _loadPrivacyMode();
     _loadScreenshotQualitySettings();
+    _loadScreenshotExpireSettings();
   }
 
   @override
@@ -215,18 +226,22 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     super.dispose();
   }
 
-  /// 导出数据库到下载目录
+  /// 导出数据到下载目录
   Future<void> _exportDatabase() async {
     if (_exportingDb) return;
-    setState(() { _exportingDb = true; });
-
+    setState(() {
+      _exportingDb = true;
+    });
     try {
       final result = await _screenshotDatabase.exportDatabaseToDownloads();
       if (!mounted) return;
       if (result != null) {
-        final displayPath = (result['humanPath'] as String?) ?? (result['absolutePath'] as String?) ?? (result['displayPath'] as String?) ?? 'Download/ScreenMemo/screenshot_memo.db';
-
-        // 成功对话框：中文提示 + 可复制路径
+        final displayPath =
+            (result['humanPath'] as String?) ??
+            (result['absolutePath'] as String?) ??
+            (result['displayPath'] as String?) ??
+            'Download/ScreenMemory/output_export.zip';
+        // 成功弹窗：中文提示 + 可复制路径
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -264,7 +279,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 }
               },
             ),
-            const UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+            const UIDialogAction(
+              text: '确定',
+              style: UIDialogActionStyle.primary,
+            ),
           ],
         );
       } else {
@@ -273,7 +291,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           barrierDismissible: false,
           title: '导出失败',
           message: '请稍后重试',
-          actions: const [UIDialogAction(text: '确定', style: UIDialogActionStyle.primary)],
+          actions: const [
+            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          ],
         );
       }
     } catch (e) {
@@ -283,13 +303,18 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
         barrierDismissible: false,
         title: '导出失败',
         content: Text('$e'),
-        actions: const [UIDialogAction(text: '确定', style: UIDialogActionStyle.primary)],
+        actions: const [
+          UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+        ],
       );
     } finally {
       if (mounted) {
-        setState(() { _exportingDb = false; });
+        setState(() {
+          _exportingDb = false;
+        });
       }
     }
+
   }
 
   @override
@@ -306,10 +331,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
   }
 
   Future<void> _loadAllPermissions() async {
-    await Future.wait([
-      _loadPermissions(),
-      _loadKeepAlivePermissions(),
-    ]);
+    await Future.wait([_loadPermissions(), _loadKeepAlivePermissions()]);
     if (mounted) {
       setState(() {
         _permissionsExpanded = !_allPermissionsGranted();
@@ -350,7 +372,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       // 使用与引导页面相同的权限检测方法和通道
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       final result = await platform.invokeMethod('getPermissionStatus');
-
       if (mounted) {
         setState(() {
           _keepAlivePermissions = Map<String, bool>.from(result ?? {});
@@ -361,7 +382,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           _permissionsExpanded = !_allPermissionsGranted();
         });
       }
-      print('保活权限状态更新完成: $_keepAlivePermissions');
+      print('保活权限状态更新完成: ' + _keepAlivePermissions.toString());
     } catch (e) {
       print('加载保活权限失败: $e');
       if (mounted) {
@@ -381,63 +402,75 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     }
   }
 
-  /// 启动电池权限检查定时器
+  /// 启动电池权限定时检查
   void _startBatteryPermissionCheck() {
     print('启动电池权限定时检查...');
     _batteryCheckCount = 0;
     _batteryPermissionTimer?.cancel();
-
-    _batteryPermissionTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-      _batteryCheckCount++;
-      print('电池权限检查第 $_batteryCheckCount 次');
-
-      try {
-        const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
-        final permissionStatus = await platform.invokeMethod('getPermissionStatus');
-        final newBatteryStatus = permissionStatus?['battery_optimization'] ?? false;
-        final oldBatteryStatus = _keepAlivePermissions['battery_optimization'] ?? false;
-
-        print('定时检查 - 旧状态: $oldBatteryStatus, 新状态: $newBatteryStatus');
-
-        if (newBatteryStatus != oldBatteryStatus) {
-          print('检测到电池权限状态变化，更新UI');
-          await _loadKeepAlivePermissions();
-          if (newBatteryStatus) {
-            print('电池权限已授权，停止定时检查');
-            timer.cancel();
+    _batteryPermissionTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (timer) async {
+        _batteryCheckCount++;
+        print('电池权限检查第 ' + _batteryCheckCount.toString() + ' 次');
+        try {
+          const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+          final permissionStatus = await platform.invokeMethod(
+            'getPermissionStatus',
+          );
+          final newBatteryStatus =
+              permissionStatus?['battery_optimization'] ?? false;
+          final oldBatteryStatus =
+              _keepAlivePermissions['battery_optimization'] ?? false;
+          print(
+            '定时检查 - 旧状态: ' +
+                oldBatteryStatus.toString() +
+                ', 新状态: ' +
+                newBatteryStatus.toString(),
+          );
+          if (newBatteryStatus != oldBatteryStatus) {
+            print('检测到电池权限状态变化，更新UI');
+            await _loadKeepAlivePermissions();
+            if (newBatteryStatus) {
+              print('电池权限已授权，停止定时检查');
+              timer.cancel();
+            }
           }
+        } catch (e) {
+          print('定时检查权限失败: ' + e.toString());
         }
-      } catch (e) {
-        print('定时检查电池权限失败: $e');
-      }
-    });
+      },
+    );
   }
 
-  /// 停止电池权限检查定时器
+  /// 停止电池权限定时检查
   void _stopBatteryPermissionCheck() {
     _batteryPermissionTimer?.cancel();
     _batteryPermissionTimer = null;
     _batteryCheckCount = 0;
   }
 
-  /// 显示自启动权限确认对话框
+  /// 显示自启动权限确认弹窗
   Future<bool> _showAutoStartConfirmDialog() async {
     return await showUIDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      title: '确认权限设置',
-      message: '请确认您已在系统设置中完成自启动权限的配置。',
-      actions: const [
-        UIDialogAction<bool>(text: '未完成', result: false),
-        UIDialogAction<bool>(text: '已完成', style: UIDialogActionStyle.primary, result: true),
-      ],
-    ) ?? false;
+          context: context,
+          barrierDismissible: false,
+          title: '确认权限设置',
+          message: '请确认您已在系统设置中完成自启动权限的配置。',
+          actions: const [
+            UIDialogAction<bool>(text: '尚未完成', result: false),
+            UIDialogAction<bool>(
+              text: '已完成',
+              style: UIDialogActionStyle.primary,
+              result: true,
+            ),
+          ],
+        ) ??
+        false;
   }
 
   Future<void> _requestPermission(String permissionType) async {
     try {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
-
       switch (permissionType) {
         case 'storage':
           await _permissionService.requestStoragePermission();
@@ -452,12 +485,16 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           await _permissionService.requestUsageStatsPermission();
           break;
         case 'mediaProjection':
-          // 不再需要MediaProjection权限
-          UINotifier.info(context, '已使用无障碍服务截屏，无需屏幕录制权限');
+          // 不再需要 MediaProjection 权限
+          UINotifier.info(context, '已使用无障碍服务截图，无需屏幕录制权限');
           break;
         case 'battery_optimization':
           if (mounted) {
-            UINotifier.info(context, '请在系统设置中完成授权，然后返回应用', duration: const Duration(seconds: 2));
+            UINotifier.info(
+              context,
+              '请在系统设置中完成授权，然后返回应用',
+              duration: const Duration(seconds: 2),
+            );
           }
           await platform.invokeMethod('openBatteryOptimizationSettings');
           _startBatteryPermissionCheck();
@@ -468,11 +505,16 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
           if (mounted) {
             final confirmed = await _showAutoStartConfirmDialog();
             if (confirmed) {
-              await platform.invokeMethod('markPermissionConfigured', {'type': 'autostart'});
+              await platform.invokeMethod('markPermissionConfigured', {
+                'type': 'autostart',
+              });
               await _loadKeepAlivePermissions();
-
               if (mounted) {
-                UINotifier.success(context, '自启动权限已标记为已授权', duration: const Duration(seconds: 2));
+                UINotifier.success(
+                  context,
+                  '自启动权限已标记为已授权',
+                  duration: const Duration(seconds: 2),
+                );
               }
             }
           }
@@ -481,16 +523,18 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
 
       // 延迟刷新权限状态
       await Future.delayed(const Duration(seconds: 1));
-      if (permissionType == 'storage' || permissionType == 'notification' || permissionType == 'accessibility' || permissionType == 'mediaProjection') {
+      if (permissionType == 'storage' ||
+          permissionType == 'notification' ||
+          permissionType == 'accessibility' ||
+          permissionType == 'mediaProjection') {
         _loadPermissions();
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, '请求权限失败: $e');
+        UINotifier.error(context, '请求权限失败: ' + e.toString());
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -505,7 +549,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             onPressed: _loadPermissions,
             tooltip: '刷新权限状态',
           ),
-          
+
           // 主题切换按钮
           IconButton(
             icon: Icon(widget.themeService.themeModeIcon),
@@ -526,13 +570,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 _buildSection(
                   context: context,
                   title: '权限设置',
-                  children: [
-                    _buildPermissionsDropdown(context),
-                  ],
+                  children: [_buildPermissionsDropdown(context)],
                 ),
-
                 const SizedBox(height: AppTheme.spacing4),
-
                 // 显示与排序
                 _buildSection(
                   context: context,
@@ -542,7 +582,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                     _buildSortModeItem(context),
                   ],
                 ),
-
                 const SizedBox(height: AppTheme.spacing4),
 
                 // 截屏设置
@@ -552,18 +591,15 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                   children: [
                     _buildScreenshotIntervalItem(context),
                     _buildScreenshotQualityItem(context),
+                    _buildScreenshotExpireItem(context),
                   ],
                 ),
-
                 const SizedBox(height: AppTheme.spacing4),
-
                 // 数据与备份
                 _buildSection(
                   context: context,
                   title: '数据与备份',
-                  children: [
-                    _buildExportItem(context),
-                  ],
+                  children: [_buildExportItem(context)],
                 ),
               ],
             ),
@@ -579,7 +615,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: AppTheme.spacing1, bottom: AppTheme.spacing3),
+          padding: const EdgeInsets.only(
+            left: AppTheme.spacing1,
+            bottom: AppTheme.spacing3,
+          ),
           child: Text(
             title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -597,9 +636,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               width: 1,
             ),
           ),
-          child: Column(
-            children: children,
-          ),
+          child: Column(children: children),
         ),
       ],
     );
@@ -649,9 +686,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -668,8 +705,8 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             Text(
               '已授权',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             )
           else
             TextButton(
@@ -682,7 +719,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 minimumSize: Size.zero,
               ),
-              child: const Text('授权'),
+              child: const Text('去授权'),
             ),
         ],
       ),
@@ -713,14 +750,14 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '导出数据库',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                  '导出数据',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '导出到 Download/ScreenMemory',
+                  '导出 ZIP 至 Download/ScreenMemory',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -743,9 +780,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 ? const SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('导出'),
           ),
@@ -779,16 +814,16 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               children: [
                 Text(
                   '首页排序',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   _sortModeLabel(_sortMode),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -844,18 +879,18 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               children: [
                 Text(
                   '隐私模式',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '对可疑成人内容自动模糊遮挡',
+                  '对敏感内容自动模糊遮挡',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -907,13 +942,13 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               children: [
                 Text(
                   '截屏间隔',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '当前间隔：$_screenshotInterval秒',
+                  '当前间隔：' + _screenshotInterval.toString() + ' 秒',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -972,9 +1007,8 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                         children: [
                           Text(
                             '截图质量',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 2),
                           // 说明行（根据开关禁用/启用与灰化）
@@ -986,21 +1020,35 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                                 children: [
                                   Text(
                                     '当前大小：',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
                                   ),
                                   const SizedBox(width: AppTheme.spacing1),
                                   GestureDetector(
-                                    onTap: _useTargetSize ? _showTargetSizeDialog : null,
+                                    onTap: _useTargetSize
+                                        ? _showTargetSizeDialog
+                                        : null,
                                     child: Text(
                                       '${_targetSizeKb}KB',
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: _useTargetSize
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                                        decoration: _useTargetSize ? TextDecoration.underline : TextDecoration.none,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: _useTargetSize
+                                                ? Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary
+                                                : Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                            decoration: _useTargetSize
+                                                ? TextDecoration.underline
+                                                : TextDecoration.none,
+                                          ),
                                     ),
                                   ),
                                   const SizedBox(width: AppTheme.spacing1),
@@ -1009,9 +1057,14 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                                       '（点击数字可修改）',
                                       softWrap: false,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -1029,9 +1082,12 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                         scale: 0.9,
                         child: Switch(
                           value: _useTargetSize,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                           onChanged: (v) async {
-                            setState(() { _useTargetSize = v; });
+                            setState(() {
+                              _useTargetSize = v;
+                            });
                             await _saveScreenshotQualitySettings();
                           },
                         ),
@@ -1042,7 +1098,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               ),
             ],
           ),
-          // 与“截屏间隔”项保持一致的内边距与间距（去除多余的底部空隙）
+          // 与“截屏间隔”项保持一致的内边距与间距（去除多余的底部空白）
         ],
       ),
     );
@@ -1068,7 +1124,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final TextEditingController controller = TextEditingController(
       text: _screenshotInterval.toString(),
     );
-
     showUIDialog<void>(
       context: context,
       title: '设置截屏间隔',
@@ -1086,7 +1141,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: '间隔时间（秒）',
-                hintText: '请输入5-60的整数',
+                hintText: '请输入 5-60 的整数',
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -1112,11 +1167,8 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
             child: const Text(
-              '范围：5-60秒，默认值：5秒。',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppTheme.info,
-              ),
+              '范围：5-60 秒，默认 5 秒',
+              style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
@@ -1131,13 +1183,13 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 5 || interval > 60) {
-              UINotifier.error(ctx, '请输入5-60的有效整数');
+              UINotifier.error(ctx, '请输入 5-60 的有效整数');
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '截屏间隔已设置为 $interval秒');
+              UINotifier.success(ctx, '截屏间隔已设置为 ' + interval.toString() + ' 秒');
             }
           },
         ),
@@ -1149,10 +1201,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
     final TextEditingController controller = TextEditingController(
       text: _targetSizeKb.toString(),
     );
-
     showUIDialog<void>(
       context: context,
-      title: '设置目标大小(单位KB)',
+      title: '设置目标大小（单位KB）',
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1168,8 +1219,6 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 labelText: '目标大小（KB）',
-                hintText: '请输入 >= 50 的整数',
-                border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
                 labelStyle: TextStyle(
@@ -1220,95 +1269,349 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
             await _saveScreenshotQualitySettings();
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '目标大小已设置为 $kb KB');
+              UINotifier.success(ctx, '目标大小已设置为 ' + kb.toString() + ' KB');
             }
           },
         ),
       ],
     );
+
   }
 
-  Future<void> _loadSortMode() async {
-    final mode = await _appService.getSortMode();
-    if (mounted) {
-      setState(() {
-        _sortMode = mode;
-      });
+  Widget _buildScreenshotExpireItem(BuildContext context) {
+      return Container(
+        padding: const EdgeInsets.all(AppTheme.spacing3),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: Icon(
+                Icons.auto_delete_outlined,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            Expanded(
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 72),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '截图过期清理',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 2),
+                        IgnorePointer(
+                          ignoring: !_expireEnabled,
+                          child: Opacity(
+                            opacity: _expireEnabled ? 1.0 : 0.5,
+                            child: Row(
+                              children: [
+                                Text(
+                                  '当前过期天数:',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                                const SizedBox(width: AppTheme.spacing1),
+                                GestureDetector(
+                                  onTap: _expireEnabled
+                                      ? _showExpireDaysDialog
+                                      : null,
+                                  child: Text(
+                                    '${_expireDays}天',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: _expireEnabled
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.primary
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                          decoration: _expireEnabled
+                                              ? TextDecoration.underline
+                                              : TextDecoration.none,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppTheme.spacing1),
+                                Flexible(
+                                  child: Text(
+                                    '（点击数字可修改）',
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: -1,
+                    right: 0,
+                    child: Transform.scale(
+                      scale: 0.9,
+                      child: Switch(
+                        value: _expireEnabled,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (v) async {
+                          setState(() {
+                            _expireEnabled = v;
+                          });
+                          await _saveScreenshotExpireSettings();
+                          // 开启或修改后立即尝试清理一次（后台节流保护）
+                          // ignore: unawaited_futures
+                          ScreenshotService.instance
+                              .cleanupExpiredScreenshotsIfNeeded(force: v);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
-  }
 
-  Future<void> _loadScreenshotQualitySettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _imageFormat = prefs.getString('image_format') ?? 'webp_lossless';
-        _imageQuality = (prefs.getInt('image_quality') ?? 90).clamp(1, 100);
-        _useTargetSize = prefs.getBool('use_target_size') ?? false;
-        final tkb = prefs.getInt('target_size_kb') ?? 50;
-        _targetSizeKb = tkb < 50 ? 50 : tkb;
+    void _showExpireDaysDialog() {
+      final TextEditingController controller = TextEditingController(
+        text: _expireDays.toString(),
+      );
+      showUIDialog<void>(
+        context: context,
+        title: '设置截图过期天数',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              child: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: '过期天数',
+                  hintText: '请输入 >= 1 的整数',
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                  labelStyle: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  hintStyle: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: AppTheme.fontSizeBase,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppTheme.spacing3),
+            Container(
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              decoration: BoxDecoration(
+                color: AppTheme.info.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              child: const Text(
+                '下限为 1 天；开启后，应用会在启动和每次截图后按周期自动清理过期文件（12小时节流保护）。',
+                style: TextStyle(fontSize: 12, color: AppTheme.info),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          const UIDialogAction(text: '取消'),
+          UIDialogAction(
+            text: '确定',
+            style: UIDialogActionStyle.primary,
+            closeOnPress: false,
+            onPressed: (ctx) async {
+              final input = controller.text.trim();
+              final d = int.tryParse(input);
+              if (d == null || d < 1) {
+                UINotifier.error(ctx, '请输入 >= 1 的有效整数');
+                return;
+              }
+              setState(() {
+                _expireEnabled = true;
+                _expireDays = d;
+              });
+              await _saveScreenshotExpireSettings();
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop();
+                UINotifier.success(ctx, '已设置为 ' + d.toString() + ' 天');
+              }
+              // ignore: unawaited_futures
+              ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
+                force: true,
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    Future<void> _loadSortMode() async {
+      final mode = await _appService.getSortMode();
+      if (mounted) {
+        setState(() {
+          _sortMode = mode;
+        });
+      }
+    }
+
+    Future<void> _loadScreenshotQualitySettings() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        setState(() {
+          _imageFormat = prefs.getString('image_format') ?? 'webp_lossless';
+          _imageQuality = (prefs.getInt('image_quality') ?? 90).clamp(1, 100);
+          _useTargetSize = prefs.getBool('use_target_size') ?? false;
+          final tkb = prefs.getInt('target_size_kb') ?? 50;
+          _targetSizeKb = tkb < 50 ? 50 : tkb;
         _grayscale = false; // 灰度已移除
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _loadPrivacyMode() async {
-    try {
-      final enabled = await _appService.getPrivacyModeEnabled();
-      if (mounted) {
-        setState(() { _privacyMode = enabled; });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _updatePrivacyMode(bool enabled) async {
-    await _appService.savePrivacyModeEnabled(enabled);
-    if (mounted) {
-      setState(() { _privacyMode = enabled; });
-      UINotifier.success(context, enabled ? '已开启隐私模式' : '已关闭隐私模式');
+        });
+      } catch (_) {}
     }
-  }
 
-  Future<void> _saveScreenshotQualitySettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
-      await prefs.setString('image_format', _useTargetSize ? 'webp_lossy' : 'webp_lossless');
-      await prefs.setInt('image_quality', _imageQuality);
-      await prefs.setBool('use_target_size', _useTargetSize);
-      await prefs.setInt('target_size_kb', _targetSizeKb < 50 ? 50 : _targetSizeKb);
-      // 不再保存灰度
-      if (mounted) {
-        UINotifier.success(context, '截图质量设置已保存');
-      }
-    } catch (e) {
-      if (mounted) {
-        UINotifier.error(context, '保存失败: $e');
+    Future<void> _loadScreenshotExpireSettings() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        setState(() {
+          _expireEnabled = prefs.getBool('screenshot_expire_enabled') ?? false;
+          final d = prefs.getInt('screenshot_expire_days') ?? 30;
+          _expireDays = d < 1 ? 1 : d;
+        });
+      } catch (_) {}
+    }
+
+    Future<void> _saveScreenshotExpireSettings() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('screenshot_expire_enabled', _expireEnabled);
+        await prefs.setInt(
+          'screenshot_expire_days',
+          _expireDays < 1 ? 1 : _expireDays,
+        );
+        if (mounted) {
+          UINotifier.success(context, '过期清理设置已保存');
+        }
+      } catch (e) {
+        if (mounted) {
+          UINotifier.error(context, '保存失败: ' + e.toString() + e.toString());
+        }
       }
     }
-  }
 
-  String _sortModeLabel(String mode) {
-    switch (mode) {
-      case 'timeAsc':
-        return '时间(旧→新)';
-      case 'timeDesc':
-        return '时间(新→旧)';
-      case 'sizeAsc':
-        return '大小(小→大)';
-      case 'sizeDesc':
-        return '大小(大→小)';
-      case 'countAsc':
-        return '数量(少→多)';
-      case 'countDesc':
-        return '数量(多→少)';
-      case 'lastScreenshot':
-        return '时间(新→旧)';
-      case 'screenshotCount':
-        return '数量(多→少)';
-      default:
-        return '时间(新→旧)';
+    Future<void> _loadPrivacyMode() async {
+      try {
+        final enabled = await _appService.getPrivacyModeEnabled();
+        if (mounted) {
+          setState(() {
+            _privacyMode = enabled;
+          });
+        }
+      } catch (_) {}
     }
-  }
+
+    Future<void> _updatePrivacyMode(bool enabled) async {
+      await _appService.savePrivacyModeEnabled(enabled);
+      if (mounted) {
+        setState(() {
+          _privacyMode = enabled;
+        });
+        UINotifier.success(context, enabled ? '已开启隐私模式' : '已关闭隐私模式');
+      }
+    }
+
+    Future<void> _saveScreenshotQualitySettings() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
+        await prefs.setString(
+          'image_format',
+          _useTargetSize ? 'webp_lossy' : 'webp_lossless',
+        );
+        await prefs.setInt('image_quality', _imageQuality);
+        await prefs.setBool('use_target_size', _useTargetSize);
+        await prefs.setInt(
+          'target_size_kb',
+          _targetSizeKb < 50 ? 50 : _targetSizeKb,
+        );
+        // 不再保存灰度
+        if (mounted) {
+          UINotifier.success(context, '截图质量设置已保存');
+        }
+      } catch (e) {
+        if (mounted) {
+          UINotifier.error(context, '保存失败: ' + e.toString());
+        }
+      }
+    }
+
+    String _sortModeLabel(String mode) {
+      switch (mode) {
+        case 'timeAsc':
+          return '时间（旧→新）';
+        case 'timeDesc':
+          return '时间（新→旧）';
+        case 'sizeAsc':
+          return '大小（小→大）';
+        case 'sizeDesc':
+          return '大小（大→小）';
+        case 'countAsc':
+          return '数量（少→多）';
+        case 'countDesc':
+          return '数量（多→少）';
+        case 'lastScreenshot':
+          return '时间（新→旧）';
+        case 'screenshotCount':
+          return '数量（多→少）';
+        default:
+          return '时间（新→旧）';
+      }
+    }
 
   Future<void> _updateSortMode(String mode) async {
     await _appService.saveSortMode(mode);
@@ -1316,7 +1619,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       setState(() {
         _sortMode = mode;
       });
-      UINotifier.success(context, '首页排序已设置为 ${_sortModeLabel(mode)}');
+      UINotifier.success(context, '首页排序已设置为 ' + _sortModeLabel(mode));
     }
   }
 
@@ -1328,21 +1631,22 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('当前：${_sortModeLabel(_sortMode)}'),
-        ],
+        children: [Text('当前：' + _sortModeLabel(_sortMode))],
       ),
       actions: const [
-        UIDialogAction<String>(text: '时间(新→旧)', result: 'timeDesc', style: UIDialogActionStyle.primary),
-        UIDialogAction<String>(text: '时间(旧→新)', result: 'timeAsc'),
-        UIDialogAction<String>(text: '大小(大→小)', result: 'sizeDesc'),
-        UIDialogAction<String>(text: '大小(小→大)', result: 'sizeAsc'),
-        UIDialogAction<String>(text: '数量(多→少)', result: 'countDesc'),
-        UIDialogAction<String>(text: '数量(少→多)', result: 'countAsc'),
+        UIDialogAction<String>(
+          text: '时间（新→旧）',
+          result: 'timeDesc',
+          style: UIDialogActionStyle.primary,
+        ),
+        UIDialogAction<String>(text: '时间（旧→新）', result: 'timeAsc'),
+        UIDialogAction<String>(text: '大小（大→小）', result: 'sizeDesc'),
+        UIDialogAction<String>(text: '大小（小→大）', result: 'sizeAsc'),
+        UIDialogAction<String>(text: '数量（多→少）', result: 'countDesc'),
+        UIDialogAction<String>(text: '数量（少→多）', result: 'countAsc'),
         UIDialogAction<String>(text: '取消', result: 'cancel'),
       ],
     );
-
     if (!mounted) return;
     if (selected != null && selected != 'cancel') {
       await _updateSortMode(selected);
