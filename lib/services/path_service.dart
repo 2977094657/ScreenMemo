@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'startup_profiler.dart';
+import 'flutter_logger.dart';
 
 /// 路径服务，提供跨平台的文件路径获取功能
 class PathService {
@@ -131,7 +132,7 @@ class PathService {
           final androidPath = await _channel.invokeMethod('getExternalFilesDir', {'subDir': null});
           paths['android_getExternalFilesDir'] = androidPath;
         } catch (e) {
-          paths['android_getExternalFilesDir'] = 'Error: $e';
+          paths['android_getExternalFilesDir'] = '错误: $e';
         }
       }
 
@@ -140,21 +141,21 @@ class PathService {
         final externalStorage = await path_provider.getExternalStorageDirectory();
         paths['path_provider_externalStorage'] = externalStorage?.path;
       } catch (e) {
-        paths['path_provider_externalStorage'] = 'Error: $e';
+        paths['path_provider_externalStorage'] = '错误: $e';
       }
 
       try {
         final appDocs = await path_provider.getApplicationDocumentsDirectory();
         paths['path_provider_appDocuments'] = appDocs.path;
       } catch (e) {
-        paths['path_provider_appDocuments'] = 'Error: $e';
+        paths['path_provider_appDocuments'] = '错误: $e';
       }
 
       try {
         final temp = await path_provider.getTemporaryDirectory();
         paths['path_provider_temporary'] = temp.path;
       } catch (e) {
-        paths['path_provider_temporary'] = 'Error: $e';
+        paths['path_provider_temporary'] = '错误: $e';
       }
 
       // 我们的服务路径
@@ -162,18 +163,18 @@ class PathService {
         final ourExternal = await getExternalFilesDir(null);
         paths['pathService_externalFiles'] = ourExternal?.path;
       } catch (e) {
-        paths['pathService_externalFiles'] = 'Error: $e';
+        paths['pathService_externalFiles'] = '错误: $e';
       }
 
       try {
         final screenshotDir = await getScreenshotDirectory();
         paths['pathService_screenshot'] = screenshotDir?.path;
       } catch (e) {
-        paths['pathService_screenshot'] = 'Error: $e';
+        paths['pathService_screenshot'] = '错误: $e';
       }
 
     } catch (e) {
-      paths['error'] = 'General error: $e';
+      paths['error'] = '通用错误: $e';
     }
 
     return paths;

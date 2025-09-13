@@ -10,6 +10,9 @@ import '../services/theme_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
+import '../services/flutter_logger.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:typed_data';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -43,6 +46,7 @@ class _SettingsPageState extends State<SettingsPage>
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
   bool _exportingDb = false;
+  bool _importingData = false;
   // 截图过期清理设置
   bool _expireEnabled = false; // 是否启用过期自动删除
   int _expireDays = 30; // 过期天数，下限 1
@@ -233,9 +237,11 @@ class _SettingsPageState extends State<SettingsPage>
       _exportingDb = true;
     });
     try {
+      await FlutterLogger.nativeInfo('UI_EXPORT', 'begin export');
       final result = await _screenshotDatabase.exportDatabaseToDownloads();
       if (!mounted) return;
       if (result != null) {
+        await FlutterLogger.nativeInfo('UI_EXPORT', 'success -> ' + ((result['humanPath'] as String?) ?? ''));
         final displayPath =
             (result['humanPath'] as String?) ??
             (result['absolutePath'] as String?) ??
@@ -286,6 +292,7 @@ class _SettingsPageState extends State<SettingsPage>
           ],
         );
       } else {
+        await FlutterLogger.nativeWarn('UI_EXPORT', 'export returned null');
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -315,6 +322,114 @@ class _SettingsPageState extends State<SettingsPage>
       }
     }
 
+  }
+
+  // 从用户选择的ZIP文件导入数据并解压到应用存储
+  Future<void> _importData() async {
+    if (_importingData) return;
+    setState(() {
+      _importingData = true;
+    });
+    try {
+      await FlutterLogger.nativeInfo('UI_IMPORT', 'open file picker');
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        withData: false,
+        allowMultiple: false,
+      );
+      if (!mounted) return;
+      if (result == null || result.files.isEmpty) {
+        await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled');
+        setState(() { _importingData = false; });
+        return; // 用户取消
+      }
+
+      final file = result.files.first; 
+      final bytes = file.bytes; 
+      final path = file.path; 
+      Map<String, dynamic>? importRes;  
+      await FlutterLogger.nativeInfo('UI_IMPORT', 'selected name=' + file.name + ' size=' + ((bytes?.length ?? 0).toString()) + ' path=' + (path ?? '')); 
+      // 停止截图服务以避免导入过程中的DB/FS冲突
+      final bool wasRunning = ScreenshotService.instance.isRunning;
+      if (wasRunning) {
+        await FlutterLogger.nativeInfo('UI_IMPORT', 'stopping service before import');
+        try { await ScreenshotService.instance.stopScreenshotService(); } catch (_) {}
+      }
+      if (bytes != null && bytes.isNotEmpty && (path == null || path.isEmpty)) {  
+        // 仅作为备选方案；优先使用文件路径流式传输
+        importRes = await _screenshotDatabase.importDataFromZipStreaming(zipBytes: bytes); 
+      } else if (path != null && path.isNotEmpty) { 
+        importRes = await _screenshotDatabase.importDataFromZipStreaming(zipPath: path); 
+      }  
+
+      if (!mounted) return;
+      if (importRes != null) { 
+        await FlutterLogger.nativeInfo('UI_IMPORT', 'success extracted=' + (importRes['extracted']?.toString() ?? 'null') + ' target=' + (importRes['targetDir']?.toString() ?? ''));
+        await showUIDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          title: '导入完成',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('数据已解压到:'),
+              const SizedBox(height: AppTheme.spacing2),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppTheme.spacing3),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Text(
+                  (importRes['targetDir'] as String?) ?? '',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          actions: const [
+            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          ],
+        );
+        // 使统计缓存失效，以便下次刷新UI
+        // ignore: unawaited_futures
+        ScreenshotService.instance.invalidateStatsCache();
+      } else { 
+        await FlutterLogger.nativeWarn('UI_IMPORT', 'import returned null');
+        await showUIDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          title: '导入失败',
+          message: '请检查ZIP文件并重试。',
+          actions: const [
+            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          ],
+        );
+      }
+    } catch (e) { 
+      if (!mounted) return; 
+      await FlutterLogger.nativeError('UI_IMPORT', 'exception: ' + e.toString());
+      await showUIDialog<void>( 
+        context: context,
+        barrierDismissible: false,
+        title: '导入失败',
+        content: Text('$e'),
+        actions: const [
+          UIDialogAction(text: 'OK', style: UIDialogActionStyle.primary),
+        ],
+      );
+    } finally { 
+      try {
+        // 尽力而为：不自动重启服务以避免意外。
+        await FlutterLogger.nativeInfo('UI_IMPORT', 'import flow finished');
+      } catch (_) {}
+      if (mounted) { 
+        setState(() { _importingData = false; }); 
+      } 
+    } 
   }
 
   @override
@@ -599,7 +714,10 @@ class _SettingsPageState extends State<SettingsPage>
                 _buildSection(
                   context: context,
                   title: '数据与备份',
-                  children: [_buildExportItem(context)],
+                  children: [
+                    _buildExportItem(context),
+                    _buildImportItem(context),
+                  ],
                 ),
               ],
             ),
@@ -783,6 +901,78 @@ class _SettingsPageState extends State<SettingsPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('导出'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.file_upload_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '导入数据',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '将ZIP文件导入到应用存储',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _importingData ? null : _importData,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: _importingData
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('导入'),
           ),
         ],
       ),
