@@ -157,14 +157,15 @@ class _SettingsPageState extends State<SettingsPage>
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
+                    color: Theme.of(context).colorScheme.secondaryContainer,
                     borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   ),
                   child: Icon(
                     _allPermissionsGranted()
-                        ? Icons.verified_user
-                        : Icons.lock_open,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ? Icons.verified_user_outlined
+                        : Icons.lock_open_outlined,
+                    color:
+                        Theme.of(context).colorScheme.onSecondaryContainer,
                     size: 18,
                   ),
                 ),
@@ -784,16 +785,12 @@ class _SettingsPageState extends State<SettingsPage>
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: isGranted
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Theme.of(context).colorScheme.surfaceVariant,
+              color: Theme.of(context).colorScheme.secondaryContainer,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(
               isGranted ? Icons.check : icon,
-              color: isGranted
-                  ? Theme.of(context).colorScheme.onPrimaryContainer
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
               size: 18,
             ),
           ),
@@ -1116,12 +1113,12 @@ class _SettingsPageState extends State<SettingsPage>
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
+              color: Theme.of(context).colorScheme.secondaryContainer,
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(
-              Icons.timer,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
+              Icons.timer_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
               size: 18,
             ),
           ),
@@ -1176,12 +1173,12 @@ class _SettingsPageState extends State<SettingsPage>
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
+                  color: Theme.of(context).colorScheme.secondaryContainer,
                   borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 ),
                 child: Icon(
                   Icons.image_outlined,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
                   size: 18,
                 ),
               ),
@@ -1485,12 +1482,12 @@ class _SettingsPageState extends State<SettingsPage>
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
+                color: Theme.of(context).colorScheme.secondaryContainer,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
               ),
               child: Icon(
                 Icons.auto_delete_outlined,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
                 size: 18,
               ),
             ),

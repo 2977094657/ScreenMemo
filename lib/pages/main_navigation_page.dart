@@ -4,6 +4,7 @@ import '../widgets/ui_components.dart';
 import 'home_page.dart';
 import 'settings_page.dart';
 import 'timeline_page.dart';
+import '../theme/app_theme.dart';
 
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
@@ -79,10 +80,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         builder: (context) {
           final theme = Theme.of(context);
           final isDark = theme.brightness == Brightness.dark;
-          final Color selectedColor = theme.colorScheme.primary;
+          // 更直观的选中色：浅色主题用信息蓝，深色主题用更醒目的蓝色强调
+          final Color selectedColor = isDark ? AppTheme.darkSelectedAccent : AppTheme.info;
+          // 未选中色：浅色使用静默前景灰，深色使用 onSurface 70% 不透明度
           final Color unselectedColor = isDark
               ? theme.colorScheme.onSurface.withOpacity(0.7)
-              : theme.colorScheme.onSurfaceVariant;
+              : AppTheme.mutedForeground;
 
           return SizedBox(
             height: 52,

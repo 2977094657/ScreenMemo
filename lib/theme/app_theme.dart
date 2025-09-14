@@ -90,6 +90,10 @@ class AppTheme {
   static const Color darkPopover = Color(0xFF2A2D30);
   static const Color darkPopoverForeground = Color(0xFFA9B7C6);
   
+  // 暗色模式下用于“选中高亮”的强调色（与灰系区分更明显）
+  // 选用 Blue 400：#60A5FA，在深背景上具有良好可读性与克制的纯度
+  static const Color darkSelectedAccent = Color(0xFF60A5FA);
+  
   /// 获取主题数据
   static ThemeData get lightTheme {
     return ThemeData(
