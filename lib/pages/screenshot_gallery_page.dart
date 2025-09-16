@@ -1186,7 +1186,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             ),
           ),
         ),
-        if (isCurrent) _buildTimelineOverlay(),
+        if (isCurrent && _dayTabs.length > 1) _buildTimelineOverlay(),
       ],
     );
   }

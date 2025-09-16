@@ -47,6 +47,8 @@ class _TimelinePageState extends State<TimelinePage>
   // 时间线滚动条交互状态（右侧快速滚动）
   bool _timelineActive = false;
   double _timelineFraction = 0.0;
+  // 拖动节流：将 jumpTo 合并到每帧一次，减少抖动
+  bool _scrubJumpScheduled = false;
   final GlobalKey _gridKey = GlobalKey();
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
 
@@ -292,6 +294,9 @@ class _TimelinePageState extends State<TimelinePage>
               child: GridView.builder(
                 key: PageStorageKey<String>('timeline_grid_tab_$tabIndex'),
                 controller: _controllerForTab(tabIndex),
+                // 仅缓存当前视窗上下各一屏，超出即回收
+                cacheExtent: MediaQuery.of(context).size.height,
+                addAutomaticKeepAlives: false,
                 physics: const ClampingScrollPhysics(),
                 padding: EdgeInsets.only(
                   bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
@@ -308,7 +313,7 @@ class _TimelinePageState extends State<TimelinePage>
             ),
           ),
         ),
-        if (isCurrent) _buildTimelineOverlay(),
+        if (isCurrent && _dayTabs.length > 1) _buildTimelineOverlay(),
       ],
     );
   }
@@ -374,14 +379,14 @@ class _TimelinePageState extends State<TimelinePage>
                       _timelineActive = true;
                       _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
                       setState(() {});
-                      _scrollToFraction(_timelineFraction);
+                      _scheduleScrubJump();
                     }
                   },
                   onVerticalDragUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
                       _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
                       setState(() {});
-                      _scrollToFraction(_timelineFraction);
+                      _scheduleScrubJump();
                     }
                   },
                   onVerticalDragEnd: (_) {
@@ -392,14 +397,14 @@ class _TimelinePageState extends State<TimelinePage>
                       _timelineActive = true;
                       _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
                       setState(() {});
-                      _scrollToFraction(_timelineFraction);
+                      _scheduleScrubJump();
                     }
                   },
                   onLongPressMoveUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
                       _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
                       setState(() {});
-                      _scrollToFraction(_timelineFraction);
+                      _scheduleScrubJump();
                     }
                   },
                   onLongPressEnd: (_) {
@@ -521,6 +526,25 @@ class _TimelinePageState extends State<TimelinePage>
     ctrl.jumpTo(target);
   }
 
+  // 将 jumpTo 合并到每帧一次，降低拖动过程中的重排与抖动
+  void _scheduleScrubJump() {
+    if (_scrubJumpScheduled) return;
+    _scrubJumpScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrubJumpScheduled = false;
+      if (!mounted) return;
+      final ctrl = _controllerForTab(_currentTabIndex);
+      if (!ctrl.hasClients) return;
+      final maxExtent = ctrl.position.maxScrollExtent;
+      if (maxExtent <= 0) return;
+      final double f = _timelineFraction.clamp(0.0, 1.0);
+      final double target = f * maxExtent;
+      if ((ctrl.position.pixels - target).abs() > 0.5) {
+        ctrl.jumpTo(target);
+      }
+    });
+  }
+
   Future<void> _prefetchFirstPageForTab(int index) async {
     if (!mounted) return;
     if (index < 0 || index >= _dayTabs.length) return;
@@ -558,10 +582,23 @@ class _TimelinePageState extends State<TimelinePage>
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
     final file = File(screenshot.filePath);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseImage = Image.file(
-      file,
+    // 使用按视口尺寸下采样的缩略图以提升快速拖动时的首帧显示速度（与截图列表一致）
+    final screenWidth = MediaQuery.of(context).size.width;
+    // 计算两列网格每项的近似逻辑宽度（外边距+列间距近似处理）
+    final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
+    final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
+    final imageProvider = ResizeImage(
+      FileImage(file),
+      width: targetWidth,
+    );
+    final baseImage = Image(
+      image: imageProvider,
+      width: double.infinity,
+      height: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _buildErrorItem('图片丢失或损坏'),
+      filterQuality: FilterQuality.low,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => _buildErrorItem('图片丢失或损坏'),
     );
     final Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
