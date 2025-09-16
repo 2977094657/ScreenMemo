@@ -13,6 +13,7 @@ import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
+import 'ai_settings_page.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -711,6 +712,15 @@ class _SettingsPageState extends State<SettingsPage>
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
+                // AI 助手
+                _buildSection(
+                  context: context,
+                  title: 'AI 助手',
+                  children: [
+                    _buildAIEntryItem(context),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing4),
                 // 数据与备份
                 _buildSection(
                   context: context,
@@ -970,6 +980,78 @@ class _SettingsPageState extends State<SettingsPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('导入'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIEntryItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.smart_toy_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI 助手',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '配置 AI 接口与模型，并进行多轮对话测试',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AISettingsPage(),
+                ),
+              );
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('进入'),
           ),
         ],
       ),

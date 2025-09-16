@@ -53,8 +53,9 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 1,
+          version: 2,
           onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
         );
         StartupProfiler.end('ScreenshotDatabase._initDatabase');
         return db;
@@ -67,8 +68,9 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 1,
+          version: 2,
           onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
         );
         StartupProfiler.end('ScreenshotDatabase._initDatabase');
         return db;
@@ -81,8 +83,9 @@ class ScreenshotDatabase {
       
       final db = await openDatabase(
         path,
-        version: 1,
+        version: 2,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       );
       StartupProfiler.end('ScreenshotDatabase._initDatabase');
       return db;
@@ -271,9 +274,41 @@ class ScreenshotDatabase {
         PRIMARY KEY (app_package_name, year)
       )
     ''');
+
+    // v2: AI 配置与会话表
+    await _createAiTables(db);
+  }
+
+  /// 升级回调：按版本增量迁移
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createAiTables(db);
+    }
+  }
+
+  Future<void> _createAiTables(DatabaseExecutor db) async {
+    // ai_settings: 单行键值存储
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    ''');
+    // ai_messages: 简单会话历史（默认会话：conversation_id='default'）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id)');
   }
 
   // 无升级逻辑：新安装直接按 _onCreate 创建所有表
+  // 注：从 v2 起使用 _onUpgrade 进行增量迁移
 
   /// 检查文件路径是否已存在于数据库中（可选指定执行器，以便在事务中调用）
   Future<bool> isFilePathExists(String filePath, {DatabaseExecutor? exec}) async {
@@ -1965,5 +2000,80 @@ class ScreenshotDatabase {
       print('searchScreenshotsByOcrForApp 失败: $e');
       return <ScreenshotRecord>[];
     }
+  }
+
+  // ===================== AI 配置与会话 便捷方法 =====================
+  Future<String?> getAiSetting(String key) async {
+    try {
+      final db = await database;
+      final rows = await db.query(
+        'ai_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first['value'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setAiSetting(String key, String? value) async {
+    final db = await database;
+    if (value == null) {
+      try { await db.delete('ai_settings', where: 'key = ?', whereArgs: [key]); } catch (_) {}
+      return;
+    }
+    try {
+      await db.execute(
+        'INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)',
+        [key, value],
+      );
+    } catch (_) {
+      try {
+        final count = await db.update('ai_settings', {'value': value}, where: 'key = ?', whereArgs: [key]);
+        if (count == 0) {
+          await db.insert('ai_settings', {'key': key, 'value': value});
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAiMessages(String conversationId, {int? limit, int? offset}) async {
+    try {
+      final db = await database;
+      final rows = await db.query(
+        'ai_messages',
+        where: 'conversation_id = ?',
+        whereArgs: [conversationId],
+        orderBy: 'id ASC',
+        limit: limit,
+        offset: offset,
+      );
+      return rows;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> appendAiMessage(String conversationId, String role, String content, {int? createdAt}) async {
+    try {
+      final db = await database;
+      await db.insert('ai_messages', {
+        'conversation_id': conversationId,
+        'role': role,
+        'content': content,
+        if (createdAt != null) 'created_at': createdAt,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> clearAiConversation(String conversationId) async {
+    try {
+      final db = await database;
+      await db.delete('ai_messages', where: 'conversation_id = ?', whereArgs: [conversationId]);
+    } catch (_) {}
   }
 }

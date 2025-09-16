@@ -55,6 +55,9 @@ dependencies:
   photo_view: ^0.15.0
   url_launcher: ^6.3.1
 
+  # HTTP 网络请求
+  http: ^1.2.2
+
 
 dev_dependencies:
   flutter_test:
