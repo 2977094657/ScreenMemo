@@ -3,6 +3,7 @@ import '../services/theme_service.dart';
 import '../widgets/ui_components.dart';
 import 'home_page.dart';
 import 'settings_page.dart';
+import 'segment_status_page.dart';
 import 'timeline_page.dart';
 import '../theme/app_theme.dart';
 
@@ -28,6 +29,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _pages = [
       HomePage(themeService: widget.themeService),
       const TimelinePage(),
+      const SegmentStatusPage(),
       SettingsPage(themeService: widget.themeService),
     ];
   }
@@ -41,6 +43,11 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     const BottomNavigationBarItem(
       icon: Icon(Icons.timeline_outlined),
       activeIcon: Icon(Icons.timeline),
+      label: '',
+    ),
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.event_note_outlined),
+      activeIcon: Icon(Icons.event_note),
       label: '',
     ),
     const BottomNavigationBarItem(

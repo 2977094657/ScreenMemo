@@ -283,6 +283,9 @@ class ScreenshotDatabase {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _createAiTables(db);
+    } else {
+      // 幂等确保新表
+      await _createAiTables(db);
     }
   }
 
@@ -305,6 +308,105 @@ class ScreenshotDatabase {
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id)');
+
+    // 段落与结果表（与原生侧保持一致）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        start_time INTEGER NOT NULL,
+        end_time INTEGER NOT NULL,
+        duration_sec INTEGER NOT NULL,
+        sample_interval_sec INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        app_packages TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS segment_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        segment_id INTEGER NOT NULL,
+        capture_time INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        app_package_name TEXT NOT NULL,
+        app_name TEXT NOT NULL,
+        position_index INTEGER NOT NULL,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        UNIQUE(segment_id, file_path)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS segment_results (
+        segment_id INTEGER PRIMARY KEY,
+        ai_provider TEXT,
+        ai_model TEXT,
+        output_text TEXT,
+        structured_json TEXT,
+        categories TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+  }
+
+  // ======= 段落查询接口 =======
+  Future<Map<String, dynamic>?> getActiveSegment() async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segments',
+        where: 'status = ?',
+        whereArgs: ['collecting'],
+        orderBy: 'id DESC',
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) { return null; }
+  }
+
+  Future<List<Map<String, dynamic>>> listSegments({int limit = 50, int offset = 0}) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segments',
+        orderBy: 'id DESC',
+        limit: limit,
+        offset: offset,
+      );
+      return rows;
+    } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segment_samples',
+        where: 'segment_id = ?',
+        whereArgs: [segmentId],
+        orderBy: 'position_index ASC',
+      );
+      return rows;
+    } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  Future<Map<String, dynamic>?> getSegmentResult(int segmentId) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segment_results',
+        where: 'segment_id = ?',
+        whereArgs: [segmentId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) { return null; }
   }
 
   // 无升级逻辑：新安装直接按 _onCreate 创建所有表

@@ -37,6 +37,9 @@ class _SettingsPageState extends State<SettingsPage>
   int _screenshotInterval = 5;
   String _sortMode = 'timeDesc';
   bool _privacyMode = true; // 隐私模式，默认开启
+  // 段落采样设置
+  int _segmentSampleIntervalSec = 20; // 最小5秒
+  int _segmentDurationMin = 5; // 以分钟显示，最小1分钟
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
   int _imageQuality = 90; // 备用项，已被“目标大小”策略覆盖
@@ -223,6 +226,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadPrivacyMode();
     _loadScreenshotQualitySettings();
     _loadScreenshotExpireSettings();
+    _loadSegmentSettings();
   }
 
   @override
@@ -712,6 +716,16 @@ class _SettingsPageState extends State<SettingsPage>
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
+      // 时间段总结设置
+      _buildSection(
+        context: context,
+        title: '时间段总结',
+        children: [
+          _buildSegmentSampleItem(context),
+          _buildSegmentDurationItem(context),
+        ],
+      ),
+      const SizedBox(height: AppTheme.spacing4),
                 // AI 助手
                 _buildSection(
                   context: context,
@@ -733,6 +747,199 @@ class _SettingsPageState extends State<SettingsPage>
               ],
             ),
     );
+  }
+
+  // ===== 时间段总结设置 UI =====
+  Widget _buildSegmentSampleItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.photo_library_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('采样间隔（秒）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text('当前：${_segmentSampleIntervalSec} 秒', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showSegmentSampleDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegmentDurationItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.schedule_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('时间段时长（分钟）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text('当前：${_segmentDurationMin} 分钟', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showSegmentDurationDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadSegmentSettings() async {
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      final res = await platform.invokeMethod('getSegmentSettings');
+      final map = Map<String, dynamic>.from(res ?? {});
+      if (mounted) {
+        setState(() {
+          _segmentSampleIntervalSec = ((map['sampleIntervalSec'] as int?) ?? 20).clamp(5, 3600);
+          final durSec = ((map['segmentDurationSec'] as int?) ?? 300).clamp(60, 24*3600);
+          _segmentDurationMin = (durSec / 60).round();
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _showSegmentSampleDialog() {
+    final TextEditingController controller = TextEditingController(text: _segmentSampleIntervalSec.toString());
+    showUIDialog<void>(
+      context: context,
+      title: '设置采样间隔（秒）',
+      content: _numberField(controller, hint: '请输入 >=5 的整数'),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final v = int.tryParse(controller.text.trim());
+            if (v == null || v < 5) { UINotifier.error(ctx, '请输入 >=5 的有效整数'); return; }
+            await _saveSegmentSettings(sample: v, durationMin: _segmentDurationMin);
+            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 秒'); }
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showSegmentDurationDialog() {
+    final TextEditingController controller = TextEditingController(text: _segmentDurationMin.toString());
+    showUIDialog<void>(
+      context: context,
+      title: '设置时间段时长（分钟）',
+      content: _numberField(controller, hint: '请输入 >=1 的整数'),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final v = int.tryParse(controller.text.trim());
+            if (v == null || v < 1) { UINotifier.error(ctx, '请输入 >=1 的有效整数'); return; }
+            await _saveSegmentSettings(sample: _segmentSampleIntervalSec, durationMin: v);
+            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 分钟'); }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _numberField(TextEditingController c, {required String hint}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: TextField(
+        controller: c,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: InputDecoration(
+          labelText: hint,
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.all(AppTheme.spacing3),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveSegmentSettings({required int sample, required int durationMin}) async {
+    final sampleClamped = sample < 5 ? 5 : sample;
+    final durationSec = (durationMin <= 0 ? 1 : durationMin) * 60;
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      await platform.invokeMethod('setSegmentSettings', {
+        'sampleIntervalSec': sampleClamped,
+        'segmentDurationSec': durationSec,
+      });
+      setState(() { _segmentSampleIntervalSec = sampleClamped; _segmentDurationMin = durationMin; });
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
+    }
   }
 
   Widget _buildSection({
