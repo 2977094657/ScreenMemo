@@ -382,6 +382,53 @@ class ScreenshotDatabase {
     } catch (_) { return <Map<String, dynamic>>[]; }
   }
 
+  /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
+  /// - has_summary: 0 表示无总结；1 表示已有总结
+  Future<List<Map<String, dynamic>>> listSegmentsEx({int limit = 50, bool onlyNoSummary = false}) async {
+    final db = await database;
+    try {
+      // 与原生 SegmentDatabaseHelper.listSegmentsNeedingSummary 的条件保持一致
+      const String noSummaryCond =
+          "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
+      final String whereSql = onlyNoSummary ? 'WHERE ' + noSummaryCond : '';
+      final String sql = '''
+        SELECT s.*, CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary
+        FROM segments s
+        LEFT JOIN segment_results r ON r.segment_id = s.id
+        $whereSql
+        ORDER BY s.id DESC
+        LIMIT ?
+      ''';
+      final rows = await db.rawQuery(sql, [limit]);
+      // sqflite 返回 Map<String, Object?>，此处直接透传
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 触发一次原生端的段落推进/补救扫描（用于点击刷新时重试缺失总结）
+  Future<bool> triggerSegmentTick() async {
+    try {
+      final res = await _channel.invokeMethod('triggerSegmentTick');
+      return res == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 通过原生接口按ID批量重试生成总结
+  Future<int> retrySegments(List<int> ids) async {
+    try {
+      final res = await _channel.invokeMethod('retrySegments', {
+        'ids': ids,
+      });
+      if (res is int) return res;
+      if (res is num) return res.toInt();
+      return 0;
+    } catch (_) { return 0; }
+  }
+
   Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
     final db = await database;
     try {

@@ -40,6 +40,8 @@ class _SettingsPageState extends State<SettingsPage>
   // 段落采样设置
   int _segmentSampleIntervalSec = 20; // 最小5秒
   int _segmentDurationMin = 5; // 以分钟显示，最小1分钟
+  // AI 请求最小间隔（秒）
+  int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
   int _imageQuality = 90; // 备用项，已被“目标大小”策略覆盖
@@ -227,7 +229,8 @@ class _SettingsPageState extends State<SettingsPage>
     _loadScreenshotQualitySettings();
     _loadScreenshotExpireSettings();
     _loadSegmentSettings();
-  }
+    _loadAiRequestInterval();
+   }
 
   @override
   void dispose() {
@@ -723,6 +726,7 @@ class _SettingsPageState extends State<SettingsPage>
         children: [
           _buildSegmentSampleItem(context),
           _buildSegmentDurationItem(context),
+          _buildAiRequestIntervalItem(context),
         ],
       ),
       const SizedBox(height: AppTheme.spacing4),
@@ -846,6 +850,81 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  // ===== AI请求间隔设置 UI =====
+  Widget _buildAiRequestIntervalItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.speed_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('AI 请求最小间隔（秒）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text('当前：${_aiRequestIntervalSec} 秒（最低1秒）', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showAiRequestIntervalDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAiRequestIntervalDialog() {
+    final TextEditingController controller = TextEditingController(text: _aiRequestIntervalSec.toString());
+    showUIDialog<void>(
+      context: context,
+      title: '设置AI请求最小间隔（秒）',
+      content: _numberField(controller, hint: '请输入 ≥1 的整数'),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final parsed = int.tryParse(controller.text.trim());
+            if (parsed == null || parsed < 1) { UINotifier.error(ctx, '请输入 ≥1 的有效整数'); return; }
+            final v = parsed.clamp(1, 60);
+            try {
+              const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+              await platform.invokeMethod('setAiRequestIntervalSec', {'seconds': v});
+              if (mounted) setState(() { _aiRequestIntervalSec = v; });
+              if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 秒'); }
+            } catch (e) {
+              if (ctx.mounted) UINotifier.error(ctx, '保存失败: ' + e.toString());
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   Future<void> _loadSegmentSettings() async {
     try {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
@@ -859,6 +938,20 @@ class _SettingsPageState extends State<SettingsPage>
         });
       }
     } catch (_) {}
+  }
+
+  // 读取AI请求最小间隔（秒），默认3，最低1
+  Future<void> _loadAiRequestInterval() async {
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      final sec = await platform.invokeMethod('getAiRequestIntervalSec');
+      final v = (sec as int?) ?? 3;
+      if (mounted) {
+        setState(() { _aiRequestIntervalSec = v.clamp(1, 60); });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _aiRequestIntervalSec = 3; });
+    }
   }
 
   void _showSegmentSampleDialog() {

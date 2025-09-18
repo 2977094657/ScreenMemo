@@ -192,6 +192,42 @@ class _TimelinePageState extends State<TimelinePage>
     if (mounted) setState(() => _isLoadingMore = false);
   }
 
+  /// 顶部刷新：重载当前日期的时间线数据并更新计数
+  Future<void> _refresh() async {
+    if (!mounted) return;
+    if (_dayTabs.isEmpty || _dateStartMillis == null || _dateEndMillis == null) {
+      await _prepareDayTabs();
+      return;
+    }
+    final int idx = _currentTabIndex;
+    setState(() {
+      _screenshots.clear();
+      _pageOffset = 0;
+      _hasMore = true;
+      _isLoadingMore = false;
+      _tabCache[idx] = <ScreenshotRecord>[];
+      _tabOffset[idx] = 0;
+      _tabHasMore[idx] = true;
+    });
+    await _refreshCurrentTabCount();
+    await _reloadForCurrentTab(reset: true);
+  }
+
+  /// 刷新当前Tab的计数标签
+  Future<void> _refreshCurrentTabCount() async {
+    if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) return;
+    try {
+      final c = await ScreenshotService.instance.getGlobalScreenshotCountBetween(
+        startMillis: _dayTabs[_currentTabIndex].startMillis,
+        endMillis: _dayTabs[_currentTabIndex].endMillis,
+      );
+      if (!mounted) return;
+      setState(() {
+        _dayTabs[_currentTabIndex].count = c;
+      });
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -201,6 +237,13 @@ class _TimelinePageState extends State<TimelinePage>
         title: const Text('时间线'),
         centerTitle: true,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refresh,
+            tooltip: '刷新',
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
