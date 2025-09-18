@@ -188,6 +188,34 @@ class MainActivity : FlutterActivity() {
                     val dir = OutputFileLogger.getTodayDir(this)
                     result.success(dir?.absolutePath)
                 }
+                "setSegmentSettings" -> {
+                    // { sampleIntervalSec, segmentDurationSec }
+                    try {
+                        val sample = (call.argument<Int>("sampleIntervalSec") ?: 20).coerceAtLeast(5)
+                        val duration = (call.argument<Int>("segmentDurationSec") ?: 300).coerceAtLeast(60)
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        sp.edit()
+                            .putInt("segment_sample_interval_sec", sample)
+                            .putInt("segment_duration_sec", duration)
+                            .apply()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
+                    }
+                }
+                "getSegmentSettings" -> {
+                    try {
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        val sample = (sp.getInt("segment_sample_interval_sec", 20)).coerceAtLeast(5)
+                        val duration = (sp.getInt("segment_duration_sec", 300)).coerceAtLeast(60)
+                        result.success(mapOf(
+                            "sampleIntervalSec" to sample,
+                            "segmentDurationSec" to duration
+                        ))
+                    } catch (e: Exception) {
+                        result.error("read_failed", e.message, null)
+                    }
+                }
                 "startForegroundService" -> {
                     startForegroundService()
                     result.success(null)

@@ -54,6 +54,12 @@ class ScreenCaptureService : Service() {
             FileLogger.e(TAG, "启动前台服务失败", e)
         }
 
+        // 保障段落采样在服务生命周期内可被触发（即便应用被刷掉）
+        try {
+            // 这里不做定时器常驻，只保证进程在，实际采样在每次截图后由 SegmentSummaryManager 驱动
+            FileLogger.e(TAG, "SegmentSummaryManager 保活环境就绪")
+        } catch (_: Exception) {}
+
         FileLogger.e(TAG, "=== 前台服务 onStartCommand 完成 ===")
         return START_STICKY // 服务被杀死后自动重启
     }

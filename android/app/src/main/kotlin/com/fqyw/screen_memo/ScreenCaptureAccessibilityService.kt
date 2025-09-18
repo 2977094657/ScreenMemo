@@ -74,6 +74,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var isTimedScreenshotRunning = false
     @Volatile private var pausedByScreenOff: Boolean = false
 
+    // 段落推进心跳（无新截图时也能结束 collecting）
+    private var segmentTickTimer: Timer? = null
+    private val segmentTickIntervalMs = 1_000L
+
     // 前台应用检测定时器
     private var foregroundAppTimer: Timer? = null
     private var isForegroundDetectionRunning = false
@@ -340,6 +344,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     startForegroundAppDetection()
                     FileLogger.e(TAG, "前台应用检测已启动")
 
+                    // 启动段落推进心跳（每60秒推进所有collecting并回填）
+                    startSegmentTickTimer()
+                    FileLogger.e(TAG, "段落推进心跳已启动")
+
                     // 更新心跳
                     AccessibilityServiceWatchdog.updateHeartbeat()
 
@@ -416,6 +424,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 停止前台应用检测
         stopForegroundAppDetection()
 
+        // 停止段落推进心跳
+        stopSegmentTickTimer()
+
         // 释放WakeLock
         releaseWakeLock()
 
@@ -426,6 +437,41 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         scheduleRestart()
 
         FileLogger.e(TAG, "=== 无障碍服务已销毁 ===")
+    }
+
+    /**
+     * 启动段落推进心跳：周期性调用 SegmentSummaryManager.tick()
+     */
+    private fun startSegmentTickTimer() {
+        try {
+            segmentTickTimer?.cancel()
+            segmentTickTimer = timer(
+                name = "SegmentTickTimer",
+                daemon = true,
+                period = segmentTickIntervalMs
+            ) {
+                try {
+                    SegmentSummaryManager.tick(this@ScreenCaptureAccessibilityService)
+                } catch (e: Exception) {
+                    FileLogger.w(TAG, "Segment tick 调用失败: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "启动段落推进心跳失败", e)
+        }
+    }
+
+    /**
+     * 停止段落推进心跳
+     */
+    private fun stopSegmentTickTimer() {
+        try {
+            segmentTickTimer?.cancel()
+            segmentTickTimer = null
+            FileLogger.i(TAG, "段落推进心跳已停止")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "停止段落推进心跳失败", e)
+        }
     }
 
     /**
@@ -1277,6 +1323,21 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 )
             } catch (e: Exception) {
                 FileLogger.w(TAG, "原生侧入库失败: ${e.message}")
+            }
+
+            // 通知段落管理器（用于段落开始与采样调度）
+            try {
+                SegmentSummaryManager.onScreenshotSaved(
+                    this@ScreenCaptureAccessibilityService,
+                    packageName,
+                    appName,
+                    file.absolutePath,
+                    System.currentTimeMillis()
+                )
+                    // 在每次截图后，后台补齐未完成的段落直到最新可完整时段
+                    try { SegmentSummaryManager.backfillToLatest(this@ScreenCaptureAccessibilityService) } catch (_: Exception) {}
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "SegmentSummaryManager 调用失败: ${e.message}")
             }
 
             // 在“原图（未压缩）”上执行 OCR，并将结果异步写回数据库

@@ -62,6 +62,14 @@ class KeepAliveJobService : JobService() {
                 }
             }
             
+            // 调用段落补齐逻辑，确保在后台周期任务中也能自动总结
+            try {
+                // 优先推进所有 collecting 段落并在必要时触发AI
+                SegmentSummaryManager.tick(this)
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "tick 调用失败", e)
+            }
+
             // 任务执行完成
             jobFinished(params, true) // true表示需要重新调度
             
