@@ -56,6 +56,40 @@ object SegmentSummaryManager {
     // 窗口级完成去重：同一 (start,end) 仅允许一次 finish 流程
     private val finishingWindows: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
+    // 全局AI请求速率限制：两次请求之间的最小间隔（毫秒）
+    @Volatile private var nextAiAvailableMs: Long = 0L
+    private val aiRateLock = Object()
+
+    private fun getAiMinIntervalSec(ctx: Context): Int {
+        // 可通过 SharedPreferences(键: ai_min_request_interval_sec) 配置；默认3秒，最低1秒
+        return try {
+            val v = prefs(ctx).getInt("ai_min_request_interval_sec", 3)
+            if (v < 1) 1 else if (v > 60) 60 else v
+        } catch (_: Exception) { 3 }
+    }
+
+    /**
+     * 申请一次AI请求配额：若距离上次请求未超过最小间隔，则等待剩余时间。
+     * 采用“令牌时钟”：所有调用串行化到全局最小间隔，避免瞬时洪峰。
+     * 返回本次实际等待的毫秒数（便于日志观测）。
+     */
+    private fun acquireAiRateSlot(ctx: Context): Long {
+        val intervalMs = getAiMinIntervalSec(ctx) * 1000L
+        var waitMs = 0L
+        val now = System.currentTimeMillis()
+        synchronized(aiRateLock) {
+            val target = if (nextAiAvailableMs <= now) now else nextAiAvailableMs
+            waitMs = (target - now).coerceAtLeast(0L)
+            // 预占下一个可用时间点，确保并发下也能按照间隔队列
+            nextAiAvailableMs = target + intervalMs
+        }
+        if (waitMs > 0L) {
+            try { FileLogger.i(TAG, "AI rate limit: wait ${waitMs}ms (interval=${intervalMs}ms)") } catch (_: Exception) {}
+            try { Thread.sleep(waitMs) } catch (_: Exception) {}
+        }
+        return waitMs
+    }
+
     @Synchronized
     fun onScreenshotSaved(ctx: Context, appPackage: String, appName: String, filePathAbs: String, captureTime: Long) {
         try {
@@ -102,6 +136,8 @@ object SegmentSummaryManager {
                 }
                 if (created) {
                     tryCollectSamplesAndMaybeFinish(ctx)
+                    // 兜底：创建新事件时，尝试补救历史存在样本但缺少结果的段落
+                    try { resumeMissingSummaries(ctx, limit = 1) } catch (_: Exception) {}
                 }
             } else {
                 // 已有活动段落，尝试补充采样或结束
@@ -128,6 +164,8 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
             // 后台补齐到当天最新可完整时段
             backfillToLatest(ctx)
+            // 定时补救：扫描缺失结果的段落
+            try { resumeMissingSummaries(ctx, limit = 2) } catch (_: Exception) {}
         } catch (_: Exception) {}
     }
 
@@ -425,9 +463,13 @@ object SegmentSummaryManager {
                 }
 
                 val prompt = sb.toString()
-                try { FileLogger.i(TAG, "finish: calling Gemini with ${samples.size} images") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "finish: calling AI with images=${samples.size} seg=${seg.id}") } catch (_: Exception) {}
                 val result = callGeminiWithImages(ctx, seg, samples, prompt)
-                try { FileLogger.i(TAG, "finish: ai model=${result.first}, outputSize=${result.second.length}") } catch (_: Exception) {}
+                try {
+                    FileLogger.i(TAG, "finish: ai model=${result.first}, outputSize=${result.second.length}")
+                    val preview = truncateForLog(result.second, 3000)
+                    FileLogger.i(TAG, "AI响应预览: ${preview}")
+                } catch (_: Exception) {}
                 SegmentDatabaseHelper.saveResult(
                     ctx,
                     seg.id,
@@ -437,9 +479,18 @@ object SegmentSummaryManager {
                     structuredJson = result.third,
                     categories = result.fourth
                 )
+                // 生成后尝试与上一个已完成事件对比并合并
+                try {
+                    tryCompareAndMergeBackward(ctx, seg, samples, result.second, result.third)
+                } catch (_: Exception) {}
             } catch (e: Exception) {
                 Log.w(TAG, "finishSegment ai error: ${e.message}")
-                try { FileLogger.w(TAG, "finishSegment ai error: ${e.message}") } catch (_: Exception) {}
+                try {
+                    FileLogger.w(TAG, "finishSegment ai error: ${e.message}")
+                    // 捕获更详细的异常类型与栈
+                    FileLogger.w(TAG, "ai exception class=${e::class.java.name}")
+                    FileLogger.w(TAG, "ai exception stack=\n" + (e.stackTraceToString()))
+                } catch (_: Exception) {}
             } finally {
                 SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
                 activeSegmentId = -1L
@@ -459,11 +510,55 @@ object SegmentSummaryManager {
     ): Quad<String, String, String?, String?> {
         val cfg = AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
-        val client = OkHttpClient()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
 
         val model = cfg.model
         val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
         val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
+
+        // 速率限制：必要时等待
+        val waited = acquireAiRateSlot(ctx)
+
+        // 配置校验与请求前日志
+        try {
+            if (apiKey.isNullOrBlank()) {
+                FileLogger.e(TAG, "AI config error: missing apiKey")
+            }
+            if (base.isBlank()) {
+                FileLogger.e(TAG, "AI config error: missing baseUrl")
+            }
+            if (model.isBlank()) {
+                FileLogger.e(TAG, "AI config warning: empty model, using server default if supported")
+            }
+            if (waited > 0L) {
+                FileLogger.i(TAG, "AI waited=${waited}ms due to rate limit")
+            }
+        } catch (_: Exception) {}
+
+        // 统计图片字节与预览
+        var totalImageBytes = 0L
+        var missingImages = 0
+        val firstNames = ArrayList<String>()
+        for (s in samples) {
+            try {
+                val f = File(s.filePath)
+                val size = if (f.exists()) f.length() else 0L
+                if (size <= 0L) missingImages++ else totalImageBytes += size
+                if (firstNames.size < 6) firstNames.add(f.name)
+            } catch (_: Exception) { missingImages++ }
+        }
+        val textLen = prompt.length
+        try {
+            FileLogger.i(
+                TAG,
+                "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}" 
+            )
+        } catch (_: Exception) {}
 
         if (isGoogle) {
             // Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
@@ -485,14 +580,52 @@ object SegmentSummaryManager {
             val body = JSONObject().put("contents", contents).toString()
             val reqBody: RequestBody = body.toRequestBody("application/json; charset=utf-8".toMediaType())
             val req = Request.Builder().url(url).post(reqBody).build()
-            val resp = client.newCall(req).execute()
-            if (!resp.isSuccessful) {
-                val err = resp.body?.string()
-                try { FileLogger.e(TAG, "AI request failed: code=${resp.code}, body=${err}") } catch (_: Exception) {}
-                throw IllegalStateException("Request failed: ${resp.code} ${err}")
+            val t0 = System.currentTimeMillis()
+            var respText = ""
+            run {
+                var attempt = 0
+                val maxAttempts = 3
+                var lastCode = -1
+                var lastBody: String? = null
+                while (attempt < maxAttempts) {
+                    val start = System.currentTimeMillis()
+                    try {
+                        val resp = client.newCall(req).execute()
+                        val end = System.currentTimeMillis()
+                        lastCode = resp.code
+                        try { FileLogger.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        if (resp.isSuccessful) {
+                            respText = resp.body?.string() ?: ""
+                            break
+                        } else {
+                            lastBody = resp.body?.string()
+                            val shouldRetry = resp.code >= 500
+                            try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
+                        }
+                    } catch (e: java.net.SocketTimeoutException) {
+                        try { FileLogger.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        // 继续重试
+                    } catch (e: Exception) {
+                        // 其他IO异常：仅第一次尝试记录，仍然重试
+                        try { FileLogger.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                    }
+                    attempt++
+                    if (attempt < maxAttempts) {
+                        val backoff = (1000L * (1 shl (attempt - 1))).coerceAtMost(5000L)
+                        try { Thread.sleep(backoff) } catch (_: Exception) {}
+                    } else if (lastCode >= 0) {
+                        throw IllegalStateException("Request failed: ${lastCode} ${lastBody}")
+                    } else {
+                        throw IllegalStateException("Request failed: unknown error")
+                    }
+                }
             }
-            val respText = resp.body?.string() ?: ""
-            try { FileLogger.d(TAG, "AI response size=${respText.length}") } catch (_: Exception) {}
+            try {
+                FileLogger.d(TAG, "AI response size=${respText.length}")
+                val preview = truncateForLog(respText, 2000)
+                FileLogger.i(TAG, "AI response preview: ${preview}")
+            } catch (_: Exception) {}
 
             var outputText = ""
             try {
@@ -543,14 +676,51 @@ object SegmentSummaryManager {
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
                 .build()
-            val resp = client.newCall(req).execute()
-            if (!resp.isSuccessful) {
-                val err = resp.body?.string()
-                try { FileLogger.e(TAG, "AI request failed(OpenAI compat): code=${resp.code}, body=${err}") } catch (_: Exception) {}
-                throw IllegalStateException("Request failed: ${resp.code} ${err}")
+            val t0 = System.currentTimeMillis()
+            var respText = ""
+            run {
+                var attempt = 0
+                val maxAttempts = 3
+                var lastCode = -1
+                var lastBody: String? = null
+                while (attempt < maxAttempts) {
+                    val start = System.currentTimeMillis()
+                    try {
+                        val resp = client.newCall(req).execute()
+                        val end = System.currentTimeMillis()
+                        lastCode = resp.code
+                        try { FileLogger.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        if (resp.isSuccessful) {
+                            respText = resp.body?.string() ?: ""
+                            break
+                        } else {
+                            lastBody = resp.body?.string()
+                            val shouldRetry = resp.code >= 500
+                            try { FileLogger.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
+                        }
+                    } catch (e: java.net.SocketTimeoutException) {
+                        try { FileLogger.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        // 继续重试
+                    } catch (e: Exception) {
+                        try { FileLogger.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                    }
+                    attempt++
+                    if (attempt < maxAttempts) {
+                        val backoff = (1000L * (1 shl (attempt - 1))).coerceAtMost(5000L)
+                        try { Thread.sleep(backoff) } catch (_: Exception) {}
+                    } else if (lastCode >= 0) {
+                        throw IllegalStateException("Request failed: ${lastCode} ${lastBody}")
+                    } else {
+                        throw IllegalStateException("Request failed: unknown error")
+                    }
+                }
             }
-            val respText = resp.body?.string() ?: ""
-            try { FileLogger.d(TAG, "AI response size(OpenAI compat)=${respText.length}") } catch (_: Exception) {}
+            try {
+                FileLogger.d(TAG, "AI response size(OpenAI compat)=${respText.length}")
+                val preview = truncateForLog(respText, 2000)
+                FileLogger.i(TAG, "AI response preview(OpenAI): ${preview}")
+            } catch (_: Exception) {}
             var outputText = ""
             try {
                 val obj = JSONObject(respText)
@@ -564,6 +734,325 @@ object SegmentSummaryManager {
             val (structured, cats) = extractJsonBlocks(outputText)
             return Quad(model, outputText, structured, cats)
         }
+    }
+
+    /**
+     * 与上一个已完成段进行“是否为同一事件”的判断，若相同则合并并生成新总结；
+     * 合并策略：将时间窗口扩展为 [prev.start, cur.end] 并基于合并后的样本重新请求AI。
+     * 图片采样：若合计图片数超过 MAX_COMPARE_IMAGES，则两段各取一半，按时间均匀抽样。
+     */
+    private fun tryCompareAndMergeBackward(
+        ctx: Context,
+        cur: SegmentDatabaseHelper.Segment,
+        curSamples: List<SegmentDatabaseHelper.Sample>,
+        curOutputText: String,
+        curStructured: String?
+    ) {
+        try { FileLogger.i(TAG, "merge: begin compare cur=${cur.id} start=${fmt(cur.startTime)} with previous") } catch (_: Exception) {}
+        val prev = SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+        if (prev == null) {
+            try { FileLogger.i(TAG, "merge: no previous completed-with-result segment before ${fmt(cur.startTime)}") } catch (_: Exception) {}
+            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+            return
+        }
+
+        // 读取上一个段的样本与文本
+        val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
+        try { FileLogger.i(TAG, "merge: prev=${prev.id} A=${prevSamples.size} imgs, cur=${cur.id} B=${curSamples.size} imgs") } catch (_: Exception) {}
+        val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
+        val prevOutput = prevRes.first ?: ""
+
+        // 构造“是否同一事件”的判定提示（放宽：同一行为的持续可合并）
+        val sb = StringBuilder()
+        sb.append("请判断两段时间是否属于同一用户事件：\n")
+            .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+            .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+            .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
+            .append("两段各自的 overall_summary：\n")
+            .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+            .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+        val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+        sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+            .append("合并判定策略（放宽）：\n")
+            .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
+            .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
+            .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
+            .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+
+        // 采样图片：限制总数 MAX_COMPARE_IMAGES
+        val dynamicCap = (cur.durationSec / cur.sampleIntervalSec).coerceAtLeast(1)
+        val (imgsA, imgsB) = pickCompareImages(prevSamples, curSamples, dynamicCap)
+        try { FileLogger.i(TAG, "merge: pick cap=${dynamicCap} -> A=${imgsA.size}, B=${imgsB.size}") } catch (_: Exception) {}
+        val decide = callGeminiWithImages(ctx, cur, imgsA + imgsB, sb.toString())
+        val decisionText = decide.second
+        // 兼容多种输出：代码块/带空格/大小写，优先解析JSON片段
+        val same: Boolean = try {
+            val pair = extractJsonBlocks(decisionText)
+            val jsonStr = pair.first
+            if (jsonStr != null) {
+                try {
+                    val obj = org.json.JSONObject(jsonStr)
+                    obj.optBoolean("same_event", false)
+                } catch (_: Exception) {
+                    // 回退：正则匹配，允许空格
+                    Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                }
+            } else {
+                Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+            }
+        } catch (_: Exception) {
+            Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+        }
+        try { FileLogger.i(TAG, "merge: decision same_event=${same} textLen=${decisionText.length}") } catch (_: Exception) {}
+        // 仅打印合并“判定”AI响应（避免打印普通总结响应）
+        try {
+            val preview = truncateForLog(decisionText, 3000)
+            FileLogger.i(TAG, "合并判定响应: ${preview}")
+        } catch (_: Exception) {}
+        if (!same) { SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true); return }
+
+        // 合并：窗口 [prev.start, cur.end]，样本合并并裁剪避免重复
+        val mergedSamples = mergeSamples(prevSamples, curSamples)
+        val mergePrompt = buildMergePrompt(prev, cur, mergedSamples)
+        try { FileLogger.i(TAG, "merge: same_event=true -> merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${mergedSamples.size}") } catch (_: Exception) {}
+        val merged = callGeminiWithImages(ctx, cur, mergedSamples, mergePrompt)
+        try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
+        // 仅打印合并“生成新总结”的AI响应
+        try {
+            val preview2 = truncateForLog(merged.second, 3000)
+            FileLogger.i(TAG, "合并总结响应: ${preview2}")
+        } catch (_: Exception) {}
+        // 同步更新当前段的时间窗口到合并范围
+        SegmentDatabaseHelper.updateSegmentWindow(ctx, cur.id, prev.startTime, cur.endTime)
+        // 覆写当前段的结果（保持上一个不变），并标记上一个段状态为 completed-merged 可选
+        SegmentDatabaseHelper.saveResult(
+            ctx,
+            cur.id,
+            provider = "gemini",
+            model = merged.first,
+            outputText = merged.second,
+            structuredJson = merged.third,
+            categories = merged.fourth
+        )
+        // 标记当前段为“已合并”，用于前端展示
+        try { SegmentDatabaseHelper.setMergedFlag(ctx, cur.id, true) } catch (_: Exception) {}
+        // 合并成功后：删除被合并的前一事件，避免同时存在
+        try {
+            SegmentDatabaseHelper.deleteSegmentCascade(ctx, prev.id)
+            try { FileLogger.i(TAG, "merge: deleted previous segment id=${prev.id}") } catch (_: Exception) {}
+        } catch (_: Exception) {}
+        // 递归向前继续尝试合并
+        try { FileLogger.i(TAG, "merge: continue backward compare from new start=${fmt(prev.startTime)}") } catch (_: Exception) {}
+        SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+        tryCompareAndMergeBackward(ctx, cur.copy(startTime = prev.startTime), mergedSamples, merged.second, merged.third)
+    }
+
+    private fun truncateForLog(text: String, maxLen: Int = 3000): String {
+        return if (text.length <= maxLen) text else (text.substring(0, maxLen) + "…<truncated>")
+    }
+
+    private fun pickCompareImages(
+        a: List<SegmentDatabaseHelper.Sample>,
+        b: List<SegmentDatabaseHelper.Sample>,
+        cap: Int
+    ): Pair<List<SegmentDatabaseHelper.Sample>, List<SegmentDatabaseHelper.Sample>> {
+        val maxCap = cap.coerceAtLeast(1)
+        val total = a.size + b.size
+        if (total <= maxCap) return Pair(a, b)
+        val half = maxCap / 2
+        return Pair(evenPick(a, half), evenPick(b, maxCap - half))
+    }
+
+    private fun evenPick(list: List<SegmentDatabaseHelper.Sample>, count: Int): List<SegmentDatabaseHelper.Sample> {
+        if (list.isEmpty() || count <= 0) return emptyList()
+        if (list.size <= count) return list
+        val step = list.size.toDouble() / count
+        val out = ArrayList<SegmentDatabaseHelper.Sample>(count)
+        var idx = 0.0
+        while (out.size < count) {
+            out.add(list[idx.toInt().coerceIn(0, list.size - 1)])
+            idx += step
+        }
+        return out
+    }
+
+    /** 为任意 segment 按“每槽位最近一图 + 最后一槽尝试 end 之后第一张”规则重建样本列表 */
+    private fun buildSamplesForSegment(ctx: Context, seg: SegmentDatabaseHelper.Segment): List<SegmentDatabaseHelper.Sample> {
+        val interval = seg.sampleIntervalSec
+        val start = seg.startTime
+        val end = seg.endTime
+        val totalSec = seg.durationSec
+        val totalSlots = (totalSec / interval).coerceAtLeast(1)
+
+        val shots = SegmentDatabaseHelper.listShotsBetween(ctx, start, end)
+        val samples = ArrayList<SegmentDatabaseHelper.Sample>()
+        val seenPaths = HashSet<String>()
+        for (i in 0 until totalSlots) {
+            val isLast = (i == totalSlots - 1)
+            val target = start + i * interval * 1000L
+            var chosen: SegmentDatabaseHelper.ShotInfo? = null
+            if (isLast) {
+                val post = findFirstShotStrictAfter(ctx, end)
+                if (post != null) chosen = post
+            }
+            if (chosen == null) {
+                var best: SegmentDatabaseHelper.ShotInfo? = null
+                var bestDt = Long.MAX_VALUE
+                for (s in shots) {
+                    val dt = kotlin.math.abs(s.captureTime - target)
+                    if (dt < bestDt) { bestDt = dt; best = s }
+                }
+                chosen = best
+            }
+            if (chosen != null && seenPaths.add(chosen.filePath)) {
+                samples.add(
+                    SegmentDatabaseHelper.Sample(
+                        id = 0L,
+                        segmentId = seg.id,
+                        captureTime = chosen.captureTime,
+                        filePath = chosen.filePath,
+                        appPackageName = chosen.appPackageName,
+                        appName = chosen.appName,
+                        positionIndex = i
+                    )
+                )
+            }
+        }
+        return samples
+    }
+
+    private fun mergeSamples(
+        a: List<SegmentDatabaseHelper.Sample>,
+        b: List<SegmentDatabaseHelper.Sample>
+    ): List<SegmentDatabaseHelper.Sample> {
+        val all = (a + b).sortedBy { it.captureTime }
+        val seen = HashSet<String>()
+        val res = ArrayList<SegmentDatabaseHelper.Sample>(all.size)
+        var pos = 0
+        for (s in all) {
+            if (seen.add(s.filePath)) {
+                res.add(s.copy(positionIndex = pos++))
+            }
+        }
+        return res
+    }
+
+    private fun extractOverallSummary(text: String): String {
+        val start = text.indexOf("overall_summary")
+        if (start < 0) return text.take(200)
+        val brace = text.indexOf('{', start)
+        val endBrace = text.lastIndexOf('}')
+        if (brace >= 0 && endBrace > brace) {
+            val json = text.substring(brace, endBrace + 1)
+            return try {
+                val o = org.json.JSONObject(json)
+                o.optString("overall_summary", text.take(200))
+            } catch (_: Exception) { text.take(200) }
+        }
+        return text.take(200)
+    }
+
+    private fun buildMergePrompt(
+        a: SegmentDatabaseHelper.Segment,
+        b: SegmentDatabaseHelper.Segment,
+        samples: List<SegmentDatabaseHelper.Sample>
+    ): String {
+        val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
+        for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
+        val sb = StringBuilder()
+        sb.append("合并事件总结：\n")
+            .append("时间段：").append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
+            .append("请基于以下图片产出合并后的总结，保留先前提示的输出字段与规则（行为导向，禁逐图）：\n")
+            .append("- 对‘持续观看视频/持续阅读/持续浏览’这类同类行为，即使内容不同，也请合并为一个持续事件进行描述；\n")
+            .append("- 优先描述停留时间长、样本数量多的应用/主题；出现频次很低的内容可忽略或一句话带过；\n")
+            .append("- 代表性内容：可挑选1-2个停留较久的视频/文章进行点名描述，其余合并概括；\n")
+        for ((pkg, list) in byApp) {
+            list.sortBy { it.captureTime }
+            val name = list.firstOrNull()?.appName ?: pkg
+            sb.append("应用：").append(name).append(" (").append(pkg).append(")\n")
+            for (s in list) sb.append("  - 截图时间=").append(fmt(s.captureTime)).append(" -> 文件=").append(File(s.filePath).name).append('\n')
+        }
+        return sb.toString()
+    }
+
+    /**
+     * 扫描并补救：仅针对“当天”的 completed 段落，凡无内容（文本与结构化皆空）均尝试补救；
+     * 如不存在样本，则按规则即时重建样本后再补救。
+     */
+    private fun resumeMissingSummaries(ctx: Context, limit: Int = 2) {
+        // 默认只补救“当天”
+        val since = startOfToday()
+        val list = try { SegmentDatabaseHelper.listSegmentsNeedingSummary(ctx, limit = limit, sinceMillis = since) } catch (_: Exception) { emptyList() }
+        try { FileLogger.i(TAG, "resumeMissing: candidates=${list.size}, limit=${limit}, since=today") } catch (_: Exception) {}
+        for (seg in list) {
+            try {
+                // 避免重复：若窗口已有任何结果则跳过
+                if (SegmentDatabaseHelper.hasAnyResultForWindow(ctx, seg.startTime, seg.endTime)) continue
+
+                var samples = SegmentDatabaseHelper.getSamplesForSegment(ctx, seg.id)
+                if (samples.isEmpty()) {
+                    // 即时重建样本并保存
+                    samples = buildSamplesForSegment(ctx, seg)
+                    if (samples.isNotEmpty()) {
+                        try { SegmentDatabaseHelper.saveSamples(ctx, seg.id, samples) } catch (_: Exception) {}
+                    }
+                }
+                if (samples.isEmpty()) {
+                    try { FileLogger.w(TAG, "resumeMissing: seg=${seg.id} has no samples after rebuild, skip") } catch (_: Exception) {}
+                    continue
+                }
+                // 直接复用 finish 逻辑
+                try { FileLogger.i(TAG, "resumeMissing: retry seg=${seg.id} ${fmt(seg.startTime)}-${fmt(seg.endTime)} imgs=${samples.size}") } catch (_: Exception) {}
+                finishSegment(ctx, seg, samples)
+            } catch (_: Exception) {}
+        }
+
+        // 额外：从当天第二个事件起，依次尝试未打过标记的段落进行合并判定
+        try {
+            val completed = SegmentDatabaseHelper.listUnattemptedCompletedSince(ctx, since, limit = 100)
+            var firstStart: Long? = null
+            for (s in completed) {
+                if (firstStart == null) { firstStart = s.startTime; SegmentDatabaseHelper.setMergeAttempted(ctx, s.id, true); continue }
+                val resultPair = SegmentDatabaseHelper.getResultForSegment(ctx, s.id)
+                val out = resultPair.first ?: ""
+                var samples = SegmentDatabaseHelper.getSamplesForSegment(ctx, s.id)
+                if (samples.isEmpty()) {
+                    samples = buildSamplesForSegment(ctx, s)
+                    if (samples.isNotEmpty()) {
+                        try { SegmentDatabaseHelper.saveSamples(ctx, s.id, samples) } catch (_: Exception) {}
+                    }
+                }
+                if (samples.isEmpty() || out.isEmpty()) { SegmentDatabaseHelper.setMergeAttempted(ctx, s.id, true); continue }
+                tryCompareAndMergeBackward(ctx, s, samples, out, resultPair.second)
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * 公开方法：按ID列表重试生成总结。仅处理“尚无结果”的段落，确保幂等。
+     */
+    fun retrySegmentsByIds(ctx: Context, ids: List<Long>): Int {
+        if (ids.isEmpty()) return 0
+        var retried = 0
+        for (id in ids) {
+            try {
+                // 已有结果则跳过
+                if (SegmentDatabaseHelper.hasResultForSegment(ctx, id)) continue
+                val seg = SegmentDatabaseHelper.getSegmentById(ctx, id) ?: continue
+                var samples = SegmentDatabaseHelper.getSamplesForSegment(ctx, id)
+                if (samples.isEmpty()) {
+                    samples = buildSamplesForSegment(ctx, seg)
+                    if (samples.isNotEmpty()) {
+                        try { SegmentDatabaseHelper.saveSamples(ctx, seg.id, samples) } catch (_: Exception) {}
+                    }
+                }
+                if (samples.isEmpty()) continue
+                try { FileLogger.i(TAG, "retrySegments: seg=${id} imgs=${samples.size}") } catch (_: Exception) {}
+                finishSegment(ctx, seg, samples)
+                retried++
+            } catch (_: Exception) {}
+        }
+        return retried
     }
 
     private fun guessMime(path: String): String {

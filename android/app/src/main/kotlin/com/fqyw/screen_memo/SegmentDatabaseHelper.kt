@@ -59,6 +59,35 @@ object SegmentDatabaseHelper {
         }
     }
 
+    /** 按ID读取段落 */
+    fun getSegmentById(context: Context, id: Long): Segment? {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return null
+            cursor = db.query(
+                "segments",
+                arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status"),
+                "id = ?",
+                arrayOf(id.toString()),
+                null,null,
+                null,
+                "1"
+            )
+            if (cursor.moveToFirst()) Segment(
+                id = cursor.getLong(0),
+                startTime = cursor.getLong(1),
+                endTime = cursor.getLong(2),
+                durationSec = cursor.getInt(3),
+                sampleIntervalSec = cursor.getInt(4),
+                status = cursor.getString(5)
+            ) else null
+        } catch (_: Exception) { null } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
     private fun openMasterDb(context: Context, writable: Boolean = true): SQLiteDatabase? {
         return try {
             val path = resolveMasterDbPath(context) ?: return null
@@ -84,6 +113,8 @@ object SegmentDatabaseHelper {
                   sample_interval_sec INTEGER NOT NULL,
                   status TEXT NOT NULL,
                   app_packages TEXT,
+                  merge_attempted INTEGER NOT NULL DEFAULT 0,
+                  merged_flag INTEGER NOT NULL DEFAULT 0,
                   created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
                   updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
                 )
@@ -92,6 +123,9 @@ object SegmentDatabaseHelper {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)")
             // 强一致性：每个时间窗口仅允许一个段落
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uniq_segments_window ON segments(start_time, end_time)")
+            // 幂等增加新列
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_attempted INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merged_flag INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
 
             db.execSQL(
                 """
@@ -242,6 +276,14 @@ object SegmentDatabaseHelper {
         var db: SQLiteDatabase? = null
         try {
             db = openMasterDb(context, writable = true) ?: return
+            // 若文本与结构化结果都为空或为字符串"null"，视为“无内容”，不保存
+            val ot = outputText.trim()
+            val sj = structuredJson?.trim()
+            val otEmpty = ot.isEmpty() || ot.equals("null", ignoreCase = true)
+            val sjEmpty = sj.isNullOrEmpty() || sj.equals("null", ignoreCase = true)
+            if (otEmpty && sjEmpty) {
+                return
+            }
             val cv = ContentValues().apply {
                 put("segment_id", segmentId)
                 put("ai_provider", provider)
@@ -431,6 +473,10 @@ object SegmentDatabaseHelper {
                 FROM segments s
                 JOIN segment_results r ON r.segment_id = s.id
                 WHERE s.start_time = ? AND s.end_time = ?
+                  AND (
+                    (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
+                    OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
+                  )
                 LIMIT 1
                 """.trimIndent(),
                 arrayOf(startMillis.toString(), endMillis.toString())
@@ -450,14 +496,17 @@ object SegmentDatabaseHelper {
         var cursor: Cursor? = null
         return try {
             db = openMasterDb(context, writable = false) ?: return false
-            cursor = db.query(
-                "segment_results",
-                arrayOf("segment_id"),
-                "segment_id = ?",
-                arrayOf(segmentId.toString()),
-                null, null,
-                null,
-                "1"
+            cursor = db.rawQuery(
+                """
+                SELECT 1 FROM segment_results
+                WHERE segment_id = ?
+                  AND (
+                    (output_text IS NOT NULL AND LOWER(TRIM(output_text)) NOT IN ('', 'null'))
+                    OR (structured_json IS NOT NULL AND LOWER(TRIM(structured_json)) NOT IN ('', 'null'))
+                  )
+                LIMIT 1
+                """.trimIndent(),
+                arrayOf(segmentId.toString())
             )
             cursor.moveToFirst()
         } catch (_: Exception) { false } finally {
@@ -485,6 +534,250 @@ object SegmentDatabaseHelper {
             )
             if (cursor.moveToFirst()) cursor.getLong(0) else -1
         } catch (_: Exception) { -1 } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** 更新段落时间窗口与时长 */
+    fun updateSegmentWindow(context: Context, segmentId: Long, newStart: Long, newEnd: Long) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            val dur = (((newEnd - newStart) / 1000L).toInt()).coerceAtLeast(1)
+            val cv = ContentValues().apply {
+                put("start_time", newStart)
+                put("end_time", newEnd)
+                put("duration_sec", dur)
+                put("updated_at", System.currentTimeMillis())
+            }
+            db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    /** 级联删除段落（结果、样本、段自身） */
+    fun deleteSegmentCascade(context: Context, segmentId: Long) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            db.beginTransaction()
+            try {
+                db.delete("segment_results", "segment_id = ?", arrayOf(segmentId.toString()))
+                db.delete("segment_samples", "segment_id = ?", arrayOf(segmentId.toString()))
+                db.delete("segments", "id = ?", arrayOf(segmentId.toString()))
+                db.setTransactionSuccessful()
+            } finally { try { db.endTransaction() } catch (_: Exception) {} }
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    /** 最近完成且已有结果的段落列表（按 end_time 升序或降序由参数决定） */
+    fun listRecentCompletedWithResult(context: Context, limit: Int = 20, ascending: Boolean = true): List<Segment> {
+        val list = ArrayList<Segment>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            val order = if (ascending) "end_time ASC" else "end_time DESC"
+            cursor = db.rawQuery(
+                """
+                SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
+                FROM segments s
+                JOIN segment_results r ON r.segment_id = s.id
+                WHERE s.status = 'completed' AND (
+                  (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
+                  OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
+                )
+                ORDER BY $order
+                LIMIT ${'$'}limit
+                """.trimIndent(),
+                emptyArray()
+            )
+            while (cursor.moveToNext()) {
+                list.add(
+                    Segment(
+                        id = cursor.getLong(0),
+                        startTime = cursor.getLong(1),
+                        endTime = cursor.getLong(2),
+                        durationSec = cursor.getInt(3),
+                        sampleIntervalSec = cursor.getInt(4),
+                        status = cursor.getString(5)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return list
+    }
+
+    /** 标记某段落已尝试合并 */
+    fun setMergeAttempted(context: Context, segmentId: Long, attempted: Boolean = true) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            val cv = ContentValues().apply {
+                put("merge_attempted", if (attempted) 1 else 0)
+                put("updated_at", System.currentTimeMillis())
+            }
+            db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+ 
+    /** 标记某段落为“已合并” */
+    fun setMergedFlag(context: Context, segmentId: Long, merged: Boolean = true) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            val cv = ContentValues().apply {
+                put("merged_flag", if (merged) 1 else 0)
+                put("updated_at", System.currentTimeMillis())
+            }
+            db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    fun isMergeAttempted(context: Context, segmentId: Long): Boolean {
+        var db: SQLiteDatabase? = null
+        var c: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return false
+            c = db.query("segments", arrayOf("merge_attempted"), "id = ?", arrayOf(segmentId.toString()), null, null, null, "1")
+            if (c.moveToFirst()) (c.getInt(0) == 1) else false
+        } catch (_: Exception) { false } finally { try { c?.close() } catch (_: Exception) {}; try { db?.close() } catch (_: Exception) {} }
+    }
+
+    /** 当天已完成但尚未尝试合并的段落（排除第一段） */
+    fun listUnattemptedCompletedSince(context: Context, sinceMillis: Long, limit: Int = 100): List<Segment> {
+        val list = ArrayList<Segment>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            cursor = db.rawQuery(
+                """
+                SELECT id, start_time, end_time, duration_sec, sample_interval_sec, status
+                FROM segments
+                WHERE status = 'completed' AND start_time >= ? AND merge_attempted = 0
+                ORDER BY end_time ASC
+                LIMIT ${'$'}limit
+                """.trimIndent(), arrayOf(sinceMillis.toString())
+            )
+            while (cursor.moveToNext()) {
+                list.add(
+                    Segment(
+                        id = cursor.getLong(0),
+                        startTime = cursor.getLong(1),
+                        endTime = cursor.getLong(2),
+                        durationSec = cursor.getInt(3),
+                        sampleIntervalSec = cursor.getInt(4),
+                        status = cursor.getString(5)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally { try { cursor?.close() } catch (_: Exception) {}; try { db?.close() } catch (_: Exception) {} }
+        return list
+    }
+
+    /**
+     * 获取在指定 start 之前、最近的一个且已有 AI 结果的已完成段落。
+     */
+    fun getPreviousCompletedSegmentWithResult(context: Context, beforeStart: Long): Segment? {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return null
+            cursor = db.rawQuery(
+                """
+                SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
+                FROM segments s
+                JOIN segment_results r ON r.segment_id = s.id
+                WHERE s.end_time <= ? AND s.status = 'completed' AND (
+                  (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
+                  OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
+                )
+                ORDER BY s.end_time DESC
+                LIMIT 1
+                """.trimIndent(),
+                arrayOf(beforeStart.toString())
+            )
+            if (cursor.moveToFirst()) {
+                Segment(
+                    id = cursor.getLong(0),
+                    startTime = cursor.getLong(1),
+                    endTime = cursor.getLong(2),
+                    durationSec = cursor.getInt(3),
+                    sampleIntervalSec = cursor.getInt(4),
+                    status = cursor.getString(5)
+                )
+            } else null
+        } catch (_: Exception) { null } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** 读取某段落的样本列表（按 position_index 升序） */
+    fun getSamplesForSegment(context: Context, segmentId: Long): List<Sample> {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        val list = ArrayList<Sample>()
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            cursor = db.query(
+                "segment_samples",
+                arrayOf("id","segment_id","capture_time","file_path","app_package_name","app_name","position_index"),
+                "segment_id = ?",
+                arrayOf(segmentId.toString()),
+                null,null,
+                "position_index ASC"
+            )
+            while (cursor.moveToNext()) {
+                list.add(
+                    Sample(
+                        id = cursor.getLong(0),
+                        segmentId = cursor.getLong(1),
+                        captureTime = cursor.getLong(2),
+                        filePath = cursor.getString(3),
+                        appPackageName = cursor.getString(4),
+                        appName = cursor.getString(5),
+                        positionIndex = cursor.getInt(6)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return list
+    }
+
+    /** 返回段落结果（output_text, structured_json） */
+    fun getResultForSegment(context: Context, segmentId: Long): Pair<String?, String?> {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return Pair(null, null)
+            cursor = db.query(
+                "segment_results",
+                arrayOf("output_text","structured_json"),
+                "segment_id = ?",
+                arrayOf(segmentId.toString()),
+                null,null,
+                null,
+                "1"
+            )
+            if (cursor.moveToFirst()) {
+                Pair(cursor.getString(0), cursor.getString(1))
+            } else Pair(null, null)
+        } catch (_: Exception) { Pair(null, null) } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}
         }
@@ -518,7 +811,11 @@ object SegmentDatabaseHelper {
                     val list = ArrayList<Pair<Long, Boolean>>()
                     val cur2 = db.rawQuery(
                         """
-                        SELECT s.id, CASE WHEN r.segment_id IS NULL THEN 0 ELSE 1 END AS has_result
+                        SELECT s.id,
+                               CASE WHEN r.segment_id IS NOT NULL AND (
+                                         (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null')) OR
+                                         (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
+                                     ) THEN 1 ELSE 0 END AS has_result
                         FROM segments s
                         LEFT JOIN segment_results r ON r.segment_id = s.id
                         WHERE s.start_time = ? AND s.end_time = ?
@@ -554,6 +851,55 @@ object SegmentDatabaseHelper {
             try { db?.close() } catch (_: Exception) {}
         }
         return totalDeleted
+    }
+
+    /**
+     * 列出需要补救总结的段落（已完成、无结果但有样本），可按起始时间筛选并限制数量。
+     */
+    fun listSegmentsNeedingSummary(context: Context, limit: Int = 5, sinceMillis: Long? = null): List<Segment> {
+        val list = ArrayList<Segment>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            val where = StringBuilder(
+                "s.status = 'completed' AND (r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('', 'null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('', 'null'))))"
+            )
+            val args = ArrayList<String>()
+            if (sinceMillis != null) {
+                where.append(" AND s.start_time >= ?")
+                args.add(sinceMillis.toString())
+            }
+            cursor = db.rawQuery(
+                """
+                SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
+                FROM segments s
+                LEFT JOIN segment_results r ON r.segment_id = s.id
+                WHERE ${'$'}{where.toString()}
+                ORDER BY s.id DESC
+                LIMIT ${'$'}limit
+                """.trimIndent(),
+                args.toTypedArray()
+            )
+            while (cursor.moveToNext()) {
+                list.add(
+                    Segment(
+                        id = cursor.getLong(0),
+                        startTime = cursor.getLong(1),
+                        endTime = cursor.getLong(2),
+                        durationSec = cursor.getInt(3),
+                        sampleIntervalSec = cursor.getInt(4),
+                        status = cursor.getString(5)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        // 不再强制要求“必须已有样本”，直接返回待补救段落
+        return list
     }
 
     private fun tableExists(db: SQLiteDatabase, table: String): Boolean {

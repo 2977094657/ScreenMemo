@@ -216,6 +216,35 @@ class MainActivity : FlutterActivity() {
                         result.error("read_failed", e.message, null)
                     }
                 }
+                "setAiRequestIntervalSec" -> {
+                    try {
+                        val secRaw = call.argument<Int>("seconds") ?: 3
+                        val sec = when {
+                            secRaw < 1 -> 1
+                            secRaw > 60 -> 60
+                            else -> secRaw
+                        }
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        sp.edit().putInt("ai_min_request_interval_sec", sec).apply()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
+                    }
+                }
+                "getAiRequestIntervalSec" -> {
+                    try {
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        val secRaw = sp.getInt("ai_min_request_interval_sec", 3)
+                        val sec = when {
+                            secRaw < 1 -> 1
+                            secRaw > 60 -> 60
+                            else -> secRaw
+                        }
+                        result.success(sec)
+                    } catch (e: Exception) {
+                        result.error("read_failed", e.message, null)
+                    }
+                }
                 "startForegroundService" -> {
                     startForegroundService()
                     result.success(null)
@@ -475,6 +504,35 @@ class MainActivity : FlutterActivity() {
                         }.start()
                     } catch (e: Exception) {
                         result.error("ocr_error", e.message, null)
+                    }
+                }
+                "triggerSegmentTick" -> {
+                    try {
+                        Thread {
+                            try {
+                                SegmentSummaryManager.tick(this)
+                            } catch (e: Exception) {
+                                FileLogger.w(TAG, "manual tick failed: ${e.message}")
+                            }
+                        }.start()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("tick_failed", e.message, null)
+                    }
+                }
+                "retrySegments" -> {
+                    try {
+                        val ids = (call.argument<List<Int>>("ids") ?: emptyList()).map { it.toLong() }
+                        Thread {
+                            try {
+                                val n = SegmentSummaryManager.retrySegmentsByIds(this, ids)
+                                runOnUiThread { result.success(n) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("retry_failed", e.message, null) }
+                            }
+                        }.start()
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
                     }
                 }
                 else -> {
