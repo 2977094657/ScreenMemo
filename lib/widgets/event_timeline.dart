@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'ui_components.dart';
 
 /// 事件时间轴组件（竖向）
 /// - 不依赖第三方库，纯 Flutter 绘制
@@ -249,6 +251,7 @@ class _SegmentCard extends StatelessWidget {
     final title = '${_fmtTime(start)} - ${_fmtTime(end)}';
     final String summaryText = hasSummary ? '已有总结' : '暂无总结';
     final Color badgeColor = merged ? Colors.orange : Colors.transparent;
+    final String copyText = '$title\n状态：$status · $summaryText';
 
     return Card(
       child: InkWell(
@@ -281,6 +284,19 @@ class _SegmentCard extends StatelessWidget {
                   ),
                   child: const Text('已合并', style: TextStyle(fontSize: 11, color: Colors.orange)),
                 ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: IconButton(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: copyText));
+                    UINotifier.success(context, '已复制到剪贴板');
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  tooltip: '复制',
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+              ),
             ],
           ),
         ),

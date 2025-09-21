@@ -11,6 +11,7 @@ import '../services/screenshot_database.dart';
 import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
+import '../services/notification_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'ai_settings_page.dart';
@@ -48,6 +49,10 @@ class _SettingsPageState extends State<SettingsPage>
   bool _useTargetSize = false; // 默认关闭
   int _targetSizeKb = 50; // 默认 50KB（最低仅支持 50KB）
   bool _grayscale = false; // 已移除，保持为 false
+  // 每日总结提醒
+  bool _dailySummaryEnabled = true;
+  int _dailyHour = 22;
+  int _dailyMinute = 0;
   // 电池权限检查定时器
   Timer? _batteryPermissionTimer;
   int _batteryCheckCount = 0;
@@ -230,6 +235,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadScreenshotExpireSettings();
     _loadSegmentSettings();
     _loadAiRequestInterval();
+    _loadDailySummarySettings();
    }
 
   @override
@@ -719,17 +725,27 @@ class _SettingsPageState extends State<SettingsPage>
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
-      // 时间段总结设置
-      _buildSection(
-        context: context,
-        title: '时间段总结',
-        children: [
-          _buildSegmentSampleItem(context),
-          _buildSegmentDurationItem(context),
-          _buildAiRequestIntervalItem(context),
-        ],
-      ),
-      const SizedBox(height: AppTheme.spacing4),
+                // 时间段总结设置
+                _buildSection(
+                  context: context,
+                  title: '时间段总结',
+                  children: [
+                    _buildSegmentSampleItem(context),
+                    _buildSegmentDurationItem(context),
+                    _buildAiRequestIntervalItem(context),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing4),
+                // 每日总结
+                _buildSection(
+                  context: context,
+                  title: '每日总结',
+                  children: [
+                    _buildDailySummaryEnableItem(context),
+                    _buildDailySummaryTimeItem(context),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing4),
                 // AI 助手
                 _buildSection(
                   context: context,
@@ -854,6 +870,14 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildAiRequestIntervalItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Container(
@@ -883,6 +907,113 @@ class _SettingsPageState extends State<SettingsPage>
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
             onPressed: _showAiRequestIntervalDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== 每日总结提醒 UI =====
+  Widget _buildDailySummaryEnableItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.notifications_active_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('每日总结提醒', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text('每天固定时间推送提醒', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: _dailySummaryEnabled,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) async {
+                setState(() { _dailySummaryEnabled = v; });
+                await _saveDailySummarySettings();
+                if (!mounted) return;
+                if (v) {
+                  UINotifier.success(context, 'Daily summary enabled');
+                } else {
+                  UINotifier.info(context, 'Daily summary disabled');
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailySummaryTimeItem(BuildContext context) {
+    final String hh = _dailyHour.toString().padLeft(2, '0');
+    final String mm = _dailyMinute.toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.schedule_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('提醒时间', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text('当前：$hh:$mm', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _pickDailyTime,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -954,12 +1085,76 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
+  // ===== 每日总结提醒 设置/存储与排程 =====
+  Future<void> _loadDailySummarySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('daily_summary_enabled');
+      final hour = prefs.getInt('daily_summary_hour');
+      final minute = prefs.getInt('daily_summary_minute');
+      if (mounted) {
+        setState(() {
+          _dailySummaryEnabled = enabled ?? true;
+          _dailyHour = (hour ?? 22).clamp(0, 23);
+          _dailyMinute = (minute ?? 0).clamp(0, 59);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveDailySummarySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('daily_summary_enabled', _dailySummaryEnabled);
+      await prefs.setInt('daily_summary_hour', _dailyHour);
+      await prefs.setInt('daily_summary_minute', _dailyMinute);
+
+      if (_dailySummaryEnabled) {
+        await NotificationService.instance.cancelDaily();
+        await NotificationService.instance.scheduleDailyAt(hour: _dailyHour, minute: _dailyMinute);
+      } else {
+        await NotificationService.instance.cancelDaily();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pickDailyTime() async {
+    final initial = TimeOfDay(hour: _dailyHour, minute: _dailyMinute);
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (picked == null) return;
+    setState(() {
+      _dailyHour = picked.hour;
+      _dailyMinute = picked.minute;
+    });
+    await _saveDailySummarySettings();
+    if (!mounted) return;
+    UINotifier.success(context, 'Daily summary time set to ${picked.format(context)}');
+  }
+
   void _showSegmentSampleDialog() {
     final TextEditingController controller = TextEditingController(text: _segmentSampleIntervalSec.toString());
     showUIDialog<void>(
       context: context,
       title: '设置采样间隔（秒）',
-      content: _numberField(controller, hint: '请输入 >=5 的整数'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _numberField(controller, hint: '请输入 >=5 的整数'),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: const Text(
+              '说明：采样仅基于已保存的截图进行分析，不会重新触发截图或影响后台行为。',
+              style: TextStyle(fontSize: 12, color: AppTheme.info),
+            ),
+          ),
+        ],
+      ),
       actions: [
         const UIDialogAction(text: '取消'),
         UIDialogAction(
@@ -1289,14 +1484,6 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildAIEntryItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
-        ),
-      ),
       child: Row(
         children: [
           Container(

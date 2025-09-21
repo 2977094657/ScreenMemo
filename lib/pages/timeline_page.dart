@@ -7,6 +7,7 @@ import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../widgets/nsfw_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/daily_summary_service.dart';
 
 /// 全局时间线页面（骨架）
 /// 后续将加载按日期的全局截图时间线与应用图标
@@ -289,6 +290,7 @@ class _TimelinePageState extends State<TimelinePage>
                     ),
                     // 日期Tab与内容之间增加1px底部外边距
                     const SizedBox(height: 1),
+                    _buildDailyBanner(),
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
@@ -302,6 +304,115 @@ class _TimelinePageState extends State<TimelinePage>
                     ),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildDailyBanner() {
+    if (_dateStartMillis == null || _dateEndMillis == null) {
+      return const SizedBox.shrink();
+    }
+    final int s = _dateStartMillis!;
+    final int e = _dateEndMillis!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing2),
+      child: FutureBuilder<DailySummaryResult>(
+        future: DailySummaryService.instance.compute(startMillis: s, endMillis: e),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return _buildBannerSkeleton();
+          }
+          if (!snap.hasData) return const SizedBox.shrink();
+          final res = snap.data!;
+          if (res.totalDurationMs <= 0 || res.appUsages.isEmpty) {
+            return const SizedBox.shrink();
+          }
+          final total = DailySummaryService.formatHm(res.totalDurationMs);
+          final top = res.topApps(topN: 2);
+          final subtitle = top.isNotEmpty
+              ? top.map((a) => '${a.appName} ${DailySummaryService.formatHm(a.durationMs)}').join(' · ')
+              : 'No active apps';
+          return InkWell(
+            onTap: () {
+              Navigator.of(context).pushNamed('/daily_summary', arguments: {
+                'dateStartMillis': s,
+                'dateEndMillis': e,
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.45),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.6), width: 1),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
+                    child: Icon(Icons.assessment_outlined, size: 18, color: Theme.of(context).colorScheme.onSecondaryContainer),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('今日总结 · $total', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.spacing2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('查看详情', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.primary),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBannerSkeleton() {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(height: 12, width: 120, color: Theme.of(context).colorScheme.surface),
+                const SizedBox(height: 8),
+                Container(height: 12, width: 200, color: Theme.of(context).colorScheme.surface),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

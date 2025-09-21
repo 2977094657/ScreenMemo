@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 import 'package:photo_view/photo_view.dart';
@@ -11,6 +13,7 @@ import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_components.dart';
 
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
@@ -209,7 +212,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                             color: Colors.orange.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text('已合并', style: TextStyle(fontSize: 12, color: Colors.orange)),
+                          child: const Text('合并事件', style: TextStyle(fontSize: 12, color: Colors.orange)),
                         ),
                     ],
                   ),
@@ -239,12 +242,107 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                   const SizedBox(height: 6),
                   if (result == null) const Text('暂无'),
                   if (result != null) ...[
-                    Text('Model：${result['ai_model'] ?? ''}'),
-                    const SizedBox(height: 6),
-                    Text((result['output_text'] as String?) ?? ''),
-                    const SizedBox(height: 10),
-                    if ((result['structured_json'] as String?) != null)
-                      SelectableText((result['structured_json'] as String?) ?? ''),
+                    Builder(
+                      builder: (c) {
+                        final String rawText = (result['output_text'] as String?) ?? '';
+                        final String rawJson = (result['structured_json'] as String?) ?? '';
+                        Map<String, dynamic>? sj;
+                        try {
+                          final d = jsonDecode(rawJson);
+                          if (d is Map<String, dynamic>) sj = d;
+                        } catch (_) {}
+                        String? err;
+                        try {
+                          final e = sj?['error'];
+                          if (e is Map) {
+                            final m = (e['message'] ?? e['msg'] ?? '').toString();
+                            if (m.trim().isNotEmpty) {
+                              err = m;
+                            } else {
+                              err = e.toString();
+                            }
+                          } else if (e is String && e.trim().isNotEmpty) {
+                            err = e;
+                          }
+                        } catch (_) {}
+                        if (err == null && rawText.trim().startsWith('{')) {
+                          try {
+                            final d2 = jsonDecode(rawText);
+                            if (d2 is Map && d2['error'] != null) {
+                              final e2 = d2['error'];
+                              if (e2 is Map && (e2['message'] is String)) {
+                                err = e2['message'] as String;
+                              } else {
+                                err = e2.toString();
+                              }
+                            }
+                          } catch (_) {}
+                        }
+                        if (err == null) {
+                          final low = rawText.toLowerCase();
+                          if (low.contains('server_error') ||
+                              low.contains('request failed') ||
+                              low.contains('no candidates returned')) {
+                            err = rawText;
+                          }
+                        }
+                        if (err != null) {
+                          final cs = Theme.of(c).colorScheme;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: cs.errorContainer,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: cs.error.withOpacity(0.6), width: 1),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline, size: 16, color: cs.onErrorContainer),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: SelectableText(
+                                        err!,
+                                        style: Theme.of(c).textTheme.bodyMedium?.copyWith(color: cs.onErrorContainer),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              if (rawJson.isNotEmpty)
+                                SelectableText(rawJson, style: Theme.of(c).textTheme.bodySmall),
+                            ],
+                          );
+                        } else {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Model：${result['ai_model'] ?? ''}'),
+                              const SizedBox(height: 6),
+                              MarkdownBody(
+                                data: rawText,
+                                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(c)).copyWith(
+                                  p: Theme.of(c).textTheme.bodyMedium,
+                                ),
+                                onTapLink: (text, href, title) async {
+                                  if (href == null) return;
+                                  final uri = Uri.tryParse(href);
+                                  if (uri != null) {
+                                    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                              if (rawJson.isNotEmpty)
+                                SelectableText(rawJson),
+                            ],
+                          );
+                        }
+                      },
+                    ),
                   ],
                 ],
               ),
@@ -305,6 +403,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           padding: const EdgeInsets.only(top: 2.0),
           child: const Text('事件状态'),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: '刷新',
+            onPressed: _refresh,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -319,6 +424,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           onOpenDetail: (seg) => _openDetail(seg),
           openGallery: (samples, index) => _openImageGallery(samples, index),
           activeHeader: _buildActiveCard(),
+          onRefreshRequested: _refresh,
         ),
       ),
     );
@@ -337,6 +443,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
   final void Function(Map<String, dynamic>) onOpenDetail;
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
   final Widget activeHeader;
+  final Future<void> Function() onRefreshRequested;
 
   const _SegmentTimelineTabView({
     required this.segments,
@@ -349,6 +456,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
     required this.onOpenDetail,
     required this.openGallery,
     required this.activeHeader,
+    required this.onRefreshRequested,
   });
 
   @override
@@ -440,6 +548,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
                             appInfoByPackage: appInfoByPackage,
                             onOpenDetail: () => onOpenDetail(grouped[k]![i]),
                             openGallery: openGallery,
+                            onRefreshRequested: onRefreshRequested,
                           )),
                       const SizedBox(height: 12),
                     ],
@@ -488,6 +597,7 @@ class _SegmentEntryCard extends StatefulWidget {
   final Map<String, AppInfo> appInfoByPackage;
   final VoidCallback onOpenDetail;
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
+  final Future<void> Function() onRefreshRequested;
 
   const _SegmentEntryCard({
     required this.segment,
@@ -498,6 +608,7 @@ class _SegmentEntryCard extends StatefulWidget {
     required this.appInfoByPackage,
     required this.onOpenDetail,
     required this.openGallery,
+    required this.onRefreshRequested,
   });
 
   @override
@@ -506,113 +617,330 @@ class _SegmentEntryCard extends StatefulWidget {
 
 class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   bool _expanded = false;
+  // 懒加载样本的本地状态，避免每项滚动时触发异步查询导致跳动
+  bool _samplesLoading = false;
+  bool _samplesLoaded = false;
+  List<Map<String, dynamic>> _samples = const <Map<String, dynamic>>[];
+  // 摘要展开/收起状态（防止固定高度无法展开）
+  bool _summaryExpanded = false;
+  // 重新生成操作状态
+  bool _retrying = false;
+  // 结果轮询器：点击“重新生成”后，直到拿到结果为止持续旋转提示
+  Timer? _resultWatchTimer;
 
   @override
   Widget build(BuildContext context) {
     final int id = (widget.segment['id'] as int?) ?? 0;
-    return FutureBuilder<List<dynamic>>(
-      future: Future.wait<dynamic>([widget.loadSamples(id), widget.loadResult(id)]),
-      builder: (ctx, snap) {
-        final loading = !snap.hasData;
-        final List<Map<String, dynamic>> samples =
-            loading ? const <Map<String, dynamic>>[] : (snap.data![0] as List).cast<Map<String, dynamic>>();
-        final Map<String, dynamic>? result = loading ? null : (snap.data![1] as Map<String, dynamic>?);
-        if (!loading && samples.isEmpty) {
-          return const SizedBox.shrink();
+    // 移除 per-item FutureBuilder，使用后端联表元数据；展开时懒加载样本
+    final int sampleCount = (widget.segment['sample_count'] as int?) ?? 0;
+    final int start = (widget.segment['start_time'] as int?) ?? 0;
+    final int end = (widget.segment['end_time'] as int?) ?? 0;
+    final String timeLabel = '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
+    final bool merged = (widget.segment['merged_flag'] as int?) == 1;
+    final bool hasSummary = ((widget.segment['has_summary'] as int?) ?? 0) == 1;
+    final String status = (widget.segment['status'] as String?) ?? '';
+
+    final Map<String, dynamic> resultMeta = {
+      'categories': widget.segment['categories'],
+      'output_text': widget.segment['output_text'],
+    };
+    final Map<String, dynamic>? structured = _tryParseJson(widget.segment['structured_json'] as String?);
+    final String? keyAction = _extractKeyActionDetail(structured);
+    final List<String> categories = _extractCategories(resultMeta, structured);
+    final String summary = _extractOverallSummary(resultMeta, structured);
+
+    // 错误检测：从 structured_json.error / output_text(JSON) / 关键字启发式 识别错误
+    String? errorText;
+    final String outputRaw = (resultMeta['output_text'] as String?)?.toString() ?? '';
+
+    // 1) structured_json.error
+    try {
+      final err = structured?['error'];
+      if (err is Map) {
+        final msg = (err['message'] ?? err['msg'] ?? '').toString();
+        if (msg.trim().isNotEmpty) {
+          errorText = msg;
+        } else {
+          errorText = err.toString();
+        }
+      } else if (err is String && err.trim().isNotEmpty) {
+        errorText = err;
+      }
+    } catch (_) {}
+
+    // 2) output_text 若为 JSON 且含 error
+    if (errorText == null && outputRaw.isNotEmpty && outputRaw.trim().startsWith('{')) {
+      try {
+        final decoded = jsonDecode(outputRaw);
+        if (decoded is Map && decoded['error'] != null) {
+          final e = decoded['error'];
+          if (e is Map && (e['message'] is String)) {
+            errorText = (e['message'] as String);
+          } else {
+            errorText = e.toString();
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3) 关键字启发式
+    if (errorText == null) {
+      final low = outputRaw.toLowerCase();
+      if (low.contains('server_error') ||
+          low.contains('request failed') ||
+          low.contains('no candidates returned')) {
+        errorText = outputRaw;
+      }
+    }
+
+    Widget _buildErrorBanner(String text) {
+      final cs = Theme.of(context).colorScheme;
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: cs.errorContainer,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: cs.error.withOpacity(0.6), width: 1),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 16, color: cs.onErrorContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: cs.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+        // 包名：优先使用后端汇总的 app_packages_display，其次 app_packages（保证首屏就能显示 Logo）
+        List<String> packages = <String>[];
+        final String? appPkgsDisplay = widget.segment['app_packages_display'] as String?;
+        final String? appPkgsRaw = widget.segment['app_packages'] as String?;
+        final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+            ? appPkgsDisplay
+            : appPkgsRaw;
+        if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
+          packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
         }
 
-        final start = (widget.segment['start_time'] as int?) ?? 0;
-        final end = (widget.segment['end_time'] as int?) ?? 0;
-        final timeLabel = '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
-
-        final Map<String, dynamic>? structured = _tryParseJson(result?['structured_json'] as String?);
-        final String? keyAction = _extractKeyActionDetail(structured);
-        final List<String> categories = _extractCategories(result, structured);
-        final String summary = _extractOverallSummary(result, structured);
-
-        final List<String> packages = _uniquePackages(samples);
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-          child: Column(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _timeSeparator(context, label: timeLabel, keyActionDetail: keyAction),
+          const SizedBox(height: 4),
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _timeSeparator(context, label: timeLabel, keyActionDetail: keyAction),
-              const SizedBox(height: 4),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 左侧：应用Logo（去重，按内容自适应，不占满）
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
-                  ),
-                  const SizedBox(width: 8),
-                  // 右侧：分类标签（占用剩余空间，尽量不换行）
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      alignment: WrapAlignment.start,
-                      children: categories.map((c) => _buildChip(context, c)).toList(),
-                    ),
-                  ),
-                ],
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
               ),
-              if (summary.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(summary),
-              ],
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: loading || samples.isEmpty
-                        ? null
-                        : () => setState(() {
-                              _expanded = !_expanded;
-                            }),
-                    icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-                    label: Text(_expanded ? '收起图片 (${samples.length})' : '查看图片 (${samples.length})'),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.start,
+                  children: [
+                    if (merged)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+                        constraints: const BoxConstraints(minHeight: 20),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warning.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                          border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                        ),
+                        child: const Text(
+                          '合并事件',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.warning,
+                            height: 1.0,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ...categories.map((c) => _buildChip(context, c)).toList(),
+                  ],
+                ),
               ),
-              if (_expanded && samples.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                _buildThumbGrid(context, samples),
-              ],
-              if (!widget.isLast) ...[
-                const SizedBox(height: AppTheme.spacing3),
-                _buildSeparator(context),
-                const SizedBox(height: AppTheme.spacing3),
-              ],
             ],
           ),
-        );
-      },
+          if (errorText != null) ...[
+            const SizedBox(height: 6),
+            _buildErrorBanner(errorText!),
+          ] else if (summary.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            // 根据是否超出行数动态决定是否显示“展开/收起”
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
+                // 仅在收起状态下检测是否溢出
+                bool overflow = false;
+                if (!_summaryExpanded && textStyle != null) {
+                  final tp = TextPainter(
+                    text: TextSpan(text: summary, style: textStyle),
+                    maxLines: 7,
+                    ellipsis: '…',
+                    textDirection: Directionality.of(context),
+                  )..layout(maxWidth: constraints.maxWidth);
+                  overflow = tp.didExceedMaxLines;
+                }
+
+                // 预估 7 行高度用于折叠时裁切
+                final double lineHeight = (textStyle?.height ?? 1.2) * (textStyle?.fontSize ?? 14.0);
+                final double collapsedHeight = lineHeight * 7.0 + 2.0;
+
+                final md = MarkdownBody(
+                  data: summary,
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                    p: textStyle,
+                  ),
+                  onTapLink: (text, href, title) async {
+                    if (href == null) return;
+                    final uri = Uri.tryParse(href);
+                    if (uri != null) {
+                      try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                    }
+                  },
+                );
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _summaryExpanded
+                        ? md
+                        : ConstrainedBox(constraints: BoxConstraints(maxHeight: collapsedHeight), child: ClipRect(child: md)),
+                    if (overflow || _summaryExpanded)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => setState(() => _summaryExpanded = !_summaryExpanded),
+                          child: Text(_summaryExpanded ? '收起内容' : '展开更多'),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: sampleCount <= 0 ? null : () async {
+                  setState(() => _expanded = !_expanded);
+                  if (_expanded && !_samplesLoaded && !_samplesLoading) {
+                    setState(() => _samplesLoading = true);
+                    try {
+                      final loaded = await widget.loadSamples(id);
+                      setState(() {
+                        _samples = loaded;
+                        _samplesLoaded = true;
+                      });
+                    } catch (_) {} finally {
+                      if (mounted) setState(() => _samplesLoading = false);
+                    }
+                  }
+                },
+                icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                label: Text(_expanded ? '收起图片 ($sampleCount)' : '查看图片 ($sampleCount)'),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '重新生成',
+                onPressed: _retrying ? null : () async {
+                  await _retry();
+                },
+                icon: _retrying
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_outlined, size: 18),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: '复制',
+                icon: const Icon(Icons.copy, size: 18),
+                onPressed: () async {
+                  final buffer = StringBuffer()
+                    ..writeln('时间段：$timeLabel')
+                    ..writeln('状态：$status');
+                  if (merged) buffer.writeln('标记：合并事件');
+                  if (categories.isNotEmpty) buffer.writeln('类别：${categories.join(', ')}');
+                  if (errorText != null && errorText!.trim().isNotEmpty) {
+                    buffer.writeln('错误：$errorText');
+                  } else if (summary.trim().isNotEmpty) {
+                    buffer.writeln('摘要：$summary');
+                  }
+                  await Clipboard.setData(ClipboardData(text: buffer.toString()));
+                  if (!mounted) return;
+                  UINotifier.success(context, '已复制到剪贴板');
+                },
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: '删除事件',
+                icon: const Icon(Icons.delete_outline, size: 18),
+                onPressed: () async {
+                  await _confirmAndDelete();
+                },
+              ),
+            ],
+          ),
+          if (_expanded)
+            (_samplesLoading
+                ? const SizedBox(
+                    height: 60,
+                    child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+                  )
+                : (_samples.isNotEmpty ? _buildThumbGrid(context, _samples) : const SizedBox.shrink())),
+          if (!widget.isLast) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            _buildSeparator(context),
+            const SizedBox(height: AppTheme.spacing3),
+          ],
+        ],
+      ),
     );
   }
 
-            // 时间居中 + 右侧关键动作（不使用分割线）
+            // 时间居中 + 下一行展示关键动作（不使用分割线）
             Widget _timeSeparator(BuildContext context, {required String label, String? keyActionDetail}) {
               final Color actionColor = AppTheme.warning; // 使用更醒目的警告色
-              return SizedBox(
-                height: 22,
-                child: Center(
-                  child: RichText(
-                    text: TextSpan(
-                      style: DefaultTextStyle.of(context).style,
-                      children: [
-                        TextSpan(text: label),
-                        if (keyActionDetail != null && keyActionDetail.trim().isNotEmpty)
-                          TextSpan(
-                            text: '  $keyActionDetail',
-                            style: TextStyle(color: actionColor),
-                          ),
-                      ],
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 22,
+                    child: Center(
+                      child: Text(
+                        label,
+                        style: DefaultTextStyle.of(context).style,
+                      ),
                     ),
                   ),
-                ),
+                  if (keyActionDetail != null && keyActionDetail.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Center(
+                        child: Text(
+                          keyActionDetail,
+                          style: DefaultTextStyle.of(context).style.copyWith(color: actionColor),
+                        ),
+                      ),
+                    ),
+                ],
               );
             }
 
@@ -707,6 +1035,88 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         );
       },
     );
+  }
+
+  Future<void> _retry() async {
+    final int id = (widget.segment['id'] as int?) ?? 0;
+    if (id <= 0 || _retrying) return;
+    setState(() => _retrying = true);
+    try {
+      // 手动重试不受时间/已有结果限制：强制重跑
+      final n = await ScreenshotDatabase.instance.retrySegments([id], force: true);
+      if (!mounted) return;
+      final ok = n > 0;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Regeneration queued' : 'Already queued or failed')),
+      );
+      // 开启轮询直到拿到结果为止；若原本就有结果，可能立即返回
+      if (ok) _startResultWatch(id);
+      // 如果没成功入队，停止旋转
+      if (!ok) setState(() => _retrying = false);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _retrying = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Retry failed')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final int id = (widget.segment['id'] as int?) ?? 0;
+    if (id <= 0) return;
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) {
+            return AlertDialog(
+              title: const Text('删除确认'),
+              content: const Text('确定删除该事件？此操作不会删除任何图片文件。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('删除'),
+                ),
+              ],
+            );
+          },
+        ) ?? false;
+    if (!confirmed) return;
+    try {
+      final ok = await ScreenshotDatabase.instance.deleteSegmentOnly(id);
+      if (!mounted) return;
+      if (ok) {
+        UINotifier.success(context, '事件已删除');
+        await widget.onRefreshRequested();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Delete failed')));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Delete failed')));
+    }
+  }
+
+  void _startResultWatch(int id) {
+    _resultWatchTimer?.cancel();
+    // 轮询间隔 2s；若拿到结果则停止旋转
+    _resultWatchTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      try {
+        final res = await widget.loadResult(id);
+        if (!mounted) return;
+        if (res != null) {
+          setState(() => _retrying = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Regenerated')));
+          t.cancel();
+        }
+      } catch (_) {
+        // 读取失败不影响轮询，继续尝试
+      }
+    });
   }
 
   Map<String, dynamic>? _tryParseJson(String? s) {
