@@ -17,6 +17,8 @@ android {
     }
 
     compileOptions {
+        // 启用 desugaring 以支持 Java 8+ 语言/库特性（满足 flutter_local_notifications 要求）
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -72,6 +74,9 @@ flutter {
 dependencies {
     // Satisfy Flutter deferred components references during R8 shrinking
     implementation("com.google.android.play:core:1.10.3")
+
+    // 启用核心库 desugaring（满足 flutter_local_notifications 的 AAR 要求）
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // Umeng Common SDK (Analytics base) + ASMS + APM (Crash/ANR/卡顿/性能)
     implementation("com.umeng.umsdk:common:9.8.5")

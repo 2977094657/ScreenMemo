@@ -523,9 +523,11 @@ class MainActivity : FlutterActivity() {
                 "retrySegments" -> {
                     try {
                         val ids = (call.argument<List<Int>>("ids") ?: emptyList()).map { it.toLong() }
+                        val force = call.argument<Boolean>("force") ?: false
+                        try { FileLogger.i(TAG, "retrySegments: ids=${ids} force=${force}") } catch (_: Exception) {}
                         Thread {
                             try {
-                                val n = SegmentSummaryManager.retrySegmentsByIds(this, ids)
+                                val n = SegmentSummaryManager.retrySegmentsByIds(this, ids, force)
                                 runOnUiThread { result.success(n) }
                             } catch (e: Exception) {
                                 runOnUiThread { result.error("retry_failed", e.message, null) }
@@ -562,7 +564,8 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         activityCreateTs = System.currentTimeMillis()
         super.onCreate(savedInstanceState)
-        showSplashDialog()
+        // 移除应用内开屏对话框，避免显示“屏幕无痕，记忆有痕”Slogan
+        // showSplashDialog()
     }
 
     override fun onFlutterUiDisplayed() {
@@ -572,7 +575,8 @@ class MainActivity : FlutterActivity() {
         val delta = System.currentTimeMillis() - activityCreateTs
         Log.d(TAG, "onFlutterUiDisplayed: first frame delta since onCreate = ${delta}ms; runPostFirstFrameInit start")
         try { FileLogger.e(TAG, "首帧耗时(自onCreate): ${delta}ms") } catch (_: Exception) {}
-        dismissSplashDialog()
+        // 已不再显示开屏对话框，无需关闭
+        // dismissSplashDialog()
         runPostFirstFrameInit()
     }
 

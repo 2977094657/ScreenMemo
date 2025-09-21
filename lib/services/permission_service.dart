@@ -78,8 +78,9 @@ class PermissionService with WidgetsBindingObserver {
   
   /// 检查存储权限
   Future<bool> _checkStoragePermission() async {
-    final status = await Permission.storage.status;
-    return status.isGranted;
+    // 应用仅写入 app 私有外部目录并在 Android 10+ 使用 MediaStore 导出，
+    // 不再需要传统 READ/WRITE_EXTERNAL_STORAGE 运行时权限，统一视为“已授权”。
+    return true;
   }
   
   /// 检查通知权限
@@ -91,16 +92,17 @@ class PermissionService with WidgetsBindingObserver {
   /// 请求基础权限
   Future<bool> requestBasicPermissions() async {
     try {
-      // 请求存储权限
-      final storageStatus = await Permission.storage.request();
+      // 存储权限在 Android 10+ 默认无需；统一视为已授权
+      await _saveStorageStatus(true);
 
-      // 请求通知权限
+      // 仅请求通知权限
       final notificationStatus = await Permission.notification.request();
 
-      // 立即强制刷新权限状态
+      // 立即强制刷新权限状态并通知UI
       await forceRefreshPermissions();
+      onPermissionsUpdated?.call();
 
-      return storageStatus.isGranted && notificationStatus.isGranted;
+      return notificationStatus.isGranted;
     } catch (e) {
       print('请求基础权限失败: $e');
       return false;
@@ -181,18 +183,21 @@ class PermissionService with WidgetsBindingObserver {
     }
   }
 
-  /// 请求存储权限
+  /// 请求存储权限（默认通过）
   Future<bool> requestStoragePermission() async {
     try {
-      final status = await Permission.storage.request();
+      // 不再弹系统对话框，直接视为已授权
+      await _saveStorageStatus(true);
 
-      // 立即强制刷新权限状态
+      // 立即强制刷新权限状态并通知UI
       await forceRefreshPermissions();
+      onPermissionsUpdated?.call();
 
-      return status.isGranted;
+      return true;
     } catch (e) {
       print('请求存储权限失败: $e');
-      return false;
+      // 为避免阻断首启流程，保守返回 true
+      return true;
     }
   }
 

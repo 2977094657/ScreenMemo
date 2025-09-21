@@ -53,7 +53,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 2,
+          version: 3,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -68,7 +68,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 2,
+          version: 3,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -83,7 +83,7 @@ class ScreenshotDatabase {
       
       final db = await openDatabase(
         path,
-        version: 2,
+        version: 3,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -309,6 +309,21 @@ class ScreenshotDatabase {
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id)');
 
+    // ai_site_groups: 接口站点分组（用于多站点备用&排序）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_site_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key TEXT,
+        model TEXT NOT NULL,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_site_groups_order ON ai_site_groups(enabled, order_index, id)');
+
     // 段落与结果表（与原生侧保持一致）
     await db.execute('''
       CREATE TABLE IF NOT EXISTS segments (
@@ -384,15 +399,33 @@ class ScreenshotDatabase {
 
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
   /// - has_summary: 0 表示无总结；1 表示已有总结
+  /// - 仅返回“至少有一张样本图片”的事件，避免前端渲染后再隐藏导致滚动抖动
   Future<List<Map<String, dynamic>>> listSegmentsEx({int limit = 50, bool onlyNoSummary = false}) async {
     final db = await database;
     try {
-      // 与原生 SegmentDatabaseHelper.listSegmentsNeedingSummary 的条件保持一致
       const String noSummaryCond =
           "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
-      final String whereSql = onlyNoSummary ? 'WHERE ' + noSummaryCond : '';
+      const String hasSamplesCond =
+          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+      // 组合 WHERE 子句
+      final List<String> whereClauses = <String>[hasSamplesCond];
+      if (onlyNoSummary) {
+        whereClauses.add('(' + noSummaryCond + ')');
+      }
+      final String whereSql = whereClauses.isEmpty ? '' : ('WHERE ' + whereClauses.join(' AND '));
       final String sql = '''
-        SELECT s.*, CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary
+        SELECT
+          s.*,
+          CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
+          (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count,
+          -- 若 segments.app_packages 为空，回退为样本表去重聚合
+          COALESCE(
+            NULLIF(TRIM(s.app_packages), ''),
+            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+          ) AS app_packages_display,
+          r.output_text,
+          r.structured_json,
+          r.categories
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
         $whereSql
@@ -400,7 +433,6 @@ class ScreenshotDatabase {
         LIMIT ?
       ''';
       final rows = await db.rawQuery(sql, [limit]);
-      // sqflite 返回 Map<String, Object?>，此处直接透传
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
@@ -418,15 +450,19 @@ class ScreenshotDatabase {
   }
 
   /// 通过原生接口按ID批量重试生成总结
-  Future<int> retrySegments(List<int> ids) async {
+  /// force=true 时无视已有结果与时间范围，直接强制重跑
+  Future<int> retrySegments(List<int> ids, {bool force = false}) async {
     try {
       final res = await _channel.invokeMethod('retrySegments', {
         'ids': ids,
+        'force': force,
       });
       if (res is int) return res;
       if (res is num) return res.toInt();
       return 0;
-    } catch (_) { return 0; }
+    } catch (_) {
+      return 0;
+    }
   }
 
   Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
@@ -454,6 +490,20 @@ class ScreenshotDatabase {
       if (rows.isEmpty) return null;
       return rows.first;
     } catch (_) { return null; }
+  }
+  /// 删除单个段落事件（仅删除事件及其结果/样本，不删除月表中的图片记录/文件）
+  Future<bool> deleteSegmentOnly(int segmentId) async {
+    final db = await database;
+    try {
+      await db.transaction((txn) async {
+        await txn.delete('segment_results', where: 'segment_id = ?', whereArgs: [segmentId]);
+        await txn.delete('segment_samples', where: 'segment_id = ?', whereArgs: [segmentId]);
+        await txn.delete('segments', where: 'id = ?', whereArgs: [segmentId]);
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   // 无升级逻辑：新安装直接按 _onCreate 创建所有表

@@ -30,6 +30,8 @@ import kotlin.math.roundToInt
 object SegmentSummaryManager {
 
     private const val TAG = "SegmentSummaryManager"
+    // 提供方硬上限（例如 OpenAI 报错 max allowed is 16），作为最终兜底
+    private const val PROVIDER_IMAGE_HARD_LIMIT = 16
 
     // 读写设置（SharedPreferences）
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
@@ -400,7 +402,7 @@ object SegmentSummaryManager {
         }
     }
 
-    private fun finishSegment(ctx: Context, seg: SegmentDatabaseHelper.Segment, samples: List<SegmentDatabaseHelper.Sample>) {
+    private fun finishSegment(ctx: Context, seg: SegmentDatabaseHelper.Segment, samples: List<SegmentDatabaseHelper.Sample>, force: Boolean = false) {
         // 并发去重：同一段落只允许一次完成流程
         if (!finishingSegments.add(seg.id)) {
             return
@@ -413,46 +415,58 @@ object SegmentSummaryManager {
         }
         Thread {
             try {
-                try { FileLogger.i(TAG, "finish: begin segment=${seg.id}, samples=${samples.size}") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "finish: begin segment=${seg.id}, samples=${samples.size}, force=${force}") } catch (_: Exception) {}
                 // 兜底：无样本则不进行AI
                 if (samples.isEmpty()) {
                     try { FileLogger.w(TAG, "finish: no samples, skip ai seg=${seg.id}") } catch (_: Exception) {}
                     SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
                     return@Thread
                 }
-                // 若同窗口已有任一结果，直接标记完成并跳过AI调用
-                if (SegmentDatabaseHelper.hasAnyResultForWindow(ctx, seg.startTime, seg.endTime)) {
-                    try { FileLogger.w(TAG, "finish: window already has result, skip seg=${seg.id}") } catch (_: Exception) {}
-                    SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
-                    return@Thread
-                }
-                // 双重检查：该段落是否已写入结果（在极端并发下）
-                if (SegmentDatabaseHelper.hasResultForSegment(ctx, seg.id)) {
-                    SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
-                    return@Thread
+                // 非强制模式下：存在结果即跳过；强制模式则无视现有结果重新生成
+                if (!force) {
+                    // 若同窗口已有任一结果，直接标记完成并跳过AI调用
+                    if (SegmentDatabaseHelper.hasAnyResultForWindow(ctx, seg.startTime, seg.endTime)) {
+                        try { FileLogger.w(TAG, "finish: window already has result, skip seg=${seg.id}") } catch (_: Exception) {}
+                        SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
+                        return@Thread
+                    }
+                    // 双重检查：该段落是否已写入结果（在极端并发下）
+                    if (SegmentDatabaseHelper.hasResultForSegment(ctx, seg.id)) {
+                        SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
+                        return@Thread
+                    }
                 }
                 // 聚合应用与时间片，组织提示
                 val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
                 for (s in samples) {
                     byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
                 }
-                // 构造描述（仅时间点与应用，不包含OCR文本），要求中文输出
+
+                // 读取自定义提示词（普通事件），若不存在则使用内置默认要求
+                val customHeader = try {
+                    AISettingsNative.readSettingValue(ctx, "prompt_segment")
+                } catch (_: Exception) { null }
+                val defaultHeader =
+                    "请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：\n" +
+                    "- 禁止使用OCR文本；直接理解图片内容；\n" +
+                    "- 不要逐图描述；按应用/主题整合用户在该时间段的‘行为总结’（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；\n" +
+                    "- 对视频标题、作者、品牌等独特信息，按屏幕原样在输出中保留；\n" +
+                    "- 对同一文章/视频/页面的连续图片，归为同一 content_group 做整体总结；\n" +
+                    "- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；\n" +
+                    "- overall_summary 使用 Markdown 小节与要点，建议包含：\"## 概览\"（时间范围、主要应用/主题）、\"## 关键操作\"（按时间的要点清单）、\"## 主要活动\"（按应用/主题的要点清单）、\"## 重点内容\"（可保留的标题/作者/品牌等）；\n" +
+                    "- content_groups[].summary 使用 1-3 条 Markdown 要点呈现该组主题/代表性标题/阅读或观看意图；\n" +
+                    "以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n" +
+                    "字段约定：\n" +
+                    "key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"应用名\",\"ref_image\":\"文件名\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"(Markdown) 精简说明，避免敏感信息\",\"confidence\":0.0}],\n" +
+                    "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"文件名1\",\"文件名2\"],\"summary\":\"(Markdown) 本组内容的要点\"}],\n" +
+                    "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"(Markdown) 一句话行为（可简短强调）\"}],\n" +
+                    "overall_summary: \"(Markdown) 使用小节与要点，避免流水账并尽可能保留信息\""
+                val header = (customHeader ?: defaultHeader)
+
+                // 构造描述（仅时间点与应用，不包含OCR文本）
                 val sb = StringBuilder()
-                sb.append("时间段：")
-                    .append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
-                    .append("请基于以下多张屏幕图片进行中文总结，并输出结构化结果：\n")
-                    .append("- 禁止使用OCR文本，直接理解图片内容；\n")
-                    .append("- 不要对每张图片逐条描述；请产出用户在该时间段的‘行为总结’，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；\n")
-                    .append("- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；\n")
-                    .append("- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结，不必逐图总结；\n")
-                    .append("- 识别关键操作（支付/下单、登录/注册、权限授权或系统权限弹窗、账号绑定/解绑、验证码、人脸/指纹、应用内购买等），仅描述已发生的事实，不要输出敏感信息；\n")
-                    .append("- 输出一个 overall_summary（中等长度，2-4句，避免过度简略），聚焦该时间段用户主要行为与意图；\n")
-                    .append("- 以 JSON 输出以下字段（在原有字段基础上新增，不要删除）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n")
-                    .append("字段约定：\n")
-                    .append("key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"应用名\",\"ref_image\":\"文件名\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"简要说明（避免敏感信息）\",\"confidence\":0.0}],\n")
-                    .append("content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"文件名1\",\"文件名2\"],\"summary\":\"本组内容中文总结\"}],\n")
-                    .append("timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"一句话行为\"}],\n")
-                    .append("overall_summary: \"2-4句的中等长度概述，避免流水账与过度简略\"\n")
+                sb.append("时间段：").append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
+                sb.append(header).append('\n')
                 for ((pkg, list) in byApp) {
                     list.sortBy { it.captureTime }
                     val name = list.firstOrNull()?.appName ?: pkg
@@ -491,6 +505,23 @@ object SegmentSummaryManager {
                     FileLogger.w(TAG, "ai exception class=${e::class.java.name}")
                     FileLogger.w(TAG, "ai exception stack=\n" + (e.stackTraceToString()))
                 } catch (_: Exception) {}
+                // 将错误预览文本持久化，供前端错误样式展示
+                try {
+                    val cfg = AISettingsNative.readConfig(ctx)
+                    val msg = e.message ?: "unknown error"
+                    val idx = msg.indexOf('{')
+                    val body = if (idx >= 0) msg.substring(idx) else msg
+                    val previewLine = "AI response preview(OpenAI): " + body
+                    SegmentDatabaseHelper.saveResult(
+                        ctx,
+                        seg.id,
+                        provider = "gemini",
+                        model = cfg.model,
+                        outputText = previewLine,
+                        structuredJson = null,
+                        categories = null
+                    )
+                } catch (_: Exception) {}
             } finally {
                 SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
                 activeSegmentId = -1L
@@ -521,6 +552,12 @@ object SegmentSummaryManager {
         val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
         val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
 
+        // 统一图片限额（单段：floor(duration/interval)，并受提供方硬上限保护）
+        val capBySeg = (seg.durationSec / seg.sampleIntervalSec).coerceAtLeast(1)
+        val effectiveCap = kotlin.math.min(capBySeg, PROVIDER_IMAGE_HARD_LIMIT)
+        val samplesOrdered = samples.sortedBy { it.captureTime }
+        val effSamples = if (samplesOrdered.size > effectiveCap) evenPick(samplesOrdered, effectiveCap) else samplesOrdered
+
         // 速率限制：必要时等待
         val waited = acquireAiRateSlot(ctx)
 
@@ -544,7 +581,7 @@ object SegmentSummaryManager {
         var totalImageBytes = 0L
         var missingImages = 0
         val firstNames = ArrayList<String>()
-        for (s in samples) {
+        for (s in effSamples) {
             try {
                 val f = File(s.filePath)
                 val size = if (f.exists()) f.length() else 0L
@@ -567,7 +604,7 @@ object SegmentSummaryManager {
 
             val parts = JSONArray()
             parts.put(JSONObject().put("text", prompt))
-            for (s in samples) {
+            for (s in effSamples) {
                 val imgBytes = try { File(s.filePath).readBytes() } catch (_: Exception) { null }
                 if (imgBytes == null || imgBytes.isEmpty()) continue
                 val b64 = Base64.encodeToString(imgBytes, Base64.NO_WRAP)
@@ -641,6 +678,15 @@ object SegmentSummaryManager {
                     }
                 }
             } catch (_: Exception) {}
+            // 若无正常内容且响应体包含 error，则回落为直接保存错误预览，供前端显示
+            if (outputText.isBlank()) {
+                try {
+                    val low = respText.lowercase()
+                    if (low.contains("\"error\"") || low.contains("no candidates returned")) {
+                        outputText = "AI response preview(Google): " + respText
+                    }
+                } catch (_: Exception) {}
+            }
             val (structured, cats) = extractJsonBlocks(outputText)
             return Quad(model, outputText, structured, cats)
         } else {
@@ -650,7 +696,7 @@ object SegmentSummaryManager {
 
             val contentArr = JSONArray()
             contentArr.put(JSONObject().put("type", "text").put("text", prompt))
-            for (s in samples) {
+            for (s in effSamples) {
                 val imgBytes = try { File(s.filePath).readBytes() } catch (_: Exception) { null }
                 if (imgBytes == null || imgBytes.isEmpty()) continue
                 val b64 = Base64.encodeToString(imgBytes, Base64.NO_WRAP)
@@ -692,7 +738,25 @@ object SegmentSummaryManager {
                         try { FileLogger.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         if (resp.isSuccessful) {
                             respText = resp.body?.string() ?: ""
-                            break
+                            // 检测 200 成功但响应体为错误或无候选的情况（如 {"error":{...}}）
+                            var hasPayloadError = false
+                            try {
+                                val obj = org.json.JSONObject(respText)
+                                val err = obj.optJSONObject("error")
+                                if (err != null) {
+                                    hasPayloadError = true
+                                }
+                            } catch (_: Exception) {
+                                // 非 JSON 或无法解析则按正常成功处理
+                            }
+                            if (hasPayloadError) {
+                                // 记录并视为“带错误负载的成功”，交由下游保存错误预览供前端展示，避免自动重试
+                                try { FileLogger.w(TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
+                                break
+                            } else {
+                                // 正常成功
+                                break
+                            }
                         } else {
                             lastBody = resp.body?.string()
                             val shouldRetry = resp.code >= 500
@@ -731,6 +795,15 @@ object SegmentSummaryManager {
                     outputText = msg?.optString("content", "") ?: ""
                 }
             } catch (_: Exception) {}
+            // 若无正常内容且响应体包含 error，则回落为直接保存错误预览，供前端显示
+            if (outputText.isBlank()) {
+                try {
+                    val low = respText.lowercase()
+                    if (low.contains("\"error\"") || low.contains("no candidates returned")) {
+                        outputText = "AI response preview(OpenAI): " + respText
+                    }
+                } catch (_: Exception) {}
+            }
             val (structured, cats) = extractJsonBlocks(outputText)
             return Quad(model, outputText, structured, cats)
         }
@@ -780,7 +853,8 @@ object SegmentSummaryManager {
             .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
 
         // 采样图片：限制总数 MAX_COMPARE_IMAGES
-        val dynamicCap = (cur.durationSec / cur.sampleIntervalSec).coerceAtLeast(1)
+        val mergedDurationSec = (((cur.endTime) - prev.startTime) / 1000L).toInt().coerceAtLeast(1)
+        val dynamicCap = kotlin.math.min(mergedDurationSec / cur.sampleIntervalSec, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
         val (imgsA, imgsB) = pickCompareImages(prevSamples, curSamples, dynamicCap)
         try { FileLogger.i(TAG, "merge: pick cap=${dynamicCap} -> A=${imgsA.size}, B=${imgsB.size}") } catch (_: Exception) {}
         val decide = callGeminiWithImages(ctx, cur, imgsA + imgsB, sb.toString())
@@ -811,11 +885,16 @@ object SegmentSummaryManager {
         } catch (_: Exception) {}
         if (!same) { SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true); return }
 
-        // 合并：窗口 [prev.start, cur.end]，样本合并并裁剪避免重复
-        val mergedSamples = mergeSamples(prevSamples, curSamples)
-        val mergePrompt = buildMergePrompt(prev, cur, mergedSamples)
-        try { FileLogger.i(TAG, "merge: same_event=true -> merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${mergedSamples.size}") } catch (_: Exception) {}
-        val merged = callGeminiWithImages(ctx, cur, mergedSamples, mergePrompt)
+        // 合并：窗口 [prev.start, cur.end]，样本按“均分限额”后再合并，严格限制图片上限
+        // 规则：总上限 = floor(cur.durationSec / cur.sampleIntervalSec)，并与 PROVIDER_IMAGE_HARD_LIMIT 取最小
+        val capFinal = (cur.durationSec / cur.sampleIntervalSec).coerceAtLeast(1)
+        val finalCap = kotlin.math.min(capFinal, PROVIDER_IMAGE_HARD_LIMIT)
+        // 两段均分：各自各取一半（奇数时后者多1）
+        val picks = pickCompareImages(prevSamples, curSamples, finalCap)
+        val limitedMerged = mergeSamples(picks.first, picks.second)
+        val mergePrompt = buildMergePrompt(ctx, prev, cur, limitedMerged)
+        try { FileLogger.i(TAG, "merge: same_event=true -> merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${limitedMerged.size} (cap=${finalCap})") } catch (_: Exception) {}
+        val merged = callGeminiWithImages(ctx, cur, limitedMerged, mergePrompt)
         try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
         // 仅打印合并“生成新总结”的AI响应
         try {
@@ -844,7 +923,7 @@ object SegmentSummaryManager {
         // 递归向前继续尝试合并
         try { FileLogger.i(TAG, "merge: continue backward compare from new start=${fmt(prev.startTime)}") } catch (_: Exception) {}
         SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
-        tryCompareAndMergeBackward(ctx, cur.copy(startTime = prev.startTime), mergedSamples, merged.second, merged.third)
+        tryCompareAndMergeBackward(ctx, cur.copy(startTime = prev.startTime), limitedMerged, merged.second, merged.third)
     }
 
     private fun truncateForLog(text: String, maxLen: Int = 3000): String {
@@ -953,24 +1032,46 @@ object SegmentSummaryManager {
     }
 
     private fun buildMergePrompt(
+        ctx: Context,
         a: SegmentDatabaseHelper.Segment,
         b: SegmentDatabaseHelper.Segment,
         samples: List<SegmentDatabaseHelper.Sample>
     ): String {
         val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
         for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
+
+        // 支持自定义合并提示词（ai_settings.key = prompt_merge），否则使用内置默认
+        val customHeader = try { AISettingsNative.readSettingValue(ctx, "prompt_merge") } catch (_: Exception) { null }
+        val defaultHeader =
+            "请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：\n" +
+            "- 禁止使用OCR文本，直接理解图片内容；\n" +
+            "- 不要对每张图片逐条描述；请产出用户在该时间段的‘行为总结’，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；\n" +
+            "- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；\n" +
+            "- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；\n" +
+            "- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；\n" +
+            "- overall_summary 为 Markdown，建议包含以下小节：\"## 概览\"（时间范围、主要应用/主题）、\"## 关键操作\"（按时间的要点清单）、\"## 主要活动\"（按应用/主题的要点清单）、\"## 重点内容\"（可保留的标题/作者/品牌等）；\n" +
+            "- content_groups[].summary 为 Markdown，使用 1-3 条要点列出该组主题/代表性标题/阅读或观看意图；\n" +
+            "- 为尽可能保留信息，可在 Markdown 中使用无序/有序列表、加粗/斜体与内联代码高亮（但不要使用代码块）；\n" +
+            "以 JSON 输出以下字段（与普通事件保持一致，不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n" +
+            "字段约定：\n" +
+            "key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"应用名\",\"ref_image\":\"文件名\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"简要说明（避免敏感信息）\",\"confidence\":0.0}],\n" +
+            "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"文件名1\",\"文件名2\"],\"summary\":\"本组内容的Markdown要点\"}],\n" +
+            "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"一句话行为（可用简短Markdown强调）\"}],\n" +
+            "overall_summary: \"使用Markdown的小节与要点，保留多事件合并后的关键信息\"；\n" +
+            "仅输出一个 JSON 对象，不要附加解释"
+        val header = customHeader ?: defaultHeader
+
         val sb = StringBuilder()
         sb.append("合并事件总结：\n")
             .append("时间段：").append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
-            .append("请基于以下图片产出合并后的总结，保留先前提示的输出字段与规则（行为导向，禁逐图）：\n")
-            .append("- 对‘持续观看视频/持续阅读/持续浏览’这类同类行为，即使内容不同，也请合并为一个持续事件进行描述；\n")
-            .append("- 优先描述停留时间长、样本数量多的应用/主题；出现频次很低的内容可忽略或一句话带过；\n")
-            .append("- 代表性内容：可挑选1-2个停留较久的视频/文章进行点名描述，其余合并概括；\n")
+            .append(header).append('\n')
         for ((pkg, list) in byApp) {
             list.sortBy { it.captureTime }
             val name = list.firstOrNull()?.appName ?: pkg
             sb.append("应用：").append(name).append(" (").append(pkg).append(")\n")
-            for (s in list) sb.append("  - 截图时间=").append(fmt(s.captureTime)).append(" -> 文件=").append(File(s.filePath).name).append('\n')
+            for (s in list) {
+                sb.append("  - 截图时间=").append(fmt(s.captureTime)).append(" -> 文件=").append(File(s.filePath).name).append('\n')
+            }
         }
         return sb.toString()
     }
@@ -1029,15 +1130,16 @@ object SegmentSummaryManager {
     }
 
     /**
-     * 公开方法：按ID列表重试生成总结。仅处理“尚无结果”的段落，确保幂等。
+     * 公开方法：按ID列表重试生成总结。
+     * - force=true 时无视“已有结果/同窗已有结果”直接重跑并覆盖写入。
      */
-    fun retrySegmentsByIds(ctx: Context, ids: List<Long>): Int {
+    fun retrySegmentsByIds(ctx: Context, ids: List<Long>, force: Boolean = false): Int {
         if (ids.isEmpty()) return 0
         var retried = 0
         for (id in ids) {
             try {
-                // 已有结果则跳过
-                if (SegmentDatabaseHelper.hasResultForSegment(ctx, id)) continue
+                // 非强制：已有结果则跳过
+                if (!force && SegmentDatabaseHelper.hasResultForSegment(ctx, id)) continue
                 val seg = SegmentDatabaseHelper.getSegmentById(ctx, id) ?: continue
                 var samples = SegmentDatabaseHelper.getSamplesForSegment(ctx, id)
                 if (samples.isEmpty()) {
@@ -1047,8 +1149,8 @@ object SegmentSummaryManager {
                     }
                 }
                 if (samples.isEmpty()) continue
-                try { FileLogger.i(TAG, "retrySegments: seg=${id} imgs=${samples.size}") } catch (_: Exception) {}
-                finishSegment(ctx, seg, samples)
+                try { FileLogger.i(TAG, "retrySegments: seg=${id} imgs=${samples.size} force=${force}") } catch (_: Exception) {}
+                finishSegment(ctx, seg, samples, force)
                 retried++
             } catch (_: Exception) {}
         }
