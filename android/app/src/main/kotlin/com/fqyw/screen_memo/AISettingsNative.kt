@@ -64,6 +64,22 @@ object AISettingsNative {
             throw e
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
+
+    // 读取任意 ai_settings 键值（去除首尾空白，空串视为 null）
+    fun readSettingValue(context: Context, key: String): String? {
+        var db: SQLiteDatabase? = null
+        return try {
+            db = openMasterDb(context)
+            if (db == null) return null
+            val v = readSetting(db!!, key)
+            val trimmed = v?.trim()
+            if (trimmed.isNullOrEmpty()) null else trimmed
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
 }
 
 

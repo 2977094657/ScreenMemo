@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../services/ai_settings_service.dart';
 import '../services/ai_chat_service.dart';
+import '../widgets/ui_dialog.dart';
 
 /// AI 设置与测试页面：配置 OpenAI 兼容接口并进行多轮聊天测试
 class AISettingsPage extends StatefulWidget {
@@ -13,6 +16,7 @@ class AISettingsPage extends StatefulWidget {
 }
 
 class _AISettingsPageState extends State<AISettingsPage> {
+  static const double _inputRowHeight = 40.0;
   final AISettingsService _settings = AISettingsService.instance;
   final AIChatService _chat = AIChatService.instance;
 
@@ -26,6 +30,59 @@ class _AISettingsPageState extends State<AISettingsPage> {
   bool _saving = false;
   bool _sending = false;
   bool _streamEnabled = true;
+  bool _connExpanded = false;
+  bool _groupSelectorVisible = true;
+  bool _promptExpanded = false;
+
+  // 提示词管理
+  String? _promptSegment;
+  String? _promptMerge;
+  final TextEditingController _promptSegmentController = TextEditingController();
+  final TextEditingController _promptMergeController = TextEditingController();
+  bool _editingPromptSegment = false;
+  bool _editingPromptMerge = false;
+  bool _savingPromptSegment = false;
+  bool _savingPromptMerge = false;
+
+  // 默认提示词预览（与原生默认一致，便于渲染&编辑）
+  static const String _defaultSegmentPromptPreview = '''
+请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：
+- 禁止使用OCR文本；直接理解图片内容；
+- 不要逐图描述；按应用/主题整合用户在该时间段的‘行为总结’（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；
+- 对视频标题、作者、品牌等独特信息，按屏幕原样在输出中保留；
+- 对同一文章/视频/页面的连续图片，归为同一 content_group 做整体总结；
+- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；
+- overall_summary 使用 Markdown 小节与要点，建议包含："## 概览"（时间范围、主要应用/主题）、"## 关键操作"（按时间的要点清单）、"## 主要活动"（按应用/主题的要点清单）、"## 重点内容"（可保留的标题/作者/品牌等）；
+- content_groups[].summary 使用 1-3 条 Markdown 要点呈现该组主题/代表性标题/阅读或观看意图；
+以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
+字段约定（示例说明格式，非固定内容）：
+- key_actions[]: [{ "type": "...", "app": "应用名", "ref_image": "文件名", "ref_time": "HH:mm:ss", "detail": "(Markdown) 精简说明", "confidence": 0.0 }]
+- content_groups[]: [{ "group_type": "...", "title": "可为空", "app": "应用名", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["文件名1"], "summary": "(Markdown) 本组内容要点" }]
+- timeline[]: [{ "time": "HH:mm:ss", "app": "应用名", "action": "浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他", "summary": "(Markdown) 一句话行为（可简短强调）" }]
+- overall_summary: "(Markdown) 使用小节与要点，避免流水账并尽可能保留信息"
+''';
+
+  static const String _defaultMergePromptPreview = '''
+请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：
+- 禁止使用OCR文本，直接理解图片内容；
+- 不要对每张图片逐条描述；请产出用户在该时间段的‘行为总结’，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；
+- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；
+- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；
+- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；
+- overall_summary 为 Markdown，建议包含以下小节："## 概览"、"## 关键操作"、"## 主要活动"、"## 重点内容"；
+- content_groups[].summary 为 Markdown，使用 1-3 条要点列出该组主题/代表性标题/阅读或观看意图；
+- 为尽可能保留信息，可在 Markdown 中使用无序/有序列表、加粗/斜体与内联代码高亮（但不要使用代码块）；
+以 JSON 输出以下字段（与普通事件保持一致，不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
+字段约定（示例说明格式，非固定内容）：
+- key_actions[]: [{ "type": "...", "app": "应用名", "ref_image": "文件名", "ref_time": "HH:mm:ss", "detail": "简要说明（避免敏感信息）", "confidence": 0.0 }]
+- content_groups[]: [{ "group_type": "...", "title": "可为空", "app": "应用名", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["文件名1"], "summary": "本组内容的Markdown要点" }]
+- timeline[]: [{ "time": "HH:mm:ss", "app": "应用名", "action": "浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他", "summary": "一句话行为（可用简短Markdown强调）" }]
+- overall_summary: "使用Markdown的小节与要点，保留多事件合并后的关键信息"
+''';
+
+  // 分组相关状态
+  List<AISiteGroup> _groups = <AISiteGroup>[];
+  int? _activeGroupId;
 
   @override
   void initState() {
@@ -39,23 +96,64 @@ class _AISettingsPageState extends State<AISettingsPage> {
     _apiKeyController.dispose();
     _modelController.dispose();
     _inputController.dispose();
+    _promptSegmentController.dispose();
+    _promptMergeController.dispose();
     super.dispose();
   }
 
   Future<void> _loadAll() async {
     try {
-      final baseUrl = await _settings.getBaseUrl();
-      final apiKey = await _settings.getApiKey();
-      final model = await _settings.getModel();
-      final history = await _settings.getChatHistory();
+      // 分组数据与当前激活分组
+      final groups = await _settings.listSiteGroups();
+      final activeId = await _settings.getActiveGroupId();
+
+      // 基础配置：若存在激活分组，则从分组读取；否则读取未分组键值
+      String baseUrl;
+      String? apiKey;
+      String model;
+      final history = await _settings.getChatHistoryByGroup(activeId);
       final streamEnabled = await _settings.getStreamEnabled();
+      final segPrompt = await _settings.getPromptSegment();
+      final mergePrompt = await _settings.getPromptMerge();
+
+      if (activeId != null) {
+        final g = await _settings.getSiteGroupById(activeId);
+        baseUrl = g?.baseUrl ?? await _settings.getBaseUrl();
+        apiKey = g?.apiKey ?? await _settings.getApiKey();
+        model = g?.model ?? await _settings.getModel();
+      } else {
+        baseUrl = await _settings.getBaseUrl();
+        apiKey = await _settings.getApiKey();
+        model = await _settings.getModel();
+      }
+
       if (!mounted) return;
       setState(() {
-        _baseUrlController.text = baseUrl;
-        _apiKeyController.text = apiKey ?? '';
-        _modelController.text = model;
+        _groups = groups;
+        _activeGroupId = activeId;
+
+        // 未分组：默认值隐藏；分组：直接填充实际值
+        if (activeId == null) {
+          _baseUrlController.text = (baseUrl == 'https://api.openai.com') ? '' : baseUrl;
+          _apiKeyController.text = apiKey ?? '';
+          _modelController.text = (model == 'gpt-4o-mini') ? '' : model;
+        } else {
+          _baseUrlController.text = baseUrl;
+          _apiKeyController.text = apiKey ?? '';
+          _modelController.text = model;
+        }
+
         _messages = history;
         _streamEnabled = streamEnabled;
+        _promptSegment = segPrompt;
+        _promptMerge = mergePrompt;
+        // 预填编辑器（若无自定义，填充默认预览，方便用户基于默认直接修改）
+        _promptSegmentController.text = (_promptSegment == null || _promptSegment!.trim().isEmpty)
+            ? _defaultSegmentPromptPreview
+            : _promptSegment!;
+        _promptMergeController.text = (_promptMerge == null || _promptMerge!.trim().isEmpty)
+            ? _defaultMergePromptPreview
+            : _promptMerge!;
         _loading = false;
       });
     } catch (_) {
@@ -67,16 +165,263 @@ class _AISettingsPageState extends State<AISettingsPage> {
     if (_saving) return;
     setState(() { _saving = true; });
     try {
-      await _settings.setBaseUrl(_baseUrlController.text.trim());
-      await _settings.setApiKey(_apiKeyController.text.trim());
-      await _settings.setModel(_modelController.text.trim());
-      if (!mounted) return;
-      UINotifier.success(context, 'Saved');
+      final base = _baseUrlController.text.trim();
+      final key = _apiKeyController.text.trim();
+      final model = _modelController.text.trim();
+
+      final gid = _activeGroupId;
+      if (gid != null) {
+        // 更新当前分组
+        final g = await _settings.getSiteGroupById(gid);
+        if (g == null) {
+          UINotifier.error(context, '分组不存在');
+        } else {
+          final updated = g.copyWith(
+            baseUrl: base.isEmpty ? g.baseUrl : base,
+            apiKey: key.isEmpty ? null : key,
+            model: model.isEmpty ? g.model : model,
+          );
+          await _settings.updateSiteGroup(updated);
+          UINotifier.success(context, '已保存当前分组');
+        }
+      } else {
+        // 未分组：保存到键值
+        await _settings.setBaseUrl(base);
+        await _settings.setApiKey(key.isEmpty ? null : key);
+        await _settings.setModel(model);
+        UINotifier.success(context, '已保存');
+      }
+      await _loadAll();
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, 'Save failed: ' + e.toString());
+      UINotifier.error(context, '保存失败: ' + e.toString());
     } finally {
       if (mounted) setState(() { _saving = false; });
+    }
+  }
+
+  // ======= 提示词管理 =======
+  Widget _buildPromptManagerCard() {
+    final titleStyle = Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600);
+    final hintStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+
+    Widget buildSection({
+      required String label,
+      required String currentMarkdown,
+      required bool editing,
+      required TextEditingController controller,
+      required VoidCallback onEditToggle,
+      required Future<void> Function() onSave,
+      required Future<void> Function() onReset,
+      required bool saving,
+    }) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(label, style: titleStyle),
+              const Spacer(),
+              if (!editing)
+                TextButton(
+                  onPressed: onEditToggle,
+                  child: const Text('编辑'),
+                )
+              else ...[
+                TextButton(
+                  onPressed: saving ? null : onSave,
+                  child: Text(saving ? '保存中' : '保存'),
+                ),
+                const SizedBox(width: AppTheme.spacing1),
+                TextButton(
+                  onPressed: saving ? null : onReset,
+                  child: const Text('重置默认'),
+                ),
+                const SizedBox(width: AppTheme.spacing1),
+                TextButton(
+                  onPressed: saving ? null : onEditToggle,
+                  child: const Text('取消'),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          if (!editing)
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              child: MarkdownBody(
+                data: currentMarkdown,
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: Theme.of(context).colorScheme.outline),
+              ),
+              child: TextField(
+                controller: controller,
+                minLines: 6,
+                maxLines: 24,
+                style: Theme.of(context).textTheme.bodySmall,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(AppTheme.spacing2),
+                ),
+              ),
+            ),
+          const SizedBox(height: AppTheme.spacing3),
+        ],
+      );
+    }
+
+    final segMarkdown = (_promptSegment == null || _promptSegment!.trim().isEmpty)
+        ? _defaultSegmentPromptPreview
+        : _promptSegment!;
+    final mergeMarkdown = (_promptMerge == null || _promptMerge!.trim().isEmpty)
+        ? _defaultMergePromptPreview
+        : _promptMerge!;
+
+    return UICard(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 折叠标题（点击展开/收起）
+          GestureDetector(
+            onTap: () => setState(() { _promptExpanded = !_promptExpanded; }),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('提示词管理', style: titleStyle),
+                      const SizedBox(height: 2),
+                      Text(
+                        _buildPromptSummary(),
+                        style: hintStyle,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(_promptExpanded ? Icons.expand_less : Icons.expand_more),
+              ],
+            ),
+          ),
+          if (_promptExpanded) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Text('为“普通事件总结”和“合并事件总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。', style: hintStyle),
+            const SizedBox(height: AppTheme.spacing3),
+
+            // 普通事件提示词
+            buildSection(
+              label: '普通事件提示词',
+              currentMarkdown: segMarkdown,
+              editing: _editingPromptSegment,
+              controller: _promptSegmentController,
+              onEditToggle: () => setState(() => _editingPromptSegment = !_editingPromptSegment),
+              onSave: _savePromptSegment,
+              onReset: _resetPromptSegment,
+              saving: _savingPromptSegment,
+            ),
+
+            // 合并事件提示词
+            buildSection(
+              label: '合并事件提示词',
+              currentMarkdown: mergeMarkdown,
+              editing: _editingPromptMerge,
+              controller: _promptMergeController,
+              onEditToggle: () => setState(() => _editingPromptMerge = !_editingPromptMerge),
+              onSave: _savePromptMerge,
+              onReset: _resetPromptMerge,
+              saving: _savingPromptMerge,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _savePromptSegment() async {
+    if (_savingPromptSegment) return;
+    setState(() => _savingPromptSegment = true);
+    try {
+      final v = _promptSegmentController.text.trim();
+      await _settings.setPromptSegment(v.isEmpty ? null : v);
+      await _loadAll();
+      if (mounted) {
+        setState(() => _editingPromptSegment = false);
+        UINotifier.success(context, '已保存普通事件提示词');
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '保存失败: $e');
+    } finally {
+      if (mounted) setState(() => _savingPromptSegment = false);
+    }
+  }
+
+  Future<void> _resetPromptSegment() async {
+    if (_savingPromptSegment) return;
+    setState(() => _savingPromptSegment = true);
+    try {
+      await _settings.setPromptSegment(null);
+      await _loadAll();
+      if (mounted) {
+        setState(() => _editingPromptSegment = false);
+        UINotifier.success(context, '已重置为默认提示词');
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '重置失败: $e');
+    } finally {
+      if (mounted) setState(() => _savingPromptSegment = false);
+    }
+  }
+
+  Future<void> _savePromptMerge() async {
+    if (_savingPromptMerge) return;
+    setState(() => _savingPromptMerge = true);
+    try {
+      final v = _promptMergeController.text.trim();
+      await _settings.setPromptMerge(v.isEmpty ? null : v);
+      await _loadAll();
+      if (mounted) {
+        setState(() => _editingPromptMerge = false);
+        UINotifier.success(context, '已保存合并事件提示词');
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '保存失败: $e');
+    } finally {
+      if (mounted) setState(() => _savingPromptMerge = false);
+    }
+  }
+
+  Future<void> _resetPromptMerge() async {
+    if (_savingPromptMerge) return;
+    setState(() => _savingPromptMerge = true);
+    try {
+      await _settings.setPromptMerge(null);
+      await _loadAll();
+      if (mounted) {
+        setState(() => _editingPromptMerge = false);
+        UINotifier.success(context, '已重置为默认提示词');
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '重置失败: $e');
+    } finally {
+      if (mounted) setState(() => _savingPromptMerge = false);
     }
   }
 
@@ -85,10 +430,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _chat.clearConversation();
       if (!mounted) return;
       setState(() { _messages = <AIMessage>[]; });
-      UINotifier.success(context, 'Cleared');
+      UINotifier.success(context, '已清空');
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, 'Clear failed: ' + e.toString());
+      UINotifier.error(context, '清空失败: ' + e.toString());
     }
   }
 
@@ -96,7 +441,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
     if (_sending) return;
     final text = _inputController.text.trim();
     if (text.isEmpty) {
-      UINotifier.error(context, 'Message is empty');
+      UINotifier.error(context, '消息不能为空');
       return;
     }
     setState(() { _sending = true; });
@@ -137,7 +482,18 @@ class _AISettingsPageState extends State<AISettingsPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, 'Send failed: ' + e.toString());
+      // 将错误显示为一条“错误”气泡，便于区分样式
+      setState(() {
+        if (_streamEnabled && _messages.isNotEmpty && _messages.last.role == 'assistant') {
+          final newList = List<AIMessage>.from(_messages);
+          newList[_messages.length - 1] = AIMessage(role: 'error', content: e.toString());
+          _messages = newList;
+        } else {
+          _messages = List<AIMessage>.from(_messages)
+            ..add(AIMessage(role: 'error', content: e.toString()));
+        }
+      });
+      UINotifier.error(context, '发送失败: ' + e.toString());
     } finally {
       if (mounted) setState(() { _sending = false; });
     }
@@ -153,152 +509,225 @@ class _AISettingsPageState extends State<AISettingsPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(AppTheme.spacing4),
-                  child: UICard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          : NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppTheme.spacing4),
+                    child: UICard(
+                      padding: const EdgeInsets.all(AppTheme.spacing3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 折叠标题（点击展开/收起）
+                          GestureDetector(
+                            onTap: () => setState(() {
+                              _connExpanded = !_connExpanded;
+                              if (_connExpanded) _groupSelectorVisible = true;
+                            }),
+                            behavior: HitTestBehavior.opaque,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '连接设置',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(fontWeight: FontWeight.w600),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _buildConnSummary(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(_connExpanded ? Icons.expand_less : Icons.expand_more),
+                              ],
+                            ),
+                          ),
+                          if (_connExpanded) ...[
+                            const SizedBox(height: AppTheme.spacing2),
+                            _buildGroupSelector(),
+                            const SizedBox(height: AppTheme.spacing2),
+                            _buildTextField(
+                              controller: _baseUrlController,
+                              label: '接口地址',
+                              hint: '例如：https://api.openai.com',
+                            ),
+                            const SizedBox(height: AppTheme.spacing2),
+                            _buildTextField(
+                              controller: _apiKeyController,
+                              label: 'API 密钥',
+                              hint: '例如：sk-... 或其他服务商 Token',
+                              obscure: true,
+                            ),
+                            const SizedBox(height: AppTheme.spacing2),
+                            _buildTextField(
+                              controller: _modelController,
+                              label: '模型',
+                              hint: '例如：gpt-4o-mini / gpt-4o / 兼容模型',
+                            ),
+                            const SizedBox(height: AppTheme.spacing2),
+                            Row(
+                              children: [
+                                UIButton(
+                                  text: '保存',
+                                  variant: UIButtonVariant.primary,
+                                  size: UIButtonSize.small,
+                                  onPressed: _saving ? null : _saveSettings,
+                                  loading: _saving,
+                                ),
+                                const SizedBox(width: AppTheme.spacing2),
+                                UIButton(
+                                  text: '清空会话',
+                                  variant: UIButtonVariant.outline,
+                                  size: UIButtonSize.small,
+                                  onPressed: _clearHistory,
+                                ),
+                                const SizedBox(width: AppTheme.spacing2),
+                                if (_activeGroupId != null)
+                                  UIButton(
+                                    text: '删除分组',
+                                    variant: UIButtonVariant.outline,
+                                    size: UIButtonSize.small,
+                                    onPressed: _deleteActiveGroup,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: AppTheme.spacing2),
+                            // 流式请求开关（紧凑）
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '流式请求',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(fontWeight: FontWeight.w500),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '开启后将使用流式响应（默认开启）',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Transform.scale(
+                                  scale: 0.85,
+                                  child: Switch(
+                                    value: _streamEnabled,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    onChanged: (v) async {
+                                      setState(() { _streamEnabled = v; });
+                                      await _settings.setStreamEnabled(v);
+                                      if (mounted) {
+                                        UINotifier.success(context, v ? '流式已开启' : '流式已关闭');
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                    child: _buildPromptManagerCard(),
+                  ),
+                ),
+              ],
+              body: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                      vertical: AppTheme.spacing2,
+                    ),
+                    child: Row(
                       children: [
-                        Text('连接设置',
+                        Text('对话测试',
                             style: Theme.of(context)
                                 .textTheme
                                 .titleSmall
                                 ?.copyWith(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: AppTheme.spacing3),
-                        _buildTextField(
-                          controller: _baseUrlController,
-                          label: 'Base URL',
-                          hint: 'https://api.openai.com',
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        _buildTextField(
-                          controller: _apiKeyController,
-                          label: 'API Key',
-                          hint: 'sk-... or other provider token',
-                          obscure: true,
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        _buildTextField(
-                          controller: _modelController,
-                          label: 'Model',
-                          hint: 'gpt-4o-mini / gpt-4o / compatible',
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        Row(
-                          children: [
-                            UIButton(
-                              text: '保存',
-                              variant: UIButtonVariant.primary,
-                              onPressed: _saving ? null : _saveSettings,
-                              loading: _saving,
-                            ),
-                            const SizedBox(width: AppTheme.spacing2),
-                            UIButton(
-                              text: '清空会话',
-                              variant: UIButtonVariant.outline,
-                              onPressed: _clearHistory,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        // 流式请求开关
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('流式请求',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(fontWeight: FontWeight.w500)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '开启后将使用 streaming 响应（默认开启）',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Transform.scale(
-                              scale: 0.9,
-                              child: Switch(
-                                value: _streamEnabled,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                onChanged: (v) async {
-                                  setState(() { _streamEnabled = v; });
-                                  await _settings.setStreamEnabled(v);
-                                  if (mounted) {
-                                    UINotifier.success(context, v ? 'Streaming ON' : 'Streaming OFF');
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing4,
-                          vertical: AppTheme.spacing2,
-                        ),
-                        child: Row(
-                          children: [
-                            Text('对话测试',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w600)),
-                          ],
-                        ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
                       ),
-                      const SizedBox(height: AppTheme.spacing1),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.spacing4,
-                          ),
-                          child: _buildChatList(),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTheme.spacing4,
-                          AppTheme.spacing2,
-                          AppTheme.spacing4,
-                          AppTheme.spacing4,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
+                      child: _buildChatList(),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing2,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                    ),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: _inputRowHeight,
                               child: _buildInputField(),
                             ),
-                            const SizedBox(width: AppTheme.spacing2),
-                            UIButton(
-                              text: _sending ? '发送中' : '发送',
-                              variant: UIButtonVariant.primary,
-                              onPressed: _sending ? null : _sendMessage,
-                              loading: _sending,
+                          ),
+                          const SizedBox(width: AppTheme.spacing2),
+                          SizedBox(
+                            height: _inputRowHeight,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints.tightFor(width: 92),
+                              child: SizedBox.expand(
+                                child: UIButton(
+                                  text: _sending ? '发送中' : '发送',
+                                  variant: UIButtonVariant.primary,
+                                  size: UIButtonSize.small,
+                                  onPressed: _sending ? null : _sendMessage,
+                                  loading: _sending,
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }
@@ -309,9 +738,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
     required String hint,
     bool obscure = false,
   }) {
+    // 紧凑型输入框（更小的字体与内边距）
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline,
@@ -321,21 +751,258 @@ class _AISettingsPageState extends State<AISettingsPage> {
       child: TextField(
         controller: controller,
         obscureText: obscure,
+        onTap: () {
+          // 点击连接设置里的输入框时，自动收起上方分组下拉区域
+          if (_groupSelectorVisible) {
+            setState(() { _groupSelectorVisible = false; });
+          }
+        },
+        style: Theme.of(context).textTheme.bodySmall,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.all(AppTheme.spacing3),
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing2,
+            vertical: AppTheme.spacing2,
+          ),
           floatingLabelBehavior: FloatingLabelBehavior.always,
+          labelStyle: Theme.of(context).textTheme.bodySmall,
+          hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          filled: false,
         ),
       ),
+    );
+  }
+
+  /// 折叠头部摘要：展示当前分组 + baseUrl + model（截断显示）
+  String _buildConnSummary() {
+    final gid = _activeGroupId;
+    String groupName;
+    if (gid == null) {
+      groupName = '未分组';
+    } else {
+      final g = _groups.where((e) => e.id == gid).toList();
+      groupName = g.isNotEmpty ? g.first.name : '分组$gid';
+    }
+    final base = _baseUrlController.text.trim().isEmpty
+        ? 'https://api.openai.com'
+        : _baseUrlController.text.trim();
+    final model = _modelController.text.trim().isEmpty
+        ? 'gpt-4o-mini'
+        : _modelController.text.trim();
+
+    String brief(String s, int max) => s.length > max ? (s.substring(0, max) + '…') : s;
+
+    return '$groupName · ${brief(base, 36)} · ${brief(model, 24)}';
+  }
+
+  /// 折叠头部摘要：提示词管理当前状态
+  String _buildPromptSummary() {
+    final seg = (_promptSegment == null || _promptSegment!.trim().isEmpty) ? '默认' : '已自定义';
+    final mer = (_promptMerge == null || _promptMerge!.trim().isEmpty) ? '默认' : '已自定义';
+    return '普通：$seg · 合并：$mer';
+  }
+
+  Future<void> _onGroupChanged(int? newId) async {
+    await _settings.setActiveGroupId(newId);
+    await _loadAll();
+    if (!mounted) return;
+    UINotifier.success(context, newId == null ? '已切换到未分组' : '已切换分组');
+  }
+
+  Future<void> _addGroup() async {
+    try {
+      final name = '站点组${_groups.length + 1}';
+      final base = _baseUrlController.text.trim().isEmpty ? 'https://api.openai.com' : _baseUrlController.text.trim();
+      final key = _apiKeyController.text.trim();
+      final model = _modelController.text.trim().isEmpty ? 'gpt-4o-mini' : _modelController.text.trim();
+      final id = await _settings.addSiteGroup(
+        name: name,
+        baseUrl: base,
+        apiKey: key.isEmpty ? null : key,
+        model: model,
+      );
+      await _settings.setActiveGroupId(id);
+      await _loadAll();
+      if (!mounted) return;
+      UINotifier.success(context, '已新增分组');
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, '新增分组失败: ' + e.toString());
+    }
+  }
+
+  Future<void> _renameActiveGroup() async {
+    final gid = _activeGroupId;
+    if (gid == null) {
+      if (mounted) UINotifier.info(context, '未选择分组');
+      return;
+    }
+    try {
+      final g = await _settings.getSiteGroupById(gid);
+      if (g == null) {
+        if (mounted) UINotifier.error(context, '分组不存在');
+        return;
+      }
+      final controller = TextEditingController(text: g.name);
+      await showUIDialog<void>(
+        context: context,
+        title: '重命名分组',
+        content: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          child: TextField(
+            controller: controller,
+            style: Theme.of(context).textTheme.bodySmall,
+            decoration: const InputDecoration(
+              labelText: '分组名称',
+              hintText: '请输入新的分组名称',
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing2,
+                vertical: AppTheme.spacing2,
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.always,
+            ),
+          ),
+        ),
+        actions: [
+          const UIDialogAction(text: '取消'),
+          UIDialogAction(
+            text: '确定',
+            style: UIDialogActionStyle.primary,
+            closeOnPress: false,
+            onPressed: (ctx) async {
+              final newName = controller.text.trim();
+              if (newName.isEmpty) {
+                UINotifier.error(ctx, '名称不能为空');
+                return;
+              }
+              try {
+                final updated = g.copyWith(name: newName);
+                await _settings.updateSiteGroup(updated);
+                if (ctx.mounted) Navigator.of(ctx).pop();
+                await _loadAll();
+                if (mounted) UINotifier.success(context, '已重命名');
+              } catch (e) {
+                if (ctx.mounted) UINotifier.error(ctx, '重命名失败: ' + e.toString());
+              }
+            },
+          ),
+        ],
+      );
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '加载分组失败: ' + e.toString());
+    }
+  }
+
+  Future<void> _deleteActiveGroup() async {
+    final gid = _activeGroupId;
+    if (gid == null) {
+      UINotifier.info(context, '未选择分组');
+      return;
+    }
+    try {
+      await _settings.deleteSiteGroup(gid);
+      await _settings.setActiveGroupId(null);
+      await _loadAll();
+      if (!mounted) return;
+      UINotifier.success(context, '已删除分组');
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, '删除分组失败: ' + e.toString());
+    }
+  }
+
+  Widget _buildGroupSelector() {
+    final items = <DropdownMenuItem<int?>>[
+      const DropdownMenuItem<int?>(
+        value: null,
+        child: Text('未分组（单一配置）'),
+      ),
+      ..._groups.map((g) => DropdownMenuItem<int?>(
+        value: g.id,
+        child: Text(g.name),
+      )),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '站点分组',
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '可配置多个站点作为备用；发送失败时自动切换',
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        if (_groupSelectorVisible)
+          Row(
+            children: [
+              DropdownButton<int?>(
+                value: _activeGroupId,
+                items: items,
+                isDense: true,
+                style: Theme.of(context).textTheme.bodySmall,
+                onChanged: (v) => _onGroupChanged(v),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              UIButton(
+                text: '重命名',
+                variant: UIButtonVariant.outline,
+                size: UIButtonSize.small,
+                onPressed: (_activeGroupId == null) ? null : _renameActiveGroup,
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              UIButton(
+                text: '新增分组',
+                variant: UIButtonVariant.outline,
+                size: UIButtonSize.small,
+                onPressed: _addGroup,
+              ),
+            ],
+          )
+        else
+          TextButton(
+            onPressed: () => setState(() { _groupSelectorVisible = true; }),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              '显示分组选择',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
     );
   }
 
   Widget _buildInputField() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline,
@@ -344,10 +1011,26 @@ class _AISettingsPageState extends State<AISettingsPage> {
       ),
       child: TextField(
         controller: _inputController,
+        textAlignVertical: TextAlignVertical.top,
+        onTap: () {
+          // 点击底部输入框时收起整个“连接设置”折叠区，避免遮挡内容
+          setState(() { _connExpanded = false; });
+        },
+        style: Theme.of(context).textTheme.bodySmall,
         decoration: const InputDecoration(
-          hintText: 'Type a message...',
+          hintText: '请输入消息',
+          isDense: true,
           border: InputBorder.none,
-          contentPadding: EdgeInsets.all(AppTheme.spacing3),
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing2,
+            vertical: AppTheme.spacing2,
+          ),
+          filled: false,
         ),
         minLines: 1,
         maxLines: 4,
@@ -363,13 +1046,22 @@ class _AISettingsPageState extends State<AISettingsPage> {
       itemBuilder: (context, index) {
         final m = _messages[index];
         final isUser = m.role == 'user';
+        final isError = m.role == 'error' ||
+            m.content.contains('"error"') ||
+            m.content.toLowerCase().contains('server_error') ||
+            m.content.toLowerCase().contains('request failed') ||
+            m.content.toLowerCase().contains('no candidates returned');
         final align = isUser ? Alignment.centerRight : Alignment.centerLeft;
         final bg = isUser
             ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.surfaceVariant;
+            : isError
+                ? Theme.of(context).colorScheme.errorContainer
+                : Theme.of(context).colorScheme.surfaceVariant;
         final fg = isUser
             ? Theme.of(context).colorScheme.onPrimary
-            : Theme.of(context).colorScheme.onSurfaceVariant;
+            : isError
+                ? Theme.of(context).colorScheme.onErrorContainer
+                : Theme.of(context).colorScheme.onSurfaceVariant;
         return Align(
           alignment: align,
           child: Container(
@@ -382,17 +1074,34 @@ class _AISettingsPageState extends State<AISettingsPage> {
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outline,
-                width: isUser ? 0 : 1,
-              ),
             ),
-            child: Text(
-              m.content,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: fg),
+            child: MarkdownBody(
+              data: m.content,
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                a: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isUser
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : isError
+                          ? Theme.of(context).colorScheme.onErrorContainer
+                          : Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                ),
+                h1: Theme.of(context).textTheme.titleMedium?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                h2: Theme.of(context).textTheme.titleSmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                h3: Theme.of(context).textTheme.bodyLarge?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                h4: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                h5: Theme.of(context).textTheme.bodySmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                h6: Theme.of(context).textTheme.bodySmall?.copyWith(color: fg, fontStyle: FontStyle.italic),
+                code: Theme.of(context).textTheme.bodySmall?.copyWith(color: fg, fontFamily: 'monospace'),
+              ),
+              onTapLink: (text, href, title) async {
+                if (href == null) return;
+                final uri = Uri.tryParse(href);
+                if (uri != null) {
+                  try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                }
+              },
             ),
           ),
         );
