@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'services/startup_profiler.dart';
 import 'theme/app_theme.dart';
 import 'services/permission_service.dart';
@@ -10,6 +10,10 @@ import 'pages/screenshot_gallery_page.dart';
 import 'pages/screenshot_viewer_page.dart';
 import 'pages/search_page.dart';
 import 'services/flutter_logger.dart';
+
+// 新增：每日总结详情页与通知服务
+import 'pages/daily_summary_page.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,12 +36,24 @@ class ScreenMemoApp extends StatefulWidget {
 
 class _ScreenMemoAppState extends State<ScreenMemoApp> {
   final ThemeService _themeService = ThemeService();
+  // 全局导航Key：用于通知点击时无context路由跳转
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     StartupProfiler.mark('ScreenMemoAppState.initState');
     _themeService.addListener(_onThemeChanged);
+
+    // 初始化本地通知并安排每日22:00提醒（Android优先）
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await NotificationService.instance.initialize(_navigatorKey);
+        // 避免重复：先取消再安排
+        await NotificationService.instance.cancelDaily();
+        await NotificationService.instance.scheduleDailyAt(hour: 22, minute: 0);
+      } catch (_) {}
+    });
   }
 
   @override
@@ -61,10 +77,13 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
       themeMode: _themeService.themeMode,
       home: AppInitializer(themeService: _themeService),
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navigatorKey,
       routes: {
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
         '/search': (context) => const SearchPage(),
+        // 新增每日总结详情页路由
+        '/daily_summary': (context) => const DailySummaryPage(),
       },
     );
   }
