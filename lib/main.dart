@@ -10,6 +10,7 @@ import 'pages/screenshot_gallery_page.dart';
 import 'pages/screenshot_viewer_page.dart';
 import 'pages/search_page.dart';
 import 'services/flutter_logger.dart';
+import 'services/app_lifecycle_service.dart';
 
 
 Future<void> main() async {
@@ -31,7 +32,7 @@ class ScreenMemoApp extends StatefulWidget {
   State<ScreenMemoApp> createState() => _ScreenMemoAppState();
 }
 
-class _ScreenMemoAppState extends State<ScreenMemoApp> {
+class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserver {
   final ThemeService _themeService = ThemeService();
   // 全局导航Key：用于通知点击时无context路由跳转
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -41,18 +42,32 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> {
     super.initState();
     StartupProfiler.mark('ScreenMemoAppState.initState');
     _themeService.addListener(_onThemeChanged);
-
+    // 监听应用生命周期，用于页面自动刷新
+    WidgetsBinding.instance.addObserver(this);
+    // 首帧后触发“首次进入 UI”事件（冷启动或UI首次展示）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppLifecycleService.instance.emitFirstUiResumed();
+    });
   }
 
   @override
   void dispose() {
     _themeService.removeListener(_onThemeChanged);
     _themeService.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   void _onThemeChanged() {
     setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 回到前台：通知页面执行进入应用后的自动刷新
+      AppLifecycleService.instance.emitResumed();
+    }
   }
 
   @override

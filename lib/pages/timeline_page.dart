@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/screenshot_record.dart';
@@ -6,6 +7,7 @@ import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../widgets/nsfw_guard.dart';
+import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 全局时间线页面（骨架）
@@ -51,6 +53,7 @@ class _TimelinePageState extends State<TimelinePage>
   bool _scrubJumpScheduled = false;
   final GlobalKey _gridKey = GlobalKey();
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
+  StreamSubscription<AppLifecycleEvent>? _lifecycleSub;
 
   @override
   void initState() {
@@ -61,6 +64,20 @@ class _TimelinePageState extends State<TimelinePage>
       if (!mounted) return;
       setState(() { _privacyMode = enabled; });
     });
+    // 订阅应用生命周期事件：进入应用/首次进入时自动刷新
+    _lifecycleSub = AppLifecycleService.instance.events.listen((event) {
+      if (!mounted) return;
+      if (event == AppLifecycleEvent.resumed || event == AppLifecycleEvent.firstUiResumed || event == AppLifecycleEvent.timelineShown) {
+        // 等价于右上角刷新按钮
+        _refresh();
+      }
+    });
+    // 如果“首次进入UI”事件已在本页挂载前发生，补一次刷新
+    if (AppLifecycleService.instance.firstUiResumedEmitted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
+    }
   }
 
   Future<void> _init() async {
@@ -904,6 +921,8 @@ class _TimelinePageState extends State<TimelinePage>
     for (final c in _tabScrollControllers.values) {
       c.dispose();
     }
+    // 取消生命周期订阅
+    _lifecycleSub?.cancel();
     super.dispose();
   }
 }

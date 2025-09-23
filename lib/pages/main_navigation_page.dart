@@ -6,6 +6,7 @@ import 'settings_page.dart';
 import 'segment_status_page.dart';
 import 'timeline_page.dart';
 import '../theme/app_theme.dart';
+import '../services/app_lifecycle_service.dart';
 
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
@@ -61,6 +62,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     setState(() {
       _currentIndex = index;
     });
+    // 每次进入“时间线”页（索引1）都触发刷新事件
+    if (index == 1) {
+      AppLifecycleService.instance.emitTimelineShown();
+    }
   }
   
   Future<bool> _onWillPop() async {
