@@ -1161,11 +1161,7 @@ class MainActivity : FlutterActivity() {
                 getExternalFilesDir(null)
             }
 
-            val path = externalFilesDir?.absolutePath
-            Log.d(TAG, "getExternalFilesDir($subDir) = $path")
-            FileLogger.i(TAG, "getExternalFilesDir($subDir) = $path")
-
-            path
+            externalFilesDir?.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "获取外部文件目录失败", e)
             FileLogger.e(TAG, "获取外部文件目录失败", e)
