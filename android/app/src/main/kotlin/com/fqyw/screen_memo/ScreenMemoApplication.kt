@@ -57,6 +57,14 @@ class ScreenMemoApplication : Application() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cache FlutterEngine", e)
         }
+
+        // 应用启动时恢复每日提醒调度（读取 SharedPreferences 中的上次设置）
+        try {
+            DailySummaryScheduler.restore(this)
+            OutputFileLogger.info(this, TAG, "Daily summary schedule restored at app start")
+        } catch (e: Exception) {
+            Log.w(TAG, "Daily schedule restore failed", e)
+        }
     }
 
     private fun getMetaData(key: String): String? {

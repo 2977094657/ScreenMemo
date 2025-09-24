@@ -14,10 +14,12 @@
     <!-- 存储权限 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-
+ 
     <!-- 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
+    <!-- 精确闹钟（Android 12+ 精确定时触发需要此权限，并由用户在“Alarms & reminders”中允许） -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+ 
     <!-- 网络权限（如果需要上传截图） -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -117,7 +119,12 @@
             android:name=".KeepAliveJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="true" />
-
+ 
+        <!-- 每日总结提醒闹钟接收器 -->
+        <receiver
+            android:name=".DailySummaryAlarmReceiver"
+            android:exported="false" />
+ 
         <!-- 开机自启接收器 -->
         <receiver
             android:name=".BootReceiver"

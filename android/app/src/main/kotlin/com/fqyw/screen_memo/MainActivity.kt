@@ -537,6 +537,148 @@ class MainActivity : FlutterActivity() {
                         result.error("invalid_args", e.message, null)
                     }
                 }
+                "showSimpleNotification" -> {
+                    try {
+                        val title = call.argument<String>("title") ?: "Daily Summary"
+                        val message = call.argument<String>("message") ?: ""
+                        try { FileLogger.i(TAG, "showSimpleNotification: title=${title}, len=${message.length}") } catch (_: Exception) {}
+                        val ok = DailySummaryNotifier.showSimple(this, title, message)
+                        result.success(ok)
+                    } catch (e: Exception) {
+                        result.error("notify_failed", e.message, null)
+                    }
+                }
+                "showNotification" -> {
+                    try {
+                        val title = call.argument<String>("title") ?: "Daily Summary"
+                        val message = call.argument<String>("message") ?: ""
+                        try { FileLogger.i(TAG, "showNotification(bigText): title=${title}, len=${message.length}") } catch (_: Exception) {}
+                        val ok = DailySummaryNotifier.showBigText(this, title, message)
+                        result.success(ok)
+                    } catch (e: Exception) {
+                        result.error("notify_failed", e.message, null)
+                    }
+                }
+                "scheduleDailySummaryNotification" -> {
+                    try {
+                        val hour = call.argument<Int>("hour") ?: 20
+                        val minute = call.argument<Int>("minute") ?: 0
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        val ok = if (enabled) {
+                            DailySummaryScheduler.schedule(this, hour, minute)
+                        } else {
+                            DailySummaryScheduler.cancel(this)
+                        }
+                        try { FileLogger.i(TAG, "scheduleDailySummaryNotification: enabled=${enabled} hour=${hour} minute=${minute} result=${ok}") } catch (_: Exception) {}
+                        result.success(ok)
+                    } catch (e: Exception) {
+                        result.error("schedule_failed", e.message, null)
+                    }
+                }
+                "openAppNotificationSettings" -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            } else {
+                                putExtra("app_package", packageName)
+                                putExtra("app_uid", applicationInfo.uid)
+                            }
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        try {
+                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(fallback)
+                            result.success(true)
+                        } catch (e2: Exception) {
+                            result.error("open_app_notify_failed", e2.message, null)
+                        }
+                    }
+                }
+                "openDailySummaryNotificationSettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                            val high = nm.getNotificationChannel("daily_summary_high")
+                            val channelId = if (high != null) "daily_summary_high" else "daily_summary"
+                            val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } else {
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra("app_package", packageName)
+                                putExtra("app_uid", applicationInfo.uid)
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        }
+                    } catch (e: Exception) {
+                        try {
+                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(fallback)
+                            result.success(true)
+                        } catch (e2: Exception) {
+                            result.error("open_channel_notify_failed", e2.message, null)
+                        }
+                    }
+                }
+                "openExactAlarmSettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } else {
+                            result.success(true)
+                        }
+                    } catch (e: Exception) {
+                        try {
+                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(fallback)
+                            result.success(true)
+                        } catch (e2: Exception) {
+                            result.error("open_exact_alarm_failed", e2.message, null)
+                        }
+                    }
+                }
+                "setDailyBrief" -> {
+                    try {
+                        val dateKey = call.argument<String>("dateKey") ?: ""
+                        val brief = call.argument<String>("brief") ?: ""
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        sp.edit()
+                            .putString("daily_brief_$dateKey", brief)
+                            .putString("daily_brief_last", brief)
+                            .apply()
+                        try { FileLogger.i(TAG, "setDailyBrief: dateKey=$dateKey len=${brief.length}") } catch (_: Exception) {}
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("set_brief_failed", e.message, null)
+                    }
+                }
+                "getDailyBrief" -> {
+                    try {
+                        val dateKey = call.argument<String>("dateKey") ?: ""
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        val brief = sp.getString("daily_brief_$dateKey", null)
+                        result.success(brief)
+                    } catch (e: Exception) {
+                        result.error("get_brief_failed", e.message, null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }
@@ -578,6 +720,7 @@ class MainActivity : FlutterActivity() {
         // 已不再显示开屏对话框，无需关闭
         // dismissSplashDialog()
         runPostFirstFrameInit()
+        try { handleLaunchFromNotification(intent) } catch (_: Exception) {}
     }
 
     private fun runPostFirstFrameInit() {
@@ -639,7 +782,28 @@ class MainActivity : FlutterActivity() {
             try { FileLogger.e(TAG, "PostFirstFrame 初始化失败", e) } catch (_: Exception) {}
         }
     }
+    
+    private fun handleLaunchFromNotification(i: Intent?) {
+        try {
+            val it = i ?: return
+            val from = it.getBooleanExtra("from_daily_summary_notification", false)
+            if (!from) return
+            val dateKey = it.getStringExtra("daily_summary_date_key") ?: ""
+            try { FileLogger.i(TAG, "handleLaunchFromNotification: from=true dateKey=$dateKey") } catch (_: Exception) {}
+            try {
+                methodChannel.invokeMethod("onDailySummaryNotificationTap", mapOf("dateKey" to dateKey))
+            } catch (e: Exception) {
+                try { FileLogger.w(TAG, "invoke onDailySummaryNotificationTap failed: ${e.message}") } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+    }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchFromNotification(intent)
+    }
+    
     // 移除额外日志输出，保留默认生命周期
 
     /**

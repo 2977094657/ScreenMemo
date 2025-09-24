@@ -51,6 +51,13 @@ class BootReceiver : BroadcastReceiver() {
                 } else {
                     Log.d(TAG, "服务之前未运行，跳过启动")
                 }
+                // 恢复每日提醒调度
+                try {
+                    DailySummaryScheduler.restore(context)
+                    Log.d(TAG, "每日提醒调度已恢复")
+                } catch (e: Exception) {
+                    Log.e(TAG, "恢复每日提醒调度失败", e)
+                }
             }
         }
     }
