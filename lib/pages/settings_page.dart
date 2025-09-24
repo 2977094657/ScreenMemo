@@ -14,6 +14,7 @@ import '../services/flutter_logger.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'ai_settings_page.dart';
+import '../services/daily_summary_service.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -56,6 +57,10 @@ class _SettingsPageState extends State<SettingsPage>
   // 截图过期清理设置
   bool _expireEnabled = false; // 是否启用过期自动删除
   int _expireDays = 30; // 过期天数，下限 1
+  // 每日总结提醒设置
+  bool _dailyNotifyEnabled = true;
+  int _dailyNotifyHour = 22;
+  int _dailyNotifyMinute = 0;
   bool _allPermissionsGranted() {
     try {
       final basicKeys = [
@@ -230,6 +235,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadScreenshotExpireSettings();
     _loadSegmentSettings();
     _loadAiRequestInterval();
+    _loadDailyNotifySettings();
    }
 
   @override
@@ -730,6 +736,18 @@ class _SettingsPageState extends State<SettingsPage>
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
+
+                // 每日总结提醒
+                _buildSection(
+                  context: context,
+                  title: '每日总结提醒',
+                  children: [
+                    _buildDailyNotifyItem(context),
+                    _buildDailyNotifyBannerItem(context),
+                    _buildDailyNotifyTestItem(context),
+                  ],
+                ),
+
                 const SizedBox(height: AppTheme.spacing4),
                 // AI 助手
                 _buildSection(
@@ -2245,4 +2263,323 @@ class _SettingsPageState extends State<SettingsPage>
       await _updateSortMode(selected);
     }
   }
+}
+
+
+// ========== 扩展：每日总结提醒设置（提示时间 + 测试按钮） ==========
+extension _DailySummaryNotifyExt on _SettingsPageState {
+  Future<void> _loadDailyNotifySettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _dailyNotifyEnabled = prefs.getBool('daily_notify_enabled') ?? true;
+        _dailyNotifyHour = (prefs.getInt('daily_notify_hour') ?? 22).clamp(0, 23);
+        _dailyNotifyMinute = (prefs.getInt('daily_notify_minute') ?? 0).clamp(0, 59);
+      });
+      await FlutterLogger.nativeInfo(
+        'DailySummaryUI',
+        'load settings: enabled=${_dailyNotifyEnabled} time=${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
+      );
+      final ok = await DailySummaryService.instance.scheduleDailyNotification(
+        hour: _dailyNotifyHour,
+        minute: _dailyNotifyMinute,
+        enabled: _dailyNotifyEnabled,
+      );
+      await FlutterLogger.nativeInfo('DailySummaryUI', 'restore schedule on load result=$ok');
+    } catch (e) {
+      await FlutterLogger.nativeWarn('DailySummaryUI', 'load settings failed: $e');
+    }
+  }
+
+  Future<void> _saveDailyNotifySettings({
+    bool? enabled,
+    int? hour,
+    int? minute,
+    bool toast = true,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final newEnabled = enabled ?? _dailyNotifyEnabled;
+      final newHour = (hour ?? _dailyNotifyHour).clamp(0, 23);
+      final newMinute = (minute ?? _dailyNotifyMinute).clamp(0, 59);
+
+      await prefs.setBool('daily_notify_enabled', newEnabled);
+      await prefs.setInt('daily_notify_hour', newHour);
+      await prefs.setInt('daily_notify_minute', newMinute);
+
+      if (mounted) {
+        setState(() {
+          _dailyNotifyEnabled = newEnabled;
+          _dailyNotifyHour = newHour;
+          _dailyNotifyMinute = newMinute;
+        });
+      }
+
+      final ok = await DailySummaryService.instance.scheduleDailyNotification(
+        hour: newHour,
+        minute: newMinute,
+        enabled: newEnabled,
+      );
+      if (toast && mounted) {
+        if (ok) {
+          UINotifier.success(
+            context,
+            newEnabled
+                ? '已设置每日提醒时间为 ${_two(newHour)}:${_two(newMinute)}'
+                : '已关闭每日提醒',
+          );
+        } else {
+          UINotifier.warning(context, '调度每日提醒失败（可能平台不支持）');
+        }
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '保存提醒设置失败: $e');
+    }
+  }
+
+  Future<void> _pickDailyNotifyTime() async {
+    final initial = TimeOfDay(hour: _dailyNotifyHour, minute: _dailyNotifyMinute);
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (picked == null) return;
+    await _saveDailyNotifySettings(hour: picked.hour, minute: picked.minute);
+  }
+
+  Widget _buildDailyNotifyItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.schedule_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('每日总结提醒时间',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                  _dailyNotifyEnabled
+                      ? '当前：${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)} · 已开启'
+                      : '当前：${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)} · 已关闭',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _pickDailyNotifyTime,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('设置时间'),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: _dailyNotifyEnabled,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) async {
+                await _saveDailyNotifySettings(enabled: v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyNotifyTestItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.notifications_active_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('测试通知',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                  '立即触发“今日总结”通知（若无当日总结会尽量生成后再发送）',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: () async {
+              // 尽量生成/获取当日总结（包含 notification_brief）
+              final key = _todayKey();
+              try {
+                await DailySummaryService.instance.getOrGenerate(key, force: false);
+              } catch (_) {}
+              final ok = await DailySummaryService.instance.triggerNotificationNow(key);
+              if (!mounted) return;
+              if (ok) {
+                UINotifier.success(context, '已触发通知');
+              } else {
+                UINotifier.warning(context, '触发通知失败或内容为空');
+              }
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('触发'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 打开“每日总结提醒”渠道设置（开启横幅/悬浮通知等）
+  Future<void> _openDailyChannelSettings() async {
+    try {
+      await FlutterLogger.nativeInfo('DailySummaryUI', 'open channel settings');
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      await platform.invokeMethod('openDailySummaryNotificationSettings');
+    } catch (e) {
+      if (mounted) UINotifier.error(context, 'Open channel settings failed: $e');
+    }
+  }
+
+  // 打开“应用通知”总设置（可选）
+  Future<void> _openAppNotificationSettings() async {
+    try {
+      await FlutterLogger.nativeInfo('DailySummaryUI', 'open app notification settings');
+      const platform = MethodChannel('com.fqyw/screen_memo/accessibility');
+      // 兼容：统一使用正确通道名
+    } catch (_) {}
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      await platform.invokeMethod('openAppNotificationSettings');
+    } catch (e) {
+      if (mounted) UINotifier.error(context, 'Open app notification settings failed: $e');
+    }
+  }
+
+
+  // 行项：开启横幅/悬浮通知
+  Widget _buildDailyNotifyBannerItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.notification_important_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('开启横幅/悬浮通知', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(
+                  '允许在屏幕顶部弹出通知（横幅/悬浮）',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _openDailyChannelSettings,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: const Text('去开启'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  String _todayKey() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-${_two(now.month)}-${_two(now.day)}';
+  }
+
+  String _two(int v) => v.toString().padLeft(2, '0');
 }
