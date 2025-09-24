@@ -10,6 +10,7 @@ import 'path_service.dart';
 import '../models/screenshot_record.dart';
 import 'startup_profiler.dart';
 import 'flutter_logger.dart';
+import 'navigation_service.dart';
 
 /// 截屏服务异常类
 class ScreenshotServiceException implements Exception {
@@ -311,6 +312,25 @@ class ScreenshotService {
 
             await _handleScreenshotSaved(arguments);
             print('=== onScreenshotSaved处理完成 ===');
+            break;
+          case 'onDailySummaryNotificationTap':
+            // 通知点击：打开每日总结页面
+            try {
+              String? dk;
+              if (call.arguments is Map) {
+                final args = Map<String, dynamic>.from(call.arguments as Map);
+                final v = args['dateKey'];
+                if (v is String) dk = v.trim().isEmpty ? null : v.trim();
+              }
+              // 记录日志并跳转
+              // ignore: discarded_futures
+              FlutterLogger.nativeInfo('Navigation', 'onTap notification dateKey=${dk ?? 'null'}');
+              // 不阻塞当前 handler
+              // ignore: unawaited_futures
+              NavigationService.instance.openDailySummary(dk);
+            } catch (e) {
+              print('处理通知点击失败: $e');
+            }
             break;
           default:
             print('未处理的方法调用: ${call.method}');

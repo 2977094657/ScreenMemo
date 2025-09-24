@@ -11,6 +11,7 @@ import 'pages/screenshot_viewer_page.dart';
 import 'pages/search_page.dart';
 import 'services/flutter_logger.dart';
 import 'services/app_lifecycle_service.dart';
+import 'services/navigation_service.dart';
 
 
 Future<void> main() async {
@@ -18,6 +19,12 @@ Future<void> main() async {
   // 简易 Flutter 侧日志初始化
   await FlutterLogger.log('app start');
   StartupProfiler.mark('main.ensureInitialized.done');
+
+  // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
+  // 这样冷启动时原生触发的通知点击事件能被 Flutter 接住
+  // ignore: unnecessary_statements
+  ScreenshotService.instance;
+
   // 立刻构建首帧，避免阻塞到 runApp 之前
   StartupProfiler.begin('runApp');
   runApp(const ScreenMemoApp());
@@ -34,8 +41,7 @@ class ScreenMemoApp extends StatefulWidget {
 
 class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserver {
   final ThemeService _themeService = ThemeService();
-  // 全局导航Key：用于通知点击时无context路由跳转
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  // 全局导航Key：由 NavigationService 提供
 
   @override
   void initState() {
@@ -80,7 +86,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
       themeMode: _themeService.themeMode,
       home: AppInitializer(themeService: _themeService),
       debugShowCheckedModeBanner: false,
-      navigatorKey: _navigatorKey,
+      navigatorKey: NavigationService.instance.navigatorKey,
       routes: {
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
