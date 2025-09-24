@@ -79,6 +79,7 @@ class AISettingsService {
   // 提示词键名
   static const String _keyPromptSegment = 'prompt_segment';
   static const String _keyPromptMerge = 'prompt_merge';
+  static const String _keyPromptDaily = 'prompt_daily';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -269,6 +270,19 @@ class AISettingsService {
   Future<void> setPromptMerge(String? value) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyPromptMerge, (value == null || value.trim().isEmpty) ? null : value.trim());
+  }
+
+  // ========== 每日总结提示词 ==========
+  Future<String?> getPromptDaily() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyPromptDaily);
+    if (v == null || v.trim().isEmpty) return null;
+    return v;
+  }
+
+  Future<void> setPromptDaily(String? value) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyPromptDaily, (value == null || value.trim().isEmpty) ? null : value.trim());
   }
 
   // ========== 端点候选（用于失败自动切换） ==========

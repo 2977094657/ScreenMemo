@@ -182,6 +182,59 @@ class AIChatService {
     throw lastError ?? Exception('No valid AI endpoint available');
   }
 
+  /// 独立一次性请求（不使用与不保存会话历史）
+  /// - 仅发送单条 user 消息到当前端点，不写 ai_messages，不影响 AI 设置页会话
+  Future<AIMessage> sendMessageOneShot(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async {
+    final endpoints = await _settings.getEndpointCandidates();
+    Exception? lastError;
+
+    for (final ep in endpoints) {
+      final apiKey = ep.apiKey;
+      if (apiKey == null || apiKey.isEmpty) {
+        lastError = Exception('API key is empty');
+        continue;
+      }
+      try {
+        final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
+        final headers = <String, String>{
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey,
+        };
+        final body = jsonEncode({
+          'model': ep.model,
+          'messages': [
+            {'role': 'user', 'content': userMessage},
+          ],
+          'temperature': 0.2,
+          'stream': false,
+        });
+
+        final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+          throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+        }
+
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final choices = data['choices'] as List<dynamic>?;
+        if (choices == null || choices.isEmpty) {
+          throw Exception('Empty choices');
+        }
+        final first = choices.first as Map<String, dynamic>;
+        final msg = first['message'] as Map<String, dynamic>?;
+        if (msg == null) {
+          throw Exception('Invalid response');
+        }
+        final content = (msg['content'] as String?) ?? '';
+        return AIMessage(role: 'assistant', content: content);
+      } catch (e) {
+        lastError = e is Exception ? e : Exception(e.toString());
+        continue; // 尝试下一个端点
+      }
+    }
+
+    throw lastError ?? Exception('No valid AI endpoint available');
+  }
+
   /// 清空当前默认会话历史
   Future<void> clearConversation() => _settings.clearChatHistory();
 
