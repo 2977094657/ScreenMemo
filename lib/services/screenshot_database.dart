@@ -53,7 +53,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 3,
+          version: 4,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -68,7 +68,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 3,
+          version: 4,
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -83,7 +83,7 @@ class ScreenshotDatabase {
       
       final db = await openDatabase(
         path,
-        version: 3,
+        version: 4,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -366,6 +366,17 @@ class ScreenshotDatabase {
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
+    // 每日总结表：按日期聚合（YYYY-MM-DD）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS daily_summaries (
+        date_key TEXT PRIMARY KEY,
+        ai_provider TEXT,
+        ai_model TEXT,
+        output_text TEXT,
+        structured_json TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
   }
 
   // ======= 段落查询接口 =======
@@ -506,6 +517,73 @@ class ScreenshotDatabase {
     }
   }
 
+  // ======= 每日总结（daily_summaries） =======
+  Future<Map<String, dynamic>?> getDailySummary(String dateKey) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'daily_summaries',
+        where: 'date_key = ?',
+        whereArgs: [dateKey],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> upsertDailySummary({
+    required String dateKey,
+    String? aiProvider,
+    String? aiModel,
+    required String outputText,
+    String? structuredJson,
+  }) async {
+    final db = await database;
+    try {
+      await db.insert(
+        'daily_summaries',
+        {
+          'date_key': dateKey,
+          'ai_provider': aiProvider,
+          'ai_model': aiModel,
+          'output_text': outputText,
+          'structured_json': structuredJson,
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 按时间范围获取“已有AI结果”的段落（含结果元数据），用于拼装每日总结上下文
+  Future<List<Map<String, dynamic>>> listSegmentsWithResultsBetween({
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    final db = await database;
+    try {
+      final rows = await db.rawQuery('''
+        SELECT
+          s.*,
+          r.output_text,
+          r.structured_json,
+          r.categories
+        FROM segments s
+        JOIN segment_results r ON r.segment_id = s.id
+        WHERE s.start_time >= ? AND s.start_time <= ?
+        ORDER BY s.start_time ASC
+      ''', [startMillis, endMillis]);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
   // 无升级逻辑：新安装直接按 _onCreate 创建所有表
   // 注：从 v2 起使用 _onUpgrade 进行增量迁移
 
