@@ -14,6 +14,7 @@ import '../models/app_info.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
+import 'daily_summary_page.dart';
 
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
@@ -487,6 +488,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
     }
     final keys = grouped.keys.toList()..sort((a, b) => a.compareTo(b));
     final ordered = keys.reversed.toList();
+    final String todayKey = _dateKey(DateTime.now().millisecondsSinceEpoch);
 
     return DefaultTabController(
       length: ordered.length,
@@ -539,6 +541,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
                     children: [
                       activeHeader,
                       const SizedBox(height: 8),
+                      if (k == todayKey) _buildDailyEntryCard(context, k),
                       ...List.generate((grouped[k] ?? const <Map<String, dynamic>>[]).length, (i) => _SegmentEntryCard(
                             segment: grouped[k]![i],
                             isLast: i == grouped[k]!.length - 1,
@@ -585,6 +588,22 @@ class _SegmentTimelineTabView extends StatelessWidget {
       }
     } catch (_) {}
     return '$key $count';
+  }
+
+  Widget _buildDailyEntryCard(BuildContext context, String dateKey) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.event_note_outlined),
+        title: const Text('今日总结'),
+        subtitle: const Text('查看或生成当日总结'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dateKey)),
+          );
+        },
+      ),
+    );
   }
 }
 
