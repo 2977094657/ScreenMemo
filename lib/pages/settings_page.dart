@@ -2285,6 +2285,8 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
         minute: _dailyNotifyMinute,
         enabled: _dailyNotifyEnabled,
       );
+      // 启动一次“自动预生成”调度
+      await DailySummaryService.instance.refreshAutoRefreshSchedule();
       await FlutterLogger.nativeInfo('DailySummaryUI', 'restore schedule on load result=$ok');
     } catch (e) {
       await FlutterLogger.nativeWarn('DailySummaryUI', 'load settings failed: $e');
@@ -2320,6 +2322,8 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
         minute: newMinute,
         enabled: newEnabled,
       );
+      // 刷新“预生成”定时器，使得在提醒前1分钟自动刷新当日总结
+      await DailySummaryService.instance.refreshAutoRefreshSchedule();
       if (toast && mounted) {
         if (ok) {
           UINotifier.success(
@@ -2338,10 +2342,102 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   }
 
   Future<void> _pickDailyNotifyTime() async {
-    final initial = TimeOfDay(hour: _dailyNotifyHour, minute: _dailyNotifyMinute);
-    final picked = await showTimePicker(context: context, initialTime: initial);
-    if (picked == null) return;
-    await _saveDailyNotifySettings(hour: picked.hour, minute: picked.minute);
+    // 数字输入方式：点击时间数字后弹出输入框，类似“截图质量”的交互
+    final TextEditingController hourController =
+        TextEditingController(text: _two(_dailyNotifyHour));
+    final TextEditingController minuteController =
+        TextEditingController(text: _two(_dailyNotifyMinute));
+
+    await showUIDialog<void>(
+      context: context,
+      title: '设置提醒时间（24小时制）',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  ),
+                  child: TextField(
+                    controller: hourController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: '小时(0-23)',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  ),
+                  child: TextField(
+                    controller: minuteController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: '分钟(0-59)',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: AppTheme.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: const Text(
+              '提示：点击数字直接输入；范围为 0-23 时与 0-59 分。',
+              style: TextStyle(fontSize: 12, color: AppTheme.info),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        const UIDialogAction(text: '取消'),
+        UIDialogAction(
+          text: '确定',
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final h = int.tryParse(hourController.text.trim());
+            final m = int.tryParse(minuteController.text.trim());
+            if (h == null || h < 0 || h > 23) {
+              UINotifier.error(ctx, '请输入 0-23 的有效小时');
+              return;
+            }
+            if (m == null || m < 0 || m > 59) {
+              UINotifier.error(ctx, '请输入 0-59 的有效分钟');
+              return;
+            }
+            await _saveDailyNotifySettings(hour: h, minute: m);
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(ctx, '已设置为 ${_two(h)}:${_two(m)}');
+            }
+          },
+        ),
+      ],
+    );
   }
 
   Widget _buildDailyNotifyItem(BuildContext context) {
@@ -2381,30 +2477,49 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                         .bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
-                Text(
-                  _dailyNotifyEnabled
-                      ? '当前：${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)} · 已开启'
-                      : '当前：${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)} · 已关闭',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                IgnorePointer(
+                  ignoring: !_dailyNotifyEnabled,
+                  child: Opacity(
+                    opacity: _dailyNotifyEnabled ? 1.0 : 0.5,
+                    child: Row(
+                      children: [
+                        Text(
+                          '当前：',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        GestureDetector(
+                          onTap: _dailyNotifyEnabled ? _pickDailyNotifyTime : null,
+                          child: Text(
+                            '${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: _dailyNotifyEnabled
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                                  decoration: _dailyNotifyEnabled
+                                      ? TextDecoration.underline
+                                      : TextDecoration.none,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.spacing1),
+                        Flexible(
+                          child: Text(
+                            '（点击数字可修改）',
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: _pickDailyNotifyTime,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-            ),
-            child: const Text('设置时间'),
           ),
           const SizedBox(width: AppTheme.spacing2),
           Transform.scale(
@@ -2452,7 +2567,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                         ?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
                 Text(
-                  '立即触发“今日总结”通知（若无当日总结会尽量生成后再发送）',
+                  '立即触发“今日总结”通知',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -2464,10 +2579,10 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
             onPressed: () async {
-              // 尽量生成/获取当日总结（包含 notification_brief）
+              // 先强制重新生成当日总结，确保通知内容新鲜
               final key = _todayKey();
               try {
-                await DailySummaryService.instance.getOrGenerate(key, force: false);
+                await DailySummaryService.instance.getOrGenerate(key, force: true);
               } catch (_) {}
               final ok = await DailySummaryService.instance.triggerNotificationNow(key);
               if (!mounted) return;
