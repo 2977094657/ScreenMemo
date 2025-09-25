@@ -541,7 +541,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
                     children: [
                       activeHeader,
                       const SizedBox(height: 8),
-                      if (k == todayKey) _buildDailyEntryCard(context, k),
+                      _buildDailyEntryCard(context, k),
                       ...List.generate((grouped[k] ?? const <Map<String, dynamic>>[]).length, (i) => _SegmentEntryCard(
                             segment: grouped[k]![i],
                             isLast: i == grouped[k]!.length - 1,
@@ -594,8 +594,8 @@ class _SegmentTimelineTabView extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.event_note_outlined),
-        title: const Text('今日总结'),
-        subtitle: const Text('查看或生成当日总结'),
+        title: const Text('每日总结'),
+        subtitle: const Text('查看或生成该日总结'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           Navigator.of(context).push(
