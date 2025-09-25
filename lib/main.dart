@@ -12,6 +12,7 @@ import 'pages/search_page.dart';
 import 'services/flutter_logger.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/navigation_service.dart';
+import 'services/daily_summary_service.dart';
 
 
 Future<void> main() async {
@@ -53,6 +54,9 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
     // 首帧后触发“首次进入 UI”事件（冷启动或UI首次展示）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppLifecycleService.instance.emitFirstUiResumed();
+      // 安排每日总结的自动预生成（08:00、12:00、17:00 + 提醒前1分钟）
+      // ignore: discarded_futures
+      DailySummaryService.instance.refreshAutoRefreshSchedule();
     });
   }
 
@@ -73,6 +77,9 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
     if (state == AppLifecycleState.resumed) {
       // 回到前台：通知页面执行进入应用后的自动刷新
       AppLifecycleService.instance.emitResumed();
+      // 回到前台时刷新一次“自动预生成”调度
+      // ignore: discarded_futures
+      DailySummaryService.instance.refreshAutoRefreshSchedule();
     }
   }
 

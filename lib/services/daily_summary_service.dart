@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_chat_service.dart';
 import 'ai_settings_service.dart';
 import 'screenshot_database.dart';
@@ -20,6 +22,9 @@ class DailySummaryService {
 
   // 原生交互通道：用于调度/触发系统通知
   static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+
+  // 自动刷新定时器：在前台时按计划预生成当天总结
+  Timer? _autoRefreshTimer;
 
   /// 生成或返回已有的每日总结
   Future<Map<String, dynamic>?> getOrGenerate(String dateKey, {bool force = false}) async {
@@ -324,28 +329,107 @@ class DailySummaryService {
     }
   }
 
+  /// 刷新“自动预生成”调度：
+  /// - 每天 08:00、12:00、17:00 自动更新一次
+  /// - 若开启每日提醒，则在提醒时间的前 1 分钟再自动更新一次（确保内容新鲜）
+  /// 说明：该调度依赖应用在前台运行；若应用未运行，则由原生闹钟按既定时间展示兜底通知。
+  Future<void> refreshAutoRefreshSchedule() async {
+    try {
+      _autoRefreshTimer?.cancel();
+      final prefs = await SharedPreferences.getInstance();
+      final bool enabled = prefs.getBool('daily_notify_enabled') ?? true;
+      final int hour = (prefs.getInt('daily_notify_hour') ?? 22).clamp(0, 23);
+      final int minute = (prefs.getInt('daily_notify_minute') ?? 0).clamp(0, 59);
+
+      final DateTime now = DateTime.now();
+
+      // 固定时间点候选（08:00、12:00、17:00）
+      final List<DateTime> candidates = <DateTime>[];
+      for (final pair in const <List<int>>[
+        <int>[8, 0],
+        <int>[12, 0],
+        <int>[17, 0],
+      ]) {
+        DateTime t = DateTime(now.year, now.month, now.day, pair[0], pair[1]);
+        if (!t.isAfter(now)) {
+          t = t.add(const Duration(days: 1));
+        }
+        candidates.add(t);
+      }
+
+      // 提醒前 1 分钟（若启用）
+      if (enabled) {
+        DateTime pre = DateTime(now.year, now.month, now.day, hour, minute)
+            .subtract(const Duration(minutes: 1));
+        if (!pre.isAfter(now)) {
+          final DateTime tm = now.add(const Duration(days: 1));
+          pre = DateTime(tm.year, tm.month, tm.day, hour, minute)
+              .subtract(const Duration(minutes: 1));
+        }
+        candidates.add(pre);
+      }
+
+      // 选择最近一次
+      candidates.sort((a, b) => a.compareTo(b));
+      if (candidates.isEmpty) return;
+      final DateTime nextAt = candidates.first;
+      final Duration delay = nextAt.difference(now);
+
+      // 日志
+      // ignore: discarded_futures
+      FlutterLogger.nativeInfo('DailySummary', 'auto-refresh scheduled at ${nextAt.toIso8601String()} (in ${delay.inSeconds}s)');
+
+      _autoRefreshTimer = Timer(delay, () async {
+        try {
+          final String key = _dateKey(nextAt);
+          await generateForDate(key); // 内部已写入通知用 brief
+        } catch (e) {
+          // ignore: discarded_futures
+          FlutterLogger.nativeWarn('DailySummary', 'auto-refresh generate failed: $e');
+        } finally {
+          // 继续调度下一次
+          // ignore: discarded_futures
+          refreshAutoRefreshSchedule();
+        }
+      });
+    } catch (e) {
+      // ignore: discarded_futures
+      FlutterLogger.nativeWarn('DailySummary', 'refreshAutoRefreshSchedule failed: $e');
+    }
+  }
+
+  String _dateKey(DateTime dt) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year.toString().padLeft(4, '0')}-${two(dt.month)}-${two(dt.day)}';
+  }
+
   /// 默认每日总结提示词（JSON输出，含 overall_summary、timeline、notification_brief）
   static const String _defaultDailyPrompt = '''
- 你是一位高质量的中文日总结助手。基于我提供的“当天多个时间段的 overall_summary（仅用于上下文）”，请生成清晰的“当日总结”，并提供简洁的时间线及一段用于通知的超短摘要（notification_brief）。
- 要求：
- - 仅输出一个 JSON 对象，不要附加解释，也不要输出 JSON 之外的 Markdown；
- - 重点：先输出 overall_summary（Markdown 文本，禁止使用代码块围栏```）：
-   - 第一段为无标题的整段总结，概括当天的主题、节奏与收获；
-   - 随后可使用若干小节（使用 Markdown 小标题）组织信息，如“## 关键操作”“## 主要活动”“## 重点内容”等；
-   - 内容应避免流水账，尽可能提炼与归纳，保留关键信息，条理清晰；
- - 然后输出 timeline[]（事件时间线），按时间升序列出 5-12 条“关键片段”，每条结构：
-   { "time": "HH:mm:ss-HH:mm:ss", "summary": "一句话行为（可用简短 Markdown 强调）" }
- - 额外输出 notification_brief（用于通知的简短纯文本，1-3 句中文，避免 Markdown/列表/标题，覆盖当天重点，尽量精炼）；
- - 禁止输出图片与引用图片地址；
- - 如果上下文非常少，也要保持格式完整，timeline 可减少条目但不要为空。
- 
- 仅输出以下字段（不要省略字段名）：
- {
-   "overall_summary": "(Markdown) 顶部为无标题总结段落，随后使用小标题与要点组织每天的关键信息",
-   "timeline": [
-     { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
-   ],
-   "notification_brief": "纯文本 1-3 句，不含 Markdown，概述当天关键活动"
- }
- ''';
+  你是一位严格的中文日总结助手。基于我提供的“当天多个时间段的 overall_summary（仅用于上下文）”，必须生成“完整的当日总结 JSON”，不得提前结束或缺失任何字段或章节。
+
+  输出要求（务必逐条满足）：
+  - 仅输出一个 JSON 对象，且可被标准 JSON 解析；不要附加解释/前后缀；不要输出 JSON 之外的 Markdown 或任何其他文本。
+  - 字段固定且全部必填：overall_summary、timeline、notification_brief。不得省略、置空或返回 null。
+  - overall_summary 为纯 Markdown 文本（禁止使用代码块围栏```），必须包含以下结构：
+    1) 第一段：无标题的整段总结，概括当天主题、节奏与收获；
+    2) 依次包含这三个二级小节（标题用 Markdown 形式，且顺序固定）：
+       "## 关键操作"
+       "## 主要活动"
+       "## 重点内容"
+       每个小节至少 3 条要点（使用 “- ” 无序列表）。如信息不足，也必须保留小节，并给出不低于 1 条的“占位但有意义”的要点（如“无明显关键操作”），禁止删除小节。
+  - timeline 为数组，按时间升序列出 5–12 条关键片段；每条结构：
+    { "time": "HH:mm:ss-HH:mm:ss", "summary": "一句话行为（可用简短 Markdown 强调）" }
+    如果上下文极少，最少也要 1 条，禁止为空。
+  - notification_brief 为纯中文短句 1–3 句，不含 Markdown/列表/标题/代码围栏，覆盖当天重点且尽量精炼。
+  - 禁止输出图片或图片链接；禁止返回除上述 3 个字段外的任何键；禁止使用 null；所有字符串需去除首尾空白。
+
+  严格输出以下 JSON 结构（键名固定，且全部存在）：
+  {
+    "overall_summary": "(Markdown) 第一段为无标题整段总结；随后必须依次包含“## 关键操作”“## 主要活动”“## 重点内容”，每节为若干以“- ”开头的列表项",
+    "timeline": [
+      { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
+    ],
+    "notification_brief": "1-3 句中文纯文本，不含 Markdown"
+  }
+  ''';
 }
