@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'ai_chat_service.dart';
 import 'ai_settings_service.dart';
 import 'screenshot_database.dart';
 import 'flutter_logger.dart';
+import 'locale_service.dart';
 
 /// 每日总结服务：
 /// - 聚合当天已有“事件AI结果”，仅取 structured_json.overall_summary 作为上下文
@@ -142,7 +145,22 @@ class DailySummaryService {
 
   Future<String> _buildDailyPrompt(String dateKey, List<Map<String, dynamic>> segments) async {
     final custom = await _settings.getPromptDaily();
-    final header = custom ?? _defaultDailyPrompt;
+
+    // 计算当前应用语言并获取“语言策略”系统文案（要求忽略上下文语言，按应用语言输出）
+    final String langCode = (LocaleService.instance.locale?.languageCode ??
+            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+        .toLowerCase();
+    final bool isZh = langCode.startsWith('zh');
+    final locale = isZh ? const Locale('zh') : const Locale('en');
+    final String languagePolicy = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
+    // 头部提示词：优先自定义；否则按语言选择默认模板
+    String header;
+    if (custom != null && custom.trim().isNotEmpty) {
+      header = '$languagePolicy\n\n${custom.trim()}';
+    } else {
+      header = '$languagePolicy\n\n${isZh ? _defaultDailyPromptZh : _defaultDailyPromptEn}';
+    }
 
     final sb = StringBuffer();
     sb.writeln(header);
@@ -281,7 +299,10 @@ class DailySummaryService {
           'brief': brief,
         });
       } catch (_) {}
-      final title = '今日总结 $dateKey';
+      final langCode = (LocaleService.instance.locale?.languageCode ??
+              WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+          .toLowerCase();
+      final title = langCode.startsWith('zh') ? '今日总结 $dateKey' : 'Daily Summary $dateKey';
       // 首选大文本通知（heads-up 条件满足时可弹横幅）
       final ok2 = await _channel.invokeMethod('showNotification', {
         'title': title,
@@ -403,8 +424,8 @@ class DailySummaryService {
     return '${dt.year.toString().padLeft(4, '0')}-${two(dt.month)}-${two(dt.day)}';
   }
 
-  /// 默认每日总结提示词（JSON输出，含 overall_summary、timeline、notification_brief）
-  static const String _defaultDailyPrompt = '''
+  /// 默认每日总结提示词（中文，JSON输出，含 overall_summary、timeline、notification_brief）
+  static const String _defaultDailyPromptZh = '''
   你是一位严格的中文日总结助手。基于我提供的“当天多个时间段的 overall_summary（仅用于上下文）”，必须生成“完整的当日总结 JSON”，不得提前结束或缺失任何字段或章节。
 
   输出要求（务必逐条满足）：
@@ -430,6 +451,36 @@ class DailySummaryService {
       { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
     ],
     "notification_brief": "1-3 句中文纯文本，不含 Markdown"
+  }
+  ''';
+
+  /// Default daily-summary prompt in English (JSON output with overall_summary, timeline, notification_brief).
+  static const String _defaultDailyPromptEn = '''
+  You are a strict English daily-summary assistant. Based on the provided "overall_summary" for multiple time ranges of the day (context only), you MUST generate a complete daily JSON summary. Do not terminate early or omit any fields/sections.
+
+  Output requirements (satisfy all):
+  - Output a single JSON object that can be parsed by standard JSON. Do NOT include explanations, prefixes/suffixes, or any text outside JSON (no Markdown outside JSON).
+  - Fields are fixed and all required: overall_summary, timeline, notification_brief. Do not omit, leave empty, or return null.
+  - overall_summary must be pure Markdown text (NO triple backtick code fences ```). It MUST include:
+    1) First paragraph: a single untitled paragraph summarizing the day’s theme, rhythm, and takeaways;
+    2) Then exactly these three second-level sections (Markdown headings) in the fixed order:
+       "## Key Actions"
+       "## Main Activities"
+       "## Key Content"
+       Each section must contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet (e.g., "No notable key actions"), never delete sections.
+  - timeline must be an array in ascending time order with 5–12 key entries. Each item:
+    { "time": "HH:mm:ss-HH:mm:ss", "summary": "One-sentence action (may use brief Markdown emphasis)" }
+    If context is minimal, at least 1 item is required; it MUST NOT be empty.
+  - notification_brief must be 1–3 short sentences of plain English (no Markdown/headings/lists/code fences), concise and covering the day’s highlights.
+  - Do NOT output images or links; do NOT return any keys other than the 3 above; do NOT use null; trim leading/trailing spaces for all strings.
+
+  Strictly output the following JSON shape (fixed keys, all present):
+  {
+    "overall_summary": "(Markdown) First paragraph is an untitled summary; then include sections “## Key Actions”, “## Main Activities”, “## Key Content”, each with bullet points starting with “- ”",
+    "timeline": [
+      { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
+    ],
+    "notification_brief": "1–3 sentences in plain English without Markdown"
   }
   ''';
 }

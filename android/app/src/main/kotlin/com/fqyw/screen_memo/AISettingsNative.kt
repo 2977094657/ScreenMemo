@@ -53,6 +53,70 @@ object AISettingsNative {
         return try {
             db = openMasterDb(context)
             if (db == null) throw IllegalStateException("AI settings database unavailable")
+
+            // 1) 优先使用“激活分组”的配置（ai_site_groups）
+            val activeIdStr = readSetting(db!!, "active_group_id")?.trim()
+            val activeId = try { activeIdStr?.toInt() } catch (_: Exception) { null }
+            if (activeId != null) {
+                try {
+                    val cursor = db!!.query(
+                        "ai_site_groups",
+                        arrayOf("base_url", "api_key", "model", "enabled"),
+                        "id = ?",
+                        arrayOf(activeId.toString()),
+                        null, null, null, "1"
+                    )
+                    cursor.use { c ->
+                        if (c.moveToFirst()) {
+                            val enabledIdx = c.getColumnIndex("enabled")
+                            val enabledOk = if (enabledIdx >= 0) c.getInt(enabledIdx) != 0 else true
+
+                            val baseIdx = c.getColumnIndex("base_url")
+                            val keyIdx  = c.getColumnIndex("api_key")
+                            val modelIdx= c.getColumnIndex("model")
+                            val baseUrl = if (baseIdx >= 0) c.getString(baseIdx)?.trim() else null
+                            val apiKey  = if (keyIdx  >= 0) c.getString(keyIdx )?.trim() else null
+                            val model   = if (modelIdx>= 0) c.getString(modelIdx)?.trim() else null
+
+                            if (enabledOk && !baseUrl.isNullOrEmpty() && !apiKey.isNullOrEmpty() && !model.isNullOrEmpty()) {
+                                return AIConfig(baseUrl = baseUrl!!, apiKey = apiKey!!, model = model!!)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    // 分组读取异常则回退未分组
+                }
+            }
+
+            // 2) 若未设置激活分组或读取失败，则选用“启用的首个分组”（与 Flutter 侧排序对齐：order_index ASC, id ASC）
+            try {
+                val cursor2 = db!!.query(
+                    "ai_site_groups",
+                    arrayOf("base_url", "api_key", "model"),
+                    "enabled != 0",
+                    null,
+                    null, null,
+                    "order_index ASC, id ASC",
+                    "1"
+                )
+                cursor2.use { c ->
+                    if (c.moveToFirst()) {
+                        val baseIdx = c.getColumnIndex("base_url")
+                        val keyIdx  = c.getColumnIndex("api_key")
+                        val modelIdx= c.getColumnIndex("model")
+                        val baseUrl = if (baseIdx >= 0) c.getString(baseIdx)?.trim() else null
+                        val apiKey  = if (keyIdx  >= 0) c.getString(keyIdx )?.trim() else null
+                        val model   = if (modelIdx>= 0) c.getString(modelIdx)?.trim() else null
+                        if (!baseUrl.isNullOrEmpty() && !apiKey.isNullOrEmpty() && !model.isNullOrEmpty()) {
+                            return AIConfig(baseUrl = baseUrl!!, apiKey = apiKey!!, model = model!!)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 分组读取失败则继续回退未分组键
+            }
+
+            // 3) 回退未分组键（ai_settings）
             val baseUrl = readSetting(db!!, "base_url")?.trim()
             val apiKey = readSetting(db!!, "api_key")?.trim()
             val model = readSetting(db!!, "model")?.trim()

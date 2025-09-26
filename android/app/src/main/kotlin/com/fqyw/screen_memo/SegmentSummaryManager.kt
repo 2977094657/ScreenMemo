@@ -442,11 +442,19 @@ object SegmentSummaryManager {
                     byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
                 }
 
-                // 读取自定义提示词（普通事件），若不存在则使用内置默认要求
-                val customHeader = try {
+                // 依据应用语言注入“语言强制策略”并选择对应提示词（支持 _zh/_en 与旧键回退）
+                val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
+                val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
+                val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
+
+                val customHeaderLang = try {
+                    AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_segment_zh" else "prompt_segment_en")
+                } catch (_: Exception) { null }
+                val customHeaderLegacy = try {
                     AISettingsNative.readSettingValue(ctx, "prompt_segment")
                 } catch (_: Exception) { null }
-                val defaultHeader =
+
+                val defaultHeaderZh =
                     "请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：\n" +
                     "- 禁止使用OCR文本；直接理解图片内容；\n" +
                     "- 不要逐图描述；按应用/主题整合用户在该时间段的‘行为总结’（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；\n" +
@@ -463,18 +471,47 @@ object SegmentSummaryManager {
                     "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"文件名1\",\"文件名2\"],\"summary\":\"(Markdown) 本组内容的要点\"}],\n" +
                     "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"(Markdown) 一句话行为（可简短强调）\"}],\n" +
                     "overall_summary: \"(Markdown) 开头是一段无标题的总结段落，随后使用小节与要点，避免流水账并尽可能保留信息\""
-                val header = (customHeader ?: defaultHeader)
+
+                val defaultHeaderEn =
+                    "Please summarize multiple screenshots in English and output structured results. STRICT rules:\n" +
+                    "- Do NOT use OCR text; understand images directly.\n" +
+                    "- Do not describe image-by-image; integrate a 'behavior summary' over the time window by app/topic (browse/watch/chat/shop/work/settings/download/share/game, etc.).\n" +
+                    "- Preserve unique on-screen info like video titles, authors, brands as-is.\n" +
+                    "- Merge consecutive images from the same article/video/page into one content_group for a holistic summary.\n" +
+                    "- Start with one plain paragraph (no heading) summarizing the time window; then present later content with Markdown subsections.\n" +
+                    "- Markdown requirements: all display texts must use Markdown (overall_summary and content_groups[].summary; timeline[].summary may use brief Markdown; key_actions[].detail may use concise Markdown). NO code fences (```), only pure Markdown.\n" +
+                    "- overall_summary MUST include exactly these three second-level sections in this fixed order:\n" +
+                    "  \\\"## Key Actions\\\"\\n  \\\"## Main Activities\\\"\\n  \\\"## Key Content\\\"\\n" +
+                    "  Each section MUST contain at least 3 bullet points using \\\"- \\\". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.\n" +
+                    "- In \"## Key Actions\", merge adjacent/continuous same-type actions as a time range \"HH:mm:ss-HH:mm:ss: description\"; only when action breaks/changes start a new item; keep 3–8 concise items.\n" +
+                    "Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.\n" +
+                    "Only output a single JSON object; do not add explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).\n" +
+                    "Field conventions:\n" +
+                    "key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"App\",\"ref_image\":\"filename\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"(Markdown) brief, avoid sensitive info\",\"confidence\":0.0}],\n" +
+                    "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"optional\",\"app\":\"App\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"file1\",\"file2\"],\"summary\":\"(Markdown) group highlights\"}],\n" +
+                    "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"App\",\"action\":\"browse|watch|chat|shop|search|edit|game|settings|download|share|other\",\"summary\":\"(Markdown) one-liner (may emphasize briefly)\"}],\n" +
+                    "overall_summary: \"(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info\""
+
+                val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
+
+                val header =
+                    languagePolicy + "\n\n" + ((customHeaderLang ?: customHeaderLegacy) ?: getByLang(ctx, R.string.segment_prompt_default_zh, R.string.segment_prompt_default_en, isZhLang))
 
                 // 构造描述（仅时间点与应用，不包含OCR文本）
                 val sb = StringBuilder()
-                sb.append("时间段：").append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
+                val timeRangeLabel = getByLang(ctx, R.string.label_time_range_zh, R.string.label_time_range_en, isZhLang)
+                val appLabel = getByLang(ctx, R.string.label_app_zh, R.string.label_app_en, isZhLang)
+                val shotLabel = getByLang(ctx, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, isZhLang)
+                val fileLabel = getByLang(ctx, R.string.label_file_zh, R.string.label_file_en, isZhLang)
+
+                sb.append(timeRangeLabel).append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
                 sb.append(header).append('\n')
                 for ((pkg, list) in byApp) {
                     list.sortBy { it.captureTime }
                     val name = list.firstOrNull()?.appName ?: pkg
-                    sb.append("应用：").append(name).append(" (").append(pkg).append(")\n")
+                    sb.append(appLabel).append(name).append(" (").append(pkg).append(")\n")
                     for (s in list) {
-                        sb.append("  - 截图时间=").append(fmt(s.captureTime)).append(" -> 文件=").append(File(s.filePath).name).append('\n')
+                        sb.append(shotLabel).append(fmt(s.captureTime)).append(fileLabel).append(File(s.filePath).name).append('\n')
                     }
                 }
 
@@ -839,20 +876,42 @@ object SegmentSummaryManager {
 
         // 构造“是否同一事件”的判定提示（放宽：同一行为的持续可合并）
         val sb = StringBuilder()
-        sb.append("请判断两段时间是否属于同一用户事件：\n")
-            .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-            .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-            .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
-            .append("两段各自的 overall_summary：\n")
-            .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
-            .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
-        val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
-        sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
-            .append("合并判定策略（放宽）：\n")
-            .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
-            .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
-            .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
-            .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+        val langOpt2 = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
+        val sysLang2 = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
+        val isZh2 = (langOpt2 == "zh") || (langOpt2 != "en" && sysLang2.startsWith("zh"))
+        val langPolicy2 = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZh2)
+        sb.append(langPolicy2).append('\n').append('\n')
+        if (isZh2) {
+            sb.append("请判断两段时间是否属于同一用户事件：\n")
+                .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
+                .append("两段各自的 overall_summary：\n")
+                .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+            val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+            sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                .append("合并判定策略（放宽）：\n")
+                .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
+                .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
+                .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
+                .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+        } else {
+            sb.append("Decide whether the two time ranges belong to the same user event:\n")
+                .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
+                .append("Each range overall_summary:\n")
+                .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+            val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+            sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
+                .append("Merge decision guidelines (relaxed):\n")
+                .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
+                .append("- If the gap ≤ 3 minutes, or the latter continues the former activity type, prefer same_event=true.\n")
+                .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
+                .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+        }
 
         // 采样图片：限制总数 MAX_COMPARE_IMAGES
         val mergedDurationSec = (((cur.endTime) - prev.startTime) / 1000L).toInt().coerceAtLeast(1)
@@ -1042,9 +1101,15 @@ object SegmentSummaryManager {
         val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
         for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
 
-        // 支持自定义合并提示词（ai_settings.key = prompt_merge），否则使用内置默认
-        val customHeader = try { AISettingsNative.readSettingValue(ctx, "prompt_merge") } catch (_: Exception) { null }
-        val defaultHeader =
+        // 依据应用语言注入“语言强制策略”并选择合并提示词（支持 _zh/_en 与旧键回退）
+        val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
+        val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
+        val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
+
+        val customHeaderLang = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_zh" else "prompt_merge_en") } catch (_: Exception) { null }
+        val customHeaderLegacy = try { AISettingsNative.readSettingValue(ctx, "prompt_merge") } catch (_: Exception) { null }
+
+        val defaultHeaderZh =
             "请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：\n" +
             "- 禁止使用OCR文本，直接理解图片内容；\n" +
             "- 不要对每张图片逐条描述；请产出用户在该时间段的‘行为总结’，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；\n" +
@@ -1062,18 +1127,43 @@ object SegmentSummaryManager {
             "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"一句话行为（可用简短Markdown强调）\"}],\n" +
             "overall_summary: \"开头为无标题的一段总结，随后使用Markdown小节与要点，保留多事件合并后的关键信息\"；\n" +
             "仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown"
-        val header = customHeader ?: defaultHeader
+
+        val defaultHeaderEn =
+            "Please produce a merged summary for the following images. MUST follow (English output, structured JSON, behavior-focused, no per-image narration / no OCR):\n" +
+            "- Do NOT use OCR; understand images directly.\n" +
+            "- Do not describe each image; output a 'behavior summary' over the period (browse/watch/chat/shop/work/settings/download/share/game, etc.), grouped by app/topic.\n" +
+            "- Preserve unique on-screen info (video titles/authors/brands) as seen.\n" +
+            "- Merge consecutive images from the same article/video/page into one content_group and summarize holistically.\n" +
+            "- Start with one plain paragraph (no headings) summarizing the period; then present details using Markdown sections.\n" +
+            "- Markdown requirements: all display texts use Markdown (overall_summary and content_groups[].summary); headings and bullet points for clarity; NO code fences (```), only pure Markdown.\n" +
+            "- overall_summary MUST include exactly these three second-level sections in this fixed order:\n" +
+            "  \\\"## Key Actions\\\"\\n  \\\"## Main Activities\\\"\\n  \\\"## Key Content\\\"\\n" +
+            "  Each section MUST contain at least 3 bullet points using \\\"- \\\". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.\n" +
+            "- In \"## Key Actions\", merge adjacent same-type actions into ranges \"HH:mm:ss-HH:mm:ss: description\"; only new item when action breaks; keep 3–8 concise lines.\n" +
+            "- content_groups[].summary uses 1–3 Markdown bullets for group topic/representative titles/intent.\n" +
+            "Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.\n" +
+            "Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown)."
+
+        val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
+
+        val header = languagePolicy + "\n\n" + ((customHeaderLang ?: customHeaderLegacy) ?: getByLang(ctx, R.string.merge_prompt_default_zh, R.string.merge_prompt_default_en, isZhLang))
 
         val sb = StringBuilder()
-        sb.append("合并事件总结：\n")
-            .append("时间段：").append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
+        val titleLabel = getByLang(ctx, R.string.title_merged_event_summary_zh, R.string.title_merged_event_summary_en, isZhLang)
+        val timeRangeLabel = getByLang(ctx, R.string.label_time_range_zh, R.string.label_time_range_en, isZhLang)
+        val appLabel = getByLang(ctx, R.string.label_app_zh, R.string.label_app_en, isZhLang)
+        val shotLabel = getByLang(ctx, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, isZhLang)
+        val fileLabel = getByLang(ctx, R.string.label_file_zh, R.string.label_file_en, isZhLang)
+
+        sb.append(titleLabel).append('\n')
+            .append(timeRangeLabel).append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
             .append(header).append('\n')
         for ((pkg, list) in byApp) {
             list.sortBy { it.captureTime }
             val name = list.firstOrNull()?.appName ?: pkg
-            sb.append("应用：").append(name).append(" (").append(pkg).append(")\n")
+            sb.append(appLabel).append(name).append(" (").append(pkg).append(")\n")
             for (s in list) {
-                sb.append("  - 截图时间=").append(fmt(s.captureTime)).append(" -> 文件=").append(File(s.filePath).name).append('\n')
+                sb.append(shotLabel).append(fmt(s.captureTime)).append(fileLabel).append(File(s.filePath).name).append('\n')
             }
         }
         return sb.toString()
@@ -1162,6 +1252,10 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
         }
         return retried
+    }
+
+    private fun getByLang(ctx: Context, zhId: Int, enId: Int, isZh: Boolean): String {
+        return ctx.getString(if (isZh) zhId else enId)
     }
 
     private fun guessMime(path: String): String {

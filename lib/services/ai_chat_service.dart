@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:flutter/widgets.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'ai_settings_service.dart';
 import 'screenshot_database.dart';
+import 'locale_service.dart';
 
 /// OpenAI Chat Completions 兼容服务
 /// - 使用 baseUrl + /v1/chat/completions
@@ -28,9 +31,17 @@ class AIChatService {
       try {
         final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
   
-        // 历史按分组隔离
+        // 历史按分组隔离 + 注入系统语言指示（本地化读取，忽略上下文语言）
         final history = await _settings.getChatHistoryByGroup(ep.groupId);
+        final String langCode = (LocaleService.instance.locale?.languageCode ??
+                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+            .toLowerCase();
+        final bool isZh = langCode.startsWith('zh');
+        final locale = isZh ? const Locale('zh') : const Locale('en');
+        final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
         final List<Map<String, dynamic>> messages = [
+          {'role': 'system', 'content': systemMsg},
           ...history.map((m) => m.toJson()),
           AIMessage(role: 'user', content: userMessage).toJson(),
         ];
@@ -93,7 +104,15 @@ class AIChatService {
   
       final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
       final history = await _settings.getChatHistoryByGroup(ep.groupId);
+      final String langCode = (LocaleService.instance.locale?.languageCode ??
+              WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+          .toLowerCase();
+      final bool isZh = langCode.startsWith('zh');
+      final locale = isZh ? const Locale('zh') : const Locale('en');
+      final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
       final List<Map<String, dynamic>> messages = [
+        {'role': 'system', 'content': systemMsg},
         ...history.map((m) => m.toJson()),
         AIMessage(role: 'user', content: userMessage).toJson(),
       ];
@@ -200,9 +219,17 @@ class AIChatService {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + apiKey,
         };
+        final String langCode = (LocaleService.instance.locale?.languageCode ??
+                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+            .toLowerCase();
+        final bool isZh = langCode.startsWith('zh');
+        final locale = isZh ? const Locale('zh') : const Locale('en');
+        final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
         final body = jsonEncode({
           'model': ep.model,
           'messages': [
+            {'role': 'system', 'content': systemMsg},
             {'role': 'user', 'content': userMessage},
           ],
           'temperature': 0.2,

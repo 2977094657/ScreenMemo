@@ -1,4 +1,6 @@
+import 'package:flutter/widgets.dart';
 import 'screenshot_database.dart';
+import 'locale_service.dart';
 
 /// 站点分组实体（用户可配置多个接口站点作为备用）
 class AISiteGroup {
@@ -76,10 +78,16 @@ class AISettingsService {
   static const String _keyModel = 'model';
   static const String _keyStreamEnabled = 'stream_enabled';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
-  // 提示词键名
-  static const String _keyPromptSegment = 'prompt_segment';
-  static const String _keyPromptMerge = 'prompt_merge';
-  static const String _keyPromptDaily = 'prompt_daily';
+  // 提示词键名（历史兼容 + 语言区分）
+  static const String _keyPromptSegment = 'prompt_segment';         // 旧版（不分语种）
+  static const String _keyPromptMerge   = 'prompt_merge';           // 旧版（不分语种）
+  static const String _keyPromptDaily   = 'prompt_daily';           // 旧版（不分语种）
+  static const String _keyPromptSegmentZh = 'prompt_segment_zh';
+  static const String _keyPromptSegmentEn = 'prompt_segment_en';
+  static const String _keyPromptMergeZh   = 'prompt_merge_zh';
+  static const String _keyPromptMergeEn   = 'prompt_merge_en';
+  static const String _keyPromptDailyZh   = 'prompt_daily_zh';
+  static const String _keyPromptDailyEn   = 'prompt_daily_en';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -248,41 +256,66 @@ class AISettingsService {
   }
 
   // ========== 提示词管理 ==========
+  String _currentLang() {
+    // 优先应用语言；为空时回退系统语言；仅识别 zh / en
+    final loc = LocaleService.instance.locale;
+    final code = (loc?.languageCode ??
+        WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+        .toLowerCase();
+    return code.startsWith('zh') ? 'zh' : 'en';
+  }
+
   Future<String?> getPromptSegment() async {
     final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyPromptSegment);
+    final lang = _currentLang();
+    // 先取语种键；不存在则回退历史通用键
+    final key = lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn;
+    String? v = await db.getAiSetting(key);
+    v ??= await db.getAiSetting(_keyPromptSegment);
     if (v == null || v.trim().isEmpty) return null;
     return v;
   }
 
   Future<void> setPromptSegment(String? value) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyPromptSegment, (value == null || value.trim().isEmpty) ? null : value.trim());
+    final lang = _currentLang();
+    final key = lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn;
+    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
   }
 
   Future<String?> getPromptMerge() async {
     final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyPromptMerge);
+    final lang = _currentLang();
+    final key = lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn;
+    String? v = await db.getAiSetting(key);
+    v ??= await db.getAiSetting(_keyPromptMerge);
     if (v == null || v.trim().isEmpty) return null;
     return v;
   }
 
   Future<void> setPromptMerge(String? value) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyPromptMerge, (value == null || value.trim().isEmpty) ? null : value.trim());
+    final lang = _currentLang();
+    final key = lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn;
+    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
   }
 
   // ========== 每日总结提示词 ==========
   Future<String?> getPromptDaily() async {
     final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyPromptDaily);
+    final lang = _currentLang();
+    final key = lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn;
+    String? v = await db.getAiSetting(key);
+    v ??= await db.getAiSetting(_keyPromptDaily);
     if (v == null || v.trim().isEmpty) return null;
     return v;
   }
 
   Future<void> setPromptDaily(String? value) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyPromptDaily, (value == null || value.trim().isEmpty) ? null : value.trim());
+    final lang = _currentLang();
+    final key = lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn;
+    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
   }
 
   // ========== 端点候选（用于失败自动切换） ==========
