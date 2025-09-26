@@ -538,7 +538,12 @@
   "retryFailed": "重试失败",
   "copyResultsTooltip": "复制结果",
 
-  "aiSettingsTitle": "AI 设置与测试",
+ "aiSystemPromptLanguagePolicy": "无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。",
+ "@aiSystemPromptLanguagePolicy": {
+   "description": "系统级语言策略提示，强制忽略传入内容语言，使用应用当前语言输出"
+ },
+
+ "aiSettingsTitle": "AI 设置与测试",
   "connectionSettingsTitle": "连接设置",
   "actionSave": "保存",
   "clearConversation": "清空会话",
@@ -548,9 +553,10 @@
   "streamingEnabledToast": "流式已开启",
   "streamingDisabledToast": "流式已关闭",
   "promptManagerTitle": "提示词管理",
-  "promptManagerHint": "为“普通事件总结”和“合并事件总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。",
+  "promptManagerHint": "为“普通事件总结”“合并事件总结”“每日总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。",
   "normalEventPromptLabel": "普通事件提示词",
   "mergeEventPromptLabel": "合并事件提示词",
+  "dailySummaryPromptLabel": "每日总结提示词",
   "actionEdit": "编辑",
   "savingLabel": "保存中",
   "resetToDefault": "重置默认",
@@ -575,6 +581,7 @@
 "savedCurrentGroupToast": "已保存当前分组",
 "savedNormalPromptToast": "已保存普通事件提示词",
 "savedMergePromptToast": "已保存合并事件提示词",
+"savedDailyPromptToast": "已保存每日总结提示词",
 "resetToDefaultPromptToast": "已重置为默认提示词",
 "resetFailedWithError": "重置失败: {error}",
 "@resetFailedWithError": { "placeholders": { "error": {} } },
@@ -609,6 +616,7 @@
 "customLabel": "已自定义",
 "normalShortLabel": "普通：",
 "mergeShortLabel": "合并：",
+"dailyShortLabel": "每日：",
 "timeRangeLabel": "时间段：{range}",
 "@timeRangeLabel": { "placeholders": { "range": {} } },
 "statusLabel": "状态：{status}",
@@ -629,5 +637,19 @@
 "monthDayTime": "{month}月{day}日 {hour}:{minute}",
 "@monthDayTime": { "placeholders": { "month": {}, "day": {}, "hour": {}, "minute": {} } },
 "yearMonthDayTime": "{year}年{month}月{day}日 {hour}:{minute}",
-"@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } }
+"@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } },
+
+"imagesCountLabel": "{count}张",
+"@imagesCountLabel": { "placeholders": { "count": {} } },
+
+"justNow": "刚刚",
+
+"minutesAgo": "{minutes}分钟前",
+"@minutesAgo": { "placeholders": { "minutes": {} } },
+
+"hoursAgo": "{hours}小时前",
+"@hoursAgo": { "placeholders": { "hours": {} } },
+
+"daysAgo": "{days}天前",
+"@daysAgo": { "placeholders": { "days": {} } }
 }

@@ -981,6 +981,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get copyResultsTooltip => '复制结果';
 
   @override
+  String get aiSystemPromptLanguagePolicy =>
+      '无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。';
+
+  @override
   String get aiSettingsTitle => 'AI 设置与测试';
 
   @override
@@ -1012,13 +1016,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '为“普通事件总结”和“合并事件总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
+      '为“普通事件总结”“合并事件总结”“每日总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
 
   @override
   String get normalEventPromptLabel => '普通事件提示词';
 
   @override
   String get mergeEventPromptLabel => '合并事件提示词';
+
+  @override
+  String get dailySummaryPromptLabel => '每日总结提示词';
 
   @override
   String get actionEdit => '编辑';
@@ -1088,6 +1095,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get savedMergePromptToast => '已保存合并事件提示词';
+
+  @override
+  String get savedDailyPromptToast => '已保存每日总结提示词';
 
   @override
   String get resetToDefaultPromptToast => '已重置为默认提示词';
@@ -1184,6 +1194,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mergeShortLabel => '合并：';
 
   @override
+  String get dailyShortLabel => '每日：';
+
+  @override
   String timeRangeLabel(Object range) {
     return '时间段：$range';
   }
@@ -1241,5 +1254,28 @@ class AppLocalizationsZh extends AppLocalizations {
     Object minute,
   ) {
     return '$year年$month月$day日 $hour:$minute';
+  }
+
+  @override
+  String imagesCountLabel(Object count) {
+    return '$count张';
+  }
+
+  @override
+  String get justNow => '刚刚';
+
+  @override
+  String minutesAgo(Object minutes) {
+    return '$minutes分钟前';
+  }
+
+  @override
+  String hoursAgo(Object hours) {
+    return '$hours小时前';
+  }
+
+  @override
+  String daysAgo(Object days) {
+    return '$days天前';
   }
 }

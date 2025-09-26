@@ -1020,6 +1020,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get copyResultsTooltip => 'Copy results';
 
   @override
+  String get aiSystemPromptLanguagePolicy =>
+      'Regardless of the language used in the input context (events, screenshot text, or user messages), you must strictly ignore it and always produce output in the application\'s current language. If the app is set to English, all answers, titles, summaries, tags, structured fields, and error messages must be written in English unless the user explicitly requests another language.';
+
+  @override
   String get aiSettingsTitle => 'AI Settings & Test';
 
   @override
@@ -1052,13 +1056,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      'Configure prompts for normal and merged summaries; supports Markdown. Empty or reset to use defaults.';
+      'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.';
 
   @override
   String get normalEventPromptLabel => 'Normal event prompt';
 
   @override
   String get mergeEventPromptLabel => 'Merged event prompt';
+
+  @override
+  String get dailySummaryPromptLabel => 'Daily summary prompt';
 
   @override
   String get actionEdit => 'Edit';
@@ -1129,6 +1136,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get savedMergePromptToast => 'Merged prompt saved';
+
+  @override
+  String get savedDailyPromptToast => 'Daily prompt saved';
 
   @override
   String get resetToDefaultPromptToast => 'Reset to default prompt';
@@ -1225,6 +1235,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mergeShortLabel => 'Merged:';
 
   @override
+  String get dailyShortLabel => 'Daily:';
+
+  @override
   String timeRangeLabel(Object range) {
     return 'Time range: $range';
   }
@@ -1283,5 +1296,28 @@ class AppLocalizationsEn extends AppLocalizations {
     Object minute,
   ) {
     return '$year/$month/$day $hour:$minute';
+  }
+
+  @override
+  String imagesCountLabel(Object count) {
+    return '$count images';
+  }
+
+  @override
+  String get justNow => 'Just now';
+
+  @override
+  String minutesAgo(Object minutes) {
+    return '$minutes minutes ago';
+  }
+
+  @override
+  String hoursAgo(Object hours) {
+    return '$hours hours ago';
+  }
+
+  @override
+  String daysAgo(Object days) {
+    return '$days days ago';
   }
 }

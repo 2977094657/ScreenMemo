@@ -6,4 +6,90 @@
     <string name="foreground_service_content">点击返回应用</string>
     <string name="notification_channel_name">屏幕截图服务</string>
     <string name="notification_channel_description">用于显示屏幕截图服务状态</string>
+
+    <!-- AI 语言策略（按应用语言强制输出），供原生端读取 -->
+    <string name="ai_language_policy_zh"><![CDATA[无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。]]></string>
+    <string name="ai_language_policy_en">You MUST ignore any input context language and always respond strictly in the current application language.</string>
+
+    <!-- 原生端：普通事件默认提示词（中文/英文各一份），从代码中迁移至资源 -->
+    <string name="segment_prompt_default_zh"><![CDATA[请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：
+- 禁止使用OCR文本；直接理解图片内容；
+- 不要逐图描述；按应用/主题整合用户在该时间段的“行为总结”（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；
+- 对视频标题、作者、品牌等独特信息，按屏幕原样在输出中保留；
+- 对同一文章/视频/页面的连续图片，归为同一 content_group 做整体总结；
+- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容；
+- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；
+- 后续小节建议包含："## 关键操作"（按时间的要点清单）、"## 主要活动"（按应用/主题的要点清单）、"## 重点内容"（可保留的标题/作者/品牌等）；
+- 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”（例如“08:16:41-08:27:21：浏览视频评论”）；仅在行为中断或切换时新起一条；控制 3-8 条精要；
+以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
+仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；
+字段约定：
+key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"应用名","ref_image":"文件名","ref_time":"HH:mm:ss","detail":"(Markdown) 精简说明，避免敏感信息","confidence":0.0}],
+content_groups[]: [{"group_type":"article|video|page|playlist|feed","title":"可为空","app":"应用名","start_time":"HH:mm:ss","end_time":"HH:mm:ss","image_count":1,"representative_images":["文件名1","文件名2"],"summary":"(Markdown) 本组内容的要点"}],
+timeline[]: [{"time":"HH:mm:ss","app":"应用名","action":"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他","summary":"(Markdown) 一句话行为（可简短强调）"}],
+overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使用小节与要点，避免流水账并尽可能保留信息"]]> </string>
+
+    <string name="segment_prompt_default_en"><![CDATA[Please summarize multiple screenshots in English and output structured results. STRICT rules:
+- Do NOT use OCR text; understand images directly.
+- Do not describe image-by-image; integrate a "behavior summary" over the time window by app/topic (browse/watch/chat/shop/work/settings/download/share/game, etc.).
+- Preserve unique on-screen info like video titles, authors, brands as-is.
+- Merge consecutive images from the same article/video/page into one content_group for a holistic summary.
+- Start with one plain paragraph (no heading) summarizing the time window; then present later content with Markdown subsections.
+- Markdown requirements: all display texts must use Markdown (overall_summary and content_groups[].summary; timeline[].summary may use brief Markdown; key_actions[].detail may use concise Markdown). NO code fences (```), only pure Markdown.
+- overall_summary MUST include exactly these three second-level sections in this fixed order:
+  "## Key Actions"
+  "## Main Activities"
+  "## Key Content"
+  Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
+- In "## Key Actions", merge adjacent/continuous same-type actions as a time range "HH:mm:ss-HH:mm:ss: description"; only when action breaks/changes start a new item; keep 3–8 concise items.
+Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
+Only output a single JSON object; do not add explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).
+Field conventions:
+key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"App","ref_image":"filename","ref_time":"HH:mm:ss","detail":"(Markdown) brief, avoid sensitive info","confidence":0.0}],
+content_groups[]: [{"group_type":"article|video|page|playlist|feed","title":"optional","app":"App","start_time":"HH:mm:ss","end_time":"HH:mm:ss","image_count":1,"representative_images":["file1","file2"],"summary":"(Markdown) group highlights"}],
+timeline[]: [{"time":"HH:mm:ss","app":"App","action":"browse|watch|chat|shop|search|edit|game|settings|download|share|other","summary":"(Markdown) one-liner (may emphasize briefly)"}],
+overall_summary: "(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info"]]> </string>
+
+    <!-- 原生端：合并事件默认提示词 -->
+    <string name="merge_prompt_default_zh"><![CDATA[请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：
+- 禁止使用OCR文本，直接理解图片内容；
+- 不要对每张图片逐条描述；请产出用户在该时间段的“行为总结”，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；
+- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；
+- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；
+- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容；
+- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；
+- 后续小节建议包含："## 关键操作"、"## 主要活动"、"## 重点内容"；
+- 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”；仅在行为中断或切换时新起一条；控制 3-8 条精要；
+- content_groups[].summary 使用 1–3 条 Markdown 要点描述话题/代表性标题/意图；
+以 JSON 输出字段：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary。
+仅输出一个 JSON 对象；不要输出解释或 JSON 外的 Markdown；展示内容写入 overall_summary。]]></string>
+
+    <string name="merge_prompt_default_en"><![CDATA[Please produce a merged summary for the following images. MUST follow (English output, structured JSON, behavior-focused, no per-image narration / no OCR):
+- Do NOT use OCR; understand images directly.
+- Do not describe each image; output a "behavior summary" over the period (browse/watch/chat/shop/work/settings/download/share/game, etc.), grouped by app/topic.
+- Preserve unique on-screen info (video titles/authors/brands) as seen.
+- Merge consecutive images from the same article/video/page into one content_group and summarize holistically.
+- Start with one plain paragraph (no headings) summarizing the period; then present details using Markdown sections.
+- Markdown requirements: all display texts use Markdown (overall_summary and content_groups[].summary); headings and bullet points for clarity; NO code fences (```), only pure Markdown.
+- overall_summary MUST include exactly these three second-level sections in this fixed order:
+  "## Key Actions"
+  "## Main Activities"
+  "## Key Content"
+  Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
+- In "## Key Actions", merge adjacent same-type actions into ranges "HH:mm:ss-HH:mm:ss: description"; only new item when action breaks; keep 3–8 concise lines.
+- content_groups[].summary uses 1–3 Markdown bullets for group topic/representative titles/intent.
+Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
+Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).]]></string>
+
+    <!-- 原生端构造提示所用标签（中/英） -->
+    <string name="title_merged_event_summary_zh">合并事件总结：</string>
+    <string name="title_merged_event_summary_en">Merged Event Summary:</string>
+    <string name="label_time_range_zh">时间段：</string>
+    <string name="label_time_range_en">Time range: </string>
+    <string name="label_app_zh">应用：</string>
+    <string name="label_app_en">App: </string>
+    <string name="label_screenshot_at_zh">  - 截图时间=</string>
+    <string name="label_screenshot_at_en">  - Screenshot at=</string>
+    <string name="label_file_zh"> -> 文件=</string>
+    <string name="label_file_en"> -> File=</string>
 </resources>

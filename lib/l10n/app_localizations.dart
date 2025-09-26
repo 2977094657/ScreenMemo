@@ -1880,6 +1880,12 @@ abstract class AppLocalizations {
   /// **'Copy results'**
   String get copyResultsTooltip;
 
+  /// System-level language policy prompt enforcing app language over context language
+  ///
+  /// In en, this message translates to:
+  /// **'Regardless of the language used in the input context (events, screenshot text, or user messages), you must strictly ignore it and always produce output in the application\'s current language. If the app is set to English, all answers, titles, summaries, tags, structured fields, and error messages must be written in English unless the user explicitly requests another language.'**
+  String get aiSystemPromptLanguagePolicy;
+
   /// No description provided for @aiSettingsTitle.
   ///
   /// In en, this message translates to:
@@ -1943,7 +1949,7 @@ abstract class AppLocalizations {
   /// No description provided for @promptManagerHint.
   ///
   /// In en, this message translates to:
-  /// **'Configure prompts for normal and merged summaries; supports Markdown. Empty or reset to use defaults.'**
+  /// **'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.'**
   String get promptManagerHint;
 
   /// No description provided for @normalEventPromptLabel.
@@ -1957,6 +1963,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Merged event prompt'**
   String get mergeEventPromptLabel;
+
+  /// No description provided for @dailySummaryPromptLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily summary prompt'**
+  String get dailySummaryPromptLabel;
 
   /// No description provided for @actionEdit.
   ///
@@ -2095,6 +2107,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Merged prompt saved'**
   String get savedMergePromptToast;
+
+  /// No description provided for @savedDailyPromptToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily prompt saved'**
+  String get savedDailyPromptToast;
 
   /// No description provided for @resetToDefaultPromptToast.
   ///
@@ -2252,6 +2270,12 @@ abstract class AppLocalizations {
   /// **'Merged:'**
   String get mergeShortLabel;
 
+  /// No description provided for @dailyShortLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily:'**
+  String get dailyShortLabel;
+
   /// No description provided for @timeRangeLabel.
   ///
   /// In en, this message translates to:
@@ -2329,6 +2353,36 @@ abstract class AppLocalizations {
     Object hour,
     Object minute,
   );
+
+  /// No description provided for @imagesCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} images'**
+  String imagesCountLabel(Object count);
+
+  /// No description provided for @justNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get justNow;
+
+  /// No description provided for @minutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes} minutes ago'**
+  String minutesAgo(Object minutes);
+
+  /// No description provided for @hoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} hours ago'**
+  String hoursAgo(Object hours);
+
+  /// No description provided for @daysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} days ago'**
+  String daysAgo(Object days);
 }
 
 class _AppLocalizationsDelegate
