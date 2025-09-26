@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
@@ -15,6 +16,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'ai_settings_page.dart';
 import '../services/daily_summary_service.dart';
+import '../services/locale_service.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -87,8 +89,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.folder_outlined,
-        title: '存储权限',
-        description: '保存截图文件到设备存储',
+        title: AppLocalizations.of(context).storagePermissionTitle,
+        description: AppLocalizations.of(context).storagePermissionDesc,
         isGranted: _permissions['storage'] ?? false,
         onRequest: () => _requestPermission('storage'),
       ),
@@ -96,8 +98,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.notifications_outlined,
-        title: '通知权限',
-        description: '显示服务状态通知',
+        title: AppLocalizations.of(context).notificationPermissionTitle,
+        description: AppLocalizations.of(context).notificationPermissionDesc,
         isGranted: _permissions['notification'] ?? false,
         onRequest: () => _requestPermission('notification'),
       ),
@@ -105,8 +107,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.accessibility_new_outlined,
-        title: '无障碍服务',
-        description: '监听应用切换并执行截图',
+        title: AppLocalizations.of(context).accessibilityPermissionTitle,
+        description: AppLocalizations.of(context).accessibilityPermissionDesc,
         isGranted: _permissions['accessibility'] ?? false,
         onRequest: () => _requestPermission('accessibility'),
       ),
@@ -114,8 +116,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.analytics_outlined,
-        title: '使用统计权限',
-        description: '确保检测前台应用',
+        title: AppLocalizations.of(context).usageStatsPermissionTitle,
+        description: AppLocalizations.of(context).usageStatsPermissionDesc,
         isGranted: _permissions['usage_stats'] ?? false,
         onRequest: () => _requestPermission('usage_stats'),
       ),
@@ -124,8 +126,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.battery_saver_outlined,
-        title: '电池优化白名单',
-        description: '确保截图服务常驻运行',
+        title: AppLocalizations.of(context).batteryOptimizationTitle,
+        description: AppLocalizations.of(context).batteryOptimizationDesc,
         isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
         onRequest: () => _requestPermission('battery_optimization'),
       ),
@@ -133,8 +135,8 @@ class _SettingsPageState extends State<SettingsPage>
       _buildPermissionItem(
         context: context,
         icon: Icons.power_settings_new_outlined,
-        title: '自启动权限',
-        description: '允许应用在后台自动重启',
+        title: AppLocalizations.of(context).autostartPermissionTitle,
+        description: AppLocalizations.of(context).autostartPermissionDesc,
         isGranted: _keepAlivePermissions['autostart'] ?? false,
         onRequest: () => _requestPermission('autostart'),
       ),
@@ -186,7 +188,7 @@ class _SettingsPageState extends State<SettingsPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '权限设置',
+                        AppLocalizations.of(context).permissionsSectionTitle,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w500,
                         ),
@@ -194,8 +196,8 @@ class _SettingsPageState extends State<SettingsPage>
                       const SizedBox(height: 2),
                       Text(
                         _allPermissionsGranted()
-                            ? '已全部授权'
-                            : '尚有 $missingCount 项权限未授权',
+                            ? AppLocalizations.of(context).allPermissionsGranted
+                            : AppLocalizations.of(context).permissionsMissingCount(missingCount),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -266,12 +268,12 @@ class _SettingsPageState extends State<SettingsPage>
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          title: '导出完成',
+          title: AppLocalizations.of(context).exportSuccessTitle,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('文件已导出至：'),
+              Text(AppLocalizations.of(context).exportFileExportedTo),
               const SizedBox(height: AppTheme.spacing2),
               Container(
                 width: double.infinity,
@@ -289,19 +291,19 @@ class _SettingsPageState extends State<SettingsPage>
           ),
           actions: [
             UIDialogAction(
-              text: '复制路径',
+              text: AppLocalizations.of(context).actionCopyPath,
               style: UIDialogActionStyle.normal,
               closeOnPress: false,
               onPressed: (ctx) async {
                 await Clipboard.setData(ClipboardData(text: displayPath));
                 if (ctx.mounted) {
                   Navigator.of(ctx).pop();
-                  UINotifier.success(ctx, '已复制路径');
+                  UINotifier.success(ctx, AppLocalizations.of(ctx).pathCopiedToast);
                 }
               },
             ),
-            const UIDialogAction(
-              text: '确定',
+            UIDialogAction(
+              text: AppLocalizations.of(context).dialogOk,
               style: UIDialogActionStyle.primary,
             ),
           ],
@@ -311,10 +313,10 @@ class _SettingsPageState extends State<SettingsPage>
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          title: '导出失败',
-          message: '请稍后重试',
-          actions: const [
-            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          title: AppLocalizations.of(context).exportFailedTitle,
+          message: AppLocalizations.of(context).pleaseTryAgain,
+          actions: [
+            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
           ],
         );
       }
@@ -384,12 +386,12 @@ class _SettingsPageState extends State<SettingsPage>
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          title: '导入完成',
+          title: AppLocalizations.of(context).importCompleteTitle,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('数据已解压到:'),
+              Text(AppLocalizations.of(context).dataExtractedTo),
               const SizedBox(height: AppTheme.spacing2),
               Container(
                 width: double.infinity,
@@ -405,8 +407,8 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             ],
           ),
-          actions: const [
-            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          actions: [
+            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
           ],
         );
         // 使统计缓存失效，以便下次刷新UI
@@ -417,23 +419,23 @@ class _SettingsPageState extends State<SettingsPage>
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
-          title: '导入失败',
-          message: '请检查ZIP文件并重试。',
-          actions: const [
-            UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          title: AppLocalizations.of(context).importFailedTitle,
+          message: AppLocalizations.of(context).importFailedCheckZip,
+          actions: [
+            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
           ],
         );
       }
     } catch (e) { 
       if (!mounted) return; 
       await FlutterLogger.nativeError('UI_IMPORT', 'exception: ' + e.toString());
-      await showUIDialog<void>( 
+      await showUIDialog<void>(
         context: context,
         barrierDismissible: false,
-        title: '导入失败',
+        title: AppLocalizations.of(context).importFailedTitle,
         content: Text('$e'),
-        actions: const [
-          UIDialogAction(text: 'OK', style: UIDialogActionStyle.primary),
+        actions: [
+          UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
         ],
       );
     } finally { 
@@ -584,12 +586,12 @@ class _SettingsPageState extends State<SettingsPage>
     return await showUIDialog<bool>(
           context: context,
           barrierDismissible: false,
-          title: '确认权限设置',
-          message: '请确认您已在系统设置中完成自启动权限的配置。',
-          actions: const [
-            UIDialogAction<bool>(text: '尚未完成', result: false),
+          title: AppLocalizations.of(context).confirmPermissionSettingsTitle,
+          message: AppLocalizations.of(context).confirmAutostartQuestion,
+          actions: [
+            UIDialogAction<bool>(text: AppLocalizations.of(context).notYet, result: false),
             UIDialogAction<bool>(
-              text: '已完成',
+              text: AppLocalizations.of(context).done,
               style: UIDialogActionStyle.primary,
               result: true,
             ),
@@ -616,13 +618,13 @@ class _SettingsPageState extends State<SettingsPage>
           break;
         case 'mediaProjection':
           // 不再需要 MediaProjection 权限
-          UINotifier.info(context, '已使用无障碍服务截图，无需屏幕录制权限');
+          UINotifier.info(context, AppLocalizations.of(context).noMediaProjectionNeeded);
           break;
         case 'battery_optimization':
           if (mounted) {
             UINotifier.info(
               context,
-              '请在系统设置中完成授权，然后返回应用',
+              AppLocalizations.of(context).pleaseCompleteInSystemSettings,
               duration: const Duration(seconds: 2),
             );
           }
@@ -642,7 +644,7 @@ class _SettingsPageState extends State<SettingsPage>
               if (mounted) {
                 UINotifier.success(
                   context,
-                  '自启动权限已标记为已授权',
+                  AppLocalizations.of(context).autostartPermissionMarked,
                   duration: const Duration(seconds: 2),
                 );
               }
@@ -661,7 +663,7 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, '请求权限失败: ' + e.toString());
+        UINotifier.error(context, AppLocalizations.of(context).requestPermissionFailed(e.toString()));
       }
     }
   }
@@ -670,14 +672,14 @@ class _SettingsPageState extends State<SettingsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('设置'),
+        title: Text(AppLocalizations.of(context).settingsTitle),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPermissions,
-            tooltip: '刷新权限状态',
+            tooltip: AppLocalizations.of(context).refreshPermissionStatus,
           ),
 
           // 主题切换按钮
@@ -699,15 +701,16 @@ class _SettingsPageState extends State<SettingsPage>
                 // 统一权限下拉菜单
                 _buildSection(
                   context: context,
-                  title: '权限设置',
+                  title: AppLocalizations.of(context).permissionsSectionTitle,
                   children: [_buildPermissionsDropdown(context)],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
-                // 显示与排序
+                // 显示与排序（加入语言设置）
                 _buildSection(
                   context: context,
-                  title: '显示与排序',
+                  title: AppLocalizations.of(context).displayAndSortSectionTitle,
                   children: [
+                    _buildLanguageItem(context),
                     _buildPrivacyModeItem(context),
                     _buildSortModeItem(context),
                   ],
@@ -717,7 +720,7 @@ class _SettingsPageState extends State<SettingsPage>
                 // 截屏设置
                 _buildSection(
                   context: context,
-                  title: '截屏设置',
+                  title: AppLocalizations.of(context).screenshotSectionTitle,
                   children: [
                     _buildScreenshotIntervalItem(context),
                     _buildScreenshotQualityItem(context),
@@ -728,7 +731,7 @@ class _SettingsPageState extends State<SettingsPage>
                 // 时间段总结设置
                 _buildSection(
                   context: context,
-                  title: '时间段总结',
+                  title: AppLocalizations.of(context).segmentSummarySectionTitle,
                   children: [
                     _buildSegmentSampleItem(context),
                     _buildSegmentDurationItem(context),
@@ -740,7 +743,7 @@ class _SettingsPageState extends State<SettingsPage>
                 // 每日总结提醒
                 _buildSection(
                   context: context,
-                  title: '每日总结提醒',
+                  title: AppLocalizations.of(context).dailyReminderSectionTitle,
                   children: [
                     _buildDailyNotifyItem(context),
                     _buildDailyNotifyBannerItem(context),
@@ -752,7 +755,7 @@ class _SettingsPageState extends State<SettingsPage>
                 // AI 助手
                 _buildSection(
                   context: context,
-                  title: 'AI 助手',
+                  title: AppLocalizations.of(context).aiAssistantSectionTitle,
                   children: [
                     _buildAIEntryItem(context),
                   ],
@@ -761,7 +764,7 @@ class _SettingsPageState extends State<SettingsPage>
                 // 数据与备份
                 _buildSection(
                   context: context,
-                  title: '数据与备份',
+                  title: AppLocalizations.of(context).dataBackupSectionTitle,
                   children: [
                     _buildExportItem(context),
                     _buildImportItem(context),
@@ -804,9 +807,9 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('采样间隔（秒）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(AppLocalizations.of(context).segmentSampleIntervalTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
-                Text('当前：${_segmentSampleIntervalSec} 秒', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(AppLocalizations.of(context).segmentSampleIntervalDesc(_segmentSampleIntervalSec), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
           ),
@@ -818,7 +821,7 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('设置'),
+            child: Text(AppLocalizations.of(context).actionSet),
           ),
         ],
       ),
@@ -848,9 +851,9 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('时间段时长（分钟）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(AppLocalizations.of(context).segmentDurationTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
-                Text('当前：${_segmentDurationMin} 分钟', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(AppLocalizations.of(context).segmentDurationDesc(_segmentDurationMin), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
           ),
@@ -862,7 +865,7 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('设置'),
+            child: Text(AppLocalizations.of(context).actionSet),
           ),
         ],
       ),
@@ -901,9 +904,9 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('AI 请求最小间隔（秒）', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(AppLocalizations.of(context).aiRequestIntervalTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
-                Text('当前：${_aiRequestIntervalSec} 秒（最低1秒）', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(AppLocalizations.of(context).aiRequestIntervalDesc(_aiRequestIntervalSec), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
           ),
@@ -915,7 +918,7 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('设置'),
+            child: Text(AppLocalizations.of(context).actionSet),
           ),
         ],
       ),
@@ -928,25 +931,25 @@ class _SettingsPageState extends State<SettingsPage>
     final TextEditingController controller = TextEditingController(text: _aiRequestIntervalSec.toString());
     showUIDialog<void>(
       context: context,
-      title: '设置AI请求最小间隔（秒）',
-      content: _numberField(controller, hint: '请输入 ≥1 的整数'),
+      title: AppLocalizations.of(context).aiRequestIntervalTitle,
+      content: _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final parsed = int.tryParse(controller.text.trim());
-            if (parsed == null || parsed < 1) { UINotifier.error(ctx, '请输入 ≥1 的有效整数'); return; }
+            if (parsed == null || parsed < 1) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
             final v = parsed.clamp(1, 60);
             try {
               const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
               await platform.invokeMethod('setAiRequestIntervalSec', {'seconds': v});
               if (mounted) setState(() { _aiRequestIntervalSec = v; });
-              if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 秒'); }
+              if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(v)); }
             } catch (e) {
-              if (ctx.mounted) UINotifier.error(ctx, '保存失败: ' + e.toString());
+              if (ctx.mounted) UINotifier.error(ctx, AppLocalizations.of(ctx).requestPermissionFailed(e.toString()));
             }
           },
         ),
@@ -990,12 +993,12 @@ class _SettingsPageState extends State<SettingsPage>
     final TextEditingController controller = TextEditingController(text: _segmentSampleIntervalSec.toString());
     showUIDialog<void>(
       context: context,
-      title: '设置采样间隔（秒）',
+      title: AppLocalizations.of(context).segmentSampleIntervalTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _numberField(controller, hint: '请输入 >=5 的整数'),
+          _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
           const SizedBox(height: AppTheme.spacing3),
           Container(
             padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -1003,24 +1006,24 @@ class _SettingsPageState extends State<SettingsPage>
               color: AppTheme.info.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: const Text(
-              '说明：采样仅基于已保存的截图进行分析，不会重新触发截图或影响后台行为。',
+            child: Text(
+              AppLocalizations.of(context).targetSizeHint,
               style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
       ),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final v = int.tryParse(controller.text.trim());
-            if (v == null || v < 5) { UINotifier.error(ctx, '请输入 >=5 的有效整数'); return; }
+            if (v == null || v < 5) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
             await _saveSegmentSettings(sample: v, durationMin: _segmentDurationMin);
-            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 秒'); }
+            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(v)); }
           },
         ),
       ],
@@ -1031,19 +1034,19 @@ class _SettingsPageState extends State<SettingsPage>
     final TextEditingController controller = TextEditingController(text: _segmentDurationMin.toString());
     showUIDialog<void>(
       context: context,
-      title: '设置时间段时长（分钟）',
-      content: _numberField(controller, hint: '请输入 >=1 的整数'),
+      title: AppLocalizations.of(context).segmentDurationTitle,
+      content: _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final v = int.tryParse(controller.text.trim());
-            if (v == null || v < 1) { UINotifier.error(ctx, '请输入 >=1 的有效整数'); return; }
+            if (v == null || v < 1) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
             await _saveSegmentSettings(sample: _segmentSampleIntervalSec, durationMin: v);
-            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, '已设置为 $v 分钟'); }
+            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).expireDaysSavedSuccess(v)); }
           },
         ),
       ],
@@ -1178,7 +1181,7 @@ class _SettingsPageState extends State<SettingsPage>
           const SizedBox(width: AppTheme.spacing2),
           if (isGranted)
             Text(
-              '已授权',
+              AppLocalizations.of(context).grantedLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -1194,7 +1197,7 @@ class _SettingsPageState extends State<SettingsPage>
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 minimumSize: Size.zero,
               ),
-              child: const Text('去授权'),
+              child: Text(AppLocalizations.of(context).authorizeAction),
             ),
         ],
       ),
@@ -1225,14 +1228,14 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '导出数据',
+                  AppLocalizations.of(context).exportDataTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '导出 ZIP 至 Download/ScreenMemory',
+                  AppLocalizations.of(context).exportDataDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1257,7 +1260,7 @@ class _SettingsPageState extends State<SettingsPage>
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('导出'),
+                : Text(AppLocalizations.of(context).actionExport),
           ),
         ],
       ),
@@ -1296,7 +1299,7 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '导入数据',
+                  AppLocalizations.of(context).importDataTitle,
                   style: Theme.of(context)
                       .textTheme
                       .bodyMedium
@@ -1304,7 +1307,7 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '将ZIP文件导入到应用存储',
+                  AppLocalizations.of(context).importDataDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -1329,7 +1332,7 @@ class _SettingsPageState extends State<SettingsPage>
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('导入'),
+                : Text(AppLocalizations.of(context).actionImport),
           ),
         ],
       ),
@@ -1360,7 +1363,7 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'AI 助手',
+                  AppLocalizations.of(context).aiAssistantTitle,
                   style: Theme.of(context)
                       .textTheme
                       .bodyMedium
@@ -1368,7 +1371,7 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '配置 AI 接口与模型，并进行多轮对话测试',
+                  AppLocalizations.of(context).aiAssistantDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -1393,7 +1396,7 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('进入'),
+            child: Text(AppLocalizations.of(context).actionEnter),
           ),
         ],
       ),
@@ -1424,7 +1427,7 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '首页排序',
+                  AppLocalizations.of(context).homeSortingTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
@@ -1450,7 +1453,137 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('设置'),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 语言设置
+  Widget _buildLanguageItem(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final opt = LocaleService.instance.option;
+    String currentLabel;
+    switch (opt) {
+      case 'zh':
+        currentLabel = t.languageChinese;
+        break;
+      case 'en':
+        currentLabel = t.languageEnglish;
+        break;
+      default:
+        currentLabel = t.languageSystem;
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.language,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t.languageSettingTitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  currentLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: () async {
+              final selected = await showUIDialog<String>(
+                context: context,
+                barrierDismissible: true,
+                title: t.languageSettingTitle,
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [Text('${t.currentTimeLabel}$currentLabel')],
+                ),
+                actions: [
+                  UIDialogAction<String>(
+                    text: t.languageSystem,
+                    result: 'system',
+                  ),
+                  UIDialogAction<String>(
+                    text: t.languageChinese,
+                    result: 'zh',
+                  ),
+                  UIDialogAction<String>(
+                    text: t.languageEnglish,
+                    result: 'en',
+                  ),
+                  UIDialogAction<String>(text: t.dialogCancel, result: 'cancel'),
+                ],
+              );
+              if (!mounted) return;
+              if (selected == null || selected == 'cancel') return;
+
+              await LocaleService.instance.setOption(selected);
+              if (mounted) {
+                setState(() {});
+              }
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final tt = AppLocalizations.of(context);
+                String newLabel2;
+                switch (LocaleService.instance.option) {
+                  case 'zh':
+                    newLabel2 = tt.languageChinese;
+                    break;
+                  case 'en':
+                    newLabel2 = tt.languageEnglish;
+                    break;
+                  default:
+                    newLabel2 = tt.languageSystem;
+                    break;
+                }
+                UINotifier.success(context, tt.languageChangedToast(newLabel2));
+              });
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(t.actionSet),
           ),
         ],
       ),
@@ -1489,14 +1622,14 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '隐私模式',
+                  AppLocalizations.of(context).privacyModeTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '对敏感内容自动模糊遮挡',
+                  AppLocalizations.of(context).privacyModeDesc,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1552,14 +1685,14 @@ class _SettingsPageState extends State<SettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '截屏间隔',
+                  AppLocalizations.of(context).screenshotIntervalTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '当前间隔：' + _screenshotInterval.toString() + ' 秒',
+                  AppLocalizations.of(context).screenshotIntervalDesc(_screenshotInterval),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1578,7 +1711,7 @@ class _SettingsPageState extends State<SettingsPage>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('设置'),
+            child: Text(AppLocalizations.of(context).actionSet),
           ),
         ],
       ),
@@ -1617,7 +1750,7 @@ class _SettingsPageState extends State<SettingsPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '截图质量',
+                            AppLocalizations.of(context).screenshotQualityTitle,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(fontWeight: FontWeight.w500),
                           ),
@@ -1630,7 +1763,7 @@ class _SettingsPageState extends State<SettingsPage>
                               child: Row(
                                 children: [
                                   Text(
-                                    '当前大小：',
+                                    AppLocalizations.of(context).currentTimeLabel,
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: Theme.of(
@@ -1665,7 +1798,7 @@ class _SettingsPageState extends State<SettingsPage>
                                   const SizedBox(width: AppTheme.spacing1),
                                   Flexible(
                                     child: Text(
-                                      '（点击数字可修改）',
+                                      AppLocalizations.of(context).clickToModifyHint,
                                       softWrap: false,
                                       overflow: TextOverflow.ellipsis,
                                       style: Theme.of(context)
@@ -1737,7 +1870,7 @@ class _SettingsPageState extends State<SettingsPage>
     );
     showUIDialog<void>(
       context: context,
-      title: '设置截屏间隔',
+      title: AppLocalizations.of(context).setIntervalDialogTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1751,8 +1884,8 @@ class _SettingsPageState extends State<SettingsPage>
               controller: controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: '间隔时间（秒）',
-                hintText: '请输入 5-60 的整数',
+                labelText: AppLocalizations.of(context).intervalSecondsLabel,
+                hintText: AppLocalizations.of(context).intervalInputHint,
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -1777,30 +1910,30 @@ class _SettingsPageState extends State<SettingsPage>
               color: AppTheme.info.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: const Text(
-              '范围：5-60 秒，默认 5 秒',
+            child: Text(
+              AppLocalizations.of(context).intervalRangeHint,
               style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
       ),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 5 || interval > 60) {
-              UINotifier.error(ctx, '请输入 5-60 的有效整数');
+              UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError);
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '截屏间隔已设置为 ' + interval.toString() + ' 秒');
+              UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(interval));
             }
           },
         ),
@@ -1814,7 +1947,7 @@ class _SettingsPageState extends State<SettingsPage>
     );
     showUIDialog<void>(
       context: context,
-      title: '设置目标大小（单位KB）',
+      title: AppLocalizations.of(context).setTargetSizeDialogTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1829,7 +1962,7 @@ class _SettingsPageState extends State<SettingsPage>
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
-                labelText: '目标大小（KB）',
+                labelText: AppLocalizations.of(context).targetSizeKbLabel,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
                 labelStyle: TextStyle(
@@ -1853,24 +1986,24 @@ class _SettingsPageState extends State<SettingsPage>
               color: AppTheme.info.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: const Text(
-              '为保证 OCR 质量，最低仅支持 50KB；系统会在不改变分辨率的情况下尽量逼近该大小。',
+            child: Text(
+              AppLocalizations.of(context).targetSizeHint,
               style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
       ),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final input = controller.text.trim();
             final kb = int.tryParse(input);
             if (kb == null || kb < 50) {
-              UINotifier.error(ctx, '请输入 >= 50 的有效整数');
+              UINotifier.error(ctx, AppLocalizations.of(ctx).targetSizeInvalidError);
               return;
             }
             setState(() {
@@ -1880,7 +2013,7 @@ class _SettingsPageState extends State<SettingsPage>
             await _saveScreenshotQualitySettings();
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '目标大小已设置为 ' + kb.toString() + ' KB');
+              UINotifier.success(ctx, AppLocalizations.of(ctx).targetSizeSavedSuccess(kb));
             }
           },
         ),
@@ -1925,7 +2058,7 @@ class _SettingsPageState extends State<SettingsPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '截图过期清理',
+                          AppLocalizations.of(context).screenshotExpireTitle,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(fontWeight: FontWeight.w500),
                         ),
@@ -1937,7 +2070,7 @@ class _SettingsPageState extends State<SettingsPage>
                             child: Row(
                               children: [
                                 Text(
-                                  '当前过期天数:',
+                                  AppLocalizations.of(context).currentTimeLabel,
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: Theme.of(
@@ -1951,7 +2084,7 @@ class _SettingsPageState extends State<SettingsPage>
                                       ? _showExpireDaysDialog
                                       : null,
                                   child: Text(
-                                    '${_expireDays}天',
+                                    AppLocalizations.of(context).expireDaysUnit(_expireDays),
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: _expireEnabled
@@ -1970,7 +2103,7 @@ class _SettingsPageState extends State<SettingsPage>
                                 const SizedBox(width: AppTheme.spacing1),
                                 Flexible(
                                   child: Text(
-                                    '（点击数字可修改）',
+                                    AppLocalizations.of(context).clickToModifyHint,
                                     softWrap: false,
                                     overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context).textTheme.bodySmall
@@ -2023,7 +2156,7 @@ class _SettingsPageState extends State<SettingsPage>
       );
       showUIDialog<void>(
         context: context,
-        title: '设置截图过期天数',
+        title: AppLocalizations.of(context).setExpireDaysDialogTitle,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2038,8 +2171,8 @@ class _SettingsPageState extends State<SettingsPage>
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
-                  labelText: '过期天数',
-                  hintText: '请输入 >= 1 的整数',
+                  labelText: AppLocalizations.of(context).expireDaysLabel,
+                  hintText: AppLocalizations.of(context).expireDaysInputHint,
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.all(AppTheme.spacing3),
                   floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -2064,24 +2197,24 @@ class _SettingsPageState extends State<SettingsPage>
                 color: AppTheme.info.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
-              child: const Text(
-                '下限为 1 天；开启后，应用会在启动和每次截图后按周期自动清理过期文件（12小时节流保护）。',
+              child: Text(
+                AppLocalizations.of(context).expireDaysHint,
                 style: TextStyle(fontSize: 12, color: AppTheme.info),
               ),
             ),
           ],
         ),
         actions: [
-          const UIDialogAction(text: '取消'),
+          UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
           UIDialogAction(
-            text: '确定',
+            text: AppLocalizations.of(context).dialogOk,
             style: UIDialogActionStyle.primary,
             closeOnPress: false,
             onPressed: (ctx) async {
               final input = controller.text.trim();
               final d = int.tryParse(input);
               if (d == null || d < 1) {
-                UINotifier.error(ctx, '请输入 >= 1 的有效整数');
+                UINotifier.error(ctx, AppLocalizations.of(ctx).expireDaysInvalidError);
                 return;
               }
               setState(() {
@@ -2091,7 +2224,7 @@ class _SettingsPageState extends State<SettingsPage>
               await _saveScreenshotExpireSettings();
               if (ctx.mounted) {
                 Navigator.of(ctx).pop();
-                UINotifier.success(ctx, '已设置为 ' + d.toString() + ' 天');
+                UINotifier.success(ctx, AppLocalizations.of(ctx).expireDaysSavedSuccess(d));
               }
               // ignore: unawaited_futures
               ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
@@ -2146,7 +2279,7 @@ class _SettingsPageState extends State<SettingsPage>
           _expireDays < 1 ? 1 : _expireDays,
         );
         if (mounted) {
-          UINotifier.success(context, '过期清理设置已保存');
+          UINotifier.success(context, AppLocalizations.of(context).expireCleanupSaved);
         }
       } catch (e) {
         if (mounted) {
@@ -2172,7 +2305,7 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() {
           _privacyMode = enabled;
         });
-        UINotifier.success(context, enabled ? '已开启隐私模式' : '已关闭隐私模式');
+        UINotifier.success(context, enabled ? AppLocalizations.of(context).privacyModeEnabledToast : AppLocalizations.of(context).privacyModeDisabledToast);
       }
     }
 
@@ -2192,11 +2325,11 @@ class _SettingsPageState extends State<SettingsPage>
         );
         // 不再保存灰度
         if (mounted) {
-          UINotifier.success(context, '截图质量设置已保存');
+          UINotifier.success(context, AppLocalizations.of(context).screenshotQualitySettingsSaved);
         }
       } catch (e) {
         if (mounted) {
-          UINotifier.error(context, '保存失败: ' + e.toString());
+          UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
         }
       }
     }
@@ -2204,23 +2337,23 @@ class _SettingsPageState extends State<SettingsPage>
     String _sortModeLabel(String mode) {
       switch (mode) {
         case 'timeAsc':
-          return '时间（旧→新）';
+          return AppLocalizations.of(context).sortTimeOldToNew;
         case 'timeDesc':
-          return '时间（新→旧）';
+          return AppLocalizations.of(context).sortTimeNewToOld;
         case 'sizeAsc':
-          return '大小（小→大）';
+          return AppLocalizations.of(context).sortSizeSmallToLarge;
         case 'sizeDesc':
-          return '大小（大→小）';
+          return AppLocalizations.of(context).sortSizeLargeToSmall;
         case 'countAsc':
-          return '数量（少→多）';
+          return AppLocalizations.of(context).sortCountFewToMany;
         case 'countDesc':
-          return '数量（多→少）';
+          return AppLocalizations.of(context).sortCountManyToFew;
         case 'lastScreenshot':
-          return '时间（新→旧）';
+          return AppLocalizations.of(context).sortTimeNewToOld;
         case 'screenshotCount':
-          return '数量（多→少）';
+          return AppLocalizations.of(context).sortCountManyToFew;
         default:
-          return '时间（新→旧）';
+          return AppLocalizations.of(context).sortTimeNewToOld;
       }
     }
 
@@ -2230,7 +2363,7 @@ class _SettingsPageState extends State<SettingsPage>
       setState(() {
         _sortMode = mode;
       });
-      UINotifier.success(context, '首页排序已设置为 ' + _sortModeLabel(mode));
+      UINotifier.success(context, AppLocalizations.of(context).currentSortingLabel(_sortModeLabel(mode)));
     }
   }
 
@@ -2238,24 +2371,24 @@ class _SettingsPageState extends State<SettingsPage>
     final selected = await showUIDialog<String>(
       context: context,
       barrierDismissible: true,
-      title: '选择首页排序',
+      title: AppLocalizations.of(context).selectHomeSortingTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [Text('当前：' + _sortModeLabel(_sortMode))],
+        children: [Text(AppLocalizations.of(context).currentSortingLabel(_sortModeLabel(_sortMode)))],
       ),
-      actions: const [
+      actions: [
         UIDialogAction<String>(
-          text: '时间（新→旧）',
+          text: AppLocalizations.of(context).sortTimeNewToOld,
           result: 'timeDesc',
           style: UIDialogActionStyle.primary,
         ),
-        UIDialogAction<String>(text: '时间（旧→新）', result: 'timeAsc'),
-        UIDialogAction<String>(text: '大小（大→小）', result: 'sizeDesc'),
-        UIDialogAction<String>(text: '大小（小→大）', result: 'sizeAsc'),
-        UIDialogAction<String>(text: '数量（多→少）', result: 'countDesc'),
-        UIDialogAction<String>(text: '数量（少→多）', result: 'countAsc'),
-        UIDialogAction<String>(text: '取消', result: 'cancel'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).sortTimeOldToNew, result: 'timeAsc'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).sortSizeLargeToSmall, result: 'sizeDesc'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).sortSizeSmallToLarge, result: 'sizeAsc'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).sortCountManyToFew, result: 'countDesc'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).sortCountFewToMany, result: 'countAsc'),
+        UIDialogAction<String>(text: AppLocalizations.of(context).dialogCancel, result: 'cancel'),
       ],
     );
     if (!mounted) return;
@@ -2329,15 +2462,15 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
           UINotifier.success(
             context,
             newEnabled
-                ? '已设置每日提醒时间为 ${_two(newHour)}:${_two(newMinute)}'
-                : '已关闭每日提醒',
+                ? AppLocalizations.of(context).reminderScheduleSuccess(_two(newHour), _two(newMinute))
+                : AppLocalizations.of(context).reminderDisabledSuccess,
           );
         } else {
-          UINotifier.warning(context, '调度每日提醒失败（可能平台不支持）');
+          UINotifier.warning(context, AppLocalizations.of(context).reminderScheduleFailed);
         }
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, '保存提醒设置失败: $e');
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveReminderSettingsFailed(e.toString()));
     }
   }
 
@@ -2350,7 +2483,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
 
     await showUIDialog<void>(
       context: context,
-      title: '设置提醒时间（24小时制）',
+      title: AppLocalizations.of(context).setReminderTimeTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2367,8 +2500,8 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                     controller: hourController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: '小时(0-23)',
+                    decoration: InputDecoration(
+                      labelText: AppLocalizations.of(context).hourLabel,
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.all(AppTheme.spacing3),
                       floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -2387,8 +2520,8 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                     controller: minuteController,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: '分钟(0-59)',
+                    decoration: InputDecoration(
+                      labelText: AppLocalizations.of(context).minuteLabel,
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.all(AppTheme.spacing3),
                       floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -2405,34 +2538,34 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               color: AppTheme.info.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: const Text(
-              '提示：点击数字直接输入；范围为 0-23 时与 0-59 分。',
+            child: Text(
+              AppLocalizations.of(context).timeInputHint,
               style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
       ),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final h = int.tryParse(hourController.text.trim());
             final m = int.tryParse(minuteController.text.trim());
             if (h == null || h < 0 || h > 23) {
-              UINotifier.error(ctx, '请输入 0-23 的有效小时');
+              UINotifier.error(ctx, AppLocalizations.of(ctx).invalidHourError);
               return;
             }
             if (m == null || m < 0 || m > 59) {
-              UINotifier.error(ctx, '请输入 0-59 的有效分钟');
+              UINotifier.error(ctx, AppLocalizations.of(ctx).invalidMinuteError);
               return;
             }
             await _saveDailyNotifySettings(hour: h, minute: m);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '已设置为 ${_two(h)}:${_two(m)}');
+              UINotifier.success(ctx, AppLocalizations.of(ctx).timeSetSuccess(_two(h), _two(m)));
             }
           },
         ),
@@ -2471,7 +2604,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('每日总结提醒时间',
+                Text(AppLocalizations.of(context).dailyReminderTimeTitle,
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
@@ -2484,7 +2617,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                     child: Row(
                       children: [
                         Text(
-                          '当前：',
+                          AppLocalizations.of(context).currentTimeLabel,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
@@ -2506,7 +2639,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                         const SizedBox(width: AppTheme.spacing1),
                         Flexible(
                           child: Text(
-                            '（点击数字可修改）',
+                            AppLocalizations.of(context).clickToModifyHint,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -2560,14 +2693,14 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('测试通知',
+                Text(AppLocalizations.of(context).testNotificationTitle,
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
                         ?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
                 Text(
-                  '立即触发“今日总结”通知',
+                  AppLocalizations.of(context).testNotificationDesc,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -2587,9 +2720,9 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               final ok = await DailySummaryService.instance.triggerNotificationNow(key);
               if (!mounted) return;
               if (ok) {
-                UINotifier.success(context, '已触发通知');
+                UINotifier.success(context, AppLocalizations.of(context).dailyNotifyTriggered);
               } else {
-                UINotifier.warning(context, '触发通知失败或内容为空');
+                UINotifier.warning(context, AppLocalizations.of(context).dailyNotifyTriggerFailed);
               }
             },
             style: TextButton.styleFrom(
@@ -2600,7 +2733,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('触发'),
+            child: Text(AppLocalizations.of(context).actionTrigger),
           ),
         ],
       ),
@@ -2666,10 +2799,10 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('开启横幅/悬浮通知', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(AppLocalizations.of(context).enableBannerNotificationTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 2),
                 Text(
-                  '允许在屏幕顶部弹出通知（横幅/悬浮）',
+                  AppLocalizations.of(context).enableBannerNotificationDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -2683,7 +2816,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
-            child: const Text('去开启'),
+            child: Text(AppLocalizations.of(context).actionOpen),
           ),
         ],
       ),

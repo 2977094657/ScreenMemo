@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
@@ -143,7 +144,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: '搜索应用...',
+                  hintText: AppLocalizations.of(context).appSearchPlaceholder,
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
@@ -180,7 +181,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                     ),
                     child: Text(
-                      '已选择 ${_selectedApps.length} 个',
+                      AppLocalizations.of(context).selectedCount(_selectedApps.length),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: _selectedApps.isNotEmpty
                             ? Theme.of(context).colorScheme.onPrimary
@@ -192,7 +193,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                   const Spacer(),
                   // 刷新按钮：强制刷新应用列表
                   IconButton(
-                    tooltip: '刷新应用列表',
+                    tooltip: AppLocalizations.of(context).refreshAppsTooltip,
                     icon: const Icon(Icons.refresh, size: 18),
                     onPressed: () async {
                       setState(() { _isLoading = true; });
@@ -217,11 +218,11 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                   ),
                   TextButton(
                     onPressed: _selectAll,
-                    child: const Text('全选', style: TextStyle(fontSize: 14)),
+                    child: Text(AppLocalizations.of(context).selectAll, style: const TextStyle(fontSize: 14)),
                   ),
                   TextButton(
                     onPressed: _clearAll,
-                    child: const Text('清空', style: TextStyle(fontSize: 14)),
+                    child: Text(AppLocalizations.of(context).clearAll, style: const TextStyle(fontSize: 14)),
                   ),
                 ],
               ),
@@ -245,7 +246,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                           Text(
-                            _searchQuery.isEmpty ? '没有找到应用' : '没有匹配的应用',
+                            _searchQuery.isEmpty ? AppLocalizations.of(context).noAppsFound : AppLocalizations.of(context).noAppsMatched,
                             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: AppTheme.mutedForeground,
                             ),

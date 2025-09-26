@@ -6,6 +6,7 @@ import '../widgets/ui_components.dart';
 import '../services/ai_settings_service.dart';
 import '../services/ai_chat_service.dart';
 import '../widgets/ui_dialog.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 /// AI 设置与测试页面：配置 OpenAI 兼容接口并进行多轮聊天测试
 class AISettingsPage extends StatefulWidget {
@@ -180,7 +181,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
         // 更新当前分组
         final g = await _settings.getSiteGroupById(gid);
         if (g == null) {
-          UINotifier.error(context, '分组不存在');
+          UINotifier.error(context, AppLocalizations.of(context).groupNotFound);
         } else {
           final updated = g.copyWith(
             baseUrl: base.isEmpty ? g.baseUrl : base,
@@ -188,19 +189,19 @@ class _AISettingsPageState extends State<AISettingsPage> {
             model: model.isEmpty ? g.model : model,
           );
           await _settings.updateSiteGroup(updated);
-          UINotifier.success(context, '已保存当前分组');
+          UINotifier.success(context, AppLocalizations.of(context).savedCurrentGroupToast);
         }
       } else {
         // 未分组：保存到键值
         await _settings.setBaseUrl(base);
         await _settings.setApiKey(key.isEmpty ? null : key);
         await _settings.setModel(model);
-        UINotifier.success(context, '已保存');
+        UINotifier.success(context, AppLocalizations.of(context).saveSuccess);
       }
       await _loadAll();
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, '保存失败: ' + e.toString());
+      UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
     } finally {
       if (mounted) setState(() { _saving = false; });
     }
@@ -231,22 +232,22 @@ class _AISettingsPageState extends State<AISettingsPage> {
               if (!editing)
                 TextButton(
                   onPressed: onEditToggle,
-                  child: const Text('编辑'),
+                  child: Text(AppLocalizations.of(context).actionEdit),
                 )
               else ...[
                 TextButton(
                   onPressed: saving ? null : onSave,
-                  child: Text(saving ? '保存中' : '保存'),
+                  child: Text(saving ? AppLocalizations.of(context).savingLabel : AppLocalizations.of(context).actionSave),
                 ),
                 const SizedBox(width: AppTheme.spacing1),
                 TextButton(
                   onPressed: saving ? null : onReset,
-                  child: const Text('重置默认'),
+                  child: Text(AppLocalizations.of(context).resetToDefault),
                 ),
                 const SizedBox(width: AppTheme.spacing1),
                 TextButton(
                   onPressed: saving ? null : onEditToggle,
-                  child: const Text('取消'),
+                  child: Text(AppLocalizations.of(context).dialogCancel),
                 ),
               ],
             ],
@@ -314,7 +315,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('提示词管理', style: titleStyle),
+                      Text(AppLocalizations.of(context).promptManagerTitle, style: titleStyle),
                       const SizedBox(height: 2),
                       Text(
                         _buildPromptSummary(),
@@ -329,12 +330,12 @@ class _AISettingsPageState extends State<AISettingsPage> {
           ),
           if (_promptExpanded) ...[
             const SizedBox(height: AppTheme.spacing2),
-            Text('为“普通事件总结”和“合并事件总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。', style: hintStyle),
+            Text(AppLocalizations.of(context).promptManagerHint, style: hintStyle),
             const SizedBox(height: AppTheme.spacing3),
 
             // 普通事件提示词
             buildSection(
-              label: '普通事件提示词',
+              label: AppLocalizations.of(context).normalEventPromptLabel,
               currentMarkdown: segMarkdown,
               editing: _editingPromptSegment,
               controller: _promptSegmentController,
@@ -346,7 +347,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
 
             // 合并事件提示词
             buildSection(
-              label: '合并事件提示词',
+              label: AppLocalizations.of(context).mergeEventPromptLabel,
               currentMarkdown: mergeMarkdown,
               editing: _editingPromptMerge,
               controller: _promptMergeController,
@@ -370,10 +371,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _loadAll();
       if (mounted) {
         setState(() => _editingPromptSegment = false);
-        UINotifier.success(context, '已保存普通事件提示词');
+        UINotifier.success(context, AppLocalizations.of(context).savedNormalPromptToast);
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, '保存失败: $e');
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingPromptSegment = false);
     }
@@ -387,10 +388,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _loadAll();
       if (mounted) {
         setState(() => _editingPromptSegment = false);
-        UINotifier.success(context, '已重置为默认提示词');
+        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, '重置失败: $e');
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingPromptSegment = false);
     }
@@ -405,10 +406,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _loadAll();
       if (mounted) {
         setState(() => _editingPromptMerge = false);
-        UINotifier.success(context, '已保存合并事件提示词');
+        UINotifier.success(context, AppLocalizations.of(context).savedMergePromptToast);
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, '保存失败: $e');
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingPromptMerge = false);
     }
@@ -422,10 +423,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _loadAll();
       if (mounted) {
         setState(() => _editingPromptMerge = false);
-        UINotifier.success(context, '已重置为默认提示词');
+        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, '重置失败: $e');
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingPromptMerge = false);
     }
@@ -436,10 +437,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _chat.clearConversation();
       if (!mounted) return;
       setState(() { _messages = <AIMessage>[]; });
-      UINotifier.success(context, '已清空');
+      UINotifier.success(context, AppLocalizations.of(context).clearSuccess);
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, '清空失败: ' + e.toString());
+      UINotifier.error(context, AppLocalizations.of(context).clearFailedWithError(e.toString()));
     }
   }
 
@@ -447,7 +448,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
     if (_sending) return;
     final text = _inputController.text.trim();
     if (text.isEmpty) {
-      UINotifier.error(context, '消息不能为空');
+      UINotifier.error(context, AppLocalizations.of(context).messageCannotBeEmpty);
       return;
     }
     setState(() { _sending = true; });
@@ -499,7 +500,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
             ..add(AIMessage(role: 'error', content: e.toString()));
         }
       });
-      UINotifier.error(context, '发送失败: ' + e.toString());
+      UINotifier.error(context, AppLocalizations.of(context).sendFailedWithError(e.toString()));
     } finally {
       if (mounted) setState(() { _sending = false; });
     }
@@ -509,7 +510,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI 设置与测试'),
+        title: Text(AppLocalizations.of(context).aiSettingsTitle),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
       ),
@@ -540,7 +541,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '连接设置',
+                                        AppLocalizations.of(context).connectionSettingsTitle,
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleSmall
@@ -569,27 +570,27 @@ class _AISettingsPageState extends State<AISettingsPage> {
                             const SizedBox(height: AppTheme.spacing2),
                             _buildTextField(
                               controller: _baseUrlController,
-                              label: '接口地址',
-                              hint: '例如：https://api.openai.com',
+                              label: AppLocalizations.of(context).baseUrlLabel,
+                              hint: AppLocalizations.of(context).baseUrlHint,
                             ),
                             const SizedBox(height: AppTheme.spacing2),
                             _buildTextField(
                               controller: _apiKeyController,
-                              label: 'API 密钥',
-                              hint: '例如：sk-... 或其他服务商 Token',
+                              label: AppLocalizations.of(context).apiKeyLabel,
+                              hint: AppLocalizations.of(context).apiKeyHint,
                               obscure: true,
                             ),
                             const SizedBox(height: AppTheme.spacing2),
                             _buildTextField(
                               controller: _modelController,
-                              label: '模型',
-                              hint: '例如：gpt-4o-mini / gpt-4o / 兼容模型',
+                              label: AppLocalizations.of(context).modelLabel,
+                              hint: AppLocalizations.of(context).modelHint,
                             ),
                             const SizedBox(height: AppTheme.spacing2),
                             Row(
                               children: [
                                 UIButton(
-                                  text: '保存',
+                                  text: AppLocalizations.of(context).actionSave,
                                   variant: UIButtonVariant.primary,
                                   size: UIButtonSize.small,
                                   onPressed: _saving ? null : _saveSettings,
@@ -597,7 +598,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                 ),
                                 const SizedBox(width: AppTheme.spacing2),
                                 UIButton(
-                                  text: '清空会话',
+                                  text: AppLocalizations.of(context).clearConversation,
                                   variant: UIButtonVariant.outline,
                                   size: UIButtonSize.small,
                                   onPressed: _clearHistory,
@@ -605,7 +606,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                 const SizedBox(width: AppTheme.spacing2),
                                 if (_activeGroupId != null)
                                   UIButton(
-                                    text: '删除分组',
+                                    text: AppLocalizations.of(context).deleteGroup,
                                     variant: UIButtonVariant.outline,
                                     size: UIButtonSize.small,
                                     onPressed: _deleteActiveGroup,
@@ -621,7 +622,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '流式请求',
+                                        AppLocalizations.of(context).streamingRequestTitle,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodySmall
@@ -629,7 +630,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '开启后将使用流式响应（默认开启）',
+                                        AppLocalizations.of(context).streamingRequestHint,
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodySmall
@@ -649,7 +650,11 @@ class _AISettingsPageState extends State<AISettingsPage> {
                                       setState(() { _streamEnabled = v; });
                                       await _settings.setStreamEnabled(v);
                                       if (mounted) {
-                                        UINotifier.success(context, v ? '流式已开启' : '流式已关闭');
+                                        UINotifier.success(
+                                          context,
+                                          v ? AppLocalizations.of(context).streamingEnabledToast
+                                            : AppLocalizations.of(context).streamingDisabledToast,
+                                        );
                                       }
                                     },
                                   ),
@@ -678,7 +683,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                     ),
                     child: Row(
                       children: [
-                        Text('对话测试',
+                        Text(AppLocalizations.of(context).chatTestTitle,
                             style: Theme.of(context)
                                 .textTheme
                                 .titleSmall
@@ -719,7 +724,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
                               constraints: const BoxConstraints.tightFor(width: 92),
                               child: SizedBox.expand(
                                 child: UIButton(
-                                  text: _sending ? '发送中' : '发送',
+                                  text: _sending ? AppLocalizations.of(context).sendingLabel : AppLocalizations.of(context).actionSend,
                                   variant: UIButtonVariant.primary,
                                   size: UIButtonSize.small,
                                   onPressed: _sending ? null : _sendMessage,
@@ -794,10 +799,10 @@ class _AISettingsPageState extends State<AISettingsPage> {
     final gid = _activeGroupId;
     String groupName;
     if (gid == null) {
-      groupName = '未分组';
+      groupName = AppLocalizations.of(context).ungroupedSingleConfig;
     } else {
       final g = _groups.where((e) => e.id == gid).toList();
-      groupName = g.isNotEmpty ? g.first.name : '分组$gid';
+      groupName = g.isNotEmpty ? g.first.name : AppLocalizations.of(context).siteGroupDefaultName(gid);
     }
     final base = _baseUrlController.text.trim().isEmpty
         ? 'https://api.openai.com'
@@ -813,21 +818,31 @@ class _AISettingsPageState extends State<AISettingsPage> {
 
   /// 折叠头部摘要：提示词管理当前状态
   String _buildPromptSummary() {
-    final seg = (_promptSegment == null || _promptSegment!.trim().isEmpty) ? '默认' : '已自定义';
-    final mer = (_promptMerge == null || _promptMerge!.trim().isEmpty) ? '默认' : '已自定义';
-    return '普通：$seg · 合并：$mer';
+    final l10n = AppLocalizations.of(context);
+    final seg = (_promptSegment == null || _promptSegment!.trim().isEmpty)
+        ? l10n.defaultLabel
+        : l10n.customLabel;
+    final mer = (_promptMerge == null || _promptMerge!.trim().isEmpty)
+        ? l10n.defaultLabel
+        : l10n.customLabel;
+    return '${l10n.normalShortLabel} $seg · ${l10n.mergeShortLabel} $mer';
   }
 
   Future<void> _onGroupChanged(int? newId) async {
     await _settings.setActiveGroupId(newId);
     await _loadAll();
     if (!mounted) return;
-    UINotifier.success(context, newId == null ? '已切换到未分组' : '已切换分组');
+    UINotifier.success(
+      context,
+      newId == null
+          ? AppLocalizations.of(context).groupSwitchedToUngrouped
+          : AppLocalizations.of(context).groupSwitched,
+    );
   }
 
   Future<void> _addGroup() async {
     try {
-      final name = '站点组${_groups.length + 1}';
+      final name = AppLocalizations.of(context).siteGroupDefaultName(_groups.length + 1);
       final base = _baseUrlController.text.trim().isEmpty ? 'https://api.openai.com' : _baseUrlController.text.trim();
       final key = _apiKeyController.text.trim();
       final model = _modelController.text.trim().isEmpty ? 'gpt-4o-mini' : _modelController.text.trim();
@@ -840,29 +855,29 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _settings.setActiveGroupId(id);
       await _loadAll();
       if (!mounted) return;
-      UINotifier.success(context, '已新增分组');
+      UINotifier.success(context, AppLocalizations.of(context).groupAddedToast);
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, '新增分组失败: ' + e.toString());
+      UINotifier.error(context, AppLocalizations.of(context).addGroupFailedWithError(e.toString()));
     }
   }
 
   Future<void> _renameActiveGroup() async {
     final gid = _activeGroupId;
     if (gid == null) {
-      if (mounted) UINotifier.info(context, '未选择分组');
+      if (mounted) UINotifier.info(context, AppLocalizations.of(context).groupNotSelected);
       return;
     }
     try {
       final g = await _settings.getSiteGroupById(gid);
       if (g == null) {
-        if (mounted) UINotifier.error(context, '分组不存在');
+        if (mounted) UINotifier.error(context, AppLocalizations.of(context).groupNotFound);
         return;
       }
       final controller = TextEditingController(text: g.name);
       await showUIDialog<void>(
         context: context,
-        title: '重命名分组',
+        title: AppLocalizations.of(context).renameGroupTitle,
         content: Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
@@ -871,12 +886,12 @@ class _AISettingsPageState extends State<AISettingsPage> {
           child: TextField(
             controller: controller,
             style: Theme.of(context).textTheme.bodySmall,
-            decoration: const InputDecoration(
-              labelText: '分组名称',
-              hintText: '请输入新的分组名称',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context).groupNameLabel,
+              hintText: AppLocalizations.of(context).groupNameHint,
               isDense: true,
               border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(
+              contentPadding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing2,
                 vertical: AppTheme.spacing2,
               ),
@@ -885,15 +900,17 @@ class _AISettingsPageState extends State<AISettingsPage> {
           ),
         ),
         actions: [
-          const UIDialogAction(text: '取消'),
           UIDialogAction(
-            text: '确定',
+            text: AppLocalizations.of(context).dialogCancel,
+          ),
+          UIDialogAction(
+            text: AppLocalizations.of(context).dialogOk,
             style: UIDialogActionStyle.primary,
             closeOnPress: false,
             onPressed: (ctx) async {
               final newName = controller.text.trim();
               if (newName.isEmpty) {
-                UINotifier.error(ctx, '名称不能为空');
+                UINotifier.error(ctx, AppLocalizations.of(ctx).nameCannotBeEmpty);
                 return;
               }
               try {
@@ -901,23 +918,23 @@ class _AISettingsPageState extends State<AISettingsPage> {
                 await _settings.updateSiteGroup(updated);
                 if (ctx.mounted) Navigator.of(ctx).pop();
                 await _loadAll();
-                if (mounted) UINotifier.success(context, '已重命名');
+                if (mounted) UINotifier.success(context, AppLocalizations.of(context).renameSuccess);
               } catch (e) {
-                if (ctx.mounted) UINotifier.error(ctx, '重命名失败: ' + e.toString());
+                if (ctx.mounted) UINotifier.error(ctx, AppLocalizations.of(ctx).renameFailedWithError(e.toString()));
               }
             },
           ),
         ],
       );
     } catch (e) {
-      if (mounted) UINotifier.error(context, '加载分组失败: ' + e.toString());
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).loadGroupFailedWithError(e.toString()));
     }
   }
 
   Future<void> _deleteActiveGroup() async {
     final gid = _activeGroupId;
     if (gid == null) {
-      UINotifier.info(context, '未选择分组');
+      UINotifier.info(context, AppLocalizations.of(context).groupNotSelected);
       return;
     }
     try {
@@ -925,18 +942,18 @@ class _AISettingsPageState extends State<AISettingsPage> {
       await _settings.setActiveGroupId(null);
       await _loadAll();
       if (!mounted) return;
-      UINotifier.success(context, '已删除分组');
+      UINotifier.success(context, AppLocalizations.of(context).groupDeletedToast);
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, '删除分组失败: ' + e.toString());
+      UINotifier.error(context, AppLocalizations.of(context).deleteGroupFailedWithError(e.toString()));
     }
   }
 
   Widget _buildGroupSelector() {
     final items = <DropdownMenuItem<int?>>[
-      const DropdownMenuItem<int?>(
+      DropdownMenuItem<int?>(
         value: null,
-        child: Text('未分组（单一配置）'),
+        child: Text(AppLocalizations.of(context).ungroupedSingleConfig),
       ),
       ..._groups.map((g) => DropdownMenuItem<int?>(
         value: g.id,
@@ -947,7 +964,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '站点分组',
+          AppLocalizations.of(context).siteGroupsTitle,
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -955,7 +972,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
         ),
         const SizedBox(height: 2),
         Text(
-          '可配置多个站点作为备用；发送失败时自动切换',
+          AppLocalizations.of(context).siteGroupsHint,
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -974,14 +991,14 @@ class _AISettingsPageState extends State<AISettingsPage> {
               ),
               const SizedBox(width: AppTheme.spacing2),
               UIButton(
-                text: '重命名',
+                text: AppLocalizations.of(context).rename,
                 variant: UIButtonVariant.outline,
                 size: UIButtonSize.small,
                 onPressed: (_activeGroupId == null) ? null : _renameActiveGroup,
               ),
               const SizedBox(width: AppTheme.spacing2),
               UIButton(
-                text: '新增分组',
+                text: AppLocalizations.of(context).addGroup,
                 variant: UIButtonVariant.outline,
                 size: UIButtonSize.small,
                 onPressed: _addGroup,
@@ -997,7 +1014,7 @@ class _AISettingsPageState extends State<AISettingsPage> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text(
-              '显示分组选择',
+              AppLocalizations.of(context).showGroupSelector,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -1023,8 +1040,8 @@ class _AISettingsPageState extends State<AISettingsPage> {
           setState(() { _connExpanded = false; });
         },
         style: Theme.of(context).textTheme.bodySmall,
-        decoration: const InputDecoration(
-          hintText: '请输入消息',
+        decoration: InputDecoration(
+          hintText: AppLocalizations.of(context).inputMessageHint,
           isDense: true,
           border: InputBorder.none,
           enabledBorder: InputBorder.none,

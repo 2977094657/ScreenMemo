@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import '../theme/app_theme.dart';
@@ -68,12 +69,12 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     if (url == null || url.isEmpty) return;
     await showUIDialog<void>(
       context: context,
-      title: '链接',
+      title: AppLocalizations.of(context).linkTitle,
       content: SelectableText(url, textAlign: TextAlign.center),
       barrierDismissible: true,
       actions: [
         UIDialogAction<void>(
-          text: '复制',
+          text: AppLocalizations.of(context).actionCopy,
           style: UIDialogActionStyle.primary,
           closeOnPress: true,
           onPressed: (ctx) async {
@@ -105,8 +106,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             await _openCurrentLink();
           },
         ),
-        const UIDialogAction<void>(
-          text: '取消',
+        UIDialogAction<void>(
+          text: AppLocalizations.of(context).dialogCancel,
           style: UIDialogActionStyle.normal,
           closeOnPress: true,
         ),
@@ -157,11 +158,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     
     final confirmed = await showUIDialog<bool>(
       context: context,
-      title: '确认删除',
-      message: '确定要删除这张截图吗？此操作无法撤销。',
-      actions: const [
-        UIDialogAction<bool>(text: '取消', result: false),
-        UIDialogAction<bool>(text: '删除', style: UIDialogActionStyle.destructive, result: true),
+      title: AppLocalizations.of(context).confirmDeleteTitle,
+      message: AppLocalizations.of(context).confirmDeleteMessage,
+      actions: [
+        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
+        UIDialogAction<bool>(text: AppLocalizations.of(context).actionDelete, style: UIDialogActionStyle.destructive, result: true),
       ],
       barrierDismissible: false,
     );
@@ -192,7 +193,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           });
           
           if (mounted) {
-            UINotifier.success(context, '截图已删除');
+            UINotifier.success(context, AppLocalizations.of(context).screenshotDeletedToast);
           }
         } else {
           // ignore: unawaited_futures
@@ -200,7 +201,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           // ignore: unawaited_futures
           FlutterLogger.nativeWarn('UI', 'viewer delete failed id=${screenshot.id}');
           if (mounted) {
-            UINotifier.error(context, '删除失败');
+            UINotifier.error(context, AppLocalizations.of(context).deleteFailed);
           }
         }
       } catch (e) {
@@ -209,7 +210,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         // ignore: unawaited_futures
         FlutterLogger.nativeError('UI', 'viewer delete exception: $e');
         if (mounted) {
-          UINotifier.error(context, '删除失败: $e');
+          UINotifier.error(context, AppLocalizations.of(context).deleteFailedWithError(e.toString()));
         }
       }
     }
@@ -221,21 +222,21 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
 
     showUIDialog<void>(
       context: context,
-      title: '截图信息',
+      title: AppLocalizations.of(context).imageInfoTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow('应用名称', screenshot.appName),
-          _buildInfoRow('截图时间', _formatDateTime(screenshot.captureTime)),
-          _buildInfoRow('文件路径', screenshot.filePath),
+          _buildInfoRow(AppLocalizations.of(context).labelAppName, screenshot.appName),
+          _buildInfoRow(AppLocalizations.of(context).labelCaptureTime, _formatDateTime(screenshot.captureTime)),
+          _buildInfoRow(AppLocalizations.of(context).labelFilePath, screenshot.filePath),
           if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
-            _buildInfoRow('页面链接', screenshot.pageUrl!),
+            _buildInfoRow(AppLocalizations.of(context).labelPageLink, screenshot.pageUrl!),
           if (screenshot.fileSize > 0)
-            _buildInfoRow('文件大小', _formatFileSize(screenshot.fileSize)),
+            _buildInfoRow(AppLocalizations.of(context).labelFileSize, _formatFileSize(screenshot.fileSize)),
         ],
       ),
-      actions: const [UIDialogAction(text: '确定')],
+      actions: [UIDialogAction(text: AppLocalizations.of(context).dialogOk)],
     );
   }
 
@@ -325,7 +326,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                 IconButton(
                   icon: const Icon(Icons.info_outline),
                   onPressed: _showImageInfo,
-                  tooltip: '图片信息',
+                  tooltip: AppLocalizations.of(context).imageInfoTooltip,
                 ),
                 if (_screenshots.isNotEmpty &&
                     _screenshots[_currentIndex].pageUrl != null &&
@@ -333,12 +334,12 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   IconButton(
                     icon: const Icon(Icons.link),
                     onPressed: _showLinkDialog,
-                    tooltip: '链接',
+                    tooltip: AppLocalizations.of(context).linkTitle,
                   ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _deleteCurrentImage,
-                  tooltip: '删除图片',
+                  tooltip: AppLocalizations.of(context).deleteImageTooltip,
                 ),
               ],
             )
@@ -359,19 +360,19 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               minScale: PhotoViewComputedScale.contained, // 最小缩放为原图比例，不能再缩小
               maxScale: PhotoViewComputedScale.covered * 4.0,
               errorBuilder: (context, error, stackTrace) {
-                return const Center(
+                return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.broken_image,
                         color: Colors.white54,
                         size: 64,
                       ),
-                      SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       Text(
-                        '图片加载失败',
-                        style: TextStyle(color: Colors.white54),
+                        AppLocalizations.of(context).imageLoadFailed,
+                        style: const TextStyle(color: Colors.white54),
                       ),
                     ],
                   ),
@@ -409,9 +410,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                       color: Colors.black.withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
-                      '内容警告：成人内容 · 轻触继续',
-                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    child: Text(
+                      '${AppLocalizations.of(context).nsfwWarningTitle} · ${AppLocalizations.of(context).tapToContinue}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),

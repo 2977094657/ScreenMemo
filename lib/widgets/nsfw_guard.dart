@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'dart:ui' as ui;
 import '../theme/app_theme.dart';
 
@@ -83,14 +84,14 @@ class NsfwBlurGuard extends StatelessWidget {
               children: [
                 const Icon(Icons.visibility_off_rounded, color: Colors.white70, size: 28),
                 const SizedBox(height: 8),
-                const Text(
-                  '内容警告：成人内容',
+                Text(
+                  AppLocalizations.of(context).nsfwWarningTitle,
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  '该内容已被标记为成人内容',
+                Text(
+                  AppLocalizations.of(context).nsfwWarningSubtitle,
                   style: TextStyle(color: Colors.white70, fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
@@ -111,7 +112,7 @@ class NsfwBlurGuard extends StatelessWidget {
                         elevation: 0,
                         textStyle: const TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      child: const Text('显示'),
+                      child: Text(AppLocalizations.of(context).show),
                     ),
                   ),
                 ],
@@ -165,14 +166,14 @@ class NsfwBackdropOverlay extends StatelessWidget {
                 children: [
                   const Icon(Icons.visibility_off_rounded, color: Colors.white70, size: 28),
                   const SizedBox(height: 8),
-                  const Text(
-                    '内容警告：成人内容',
+                  Text(
+                    AppLocalizations.of(context).nsfwWarningTitle,
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    '该内容已被标记为成人内容',
+                  Text(
+                    AppLocalizations.of(context).nsfwWarningSubtitle,
                     style: TextStyle(color: Colors.white70, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
@@ -193,7 +194,7 @@ class NsfwBackdropOverlay extends StatelessWidget {
                           elevation: 0,
                           textStyle: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                        child: const Text('显示'),
+                        child: Text(AppLocalizations.of(context).show),
                       ),
                     ),
                   ],

@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:ui' show Canvas, Size, Offset, Rect;
@@ -475,7 +476,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       if (!mounted) return;
       setState(() {
         _isLoadingMore = false;
-        _error = '加载更多失败: $e';
+        _error = AppLocalizations.of(context).loadMoreFailedWithError(e.toString());
       });
     }
   }
@@ -506,7 +507,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _prepareDayTabs(days: 14);
     } else {
       setState(() {
-        _error = '参数错误';
+        _error = AppLocalizations.of(context).invalidArguments;
         _isLoading = false;
       });
     }
@@ -529,7 +530,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       await _loadScreenshots();
     } catch (e) {
       setState(() {
-        _error = '初始化失败: $e';
+        _error = AppLocalizations.of(context).initFailedWithError(e.toString());
       });
     }
   }
@@ -702,12 +703,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _deleteScreenshot(ScreenshotRecord screenshot) async {
     final confirmed = await showUIDialog<bool>(
       context: context,
-      title: '确认删除',
-      message: '确定要删除这张截图吗？此操作无法撤销。',
-      actions: const [
-        UIDialogAction<bool>(text: '取消', result: false),
+      title: AppLocalizations.of(context).confirmDeleteTitle,
+      message: AppLocalizations.of(context).confirmDeleteMessage,
+      actions: [
+        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
         UIDialogAction<bool>(
-          text: '删除',
+          text: AppLocalizations.of(context).actionDelete,
           style: UIDialogActionStyle.destructive,
           result: true,
         ),
@@ -747,7 +748,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           await _invalidateScreenshotsCache();
 
           if (mounted) {
-            UINotifier.success(context, '截图已删除');
+            UINotifier.success(context, AppLocalizations.of(context).screenshotDeletedToast);
           }
         } else {
           // ignore: unawaited_futures
@@ -755,7 +756,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           // ignore: unawaited_futures
           FlutterLogger.nativeWarn('UI', 'deleteScreenshot failed id=${screenshot.id}');
           if (mounted) {
-            UINotifier.error(context, '删除失败');
+            UINotifier.error(context, AppLocalizations.of(context).deleteFailed);
           }
         }
       } catch (e) {
@@ -764,7 +765,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.nativeError('UI', 'deleteScreenshot exception: $e');
         if (mounted) {
-          UINotifier.error(context, '删除失败: $e');
+          UINotifier.error(context, AppLocalizations.of(context).deleteFailedWithError(e.toString()));
         }
       }
     }
@@ -782,7 +783,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             Expanded(
               child: _selectionMode
                   ? Text(
-                      '已选择 ${_selectedIds.length} 项',
+                      AppLocalizations.of(context).selectedItemsCount(_selectedIds.length),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -809,7 +810,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                         onSubmitted: _performSearch,
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
-                          hintText: '搜索截图...',
+                          hintText: AppLocalizations.of(context).searchPlaceholder,
                           hintStyle: TextStyle(
                             color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                             fontSize: 14,
@@ -843,7 +844,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                           suffixIcon: (_searchQuery.isNotEmpty || _searchController.text.isNotEmpty)
                               ? IconButton(
                                   icon: const Icon(Icons.close, size: 18),
-                                  tooltip: '清除',
+                                  tooltip: AppLocalizations.of(context).actionClear,
                                   onPressed: () {
                                     _searchController.clear();
                                     _performSearch('');
@@ -864,7 +865,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _loadScreenshots,
-              tooltip: '刷新',
+              tooltip: AppLocalizations.of(context).actionRefresh,
             ),
           ] else ...[
             TextButton(
@@ -875,7 +876,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   _isFullySelected = false; // 重置全选状态
                 });
               },
-              child: const Text('取消'),
+              child: Text(AppLocalizations.of(context).dialogCancel),
             ),
             TextButton(
               onPressed: () async {
@@ -916,7 +917,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              tooltip: '删除所选',
+              tooltip: AppLocalizations.of(context).deleteSelectedTooltip,
               onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
             ),
           ],
@@ -950,7 +951,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             ),
             const SizedBox(height: AppTheme.spacing4),
             UIButton(
-              text: '重试',
+              text: AppLocalizations.of(context).actionRetry,
               onPressed: _loadInitialData,
               variant: UIButtonVariant.outline,
             ),
@@ -972,28 +973,28 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done &&
               _screenshots.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.photo_library_outlined,
                     size: 64,
                     color: AppTheme.mutedForeground,
                   ),
-                  SizedBox(height: AppTheme.spacing4),
+                  const SizedBox(height: AppTheme.spacing4),
                   Text(
-                    '暂无截图',
-                    style: TextStyle(
+                    AppLocalizations.of(context).noScreenshotsTitle,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
                       color: AppTheme.mutedForeground,
                     ),
                   ),
-                  SizedBox(height: AppTheme.spacing2),
+                  const SizedBox(height: AppTheme.spacing2),
                   Text(
-                    '开启截图监控后，截图将显示在这里',
-                    style: TextStyle(color: AppTheme.mutedForeground),
+                    AppLocalizations.of(context).noScreenshotsSubtitle,
+                    style: const TextStyle(color: AppTheme.mutedForeground),
                   ),
                 ],
               ),
@@ -1011,7 +1012,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Widget _buildSearchResultGrid() {
     final data = _searchResults;
     if (data.isEmpty) {
-      return const Center(child: Text('无匹配结果'));
+      return Center(child: Text(AppLocalizations.of(context).noMatchingResults));
     }
     return Padding(
       padding: const EdgeInsets.all(AppTheme.spacing1),
@@ -1112,7 +1113,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                       insets: const EdgeInsets.symmetric(horizontal: 8.0),
                     ),
                     tabs: _dayTabs
-                        .map((t) => Tab(text: t.buildLabel()))
+                        .map((t) => Tab(text: (() {
+                              final l = AppLocalizations.of(context);
+                              if (_DayTabInfo._isToday(t.day)) return l.dayTabToday(t.count);
+                              if (_DayTabInfo._isYesterday(t.day)) return l.dayTabYesterday(t.count);
+                              return l.dayTabMonthDayCount(t.day.month, t.day.day, t.count);
+                            })()))
                         .toList(),
                   ),
                 ),
@@ -1194,7 +1200,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   /// 预览项：非交互，仅用于滑动时提前可见
   Widget _buildPreviewItem(ScreenshotRecord screenshot) {
     if (_baseDir == null) {
-      return _buildErrorItem("应用目录未初始化");
+      return _buildErrorItem(AppLocalizations.of(context).appDirUninitialized);
     }
     final file = path.isAbsolute(screenshot.filePath)
         ? File(screenshot.filePath)
@@ -1215,7 +1221,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             fit: BoxFit.cover,
             filterQuality: FilterQuality.low,
             gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => _buildErrorItem('图片丢失或损坏'),
+            errorBuilder: (context, error, stackTrace) => _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted),
           );
           if (!isDark) return imageWidget;
           return ColorFiltered(
@@ -1257,7 +1263,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
   Widget _buildScreenshotItem(ScreenshotRecord screenshot, int index) {
     if (_baseDir == null) {
-      return _buildErrorItem("应用目录未初始化");
+      return _buildErrorItem(AppLocalizations.of(context).appDirUninitialized);
     }
 
     // 统一使用绝对路径；兼容旧数据为相对路径时再与基础目录拼接
@@ -1318,7 +1324,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) {
                     print("图片加载失败: $error, path: ${file.path}");
-                    return _buildErrorItem('图片丢失或损坏');
+                    return _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted);
                   },
                 );
                 if (!isDark) return imageWidget;
@@ -1480,11 +1486,11 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _confirmRevealAndOpen(ScreenshotRecord screenshot, int index) async {
     final confirmed = await showUIDialog<bool>(
       context: context,
-      title: '内容警告',
-      message: '该截图来源的链接被识别为可能含有成人内容，是否继续查看？',
-      actions: const [
-        UIDialogAction<bool>(text: '取消', result: false),
-        UIDialogAction<bool>(text: '继续', style: UIDialogActionStyle.primary, result: true),
+      title: AppLocalizations.of(context).nsfwWarningTitle,
+      message: AppLocalizations.of(context).nsfwWarningSubtitle,
+      actions: [
+        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
+        UIDialogAction<bool>(text: AppLocalizations.of(context).actionContinue, style: UIDialogActionStyle.primary, result: true),
       ],
       barrierDismissible: true,
     );
@@ -1496,12 +1502,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _showLinkDialogFromGrid(String url) async {
     await showUIDialog<void>(
       context: context,
-      title: '链接',
+      title: AppLocalizations.of(context).linkTitle,
       content: SelectableText(url, textAlign: TextAlign.center),
       barrierDismissible: true,
       actions: [
         UIDialogAction<void>(
-          text: '复制',
+          text: AppLocalizations.of(context).actionCopy,
           style: UIDialogActionStyle.primary,
           closeOnPress: true,
           onPressed: (ctx) async {
@@ -1512,7 +1518,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               // ignore: unawaited_futures
               FlutterLogger.nativeInfo('UI', 'grid copy link success');
               if (mounted) {
-                UINotifier.success(context, 'Copied');
+                UINotifier.success(context, AppLocalizations.of(context).copySuccess);
               }
             } catch (e) {
               // ignore: unawaited_futures
@@ -1520,13 +1526,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               // ignore: unawaited_futures
               FlutterLogger.nativeError('UI', 'grid copy link failed: '+e.toString());
               if (mounted) {
-                UINotifier.error(context, 'Copy failed');
+                UINotifier.error(context, AppLocalizations.of(context).copyFailed);
               }
             }
           },
         ),
         UIDialogAction<void>(
-          text: '打开',
+          text: AppLocalizations.of(context).actionOpen,
           style: UIDialogActionStyle.normal,
           closeOnPress: true,
           onPressed: (ctx) async {
@@ -1538,8 +1544,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             } catch (_) {}
           },
         ),
-        const UIDialogAction<void>(
-          text: '取消',
+        UIDialogAction<void>(
+          text: AppLocalizations.of(context).dialogCancel,
           style: UIDialogActionStyle.normal,
           closeOnPress: true,
         ),
@@ -1847,25 +1853,26 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   // 时间线标签格式化（当天/本年/跨年）
   String _formatTimelineTime(DateTime dateTime) {
     final now = DateTime.now();
+    final t = AppLocalizations.of(context);
     final bool sameDay =
         now.year == dateTime.year &&
         now.month == dateTime.month &&
         now.day == dateTime.day;
     final bool sameYear = now.year == dateTime.year;
-    String hh = dateTime.hour.toString().padLeft(2, '0');
-    String mm = dateTime.minute.toString().padLeft(2, '0');
+    final String hh = dateTime.hour.toString().padLeft(2, '0');
+    final String mm = dateTime.minute.toString().padLeft(2, '0');
     if (sameDay) {
       return '$hh:$mm';
     } else if (sameYear) {
-      return '${dateTime.month}月${dateTime.day}日 $hh:$mm';
+      return t.monthDayTime(dateTime.month, dateTime.day, hh, mm);
     } else {
-      return '${dateTime.year}年${dateTime.month}月${dateTime.day}日 $hh:$mm';
+      return t.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
     }
   }
 
   /// 获取全选按钮文本
   String _getSelectAllButtonText() {
-    return _isFullySelected ? '取消全选' : '全选';
+    return _isFullySelected ? AppLocalizations.of(context).clearAll : AppLocalizations.of(context).selectAll;
   }
 
   void _toggleSelect(int index) {
@@ -1918,10 +1925,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     final isSelectAll = _selectedIds.length >= expectedTotal && expectedTotal > 0;
     final int totalCount = expectedTotal;
 
-    final String title = isSelectAll ? '确认删除所有截图' : '确认删除';
+    final String title = isSelectAll ? AppLocalizations.of(context).confirmDeleteAllTitle : AppLocalizations.of(context).confirmDeleteTitle;
     final String message = isSelectAll
-        ? '将删除当前范围内的所有 $expectedTotal 张截图及其文件夹，此操作不可恢复。'
-        : '将删除选中的 ${_selectedIds.length} 张截图，且不可恢复。是否继续？';
+        ? AppLocalizations.of(context).deleteAllMessage(expectedTotal)
+        : AppLocalizations.of(context).deleteSelectedMessage(_selectedIds.length);
 
     final confirmed = await showUIDialog<bool>(
       context: context,
@@ -1980,7 +1987,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         await _invalidateScreenshotsCache();
 
         if (mounted) {
-          UINotifier.success(context, '已删除所有 $totalCount 张截图');
+          UINotifier.success(context, AppLocalizations.of(context).deletedCountToast(totalCount));
         }
       } else {
         // ignore: unawaited_futures
@@ -1988,7 +1995,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.nativeWarn('UI', 'deleteAll failed');
         if (mounted) {
-          UINotifier.error(context, '删除失败，请重试');
+          UINotifier.error(context, AppLocalizations.of(context).deleteFailedRetry);
         }
       }
     } else {
@@ -2086,7 +2093,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           FlutterLogger.info('UI.仅保留-完成 保留=$keepCount 删除=${totalCount - keepCount}');
           // ignore: unawaited_futures
           FlutterLogger.nativeInfo('UI', 'fastDeleteKeepOnly finished');
-          UINotifier.success(context, '已保留 $keepCount 张，删除 ${totalCount - keepCount} 张');
+          UINotifier.success(context, AppLocalizations.of(context).keptAndDeletedSummary(keepCount, totalCount - keepCount));
         }
       }
     }

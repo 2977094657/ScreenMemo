@@ -9,6 +9,7 @@ import '../models/app_info.dart';
 import '../widgets/nsfw_guard.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 /// 全局时间线页面（骨架）
 /// 后续将加载按日期的全局截图时间线与应用图标
@@ -251,21 +252,21 @@ class _TimelinePageState extends State<TimelinePage>
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 40,
-        title: const Text('时间线'),
+        title: Text(AppLocalizations.of(context).timelineTitle),
         centerTitle: true,
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refresh,
-            tooltip: '刷新',
+            tooltip: AppLocalizations.of(context).actionRefresh,
           ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dayTabs.isEmpty
-              ? const Center(child: Text('No screenshots'))
+              ? Center(child: Text(AppLocalizations.of(context).noScreenshotsTitle))
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -300,7 +301,17 @@ class _TimelinePageState extends State<TimelinePage>
                                   ),
                                   insets: const EdgeInsets.symmetric(horizontal: 4.0),
                                 ),
-                                tabs: _dayTabs.map((t) => Tab(text: t.buildLabel())).toList(),
+                                tabs: _dayTabs
+                                    .map((t) {
+                                      final l10n = AppLocalizations.of(context);
+                                      final text = _DayTabInfo._isToday(t.day)
+                                          ? l10n.dayTabToday(t.count)
+                                          : (_DayTabInfo._isYesterday(t.day)
+                                              ? l10n.dayTabYesterday(t.count)
+                                              : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
+                                      return Tab(text: text);
+                                    })
+                                    .toList(),
                               ),
                             ),
                     ),
@@ -556,16 +567,17 @@ class _TimelinePageState extends State<TimelinePage>
 
   String _formatTimelineTime(DateTime dateTime) {
     final now = DateTime.now();
+    final t = AppLocalizations.of(context);
     final bool sameDay = now.year == dateTime.year && now.month == dateTime.month && now.day == dateTime.day;
     final bool sameYear = now.year == dateTime.year;
-    String hh = dateTime.hour.toString().padLeft(2, '0');
-    String mm = dateTime.minute.toString().padLeft(2, '0');
+    final String hh = dateTime.hour.toString().padLeft(2, '0');
+    final String mm = dateTime.minute.toString().padLeft(2, '0');
     if (sameDay) {
       return '$hh:$mm';
     } else if (sameYear) {
-      return '${dateTime.month}月${dateTime.day}日 $hh:$mm';
+      return t.monthDayTime(dateTime.month, dateTime.day, hh, mm);
     } else {
-      return '${dateTime.year}年${dateTime.month}月${dateTime.day}日 $hh:$mm';
+      return t.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
     }
   }
 
@@ -660,7 +672,7 @@ class _TimelinePageState extends State<TimelinePage>
       fit: BoxFit.cover,
       filterQuality: FilterQuality.low,
       gaplessPlayback: true,
-      errorBuilder: (context, error, stackTrace) => _buildErrorItem('图片丢失或损坏'),
+      errorBuilder: (context, error, stackTrace) => _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted),
     );
     final Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusSm),

@@ -7,6 +7,7 @@ import 'segment_status_page.dart';
 import 'timeline_page.dart';
 import '../theme/app_theme.dart';
 import '../services/app_lifecycle_service.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
@@ -73,7 +74,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     if (_lastBackPressedAt == null ||
         now.difference(_lastBackPressedAt!) > const Duration(seconds: 2)) {
       _lastBackPressedAt = now;
-      UINotifier.center(context, '再按一次退出屏忆');
+      UINotifier.center(context, AppLocalizations.of(context).pressBackAgainToExit);
       return false;
     }
     return true;

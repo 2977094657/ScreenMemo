@@ -12,9 +12,9 @@ import 'package:photo_view/photo_view_gallery.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../theme/app_theme.dart';
-import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import 'daily_summary_page.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
@@ -99,8 +99,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     final interval = (a['sample_interval_sec'] as int?) ?? 0;
     return Card(
       child: ListTile(
-        title: const Text('进行中的时间段'),
-        subtitle: Text('${_fmtTime(start)} - ${_fmtTime(end)}  ·  ${dur}s  ·  每${interval}s采样'),
+        title: Text(AppLocalizations.of(context).activeSegmentTitle),
+        subtitle: Text('${_fmtTime(start)} - ${_fmtTime(end)}  ·  ${dur}s  ·  ${AppLocalizations.of(context).sampleEverySeconds(interval)}'),
         trailing: const Icon(Icons.timelapse),
       ),
     );
@@ -200,11 +200,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
               child: ListView(
                 controller: ctrl,
                 children: [
-                  Text('时间段：${_fmtTime((seg['start_time'] as int?) ?? 0)} - ${_fmtTime((seg['end_time'] as int?) ?? 0)}'),
+                  Text(AppLocalizations.of(context).timeRangeLabel('${_fmtTime((seg['start_time'] as int?) ?? 0)} - ${_fmtTime((seg['end_time'] as int?) ?? 0)}')),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Text('状态：${seg['status']}'),
+                      Text(AppLocalizations.of(context).statusLabel((seg['status'] as String?) ?? '')),
                       const SizedBox(width: 8),
                       if ((seg['merged_flag'] as int?) == 1)
                         Container(
@@ -213,35 +213,40 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                             color: Colors.orange.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text('合并事件', style: TextStyle(fontSize: 12, color: Colors.orange)),
+                          child: Text(
+                            AppLocalizations.of(context).mergedEventTag,
+                            style: const TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
                         ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text('样本(${samples.length})'),
+                  Text(AppLocalizations.of(context).samplesTitle(samples.length)),
                   const SizedBox(height: 6),
                   _buildSamplesGrid(samples),
                   const Divider(height: 20),
                   Row(
                     children: [
-                      const Text('AI 结果'),
+                      Text(AppLocalizations.of(context).aiResultTitle),
                       const Spacer(),
                       if (result != null)
                         IconButton(
-                          tooltip: '复制结果',
+                          tooltip: AppLocalizations.of(context).copyResultsTooltip,
                           icon: const Icon(Icons.copy_all_outlined, size: 18),
                           onPressed: () async {
                             final text = ((result['structured_json'] as String?) ?? (result['output_text'] as String?) ?? '').toString();
                             if (text.isEmpty) return;
                             await Clipboard.setData(ClipboardData(text: text));
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(AppLocalizations.of(context).copySuccess)),
+                            );
                           },
                         ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  if (result == null) const Text('暂无'),
+                  if (result == null) Text(AppLocalizations.of(context).none),
                   if (result != null) ...[
                     Builder(
                       builder: (c) {
@@ -321,7 +326,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Model：${result['ai_model'] ?? ''}'),
+                              Text(AppLocalizations.of(context).modelValueLabel((result['ai_model'] ?? '').toString())),
                               const SizedBox(height: 6),
                               MarkdownBody(
                                 data: rawText,
@@ -402,12 +407,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.only(top: 2.0),
-          child: const Text('事件状态'),
+          child: Text(AppLocalizations.of(context).segmentStatusTitle),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: '刷新',
+            tooltip: AppLocalizations.of(context).actionRefresh,
             onPressed: _refresh,
           ),
         ],
@@ -469,13 +474,13 @@ class _SegmentTimelineTabView extends StatelessWidget {
           activeHeader,
           const SizedBox(height: 8),
           if (onlyNoSummary && autoWatching)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text('后台自动检测中…', style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(AppLocalizations.of(context).autoWatchingHint, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
             ),
-          const Padding(
-            padding: EdgeInsets.only(top: 40),
-            child: Center(child: Text('暂无事件')),
+          Padding(
+            padding: const EdgeInsets.only(top: 40),
+            child: Center(child: Text(AppLocalizations.of(context).noEvents)),
           ),
         ],
       );
@@ -526,7 +531,28 @@ class _SegmentTimelineTabView extends StatelessWidget {
                       borderSide: BorderSide(width: 2.0, color: selectedColor),
                       insets: const EdgeInsets.symmetric(horizontal: 4.0),
                     ),
-                    tabs: [for (final k in ordered) Tab(text: _buildDayLabel(k, (grouped[k] ?? const []).length))],
+                    tabs: [
+                      for (final k in ordered)
+                        Tab(
+                          text: (() {
+                            final parts = k.split('-');
+                            if (parts.length == 3) {
+                              final y = int.tryParse(parts[0]) ?? 1970;
+                              final m = int.tryParse(parts[1]) ?? 1;
+                              final d = int.tryParse(parts[2]) ?? 1;
+                              final dt = DateTime(y, m, d);
+                              final now = DateTime.now();
+                              bool sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+                              final c = (grouped[k] ?? const <Map<String, dynamic>>[]).length;
+                              final l10n = AppLocalizations.of(context);
+                              if (sameDay(dt, now)) return l10n.dayTabToday(c);
+                              if (sameDay(dt, now.subtract(const Duration(days: 1)))) return l10n.dayTabYesterday(c);
+                              return l10n.dayTabMonthDayCount(dt.month, dt.day, c);
+                            }
+                            return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
+                          })(),
+                        ),
+                    ],
                   ),
                 ),
               );
@@ -594,8 +620,8 @@ class _SegmentTimelineTabView extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.event_note_outlined),
-        title: const Text('每日总结'),
-        subtitle: const Text('查看或生成该日总结'),
+        title: Text(AppLocalizations.of(context).dailySummaryShort),
+        subtitle: Text(AppLocalizations.of(context).viewOrGenerateForDay),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           Navigator.of(context).push(
@@ -781,9 +807,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                           borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                           border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
                         ),
-                        child: const Text(
-                          '合并事件',
-                          style: TextStyle(
+                        child: Text(
+                          AppLocalizations.of(context).mergedEventTag,
+                          style: const TextStyle(
                             fontSize: 12,
                             color: AppTheme.warning,
                             height: 1.0,
@@ -847,7 +873,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                         alignment: Alignment.centerRight,
                         child: TextButton(
                           onPressed: () => setState(() => _summaryExpanded = !_summaryExpanded),
-                          child: Text(_summaryExpanded ? '收起内容' : '展开更多'),
+                          child: Text(_summaryExpanded ? AppLocalizations.of(context).collapse : AppLocalizations.of(context).expandMore),
                         ),
                       ),
                   ],
@@ -875,11 +901,11 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   }
                 },
                 icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-                label: Text(_expanded ? '收起图片 ($sampleCount)' : '查看图片 ($sampleCount)'),
+                label: Text(_expanded ? AppLocalizations.of(context).hideImagesCount(sampleCount) : AppLocalizations.of(context).viewImagesCount(sampleCount)),
               ),
               const Spacer(),
               IconButton(
-                tooltip: '重新生成',
+                tooltip: AppLocalizations.of(context).actionRegenerate,
                 onPressed: _retrying ? null : () async {
                   await _retry();
                 },
@@ -889,27 +915,28 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
               ),
               const SizedBox(width: 8),
               IconButton(
-                tooltip: '复制',
+                tooltip: AppLocalizations.of(context).actionCopy,
                 icon: const Icon(Icons.copy, size: 18),
                 onPressed: () async {
+                  final l10n = AppLocalizations.of(context);
                   final buffer = StringBuffer()
-                    ..writeln('时间段：$timeLabel')
-                    ..writeln('状态：$status');
-                  if (merged) buffer.writeln('标记：合并事件');
-                  if (categories.isNotEmpty) buffer.writeln('类别：${categories.join(', ')}');
+                    ..writeln(l10n.timeRangeLabel(timeLabel))
+                    ..writeln(l10n.statusLabel(status));
+                  if (merged) buffer.writeln(l10n.tagMergedCopy);
+                  if (categories.isNotEmpty) buffer.writeln(l10n.categoriesLabel(categories.join(', ')));
                   if (errorText != null && errorText!.trim().isNotEmpty) {
-                    buffer.writeln('错误：$errorText');
+                    buffer.writeln(l10n.errorLabel(errorText!));
                   } else if (summary.trim().isNotEmpty) {
-                    buffer.writeln('摘要：$summary');
+                    buffer.writeln(l10n.summaryLabel(summary));
                   }
                   await Clipboard.setData(ClipboardData(text: buffer.toString()));
                   if (!mounted) return;
-                  UINotifier.success(context, '已复制到剪贴板');
+                  UINotifier.success(context, AppLocalizations.of(context).copySuccess);
                 },
               ),
               const SizedBox(width: 8),
               IconButton(
-                tooltip: '删除事件',
+                tooltip: AppLocalizations.of(context).deleteEventTooltip,
                 icon: const Icon(Icons.delete_outline, size: 18),
                 onPressed: () async {
                   await _confirmAndDelete();
@@ -1066,7 +1093,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       if (!mounted) return;
       final ok = n > 0;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'Regeneration queued' : 'Already queued or failed')),
+        SnackBar(content: Text(ok ? AppLocalizations.of(context).regenerationQueued : AppLocalizations.of(context).alreadyQueuedOrFailed)),
       );
       // 开启轮询直到拿到结果为止；若原本就有结果，可能立即返回
       if (ok) _startResultWatch(id);
@@ -1076,7 +1103,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       if (mounted) {
         setState(() => _retrying = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Retry failed')),
+          SnackBar(content: Text(AppLocalizations.of(context).retryFailed)),
         );
       }
     }
@@ -1089,16 +1116,16 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           context: context,
           builder: (ctx) {
             return AlertDialog(
-              title: const Text('删除确认'),
-              content: const Text('确定删除该事件？此操作不会删除任何图片文件。'),
+              title: Text(AppLocalizations.of(ctx).deleteEventTooltip),
+              content: Text(AppLocalizations.of(ctx).confirmDeleteEventMessage),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text('取消'),
+                  child: Text(AppLocalizations.of(ctx).dialogCancel),
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text('删除'),
+                  child: Text(AppLocalizations.of(ctx).actionDelete),
                 ),
               ],
             );
@@ -1109,14 +1136,18 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       final ok = await ScreenshotDatabase.instance.deleteSegmentOnly(id);
       if (!mounted) return;
       if (ok) {
-        UINotifier.success(context, '事件已删除');
+        UINotifier.success(context, AppLocalizations.of(context).eventDeletedToast);
         await widget.onRefreshRequested();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Delete failed')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).deleteFailed)),
+        );
       }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Delete failed')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).deleteFailed)),
+      );
     }
   }
 
@@ -1129,7 +1160,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         if (!mounted) return;
         if (res != null) {
           setState(() => _retrying = false);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Regenerated')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+          );
           t.cancel();
         }
       } catch (_) {

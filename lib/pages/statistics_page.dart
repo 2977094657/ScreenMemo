@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 /// 统计页面
 class StatisticsPage extends StatefulWidget {
@@ -47,13 +48,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('统计'),
+        title: Text(AppLocalizations.of(context).statisticsTitle),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
+            tooltip: AppLocalizations.of(context).actionRefresh,
           ),
         ],
       ),
@@ -93,7 +95,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               const Icon(Icons.analytics, color: AppTheme.primary),
               const SizedBox(width: AppTheme.spacing2),
               Text(
-                '总览',
+                AppLocalizations.of(context).overviewTitle,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ],
@@ -105,7 +107,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
             children: [
               Expanded(
                 child: _buildStatItem(
-                  title: '监控应用',
+                  title: AppLocalizations.of(context).monitoredApps,
                   value: '${_selectedApps.length}',
                   icon: Icons.apps,
                   color: AppTheme.primary,
@@ -113,7 +115,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               ),
               Expanded(
                 child: _buildStatItem(
-                  title: '总截图',
+                  title: AppLocalizations.of(context).totalScreenshots,
                   value: '0', // TODO: 实际统计数据
                   icon: Icons.photo_library,
                   color: AppTheme.success,
@@ -128,7 +130,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
             children: [
               Expanded(
                 child: _buildStatItem(
-                  title: '今日截图',
+                  title: AppLocalizations.of(context).todayScreenshots,
                   value: '0', // TODO: 实际统计数据
                   icon: Icons.today,
                   color: AppTheme.info,
@@ -136,7 +138,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               ),
               Expanded(
                 child: _buildStatItem(
-                  title: '存储占用',
+                  title: AppLocalizations.of(context).storageUsage,
                   value: '0 MB', // TODO: 实际统计数据
                   icon: Icons.storage,
                   color: AppTheme.warning,
@@ -192,7 +194,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               const Icon(Icons.bar_chart, color: AppTheme.primary),
               const SizedBox(width: AppTheme.spacing2),
               Text(
-                '应用统计',
+                AppLocalizations.of(context).appStatisticsTitle,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ],
@@ -211,14 +213,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   const SizedBox(height: AppTheme.spacing2),
                   Text(
-                    '暂无监控应用',
+                    AppLocalizations.of(context).homeEmptyTitle,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: AppTheme.mutedForeground,
                     ),
                   ),
                   const SizedBox(height: AppTheme.spacing2),
                   Text(
-                    '请在设置中选择要监控的应用',
+                    AppLocalizations.of(context).homeEmptySubtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppTheme.mutedForeground,
                     ),
@@ -272,7 +274,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 Text(
-                  '截图数量: 0 | 最后截图: 暂无', // TODO: 实际统计数据
+                  AppLocalizations.of(context).screenshotCountWithLast('0', AppLocalizations.of(context).none), // TODO: 实际统计数据
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppTheme.mutedForeground,
                   ),
@@ -300,7 +302,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               const Icon(Icons.trending_up, color: AppTheme.primary),
               const SizedBox(width: AppTheme.spacing2),
               Text(
-                '使用趋势',
+                AppLocalizations.of(context).usageTrendsTitle,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ],
@@ -318,14 +320,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 ),
                 const SizedBox(height: AppTheme.spacing2),
                 Text(
-                  '趋势图表',
+                  AppLocalizations.of(context).trendChartTitle,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: AppTheme.mutedForeground,
                   ),
                 ),
                 const SizedBox(height: AppTheme.spacing2),
                 Text(
-                  '功能开发中，敬请期待',
+                  AppLocalizations.of(context).comingSoon,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppTheme.mutedForeground,
                   ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/daily_summary_service.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
@@ -60,10 +61,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       await _svc.generateForDate(widget.dateKey);
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Generated')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+      );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Generate failed')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).generateFailed)),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -136,7 +141,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   @override
   Widget build(BuildContext context) {
     final dateKey = widget.dateKey;
-    final title = '每日总结 $dateKey';
+    final title = AppLocalizations.of(context).dailySummaryTitle(dateKey);
     final md = _fixMarkdownLayout(_extractDailySummaryText());
 
     return Scaffold(
@@ -146,7 +151,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         title: Text(title),
         actions: [
           IconButton(
-            tooltip: '复制',
+            tooltip: AppLocalizations.of(context).actionCopy,
             icon: const Icon(Icons.copy_all_outlined),
             onPressed: _loading
                 ? null
@@ -155,11 +160,15 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                     if (text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已复制')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(AppLocalizations.of(context).copySuccess)),
+                    );
                   },
           ),
           IconButton(
-            tooltip: _daily == null ? '生成' : '重生成',
+            tooltip: _daily == null
+                ? AppLocalizations.of(context).actionGenerate
+                : AppLocalizations.of(context).actionRegenerate,
             icon: _loading
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.refresh_outlined),
@@ -183,7 +192,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                           color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
                         ),
                         const SizedBox(height: AppTheme.spacing2),
-                        const Text('暂无今日总结'),
+                        Text(AppLocalizations.of(context).noDailySummaryToday),
                         const SizedBox(height: AppTheme.spacing3),
                         SizedBox(
                           height: 36,
@@ -195,7 +204,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                               ),
                             ),
                             icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-                            label: const Text('生成今日总结'),
+                            label: Text(AppLocalizations.of(context).generateDailySummary),
                           ),
                         ),
                       ],

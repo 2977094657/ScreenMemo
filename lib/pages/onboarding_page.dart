@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import '../widgets/ui_dialog.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/app_selection_widget.dart';
@@ -177,13 +178,13 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
     return await showUIDialog<bool>(
       context: context,
       barrierDismissible: false,
-      title: '确认权限设置',
+      title: AppLocalizations.of(context).confirmPermissionSettingsTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '您是否已经在系统设置中完成了"自启动权限"的配置？',
+            AppLocalizations.of(context).confirmAutostartQuestion,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).colorScheme.onSurface,
             ),
@@ -205,7 +206,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                 const SizedBox(width: AppTheme.spacing2),
                 Expanded(
                   child: Text(
-                    '自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。',
+                    AppLocalizations.of(context).autostartPermissionNote,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppTheme.info,
                     ),
@@ -216,9 +217,9 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           ),
         ],
       ),
-      actions: const [
-        UIDialogAction<bool>(text: '还没有', result: false),
-        UIDialogAction<bool>(text: '已完成', style: UIDialogActionStyle.primary, result: true),
+      actions: [
+        UIDialogAction<bool>(text: AppLocalizations.of(context).notYet, result: false),
+        UIDialogAction<bool>(text: AppLocalizations.of(context).done, style: UIDialogActionStyle.primary, result: true),
       ],
     ) ?? false;
   }
@@ -375,7 +376,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           ),
           const SizedBox(height: AppTheme.spacing2),
           Text(
-            '步骤 ${_currentPage + 1} / 4',
+            AppLocalizations.of(context).stepProgress(_currentPage + 1, 4),
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -404,7 +405,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           
           // 标题
           Text(
-            '欢迎使用 屏忆',
+            AppLocalizations.of(context).onboardingWelcomeTitle,
             style: Theme.of(context).textTheme.displaySmall,
             textAlign: TextAlign.center,
           ),
@@ -413,7 +414,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
           // 描述
           Text(
-            '智能备忘与信息管理工具，帮助您高效记录、整理和回顾重要信息。',
+            AppLocalizations.of(context).onboardingWelcomeDesc,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppTheme.mutedForeground,
             ),
@@ -428,14 +429,14 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '主要功能',
+                  AppLocalizations.of(context).onboardingKeyFeaturesTitle,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: AppTheme.spacing4),
-                _buildFeatureItem(Icons.memory, '智能信息记录'),
-                _buildFeatureItem(Icons.search, '快速内容搜索'),
-                _buildFeatureItem(Icons.privacy_tip, '本地数据存储'),
-                _buildFeatureItem(Icons.analytics, '使用习惯分析'),
+                _buildFeatureItem(Icons.memory, AppLocalizations.of(context).featureSmartNotes),
+                _buildFeatureItem(Icons.search, AppLocalizations.of(context).featureQuickSearch),
+                _buildFeatureItem(Icons.privacy_tip, AppLocalizations.of(context).featureLocalStorage),
+                _buildFeatureItem(Icons.analytics, AppLocalizations.of(context).featureUsageAnalytics),
               ],
             ),
           ),
@@ -481,7 +482,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             children: [
               Expanded(
                 child: Text(
-                  '授权必要权限',
+                  AppLocalizations.of(context).onboardingPermissionsTitle,
                   style: Theme.of(context).textTheme.displaySmall,
                   textAlign: TextAlign.center,
                 ),
@@ -500,7 +501,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh),
-                tooltip: '刷新权限状态',
+                  tooltip: AppLocalizations.of(context).refreshPermissionStatus,
               ),
             ],
           ),
@@ -508,7 +509,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(height: AppTheme.spacing1),
 
           Text(
-            '为了提供完整的功能体验，需要授权以下权限：',
+            AppLocalizations.of(context).onboardingPermissionsDesc,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: AppTheme.mutedForeground,
             ),
@@ -524,8 +525,8 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
               children: [
                 _buildPermissionCard(
                   icon: Icons.storage,
-                  title: '存储权限',
-                  description: '用于保存文件到设备存储',
+                  title: AppLocalizations.of(context).storagePermissionTitle,
+                  description: AppLocalizations.of(context).storagePermissionDesc,
                   isGranted: _appState.storagePermissionGranted,
                   onRequest: () async {
                     await _permissionService.requestStoragePermission();
@@ -544,8 +545,8 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                 _buildPermissionCard(
                   icon: Icons.notifications,
-                  title: '通知权限',
-                  description: '用于显示应用状态通知',
+                  title: AppLocalizations.of(context).notificationPermissionTitle,
+                  description: AppLocalizations.of(context).notificationPermissionDesc,
                   isGranted: _appState.notificationPermissionGranted,
                   onRequest: () async {
                     await _permissionService.requestNotificationPermission();
@@ -565,8 +566,8 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                 _buildPermissionCard(
                   icon: Icons.accessibility,
-                  title: '无障碍服务',
-                  description: '用于智能信息识别和分析',
+                  title: AppLocalizations.of(context).accessibilityPermissionTitle,
+                  description: AppLocalizations.of(context).accessibilityPermissionDesc,
                   isGranted: _appState.accessibilityEnabled,
                   onRequest: () async {
                     _permissionService.requestAccessibilityPermission();
@@ -587,8 +588,8 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                 _buildPermissionCard(
                   icon: Icons.analytics,
-                  title: '使用统计权限',
-                  description: '用于准确检测前台应用',
+                  title: AppLocalizations.of(context).usageStatsPermissionTitle,
+                  description: AppLocalizations.of(context).usageStatsPermissionDesc,
                   isGranted: _appState.usageStatsPermissionGranted,
                   onRequest: () async {
                     await _permissionService.requestUsageStatsPermission();
@@ -609,13 +610,13 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                 _buildPermissionCard(
                   icon: Icons.battery_saver,
-                  title: '电池优化白名单',
-                  description: '确保截屏服务稳定运行',
+                  title: AppLocalizations.of(context).batteryOptimizationTitle,
+                  description: AppLocalizations.of(context).batteryOptimizationDesc,
                   isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
                   onRequest: () async {
                     // 先显示提示
                     if (mounted) {
-                      UINotifier.info(context, '请在系统设置中完成授权，然后返回应用', duration: const Duration(seconds: 2));
+                      UINotifier.info(context, AppLocalizations.of(context).pleaseCompleteInSystemSettings, duration: const Duration(seconds: 2));
                     }
 
                     // 打开设置页面
@@ -630,8 +631,8 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
                 _buildPermissionCard(
                   icon: Icons.power_settings_new,
-                  title: '自启动权限',
-                  description: '允许应用在后台自动重启',
+                  title: AppLocalizations.of(context).autostartPermissionTitle,
+                  description: AppLocalizations.of(context).autostartPermissionDesc,
                   isGranted: _keepAlivePermissions['autostart'] ?? false,
                   onRequest: () async {
                     // 打开设置页面
@@ -677,7 +678,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                 const SizedBox(width: AppTheme.spacing1),
                 Expanded(
                   child: Text(
-                    '权限授权后将持久保存，可随时在系统设置中修改',
+                    AppLocalizations.of(context).permissionsFooterNote,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -747,14 +748,14 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
 
           if (isGranted)
             Text(
-              '已授权',
+              AppLocalizations.of(context).grantedLabel,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             )
           else
             UIButton(
-              text: '授权',
+              text: AppLocalizations.of(context).authorizeAction,
               onPressed: onRequest,
               size: UIButtonSize.small,
             ),
@@ -772,13 +773,13 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           child: Column(
             children: [
               Text(
-                '选择监控应用',
+                AppLocalizations.of(context).onboardingSelectAppsTitle,
                 style: Theme.of(context).textTheme.displaySmall,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppTheme.spacing2),
               Text(
-                '请选择需要进行截图监控的应用，至少选择一个应用才能继续。',
+                AppLocalizations.of(context).onboardingSelectAppsDesc,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppTheme.mutedForeground,
                 ),
@@ -830,7 +831,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(height: AppTheme.spacing8),
           
           Text(
-            '设置完成！',
+            AppLocalizations.of(context).onboardingDoneTitle,
             style: Theme.of(context).textTheme.displaySmall,
             textAlign: TextAlign.center,
           ),
@@ -838,7 +839,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           const SizedBox(height: AppTheme.spacing4),
           
           Text(
-            '所有权限已成功授权，您现在可以开始使用屏忆的截图功能了。',
+            AppLocalizations.of(context).onboardingDoneDesc,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppTheme.mutedForeground,
             ),
@@ -851,12 +852,12 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             child: Column(
               children: [
                 Text(
-                  '下一步',
+                  AppLocalizations.of(context).nextStepTitle,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: AppTheme.spacing4),
                 Text(
-                  '点击"开始使用"进入主界面，开始体验强大的截图功能。',
+                  AppLocalizations.of(context).onboardingNextStepDesc,
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -876,7 +877,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           if (_currentPage > 0)
             Expanded(
               child: UIButton(
-                text: '上一步',
+                text: AppLocalizations.of(context).prevStep,
                 onPressed: _previousPage,
                 variant: UIButtonVariant.outline,
                 fullWidth: true,
@@ -887,7 +888,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
           
           Expanded(
             child: UIButton(
-              text: _currentPage == 3 ? '开始使用' : (_currentPage == 2 ? '完成选择' : '下一步'),
+              text: _currentPage == 3 ? AppLocalizations.of(context).startUsing : (_currentPage == 2 ? AppLocalizations.of(context).finishSelection : AppLocalizations.of(context).nextStep),
               onPressed: _currentPage == 3
                   ? () {
                       // 立即触发跳转，不等待任何操作

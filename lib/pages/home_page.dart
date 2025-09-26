@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
@@ -338,7 +339,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     if (newValue) {
       // 显示启动提示
       if (mounted) {
-        UINotifier.info(context, '正在启动截屏服务...');
+        UINotifier.info(context, AppLocalizations.of(context).startingScreenshotServiceInfo);
       }
 
       // 启动定时截屏
@@ -353,7 +354,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         final success = await screenshotService.startScreenshotService(persistedInterval);
         if (!success) {
           if (mounted) {
-            UINotifier.error(context, '启动截屏服务失败，请检查权限设置', duration: const Duration(seconds: 3));
+            UINotifier.error(context, AppLocalizations.of(context).startServiceFailedCheckPermissions, duration: const Duration(seconds: 3));
           }
           return;
         }
@@ -370,17 +371,17 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           }
         } catch (_) {}
       } catch (e) {
-        String errorMessage = '启动失败: 未知错误';
+        String errorMessage = AppLocalizations.of(context).startFailedUnknown;
         
         // 根据错误类型提供更具体的提示
         if (e.toString().contains('无障碍服务未启用')) {
-          errorMessage = '无障碍服务未启用\n请前往设置页面启用无障碍服务';
+          errorMessage = AppLocalizations.of(context).accessibilityNotEnabledDetail;
         } else if (e.toString().contains('存储权限未授予')) {
-          errorMessage = '存储权限未授予\n请前往设置页面授予存储权限';
+          errorMessage = AppLocalizations.of(context).storagePermissionNotGrantedDetail;
         } else if (e.toString().contains('服务未运行')) {
-          errorMessage = '服务未正常运行\n请尝试重新启动应用';
+          errorMessage = AppLocalizations.of(context).serviceNotRunningDetail;
         } else if (e.toString().contains('Android版本')) {
-          errorMessage = '系统版本不支持\n需要Android 11.0或以上版本';
+          errorMessage = AppLocalizations.of(context).androidVersionNotSupportedDetail;
         } else {
           errorMessage = e.toString();
         }
@@ -390,7 +391,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           await showUIDialog<void>(
             context: context,
             barrierDismissible: false,
-            title: '启动失败',
+            title: AppLocalizations.of(context).startFailedTitle,
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,8 +407,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                     color: AppTheme.info.withValues(alpha: 0.1),
                     borderRadius: const BorderRadius.all(Radius.circular(8.0)),
                   ),
-                  child: const Text(
-                    '提示：如果问题持续，请尝试重新启动应用或重新配置权限',
+                  child: Text(
+                    AppLocalizations.of(context).tipIfProblemPersists,
                     style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.info,
@@ -437,9 +438,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         _screenshotEnabled = newValue;
       });
       if (newValue) {
-        UINotifier.success(context, '截屏已启用');
+        UINotifier.success(context, AppLocalizations.of(context).screenshotEnabledToast);
       } else {
-        UINotifier.info(context, '截屏已停用');
+        UINotifier.info(context, AppLocalizations.of(context).screenshotDisabledToast);
       }
     }
   }
@@ -464,7 +465,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
     showUIDialog<void>(
       context: context,
-      title: '设置截屏间隔',
+      title: AppLocalizations.of(context).intervalSettingTitle,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,8 +479,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               controller: controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: '间隔时间（秒）',
-                hintText: '请输入5-60的整数',
+                labelText: AppLocalizations.of(context).intervalLabel,
+                hintText: AppLocalizations.of(context).intervalHint,
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.all(AppTheme.spacing3),
                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -504,8 +505,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               color: AppTheme.info.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: const Text(
-              '范围：5-60秒，默认值：5秒。',
+            child: Text(
+              AppLocalizations.of(context).intervalRangeNote,
               style: TextStyle(
                 fontSize: 12,
                 color: AppTheme.info,
@@ -515,22 +516,22 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         ],
       ),
       actions: [
-        const UIDialogAction(text: '取消'),
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
-          text: '确定',
+          text: AppLocalizations.of(context).dialogOk,
           style: UIDialogActionStyle.primary,
           closeOnPress: false,
           onPressed: (ctx) async {
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 5 || interval > 60) {
-              UINotifier.error(ctx, '请输入5-60的有效整数');
+              UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidInput);
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, '截屏间隔已设置为 $interval秒');
+              UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedToast(interval));
             }
           },
         ),
@@ -607,7 +608,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             _screenshotEnabled = false;
           });
 
-          UINotifier.info(context, '由于权限不足，截屏功能已自动关闭', duration: const Duration(seconds: 3));
+          UINotifier.info(context, AppLocalizations.of(context).autoDisabledDueToPermissions, duration: const Duration(seconds: 3));
         }
       }
     } catch (e) {
@@ -622,7 +623,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
       // 显示加载提示
       if (mounted) {
-        UINotifier.info(context, '正在刷新权限状态...', duration: const Duration(seconds: 1));
+        UINotifier.info(context, AppLocalizations.of(context).refreshingPermissionsInfo, duration: const Duration(seconds: 1));
       }
 
       // 强制刷新权限状态
@@ -637,11 +638,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       await _checkPermissionIssues();
 
       if (mounted) {
-        UINotifier.success(context, '权限状态已刷新', duration: const Duration(seconds: 1));
+        UINotifier.success(context, AppLocalizations.of(context).permissionsRefreshed, duration: const Duration(seconds: 1));
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, '刷新权限状态失败: $e');
+        UINotifier.error(context, AppLocalizations.of(context).refreshPermissionsFailed('$e'));
       }
     }
   }
@@ -656,20 +657,20 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         final action = await showUIDialog<String>(
           context: context,
           barrierDismissible: false,
-          title: '权限状态检查',
+          title: AppLocalizations.of(context).permissionStatusTitle,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPermissionStatusItem('存储权限', permissions['storage'] ?? false),
-              _buildPermissionStatusItem('通知权限', permissions['notification'] ?? false),
-              _buildPermissionStatusItem('无障碍服务', permissions['accessibility'] ?? false),
-              _buildPermissionStatusItem('屏幕录制权限', true),
+              _buildPermissionStatusItem(AppLocalizations.of(context).storagePermissionTitle, permissions['storage'] ?? false),
+              _buildPermissionStatusItem(AppLocalizations.of(context).notificationPermissionTitle, permissions['notification'] ?? false),
+              _buildPermissionStatusItem(AppLocalizations.of(context).accessibilityPermissionTitle, permissions['accessibility'] ?? false),
+              _buildPermissionStatusItem(AppLocalizations.of(context).screenRecordingPermissionTitle, true),
             ],
           ),
-          actions: const [
-            UIDialogAction<String>(text: '前往设置', result: 'go_settings'),
-            UIDialogAction<String>(text: '确定', style: UIDialogActionStyle.primary, result: 'ok'),
+          actions: [
+            UIDialogAction<String>(text: AppLocalizations.of(context).goToSettings, result: 'go_settings'),
+            UIDialogAction<String>(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary, result: 'ok'),
           ],
         );
         if (!mounted) return;
@@ -684,7 +685,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, '检查权限状态失败: $e');
+        UINotifier.error(context, AppLocalizations.of(context).checkPermissionStatusFailed('$e'));
       }
     }
   }
@@ -717,7 +718,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           Text(name),
           const Spacer(),
           Text(
-            granted ? '已授权' : '未授权',
+            granted ? AppLocalizations.of(context).grantedLabel : AppLocalizations.of(context).notGrantedLabel,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: granted
                       ? Theme.of(context).colorScheme.onSurfaceVariant
@@ -742,7 +743,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   _selectedPackages.clear();
                 });
               },
-              child: const Text('取消'),
+              child: Text(AppLocalizations.of(context).dialogCancel),
             ),
             TextButton(
               onPressed: () {
@@ -756,11 +757,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   }
                 });
               },
-              child: const Text('全选'),
+              child: Text(AppLocalizations.of(context).selectAll),
             ),
             IconButton(
               icon: const Icon(Icons.remove_circle_outline),
-              tooltip: '移除监测',
+              tooltip: AppLocalizations.of(context).removeMonitoring,
               onPressed: _selectedPackages.isEmpty ? null : _removeSelectedApps,
             ),
           ]
@@ -775,7 +776,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         actions: appBarActions,
         title: _selectionMode
           ? Text(
-              '已选择 ${_selectedPackages.length} 项',
+              AppLocalizations.of(context).selectedItemsCount(_selectedPackages.length),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             )
           : Row(
@@ -783,16 +784,16 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 // 左侧：加号 与 排序
                 IconButton(
                   icon: const Icon(Icons.add, size: 20),
-                  tooltip: '选择监控应用',
+                  tooltip: AppLocalizations.of(context).navSelectApps,
                   onPressed: () async {
                     await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => Scaffold(
                           appBar: AppBar(
-                            title: const Text('选择监控应用'),
+                            title: Text(AppLocalizations.of(context).navSelectApps),
                             actions: [
                               IconButton(
-                                tooltip: '为什么有些应用不显示？',
+                                tooltip: AppLocalizations.of(context).whySomeAppsHidden,
                                 icon: const Icon(Icons.help_outline),
                                 onPressed: () async {
                                   // 收集已启用输入法及默认输入法
@@ -801,44 +802,44 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
                                   final lines = <Widget>[];
                                   lines.add(Text(
-                                    '以下应用会被排除，不能选择：',
+                                    AppLocalizations.of(context).excludedAppsIntro,
                                     style: Theme.of(context).textTheme.bodyMedium,
                                   ));
                                   lines.add(const SizedBox(height: 8));
                                   // 本应用
-                                  lines.add(Text('· 本应用（避免自我干扰）'));
+                                  lines.add(Text(AppLocalizations.of(context).excludedThisApp));
                                   // 输入法应用
                                   if (imeList.isNotEmpty) {
                                     lines.add(const SizedBox(height: 8));
-                                    lines.add(Text('· 输入法（键盘）应用：'));
+                                    lines.add(Text(AppLocalizations.of(context).excludedImeApps));
                                     for (final m in imeList) {
                                       final name = m['appName'] ?? '';
                                       final pkg = m['packageName'] ?? '';
-                                      lines.add(Text('  - ${name.isNotEmpty ? name : '未知输入法'}'));
+                                      lines.add(Text('  - ${name.isNotEmpty ? name : AppLocalizations.of(context).unknownIme}'));
                                     }
                                   } else {
                                     lines.add(const SizedBox(height: 8));
-                                    lines.add(const Text('· 输入法（键盘）应用（已自动过滤）'));
+                                    lines.add(Text(AppLocalizations.of(context).excludedImeAppsFiltered));
                                   }
                                   if (defaultIme != null && (defaultIme['packageName']?.isNotEmpty ?? false)) {
                                     lines.add(const SizedBox(height: 8));
-                                    lines.add(Text("当前默认输入法：${defaultIme['appName'] ?? ''} (${defaultIme['packageName']})"));
+                                    lines.add(Text(AppLocalizations.of(context).currentDefaultIme((defaultIme['appName'] ?? '') as String, (defaultIme['packageName'] ?? '') as String)));
                                   }
                                   lines.add(const SizedBox(height: 12));
                                   lines.add(Text(
-                                    '说明：当你在其它应用中弹出键盘时，系统会切换到输入法窗口。如果不排除，会被误认为正在使用输入法，从而导致截图浮窗判断错误。我们已自动排除输入法应用，并在检测到输入法时，仍会将浮窗移到弹出输入法之前的应用。',
+                                    AppLocalizations.of(context).imeExplainText,
                                     style: Theme.of(context).textTheme.bodySmall,
                                   ));
 
                                   await showUIDialog<void>(
                                     context: context,
-                                    title: '已排除的应用',
+                                    title: AppLocalizations.of(context).excludedAppsTitle,
                                     content: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: lines,
                                     ),
-                                    actions: const [UIDialogAction(text: '知道了')],
+                                    actions: [UIDialogAction(text: AppLocalizations.of(context).gotIt)],
                                   );
                                 },
                               ),
@@ -848,7 +849,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                                   if (mounted) Navigator.of(context).pop();
                                   await _loadData(soft: true);
                                 },
-                                child: const Text('完成'),
+                                child: Text(AppLocalizations.of(context).dialogDone),
                               ),
                             ],
                           ),
@@ -876,12 +877,12 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                           color: AppTheme.destructive,
                         ),
                         onPressed: _showPermissionStatus,
-                        tooltip: '权限缺失',
+                        tooltip: AppLocalizations.of(context).permissionMissing,
                       )
                     : Padding(
                         padding: const EdgeInsets.only(left: 8),
                         child: IconButton(
-                          tooltip: _screenshotEnabled ? '停止截屏' : '开始截屏',
+                          tooltip: _screenshotEnabled ? AppLocalizations.of(context).stopScreenshot : AppLocalizations.of(context).startScreenshot,
                           iconSize: 22,
                           onPressed: _toggleScreenshotEnabled,
                           icon: _screenshotEnabled
@@ -929,7 +930,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             ),
             const SizedBox(width: 6),
             Text(
-              '搜索截图...',
+              AppLocalizations.of(context).searchPlaceholder,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                 fontSize: 14,
@@ -957,14 +958,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             ),
             const SizedBox(height: AppTheme.spacing4),
             Text(
-              '暂无监控应用',
+              AppLocalizations.of(context).homeEmptyTitle,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 color: AppTheme.mutedForeground,
               ),
             ),
             const SizedBox(height: AppTheme.spacing2),
             Text(
-              '请在设置中选择要监控的应用',
+              AppLocalizations.of(context).homeEmptySubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppTheme.mutedForeground,
               ),
@@ -1150,11 +1151,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final count = _selectedPackages.length;
     final confirmed = await showUIDialog<bool>(
       context: context,
-      title: '移除监测',
-      message: '仅移除监测，不会删除对应图片。是否继续？',
-      actions: const [
-        UIDialogAction<bool>(text: '取消', result: false),
-        UIDialogAction<bool>(text: '移除', style: UIDialogActionStyle.destructive, result: true),
+      title: AppLocalizations.of(context).removeMonitoring,
+      message: AppLocalizations.of(context).removeMonitoringMessage,
+      actions: [
+        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
+        UIDialogAction<bool>(text: AppLocalizations.of(context).remove, style: UIDialogActionStyle.destructive, result: true),
       ],
       barrierDismissible: false,
     );
@@ -1168,6 +1169,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       _selectionMode = false;
       _selectedPackages.clear();
     });
-    UINotifier.info(context, '已移除监测 $count 个应用（不删除图片）');
+    UINotifier.info(context, AppLocalizations.of(context).removedMonitoringToast(count));
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:path/path.dart' as path;
 
 import '../models/app_info.dart';
@@ -135,7 +136,7 @@ class _SearchPageState extends State<SearchPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '搜索失败: $e';
+        _error = AppLocalizations.of(context).searchFailedError(e.toString());
         _isLoading = false;
       });
     }
@@ -254,7 +255,7 @@ class _SearchPageState extends State<SearchPage> {
                           autofocus: true,
                           decoration: InputDecoration(
                             isCollapsed: true,
-                            hintText: '搜索截图...',
+                            hintText: AppLocalizations.of(context).searchPlaceholder,
                             hintStyle: TextStyle(
                               color: Theme.of(context)
                                   .colorScheme
@@ -305,7 +306,7 @@ class _SearchPageState extends State<SearchPage> {
     if (_controller.text.trim().isEmpty) {
       return Center(
         child: Text(
-          '在此输入关键词，以 OCR 文本检索截图',
+          AppLocalizations.of(context).searchInputHintOcr,
           style: Theme.of(context)
               .textTheme
               .bodyMedium
@@ -317,7 +318,7 @@ class _SearchPageState extends State<SearchPage> {
     if (_results.isEmpty) {
       return Center(
         child: Text(
-          '没有匹配的截图',
+          AppLocalizations.of(context).noMatchingScreenshots,
           style: Theme.of(context)
               .textTheme
               .bodyMedium
@@ -377,7 +378,7 @@ class _SearchPageState extends State<SearchPage> {
                   filterQuality: FilterQuality.low,
                   gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) =>
-                      _buildErrorTile('图片丢失或损坏'),
+                      _buildErrorTile(AppLocalizations.of(context).imageMissingOrCorrupted),
                 );
                 final Widget imageWidget = isDark
                     ? ColorFiltered(
