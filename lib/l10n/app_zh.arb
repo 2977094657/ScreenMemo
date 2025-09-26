@@ -1,0 +1,633 @@
+{
+  "@@locale": "zh",
+  "appTitle": "屏忆",
+  "settingsTitle": "设置",
+  "searchPlaceholder": "搜索截图...",
+  "homeEmptyTitle": "暂无监控应用",
+  "homeEmptySubtitle": "请在设置中选择要监控的应用",
+  "navSelectApps": "选择监控应用",
+  "dialogOk": "确定",
+  "dialogCancel": "取消",
+  "dialogDone": "完成",
+  "permissionStatusTitle": "权限状态检查",
+  "permissionMissing": "权限缺失",
+  "startScreenshot": "开始截屏",
+  "stopScreenshot": "停止截屏",
+  "screenshotEnabledToast": "截屏已启用",
+  "screenshotDisabledToast": "截屏已停用",
+  "intervalSettingTitle": "设置截屏间隔",
+  "intervalLabel": "间隔时间（秒）",
+  "intervalHint": "请输入5-60的整数",
+  "intervalSavedToast": "截屏间隔已设置为 {seconds} 秒",
+  "@intervalSavedToast": {
+    "description": "提示保存的截屏间隔，单位秒",
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "languageSettingTitle": "语言设置",
+  "languageSystem": "跟随系统",
+  "languageChinese": "简体中文",
+  "languageEnglish": "English",
+  "languageChangedToast": "已切换为 {name}",
+  "@languageChangedToast": {
+    "description": "切换语言后的提示",
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "nsfwWarningTitle": "内容警告：成人内容",
+  "nsfwWarningSubtitle": "该内容已被标记为成人内容",
+  "show": "显示",
+  "appSearchPlaceholder": "搜索应用...",
+  "selectedCount": "已选择 {count} 个",
+  "@selectedCount": {
+    "description": "已选择的应用数量",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "refreshAppsTooltip": "刷新应用列表",
+  "selectAll": "全选",
+  "clearAll": "清空",
+  "noAppsFound": "没有找到应用",
+  "noAppsMatched": "没有匹配的应用",
+  "stepProgress": "步骤 {current} / {total}",
+  "@stepProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "onboardingWelcomeTitle": "欢迎使用 屏忆",
+  "onboardingWelcomeDesc": "智能备忘与信息管理工具，帮助您高效记录、整理和回顾重要信息。",
+  "onboardingKeyFeaturesTitle": "主要功能",
+  "featureSmartNotes": "智能信息记录",
+  "featureQuickSearch": "快速内容搜索",
+  "featureLocalStorage": "本地数据存储",
+  "featureUsageAnalytics": "使用习惯分析",
+  "onboardingPermissionsTitle": "授权必要权限",
+  "refreshPermissionStatus": "刷新权限状态",
+  "onboardingPermissionsDesc": "为了提供完整的功能体验，需要授权以下权限：",
+  "storagePermissionTitle": "存储权限",
+  "storagePermissionDesc": "用于保存文件到设备存储",
+  "notificationPermissionTitle": "通知权限",
+  "notificationPermissionDesc": "用于显示应用状态通知",
+  "accessibilityPermissionTitle": "无障碍服务",
+  "accessibilityPermissionDesc": "用于智能信息识别和分析",
+  "usageStatsPermissionTitle": "使用统计权限",
+  "usageStatsPermissionDesc": "用于准确检测前台应用",
+  "batteryOptimizationTitle": "电池优化白名单",
+  "batteryOptimizationDesc": "确保截屏服务稳定运行",
+  "pleaseCompleteInSystemSettings": "请在系统设置中完成授权，然后返回应用",
+  "autostartPermissionTitle": "自启动权限",
+  "autostartPermissionDesc": "允许应用在后台自动重启",
+  "permissionsFooterNote": "权限授权后将持久保存，可随时在系统设置中修改",
+  "grantedLabel": "已授权",
+  "authorizeAction": "授权",
+  "onboardingSelectAppsTitle": "选择监控应用",
+  "onboardingSelectAppsDesc": "请选择需要进行截图监控的应用，至少选择一个应用才能继续。",
+  "onboardingDoneTitle": "设置完成！",
+  "onboardingDoneDesc": "所有权限已成功授权，您现在可以开始使用屏忆的截图功能了。",
+  "nextStepTitle": "下一步",
+  "onboardingNextStepDesc": "点击“开始使用”进入主界面，开始体验强大的截图功能。",
+  "prevStep": "上一步",
+  "startUsing": "开始使用",
+  "finishSelection": "完成选择",
+  "nextStep": "下一步",
+  "confirmPermissionSettingsTitle": "确认权限设置",
+  "confirmAutostartQuestion": "您是否已经在系统设置中完成了“自启动权限”的配置？",
+  "notYet": "还没有",
+  "done": "已完成",
+  "startingScreenshotServiceInfo": "正在启动截屏服务...",
+  "startServiceFailedCheckPermissions": "启动截屏服务失败，请检查权限设置",
+  "startFailedTitle": "启动失败",
+  "startFailedUnknown": "启动失败：未知错误",
+  "tipIfProblemPersists": "提示：如果问题持续，请尝试重新启动应用或重新配置权限",
+  "autoDisabledDueToPermissions": "由于权限不足，截屏功能已自动关闭",
+  "refreshingPermissionsInfo": "正在刷新权限状态...",
+  "permissionsRefreshed": "权限状态已刷新",
+  "refreshPermissionsFailed": "刷新权限状态失败: {error}",
+  "@refreshPermissionsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "screenRecordingPermissionTitle": "屏幕录制权限",
+  "goToSettings": "前往设置",
+  "notGrantedLabel": "未授权",
+  "removeMonitoring": "移除监测",
+  "selectedItemsCount": "已选择 {count} 项",
+  "@selectedItemsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "whySomeAppsHidden": "为什么有些应用不显示？",
+  "excludedAppsTitle": "已排除的应用",
+  "excludedAppsIntro": "以下应用会被排除，不能选择：",
+  "excludedThisApp": "· 本应用（避免自我干扰）",
+  "excludedImeApps": "· 输入法（键盘）应用：",
+  "excludedImeAppsFiltered": "· 输入法（键盘）应用（已自动过滤）",
+  "currentDefaultIme": "当前默认输入法：{name} ({package})",
+  "@currentDefaultIme": {
+    "placeholders": {
+      "name": {},
+      "package": {}
+    }
+  },
+  "imeExplainText": "当你在其它应用中弹出键盘时，系统会切换到输入法窗口。如果不排除，会被误认为正在使用输入法，从而导致截图浮窗判断错误。我们已自动排除输入法应用，并在检测到输入法时，仍会将浮窗移到弹出输入法之前的应用。",
+  "gotIt": "知道了",
+  "unknownIme": "未知输入法",
+  "intervalRangeNote": "范围：5-60 秒，默认值：5 秒。",
+  "intervalInvalidInput": "请输入 5-60 的有效整数",
+  "removeMonitoringMessage": "仅移除监测，不会删除对应图片。是否继续？",
+  "remove": "移除",
+  "removedMonitoringToast": "已移除监测 {count} 个应用（不删除图片）",
+  "@removedMonitoringToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "checkPermissionStatusFailed": "检查权限状态失败: {error}",
+  "@checkPermissionStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "accessibilityNotEnabledDetail": "无障碍服务未启用\n请前往设置页面启用无障碍服务",
+  "storagePermissionNotGrantedDetail": "存储权限未授予\n请前往设置页面授予存储权限",
+  "serviceNotRunningDetail": "服务未正常运行\n请尝试重新启动应用",
+  "androidVersionNotSupportedDetail": "系统版本不支持\n需要Android 11.0或以上版本",
+  "permissionsSectionTitle": "权限设置",
+  "displayAndSortSectionTitle": "显示与排序",
+  "screenshotSectionTitle": "截屏设置",
+  "segmentSummarySectionTitle": "时间段总结",
+  "dailyReminderSectionTitle": "每日总结提醒",
+  "aiAssistantSectionTitle": "AI 助手",
+  "dataBackupSectionTitle": "数据与备份",
+  "actionSet": "设置",
+  "actionEnter": "进入",
+  "actionExport": "导出",
+  "actionImport": "导入",
+  "actionCopyPath": "复制路径",
+  "actionOpen": "去开启",
+  "actionTrigger": "触发",
+  "allPermissionsGranted": "已全部授权",
+  "permissionsMissingCount": "尚有 {count} 项权限未授权",
+  "@permissionsMissingCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+
+  "exportSuccessTitle": "导出完成",
+  "exportFileExportedTo": "文件已导出至：",
+  "pathCopiedToast": "已复制路径",
+  "exportFailedTitle": "导出失败",
+  "pleaseTryAgain": "请稍后重试",
+
+  "importCompleteTitle": "导入完成",
+  "dataExtractedTo": "数据已解压到:",
+  "importFailedTitle": "导入失败",
+  "importFailedCheckZip": "请检查ZIP文件并重试。",
+
+  "noMediaProjectionNeeded": "已使用无障碍服务截图，无需屏幕录制权限",
+  "autostartPermissionMarked": "自启动权限已标记为已授权",
+  "requestPermissionFailed": "请求权限失败: {error}",
+  "@requestPermissionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+
+  "expireCleanupSaved": "过期清理设置已保存",
+  "dailyNotifyTriggered": "已触发通知",
+  "dailyNotifyTriggerFailed": "触发通知失败或内容为空",
+
+  "refreshPermissionStatusTooltip": "刷新权限状态",
+  "storagePermissionTitle": "存储权限",
+  "storagePermissionDesc": "保存截图文件到设备存储",
+  "notificationPermissionTitle": "通知权限",
+  "notificationPermissionDesc": "显示服务状态通知",
+  "accessibilityPermissionTitle": "无障碍服务",
+  "accessibilityPermissionDesc": "监听应用切换并执行截图",
+  "usageStatsPermissionTitle": "使用统计权限",
+  "usageStatsPermissionDesc": "确保检测前台应用",
+  "batteryOptimizationTitle": "电池优化白名单",
+  "batteryOptimizationDesc": "确保截图服务常驻运行",
+  "autostartPermissionTitle": "自启动权限",
+  "autostartPermissionDesc": "允许应用在后台自动重启",
+  "grantedStatus": "已授权",
+  "notGrantedStatus": "去授权",
+
+  "privacyModeTitle": "隐私模式",
+  "privacyModeDesc": "对敏感内容自动模糊遮挡",
+  "homeSortingTitle": "首页排序",
+  "screenshotIntervalTitle": "截屏间隔",
+  "screenshotIntervalDesc": "当前间隔：{seconds} 秒",
+  "@screenshotIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "screenshotQualityTitle": "截图质量",
+  "currentSizeLabel": "当前大小：",
+  "clickToModifyHint": "（点击数字可修改）",
+  "screenshotExpireTitle": "截图过期清理",
+  "currentExpireDaysLabel": "当前过期天数:",
+  "expireDaysUnit": "{days}天",
+  "@expireDaysUnit": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+
+  "exportDataTitle": "导出数据",
+  "exportDataDesc": "导出 ZIP 至 Download/ScreenMemory",
+  "importDataTitle": "导入数据",
+  "importDataDesc": "将ZIP文件导入到应用存储",
+  "aiAssistantTitle": "AI 助手",
+  "aiAssistantDesc": "配置 AI 接口与模型，并进行多轮对话测试",
+
+  "segmentSampleIntervalTitle": "采样间隔（秒）",
+  "segmentSampleIntervalDesc": "当前：{seconds} 秒",
+  "@segmentSampleIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "segmentDurationTitle": "时间段时长（分钟）",
+  "segmentDurationDesc": "当前：{minutes} 分钟",
+  "@segmentDurationDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "aiRequestIntervalTitle": "AI 请求最小间隔（秒）",
+  "aiRequestIntervalDesc": "当前：{seconds} 秒（最低1秒）",
+  "@aiRequestIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+
+  "dailyReminderTimeTitle": "每日总结提醒时间",
+  "currentTimeLabel": "当前：",
+  "testNotificationTitle": "测试通知",
+  "testNotificationDesc": "立即触发\"今日总结\"通知",
+  "enableBannerNotificationTitle": "开启横幅/悬浮通知",
+  "enableBannerNotificationDesc": "允许在屏幕顶部弹出通知（横幅/悬浮）",
+
+  "setIntervalDialogTitle": "设置截屏间隔",
+  "intervalSecondsLabel": "间隔时间（秒）",
+  "intervalInputHint": "请输入 5-60 的整数",
+  "intervalRangeHint": "范围：5-60 秒，默认 5 秒",
+  "intervalInvalidError": "请输入 5-60 的有效整数",
+  "intervalSavedSuccess": "截屏间隔已设置为 {seconds} 秒",
+  "@intervalSavedSuccess": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+
+  "setTargetSizeDialogTitle": "设置目标大小（单位KB）",
+  "targetSizeKbLabel": "目标大小（KB）",
+  "targetSizeInvalidError": "请输入 >= 50 的有效整数",
+  "targetSizeHint": "为保证 OCR 质量，最低仅支持 50KB；系统会在不改变分辨率的情况下尽量逼近该大小。",
+  "targetSizeSavedSuccess": "目标大小已设置为 {kb} KB",
+  "@targetSizeSavedSuccess": {
+    "placeholders": {
+      "kb": {}
+    }
+  },
+
+  "setExpireDaysDialogTitle": "设置截图过期天数",
+  "expireDaysLabel": "过期天数",
+  "expireDaysInputHint": "请输入 >= 1 的整数",
+  "expireDaysInvalidError": "请输入 >= 1 的有效整数",
+  "expireDaysHint": "下限为 1 天；开启后，应用会在启动和每次截图后按周期自动清理过期文件（12小时节流保护）。",
+  "expireDaysSavedSuccess": "已设置为 {days} 天",
+  "@expireDaysSavedSuccess": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+
+  "sortTimeNewToOld": "时间（新→旧）",
+  "sortTimeOldToNew": "时间（旧→新）",
+  "sortSizeLargeToSmall": "大小（大→小）",
+  "sortSizeSmallToLarge": "大小（小→大）",
+  "sortCountManyToFew": "数量（多→少）",
+  "sortCountFewToMany": "数量（少→多）",
+  "selectHomeSortingTitle": "选择首页排序",
+  "currentSortingLabel": "当前：{sorting}",
+  "@currentSortingLabel": {
+    "placeholders": {
+      "sorting": {}
+    }
+  },
+
+  "privacyModeEnabledToast": "已开启隐私模式",
+  "privacyModeDisabledToast": "已关闭隐私模式",
+  "screenshotQualitySettingsSaved": "截图质量设置已保存",
+  "saveFailedError": "保存失败: {error}",
+  "@saveFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+
+  "setReminderTimeTitle": "设置提醒时间（24小时制）",
+  "hourLabel": "小时(0-23)",
+  "minuteLabel": "分钟(0-59)",
+  "timeInputHint": "提示：点击数字直接输入；范围为 0-23 时与 0-59 分。",
+  "invalidHourError": "请输入 0-23 的有效小时",
+  "invalidMinuteError": "请输入 0-59 的有效分钟",
+  "timeSetSuccess": "已设置为 {hour}:{minute}",
+  "@timeSetSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+
+  "reminderScheduleSuccess": "已设置每日提醒时间为 {hour}:{minute}",
+  "@reminderScheduleSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderDisabledSuccess": "已关闭每日提醒",
+  "reminderScheduleFailed": "调度每日提醒失败（可能平台不支持）",
+  "saveReminderSettingsFailed": "保存提醒设置失败: {error}",
+  "@saveReminderSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchFailedError": "搜索失败: {error}",
+  "@searchFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchInputHintOcr": "在此输入关键词，以 OCR 文本检索截图",
+  "noMatchingScreenshots": "没有匹配的截图",
+  "imageMissingOrCorrupted": "图片丢失或损坏",
+  "actionClear": "清除",
+  "actionRefresh": "刷新",
+  "noScreenshotsTitle": "暂无截图",
+  "noScreenshotsSubtitle": "开启截图监控后，截图将显示在这里",
+  "confirmDeleteTitle": "确认删除",
+  "confirmDeleteMessage": "确定要删除这张截图吗？此操作无法撤销。",
+  "actionDelete": "删除",
+  "actionContinue": "继续",
+  "linkTitle": "链接",
+  "actionCopy": "复制",
+  "imageInfoTitle": "截图信息",
+  "deleteImageTooltip": "删除图片",
+  "imageLoadFailed": "图片加载失败",
+  "labelAppName": "应用名称",
+  "labelCaptureTime": "截图时间",
+  "labelFilePath": "文件路径",
+  "labelPageLink": "页面链接",
+  "labelFileSize": "文件大小",
+  "tapToContinue": "轻触继续",
+  "appDirUninitialized": "应用目录未初始化",
+  "actionRetry": "重试",
+  "noMatchingResults": "无匹配结果",
+  "deleteSelectedTooltip": "删除所选",
+  "screenshotDeletedToast": "截图已删除",
+  "deleteFailed": "删除失败",
+  "deleteFailedWithError": "删除失败: {error}",
+  "@deleteFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "deletedCountToast": "已删除 {count} 张截图",
+  "@deletedCountToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabToday": "今天 {count}",
+  "@dayTabToday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabYesterday": "昨天 {count}",
+  "@dayTabYesterday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabMonthDayCount": "{month}月{day}日 {count}",
+  "@dayTabMonthDayCount": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "count": {}
+    }
+  },
+  "imageInfoTooltip": "图片信息",
+  "linkTooltip": "链接",
+  "copySuccess": "已复制",
+  "copyFailed": "复制失败",
+  "invalidArguments": "参数错误",
+  "initFailedWithError": "初始化失败: {error}",
+  "@initFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadMoreFailedWithError": "加载更多失败: {error}",
+  "@loadMoreFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "confirmDeleteAllTitle": "确认删除所有截图",
+  "deleteAllMessage": "将删除当前范围内的所有 {count} 张截图及其文件夹，此操作不可恢复。",
+  "@deleteAllMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteSelectedMessage": "将删除选中的 {count} 张截图，且不可恢复。是否继续？",
+  "@deleteSelectedMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteFailedRetry": "删除失败，请重试",
+  "keptAndDeletedSummary": "已保留 {keep} 张，删除 {deleted} 张",
+  "@keptAndDeletedSummary": {
+    "placeholders": {
+      "keep": {},
+      "deleted": {}
+    }
+  },
+
+  "dailySummaryTitle": "每日总结 {date}",
+  "@dailySummaryTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "actionGenerate": "生成",
+  "actionRegenerate": "重生成",
+  "generateSuccess": "已生成",
+  "generateFailed": "生成失败",
+  "noDailySummaryToday": "暂无今日总结",
+  "generateDailySummary": "生成今日总结",
+
+  "statisticsTitle": "统计",
+  "overviewTitle": "总览",
+  "monitoredApps": "监控应用",
+  "totalScreenshots": "总截图",
+  "todayScreenshots": "今日截图",
+  "storageUsage": "存储占用",
+  "appStatisticsTitle": "应用统计",
+  "screenshotCountWithLast": "截图数量: {count} | 最后截图: {last}",
+  "@screenshotCountWithLast": {
+    "placeholders": {
+      "count": {},
+      "last": {}
+    }
+  },
+  "none": "暂无",
+  "usageTrendsTitle": "使用趋势",
+  "trendChartTitle": "趋势图表",
+  "comingSoon": "功能开发中，敬请期待",
+
+  "timelineTitle": "时间线",
+  "pressBackAgainToExit": "再按一次退出屏忆",
+
+  "segmentStatusTitle": "事件状态",
+  "autoWatchingHint": "后台自动检测中…",
+  "noEvents": "暂无事件",
+  "activeSegmentTitle": "进行中的时间段",
+  "sampleEverySeconds": "每 {seconds} 秒采样",
+  "@sampleEverySeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailySummaryShort": "每日总结",
+  "viewOrGenerateForDay": "查看或生成该日总结",
+  "mergedEventTag": "合并事件",
+  "collapse": "收起内容",
+  "expandMore": "展开更多",
+  "viewImagesCount": "查看图片 ({count})",
+  "@viewImagesCount": {
+    "placeholders": { "count": {} }
+  },
+  "hideImagesCount": "收起图片 ({count})",
+  "@hideImagesCount": {
+    "placeholders": { "count": {} }
+  },
+  "deleteEventTooltip": "删除事件",
+  "confirmDeleteEventMessage": "确定删除该事件？此操作不会删除任何图片文件。",
+  "eventDeletedToast": "事件已删除",
+  "regenerationQueued": "已加入重生成队列",
+  "alreadyQueuedOrFailed": "已在队列或失败",
+  "retryFailed": "重试失败",
+  "copyResultsTooltip": "复制结果",
+
+  "aiSettingsTitle": "AI 设置与测试",
+  "connectionSettingsTitle": "连接设置",
+  "actionSave": "保存",
+  "clearConversation": "清空会话",
+  "deleteGroup": "删除分组",
+  "streamingRequestTitle": "流式请求",
+  "streamingRequestHint": "开启后将使用流式响应（默认开启）",
+  "streamingEnabledToast": "流式已开启",
+  "streamingDisabledToast": "流式已关闭",
+  "promptManagerTitle": "提示词管理",
+  "promptManagerHint": "为“普通事件总结”和“合并事件总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。",
+  "normalEventPromptLabel": "普通事件提示词",
+  "mergeEventPromptLabel": "合并事件提示词",
+  "actionEdit": "编辑",
+  "savingLabel": "保存中",
+  "resetToDefault": "重置默认",
+  "chatTestTitle": "对话测试",
+  "actionSend": "发送",
+  "sendingLabel": "发送中",
+  "baseUrlLabel": "接口地址",
+  "baseUrlHint": "例如：https://api.openai.com",
+  "apiKeyLabel": "API 密钥",
+  "apiKeyHint": "例如：sk-... 或其他服务商 Token",
+  "modelLabel": "模型",
+  "modelHint": "例如：gpt-4o-mini / gpt-4o / 兼容模型",
+  "siteGroupsTitle": "站点分组",
+  "siteGroupsHint": "可配置多个站点作为备用；发送失败时自动切换",
+  "rename": "重命名",
+  "addGroup": "新增分组",
+  "showGroupSelector": "显示分组选择",
+  "ungroupedSingleConfig": "未分组（单一配置）",
+  "inputMessageHint": "请输入消息"
+,
+"saveSuccess": "已保存",
+"savedCurrentGroupToast": "已保存当前分组",
+"savedNormalPromptToast": "已保存普通事件提示词",
+"savedMergePromptToast": "已保存合并事件提示词",
+"resetToDefaultPromptToast": "已重置为默认提示词",
+"resetFailedWithError": "重置失败: {error}",
+"@resetFailedWithError": { "placeholders": { "error": {} } },
+"clearSuccess": "已清空",
+"clearFailedWithError": "清空失败: {error}",
+"@clearFailedWithError": { "placeholders": { "error": {} } },
+"messageCannotBeEmpty": "消息不能为空",
+"sendFailedWithError": "发送失败: {error}",
+"@sendFailedWithError": { "placeholders": { "error": {} } },
+"groupSwitchedToUngrouped": "已切换到未分组",
+"groupSwitched": "已切换分组",
+"groupNotSelected": "未选择分组",
+"groupNotFound": "分组不存在",
+"renameGroupTitle": "重命名分组",
+"groupNameLabel": "分组名称",
+"groupNameHint": "请输入新的分组名称",
+"nameCannotBeEmpty": "名称不能为空",
+"renameSuccess": "已重命名",
+"renameFailedWithError": "重命名失败: {error}",
+"@renameFailedWithError": { "placeholders": { "error": {} } },
+"groupAddedToast": "已新增分组",
+"addGroupFailedWithError": "新增分组失败: {error}",
+"@addGroupFailedWithError": { "placeholders": { "error": {} } },
+"groupDeletedToast": "已删除分组",
+"deleteGroupFailedWithError": "删除分组失败: {error}",
+"@deleteGroupFailedWithError": { "placeholders": { "error": {} } },
+"loadGroupFailedWithError": "加载分组失败: {error}",
+"@loadGroupFailedWithError": { "placeholders": { "error": {} } },
+"siteGroupDefaultName": "站点组{index}",
+"@siteGroupDefaultName": { "placeholders": { "index": {} } },
+"defaultLabel": "默认",
+"customLabel": "已自定义",
+"normalShortLabel": "普通：",
+"mergeShortLabel": "合并：",
+"timeRangeLabel": "时间段：{range}",
+"@timeRangeLabel": { "placeholders": { "range": {} } },
+"statusLabel": "状态：{status}",
+"@statusLabel": { "placeholders": { "status": {} } },
+"samplesTitle": "样本({count})",
+"@samplesTitle": { "placeholders": { "count": {} } },
+"aiResultTitle": "AI 结果",
+"modelValueLabel": "Model：{model}",
+"@modelValueLabel": { "placeholders": { "model": {} } },
+"tagMergedCopy": "标记：合并事件",
+"categoriesLabel": "类别：{categories}",
+"@categoriesLabel": { "placeholders": { "categories": {} } },
+"errorLabel": "错误：{error}",
+"@errorLabel": { "placeholders": { "error": {} } },
+"summaryLabel": "摘要：{summary}",
+"@summaryLabel": { "placeholders": { "summary": {} } },
+"autostartPermissionNote": "自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。",
+"monthDayTime": "{month}月{day}日 {hour}:{minute}",
+"@monthDayTime": { "placeholders": { "month": {}, "day": {}, "hour": {}, "minute": {} } },
+"yearMonthDayTime": "{year}年{month}月{day}日 {hour}:{minute}",
+"@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } }
+}

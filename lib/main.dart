@@ -13,6 +13,8 @@ import 'services/flutter_logger.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/navigation_service.dart';
 import 'services/daily_summary_service.dart';
+import 'services/locale_service.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
 
 
 Future<void> main() async {
@@ -42,6 +44,7 @@ class ScreenMemoApp extends StatefulWidget {
 
 class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserver {
   final ThemeService _themeService = ThemeService();
+  final LocaleService _localeService = LocaleService.instance;
   // 全局导航Key：由 NavigationService 提供
 
   @override
@@ -49,6 +52,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
     super.initState();
     StartupProfiler.mark('ScreenMemoAppState.initState');
     _themeService.addListener(_onThemeChanged);
+    _localeService.addListener(_onLocaleChanged);
     // 监听应用生命周期，用于页面自动刷新
     WidgetsBinding.instance.addObserver(this);
     // 首帧后触发“首次进入 UI”事件（冷启动或UI首次展示）
@@ -64,11 +68,17 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
   void dispose() {
     _themeService.removeListener(_onThemeChanged);
     _themeService.dispose();
+    _localeService.removeListener(_onLocaleChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   void _onThemeChanged() {
+    setState(() {});
+  }
+
+  void _onLocaleChanged() {
+    // 语言切换时重建以生效
     setState(() {});
   }
 
@@ -87,10 +97,13 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     StartupProfiler.mark('ScreenMemoAppState.build');
     return MaterialApp(
-      title: '屏忆',
+      onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _themeService.themeMode,
+      locale: _localeService.locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: AppInitializer(themeService: _themeService),
       debugShowCheckedModeBanner: false,
       navigatorKey: NavigationService.instance.navigatorKey,

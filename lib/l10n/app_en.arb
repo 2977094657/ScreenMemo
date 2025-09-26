@@ -1,0 +1,639 @@
+{
+  "@@locale": "en",
+  "appTitle": "ScreenMemo",
+  "settingsTitle": "Settings",
+  "searchPlaceholder": "Search screenshots...",
+  "homeEmptyTitle": "No monitored apps",
+  "homeEmptySubtitle": "Choose apps to monitor in Settings",
+  "navSelectApps": "Select apps to monitor",
+  "dialogOk": "OK",
+  "dialogCancel": "Cancel",
+  "dialogDone": "Done",
+  "permissionStatusTitle": "Permission Status",
+  "permissionMissing": "Permissions missing",
+  "startScreenshot": "Start capture",
+  "stopScreenshot": "Stop capture",
+  "screenshotEnabledToast": "Capture enabled",
+  "screenshotDisabledToast": "Capture disabled",
+  "intervalSettingTitle": "Set capture interval",
+  "intervalLabel": "Interval (seconds)",
+  "intervalHint": "Enter an integer between 5-60",
+  "intervalSavedToast": "Capture interval set to {seconds}s",
+  "@intervalSavedToast": {
+    "description": "Prompt after saving capture interval in seconds",
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "languageSettingTitle": "Language",
+  "languageSystem": "System",
+  "languageChinese": "Chinese (Simplified)",
+  "languageEnglish": "English",
+  "languageChangedToast": "Switched to {name}",
+  "@languageChangedToast": {
+    "description": "Toast after changing language",
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "nsfwWarningTitle": "Content Warning: Adult Content",
+  "nsfwWarningSubtitle": "This content has been marked as adult content",
+  "show": "Show",
+  "appSearchPlaceholder": "Search apps...",
+  "selectedCount": "Selected {count}",
+  "@selectedCount": {
+    "description": "Number of selected apps",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "refreshAppsTooltip": "Refresh apps",
+  "selectAll": "Select all",
+  "clearAll": "Clear",
+  "noAppsFound": "No apps found",
+  "noAppsMatched": "No matching apps",
+  "stepProgress": "Step {current} / {total}",
+  "@stepProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "onboardingWelcomeTitle": "Welcome to ScreenMemo",
+  "onboardingWelcomeDesc": "An intelligent memo and information management tool to help you capture, organize, and review important information efficiently.",
+  "onboardingKeyFeaturesTitle": "Key features",
+  "featureSmartNotes": "Smart information capture",
+  "featureQuickSearch": "Fast content search",
+  "featureLocalStorage": "Local data storage",
+  "featureUsageAnalytics": "Usage analytics",
+  "onboardingPermissionsTitle": "Grant required permissions",
+  "refreshPermissionStatus": "Refresh permission status",
+  "onboardingPermissionsDesc": "To provide the full experience, please grant the following permissions:",
+  "storagePermissionTitle": "Storage permission",
+  "storagePermissionDesc": "Save files to device storage",
+  "notificationPermissionTitle": "Notification permission",
+  "notificationPermissionDesc": "Show service status notifications",
+  "accessibilityPermissionTitle": "Accessibility service",
+  "accessibilityPermissionDesc": "Enable intelligent recognition and analysis",
+  "usageStatsPermissionTitle": "Usage stats permission",
+  "usageStatsPermissionDesc": "Accurately detect the foreground app",
+  "batteryOptimizationTitle": "Battery optimization whitelist",
+  "batteryOptimizationDesc": "Keep the capture service stable",
+  "pleaseCompleteInSystemSettings": "Please complete authorization in system settings, then return to the app",
+  "autostartPermissionTitle": "Auto-start permission",
+  "autostartPermissionDesc": "Allow the app to restart in the background",
+  "permissionsFooterNote": "Permissions persist after granting and can be changed anytime in system settings",
+  "grantedLabel": "Granted",
+  "authorizeAction": "Authorize",
+  "onboardingSelectAppsTitle": "Select apps to monitor",
+  "onboardingSelectAppsDesc": "Please choose apps to monitor for screenshots. Select at least one to continue.",
+  "onboardingDoneTitle": "All set!",
+  "onboardingDoneDesc": "All permissions have been granted. You can now start using ScreenMemo.",
+  "nextStepTitle": "Next step",
+  "onboardingNextStepDesc": "Tap \"Start Using\" to enter the main screen and experience powerful screenshot features.",
+  "prevStep": "Previous",
+  "startUsing": "Start Using",
+  "finishSelection": "Finish selection",
+  "nextStep": "Next",
+  "confirmPermissionSettingsTitle": "Confirm permission settings",
+  "confirmAutostartQuestion": "Have you completed the \"Auto-start permission\" configuration in system settings?",
+  "notYet": "Not yet",
+  "done": "Done",
+  "startingScreenshotServiceInfo": "Starting capture service...",
+  "startServiceFailedCheckPermissions": "Failed to start capture service. Please check permission settings",
+  "startFailedTitle": "Start failed",
+  "startFailedUnknown": "Start failed: Unknown error",
+  "tipIfProblemPersists": "Tip: If the issue persists, try restarting the app or reconfiguring permissions",
+  "autoDisabledDueToPermissions": "Capture has been disabled due to insufficient permissions",
+  "refreshingPermissionsInfo": "Refreshing permission status...",
+  "permissionsRefreshed": "Permission status refreshed",
+  "refreshPermissionsFailed": "Failed to refresh permission status: {error}",
+  "@refreshPermissionsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "screenRecordingPermissionTitle": "Screen recording permission",
+  "goToSettings": "Go to Settings",
+  "notGrantedLabel": "Not granted",
+  "removeMonitoring": "Remove monitoring",
+  "selectedItemsCount": "Selected {count}",
+  "@selectedItemsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "whySomeAppsHidden": "Why are some apps missing?",
+  "excludedAppsTitle": "Excluded apps",
+  "excludedAppsIntro": "The following apps are excluded and cannot be selected:",
+  "excludedThisApp": "· This app (to avoid self interference)",
+  "excludedImeApps": "· Input method (keyboard) apps:",
+  "excludedImeAppsFiltered": "· Input method (keyboard) apps (auto filtered)",
+  "currentDefaultIme": "Current default IME: {name} ({package})",
+  "@currentDefaultIme": {
+    "placeholders": {
+      "name": {},
+      "package": {}
+    }
+  },
+  "imeExplainText": "When the keyboard pops up in another app, the system switches to the IME window. If not excluded, it may be mistaken as using the IME, causing the floating window detection to be wrong. We automatically exclude IME apps and will still move the floating window to the app before the IME pops up when an IME is detected.",
+  "gotIt": "Got it",
+  "unknownIme": "Unknown IME",
+  "intervalRangeNote": "Range: 5–60 seconds, default: 5 seconds.",
+  "intervalInvalidInput": "Please enter a valid integer between 5–60",
+  "removeMonitoringMessage": "Only remove monitoring and do not delete images. Continue?",
+  "remove": "Remove",
+  "removedMonitoringToast": "Removed monitoring for {count} apps (images are not deleted)",
+  "@removedMonitoringToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "checkPermissionStatusFailed": "Failed to check permission status: {error}",
+  "@checkPermissionStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "accessibilityNotEnabledDetail": "Accessibility service not enabled\\nPlease enable accessibility in Settings",
+  "storagePermissionNotGrantedDetail": "Storage permission not granted\\nPlease grant storage permission in Settings",
+  "serviceNotRunningDetail": "Service not running properly\\nPlease try restarting the app",
+  "androidVersionNotSupportedDetail": "Android version not supported\\nRequires Android 11.0 or higher",
+  "permissionsSectionTitle": "Permissions",
+  "displayAndSortSectionTitle": "Display & Sorting",
+  "screenshotSectionTitle": "Capture settings",
+  "segmentSummarySectionTitle": "Segment summary",
+  "dailyReminderSectionTitle": "Daily summary reminder",
+  "aiAssistantSectionTitle": "AI Assistant",
+  "dataBackupSectionTitle": "Data & backup",
+  "actionSet": "Set",
+  "actionEnter": "Enter",
+  "actionExport": "Export",
+  "actionImport": "Import",
+  "actionCopyPath": "Copy path",
+  "actionOpen": "Open",
+  "actionTrigger": "Trigger",
+  "allPermissionsGranted": "All granted",
+  "permissionsMissingCount": "{count} permissions not granted",
+  "@permissionsMissingCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+
+  "exportSuccessTitle": "Export complete",
+  "exportFileExportedTo": "File exported to:",
+  "pathCopiedToast": "Path copied",
+  "exportFailedTitle": "Export failed",
+  "pleaseTryAgain": "Please try again later",
+
+  "importCompleteTitle": "Import complete",
+  "dataExtractedTo": "Data extracted to:",
+  "importFailedTitle": "Import failed",
+  "importFailedCheckZip": "Please check the ZIP file and try again.",
+
+  "noMediaProjectionNeeded": "Using Accessibility screenshots, no screen recording permission needed",
+  "autostartPermissionMarked": "Auto-start permission marked as granted",
+  "requestPermissionFailed": "Request permission failed: {error}",
+  "@requestPermissionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+
+  "expireCleanupSaved": "Expire cleanup settings saved",
+  "dailyNotifyTriggered": "Notification triggered",
+  "dailyNotifyTriggerFailed": "Failed to trigger notification or content empty",
+
+  "refreshPermissionStatusTooltip": "Refresh permission status",
+  "storagePermissionTitle": "Storage permission",
+  "storagePermissionDesc": "Save screenshot files to device storage",
+  "notificationPermissionTitle": "Notification permission",
+  "notificationPermissionDesc": "Show service status notifications",
+  "accessibilityPermissionTitle": "Accessibility service",
+  "accessibilityPermissionDesc": "Monitor app switching and take screenshots",
+  "usageStatsPermissionTitle": "Usage stats permission",
+  "usageStatsPermissionDesc": "Ensure accurate foreground app detection",
+  "batteryOptimizationTitle": "Battery optimization whitelist",
+  "batteryOptimizationDesc": "Keep screenshot service running stably",
+  "autostartPermissionTitle": "Auto-start permission",
+  "autostartPermissionDesc": "Allow app to restart in background",
+  "grantedStatus": "Granted",
+  "notGrantedStatus": "Grant",
+
+  "privacyModeTitle": "Privacy mode",
+  "privacyModeDesc": "Automatically blur sensitive content",
+  "homeSortingTitle": "Home sorting",
+  "screenshotIntervalTitle": "Screenshot interval",
+  "screenshotIntervalDesc": "Current interval: {seconds}s",
+  "@screenshotIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "screenshotQualityTitle": "Screenshot quality",
+  "currentSizeLabel": "Current size: ",
+  "clickToModifyHint": "(Click number to modify)",
+  "screenshotExpireTitle": "Screenshot expiration cleanup",
+  "currentExpireDaysLabel": "Current expiration days: ",
+  "expireDaysUnit": "{days} days",
+  "@expireDaysUnit": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+
+  "exportDataTitle": "Export data",
+  "exportDataDesc": "Export ZIP to Download/ScreenMemory",
+  "importDataTitle": "Import data",
+  "importDataDesc": "Import ZIP file to app storage",
+  "aiAssistantTitle": "AI Assistant",
+  "aiAssistantDesc": "Configure AI interface and models, test multi-turn conversations",
+
+  "segmentSampleIntervalTitle": "Sample interval (seconds)",
+  "segmentSampleIntervalDesc": "Current: {seconds}s",
+  "@segmentSampleIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "segmentDurationTitle": "Segment duration (minutes)",
+  "segmentDurationDesc": "Current: {minutes} minutes",
+  "@segmentDurationDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "aiRequestIntervalTitle": "AI request minimum interval (seconds)",
+  "aiRequestIntervalDesc": "Current: {seconds}s (minimum 1s)",
+  "@aiRequestIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+
+  "dailyReminderTimeTitle": "Daily summary reminder time",
+  "currentTimeLabel": "Current: ",
+  "testNotificationTitle": "Test notification",
+  "testNotificationDesc": "Trigger \"Daily Summary\" notification now",
+  "enableBannerNotificationTitle": "Enable banner/floating notifications",
+  "enableBannerNotificationDesc": "Allow notifications to pop up at the top of screen (banner/floating)",
+
+  "setIntervalDialogTitle": "Set screenshot interval",
+  "intervalSecondsLabel": "Interval (seconds)",
+  "intervalInputHint": "Enter an integer between 5-60",
+  "intervalRangeHint": "Range: 5-60 seconds, default: 5 seconds",
+  "intervalInvalidError": "Please enter a valid integer between 5-60",
+  "intervalSavedSuccess": "Screenshot interval set to {seconds}s",
+  "@intervalSavedSuccess": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+
+  "setTargetSizeDialogTitle": "Set target size (KB)",
+  "targetSizeKbLabel": "Target size (KB)",
+  "targetSizeInvalidError": "Please enter a valid integer >= 50",
+  "targetSizeHint": "To ensure OCR quality, minimum 50KB is supported; system will try to approach this size without changing resolution.",
+  "targetSizeSavedSuccess": "Target size set to {kb} KB",
+  "@targetSizeSavedSuccess": {
+    "placeholders": {
+      "kb": {}
+    }
+  },
+
+  "setExpireDaysDialogTitle": "Set screenshot expiration days",
+  "expireDaysLabel": "Expiration days",
+  "expireDaysInputHint": "Enter an integer >= 1",
+  "expireDaysInvalidError": "Please enter a valid integer >= 1",
+  "expireDaysHint": "Minimum 1 day; when enabled, app will automatically clean expired files periodically after startup and each screenshot (12-hour throttle protection).",
+  "expireDaysSavedSuccess": "Set to {days} days",
+  "@expireDaysSavedSuccess": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+
+  "sortTimeNewToOld": "Time (New→Old)",
+  "sortTimeOldToNew": "Time (Old→New)",
+  "sortSizeLargeToSmall": "Size (Large→Small)",
+  "sortSizeSmallToLarge": "Size (Small→Large)",
+  "sortCountManyToFew": "Count (Many→Few)",
+  "sortCountFewToMany": "Count (Few→Many)",
+  "selectHomeSortingTitle": "Select home sorting",
+  "currentSortingLabel": "Current: {sorting}",
+  "@currentSortingLabel": {
+    "placeholders": {
+      "sorting": {}
+    }
+  },
+
+  "privacyModeEnabledToast": "Privacy mode enabled",
+  "privacyModeDisabledToast": "Privacy mode disabled",
+  "screenshotQualitySettingsSaved": "Screenshot quality settings saved",
+  "saveFailedError": "Save failed: {error}",
+  "@saveFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+
+  "setReminderTimeTitle": "Set reminder time (24-hour format)",
+  "hourLabel": "Hour (0-23)",
+  "minuteLabel": "Minute (0-59)",
+  "timeInputHint": "Tip: Click numbers to input directly; range is 0-23 hours and 0-59 minutes.",
+  "invalidHourError": "Please enter a valid hour between 0-23",
+  "invalidMinuteError": "Please enter a valid minute between 0-59",
+  "timeSetSuccess": "Set to {hour}:{minute}",
+  "@timeSetSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+
+  "reminderScheduleSuccess": "Daily reminder time set to {hour}:{minute}",
+  "@reminderScheduleSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderDisabledSuccess": "Daily reminder disabled",
+  "reminderScheduleFailed": "Failed to schedule daily reminder (platform may not support)",
+  "saveReminderSettingsFailed": "Failed to save reminder settings: {error}",
+  "@saveReminderSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  }
+,
+  "searchFailedError": "Search failed: {error}",
+  "@searchFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchInputHintOcr": "Type keywords to search screenshots by OCR",
+  "noMatchingScreenshots": "No matching screenshots",
+  "imageMissingOrCorrupted": "Image missing or corrupted",
+  "actionClear": "Clear",
+  "actionRefresh": "Refresh",
+  "noScreenshotsTitle": "No screenshots yet",
+  "noScreenshotsSubtitle": "Enable screenshot monitoring to see images here",
+  "confirmDeleteTitle": "Confirm deletion",
+  "confirmDeleteMessage": "Delete this screenshot? This action cannot be undone.",
+  "actionDelete": "Delete",
+  "actionContinue": "Continue",
+  "linkTitle": "Link",
+  "actionCopy": "Copy",
+  "imageInfoTitle": "Screenshot info",
+  "deleteImageTooltip": "Delete image",
+  "imageLoadFailed": "Image failed to load",
+  "labelAppName": "App name",
+  "labelCaptureTime": "Capture time",
+  "labelFilePath": "File path",
+  "labelPageLink": "Page link",
+  "labelFileSize": "File size",
+  "tapToContinue": "Tap to continue",
+  "appDirUninitialized": "App directory not initialized",
+  "actionRetry": "Retry",
+  "deleteSelectedTooltip": "Delete selected",
+  "noMatchingResults": "No matching results",
+  "dayTabToday": "Today {count}",
+  "@dayTabToday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabYesterday": "Yesterday {count}",
+  "@dayTabYesterday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabMonthDayCount": "{month}/{day} {count}",
+  "@dayTabMonthDayCount": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "count": {}
+    }
+  },
+  "screenshotDeletedToast": "Screenshot deleted",
+  "deleteFailed": "Delete failed",
+  "deleteFailedWithError": "Delete failed: {error}",
+  "@deleteFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "imageInfoTooltip": "Image info",
+  "copySuccess": "Copied",
+  "copyFailed": "Copy failed",
+  "deletedCountToast": "Deleted {count} screenshots",
+  "@deletedCountToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "invalidArguments": "Invalid arguments",
+  "initFailedWithError": "Initialization failed: {error}",
+  "@initFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadMoreFailedWithError": "Failed to load more: {error}",
+  "@loadMoreFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "confirmDeleteAllTitle": "Confirm deleting all screenshots",
+  "deleteAllMessage": "Will delete all {count} screenshots in current scope. This action cannot be undone.",
+  "@deleteAllMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteSelectedMessage": "Will delete {count} selected screenshots. This cannot be undone. Continue?",
+  "@deleteSelectedMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteFailedRetry": "Delete failed, please retry",
+  "keptAndDeletedSummary": "Kept {keep}, deleted {deleted}",
+  "@keptAndDeletedSummary": {
+    "placeholders": {
+      "keep": {},
+      "deleted": {}
+    }
+  },
+
+  "dailySummaryTitle": "Daily Summary {date}",
+  "@dailySummaryTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "actionGenerate": "Generate",
+  "actionRegenerate": "Regenerate",
+  "generateSuccess": "Generated",
+  "generateFailed": "Generate failed",
+  "noDailySummaryToday": "No summary for today",
+  "generateDailySummary": "Generate today's summary",
+
+  "statisticsTitle": "Statistics",
+  "overviewTitle": "Overview",
+  "monitoredApps": "Monitored apps",
+  "totalScreenshots": "Total screenshots",
+  "todayScreenshots": "Today's screenshots",
+  "storageUsage": "Storage usage",
+  "appStatisticsTitle": "App statistics",
+  "screenshotCountWithLast": "Screenshots: {count} | Last: {last}",
+  "@screenshotCountWithLast": {
+    "placeholders": {
+      "count": {},
+      "last": {}
+    }
+  },
+  "none": "None",
+  "usageTrendsTitle": "Usage trends",
+  "trendChartTitle": "Trend chart",
+  "comingSoon": "Coming soon",
+
+  "timelineTitle": "Timeline",
+  "pressBackAgainToExit": "Press back again to exit",
+
+  "segmentStatusTitle": "Event Status",
+  "autoWatchingHint": "Auto watching in background…",
+  "noEvents": "No events",
+  "activeSegmentTitle": "Active segment",
+  "sampleEverySeconds": "Sample every {seconds}s",
+  "@sampleEverySeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailySummaryShort": "Daily Summary",
+  "viewOrGenerateForDay": "View or generate the day's summary",
+  "mergedEventTag": "Merged",
+  "collapse": "Collapse",
+  "expandMore": "Expand more",
+  "viewImagesCount": "View images ({count})",
+  "@viewImagesCount": {
+    "placeholders": { "count": {} }
+  },
+  "hideImagesCount": "Hide images ({count})",
+  "@hideImagesCount": {
+    "placeholders": { "count": {} }
+  },
+  "deleteEventTooltip": "Delete event",
+  "confirmDeleteEventMessage": "Delete this event? This will not delete any image files.",
+  "eventDeletedToast": "Event deleted",
+  "regenerationQueued": "Regeneration queued",
+  "alreadyQueuedOrFailed": "Already queued or failed",
+  "retryFailed": "Retry failed",
+  "copyResultsTooltip": "Copy results",
+
+  "aiSettingsTitle": "AI Settings & Test",
+  "connectionSettingsTitle": "Connection settings",
+  "actionSave": "Save",
+  "clearConversation": "Clear conversation",
+  "deleteGroup": "Delete group",
+  "streamingRequestTitle": "Streaming",
+  "streamingRequestHint": "Use streaming responses when enabled (default on)",
+  "streamingEnabledToast": "Streaming enabled",
+  "streamingDisabledToast": "Streaming disabled",
+  "promptManagerTitle": "Prompt manager",
+  "promptManagerHint": "Configure prompts for normal and merged summaries; supports Markdown. Empty or reset to use defaults.",
+  "normalEventPromptLabel": "Normal event prompt",
+  "mergeEventPromptLabel": "Merged event prompt",
+  "actionEdit": "Edit",
+  "savingLabel": "Saving",
+  "resetToDefault": "Reset to default",
+  "chatTestTitle": "Chat test",
+  "actionSend": "Send",
+  "sendingLabel": "Sending",
+  "baseUrlLabel": "Base URL",
+  "baseUrlHint": "e.g. https://api.openai.com",
+  "apiKeyLabel": "API key",
+  "apiKeyHint": "e.g. sk-... or vendor token",
+  "modelLabel": "Model",
+  "modelHint": "e.g. gpt-4o-mini / gpt-4o / compatible",
+  "siteGroupsTitle": "Site groups",
+  "siteGroupsHint": "Configure multiple sites as fallback; auto switch on failure",
+  "rename": "Rename",
+  "addGroup": "Add group",
+  "showGroupSelector": "Show group selector",
+  "ungroupedSingleConfig": "Ungrouped (single config)",
+  "inputMessageHint": "Enter a message",
+  
+  "saveSuccess": "Saved",
+  "savedCurrentGroupToast": "Group saved",
+  "savedNormalPromptToast": "Normal prompt saved",
+  "savedMergePromptToast": "Merged prompt saved",
+  "resetToDefaultPromptToast": "Reset to default prompt",
+  "resetFailedWithError": "Reset failed: {error}",
+  "@resetFailedWithError": {
+    "placeholders": { "error": {} }
+  },
+  "clearSuccess": "Cleared",
+  "clearFailedWithError": "Clear failed: {error}",
+  "@clearFailedWithError": {
+    "placeholders": { "error": {} }
+  },
+  "messageCannotBeEmpty": "Message cannot be empty",
+  "sendFailedWithError": "Send failed: {error}",
+  "@sendFailedWithError": {
+    "placeholders": { "error": {} }
+  },
+  "groupSwitchedToUngrouped": "Switched to Ungrouped",
+  "groupSwitched": "Group switched",
+  "groupNotSelected": "No group selected",
+  "groupNotFound": "Group not found",
+  "renameGroupTitle": "Rename group",
+  "groupNameLabel": "Group name",
+  "groupNameHint": "Enter a new group name",
+  "nameCannotBeEmpty": "Name cannot be empty",
+  "renameSuccess": "Renamed",
+  "renameFailedWithError": "Rename failed: {error}",
+  "@renameFailedWithError": { "placeholders": { "error": {} } },
+  "groupAddedToast": "Group added",
+  "addGroupFailedWithError": "Add group failed: {error}",
+  "@addGroupFailedWithError": { "placeholders": { "error": {} } },
+  "groupDeletedToast": "Group deleted",
+  "deleteGroupFailedWithError": "Delete group failed: {error}",
+  "@deleteGroupFailedWithError": { "placeholders": { "error": {} } },
+  "loadGroupFailedWithError": "Load group failed: {error}",
+  "@loadGroupFailedWithError": { "placeholders": { "error": {} } },
+  "siteGroupDefaultName": "Site Group {index}",
+  "@siteGroupDefaultName": { "placeholders": { "index": {} } },
+  "defaultLabel": "Default",
+  "customLabel": "Custom",
+  "normalShortLabel": "Normal:",
+  "mergeShortLabel": "Merged:",
+  "timeRangeLabel": "Time range: {range}",
+  "@timeRangeLabel": { "placeholders": { "range": {} } },
+  "statusLabel": "Status: {status}",
+  "@statusLabel": { "placeholders": { "status": {} } },
+  "samplesTitle": "Samples ({count})",
+  "@samplesTitle": { "placeholders": { "count": {} } },
+  "aiResultTitle": "AI Result",
+  "modelValueLabel": "Model: {model}",
+  "@modelValueLabel": { "placeholders": { "model": {} } },
+  "tagMergedCopy": "Tag: Merged",
+  "categoriesLabel": "Categories: {categories}",
+  "@categoriesLabel": { "placeholders": { "categories": {} } },
+  "errorLabel": "Error: {error}",
+  "@errorLabel": { "placeholders": { "error": {} } },
+  "summaryLabel": "Summary: {summary}",
+  "@summaryLabel": { "placeholders": { "summary": {} } },
+  "autostartPermissionNote": "Auto-start permission varies by OEM and cannot be auto-detected. Please choose based on your actual settings.",
+  "monthDayTime": "{month}/{day} {hour}:{minute}",
+  "@monthDayTime": { "placeholders": { "month": {}, "day": {}, "hour": {}, "minute": {} } },
+  "yearMonthDayTime": "{year}/{month}/{day} {hour}:{minute}",
+  "@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } }
+  }
