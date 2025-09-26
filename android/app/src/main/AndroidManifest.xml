@@ -39,7 +39,8 @@
     <application
         android:label="@string/app_name"
         android:name=".ScreenMemoApplication"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:localeConfig="@xml/locales_config">
         <!-- Umeng configuration (AppKey/Channel injected via manifestPlaceholders) -->
         <meta-data
             android:name="UMENG_APPKEY"
@@ -72,11 +73,35 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- LAUNCHER moved to activity-alias for dynamic label switching -->
+        </activity>
+
+        <!-- Launcher aliases for dynamic label switching -->
+        <activity-alias
+            android:name=".LauncherAliasZh"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="屏忆"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".LauncherAliasEn"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Screen Memo"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
 
         <!-- 无障碍服务声明 -->
         <service

@@ -320,6 +320,16 @@ class MainActivity : FlutterActivity() {
                 "getDeviceInfo" -> {
                     result.success(OEMCompatibilityHelper.getDeviceInfo())
                 }
+                "switchLauncherAlias" -> {
+                    try {
+                        val lang = call.argument<String>("lang") ?: ""
+                        val ok = switchLauncherAliasInternal(lang)
+                        result.success(ok)
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "切换Launcher别名失败", e)
+                        result.error("alias_switch_failed", e.message, null)
+                    }
+                }
                 "getEnabledImeList" -> {
                     try {
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -1636,6 +1646,44 @@ class MainActivity : FlutterActivity() {
                 "fileName" to displayName,
                 "size" to size
             )
+        }
+    }
+
+    private fun switchLauncherAliasInternal(lang: String): Boolean {
+        return try {
+            val pm = packageManager
+            val zh = ComponentName(this, "$packageName.LauncherAliasZh")
+            val en = ComponentName(this, "$packageName.LauncherAliasEn")
+            val langLower = lang.lowercase()
+            if (langLower == "en") {
+                pm.setComponentEnabledSetting(
+                    en,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    zh,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                try { FileLogger.i(TAG, "Launcher alias switched to EN") } catch (_: Exception) {}
+            } else {
+                pm.setComponentEnabledSetting(
+                    zh,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    en,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                try { FileLogger.i(TAG, "Launcher alias switched to ZH") } catch (_: Exception) {}
+            }
+            true
+        } catch (e: Exception) {
+            try { FileLogger.e(TAG, "切换Launcher别名异常", e) } catch (_: Exception) {}
+            false
         }
     }
 }
