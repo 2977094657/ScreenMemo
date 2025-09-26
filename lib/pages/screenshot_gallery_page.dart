@@ -481,14 +481,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     }
   }
 
-  /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间
+  /// 构建标题栏右侧统计文本：X张 · Y.YYMB/GB/TB · 时间（本地化）
   String _buildHeaderStatsText() {
-    // 使用统计的总量/总大小与最近时间（非依赖已加载列表）
-    String timeStr = '暂无';
+    final l10n = AppLocalizations.of(context);
+    String timeStr = l10n.none;
     if (_latestTime != null) {
       timeStr = _formatDateTime(_latestTime!);
     }
-    return '$_totalCount张 · ${_formatTotalSizeMBGBTB(_totalSize)} · $timeStr';
+    return '${l10n.imagesCountLabel(_totalCount)} · ${_formatTotalSizeMBGBTB(_totalSize)} · $timeStr';
   }
 
   @override
@@ -2126,19 +2126,27 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   }
 
   String _formatDateTime(DateTime dateTime) {
+    final l10n = AppLocalizations.of(context);
     final now = DateTime.now();
     final diff = now.difference(dateTime);
 
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return l10n.justNow;
     } else if (diff.inHours < 1) {
-      return '${diff.inMinutes}分钟前';
+      return l10n.minutesAgo(diff.inMinutes);
     } else if (diff.inDays < 1) {
-      return '${diff.inHours}小时前';
+      return l10n.hoursAgo(diff.inHours);
     } else if (diff.inDays < 7) {
-      return '${diff.inDays}天前';
+      return l10n.daysAgo(diff.inDays);
     } else {
-      return '${dateTime.month}/${dateTime.day} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      final bool sameYear = now.year == dateTime.year;
+      final String hh = dateTime.hour.toString().padLeft(2, '0');
+      final String mm = dateTime.minute.toString().padLeft(2, '0');
+      if (sameYear) {
+        return l10n.monthDayTime(dateTime.month, dateTime.day, hh, mm);
+      } else {
+        return l10n.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
+      }
     }
   }
 

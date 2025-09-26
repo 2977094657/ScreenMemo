@@ -1086,34 +1086,35 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   /// 获取应用统计文本
   String _getAppStatText(String packageName) {
+    final l10n = AppLocalizations.of(context);
     final appStats = _screenshotStats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
     final stat = appStats[packageName];
-    
+
     if (stat == null) {
-      return '0张 · 0.00MB · 暂无';
+      return '${l10n.imagesCountLabel(0)} · ${_formatTotalSizeMBGBTB(0)} · ${l10n.none}';
     }
-    
+
     final count = stat['totalCount'] as int? ?? 0;
     final lastTime = stat['lastCaptureTime'] as DateTime?;
     final totalBytes = stat['totalSize'] as int? ?? 0;
-    
-    String timeStr = '暂无';
+
+    String timeStr = l10n.none;
     if (lastTime != null) {
       final now = DateTime.now();
       final diff = now.difference(lastTime);
-      
+
       if (diff.inMinutes < 1) {
-        timeStr = '刚刚';
+        timeStr = l10n.justNow;
       } else if (diff.inHours < 1) {
-        timeStr = '${diff.inMinutes}分钟前';
+        timeStr = l10n.minutesAgo(diff.inMinutes);
       } else if (diff.inDays < 1) {
-        timeStr = '${diff.inHours}小时前';
+        timeStr = l10n.hoursAgo(diff.inHours);
       } else {
-        timeStr = '${diff.inDays}天前';
+        timeStr = l10n.daysAgo(diff.inDays);
       }
     }
-    
-    return '$count张 · ${_formatTotalSizeMBGBTB(totalBytes)} · $timeStr';
+
+    return '${l10n.imagesCountLabel(count)} · ${_formatTotalSizeMBGBTB(totalBytes)} · $timeStr';
   }
 
   /// 将字节格式化为最小MB，然后GB/TB
