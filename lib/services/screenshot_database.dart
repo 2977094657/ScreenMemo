@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1629,48 +1630,106 @@ class ScreenshotDatabase {
   /// 返回导出结果（包含 displayPath 等），失败返回 null
   Future<Map<String, dynamic>?> exportDatabaseToDownloads() async {
     try {
-      // 将 external/output 整个目录打包为 zip
-      final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir(); 
+      // 先校验 output 目录存在
+      final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir();
       await FlutterLogger.nativeInfo('EXPORT', 'baseDir=' + (base?.path ?? 'null'));
-      if (base == null) return null; 
-      final outputDir = Directory(join(base.path, 'output')); 
-      if (!await outputDir.exists()) { await FlutterLogger.nativeWarn('EXPORT', 'output not found: ' + outputDir.path); return null; }
+      if (base == null) return null;
+      final outputDir = Directory(join(base.path, 'output'));
+      if (!await outputDir.exists()) {
+        await FlutterLogger.nativeWarn('EXPORT', 'output not found: ' + outputDir.path);
+        return null;
+      }
 
-      // 生成临时zip路径
+      // 0) 极致速度：优先尝试原生 Zip（Android 端 ZipOutputStream BEST_SPEED，直写 Downloads）
+      try {
+        final fast = await _channel.invokeMethod('exportOutputToDownloadsNative', {
+          'displayName': 'output_export.zip',
+          'subDir': 'ScreenMemory',
+        });
+        if (fast is Map) {
+          final map = Map<String, dynamic>.from(fast);
+          map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
+          await FlutterLogger.nativeInfo('EXPORT', 'native fast saved to ' + (map['humanPath']?.toString() ?? ''));
+          return map;
+        }
+      } catch (e) {
+        // iOS/桌面或老版本安卓无该方法时走回退路径
+        await FlutterLogger.nativeWarn('EXPORT', 'native fast path unavailable, fallback: ' + e.toString());
+      }
+
+      // 1) 回退：Dart 侧 Isolate 流式压缩（混合策略：文件大多 STORE，小文本 FAST）
       final tmpZip = File(join(base.path, 'output_export.zip'));
       try { if (await tmpZip.exists()) await tmpZip.delete(); } catch (_) {}
 
-      // 使用 archive 库打包
-      final archive = Archive();
-      await for (final entity in outputDir.list(recursive: true, followLinks: false)) {
-        if (entity is File) {
-          final relPath = entity.path.substring(outputDir.path.length + 1).replaceAll('\\\\', '/');
-          final bytes = await entity.readAsBytes();
-          archive.addFile(ArchiveFile(relPath, bytes.length, bytes));
+      final String outputPath = outputDir.path;
+      final String tmpZipPath = tmpZip.path;
+      final zippedPath = await Isolate.run(() async {
+        bool _ignored(String relLower) {
+          final parts = relLower.split('/');
+          if (parts.isNotEmpty) {
+            final head = parts.first;
+            if (head == 'cache' || head == 'tmp' || head == 'temp' || head == '.thumbnails') return true;
+          }
+          return relLower.endsWith('.db-wal') ||
+                 relLower.endsWith('.db-shm') ||
+                 relLower.endsWith('.db-journal');
         }
-      }
-      final encoder = ZipEncoder();
-      final zipData = encoder.encode(archive);
-      if (zipData == null) return null;
-      await tmpZip.writeAsBytes(zipData, flush: true); 
-      await FlutterLogger.nativeInfo('EXPORT', 'zip bytes=' + zipData.length.toString() + ' path=' + tmpZip.path);
 
-      // 通过原生保存到 Download/ScreenMemory
+        bool _compressible(String relLower, int size) {
+          if (size > 5 * 1024 * 1024) return false;
+          return relLower.endsWith('.json') ||
+                 relLower.endsWith('.txt')  ||
+                 relLower.endsWith('.csv')  ||
+                 relLower.endsWith('.md')   ||
+                 relLower.endsWith('.log')  ||
+                 relLower.endsWith('.yaml') ||
+                 relLower.endsWith('.yml')  ||
+                 relLower.endsWith('.xml');
+        }
+
+        final dir = Directory(outputPath);
+        if (!await dir.exists()) return null;
+
+        final archive = Archive();
+        await for (final entity in dir.list(recursive: true, followLinks: false)) {
+          if (entity is! File) continue;
+          final relPath = entity.path.substring(dir.path.length + 1).replaceAll('\\', '/');
+          final relLower = relPath.toLowerCase();
+          if (_ignored(relLower)) continue;
+
+          final size = await entity.length();
+          final input = InputFileStream(entity.path);
+          final af = ArchiveFile.stream(relPath, size, input);
+          af.compress = _compressible(relLower, size); // 小文本快速压缩；其他 STORE
+          archive.addFile(af);
+        }
+
+        final out = OutputFileStream(tmpZipPath);
+        final encoder = ZipEncoder();
+        encoder.encode(archive, level: Deflate.BEST_SPEED, output: out);
+        out.close();
+        return tmpZipPath;
+      });
+
+      if (zippedPath == null) return null;
+      await FlutterLogger.nativeInfo('EXPORT', 'fallback zip ready path=' + zippedPath);
+
+      // 2) 通过原生保存到 Download/ScreenMemory
       final result = await _channel.invokeMethod('exportFileToDownloads', {
-        'sourcePath': tmpZip.path,
+        'sourcePath': zippedPath,
         'displayName': 'output_export.zip',
         'subDir': 'ScreenMemory',
       });
 
-      // 清理临时文件
+      // 3) 清理临时文件
       try { await tmpZip.delete(); } catch (_) {}
 
-      if (result is Map) { 
-        final map = Map<String, dynamic>.from(result); 
-        map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?); 
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
         await FlutterLogger.nativeInfo('EXPORT', 'saved to ' + (map['humanPath']?.toString() ?? ''));
-        return map; 
-      } 
+        return map;
+      }
       return null;
     } catch (e) {
       print('导出output压缩包失败: $e');
@@ -1678,97 +1737,29 @@ class ScreenshotDatabase {
     }
   }
 
-  /// 从 ZIP 归档导入数据到应用的外部存储 "output" 目录。
-  /// 导出的 ZIP 包含相对于 "output" 文件夹的路径。
-  /// 这将安全地将条目解压到 `<externalFilesDir>/output` 并重置
-  /// 打开的数据库句柄，以便后续查询在导入的数据上操作。
-  ///
-  /// 返回: 成功时返回 { 'extracted': int, 'targetDir': String }；失败时返回 null。
+  /// 从 ZIP 归档导入数据到应用的外部存储 "output" 目录（兼容旧接口）。
+  /// 实现统一委托到流式 + Isolate 版本。
   Future<Map<String, dynamic>?> importDataFromZip({
     String? zipPath,
     List<int>? zipBytes,
     bool overwrite = true,
   }) async {
-    try {
-      await FlutterLogger.nativeInfo('IMPORT', 'begin');
-      await FlutterLogger.nativeDebug('IMPORT', 'args path=' + (zipPath ?? '') + ' bytes=' + ((zipBytes?.length ?? 0).toString()));
-      if ((zipPath == null || zipPath.isEmpty) && (zipBytes == null || zipBytes.isEmpty)) {
-        await FlutterLogger.nativeWarn('IMPORT', 'no input');
-        return null;
-      }
-
-      final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir();
-      if (base == null) return null;
-      final outputDir = Directory(join(base.path, 'output'));
-      await FlutterLogger.nativeInfo('IMPORT', 'baseDir=' + base.path);
-      if (!await outputDir.exists()) {
-        await outputDir.create(recursive: true);
-        await FlutterLogger.nativeInfo('IMPORT', 'created outputDir=' + outputDir.path);
-      }
-
-      // 读取字节数据
-      // 在导入前关闭DB句柄以避免冲突
-      try { await _resetDatabasesAfterImport(); } catch (_) {}
-      final bytes = zipBytes ?? await File(zipPath!).readAsBytes();
-      if (bytes.isEmpty) return null;
-
-      // 解码 ZIP
-      final archive = ZipDecoder().decodeBytes(bytes, verify: true);
-      int extracted = 0; 
-      await FlutterLogger.nativeInfo('IMPORT', 'entries=' + archive.length.toString());
-      for (final entry in archive) {
-        final relative = normalize(entry.name).replaceAll('\\', '/');
-        final String rel = relative.startsWith('output/') ? relative.substring('output/'.length) : relative;
-        if (rel.startsWith('../') || rel.startsWith('/')) { 
-          // 跳过可疑路径
-          continue;
-        }
-        final destPath = join(outputDir.path, rel);
-        if (entry.isFile) {
-          final file = File(destPath);
-          final parent = file.parent;
-          if (!await parent.exists()) {
-            await parent.create(recursive: true);
-          }
-          if (!overwrite && await file.exists()) {
-            // 保持现有文件
-          } else {
-            await file.writeAsBytes(entry.content as List<int>, flush: true);
-            extracted++;
-          }
-        } else {
-          final dir = Directory(destPath);
-          if (!await dir.exists()) {
-            await dir.create(recursive: true);
-          }
-        }
-      }
-
-      // 重置打开的数据库句柄
-      try {
-        await _resetDatabasesAfterImport();
-      } catch (_) {}
-
-      final _res = { 
-        'extracted': extracted, 
-        'targetDir': outputDir.path, 
-      }; 
-      await FlutterLogger.nativeInfo('IMPORT', '完成 解压=' + extracted.toString() + ' 目标=' + outputDir.path);
-      return _res; 
-    } catch (e) {
-      print('导入 ZIP 失败: $e');
-      return null;
-    }
+    return await importDataFromZipStreaming(
+      zipPath: zipPath,
+      zipBytes: zipBytes,
+      overwrite: overwrite,
+    );
   }
 
   /// 流式ZIP导入以防止大型归档OOM。推荐使用此方法。
+  /// 使用独立 Isolate 执行解压，避免主 Isolate 卡顿。
   Future<Map<String, dynamic>?> importDataFromZipStreaming({
     String? zipPath,
     List<int>? zipBytes,
     bool overwrite = true,
   }) async {
     try {
-      await FlutterLogger.nativeInfo('IMPORT', '开始(流式)');
+      await FlutterLogger.nativeInfo('IMPORT', '开始(流式+Isolate)');
       await FlutterLogger.nativeDebug('IMPORT', 'args path=' + (zipPath ?? '') + ' bytes=' + ((zipBytes?.length ?? 0).toString()));
       if ((zipPath == null || zipPath.isEmpty) && (zipBytes == null || zipBytes.isEmpty)) {
         await FlutterLogger.nativeWarn('IMPORT', 'no input');
@@ -1800,39 +1791,42 @@ class ScreenshotDatabase {
         localZipPath = tmpZipFile.path;
       }
 
-      final input = InputFileStream(localZipPath);
-      final archive = ZipDecoder().decodeBuffer(input);
-      await FlutterLogger.nativeInfo('IMPORT', 'entries=' + archive.length.toString());
-      int extracted = 0;
-      int logged = 0;
-      for (final f in archive.files) {
-        final relative = normalize(f.name).replaceAll('\\', '/');
-        final String rel = relative.startsWith('output/') ? relative.substring('output/'.length) : relative;
-        if (logged < 10) { await FlutterLogger.nativeDebug('IMPORT', '条目: ' + relative + ' -> ' + rel); logged++; }
-        if (rel.startsWith('../') || rel.startsWith('/')) {
-          continue;
-        }
-        final destPath = join(outputDir.path, rel);
-        if (f.isFile) {
-          final parent = File(destPath).parent;
-          if (!await parent.exists()) {
-            await parent.create(recursive: true);
+      // 在独立 Isolate 中执行解压，避免阻塞 UI
+      final extracted = await Isolate.run(() async {
+        final input = InputFileStream(localZipPath);
+        final archive = ZipDecoder().decodeBuffer(input);
+        int count = 0;
+        for (final f in archive.files) {
+          final relative = normalize(f.name).replaceAll('\\', '/');
+          final String rel = relative.startsWith('output/') ? relative.substring('output/'.length) : relative;
+          if (rel.startsWith('../') || rel.startsWith('/')) {
+            continue;
           }
-          if (!overwrite && await File(destPath).exists()) {
-            // 保持现有文件
+          final destPath = join(outputDir.path, rel);
+          if (f.isFile) {
+            final destFile = File(destPath);
+            final parent = destFile.parent;
+            if (!await parent.exists()) {
+              await parent.create(recursive: true);
+            }
+            if (!overwrite && await destFile.exists()) {
+              // 跳过覆盖
+            } else {
+              final out = OutputFileStream(destPath);
+              f.writeContent(out);
+              out.close();
+              count++;
+            }
           } else {
-            final out = OutputFileStream(destPath);
-            f.writeContent(out);
-            out.close();
-            extracted++;
-          }
-        } else {
-          final dir = Directory(destPath);
-          if (!await dir.exists()) {
-            await dir.create(recursive: true);
+            final d = Directory(destPath);
+            if (!await d.exists()) {
+              await d.create(recursive: true);
+            }
           }
         }
-      }
+        input.close();
+        return count;
+      });
 
       // 清理临时文件
       try { if (tmpZipFile != null) await tmpZipFile.delete(); } catch (_) {}
@@ -1844,7 +1838,7 @@ class ScreenshotDatabase {
         'extracted': extracted,
         'targetDir': outputDir.path,
       };
-      await FlutterLogger.nativeInfo('IMPORT', '完成(流式) 解压=' + extracted.toString() + ' 目标=' + outputDir.path);
+      await FlutterLogger.nativeInfo('IMPORT', '完成(流式+Isolate) 解压=' + extracted.toString() + ' 目标=' + outputDir.path);
       return res;
     } catch (e) {
       await FlutterLogger.nativeError('IMPORT', '异常(流式): ' + e.toString());

@@ -53,6 +53,9 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.Deflater
 import com.fqyw.screen_memo.UmengLogger
 import com.fqyw.screen_memo.OutputFileLogger
 
@@ -397,6 +400,20 @@ class MainActivity : FlutterActivity() {
                         FileLogger.e(TAG, "导出文件到下载目录失败", e)
                         result.error("export_failed", e.message, null)
                     }
+                }
+                "exportOutputToDownloadsNative" -> {
+                    // 极致速度：原生 Java ZipOutputStream(BEST_SPEED) 直接写入 Downloads（无中间临时文件）
+                    val displayName = call.argument<String>("displayName") ?: "output_export.zip"
+                    val subDir = call.argument<String>("subDir")
+                    Thread {
+                        try {
+                            val map = exportOutputToDownloadsNativeInternal(displayName, subDir)
+                            runOnUiThread { result.success(map) }
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "原生导出压缩失败", e)
+                            runOnUiThread { result.error("native_export_failed", e.message, null) }
+                        }
+                    }.start()
                 }
                 "insertScreenshotRecord" -> {
                     val packageName = call.argument<String>("packageName") ?: ""
@@ -1646,6 +1663,136 @@ class MainActivity : FlutterActivity() {
                 "fileName" to displayName,
                 "size" to size
             )
+        }
+    }
+
+    /**
+     * 以原生 ZipOutputStream(BEST_SPEED) 直接压缩 output 目录并写入 Downloads/ScreenMemory（无中转临时文件）
+     * - 极致速度：全局 Deflater.BEST_SPEED；仅复制字节，不做高开销压缩
+     * - 直接写入 MediaStore OutputStream，省去“临时文件 -> 再复制到Downloads”的一步磁盘 I/O
+     */
+    private fun exportOutputToDownloadsNativeInternal(displayName: String, subDir: String?): Map<String, Any?> {
+        val externalBase = getExternalFilesDir(null)
+            ?: throw IllegalStateException("External files dir not available")
+        val outputDir = File(externalBase, "output")
+        if (!outputDir.exists() || !outputDir.isDirectory) {
+            throw IllegalStateException("output directory not found: ${outputDir.absolutePath}")
+        }
+
+        val resolver = contentResolver
+        val targetSubDir = (subDir ?: "ScreenMemory").trim('/').ifEmpty { "ScreenMemory" }
+        val displayPath = if (targetSubDir.isNotEmpty()) "Download/$targetSubDir/$displayName" else "Download/$displayName"
+
+        // Android 10+ 走 MediaStore
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/zip")
+                put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    if (targetSubDir.isNotEmpty()) Environment.DIRECTORY_DOWNLOADS + "/" + targetSubDir
+                    else Environment.DIRECTORY_DOWNLOADS
+                )
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Failed to create item in MediaStore")
+
+            var bytesWritten = 0L
+            resolver.openOutputStream(uri)?.use { rawOut ->
+                ZipOutputStream(rawOut).use { zipOut ->
+                    zipOut.setLevel(Deflater.BEST_SPEED)
+                    // 将根目录名包含为 "output/"
+                    addDirectoryToZipNative(zipOut, outputDir, outputDir, "output/")
+                }
+                // 无法直接从 Uri 查询写入大小，按需要可忽略或额外统计
+            } ?: throw IllegalStateException("Failed to open output stream")
+
+            // 提交
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+
+            @Suppress("DEPRECATION")
+            val absDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val absolutePath = if (targetSubDir.isNotEmpty())
+                File(absDownloads, "$targetSubDir/$displayName").absolutePath
+            else
+                File(absDownloads, displayName).absolutePath
+
+            return mapOf(
+                "contentUri" to uri.toString(),
+                "displayPath" to displayPath,
+                "absolutePath" to absolutePath,
+                "fileName" to displayName,
+                "size" to bytesWritten // 可能为0，Android Q+可选从 uri 查询实际大小，这里保持兼容
+            )
+        } else {
+            // Android 9 及以下：直接写入公共下载目录文件
+            @Suppress("DEPRECATION")
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDir = if (targetSubDir.isNotEmpty()) File(downloadsDir, targetSubDir) else downloadsDir
+            if (!targetDir.exists()) targetDir.mkdirs()
+            val dest = File(targetDir, displayName)
+
+            FileOutputStream(dest).use { fos ->
+                ZipOutputStream(fos).use { zipOut ->
+                    zipOut.setLevel(Deflater.BEST_SPEED)
+                    addDirectoryToZipNative(zipOut, outputDir, outputDir, "output/")
+                }
+            }
+
+            return mapOf(
+                "contentUri" to dest.absolutePath,
+                "displayPath" to displayPath,
+                "absolutePath" to dest.absolutePath,
+                "fileName" to displayName,
+                "size" to dest.length()
+            )
+        }
+    }
+
+    /**
+     * 递归将目录加入 Zip（原生实现，极致速度）
+     * - rootDir：用于计算相对路径
+     * - prefix：用于包含顶层目录名（例如 "output/"）
+     * - 忽略 cache/tmp/.thumbnails 以及 SQLite 日志文件以提速（可按需调整）
+     */
+    private fun addDirectoryToZipNative(zipOut: ZipOutputStream, rootDir: File, dir: File, prefix: String) {
+        val files = dir.listFiles() ?: return
+        val buffer = ByteArray(256 * 1024)
+        for (f in files) {
+            val rel = rootDir.toURI().relativize(f.toURI()).path.replace("\\", "/")
+            val relLower = rel.lowercase()
+            // 忽略低价值文件/目录
+            val head = relLower.substringBefore('/', "")
+            if (head == "cache" || head == "tmp" || head == "temp" || head == ".thumbnails") continue
+            if (relLower.endsWith(".db-wal") || relLower.endsWith(".db-shm") || relLower.endsWith(".db-journal")) continue
+
+            if (f.isDirectory) {
+                // 目录条目可选写入，常规解压工具不强制需要；这里显式写入更完整
+                val entryName = prefix + rel.trimEnd('/') + "/"
+                val entry = ZipEntry(entryName)
+                entry.time = f.lastModified()
+                zipOut.putNextEntry(entry)
+                zipOut.closeEntry()
+                addDirectoryToZipNative(zipOut, rootDir, f, prefix)
+            } else {
+                val entryName = prefix + rel
+                val entry = ZipEntry(entryName)
+                entry.time = f.lastModified()
+                zipOut.putNextEntry(entry)
+                FileInputStream(f).use { ins ->
+                    var read: Int
+                    while (true) {
+                        read = ins.read(buffer)
+                        if (read <= 0) break
+                        zipOut.write(buffer, 0, read)
+                    }
+                }
+                zipOut.closeEntry()
+            }
         }
     }
 
