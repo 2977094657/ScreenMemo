@@ -38,7 +38,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _isLoadingKeepAlive = true;
   bool _permissionsExpanded = true; // 权限下拉菜单展开状态：默认展开，全部授权后自动收起
   int _screenshotInterval = 5;
-  String _sortMode = 'timeDesc';
   bool _privacyMode = true; // 隐私模式，默认开启
   // 段落采样设置
   int _segmentSampleIntervalSec = 20; // 最小5秒
@@ -231,7 +230,6 @@ class _SettingsPageState extends State<SettingsPage>
     WidgetsBinding.instance.addObserver(this);
     _loadAllPermissions();
     _loadScreenshotInterval();
-    _loadSortMode();
     _loadPrivacyMode();
     _loadScreenshotQualitySettings();
     _loadScreenshotExpireSettings();
@@ -712,7 +710,6 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [
                     _buildLanguageItem(context),
                     _buildPrivacyModeItem(context),
-                    _buildSortModeItem(context),
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
@@ -1403,62 +1400,6 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildSortModeItem(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.sort,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppLocalizations.of(context).homeSortingTitle,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _sortModeLabel(_sortMode),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: _showSortModeDialog,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-            ),
-            child: Text(AppLocalizations.of(context).actionSet),
-          ),
-        ],
-      ),
-    );
-  }
 
   // 语言设置
   Widget _buildLanguageItem(BuildContext context) {
@@ -2236,14 +2177,6 @@ class _SettingsPageState extends State<SettingsPage>
       );
     }
 
-    Future<void> _loadSortMode() async {
-      final mode = await _appService.getSortMode();
-      if (mounted) {
-        setState(() {
-          _sortMode = mode;
-        });
-      }
-    }
 
     Future<void> _loadScreenshotQualitySettings() async {
       try {
@@ -2334,68 +2267,8 @@ class _SettingsPageState extends State<SettingsPage>
       }
     }
 
-    String _sortModeLabel(String mode) {
-      switch (mode) {
-        case 'timeAsc':
-          return AppLocalizations.of(context).sortTimeOldToNew;
-        case 'timeDesc':
-          return AppLocalizations.of(context).sortTimeNewToOld;
-        case 'sizeAsc':
-          return AppLocalizations.of(context).sortSizeSmallToLarge;
-        case 'sizeDesc':
-          return AppLocalizations.of(context).sortSizeLargeToSmall;
-        case 'countAsc':
-          return AppLocalizations.of(context).sortCountFewToMany;
-        case 'countDesc':
-          return AppLocalizations.of(context).sortCountManyToFew;
-        case 'lastScreenshot':
-          return AppLocalizations.of(context).sortTimeNewToOld;
-        case 'screenshotCount':
-          return AppLocalizations.of(context).sortCountManyToFew;
-        default:
-          return AppLocalizations.of(context).sortTimeNewToOld;
-      }
-    }
 
-  Future<void> _updateSortMode(String mode) async {
-    await _appService.saveSortMode(mode);
-    if (mounted) {
-      setState(() {
-        _sortMode = mode;
-      });
-      UINotifier.success(context, AppLocalizations.of(context).currentSortingLabel(_sortModeLabel(mode)));
-    }
-  }
 
-  void _showSortModeDialog() async {
-    final selected = await showUIDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      title: AppLocalizations.of(context).selectHomeSortingTitle,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [Text(AppLocalizations.of(context).currentSortingLabel(_sortModeLabel(_sortMode)))],
-      ),
-      actions: [
-        UIDialogAction<String>(
-          text: AppLocalizations.of(context).sortTimeNewToOld,
-          result: 'timeDesc',
-          style: UIDialogActionStyle.primary,
-        ),
-        UIDialogAction<String>(text: AppLocalizations.of(context).sortTimeOldToNew, result: 'timeAsc'),
-        UIDialogAction<String>(text: AppLocalizations.of(context).sortSizeLargeToSmall, result: 'sizeDesc'),
-        UIDialogAction<String>(text: AppLocalizations.of(context).sortSizeSmallToLarge, result: 'sizeAsc'),
-        UIDialogAction<String>(text: AppLocalizations.of(context).sortCountManyToFew, result: 'countDesc'),
-        UIDialogAction<String>(text: AppLocalizations.of(context).sortCountFewToMany, result: 'countAsc'),
-        UIDialogAction<String>(text: AppLocalizations.of(context).dialogCancel, result: 'cancel'),
-      ],
-    );
-    if (!mounted) return;
-    if (selected != null && selected != 'cancel') {
-      await _updateSortMode(selected);
-    }
-  }
 }
 
 
