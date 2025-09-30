@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
@@ -6,6 +6,7 @@ import '../services/app_selection_service.dart';
 import '../services/screenshot_service.dart';
 import '../services/permission_service.dart';
 import '../services/theme_service.dart';
+import '../services/locale_service.dart';
 import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
@@ -821,16 +822,34 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         toolbarHeight: 48,
+        automaticallyImplyLeading: false,
+        leadingWidth: 0,
+        titleSpacing: 0,
         actions: appBarActions,
         title: _selectionMode
           ? Text(
               AppLocalizations.of(context).selectedItemsCount(_selectedPackages.length),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             )
-          : Row(
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+              child: Row(
               children: [
-                // 左侧：加号 与 排序
+                // 左侧:语言切换图标
                 IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  icon: const Icon(Icons.language, size: 20),
+                  tooltip: AppLocalizations.of(context).languageSettingTitle,
+                  onPressed: _showLanguageBottomSheet,
+                ),
+                
+                // 加号按钮
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                   icon: const Icon(Icons.add, size: 20),
                   tooltip: AppLocalizations.of(context).navSelectApps,
                   onPressed: () async {
@@ -914,38 +933,59 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 ),
                 // 首页不再显示排序图标，排序在设置页调整
 
-                // 搜索框
-                Expanded(child: _buildSearchBar(context)),
+                const SizedBox(width: 2),
                 
-                // 搜索框右侧：权限提示 或 开关（与搜索框保持间距且同高）
+                // 搜索框 - 大幅增加flex权重
+                Expanded(flex: 7, child: _buildSearchBar(context)),
+                
+                const SizedBox(width: 2),
+                
+                // 搜索框右侧：权限提示 或 开关
                 _hasPermissionIssues
                     ? IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+                        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                         icon: const Icon(
                           Icons.warning,
+                          size: 20,
                           color: AppTheme.destructive,
                         ),
                         onPressed: _showPermissionStatus,
                         tooltip: AppLocalizations.of(context).permissionMissing,
                       )
-                    : Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: IconButton(
-                          tooltip: _screenshotEnabled ? AppLocalizations.of(context).stopScreenshot : AppLocalizations.of(context).startScreenshot,
-                          iconSize: 22,
-                          onPressed: _toggleScreenshotEnabled,
-                          icon: _screenshotEnabled
-                              ? Icon(
-                                  Icons.camera_alt,
-                                  color: Theme.of(context).colorScheme.primary,
-                                )
-                              : const Icon(
-                                  Icons.no_photography_outlined,
-                                  color: AppTheme.destructive,
-                                ),
-                        ),
-                      ),
+                   : IconButton(
+                       padding: EdgeInsets.zero,
+                       constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+                       visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                       tooltip: _screenshotEnabled ? AppLocalizations.of(context).stopScreenshot : AppLocalizations.of(context).startScreenshot,
+                       iconSize: 22,
+                       onPressed: _toggleScreenshotEnabled,
+                       icon: _screenshotEnabled
+                           ? Icon(
+                               Icons.camera_alt,
+                               color: Theme.of(context).colorScheme.primary,
+                             )
+                           : const Icon(
+                               Icons.no_photography_outlined,
+                               color: AppTheme.destructive,
+                             ),
+                     ),
+               
+               // 右侧:主题切换图标
+               IconButton(
+                 padding: EdgeInsets.zero,
+                 constraints: const BoxConstraints.tightFor(width: 24, height: 36),
+                 visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                 icon: Icon(widget.themeService.themeModeIcon, size: 20),
+                 tooltip: widget.themeService.themeModeDescription,
+                 onPressed: () async {
+                   await widget.themeService.toggleTheme();
+                 },
+               ),
               ],
             ),
+          ),
       ),
       body: Column(
         children: [
@@ -971,7 +1011,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
     return Container(
       height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6, vertical: AppTheme.spacing2),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
@@ -1053,13 +1093,19 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final l10n = AppLocalizations.of(context);
     switch (_sortMode) {
       case 'time':
-        return _sortOrderAsc ? l10n.sortTimeOldToNew : l10n.sortTimeNewToOld;
+      case 'timeAsc':
+      case 'timeDesc':
+        return l10n.sortFieldTime;
       case 'count':
-        return _sortOrderAsc ? l10n.sortCountFewToMany : l10n.sortCountManyToFew;
+      case 'countAsc':
+      case 'countDesc':
+        return l10n.sortFieldCount;
       case 'size':
-        return _sortOrderAsc ? l10n.sortSizeSmallToLarge : l10n.sortSizeLargeToSmall;
+      case 'sizeAsc':
+      case 'sizeDesc':
+        return l10n.sortFieldSize;
       default:
-        return l10n.sortTimeNewToOld;
+        return l10n.sortFieldTime;
     }
   }
 
@@ -1079,13 +1125,13 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         ),
         child: Row(
           children: [
-            const SizedBox(width: 10),
+            const SizedBox(width: 4),
             Icon(
               Icons.search,
               color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
               size: 18,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 2),
             Text(
               AppLocalizations.of(context).searchPlaceholder,
               style: TextStyle(
@@ -1348,5 +1394,140 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       _selectedPackages.clear();
     });
     UINotifier.info(context, AppLocalizations.of(context).removedMonitoringToast(count));
+  }
+
+  /// 显示语言选择底部弹窗
+  void _showLanguageBottomSheet() {
+    final t = AppLocalizations.of(context);
+    final currentOption = LocaleService.instance.option;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(AppTheme.radiusLg),
+            topRight: Radius.circular(AppTheme.radiusLg),
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 顶部指示器
+              Container(
+                margin: const EdgeInsets.only(top: AppTheme.spacing3),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // 标题
+              Padding(
+                padding: const EdgeInsets.all(AppTheme.spacing4),
+                child: Text(
+                  t.languageSettingTitle,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              
+              // 语言选项列表
+              _buildLanguageOption(
+                context: context,
+                title: t.languageSystem,
+                value: 'system',
+                currentValue: currentOption,
+                onTap: () async {
+                  await LocaleService.instance.setOption('system');
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    UINotifier.success(context, t.languageChangedToast(t.languageSystem));
+                  }
+                },
+              ),
+              
+              _buildLanguageOption(
+                context: context,
+                title: t.languageChinese,
+                value: 'zh',
+                currentValue: currentOption,
+                onTap: () async {
+                  await LocaleService.instance.setOption('zh');
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    UINotifier.success(context, t.languageChangedToast(t.languageChinese));
+                  }
+                },
+              ),
+              
+              _buildLanguageOption(
+                context: context,
+                title: t.languageEnglish,
+                value: 'en',
+                currentValue: currentOption,
+                onTap: () async {
+                  await LocaleService.instance.setOption('en');
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    UINotifier.success(context, t.languageChangedToast(t.languageEnglish));
+                  }
+                },
+              ),
+              
+              const SizedBox(height: AppTheme.spacing4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建语言选项行
+  Widget _buildLanguageOption({
+    required BuildContext context,
+    required String title,
+    required String value,
+    required String currentValue,
+    required VoidCallback onTap,
+  }) {
+    final isSelected = value == currentValue;
+    
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing3,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            if (isSelected)
+              Icon(
+                Icons.check,
+                color: Theme.of(context).colorScheme.primary,
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

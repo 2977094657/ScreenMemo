@@ -679,15 +679,6 @@ class _SettingsPageState extends State<SettingsPage>
             onPressed: _loadPermissions,
             tooltip: AppLocalizations.of(context).refreshPermissionStatus,
           ),
-
-          // 主题切换按钮
-          IconButton(
-            icon: Icon(widget.themeService.themeModeIcon),
-            onPressed: () async {
-              await widget.themeService.toggleTheme();
-            },
-            tooltip: widget.themeService.themeModeDescription,
-          ),
         ],
       ),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -703,12 +694,11 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [_buildPermissionsDropdown(context)],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
-                // 显示与排序（加入语言设置）
+                // 显示
                 _buildSection(
                   context: context,
-                  title: AppLocalizations.of(context).displayAndSortSectionTitle,
+                  title: '显示',
                   children: [
-                    _buildLanguageItem(context),
                     _buildPrivacyModeItem(context),
                   ],
                 ),
@@ -1401,147 +1391,9 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
 
-  // 语言设置
-  Widget _buildLanguageItem(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    final opt = LocaleService.instance.option;
-    String currentLabel;
-    switch (opt) {
-      case 'zh':
-        currentLabel = t.languageChinese;
-        break;
-      case 'en':
-        currentLabel = t.languageEnglish;
-        break;
-      default:
-        currentLabel = t.languageSystem;
-        break;
-    }
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.language,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  t.languageSettingTitle,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  currentLabel,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: () async {
-              final selected = await showUIDialog<String>(
-                context: context,
-                barrierDismissible: true,
-                title: t.languageSettingTitle,
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [Text('${t.currentTimeLabel}$currentLabel')],
-                ),
-                actions: [
-                  UIDialogAction<String>(
-                    text: t.languageSystem,
-                    result: 'system',
-                  ),
-                  UIDialogAction<String>(
-                    text: t.languageChinese,
-                    result: 'zh',
-                  ),
-                  UIDialogAction<String>(
-                    text: t.languageEnglish,
-                    result: 'en',
-                  ),
-                  UIDialogAction<String>(text: t.dialogCancel, result: 'cancel'),
-                ],
-              );
-              if (!mounted) return;
-              if (selected == null || selected == 'cancel') return;
-
-              await LocaleService.instance.setOption(selected);
-              if (mounted) {
-                setState(() {});
-              }
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                final tt = AppLocalizations.of(context);
-                String newLabel2;
-                switch (LocaleService.instance.option) {
-                  case 'zh':
-                    newLabel2 = tt.languageChinese;
-                    break;
-                  case 'en':
-                    newLabel2 = tt.languageEnglish;
-                    break;
-                  default:
-                    newLabel2 = tt.languageSystem;
-                    break;
-                }
-                UINotifier.success(context, tt.languageChangedToast(newLabel2));
-              });
-            },
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-            ),
-            child: Text(t.actionSet),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildPrivacyModeItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
-        ),
-      ),
       child: Row(
         children: [
           Container(
