@@ -60,11 +60,11 @@ class ThemeService extends ChangeNotifier {
   IconData get themeModeIcon {
     switch (_themeMode) {
       case ThemeMode.system:
-        return Icons.brightness_auto;
+        return Icons.brightness_auto_outlined;
       case ThemeMode.light:
-        return Icons.brightness_high;
+        return Icons.brightness_high_outlined;
       case ThemeMode.dark:
-        return Icons.brightness_4;
+        return Icons.brightness_4_outlined;
     }
   }
   

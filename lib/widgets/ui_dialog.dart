@@ -59,7 +59,7 @@ Future<T?> showUIDialog<T>({
                   decoration: BoxDecoration(
                     color: surface,
                     borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-                    border: Border.all(color: borderColor, width: 1),
+                    
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Column(

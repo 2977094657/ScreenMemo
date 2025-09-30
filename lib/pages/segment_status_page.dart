@@ -13,6 +13,7 @@ import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 
@@ -1112,25 +1113,26 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   Future<void> _confirmAndDelete() async {
     final int id = (widget.segment['id'] as int?) ?? 0;
     if (id <= 0) return;
-    final bool confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) {
-            return AlertDialog(
-              title: Text(AppLocalizations.of(ctx).deleteEventTooltip),
-              content: Text(AppLocalizations.of(ctx).confirmDeleteEventMessage),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(AppLocalizations.of(ctx).dialogCancel),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: Text(AppLocalizations.of(ctx).actionDelete),
-                ),
-              ],
-            );
-          },
-        ) ?? false;
+
+    final bool confirmed = await showUIDialog<bool>(
+      context: context,
+      title: AppLocalizations.of(context).deleteEventTooltip,
+      message: AppLocalizations.of(context).confirmDeleteEventMessage,
+      actions: [
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).dialogCancel,
+          style: UIDialogActionStyle.normal,
+          result: false,
+        ),
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).actionDelete,
+          style: UIDialogActionStyle.destructive,
+          result: true,
+        ),
+      ],
+      barrierDismissible: true,
+    ) ?? false;
+
     if (!confirmed) return;
     try {
       final ok = await ScreenshotDatabase.instance.deleteSegmentOnly(id);
