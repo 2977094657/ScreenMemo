@@ -461,6 +461,16 @@ class ScreenshotService {
     }
   }
 
+  /// 获取汇总统计数据
+  Future<Map<String, dynamic>> getTotals() async {
+    return await _database.getTotals();
+  }
+
+  /// 重新计算汇总统计（用于数据迁移或修复）
+  Future<void> recalculateTotals() async {
+    await _database.recalculateTotals();
+  }
+
   /// 获取最新统计（不使用统计缓存，可选择强制全量文件同步）
   Future<Map<String, dynamic>> getScreenshotStatsFresh({bool forceFullSync = true}) async {
     StartupProfiler.begin('ScreenshotService.getScreenshotStatsFresh');

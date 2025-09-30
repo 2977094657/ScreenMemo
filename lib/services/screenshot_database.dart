@@ -276,6 +276,17 @@ class ScreenshotDatabase {
       )
     ''');
 
+    // 全局汇总统计表（单行记录，固定ID=1）
+    await db.execute('''
+      CREATE TABLE totals (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        app_count INTEGER NOT NULL DEFAULT 0,
+        screenshot_count INTEGER NOT NULL DEFAULT 0,
+        total_size_bytes INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+
     // v2: AI 配置与会话表
     await _createAiTables(db);
   }
@@ -284,10 +295,28 @@ class ScreenshotDatabase {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _createAiTables(db);
+    } else if (oldVersion < 4) {
+      // 从版本2/3升级到版本4：创建汇总统计表
+      await _createTotalsTable(db);
+      // 幂等确保新表
+      await _createAiTables(db);
     } else {
       // 幂等确保新表
       await _createAiTables(db);
     }
+  }
+
+  /// 创建汇总统计表（用于版本升级）
+  Future<void> _createTotalsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS totals (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        app_count INTEGER NOT NULL DEFAULT 0,
+        screenshot_count INTEGER NOT NULL DEFAULT 0,
+        total_size_bytes INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
   }
 
   Future<void> _createAiTables(DatabaseExecutor db) async {
@@ -623,48 +652,53 @@ class ScreenshotDatabase {
   Future<int?> insertScreenshotIfNotExists(ScreenshotRecord record) async {
     final db = await database; // 主库
     try {
-      // 主库注册应用
-      await _registerAppIfNeeded(db, record.appPackageName, record.appName);
+      await db.transaction((txn) async {
+        // 主库注册应用
+        await _registerAppIfNeeded(txn, record.appPackageName, record.appName);
 
-      final ts = record.captureTime.millisecondsSinceEpoch;
-      final year = _yearFromMillis(ts);
-      final month = _monthFromMillis(ts);
-      final shardDb = await _openShardDb(record.appPackageName, year);
-      if (shardDb == null) throw Exception('open shard db failed');
+        final ts = record.captureTime.millisecondsSinceEpoch;
+        final year = _yearFromMillis(ts);
+        final month = _monthFromMillis(ts);
+        final shardDb = await _openShardDb(record.appPackageName, year);
+        if (shardDb == null) throw Exception('open shard db failed');
 
-      // 月表建表
-      await _ensureMonthTable(shardDb, year, month);
-      final tableName = _monthTableName(year, month);
+        // 月表建表
+        await _ensureMonthTable(shardDb, year, month);
+        final tableName = _monthTableName(year, month);
 
-      // 去重：按 file_path 在该月表查重
-      try {
-        final rows = await shardDb.query(tableName, columns: ['id'], where: 'file_path = ?', whereArgs: [record.filePath], limit: 1);
-        if (rows.isNotEmpty) return null;
-      } catch (_) {}
+        // 去重：按 file_path 在该月表查重
+        try {
+          final rows = await shardDb.query(tableName, columns: ['id'], where: 'file_path = ?', whereArgs: [record.filePath], limit: 1);
+          if (rows.isNotEmpty) return null;
+        } catch (_) {}
 
-      // 计算实际文件大小
-      final file = File(record.filePath);
-      final actualFileSize = await file.exists() ? await file.length() : 0;
-      final recordWithSize = record.copyWith(fileSize: actualFileSize);
-      
-      // 插入分库月表
-      final map = {...recordWithSize.toMap()};
-      map.remove('app_package_name');
-      map.remove('app_name');
-      final localId = await shardDb.insert(tableName, map);
+        // 计算实际文件大小
+        final file = File(record.filePath);
+        final actualFileSize = await file.exists() ? await file.length() : 0;
+        final recordWithSize = record.copyWith(fileSize: actualFileSize);
 
-      // 更新主库聚合
-      await _upsertAppStatOnInsert(
-        db,
-        recordWithSize.appPackageName,
-        recordWithSize.appName,
-        actualFileSize,
-        ts,
-      );
+        // 插入分库月表
+        final map = {...recordWithSize.toMap()};
+        map.remove('app_package_name');
+        map.remove('app_name');
+        final localId = await shardDb.insert(tableName, map);
 
-      final gid = _encodeGid(year, month, localId);
-      print('分库插入成功 gid=$gid table=$tableName');
-      return gid;
+        // 更新主库聚合
+        await _upsertAppStatOnInsert(
+          txn,
+          recordWithSize.appPackageName,
+          recordWithSize.appName,
+          actualFileSize,
+          ts,
+        );
+
+        // 更新汇总统计
+        await updateTotalsOnInsert([recordWithSize.appPackageName], 1, actualFileSize);
+
+        final gid = _encodeGid(year, month, localId);
+        print('分库插入成功 gid=$gid table=$tableName');
+        return gid;
+      });
     } catch (e) {
       print('插入截屏记录失败: $e');
       rethrow;
@@ -686,6 +720,9 @@ class ScreenshotDatabase {
     if (records.isEmpty) return 0;
     final db = await database; // 主库
     int inserted = 0;
+    final Map<String, int> packageCounts = {};
+    final Map<String, int> packageSizes = {};
+
     try {
       await db.transaction((txn) async {
         for (final record in records) {
@@ -716,6 +753,16 @@ class ScreenshotDatabase {
             ts,
           );
           inserted++;
+          packageCounts[recordWithSize.appPackageName] = (packageCounts[recordWithSize.appPackageName] ?? 0) + 1;
+          packageSizes[recordWithSize.appPackageName] = (packageSizes[recordWithSize.appPackageName] ?? 0) + actualFileSize;
+        }
+
+        // 批量更新汇总统计
+        if (inserted > 0) {
+          final packageNames = packageCounts.keys.toList();
+          final totalScreenshots = packageCounts.values.fold(0, (sum, count) => sum + count);
+          final totalSize = packageSizes.values.fold(0, (sum, size) => sum + size);
+          await updateTotalsOnInsert(packageNames, totalScreenshots, totalSize);
         }
       });
     } catch (e) {
@@ -732,6 +779,9 @@ class ScreenshotDatabase {
     if (records.isEmpty) return 0;
     final db = await database; // 主库
     int totalInserted = 0;
+    final Map<String, int> packageCounts = {};
+    final Map<String, int> packageSizes = {};
+
     try {
       // 按包分组（减少表切换开销）
       final Map<String, List<ScreenshotRecord>> byPkg = <String, List<ScreenshotRecord>>{};
@@ -777,11 +827,26 @@ class ScreenshotDatabase {
                 conflictAlgorithm: ConflictAlgorithm.ignore,
             );
           }
-          await batch.commit(noResult: true, continueOnError: true);
+          final batchResult = await batch.commit(noResult: true, continueOnError: true);
+          if (batchResult != null) {
+            totalInserted += batchResult.length;
+          }
 
             // 重算该应用聚合一次（按包维度即可）
           await _recomputeAppStatForPackage(txn, packageName);
+
+          // 累计统计数据
+          packageCounts[packageName] = (packageCounts[packageName] ?? 0) + list.length;
+          packageSizes[packageName] = (packageSizes[packageName] ?? 0) + list.fold(0, (sum, r) => sum + r.fileSize);
           }
+        }
+
+        // 批量更新汇总统计
+        if (totalInserted > 0) {
+          final packageNames = packageCounts.keys.toList();
+          final totalScreenshots = packageCounts.values.fold(0, (sum, count) => sum + count);
+          final totalSize = packageSizes.values.fold(0, (sum, size) => sum + size);
+          await updateTotalsOnInsert(packageNames, totalScreenshots, totalSize);
         }
       });
     } catch (e) {
@@ -2346,5 +2411,108 @@ class ScreenshotDatabase {
       final db = await database;
       await db.delete('ai_messages', where: 'conversation_id = ?', whereArgs: [conversationId]);
     } catch (_) {}
+  }
+
+  // ===================== 汇总统计表操作 =====================
+
+  /// 获取汇总统计数据（若不存在则初始化为0）
+  Future<Map<String, dynamic>> getTotals() async {
+    final db = await database;
+    try {
+      final rows = await db.query('totals', where: 'id = 1', limit: 1);
+      if (rows.isEmpty) {
+        // 初始化汇总表
+        await db.insert('totals', {
+          'id': 1,
+          'app_count': 0,
+          'screenshot_count': 0,
+          'total_size_bytes': 0,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        });
+        return {
+          'app_count': 0,
+          'screenshot_count': 0,
+          'total_size_bytes': 0,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        };
+      }
+      return rows.first;
+    } catch (e) {
+      print('获取汇总统计失败: $e');
+      return {
+        'app_count': 0,
+        'screenshot_count': 0,
+        'total_size_bytes': 0,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      };
+    }
+  }
+
+  /// 增量更新汇总统计（在截图入库后调用）
+  /// 对于新应用，先检查是否已存在于app_stats中判断是否首次出现
+  Future<void> updateTotalsOnInsert(List<String> packageNames, int screenshotCount, int totalSizeBytes) async {
+    final db = await database;
+    try {
+      await db.transaction((txn) async {
+        int newAppCount = 0;
+
+        // 检查哪些应用是首次出现（在app_stats中不存在）
+        for (final packageName in packageNames) {
+          final existing = await txn.query(
+            'app_stats',
+            columns: ['app_package_name'],
+            where: 'app_package_name = ?',
+            whereArgs: [packageName],
+            limit: 1,
+          );
+          if (existing.isEmpty) {
+            newAppCount++;
+          }
+        }
+
+        // 更新汇总表
+        await txn.execute('''
+          INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
+          VALUES (1,
+            COALESCE((SELECT app_count FROM totals WHERE id = 1), 0) + ?,
+            COALESCE((SELECT screenshot_count FROM totals WHERE id = 1), 0) + ?,
+            COALESCE((SELECT total_size_bytes FROM totals WHERE id = 1), 0) + ?,
+            ?
+          )
+        ''', [newAppCount, screenshotCount, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+      });
+    } catch (e) {
+      print('更新汇总统计失败: $e');
+    }
+  }
+
+  /// 从现有数据重新计算汇总统计（用于数据迁移或修复）
+  Future<void> recalculateTotals() async {
+    final db = await database;
+    try {
+      await db.transaction((txn) async {
+        // 计算应用数量
+        final appStats = await txn.query('app_stats');
+        final appCount = appStats.length;
+
+        // 计算总截图数量和总大小
+        int totalScreenshots = 0;
+        int totalSizeBytes = 0;
+        for (final stat in appStats) {
+          totalScreenshots += (stat['total_count'] as int?) ?? 0;
+          totalSizeBytes += (stat['total_size'] as int?) ?? 0;
+        }
+
+        // 更新或插入汇总表
+        await txn.execute('''
+          INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
+          VALUES (1, ?, ?, ?, ?)
+        ''', [appCount, totalScreenshots, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+
+        print('重新计算汇总统计完成: 应用=$appCount, 截图=$totalScreenshots, 大小=$totalSizeBytes');
+      });
+    } catch (e) {
+      print('重新计算汇总统计失败: $e');
+    }
   }
 }
