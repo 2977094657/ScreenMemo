@@ -14,6 +14,7 @@ import '../widgets/app_selection_widget.dart';
 import 'exclusion_help_page.dart';
 import 'settings_page.dart';
 import '../services/flutter_logger.dart';
+import 'dart:async';
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -30,12 +31,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
   String _sortMode = 'timeDesc';
+  bool _sortOrderAsc = false; // 新增：排序顺序，false为降序，true为升序
   bool _screenshotEnabled = false;
   int _screenshotInterval = 5;
   bool _isLoading = false; // 不显示全屏加载动画
   bool _initialized = true; // 直接认为已初始化，避免首屏Loading
   bool _hasPermissionIssues = false; // 权限问题状态
   Map<String, dynamic> _screenshotStats = {}; // 截图统计数据
+  Map<String, dynamic> _totals = {}; // 新增：汇总统计数据
   bool _selectionMode = false;
   final Set<String> _selectedPackages = <String>{};
 
@@ -60,6 +63,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     ScreenshotService.instance.onScreenshotSaved.listen((_) {
       // 收到新增/删除事件，直接拉取最新统计（不走缓存）
       _loadStatsFresh();
+      _loadTotals(); // 同时刷新汇总统计
     });
 
     // 订阅排序模式变更，自动刷新排序
@@ -138,6 +142,20 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     StartupProfiler.end('HomePage._loadStatsFresh');
   }
 
+  /// 加载汇总统计
+  Future<void> _loadTotals() async {
+    try {
+      final totals = await ScreenshotService.instance.getTotals();
+      if (mounted) {
+        setState(() {
+          _totals = totals;
+        });
+      }
+    } catch (e) {
+      print('加载汇总统计失败: $e');
+    }
+  }
+
   /// 计算当前统计数据的签名，用于快速判断是否需要刷新UI
   String _computeStatsSignature(Map<String, dynamic> stats) {
     final int total = (stats['totalScreenshots'] as int?) ?? 0;
@@ -208,6 +226,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
       // 再加载统计数据（缓存优先），不阻塞应用列表
       await _loadStats();
+
+      // 首次加载时重新计算汇总统计（确保数据完整性）
+      await ScreenshotService.instance.recalculateTotals();
+      await _loadTotals(); // 同时加载汇总统计
 
       // 根据排序模式排序应用
       _sortApps();
@@ -287,18 +309,28 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       return a.packageName.compareTo(b.packageName);
     }
 
+    // 根据当前排序模式和顺序进行排序
     switch (mode) {
+      case 'time':
+        appsWithShots.sort((a, b) => compareByTime(a, b, desc: !_sortOrderAsc));
+        break;
       case 'timeAsc':
         appsWithShots.sort((a, b) => compareByTime(a, b, desc: false));
         break;
       case 'timeDesc':
         appsWithShots.sort((a, b) => compareByTime(a, b, desc: true));
         break;
+      case 'count':
+        appsWithShots.sort((a, b) => compareByCount(a, b, desc: !_sortOrderAsc));
+        break;
       case 'countAsc':
         appsWithShots.sort((a, b) => compareByCount(a, b, desc: false));
         break;
       case 'countDesc':
         appsWithShots.sort((a, b) => compareByCount(a, b, desc: true));
+        break;
+      case 'size':
+        appsWithShots.sort((a, b) => compareBySize(a, b, desc: !_sortOrderAsc));
         break;
       case 'sizeAsc':
         appsWithShots.sort((a, b) => compareBySize(a, b, desc: false));
@@ -328,6 +360,22 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       });
       _sortApps();
     }
+  }
+
+  // 新增：切换排序字段
+  void _cycleSortField() {
+    final fields = ['time', 'count', 'size'];
+    final currentIndex = fields.indexOf(_sortMode);
+    final nextIndex = (currentIndex + 1) % fields.length;
+    _onSelectSort(fields[nextIndex]);
+  }
+
+  // 新增：切换排序顺序
+  void _toggleSortOrder() {
+    setState(() {
+      _sortOrderAsc = !_sortOrderAsc;
+    });
+    _sortApps();
   }
 
   Future<void> _toggleScreenshotEnabled() async {
@@ -899,11 +947,120 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               ],
             ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _loadData(soft: true),
-        child: _buildAppsList(),
+      body: Column(
+        children: [
+          // 新增：副导航栏
+          _buildSubNavigation(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _loadData(soft: true),
+              child: _buildAppsList(),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  /// 构建副导航栏：统计信息 + 排序菜单
+  Widget _buildSubNavigation() {
+    final l10n = AppLocalizations.of(context);
+    final appCount = _totals['app_count'] as int? ?? 0;
+    final screenshotCount = _totals['screenshot_count'] as int? ?? 0;
+    final totalSizeBytes = _totals['total_size_bytes'] as int? ?? 0;
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // 左侧：统计信息
+          Expanded(
+            child: Row(
+              children: [
+                // 应用数量
+                Text(
+                  '${appCount}${l10n.apps}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 截图数量
+                Text(
+                  '${screenshotCount}${l10n.images}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 文件大小
+                Text(
+                  _formatFileSize(totalSizeBytes),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 右侧：排序菜单
+          InkWell(
+            onTap: _cycleSortField,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _getSortFieldLabel(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: _toggleSortOrder,
+                  child: Icon(
+                    _sortOrderAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 获取当前排序字段的显示标签
+  String _getSortFieldLabel() {
+    final l10n = AppLocalizations.of(context);
+    switch (_sortMode) {
+      case 'time':
+        return _sortOrderAsc ? l10n.sortTimeOldToNew : l10n.sortTimeNewToOld;
+      case 'count':
+        return _sortOrderAsc ? l10n.sortCountFewToMany : l10n.sortCountManyToFew;
+      case 'size':
+        return _sortOrderAsc ? l10n.sortSizeSmallToLarge : l10n.sortSizeLargeToSmall;
+      default:
+        return l10n.sortTimeNewToOld;
+    }
   }
 
   Widget _buildSearchBar(BuildContext context) {
@@ -1131,6 +1288,26 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     } else {
       // 最小单位MB（包含 <1MB 的情况）
       return (bytes / mb).toStringAsFixed(2) + 'MB';
+    }
+  }
+
+  /// 格式化文件大小，支持B/KB/MB/GB单位，保留两位小数
+  String _formatFileSize(int bytes) {
+    const double kb = 1024;
+    const double mb = kb * 1024;
+    const double gb = mb * 1024;
+    const double tb = gb * 1024;
+
+    if (bytes >= tb) {
+      return '${(bytes / tb).toStringAsFixed(2)}TB';
+    } else if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(2)}GB';
+    } else if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(2)}MB';
+    } else if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(2)}KB';
+    } else {
+      return '${bytes}B';
     }
   }
 

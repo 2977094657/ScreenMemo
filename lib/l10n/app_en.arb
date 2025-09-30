@@ -648,6 +648,9 @@
   "imagesCountLabel": "{count} images",
   "@imagesCountLabel": { "placeholders": { "count": {} } },
 
+  "apps": "apps",
+  "images": "images",
+
   "justNow": "Just now",
 
   "minutesAgo": "{minutes} minutes ago",

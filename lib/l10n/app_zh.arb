@@ -642,6 +642,9 @@
 "imagesCountLabel": "{count}张",
 "@imagesCountLabel": { "placeholders": { "count": {} } },
 
+"apps": "应用",
+"images": "图片",
+
 "justNow": "刚刚",
 
 "minutesAgo": "{minutes}分钟前",

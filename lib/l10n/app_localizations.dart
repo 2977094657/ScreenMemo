@@ -2360,6 +2360,18 @@ abstract class AppLocalizations {
   /// **'{count} images'**
   String imagesCountLabel(Object count);
 
+  /// No description provided for @apps.
+  ///
+  /// In en, this message translates to:
+  /// **'apps'**
+  String get apps;
+
+  /// No description provided for @images.
+  ///
+  /// In en, this message translates to:
+  /// **'images'**
+  String get images;
+
   /// No description provided for @justNow.
   ///
   /// In en, this message translates to:

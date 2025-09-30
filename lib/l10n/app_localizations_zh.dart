@@ -1262,6 +1262,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get apps => '应用';
+
+  @override
+  String get images => '图片';
+
+  @override
   String get justNow => '刚刚';
 
   @override

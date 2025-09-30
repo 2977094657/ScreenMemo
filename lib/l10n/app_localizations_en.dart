@@ -1304,6 +1304,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get apps => 'apps';
+
+  @override
+  String get images => 'images';
+
+  @override
   String get justNow => 'Just now';
 
   @override
