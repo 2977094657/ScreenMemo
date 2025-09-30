@@ -320,7 +320,10 @@
   "sortSizeSmallToLarge": "Size (Small→Large)",
   "sortCountManyToFew": "Count (Many→Few)",
   "sortCountFewToMany": "Count (Few→Many)",
-  "selectHomeSortingTitle": "Select home sorting",
+  "sortFieldTime": "Time",
+"sortFieldCount": "Count",
+"sortFieldSize": "Size",
+"selectHomeSortingTitle": "Select home sorting",
   "currentSortingLabel": "Current: {sorting}",
   "@currentSortingLabel": {
     "placeholders": {

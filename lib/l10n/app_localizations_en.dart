@@ -666,6 +666,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sortCountFewToMany => 'Count (Few→Many)';
 
   @override
+  String get sortFieldTime => 'Time';
+
+  @override
+  String get sortFieldCount => 'Count';
+
+  @override
+  String get sortFieldSize => 'Size';
+
+  @override
   String get selectHomeSortingTitle => 'Select home sorting';
 
   @override

@@ -1268,6 +1268,24 @@ abstract class AppLocalizations {
   /// **'Count (Few→Many)'**
   String get sortCountFewToMany;
 
+  /// No description provided for @sortFieldTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get sortFieldTime;
+
+  /// No description provided for @sortFieldCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Count'**
+  String get sortFieldCount;
+
+  /// No description provided for @sortFieldSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get sortFieldSize;
+
   /// No description provided for @selectHomeSortingTitle.
   ///
   /// In en, this message translates to:

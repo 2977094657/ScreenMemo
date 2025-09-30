@@ -328,6 +328,9 @@
     }
   },
 
+  "sortFieldTime": "时间",
+  "sortFieldCount": "数量",
+  "sortFieldSize": "大小",
   "privacyModeEnabledToast": "已开启隐私模式",
   "privacyModeDisabledToast": "已关闭隐私模式",
   "screenshotQualitySettingsSaved": "截图质量设置已保存",

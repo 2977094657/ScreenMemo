@@ -633,6 +633,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sortCountFewToMany => '数量（少→多）';
 
   @override
+  String get sortFieldTime => '时间';
+
+  @override
+  String get sortFieldCount => '数量';
+
+  @override
+  String get sortFieldSize => '大小';
+
+  @override
   String get selectHomeSortingTitle => '选择首页排序';
 
   @override
