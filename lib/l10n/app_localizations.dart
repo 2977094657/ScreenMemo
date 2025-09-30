@@ -2413,6 +2413,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{days} days ago'**
   String daysAgo(Object days);
+
+  /// Search results count display
+  ///
+  /// In en, this message translates to:
+  /// **'{count} images found'**
+  String searchResultsCount(Object count);
+
+  /// No description provided for @searchFiltersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Filters'**
+  String get searchFiltersTitle;
+
+  /// No description provided for @filterByTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get filterByTime;
+
+  /// No description provided for @filterByApp.
+  ///
+  /// In en, this message translates to:
+  /// **'App'**
+  String get filterByApp;
+
+  /// No description provided for @filterBySize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get filterBySize;
+
+  /// No description provided for @filterTimeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterTimeAll;
+
+  /// No description provided for @filterTimeToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get filterTimeToday;
+
+  /// No description provided for @filterTimeYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get filterTimeYesterday;
+
+  /// No description provided for @filterTimeLast7Days.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 7 days'**
+  String get filterTimeLast7Days;
+
+  /// No description provided for @filterTimeLast30Days.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 30 days'**
+  String get filterTimeLast30Days;
+
+  /// No description provided for @filterTimeCustomRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom range'**
+  String get filterTimeCustomRange;
+
+  /// No description provided for @filterAppAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All apps'**
+  String get filterAppAll;
+
+  /// No description provided for @filterSizeAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All sizes'**
+  String get filterSizeAll;
+
+  /// No description provided for @filterSizeSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'< 100 KB'**
+  String get filterSizeSmall;
+
+  /// No description provided for @filterSizeMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'100 KB - 1 MB'**
+  String get filterSizeMedium;
+
+  /// No description provided for @filterSizeLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'> 1 MB'**
+  String get filterSizeLarge;
+
+  /// No description provided for @applyFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply'**
+  String get applyFilters;
+
+  /// No description provided for @resetFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get resetFilters;
+
+  /// No description provided for @selectDateRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Select date range'**
+  String get selectDateRange;
+
+  /// No description provided for @startDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Start date'**
+  String get startDate;
+
+  /// No description provided for @endDate.
+  ///
+  /// In en, this message translates to:
+  /// **'End date'**
+  String get endDate;
+
+  /// No description provided for @noResultsForFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'No images match the current filters'**
+  String get noResultsForFilters;
 }
 
 class _AppLocalizationsDelegate

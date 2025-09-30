@@ -1335,4 +1335,72 @@ class AppLocalizationsEn extends AppLocalizations {
   String daysAgo(Object days) {
     return '$days days ago';
   }
+
+  @override
+  String searchResultsCount(Object count) {
+    return '$count images found';
+  }
+
+  @override
+  String get searchFiltersTitle => 'Filters';
+
+  @override
+  String get filterByTime => 'Time';
+
+  @override
+  String get filterByApp => 'App';
+
+  @override
+  String get filterBySize => 'Size';
+
+  @override
+  String get filterTimeAll => 'All';
+
+  @override
+  String get filterTimeToday => 'Today';
+
+  @override
+  String get filterTimeYesterday => 'Yesterday';
+
+  @override
+  String get filterTimeLast7Days => 'Last 7 days';
+
+  @override
+  String get filterTimeLast30Days => 'Last 30 days';
+
+  @override
+  String get filterTimeCustomRange => 'Custom range';
+
+  @override
+  String get filterAppAll => 'All apps';
+
+  @override
+  String get filterSizeAll => 'All sizes';
+
+  @override
+  String get filterSizeSmall => '< 100 KB';
+
+  @override
+  String get filterSizeMedium => '100 KB - 1 MB';
+
+  @override
+  String get filterSizeLarge => '> 1 MB';
+
+  @override
+  String get applyFilters => 'Apply';
+
+  @override
+  String get resetFilters => 'Reset';
+
+  @override
+  String get selectDateRange => 'Select date range';
+
+  @override
+  String get startDate => 'Start date';
+
+  @override
+  String get endDate => 'End date';
+
+  @override
+  String get noResultsForFilters => 'No images match the current filters';
 }

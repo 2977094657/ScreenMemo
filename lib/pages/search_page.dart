@@ -29,6 +29,7 @@ class _SearchPageState extends State<SearchPage> {
   final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
 
   List<ScreenshotRecord> _results = <ScreenshotRecord>[];
+  List<ScreenshotRecord> _filteredResults = <ScreenshotRecord>[]; // 筛选后的结果
   bool _isLoading = false;
   String? _error;
   Timer? _debounce;
@@ -40,6 +41,13 @@ class _SearchPageState extends State<SearchPage> {
   bool _hasMore = false;
   bool _loadingMore = false;
   String _lastQuery = '';
+
+  // 筛选相关状态
+  String _timeFilter = 'all'; // all, today, yesterday, last7days, last30days, custom
+  String _sizeFilter = 'all'; // all, small, medium, large
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
+  int _totalResultsCount = 0; // 总结果数(未筛选前)
 
   @override
   void initState() {
@@ -129,6 +137,8 @@ class _SearchPageState extends State<SearchPage> {
       if (!mounted) return;
       setState(() {
         _results = list;
+        _totalResultsCount = list.length;
+        _applyFilters();
         _offset = list.length;
         _hasMore = list.length >= _pageSize;
         _isLoading = false;
@@ -154,6 +164,8 @@ class _SearchPageState extends State<SearchPage> {
           _hasMore = false;
         } else {
           _results.addAll(more);
+          _totalResultsCount = _results.length;
+          _applyFilters();
           _offset += more.length;
           _hasMore = more.length >= _pageSize;
         }
@@ -166,6 +178,105 @@ class _SearchPageState extends State<SearchPage> {
         _hasMore = false;
       });
     }
+  }
+
+  // 应用筛选条件
+  void _applyFilters() {
+    List<ScreenshotRecord> filtered = List.from(_results);
+
+    // 时间筛选
+    if (_timeFilter != 'all') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      switch (_timeFilter) {
+        case 'today':
+          filtered = filtered.where((r) =>
+            r.captureTime.isAfter(today)
+          ).toList();
+          break;
+        case 'yesterday':
+          final yesterday = today.subtract(const Duration(days: 1));
+          filtered = filtered.where((r) =>
+            r.captureTime.isAfter(yesterday) && r.captureTime.isBefore(today)
+          ).toList();
+          break;
+        case 'last7days':
+          final last7 = today.subtract(const Duration(days: 7));
+          filtered = filtered.where((r) =>
+            r.captureTime.isAfter(last7)
+          ).toList();
+          break;
+        case 'last30days':
+          final last30 = today.subtract(const Duration(days: 30));
+          filtered = filtered.where((r) =>
+            r.captureTime.isAfter(last30)
+          ).toList();
+          break;
+        case 'custom':
+          if (_customStartDate != null && _customEndDate != null) {
+            filtered = filtered.where((r) =>
+              r.captureTime.isAfter(_customStartDate!) &&
+              r.captureTime.isBefore(_customEndDate!.add(const Duration(days: 1)))
+            ).toList();
+          }
+          break;
+      }
+    }
+
+    // 大小筛选
+    if (_sizeFilter != 'all') {
+      switch (_sizeFilter) {
+        case 'small':
+          filtered = filtered.where((r) => r.fileSize < 100 * 1024).toList();
+          break;
+        case 'medium':
+          filtered = filtered.where((r) =>
+            r.fileSize >= 100 * 1024 && r.fileSize <= 1024 * 1024
+          ).toList();
+          break;
+        case 'large':
+          filtered = filtered.where((r) => r.fileSize > 1024 * 1024).toList();
+          break;
+      }
+    }
+
+    _filteredResults = filtered;
+  }
+
+  // 重置筛选条件
+  void _resetFilters() {
+    setState(() {
+      _timeFilter = 'all';
+      _sizeFilter = 'all';
+      _customStartDate = null;
+      _customEndDate = null;
+      _applyFilters();
+    });
+  }
+
+  // 显示筛选对话框
+  void _showFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _FilterSheet(
+        timeFilter: _timeFilter,
+        sizeFilter: _sizeFilter,
+        customStartDate: _customStartDate,
+        customEndDate: _customEndDate,
+        onApply: (time, size, startDate, endDate) {
+          setState(() {
+            _timeFilter = time;
+            _sizeFilter = size;
+            _customStartDate = startDate;
+            _customEndDate = endDate;
+            _applyFilters();
+          });
+        },
+        onReset: _resetFilters,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>?> _ensureBoxes(String filePath) async {
@@ -327,7 +438,92 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    return NotificationListener<ScrollEndNotification>(
+    return Column(
+      children: [
+        // 结果统计和筛选栏
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing3,
+            vertical: AppTheme.spacing2,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  AppLocalizations.of(context).searchResultsCount(_filteredResults.length.toString()),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppTheme.mutedForeground,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: _showFilterDialog,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: (_timeFilter != 'all' || _sizeFilter != 'all')
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withOpacity(0.3),
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.filter_list,
+                        size: 16,
+                        color: (_timeFilter != 'all' || _sizeFilter != 'all')
+                            ? Theme.of(context).colorScheme.primary
+                            : AppTheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        AppLocalizations.of(context).searchFiltersTitle,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: (_timeFilter != 'all' || _sizeFilter != 'all')
+                              ? Theme.of(context).colorScheme.primary
+                              : AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 图片网格
+        Expanded(
+          child: _filteredResults.isEmpty
+              ? Center(
+                  child: Text(
+                    AppLocalizations.of(context).noResultsForFilters,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: AppTheme.mutedForeground),
+                  ),
+                )
+              : NotificationListener<ScrollEndNotification>(
       onNotification: (_) {
         _onScroll();
         return false;
@@ -346,9 +542,9 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisSpacing: AppTheme.spacing1,
           childAspectRatio: 0.45,
         ),
-        itemCount: _results.length + (_loadingMore ? 1 : 0),
+        itemCount: _filteredResults.length + (_loadingMore ? 1 : 0),
         itemBuilder: (context, index) {
-          if (_loadingMore && index == _results.length) {
+          if (_loadingMore && index == _filteredResults.length) {
             return const Center(
               child: SizedBox(
                 width: 20,
@@ -357,7 +553,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
             );
           }
-          final s = _results[index];
+          final s = _filteredResults[index];
           final File file = _resolveFile(s.filePath);
           final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(s.pageUrl);
           return GestureDetector(
@@ -568,6 +764,9 @@ class _SearchPageState extends State<SearchPage> {
           );
         },
       ),
+        ),
+        ),
+      ],
     );
   }
 
@@ -697,3 +896,208 @@ class _OcrBoxesPainter extends CustomPainter {
   }
 }
 
+
+
+// 筛选面板Widget - 优化UI版本
+class _FilterSheet extends StatefulWidget {
+  final String timeFilter;
+  final String sizeFilter;
+  final DateTime? customStartDate;
+  final DateTime? customEndDate;
+  final Function(String time, String size, DateTime? startDate, DateTime? endDate) onApply;
+  final VoidCallback onReset;
+
+  const _FilterSheet({
+    required this.timeFilter,
+    required this.sizeFilter,
+    this.customStartDate,
+    this.customEndDate,
+    required this.onApply,
+    required this.onReset,
+  });
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late String _timeFilter;
+  late String _sizeFilter;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeFilter = widget.timeFilter;
+    _sizeFilter = widget.sizeFilter;
+    _customStartDate = widget.customStartDate;
+    _customEndDate = widget.customEndDate;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
+    return Container(
+      padding: EdgeInsets.only(
+        left: AppTheme.spacing3,
+        right: AppTheme.spacing3,
+        top: AppTheme.spacing3,
+        bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing3,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题栏
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                l10n.searchFiltersTitle,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // 时间筛选
+          Text(
+            l10n.filterByTime,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              _buildFilterChip(l10n.filterTimeAll, 'all', _timeFilter, (v) => setState(() => _timeFilter = v)),
+              _buildFilterChip(l10n.filterTimeToday, 'today', _timeFilter, (v) => setState(() => _timeFilter = v)),
+              _buildFilterChip(l10n.filterTimeYesterday, 'yesterday', _timeFilter, (v) => setState(() => _timeFilter = v)),
+              _buildFilterChip(l10n.filterTimeLast7Days, 'last7days', _timeFilter, (v) => setState(() => _timeFilter = v)),
+              _buildFilterChip(l10n.filterTimeLast30Days, 'last30days', _timeFilter, (v) => setState(() => _timeFilter = v)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // 大小筛选
+          Text(
+            l10n.filterBySize,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              _buildFilterChip(l10n.filterSizeAll, 'all', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
+              _buildFilterChip(l10n.filterSizeSmall, 'small', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
+              _buildFilterChip(l10n.filterSizeMedium, 'medium', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
+              _buildFilterChip(l10n.filterSizeLarge, 'large', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // 按钮栏
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    widget.onReset();
+                    Navigator.pop(context);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    l10n.resetFilters,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    widget.onApply(
+                      _timeFilter,
+                      _sizeFilter,
+                      _customStartDate,
+                      _customEndDate,
+                    );
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: Text(
+                    l10n.applyFilters,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, String value, String currentValue, Function(String) onSelected) {
+    final isSelected = currentValue == value;
+    return FilterChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurface,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      selected: isSelected,
+      onSelected: (selected) => onSelected(value),
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+      checkmarkColor: Theme.of(context).colorScheme.primary,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      ),
+      side: isSelected
+          ? BorderSide.none
+          : BorderSide(
+              color: Colors.grey.withOpacity(0.2),
+              width: 1,
+            ),
+    );
+  }
+}

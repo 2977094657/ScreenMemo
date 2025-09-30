@@ -1293,4 +1293,72 @@ class AppLocalizationsZh extends AppLocalizations {
   String daysAgo(Object days) {
     return '$days天前';
   }
+
+  @override
+  String searchResultsCount(Object count) {
+    return '找到 $count 张图片';
+  }
+
+  @override
+  String get searchFiltersTitle => '筛选';
+
+  @override
+  String get filterByTime => '时间';
+
+  @override
+  String get filterByApp => '应用';
+
+  @override
+  String get filterBySize => '大小';
+
+  @override
+  String get filterTimeAll => '全部';
+
+  @override
+  String get filterTimeToday => '今天';
+
+  @override
+  String get filterTimeYesterday => '昨天';
+
+  @override
+  String get filterTimeLast7Days => '最近7天';
+
+  @override
+  String get filterTimeLast30Days => '最近30天';
+
+  @override
+  String get filterTimeCustomRange => '自定义范围';
+
+  @override
+  String get filterAppAll => '全部应用';
+
+  @override
+  String get filterSizeAll => '全部大小';
+
+  @override
+  String get filterSizeSmall => '< 100 KB';
+
+  @override
+  String get filterSizeMedium => '100 KB - 1 MB';
+
+  @override
+  String get filterSizeLarge => '> 1 MB';
+
+  @override
+  String get applyFilters => '应用';
+
+  @override
+  String get resetFilters => '重置';
+
+  @override
+  String get selectDateRange => '选择日期范围';
+
+  @override
+  String get startDate => '开始日期';
+
+  @override
+  String get endDate => '结束日期';
+
+  @override
+  String get noResultsForFilters => '没有符合当前筛选条件的图片';
 }

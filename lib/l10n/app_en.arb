@@ -663,5 +663,32 @@
   "@hoursAgo": { "placeholders": { "hours": {} } },
 
   "daysAgo": "{days} days ago",
-  "@daysAgo": { "placeholders": { "days": {} } }
+  "@daysAgo": { "placeholders": { "days": {} } },
+
+  "searchResultsCount": "{count} images found",
+  "@searchResultsCount": {
+    "description": "Search results count display",
+    "placeholders": { "count": {} }
+  },
+  "searchFiltersTitle": "Filters",
+  "filterByTime": "Time",
+  "filterByApp": "App",
+  "filterBySize": "Size",
+  "filterTimeAll": "All",
+  "filterTimeToday": "Today",
+  "filterTimeYesterday": "Yesterday",
+  "filterTimeLast7Days": "Last 7 days",
+  "filterTimeLast30Days": "Last 30 days",
+  "filterTimeCustomRange": "Custom range",
+  "filterAppAll": "All apps",
+  "filterSizeAll": "All sizes",
+  "filterSizeSmall": "< 100 KB",
+  "filterSizeMedium": "100 KB - 1 MB",
+  "filterSizeLarge": "> 1 MB",
+  "applyFilters": "Apply",
+  "resetFilters": "Reset",
+  "selectDateRange": "Select date range",
+  "startDate": "Start date",
+  "endDate": "End date",
+  "noResultsForFilters": "No images match the current filters"
   }

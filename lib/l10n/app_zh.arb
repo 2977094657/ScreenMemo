@@ -657,5 +657,32 @@
 "@hoursAgo": { "placeholders": { "hours": {} } },
 
 "daysAgo": "{days}天前",
-"@daysAgo": { "placeholders": { "days": {} } }
+"@daysAgo": { "placeholders": { "days": {} } },
+
+"searchResultsCount": "找到 {count} 张图片",
+"@searchResultsCount": {
+  "description": "搜索结果数量显示",
+  "placeholders": { "count": {} }
+},
+"searchFiltersTitle": "筛选",
+"filterByTime": "时间",
+"filterByApp": "应用",
+"filterBySize": "大小",
+"filterTimeAll": "全部",
+"filterTimeToday": "今天",
+"filterTimeYesterday": "昨天",
+"filterTimeLast7Days": "最近7天",
+"filterTimeLast30Days": "最近30天",
+"filterTimeCustomRange": "自定义范围",
+"filterAppAll": "全部应用",
+"filterSizeAll": "全部大小",
+"filterSizeSmall": "< 100 KB",
+"filterSizeMedium": "100 KB - 1 MB",
+"filterSizeLarge": "> 1 MB",
+"applyFilters": "应用",
+"resetFilters": "重置",
+"selectDateRange": "选择日期范围",
+"startDate": "开始日期",
+"endDate": "结束日期",
+"noResultsForFilters": "没有符合当前筛选条件的图片"
 }
