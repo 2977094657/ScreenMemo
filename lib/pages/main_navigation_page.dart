@@ -5,6 +5,7 @@ import 'home_page.dart';
 import 'settings_page.dart';
 import 'segment_status_page.dart';
 import 'timeline_page.dart';
+import 'favorites_page.dart';
 import '../theme/app_theme.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
@@ -30,6 +31,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     super.initState();
     _pages = [
       HomePage(themeService: widget.themeService),
+      const FavoritesPage(),
       const TimelinePage(),
       const SegmentStatusPage(),
       SettingsPage(themeService: widget.themeService),
@@ -40,6 +42,11 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     const BottomNavigationBarItem(
       icon: Icon(Icons.home_outlined),
       activeIcon: Icon(Icons.home),
+      label: '',
+    ),
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.favorite_outline),
+      activeIcon: Icon(Icons.favorite),
       label: '',
     ),
     const BottomNavigationBarItem(
@@ -63,8 +70,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     setState(() {
       _currentIndex = index;
     });
-    // 每次进入“时间线”页（索引1）都触发刷新事件
-    if (index == 1) {
+    // 每次进入"时间线"页（索引2，因为收藏页插入到了索引1）都触发刷新事件
+    if (index == 2) {
       AppLifecycleService.instance.emitTimelineShown();
     }
   }

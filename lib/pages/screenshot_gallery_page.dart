@@ -19,6 +19,7 @@ import '../widgets/ui_components.dart';
 import '../services/app_selection_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
+import '../services/favorite_service.dart';
 import '../widgets/nsfw_guard.dart';
 
 /// 内部：日期Tab信息（一天为单位）
@@ -73,6 +74,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   final Set<int> _selectedIds = <int>{};
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
   bool _isFullySelected = false; // 标记是否已经全选所有数据
+  // 收藏状态缓存
+  final Map<int, bool> _favoriteStatus = <int, bool>{};
   // 取消滑动选择
   bool _initialized = false; // 避免返回时重复触发初始化加载
   bool _privacyMode = true; // 默认开启
@@ -1292,6 +1295,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       onLongPress: () {
         if (!_selectionMode) {
           setState(() => _selectionMode = true);
+          _loadFavoriteStatus();
         }
         _toggleSelect(index);
       },
@@ -1404,7 +1408,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                 ),
               ),
             ),
-          // 选择矩形“复选框”叠加（仅多选模式显示，右上角白色边框，浅灰底，选中打勾）
+          // 选择矩形"复选框"叠加（仅多选模式显示，右上角白色边框，浅灰底，选中打勾）
           if (_selectionMode)
             Positioned(
               top: 6,
@@ -1424,6 +1428,33 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                 child: isSelected
                     ? const Icon(Icons.check, size: 16, color: Colors.white)
                     : null,
+              ),
+            ),
+          // 收藏按钮（仅多选模式显示，左上角）
+          if (_selectionMode && screenshot.id != null)
+            Positioned(
+              top: 6,
+              left: 6,
+              child: GestureDetector(
+                onTap: () => _toggleFavorite(screenshot),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    (_favoriteStatus[screenshot.id] ?? false)
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    size: 18,
+                    color: (_favoriteStatus[screenshot.id] ?? false)
+                        ? Colors.red
+                        : Colors.white,
+                  ),
+                ),
               ),
             ),
           // 去除之前的全图遮罩，仅保留底部信息遮罩
@@ -2174,6 +2205,66 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     } else {
       // 最小单位MB（包含 <1MB 的情况）
       return (bytes / mb).toStringAsFixed(2) + 'MB';
+    }
+  }
+
+  /// 加载当前截图列表的收藏状态
+  Future<void> _loadFavoriteStatus() async {
+    if (_screenshots.isEmpty) return;
+    
+    try {
+      final ids = _screenshots
+          .where((s) => s.id != null)
+          .map((s) => s.id!)
+          .toList();
+      
+      if (ids.isEmpty) return;
+      
+      final statusMap = await FavoriteService.instance.checkFavorites(
+        screenshotIds: ids,
+        appPackageName: _packageName,
+      );
+      
+      if (!mounted) return;
+      setState(() {
+        _favoriteStatus.clear();
+        _favoriteStatus.addAll(statusMap);
+      });
+    } catch (e) {
+      print('加载收藏状态失败: $e');
+    }
+  }
+  
+  /// 切换收藏状态
+  Future<void> _toggleFavorite(ScreenshotRecord screenshot) async {
+    if (screenshot.id == null) return;
+    
+    try {
+      final currentStatus = _favoriteStatus[screenshot.id] ?? false;
+      final success = await FavoriteService.instance.toggleFavorite(
+        screenshotId: screenshot.id!,
+        appPackageName: screenshot.appPackageName,
+      );
+      
+      if (success) {
+        setState(() {
+          _favoriteStatus[screenshot.id!] = !currentStatus;
+        });
+        
+        if (mounted) {
+          UINotifier.success(
+            context,
+            currentStatus ? '已取消收藏' : '已添加到收藏',
+          );
+        }
+      } else if (mounted) {
+        UINotifier.error(context, '操作失败');
+      }
+    } catch (e) {
+      print('切换收藏状态失败: $e');
+      if (mounted) {
+        UINotifier.error(context, '操作失败: $e');
+      }
     }
   }
 

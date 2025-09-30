@@ -289,6 +289,9 @@ class ScreenshotDatabase {
 
     // v2: AI 配置与会话表
     await _createAiTables(db);
+    
+    // 收藏表
+    await _createFavoritesTable(db);
   }
 
   /// 升级回调：按版本增量迁移
@@ -304,6 +307,8 @@ class ScreenshotDatabase {
       // 幂等确保新表
       await _createAiTables(db);
     }
+    // 幂等确保收藏表
+    await _createFavoritesTable(db);
   }
 
   /// 创建汇总统计表（用于版本升级）
@@ -317,6 +322,24 @@ class ScreenshotDatabase {
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
+  }
+
+  /// 创建收藏表
+  Future<void> _createFavoritesTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS favorites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        screenshot_id INTEGER NOT NULL,
+        app_package_name TEXT NOT NULL,
+        favorite_time INTEGER NOT NULL,
+        note TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        UNIQUE(screenshot_id, app_package_name)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_favorites_screenshot ON favorites(screenshot_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_favorites_time ON favorites(favorite_time DESC)');
   }
 
   Future<void> _createAiTables(DatabaseExecutor db) async {
@@ -2513,6 +2536,183 @@ class ScreenshotDatabase {
       });
     } catch (e) {
       print('重新计算汇总统计失败: $e');
+    }
+  }
+
+  // ===================== 收藏相关方法 =====================
+
+  /// 添加或更新收藏（如果已存在则更新备注）
+  Future<bool> addOrUpdateFavorite({
+    required int screenshotId,
+    required String appPackageName,
+    String? note,
+  }) async {
+    final db = await database;
+    try {
+      await db.insert(
+        'favorites',
+        {
+          'screenshot_id': screenshotId,
+          'app_package_name': appPackageName,
+          'favorite_time': DateTime.now().millisecondsSinceEpoch,
+          'note': note,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    } catch (e) {
+      print('添加收藏失败: $e');
+      return false;
+    }
+  }
+
+  /// 移除收藏
+  Future<bool> removeFavorite({
+    required int screenshotId,
+    required String appPackageName,
+  }) async {
+    final db = await database;
+    try {
+      final result = await db.delete(
+        'favorites',
+        where: 'screenshot_id = ? AND app_package_name = ?',
+        whereArgs: [screenshotId, appPackageName],
+      );
+      return result > 0;
+    } catch (e) {
+      print('移除收藏失败: $e');
+      return false;
+    }
+  }
+
+  /// 检查是否已收藏
+  Future<bool> isFavorite({
+    required int screenshotId,
+    required String appPackageName,
+  }) async {
+    final db = await database;
+    try {
+      final result = await db.query(
+        'favorites',
+        where: 'screenshot_id = ? AND app_package_name = ?',
+        whereArgs: [screenshotId, appPackageName],
+        limit: 1,
+      );
+      return result.isNotEmpty;
+    } catch (e) {
+      print('检查收藏状态失败: $e');
+      return false;
+    }
+  }
+
+  /// 批量检查收藏状态
+  Future<Map<int, bool>> checkFavorites({
+    required List<int> screenshotIds,
+    required String appPackageName,
+  }) async {
+    final db = await database;
+    final Map<int, bool> result = {};
+    
+    if (screenshotIds.isEmpty) return result;
+    
+    try {
+      final placeholders = List.filled(screenshotIds.length, '?').join(',');
+      final rows = await db.query(
+        'favorites',
+        columns: ['screenshot_id'],
+        where: 'screenshot_id IN ($placeholders) AND app_package_name = ?',
+        whereArgs: [...screenshotIds, appPackageName],
+      );
+      
+      final favoriteIds = rows.map((r) => r['screenshot_id'] as int).toSet();
+      for (final id in screenshotIds) {
+        result[id] = favoriteIds.contains(id);
+      }
+    } catch (e) {
+      print('批量检查收藏状态失败: $e');
+      for (final id in screenshotIds) {
+        result[id] = false;
+      }
+    }
+    
+    return result;
+  }
+
+  /// 获取所有收藏（按收藏时间倒序）
+  Future<List<Map<String, dynamic>>> getAllFavorites({
+    int? limit,
+    int? offset,
+  }) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'favorites',
+        orderBy: 'favorite_time DESC',
+        limit: limit,
+        offset: offset,
+      );
+      return rows;
+    } catch (e) {
+      print('获取收藏列表失败: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 获取收藏总数
+  Future<int> getFavoritesCount() async {
+    final db = await database;
+    try {
+      final result = await db.rawQuery('SELECT COUNT(*) as count FROM favorites');
+      return (result.first['count'] as int?) ?? 0;
+    } catch (e) {
+      print('获取收藏数量失败: $e');
+      return 0;
+    }
+  }
+
+  /// 更新收藏备注
+  Future<bool> updateFavoriteNote({
+    required int screenshotId,
+    required String appPackageName,
+    String? note,
+  }) async {
+    final db = await database;
+    try {
+      final result = await db.update(
+        'favorites',
+        {
+          'note': note,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'screenshot_id = ? AND app_package_name = ?',
+        whereArgs: [screenshotId, appPackageName],
+      );
+      return result > 0;
+    } catch (e) {
+      print('更新收藏备注失败: $e');
+      return false;
+    }
+  }
+
+  /// 获取特定收藏的详情
+  Future<Map<String, dynamic>?> getFavoriteDetail({
+    required int screenshotId,
+    required String appPackageName,
+  }) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'favorites',
+        where: 'screenshot_id = ? AND app_package_name = ?',
+        whereArgs: [screenshotId, appPackageName],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (e) {
+      print('获取收藏详情失败: $e');
+      return null;
     }
   }
 }
