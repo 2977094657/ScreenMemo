@@ -1,0 +1,173 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import 'nsfw_guard.dart';
+
+/// 统一的截图图片显示组件
+/// 
+/// 自动处理：
+/// - 深色模式遮罩
+/// - 隐私模式（NSFW）遮罩
+/// - 图片加载和错误处理
+/// 
+/// 使用此组件可确保所有截图显示保持一致的样式和行为
+class ScreenshotImageWidget extends StatelessWidget {
+  /// 图片文件
+  final File file;
+  
+  /// 是否启用隐私模式
+  final bool privacyMode;
+  
+  /// 页面链接（用于判断是否为 NSFW）
+  final String? pageUrl;
+  
+  /// 图片宽度
+  final double? width;
+  
+  /// 图片高度
+  final double? height;
+  
+  /// 图片适配方式
+  final BoxFit fit;
+  
+  /// 圆角
+  final BorderRadius? borderRadius;
+  
+  /// 点击回调
+  final VoidCallback? onTap;
+  
+  /// NSFW 显示回调（点击"显示"按钮时）
+  final VoidCallback? onReveal;
+  
+  /// 是否显示 NSFW 的"显示"按钮
+  final bool showNsfwButton;
+  
+  /// 目标缩略图宽度（用于性能优化）
+  final int? targetWidth;
+  
+  /// 错误占位文本
+  final String? errorText;
+  
+  const ScreenshotImageWidget({
+    super.key,
+    required this.file,
+    this.privacyMode = true,
+    this.pageUrl,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+    this.borderRadius,
+    this.onTap,
+    this.onReveal,
+    this.showNsfwButton = true,
+    this.targetWidth,
+    this.errorText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final bool nsfwMasked = privacyMode && NsfwDetector.isNsfwUrl(pageUrl);
+    
+    Widget imageWidget = _buildImage(context, isDark);
+    
+    // 如果有 NSFW 遮罩，添加遮罩层
+    if (nsfwMasked) {
+      imageWidget = Stack(
+        children: [
+          imageWidget,
+          Positioned.fill(
+            child: NsfwBackdropOverlay(
+              borderRadius: borderRadius,
+              onReveal: onReveal ?? onTap,
+              showButton: showNsfwButton,
+            ),
+          ),
+        ],
+      );
+    }
+    
+    // 添加点击手势
+    if (onTap != null && !nsfwMasked) {
+      imageWidget = GestureDetector(
+        onTap: onTap,
+        child: imageWidget,
+      );
+    }
+    
+    // 添加圆角裁剪
+    if (borderRadius != null) {
+      imageWidget = ClipRRect(
+        borderRadius: borderRadius!,
+        child: imageWidget,
+      );
+    }
+    
+    return imageWidget;
+  }
+  
+  /// 构建图片
+  Widget _buildImage(BuildContext context, bool isDark) {
+    final ImageProvider imageProvider = targetWidth != null
+        ? ResizeImage(FileImage(file), width: targetWidth!)
+        : FileImage(file);
+    
+    final baseImage = Image(
+      image: imageProvider,
+      width: width,
+      height: height,
+      fit: fit,
+      filterQuality: FilterQuality.low,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => _buildErrorWidget(context),
+    );
+    
+    // 深色模式下添加黑色遮罩
+    if (isDark) {
+      return ColorFiltered(
+        colorFilter: ColorFilter.mode(
+          Colors.black.withValues(alpha: 0.5),
+          BlendMode.darken,
+        ),
+        child: baseImage,
+      );
+    }
+    
+    return baseImage;
+  }
+  
+  /// 构建错误占位
+  Widget _buildErrorWidget(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: borderRadius,
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.broken_image,
+            size: 32,
+            color: AppTheme.mutedForeground,
+          ),
+          if (errorText != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              errorText!,
+              style: const TextStyle(
+                color: AppTheme.mutedForeground,
+                fontSize: 11,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
