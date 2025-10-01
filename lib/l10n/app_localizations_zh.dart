@@ -936,6 +936,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noEvents => '暂无事件';
 
   @override
+  String get noEventsSubtitle => '事件段落和AI总结将显示在这里';
+
+  @override
   String get activeSegmentTitle => '进行中的时间段';
 
   @override
@@ -1361,4 +1364,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get noResultsForFilters => '没有符合当前筛选条件的图片';
+
+  @override
+  String get openLink => '打开';
+
+  @override
+  String get favoritePageTitle => '收藏';
+
+  @override
+  String get noFavoritesTitle => '暂无收藏';
+
+  @override
+  String get noFavoritesSubtitle => '在截图列表长按图片进入多选模式后收藏';
+
+  @override
+  String get noteLabel => '备注';
+
+  @override
+  String get updatedAt => '更新于 ';
+
+  @override
+  String get clickToAddNote => '点击添加备注...';
+
+  @override
+  String get noteUnchanged => '备注无变化';
+
+  @override
+  String get noteSaved => '备注已保存';
+
+  @override
+  String get favoritesRemoved => '已取消收藏';
+
+  @override
+  String get operationFailed => '操作失败';
+
+  @override
+  String get cannotGetAppDir => '无法获取应用目录';
 }

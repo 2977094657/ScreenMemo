@@ -1,7 +1,24 @@
+import 'dart:async';
 import 'package:screen_memo/models/favorite_record.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 import 'package:screen_memo/services/screenshot_database.dart';
 import 'package:screen_memo/services/screenshot_service.dart';
+
+/// 收藏变更事件类型
+enum FavoriteChangeType { added, removed, updated }
+
+/// 收藏变更事件
+class FavoriteChangeEvent {
+  final int screenshotId;
+  final String appPackageName;
+  final FavoriteChangeType type;
+  
+  const FavoriteChangeEvent({
+    required this.screenshotId,
+    required this.appPackageName,
+    required this.type,
+  });
+}
 
 /// 收藏服务类
 /// 封装收藏相关的业务逻辑
@@ -12,6 +29,22 @@ class FavoriteService {
   FavoriteService._();
   
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
+  
+  // 收藏变更事件流
+  final StreamController<FavoriteChangeEvent> _changeController = 
+      StreamController<FavoriteChangeEvent>.broadcast();
+  
+  /// 监听收藏变更事件
+  Stream<FavoriteChangeEvent> get onFavoriteChanged => _changeController.stream;
+  
+  /// 发送收藏变更事件
+  void _notifyChange(int screenshotId, String appPackageName, FavoriteChangeType type) {
+    _changeController.add(FavoriteChangeEvent(
+      screenshotId: screenshotId,
+      appPackageName: appPackageName,
+      type: type,
+    ));
+  }
   
   /// 切换收藏状态
   /// 如果已收藏则取消，否则添加收藏
@@ -26,18 +59,26 @@ class FavoriteService {
         appPackageName: appPackageName,
       );
       
+      bool success;
       if (isFav) {
-        return await _db.removeFavorite(
+        success = await _db.removeFavorite(
           screenshotId: screenshotId,
           appPackageName: appPackageName,
         );
+        if (success) {
+          _notifyChange(screenshotId, appPackageName, FavoriteChangeType.removed);
+        }
       } else {
-        return await _db.addOrUpdateFavorite(
+        success = await _db.addOrUpdateFavorite(
           screenshotId: screenshotId,
           appPackageName: appPackageName,
           note: note,
         );
+        if (success) {
+          _notifyChange(screenshotId, appPackageName, FavoriteChangeType.added);
+        }
       }
+      return success;
     } catch (e) {
       print('切换收藏状态失败: $e');
       return false;
@@ -50,11 +91,15 @@ class FavoriteService {
     required String appPackageName,
     String? note,
   }) async {
-    return await _db.addOrUpdateFavorite(
+    final success = await _db.addOrUpdateFavorite(
       screenshotId: screenshotId,
       appPackageName: appPackageName,
       note: note,
     );
+    if (success) {
+      _notifyChange(screenshotId, appPackageName, FavoriteChangeType.added);
+    }
+    return success;
   }
   
   /// 取消收藏
@@ -62,10 +107,14 @@ class FavoriteService {
     required int screenshotId,
     required String appPackageName,
   }) async {
-    return await _db.removeFavorite(
+    final success = await _db.removeFavorite(
       screenshotId: screenshotId,
       appPackageName: appPackageName,
     );
+    if (success) {
+      _notifyChange(screenshotId, appPackageName, FavoriteChangeType.removed);
+    }
+    return success;
   }
   
   /// 检查是否已收藏
@@ -151,11 +200,20 @@ class FavoriteService {
     required String appPackageName,
     String? note,
   }) async {
-    return await _db.updateFavoriteNote(
+    final success = await _db.updateFavoriteNote(
       screenshotId: screenshotId,
       appPackageName: appPackageName,
       note: note,
     );
+    if (success) {
+      _notifyChange(screenshotId, appPackageName, FavoriteChangeType.updated);
+    }
+    return success;
+  }
+  
+  /// 释放资源
+  void dispose() {
+    _changeController.close();
   }
   
   /// 获取收藏详情

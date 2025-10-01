@@ -1802,6 +1802,12 @@ abstract class AppLocalizations {
   /// **'No events'**
   String get noEvents;
 
+  /// No description provided for @noEventsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Event segments and AI summaries will appear here'**
+  String get noEventsSubtitle;
+
   /// No description provided for @activeSegmentTitle.
   ///
   /// In en, this message translates to:
@@ -2545,6 +2551,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No images match the current filters'**
   String get noResultsForFilters;
+
+  /// No description provided for @openLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get openLink;
+
+  /// No description provided for @favoritePageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get favoritePageTitle;
+
+  /// No description provided for @noFavoritesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No favorites'**
+  String get noFavoritesTitle;
+
+  /// No description provided for @noFavoritesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Long-press on screenshots in the gallery to enter multi-select mode and add favorites'**
+  String get noFavoritesSubtitle;
+
+  /// No description provided for @noteLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Note'**
+  String get noteLabel;
+
+  /// No description provided for @updatedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated '**
+  String get updatedAt;
+
+  /// No description provided for @clickToAddNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Click to add note...'**
+  String get clickToAddNote;
+
+  /// No description provided for @noteUnchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Note unchanged'**
+  String get noteUnchanged;
+
+  /// No description provided for @noteSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Note saved'**
+  String get noteSaved;
+
+  /// No description provided for @favoritesRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from favorites'**
+  String get favoritesRemoved;
+
+  /// No description provided for @operationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation failed'**
+  String get operationFailed;
+
+  /// No description provided for @cannotGetAppDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot get app directory'**
+  String get cannotGetAppDir;
 }
 
 class _AppLocalizationsDelegate

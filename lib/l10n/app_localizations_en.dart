@@ -974,6 +974,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noEvents => 'No events';
 
   @override
+  String get noEventsSubtitle =>
+      'Event segments and AI summaries will appear here';
+
+  @override
   String get activeSegmentTitle => 'Active segment';
 
   @override
@@ -1403,4 +1407,41 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noResultsForFilters => 'No images match the current filters';
+
+  @override
+  String get openLink => 'Open';
+
+  @override
+  String get favoritePageTitle => 'Favorites';
+
+  @override
+  String get noFavoritesTitle => 'No favorites';
+
+  @override
+  String get noFavoritesSubtitle =>
+      'Long-press on screenshots in the gallery to enter multi-select mode and add favorites';
+
+  @override
+  String get noteLabel => 'Note';
+
+  @override
+  String get updatedAt => 'Updated ';
+
+  @override
+  String get clickToAddNote => 'Click to add note...';
+
+  @override
+  String get noteUnchanged => 'Note unchanged';
+
+  @override
+  String get noteSaved => 'Note saved';
+
+  @override
+  String get favoritesRemoved => 'Removed from favorites';
+
+  @override
+  String get operationFailed => 'Operation failed';
+
+  @override
+  String get cannotGetAppDir => 'Cannot get app directory';
 }

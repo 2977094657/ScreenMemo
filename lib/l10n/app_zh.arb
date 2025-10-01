@@ -513,6 +513,7 @@
   "segmentStatusTitle": "事件状态",
   "autoWatchingHint": "后台自动检测中…",
   "noEvents": "暂无事件",
+  "noEventsSubtitle": "事件段落和AI总结将显示在这里",
   "activeSegmentTitle": "进行中的时间段",
   "sampleEverySeconds": "每 {seconds} 秒采样",
   "@sampleEverySeconds": {
@@ -684,5 +685,18 @@
 "selectDateRange": "选择日期范围",
 "startDate": "开始日期",
 "endDate": "结束日期",
-"noResultsForFilters": "没有符合当前筛选条件的图片"
-}
+  "noResultsForFilters": "没有符合当前筛选条件的图片",
+  
+  "openLink": "打开",
+  "favoritePageTitle": "收藏",
+  "noFavoritesTitle": "暂无收藏",
+  "noFavoritesSubtitle": "在截图列表长按图片进入多选模式后收藏",
+  "noteLabel": "备注",
+  "updatedAt": "更新于 ",
+  "clickToAddNote": "点击添加备注...",
+  "noteUnchanged": "备注无变化",
+  "noteSaved": "备注已保存",
+  "favoritesRemoved": "已取消收藏",
+  "operationFailed": "操作失败",
+  "cannotGetAppDir": "无法获取应用目录"
+  }

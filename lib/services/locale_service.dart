@@ -29,17 +29,32 @@ class LocaleService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_key) ?? 'system';
     _applyOption(saved, notify: false);
-    // 同步启动器别名，确保首次启动桌面名称正确
-    await _updateLauncherAlias();
+    
+    // 检查是否首次启动（确保启动器别名与语言设置一致）
+    final isFirstInit = prefs.getBool('launcher_alias_initialized') ?? false;
+    if (!isFirstInit) {
+      await _updateLauncherAlias();
+      await prefs.setBool('launcher_alias_initialized', true);
+      return;
+    }
+    
+    // 检查是否需要更新启动器别名（应用启动时更新）
+    final needsUpdate = prefs.getBool('launcher_alias_needs_update') ?? false;
+    if (needsUpdate) {
+      await _updateLauncherAlias();
+      await prefs.setBool('launcher_alias_needs_update', false);
+    }
   }
 
   Future<void> setOption(String option) async {
     if (option != 'system' && option != 'zh' && option != 'en') return;
     if (_option == option) return;
     _applyOption(option, notify: true);
-    await _updateLauncherAlias();
+    // 不立即更新启动器别名，避免应用退出到桌面
+    // 保存待更新标记，下次启动时更新
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, _option);
+    await prefs.setBool('launcher_alias_needs_update', true);
   }
 
   void _applyOption(String option, {required bool notify}) {

@@ -513,6 +513,7 @@
   "segmentStatusTitle": "Event Status",
   "autoWatchingHint": "Auto watching in background…",
   "noEvents": "No events",
+  "noEventsSubtitle": "Event segments and AI summaries will appear here",
   "activeSegmentTitle": "Active segment",
   "sampleEverySeconds": "Sample every {seconds}s",
   "@sampleEverySeconds": {
@@ -690,5 +691,18 @@
   "selectDateRange": "Select date range",
   "startDate": "Start date",
   "endDate": "End date",
-  "noResultsForFilters": "No images match the current filters"
+  "noResultsForFilters": "No images match the current filters",
+  
+  "openLink": "Open",
+  "favoritePageTitle": "Favorites",
+  "noFavoritesTitle": "No favorites",
+  "noFavoritesSubtitle": "Long-press on screenshots in the gallery to enter multi-select mode and add favorites",
+  "noteLabel": "Note",
+  "updatedAt": "Updated ",
+  "clickToAddNote": "Click to add note...",
+  "noteUnchanged": "Note unchanged",
+  "noteSaved": "Note saved",
+  "favoritesRemoved": "Removed from favorites",
+  "operationFailed": "Operation failed",
+  "cannotGetAppDir": "Cannot get app directory"
   }
