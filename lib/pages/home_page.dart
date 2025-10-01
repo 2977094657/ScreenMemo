@@ -590,6 +590,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   Future<void> _onAppTap(AppInfo app) async {
     // TODO: 进入应用详情页面，显示截图历史
+    // 在导航之前，统一取消焦点，避免其他标签页的 TextField 焦点残留
+    FocusManager.instance.primaryFocus?.unfocus();
     await Navigator.pushNamed(
       context, 
       '/screenshot_gallery',

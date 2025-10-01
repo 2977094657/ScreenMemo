@@ -16,6 +16,7 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import '../widgets/screenshot_image_widget.dart';
 
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
@@ -37,8 +38,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   // 应用图标缓存（包名 -> AppInfo）
   final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
 
+  // 隐私模式状态
+  bool _privacyMode = true; // 默认开启，初始化时从偏好读取
  
-  // 自动轮询：每秒检测“暂无总结”并自动刷新，直到清空
+  // 自动轮询：每秒检测"暂无总结"并自动刷新，直到清空
   Timer? _autoTimer;
   bool _autoWatching = false;
   int _autoTickCount = 0;
@@ -47,7 +50,20 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   void initState() {
     super.initState();
     _initApps();
+    _loadPrivacyMode();
     _refresh();
+    // 订阅隐私模式变更
+    AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
+      if (!mounted) return;
+      setState(() { _privacyMode = enabled; });
+    });
+  }
+
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      if (mounted) setState(() { _privacyMode = enabled; });
+    } catch (_) {}
   }
 
   Future<void> _initApps() async {
@@ -150,7 +166,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   }
 
   Widget _buildSamplesGrid(List<Map<String, dynamic>> samples) {
-    final bg = Colors.transparent;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -164,21 +179,27 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       itemBuilder: (ctx, i) {
         final s = samples[i];
         final path = (s['file_path'] as String?) ?? '';
-        return GestureDetector(
-          onTap: () => _openImageGallery(samples, i),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              color: bg,
-              child: path.isEmpty
-                  ? const Center(child: Icon(Icons.image_not_supported_outlined))
-                  : Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (c, e, s) => const Center(child: Icon(Icons.broken_image_outlined)),
-                    ),
+        final pageUrl = (s['page_url'] as String?) ?? '';
+        
+        if (path.isEmpty) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
             ),
-          ),
+            child: const Center(child: Icon(Icons.image_not_supported_outlined)),
+          );
+        }
+        
+        return ScreenshotImageWidget(
+          file: File(path),
+          privacyMode: _privacyMode,
+          pageUrl: pageUrl.isNotEmpty ? pageUrl : null,
+          fit: BoxFit.cover,
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _openImageGallery(samples, i),
+          showNsfwButton: true,
+          errorText: 'Image Error',
         );
       },
     );
@@ -432,6 +453,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           openGallery: (samples, index) => _openImageGallery(samples, index),
           activeHeader: _buildActiveCard(),
           onRefreshRequested: _refresh,
+          privacyMode: _privacyMode,
         ),
       ),
     );
@@ -451,6 +473,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
   final Widget activeHeader;
   final Future<void> Function() onRefreshRequested;
+  final bool privacyMode;
 
   const _SegmentTimelineTabView({
     required this.segments,
@@ -464,24 +487,66 @@ class _SegmentTimelineTabView extends StatelessWidget {
     required this.openGallery,
     required this.activeHeader,
     required this.onRefreshRequested,
+    required this.privacyMode,
   });
 
   @override
   Widget build(BuildContext context) {
     if (segments.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-        children: [
-          activeHeader,
-          const SizedBox(height: 8),
-          if (onlyNoSummary && autoWatching)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(AppLocalizations.of(context).autoWatchingHint, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+      return CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  activeHeader,
+                  const SizedBox(height: 8),
+                  if (onlyNoSummary && autoWatching)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(AppLocalizations.of(context).autoWatchingHint, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                    ),
+                ],
+              ),
             ),
-          Padding(
-            padding: const EdgeInsets.only(top: 40),
-            child: Center(child: Text(AppLocalizations.of(context).noEvents)),
+          ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.event_note_outlined,
+                      size: 64,
+                      color: AppTheme.mutedForeground.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: AppTheme.spacing4),
+                    Text(
+                      AppLocalizations.of(context).noEvents,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.mutedForeground,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: Text(
+                        AppLocalizations.of(context).noEventsSubtitle,
+                        style: const TextStyle(color: AppTheme.mutedForeground),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       );
@@ -579,6 +644,7 @@ class _SegmentTimelineTabView extends StatelessWidget {
                             onOpenDetail: () => onOpenDetail(grouped[k]![i]),
                             openGallery: openGallery,
                             onRefreshRequested: onRefreshRequested,
+                            privacyMode: privacyMode,
                           )),
                       const SizedBox(height: 12),
                     ],
@@ -644,6 +710,7 @@ class _SegmentEntryCard extends StatefulWidget {
   final VoidCallback onOpenDetail;
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
   final Future<void> Function() onRefreshRequested;
+  final bool privacyMode;
 
   const _SegmentEntryCard({
     required this.segment,
@@ -655,6 +722,7 @@ class _SegmentEntryCard extends StatefulWidget {
     required this.onOpenDetail,
     required this.openGallery,
     required this.onRefreshRequested,
+    required this.privacyMode,
   });
 
   @override
@@ -1061,24 +1129,27 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       itemBuilder: (ctx, i) {
         final s = samples[i];
         final path = (s['file_path'] as String?) ?? '';
-        return GestureDetector(
+        final pageUrl = (s['page_url'] as String?) ?? '';
+        
+        if (path.isEmpty) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(child: Icon(Icons.image_not_supported_outlined)),
+          );
+        }
+        
+        return ScreenshotImageWidget(
+          file: File(path),
+          privacyMode: widget.privacyMode,
+          pageUrl: pageUrl.isNotEmpty ? pageUrl : null,
+          fit: BoxFit.cover,
+          borderRadius: BorderRadius.circular(8),
           onTap: () => widget.openGallery(samples, i),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: path.isEmpty
-                ? Container(
-                  color: Colors.transparent,
-                  child: const Center(child: Icon(Icons.image_not_supported_outlined)),
-                )
-              : Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => Container(
-                    color: Colors.transparent,
-                    child: const Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
-                ),
-          ),
+          showNsfwButton: true,
+          errorText: 'Image Error',
         );
       },
     );

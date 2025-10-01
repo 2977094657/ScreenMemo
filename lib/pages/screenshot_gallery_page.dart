@@ -21,6 +21,7 @@ import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 import '../services/favorite_service.dart';
 import '../widgets/nsfw_guard.dart';
+import '../widgets/screenshot_item_widget.dart';
 
 /// 内部：日期Tab信息（一天为单位）
 class _DayTabInfo {
@@ -489,9 +490,35 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     final l10n = AppLocalizations.of(context);
     String timeStr = l10n.none;
     if (_latestTime != null) {
-      timeStr = _formatDateTime(_latestTime!);
+      timeStr = _formatDateTimeForStats(_latestTime!);
     }
     return '${l10n.imagesCountLabel(_totalCount)} · ${_formatTotalSizeMBGBTB(_totalSize)} · $timeStr';
+  }
+  
+  /// 格式化时间（用于统计显示）
+  String _formatDateTimeForStats(DateTime dateTime) {
+    final l10n = AppLocalizations.of(context);
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 1) {
+      return l10n.justNow;
+    } else if (diff.inHours < 1) {
+      return l10n.minutesAgo(diff.inMinutes);
+    } else if (diff.inDays < 1) {
+      return l10n.hoursAgo(diff.inHours);
+    } else if (diff.inDays < 7) {
+      return l10n.daysAgo(diff.inDays);
+    } else {
+      final bool sameYear = now.year == dateTime.year;
+      final String hh = dateTime.hour.toString().padLeft(2, '0');
+      final String mm = dateTime.minute.toString().padLeft(2, '0');
+      if (sameYear) {
+        return l10n.monthDayTime(dateTime.month, dateTime.day, hh, mm);
+      } else {
+        return l10n.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
+      }
+    }
   }
 
   @override
@@ -1205,46 +1232,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     if (_baseDir == null) {
       return _buildErrorItem(AppLocalizations.of(context).appDirUninitialized);
     }
-    final file = path.isAbsolute(screenshot.filePath)
-        ? File(screenshot.filePath)
-        : File(path.join(_baseDir!.path, screenshot.filePath));
-    final base = ClipRRect(
-      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      child: Builder(
-        builder: (context) {
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          final screenWidth = MediaQuery.of(context).size.width;
-          final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
-          final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
-          final imageProvider = ResizeImage(FileImage(file), width: targetWidth);
-          final imageWidget = Image(
-            image: imageProvider,
-            width: double.infinity,
-            height: double.infinity,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.low,
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted),
-          );
-          if (!isDark) return imageWidget;
-          return ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: 0.5),
-              BlendMode.darken,
-            ),
-            child: imageWidget,
-          );
-        },
-      ),
-    );
-    final bool isNsfw = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
-    if (!isNsfw) return base;
-    return NsfwBlurGuard(
-      child: base,
-      masked: true,
-      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      onReveal: null, // 预览项仅显示遮罩，无点击
-      showButton: false,
+    
+    return ScreenshotItemWidget(
+      screenshot: screenshot,
+      baseDir: _baseDir,
+      appInfoMap: {_packageName: _appInfo},
+      privacyMode: _privacyMode,
+      // 预览项不可交互
+      onTap: null,
     );
   }
 
@@ -1269,18 +1264,18 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       return _buildErrorItem(AppLocalizations.of(context).appDirUninitialized);
     }
 
-    // 统一使用绝对路径；兼容旧数据为相对路径时再与基础目录拼接
-    final file = path.isAbsolute(screenshot.filePath)
-        ? File(screenshot.filePath)
-        : File(path.join(_baseDir!.path, screenshot.filePath));
-
     final isSelected =
         _selectionMode &&
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
     final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
-    final itemContent = GestureDetector(
+    
+    final itemContent = ScreenshotItemWidget(
+      screenshot: screenshot,
+      baseDir: _baseDir,
+      appInfoMap: {_packageName: _appInfo},
+      privacyMode: _privacyMode,
       onTap: () {
         if (_selectionMode) {
           _toggleSelect(index);
@@ -1299,218 +1294,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         }
         _toggleSelect(index);
       },
-      child: Stack(
-        children: [
-          // 图片直接显示，减小圆角以与整体风格协调
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            child: Builder(
-              builder: (context) {
-                final isDark = Theme.of(context).brightness == Brightness.dark;
-                // 使用按视口尺寸下采样的缩略图以提升快速拖动时的首帧显示速度
-                final screenWidth = MediaQuery.of(context).size.width;
-                // 计算两列网格每项的近似逻辑宽度（外边距+列间距近似处理）
-                final double logicalTileWidth =
-                    (screenWidth - AppTheme.spacing1 * 3) / 2;
-                final int targetWidth =
-                    (logicalTileWidth * MediaQuery.of(context).devicePixelRatio)
-                        .round();
-                final imageProvider = ResizeImage(
-                  FileImage(file),
-                  width: targetWidth,
-                );
-                final imageWidget = Image(
-                  image: imageProvider,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.low,
-                  gaplessPlayback: true,
-                  errorBuilder: (context, error, stackTrace) {
-                    print("图片加载失败: $error, path: ${file.path}");
-                    return _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted);
-                  },
-                );
-                if (!isDark) return imageWidget;
-                return ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    Colors.black.withValues(alpha: 0.5),
-                    BlendMode.darken,
-                  ),
-                  child: imageWidget,
-                );
-              },
-            ),
-          ),
-          // NSFW 遮罩：放在图片之上、选择框之下，确保不遮挡多选复选框
-          if (nsfwMasked)
-            Positioned.fill(
-              child: NsfwBackdropOverlay(
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                onReveal: () => _viewScreenshot(screenshot, index),
-                showButton: true,
-              ),
-            ),
-          // 顶部链接信息遮罩：NSFW 时隐藏，避免露出网址
-          if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty && !nsfwMasked)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _showLinkDialogFromGrid(screenshot.pageUrl!),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacing2,
-                    vertical: AppTheme.spacing1,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.7),
-                        Colors.transparent,
-                      ],
-                    ),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(AppTheme.radiusSm),
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.link,
-                        size: 14,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? (Theme.of(context).textTheme.bodySmall?.color ?? Colors.white)
-                            : Colors.white,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          screenshot.pageUrl!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                fontSize: 11,
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? Theme.of(context).textTheme.bodySmall?.color
-                                    : Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ) ?? const TextStyle(fontSize: 11, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          // 选择矩形"复选框"叠加（仅多选模式显示，右上角白色边框，浅灰底，选中打勾）
-          if (_selectionMode)
-            Positioned(
-              top: 6,
-              right: 6,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.black : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: isSelected ? Colors.black : Colors.white,
-                    width: 2,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: isSelected
-                    ? const Icon(Icons.check, size: 16, color: Colors.white)
-                    : null,
-              ),
-            ),
-          // 收藏按钮（仅多选模式显示，左上角）
-          if (_selectionMode && screenshot.id != null)
-            Positioned(
-              top: 6,
-              left: 6,
-              child: GestureDetector(
-                onTap: () => _toggleFavorite(screenshot),
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    (_favoriteStatus[screenshot.id] ?? false)
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    size: 18,
-                    color: (_favoriteStatus[screenshot.id] ?? false)
-                        ? Colors.red
-                        : Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          // 去除之前的全图遮罩，仅保留底部信息遮罩
-          // 底部信息遮罩（同步减小底边圆角）
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing2,
-                vertical: AppTheme.spacing1,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.7),
-                  ],
-                ),
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(AppTheme.radiusSm),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatFileSize(screenshot.fileSize),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? Theme.of(context).textTheme.bodySmall?.color
-                              : Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  Text(
-                    _formatDateTime(screenshot.captureTime),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? Theme.of(context).textTheme.bodySmall?.color
-                              : Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      onLinkTap: (url) => _showLinkDialogFromGrid(url),
+      showCheckbox: _selectionMode,
+      isSelected: isSelected,
+      showFavoriteButton: _selectionMode && screenshot.id != null,
+      isFavorited: _favoriteStatus[screenshot.id] ?? false,
+      onFavoriteToggle: () => _toggleFavorite(screenshot),
     );
+    
     return KeyedSubtree(key: itemKey, child: itemContent);
   }
 
@@ -2156,40 +1947,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     );
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    final l10n = AppLocalizations.of(context);
-    final now = DateTime.now();
-    final diff = now.difference(dateTime);
-
-    if (diff.inMinutes < 1) {
-      return l10n.justNow;
-    } else if (diff.inHours < 1) {
-      return l10n.minutesAgo(diff.inMinutes);
-    } else if (diff.inDays < 1) {
-      return l10n.hoursAgo(diff.inHours);
-    } else if (diff.inDays < 7) {
-      return l10n.daysAgo(diff.inDays);
-    } else {
-      final bool sameYear = now.year == dateTime.year;
-      final String hh = dateTime.hour.toString().padLeft(2, '0');
-      final String mm = dateTime.minute.toString().padLeft(2, '0');
-      if (sameYear) {
-        return l10n.monthDayTime(dateTime.month, dateTime.day, hh, mm);
-      } else {
-        return l10n.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
-      }
-    }
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '${bytes}B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    } else {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
-  }
 
   /// 将字节格式化为最小MB，然后GB/TB
   String _formatTotalSizeMBGBTB(int bytes) {

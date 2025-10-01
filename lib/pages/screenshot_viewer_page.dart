@@ -99,7 +99,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           },
         ),
         UIDialogAction<void>(
-          text: '打开',
+          text: AppLocalizations.of(context).openLink,
           style: UIDialogActionStyle.normal,
           closeOnPress: true,
           onPressed: (ctx) async {

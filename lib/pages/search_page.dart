@@ -12,6 +12,7 @@ import '../services/path_service.dart';
 import '../services/screenshot_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/nsfw_guard.dart';
+import '../widgets/screenshot_item_widget.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -293,7 +294,8 @@ class _SearchPageState extends State<SearchPage> {
     final List<ScreenshotRecord> sameApp =
         _results.where((r) => r.appPackageName == record.appPackageName).toList();
     final int initialIndex = sameApp.indexWhere((r) => r.id == record.id);
-    final appInfo = AppInfo(
+    // 从缓存中获取完整的应用信息（包含 icon）
+    final appInfo = _appInfoByPackage[record.appPackageName] ?? AppInfo(
       packageName: record.appPackageName,
       appName: record.appName,
       icon: null,
@@ -554,213 +556,51 @@ class _SearchPageState extends State<SearchPage> {
             );
           }
           final s = _filteredResults[index];
-          final File file = _resolveFile(s.filePath);
-          final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(s.pageUrl);
-          return GestureDetector(
-            onTap: nsfwMasked ? null : () => _openViewer(s, index),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final double tileW = constraints.maxWidth;
-                final double tileH = constraints.maxHeight;
-                final bool isDark = Theme.of(context).brightness == Brightness.dark;
-                final Image baseImage = Image(
-                  image: ResizeImage(
-                    FileImage(file),
-                    width: _targetThumbWidth(context),
-                  ),
-                  width: tileW,
-                  height: tileH,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.low,
-                  gaplessPlayback: true,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _buildErrorTile(AppLocalizations.of(context).imageMissingOrCorrupted),
-                );
-                final Widget imageWidget = isDark
-                    ? ColorFiltered(
-                        colorFilter: ColorFilter.mode(
-                          Colors.black.withOpacity(0.5),
-                          BlendMode.darken,
-                        ),
-                        child: baseImage,
-                      )
-                    : baseImage;
-
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      imageWidget,
-                      if (_lastQuery.isNotEmpty)
-                        FutureBuilder<Map<String, dynamic>?>(
-                          future: _ensureBoxes(s.filePath),
-                          builder: (context, snapshot) {
-                            final data = snapshot.data;
-                            if (data == null) return const SizedBox.shrink();
-                            final int srcW = (data['width'] as int?) ?? 0;
-                            final int srcH = (data['height'] as int?) ?? 0;
-                            final List<dynamic> raw =
-                                (data['boxes'] as List?) ?? const [];
-                            if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
-                              return const SizedBox.shrink();
-                            }
-                            final List<Rect> rects = <Rect>[];
-                            for (final item in raw) {
-                              if (item is Map) {
-                                final m = Map<String, dynamic>.from(item);
-                                final l = (m['left'] as num?)?.toDouble() ?? 0;
-                                final t = (m['top'] as num?)?.toDouble() ?? 0;
-                                final r = (m['right'] as num?)?.toDouble() ?? 0;
-                                final b = (m['bottom'] as num?)?.toDouble() ?? 0;
-                                rects.add(Rect.fromLTRB(l, t, r, b));
-                              }
-                            }
-                            if (rects.isEmpty) return const SizedBox.shrink();
-                            return CustomPaint(
-                              painter: _OcrBoxesPainter(
-                                originalWidth: srcW.toDouble(),
-                                originalHeight: srcH.toDouble(),
-                                boxes: rects,
-                              ),
-                            );
-                          },
-                        ),
-                      if (!nsfwMasked && s.pageUrl != null && s.pageUrl!.isNotEmpty)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.spacing2,
-                              vertical: AppTheme.spacing1,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withOpacity(0.7),
-                                  Colors.transparent,
-                                ],
-                              ),
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(AppTheme.radiusSm),
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.link,
-                                  size: 14,
-                                  color: Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color
-                                      : Colors.white,
-                                ),
-                                const SizedBox(width: AppTheme.spacing1),
-                                Expanded(
-                                  child: Text(
-                                    s.pageUrl!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          fontSize: 11,
-                                          color: Theme.of(context)
-                                                      .brightness ==
-                                                  Brightness.dark
-                                              ? Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall
-                                                  ?.color
-                                              : Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.spacing2,
-                            vertical: AppTheme.spacing1,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.7),
-                              ],
-                            ),
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(AppTheme.radiusSm),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              _buildAppIcon(s.appPackageName),
-                              Expanded(
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 6),
-                                  child: Text(
-                                    _formatFileSize(s.fileSize),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Theme.of(context).brightness == Brightness.dark
-                                          ? Theme.of(context).textTheme.bodySmall?.color
-                                          : Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                _formatTime(s.captureTime),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Theme.of(context).brightness == Brightness.dark
-                                      ? Theme.of(context).textTheme.bodySmall?.color
-                                      : Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (nsfwMasked)
-                        Positioned.fill(
-                          child: NsfwBackdropOverlay(
-                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                            onReveal: () => _openViewer(s, index),
-                            showButton: true,
-                          ),
-                        ),
-                    ],
+          
+          // 构建 OCR 标注叠加层
+          Widget? ocrOverlay;
+          if (_lastQuery.isNotEmpty) {
+            ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
+              future: _ensureBoxes(s.filePath),
+              builder: (context, snapshot) {
+                final data = snapshot.data;
+                if (data == null) return const SizedBox.shrink();
+                final int srcW = (data['width'] as int?) ?? 0;
+                final int srcH = (data['height'] as int?) ?? 0;
+                final List<dynamic> raw = (data['boxes'] as List?) ?? const [];
+                if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                final List<Rect> rects = <Rect>[];
+                for (final item in raw) {
+                  if (item is Map) {
+                    final m = Map<String, dynamic>.from(item);
+                    final l = (m['left'] as num?)?.toDouble() ?? 0;
+                    final t = (m['top'] as num?)?.toDouble() ?? 0;
+                    final r = (m['right'] as num?)?.toDouble() ?? 0;
+                    final b = (m['bottom'] as num?)?.toDouble() ?? 0;
+                    rects.add(Rect.fromLTRB(l, t, r, b));
+                  }
+                }
+                if (rects.isEmpty) return const SizedBox.shrink();
+                return CustomPaint(
+                  painter: _OcrBoxesPainter(
+                    originalWidth: srcW.toDouble(),
+                    originalHeight: srcH.toDouble(),
+                    boxes: rects,
                   ),
                 );
               },
-            ),
+            );
+          }
+          
+          return ScreenshotItemWidget(
+            screenshot: s,
+            baseDir: _baseDir,
+            appInfoMap: _appInfoByPackage,
+            privacyMode: _privacyMode,
+            onTap: () => _openViewer(s, index),
+            customOverlay: ocrOverlay,
           );
         },
       ),
@@ -770,79 +610,6 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  int _targetThumbWidth(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double logicalTileWidth =
-        (screenWidth - AppTheme.spacing1 * 3) / 2;
-    return (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
-  }
-
-  File _resolveFile(String filePath) {
-    if (path.isAbsolute(filePath)) return File(filePath);
-    final base = _baseDir;
-    if (base == null) return File(filePath);
-    return File(path.join(base.path, filePath));
-  }
-
-  Widget _buildErrorTile(String message) {
-    return Container(
-      color: AppTheme.muted,
-      alignment: Alignment.center,
-      child: Text(
-        message,
-        style: const TextStyle(color: AppTheme.destructive, fontSize: 12),
-      ),
-    );
-  }
-
-  String _formatTime(DateTime dt) {
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '${bytes}B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    } else {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
-  }
-
-  Widget _buildAppIcon(String packageName) {
-    final app = _appInfoByPackage[packageName];
-    if (app != null && app.icon != null && app.icon!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.memory(
-          app.icon!,
-          width: 18,
-          height: 18,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-    final parts = packageName.split('.');
-    final head = parts.isNotEmpty ? parts.last : packageName;
-    final leading = head.isNotEmpty ? head[0].toUpperCase() : '?';
-    return Container(
-      width: 18,
-      height: 18,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        leading,
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: Colors.black,
-        ),
-      ),
-    );
-  }
 }
 
 class _OcrBoxesPainter extends CustomPainter {

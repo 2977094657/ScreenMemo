@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../models/favorite_record.dart';
@@ -13,6 +14,8 @@ import '../theme/app_theme.dart';
 import '../widgets/ui_dialog.dart';
 import '../widgets/ui_components.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/screenshot_item_widget.dart';
+import '../widgets/screenshot_image_widget.dart';
 
 /// 收藏页面
 class FavoritesPage extends StatefulWidget {
@@ -28,6 +31,8 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
   String? _error;
   Directory? _baseDir;
   final Map<String, AppInfo?> _appInfoCache = {}; // 缓存应用信息
+  bool _privacyMode = true; // 隐私模式
+  StreamSubscription<FavoriteChangeEvent>? _favoriteChangeSub;
   
   @override
   bool get wantKeepAlive => true;
@@ -36,6 +41,31 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
   void initState() {
     super.initState();
     _loadData();
+    _loadPrivacyMode();
+    // 监听隐私模式变更
+    AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
+      if (!mounted) return;
+      setState(() { _privacyMode = enabled; });
+    });
+    // 监听收藏变更事件
+    _favoriteChangeSub = FavoriteService.instance.onFavoriteChanged.listen((event) {
+      if (!mounted) return;
+      // 收藏变更时刷新列表
+      _loadData();
+    });
+  }
+  
+  @override
+  void dispose() {
+    _favoriteChangeSub?.cancel();
+    super.dispose();
+  }
+  
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      if (mounted) setState(() { _privacyMode = enabled; });
+    } catch (_) {}
   }
   
   Future<void> _loadData() async {
@@ -48,7 +78,7 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
       // 获取基础目录
       final dir = await PathService.getExternalFilesDir(null);
       if (dir == null) {
-        throw Exception('无法获取应用目录');
+        throw Exception(AppLocalizations.of(context).cannotGetAppDir);
       }
       
       _baseDir = dir;
@@ -93,7 +123,7 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
       });
     } catch (e) {
       setState(() {
-        _error = '加载失败: $e';
+        _error = '${AppLocalizations.of(context).loadMoreFailedWithError(e.toString())}';
         _isLoading = false;
       });
     }
@@ -128,21 +158,18 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Center(
-          child: Text(
-            '收藏 (${_favorites.length})',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        toolbarHeight: 36,
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 2.0),
+          child: Text('${AppLocalizations.of(context).favoritePageTitle} (${_favorites.length})'),
         ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
-            tooltip: '刷新',
+            tooltip: AppLocalizations.of(context).actionRefresh,
           ),
         ],
       ),
@@ -165,7 +192,7 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
             Text(_error!, style: const TextStyle(color: AppTheme.destructive)),
             const SizedBox(height: AppTheme.spacing4),
             UIButton(
-              text: '重试',
+              text: AppLocalizations.of(context).actionRetry,
               onPressed: _loadData,
               variant: UIButtonVariant.outline,
             ),
@@ -176,40 +203,42 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
     
     if (_favorites.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.favorite_outline,
-              size: 64,
-              color: AppTheme.mutedForeground.withOpacity(0.5),
-            ),
-            const SizedBox(height: AppTheme.spacing4),
-            const Text(
-              '暂无收藏',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.mutedForeground,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.favorite_outline,
+                size: 64,
+                color: AppTheme.mutedForeground.withOpacity(0.5),
               ),
-            ),
-            const SizedBox(height: AppTheme.spacing2),
-            const Text(
-              '在截图列表长按图片进入多选模式后收藏',
-              style: TextStyle(color: AppTheme.mutedForeground),
-            ),
-          ],
+              const SizedBox(height: AppTheme.spacing4),
+              Text(
+                AppLocalizations.of(context).noFavoritesTitle,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.mutedForeground,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: Text(
+                  AppLocalizations.of(context).noFavoritesSubtitle,
+                  style: const TextStyle(color: AppTheme.mutedForeground),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
     
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        // 点击空白区域时取消焦点，触发自动保存
-        FocusScope.of(context).unfocus();
-      },
-      child: ListView.builder(
+    return ListView.builder(
         physics: const ClampingScrollPhysics(),
         padding: EdgeInsets.only(
           left: AppTheme.spacing2,
@@ -223,6 +252,7 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
           item: _favorites[index],
           index: index,
           baseDir: _baseDir!,
+          privacyMode: _privacyMode,
           onRemove: (item) {
             setState(() {
               _favorites.remove(item);
@@ -242,8 +272,7 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
             });
           },
         ),
-      ),
-    );
+      );
   }
   
   Widget _buildErrorItem(String message) {
@@ -271,13 +300,13 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
     final diff = now.difference(dateTime);
     
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return AppLocalizations.of(context).justNow;
     } else if (diff.inHours < 1) {
-      return '${diff.inMinutes}分钟前';
+      return AppLocalizations.of(context).minutesAgo(diff.inMinutes.toString());
     } else if (diff.inHours < 24) {
-      return '${diff.inHours}小时前';
+      return AppLocalizations.of(context).hoursAgo(diff.inHours.toString());
     } else if (diff.inDays < 7) {
-      return '${diff.inDays}天前';
+      return AppLocalizations.of(context).daysAgo(diff.inDays.toString());
     } else {
       final hh = dateTime.hour.toString().padLeft(2, '0');
       final mm = dateTime.minute.toString().padLeft(2, '0');
@@ -301,6 +330,7 @@ class _FavoriteItemWidget extends StatefulWidget {
   final _FavoriteItem item;
   final int index;
   final Directory baseDir;
+  final bool privacyMode;
   final Function(_FavoriteItem) onRemove;
   final Function(_FavoriteItem, String?) onUpdate;
   
@@ -309,6 +339,7 @@ class _FavoriteItemWidget extends StatefulWidget {
     required this.item,
     required this.index,
     required this.baseDir,
+    required this.privacyMode,
     required this.onRemove,
     required this.onUpdate,
   });
@@ -326,13 +357,6 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     super.initState();
     _noteController = TextEditingController(text: widget.item.favorite.note ?? '');
     _noteFocusNode = FocusNode();
-    
-    // 监听焦点失去事件，自动保存备注
-    _noteFocusNode.addListener(() {
-      if (!_noteFocusNode.hasFocus) {
-        _saveNoteIfChanged();
-      }
-    });
   }
   
   @override
@@ -342,15 +366,23 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     super.dispose();
   }
   
-  /// 保存备注（如果有变化）
-  Future<void> _saveNoteIfChanged() async {
+  /// 主动保存备注
+  Future<void> _saveNote() async {
     final oldNote = widget.item.favorite.note ?? '';
     final newNote = _noteController.text.trim();
     
-    // 如果内容没有变化，不进行保存
-    if (oldNote == newNote) return;
+    // 如果内容没有变化，提示无需保存
+    if (oldNote == newNote) {
+      if (mounted) {
+        UINotifier.info(context, AppLocalizations.of(context).noteUnchanged);
+      }
+      return;
+    }
     
     if (widget.item.screenshot.id == null) return;
+    
+    // 取消焦点，收起键盘
+    FocusScope.of(context).unfocus();
     
     try {
       final success = await FavoriteService.instance.updateNote(
@@ -361,9 +393,15 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
       
       if (success && mounted) {
         widget.onUpdate(widget.item, newNote.isEmpty ? null : newNote);
+        UINotifier.success(context, AppLocalizations.of(context).noteSaved);
+      } else if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).saveFailedError(''));
       }
     } catch (e) {
       print('保存备注失败: $e');
+      if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
+      }
     }
   }
   
@@ -379,14 +417,16 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     if (success) {
       widget.onRemove(widget.item);
       if (mounted) {
-        UINotifier.success(context, '已取消收藏');
+        UINotifier.success(context, AppLocalizations.of(context).favoritesRemoved);
       }
     } else if (mounted) {
-      UINotifier.error(context, '操作失败');
+      UINotifier.error(context, AppLocalizations.of(context).operationFailed);
     }
   }
   
   void _viewScreenshot() {
+    // 打开查看器前收起键盘，避免返回时键盘误弹
+    FocusScope.of(context).unfocus();
     Navigator.pushNamed(
       context,
       '/screenshot_viewer',
@@ -427,32 +467,25 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 左侧：图片
-          GestureDetector(
-            onTap: _viewScreenshot,
+          // 左侧：图片（使用统一的图片组件）
+          SizedBox(
+            width: imageWidth,
+            height: imageHeight,
             child: Stack(
               children: [
-                ClipRRect(
+                ScreenshotImageWidget(
+                  file: file,
+                  privacyMode: widget.privacyMode,
+                  pageUrl: widget.item.screenshot.pageUrl,
+                  width: imageWidth,
+                  height: imageHeight,
+                  fit: BoxFit.cover,
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(AppTheme.radiusMd),
                     bottomLeft: Radius.circular(AppTheme.radiusMd),
                   ),
-                  child: Image.file(
-                    file,
-                    width: imageWidth,
-                    height: imageHeight,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: imageWidth,
-                        height: imageHeight,
-                        color: AppTheme.muted,
-                        child: const Center(
-                          child: Icon(Icons.error_outline, color: AppTheme.destructive),
-                        ),
-                      );
-                    },
-                  ),
+                  onTap: _viewScreenshot,
+                  errorText: 'Image Error',
                 ),
                 // 收藏图标（左上角，点击直接取消收藏）
                 Positioned(
@@ -505,11 +538,11 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 备注标题和更新时间
+                  // 备注标题、更新时间和保存按钮
                   Row(
                     children: [
                       Text(
-                        '备注',
+                        AppLocalizations.of(context).noteLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.mutedForeground,
                           fontWeight: FontWeight.w600,
@@ -519,7 +552,7 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
                       Expanded(
                         child: Text(
                           widget.item.favorite.note != null && widget.item.favorite.note!.isNotEmpty
-                              ? '更新于 ${_formatCompactTime(widget.item.updatedAt)}'
+                              ? '${AppLocalizations.of(context).updatedAt}${_formatCompactTime(widget.item.updatedAt)}'
                               : '',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             fontSize: 10,
@@ -528,39 +561,43 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // 保存按钮
+                      InkWell(
+                        onTap: _saveNote,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.save_outlined,
+                            size: 18,
+                            color: AppTheme.mutedForeground.withOpacity(0.8),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: AppTheme.spacing1),
                   // 备注输入框（无边框，点击即可编辑，不限制文字数量）
                   Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        // 点击时请求焦点，确保光标显示
-                        if (!_noteFocusNode.hasFocus) {
-                          _noteFocusNode.requestFocus();
-                        }
-                      },
-                      child: TextField(
-                        controller: _noteController,
-                        focusNode: _noteFocusNode,
-                        decoration: InputDecoration(
-                          hintText: '点击添加备注...',
-                          hintStyle: TextStyle(
-                            color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
-                            fontSize: 13,
-                          ),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
+                    child: TextField(
+                      controller: _noteController,
+                      focusNode: _noteFocusNode,
+                      decoration: InputDecoration(
+                        hintText: AppLocalizations.of(context).clickToAddNote,
+                        hintStyle: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5),
+                          fontSize: 13,
                         ),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
                       ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
                     ),
                   ),
                   const SizedBox(height: AppTheme.spacing1),
@@ -617,13 +654,13 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     final diff = now.difference(dateTime);
     
     if (diff.inMinutes < 1) {
-      return '刚刚';
+      return AppLocalizations.of(context).justNow;
     } else if (diff.inHours < 1) {
-      return '${diff.inMinutes}分钟前';
+      return AppLocalizations.of(context).minutesAgo(diff.inMinutes.toString());
     } else if (diff.inHours < 24) {
-      return '${diff.inHours}小时前';
+      return AppLocalizations.of(context).hoursAgo(diff.inHours.toString());
     } else if (diff.inDays < 7) {
-      return '${diff.inDays}天前';
+      return AppLocalizations.of(context).daysAgo(diff.inDays.toString());
     } else {
       final hh = dateTime.hour.toString().padLeft(2, '0');
       final mm = dateTime.minute.toString().padLeft(2, '0');

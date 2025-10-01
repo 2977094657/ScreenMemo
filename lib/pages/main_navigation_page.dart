@@ -67,6 +67,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   ];
 
   void _onTabTapped(int index) {
+    // 切换底部标签时，统一取消当前焦点，避免隐藏页的输入框仍然保留焦点导致键盘误弹
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _currentIndex = index;
     });

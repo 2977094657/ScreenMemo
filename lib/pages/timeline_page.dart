@@ -10,6 +10,7 @@ import '../widgets/nsfw_guard.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import '../widgets/screenshot_item_widget.dart';
 
 /// 全局时间线页面（骨架）
 /// 后续将加载按日期的全局截图时间线与应用图标
@@ -251,10 +252,13 @@ class _TimelinePageState extends State<TimelinePage>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 40,
-        title: Text(AppLocalizations.of(context).timelineTitle),
+        toolbarHeight: 36,
         centerTitle: true,
-        elevation: 0,
+        automaticallyImplyLeading: false,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 2.0),
+          child: Text(AppLocalizations.of(context).timelineTitle),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -266,54 +270,95 @@ class _TimelinePageState extends State<TimelinePage>
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dayTabs.isEmpty
-              ? Center(child: Text(AppLocalizations.of(context).noScreenshotsTitle))
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 64,
+                          color: AppTheme.mutedForeground.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: AppTheme.spacing4),
+                        Text(
+                          AppLocalizations.of(context).noScreenshotsTitle,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.mutedForeground,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 300),
+                          child: Text(
+                            AppLocalizations.of(context).noScreenshotsSubtitle,
+                            style: const TextStyle(color: AppTheme.mutedForeground),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 与截图列表一致的Tab样式与内边距
-                    Padding(
-                      padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
-                      child: _dayTabs.isEmpty || _tabController == null
-                          ? const SizedBox(height: 32)
-                          : SizedBox(
-                              height: 32,
-                              child: TabBar(
-                                controller: _tabController,
-                                isScrollable: true,
-                                tabAlignment: TabAlignment.start,
-                                padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                                // 增加时间线日期Tab的左右间距（仅时间线页）
-                                labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-                                labelColor: (Theme.of(context).brightness == Brightness.dark
-                                    ? AppTheme.darkForeground
-                                    : AppTheme.foreground),
-                                unselectedLabelColor: Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground,
-                                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                                unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-                                dividerColor: Colors.transparent,
-                                indicatorSize: TabBarIndicatorSize.label,
-                                indicator: UnderlineTabIndicator(
-                                  borderSide: BorderSide(
-                                    width: 2.0,
-                                    color: (Theme.of(context).brightness == Brightness.dark
-                                        ? AppTheme.darkForeground
-                                        : AppTheme.foreground),
-                                  ),
-                                  insets: const EdgeInsets.symmetric(horizontal: 4.0),
-                                ),
-                                tabs: _dayTabs
-                                    .map((t) {
-                                      final l10n = AppLocalizations.of(context);
-                                      final text = _DayTabInfo._isToday(t.day)
-                                          ? l10n.dayTabToday(t.count)
-                                          : (_DayTabInfo._isYesterday(t.day)
-                                              ? l10n.dayTabYesterday(t.count)
-                                              : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
-                                      return Tab(text: text);
-                                    })
-                                    .toList(),
+                    Builder(
+                      builder: (context) {
+                        if (_dayTabs.isEmpty || _tabController == null) {
+                          return const SizedBox(height: 32);
+                        }
+                        final Color selectedColor = Theme.of(context).brightness == Brightness.dark
+                            ? AppTheme.darkForeground
+                            : AppTheme.foreground;
+                        final Color unselectedColor =
+                            Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
+                        return SizedBox(
+                          height: 32,
+                          child: Transform.translate(
+                            offset: const Offset(0, -2),
+                            child: TabBar(
+                              controller: _tabController,
+                              isScrollable: true,
+                              tabAlignment: TabAlignment.start,
+                              // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
+                              padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                              // 与截图列表一致：标签水平留白适中
+                              labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                              labelColor: selectedColor,
+                              unselectedLabelColor: unselectedColor,
+                              labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                              unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                              // 与截图列表一致：去掉底部分割线
+                              dividerColor: Colors.transparent,
+                              indicatorSize: TabBarIndicatorSize.label,
+                              // 减少上下空隙
+                              indicatorPadding: EdgeInsets.zero,
+                              // 与截图列表一致：细下划线，较小的左右 insets
+                              indicator: UnderlineTabIndicator(
+                                borderSide: BorderSide(width: 2.0, color: selectedColor),
+                                insets: const EdgeInsets.symmetric(horizontal: 4.0),
                               ),
+                              tabs: _dayTabs
+                                  .map((t) {
+                                    final l10n = AppLocalizations.of(context);
+                                    final text = _DayTabInfo._isToday(t.day)
+                                        ? l10n.dayTabToday(t.count)
+                                        : (_DayTabInfo._isYesterday(t.day)
+                                            ? l10n.dayTabYesterday(t.count)
+                                            : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
+                                    return Tab(text: text);
+                                  })
+                                  .toList(),
                             ),
+                          ),
+                        );
+                      },
                     ),
                     // 日期Tab与内容之间增加1px底部外边距
                     const SizedBox(height: 1),
@@ -654,174 +699,20 @@ class _TimelinePageState extends State<TimelinePage>
 
   Widget _buildItem(ScreenshotRecord screenshot, int index) {
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final file = File(screenshot.filePath);
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    // 使用按视口尺寸下采样的缩略图以提升快速拖动时的首帧显示速度（与截图列表一致）
-    final screenWidth = MediaQuery.of(context).size.width;
-    // 计算两列网格每项的近似逻辑宽度（外边距+列间距近似处理）
-    final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
-    final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
-    final imageProvider = ResizeImage(
-      FileImage(file),
-      width: targetWidth,
-    );
-    final baseImage = Image(
-      image: imageProvider,
-      width: double.infinity,
-      height: double.infinity,
-      fit: BoxFit.cover,
-      filterQuality: FilterQuality.low,
-      gaplessPlayback: true,
-      errorBuilder: (context, error, stackTrace) => _buildErrorItem(AppLocalizations.of(context).imageMissingOrCorrupted),
-    );
-    final Widget image = ClipRRect(
-      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      child: isDark
-          ? ColorFiltered(
-              colorFilter: ColorFilter.mode(
-                Colors.black.withValues(alpha: 0.5),
-                BlendMode.darken,
-              ),
-              child: baseImage,
-            )
-          : baseImage,
-    );
     final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
-    final content = GestureDetector(
+    
+    final content = ScreenshotItemWidget(
+      screenshot: screenshot,
+      appInfoMap: _appInfoByPackage,
+      privacyMode: _privacyMode,
       onTap: () {
         if (!nsfwMasked) {
           _viewFromCurrent(index);
         }
       },
-      child: Stack(
-      children: [
-        image,
-        // NSFW 遮罩（隐私模式）：与截图列表一致
-        if (nsfwMasked)
-          Positioned.fill(
-            child: NsfwBackdropOverlay(
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              onReveal: () => _viewFromCurrent(index),
-              showButton: true,
-            ),
-          ),
-        // 顶部链接信息遮罩：NSFW 时隐藏，避免露出网址
-        // 链接条不受隐私开关影响，仅在非 NSFW 时展示
-        if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _openLink(screenshot.pageUrl!),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacing2,
-                  vertical: AppTheme.spacing1,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(AppTheme.radiusSm),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.link,
-                      size: 14,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Theme.of(context).textTheme.bodySmall?.color
-                          : Colors.white,
-                    ),
-                    const SizedBox(width: AppTheme.spacing1),
-                    Expanded(
-                      child: Text(
-                        screenshot.pageUrl!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontSize: 11,
-                              color: Theme.of(context).brightness == Brightness.dark
-                                  ? Theme.of(context).textTheme.bodySmall?.color
-                                  : Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.spacing2,
-              vertical: AppTheme.spacing1,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.7),
-                ],
-              ),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(AppTheme.radiusSm),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildAppIcon(screenshot.appPackageName),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Text(
-                      _formatFileSize(screenshot.fileSize),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Theme.of(context).textTheme.bodySmall?.color
-                            : Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                Text(
-                  _formatTime(screenshot.captureTime),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Theme.of(context).textTheme.bodySmall?.color
-                        : Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    ));
+      onLinkTap: (url) => _openLink(url),
+    );
+    
     return KeyedSubtree(key: itemKey, child: content);
   }
 
@@ -856,70 +747,6 @@ class _TimelinePageState extends State<TimelinePage>
         'multiApp': true,
       },
     );
-  }
-  
-  Widget _buildAppIcon(String packageName) {
-    final app = _appInfoByPackage[packageName];
-    if (app != null && app.icon != null && app.icon!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.memory(
-          app.icon!,
-          width: 18,
-          height: 18,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-    // 占位符（小圆形）
-    final parts = packageName.split('.');
-    final head = parts.isNotEmpty ? parts.last : packageName;
-    final leading = head.isNotEmpty ? head[0].toUpperCase() : '?';
-    return Container(
-      width: 18,
-      height: 18,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        leading,
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: Colors.black,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorItem(String message) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        message,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
-  }
-
-  String _formatTime(DateTime dt) {
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '${bytes}B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    } else {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
   }
 
   @override

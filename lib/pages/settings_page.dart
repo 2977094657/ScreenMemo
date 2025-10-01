@@ -670,9 +670,13 @@ class _SettingsPageState extends State<SettingsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context).settingsTitle),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
+        toolbarHeight: 36,
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 2.0),
+          child: Text(AppLocalizations.of(context).settingsTitle),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
