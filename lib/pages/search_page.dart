@@ -583,11 +583,16 @@ class _SearchPageState extends State<SearchPage> {
                   }
                 }
                 if (rects.isEmpty) return const SizedBox.shrink();
-                return CustomPaint(
-                  painter: _OcrBoxesPainter(
-                    originalWidth: srcW.toDouble(),
-                    originalHeight: srcH.toDouble(),
-                    boxes: rects,
+                return Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: true,
+                    child: CustomPaint(
+                      painter: _OcrBoxesPainter(
+                        originalWidth: srcW.toDouble(),
+                        originalHeight: srcH.toDouble(),
+                        boxes: rects,
+                      ),
+                    ),
                   ),
                 );
               },
