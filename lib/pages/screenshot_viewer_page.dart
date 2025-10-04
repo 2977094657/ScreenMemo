@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'dart:ui' as ui;
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
@@ -14,6 +15,8 @@ import '../services/flutter_logger.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/nsfw_guard.dart';
 import '../services/screenshot_database.dart';
+import '../services/nsfw_preference_service.dart';
+import '../services/app_selection_service.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -32,6 +35,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   late PageController _pageController;
   bool _showAppBar = true;
   bool _initialized = false;
+
+  // 已揭示的 NSFW 图片（本会话内）
+  final Set<int> _revealedIds = <int>{};
+  // 隐私模式（从设置读取）
+  bool _privacyMode = true;
 
   // 移除调试日志
 
@@ -130,9 +138,22 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       _appInfo = args['appInfo'] as AppInfo;
       _pageController = PageController(initialPage: _currentIndex);
       _initialized = true;
-    }
 
-    // 去除额外 dump
+      // 预加载 NSFW 规则与手动标记（不阻塞UI）
+      // ignore: unawaited_futures
+      NsfwPreferenceService.instance.ensureRulesLoaded();
+      final ids = _screenshots.where((s) => s.id != null).map((s) => s.id!).toList();
+      if (ids.isNotEmpty) {
+        // ignore: unawaited_futures
+        NsfwPreferenceService.instance.preloadManualFlags(
+          appPackageName: _appInfo.packageName,
+          screenshotIds: ids,
+        );
+      }
+      // 同步隐私模式
+      // ignore: unawaited_futures
+      _loadPrivacyMode();
+    }
   }
 
   @override
@@ -346,77 +367,134 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           : null,
       body: GestureDetector(
         onTap: _toggleAppBar,
+        onLongPress: _showNsfwMenu,
         child: Stack(
           children: [
             PhotoViewGallery.builder(
-          scrollPhysics: const BouncingScrollPhysics(),
-          builder: (BuildContext context, int index) {
-            final screenshot = _screenshots[index];
-            final file = File(screenshot.filePath);
+              scrollPhysics: const BouncingScrollPhysics(),
+              builder: (BuildContext context, int index) {
+                final screenshot = _screenshots[index];
+                final file = File(screenshot.filePath);
 
-            return PhotoViewGalleryPageOptions(
-              imageProvider: FileImage(file),
-              initialScale: PhotoViewComputedScale.contained,
-              minScale: PhotoViewComputedScale.contained, // 最小缩放为原图比例，不能再缩小
-              maxScale: PhotoViewComputedScale.covered * 4.0,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.broken_image,
-                        color: Colors.white54,
-                        size: 64,
+                return PhotoViewGalleryPageOptions(
+                  imageProvider: FileImage(file),
+                  initialScale: PhotoViewComputedScale.contained,
+                  minScale: PhotoViewComputedScale.contained, // 最小缩放为原图比例，不能再缩小
+                  maxScale: PhotoViewComputedScale.covered * 4.0,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.broken_image,
+                            color: Colors.white54,
+                            size: 64,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            AppLocalizations.of(context).imageLoadFailed,
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        AppLocalizations.of(context).imageLoadFailed,
-                        style: const TextStyle(color: Colors.white54),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
-            );
-          },
-          itemCount: _screenshots.length,
-          loadingBuilder: (context, event) => const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          ),
-          backgroundDecoration: BoxDecoration(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Theme.of(context).scaffoldBackgroundColor
-                : Colors.black,
-          ),
-          pageController: _pageController,
-          onPageChanged: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-            ),
-            // 当当前图片被识别为 NSFW 时，初始以信息栏提示+点击空白即可查看（此处不做强制遮挡避免与缩放手势冲突）
-            if (_screenshots.isNotEmpty &&
-                NsfwDetector.isNsfwUrl(_screenshots[_currentIndex].pageUrl))
-              Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${AppLocalizations.of(context).nsfwWarningTitle} · ${AppLocalizations.of(context).tapToContinue}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
+              itemCount: _screenshots.length,
+              loadingBuilder: (context, event) => const Center(
+                child: CircularProgressIndicator(color: Colors.white),
               ),
+              backgroundDecoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Theme.of(context).scaffoldBackgroundColor
+                    : Colors.black,
+              ),
+              pageController: _pageController,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+            ),
+
+            // NSFW 遮罩（规则 + 手动标记 + 自动识别聚合；用户点“显示”后本会话内记忆）
+            if (_screenshots.isNotEmpty) ...[
+              Builder(
+                builder: (context) {
+                  final s = _screenshots[_currentIndex];
+                  final id = s.id;
+                  final masked = _privacyMode &&
+                      NsfwPreferenceService.instance.shouldMaskCached(s) &&
+                      !(id != null && _revealedIds.contains(id));
+                  if (!masked) return const SizedBox.shrink();
+                  return Stack(
+                    children: [
+                      // 背景模糊 + 变暗层（手势穿透）
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: true,
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                            child: Container(color: Colors.black.withValues(alpha: 0.35)),
+                          ),
+                        ),
+                      ),
+                      // 中央文案 + “显示”按钮（仅按钮可点击）
+                      Positioned.fill(
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.visibility_off_rounded, color: Colors.white70, size: 28),
+                              const SizedBox(height: 8),
+                              Text(
+                                AppLocalizations.of(context).nsfwWarningTitle,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                AppLocalizations.of(context).nsfwWarningSubtitle,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: 86,
+                                height: 34,
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    if (id != null) {
+                                      setState(() {
+                                        _revealedIds.add(id);
+                                      });
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white.withValues(alpha: 0.9),
+                                    foregroundColor: Colors.black87,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    elevation: 0,
+                                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                  child: Text(AppLocalizations.of(context).show),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+
             // 按需求：大图查看页不显示顶部链接遮罩，仅保留右上角链接图标
             if (Theme.of(context).brightness == Brightness.dark)
               IgnorePointer(
@@ -428,6 +506,64 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      if (mounted) {
+        setState(() { _privacyMode = enabled; });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showNsfwMenu() async {
+    if (_screenshots.isEmpty) return;
+    final s = _screenshots[_currentIndex];
+    final l10n = AppLocalizations.of(context);
+    final id = s.id;
+    if (id == null) return;
+    final isFlagged = NsfwPreferenceService.instance.isManuallyFlaggedCached(
+      screenshotId: id,
+      appPackageName: s.appPackageName,
+    );
+    final actionMark = !isFlagged;
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(actionMark ? Icons.visibility_off : Icons.visibility),
+                title: Text(actionMark ? l10n.manualMarkNsfw : l10n.manualUnmarkNsfw),
+                onTap: () => Navigator.of(ctx).pop(actionMark ? 'mark' : 'unmark'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (result == null) return;
+    final ok = await NsfwPreferenceService.instance.setManualFlag(
+      screenshotId: id,
+      appPackageName: s.appPackageName,
+      flag: result == 'mark',
+    );
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        if (result == 'mark') {
+          _revealedIds.remove(id); // 标记后恢复遮罩
+        } else {
+          _revealedIds.remove(id);
+        }
+      });
+      UINotifier.success(context, result == 'mark' ? l10n.manualMarkSuccess : l10n.manualUnmarkSuccess);
+    } else {
+      UINotifier.error(context, l10n.manualMarkFailed);
+    }
   }
 
 

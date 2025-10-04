@@ -1,15 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../models/screenshot_record.dart';
+import '../services/nsfw_preference_service.dart';
 import 'nsfw_guard.dart';
 
 /// 统一的截图图片显示组件
-/// 
+///
 /// 自动处理：
 /// - 深色模式遮罩
 /// - 隐私模式（NSFW）遮罩
 /// - 图片加载和错误处理
-/// 
+///
 /// 使用此组件可确保所有截图显示保持一致的样式和行为
 class ScreenshotImageWidget extends StatelessWidget {
   /// 图片文件
@@ -18,8 +20,11 @@ class ScreenshotImageWidget extends StatelessWidget {
   /// 是否启用隐私模式
   final bool privacyMode;
   
-  /// 页面链接（用于判断是否为 NSFW）
+  /// 页面链接（用于判断是否为 NSFW）- 已废弃，使用 screenshot 参数
   final String? pageUrl;
+  
+  /// 截图记录（用于准确判断 NSFW）
+  final ScreenshotRecord? screenshot;
   
   /// 图片宽度
   final double? width;
@@ -53,6 +58,7 @@ class ScreenshotImageWidget extends StatelessWidget {
     required this.file,
     this.privacyMode = true,
     this.pageUrl,
+    this.screenshot,
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -67,7 +73,11 @@ class ScreenshotImageWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool nsfwMasked = privacyMode && NsfwDetector.isNsfwUrl(pageUrl);
+    // 优先使用 screenshot 参数进行准确判断，否则回退到旧的 URL 判断方式
+    final bool nsfwMasked = privacyMode &&
+        (screenshot != null
+            ? NsfwPreferenceService.instance.shouldMaskCached(screenshot!)
+            : NsfwDetector.isNsfwUrl(pageUrl));
     
     Widget imageWidget = _buildImage(context, isDark);
     

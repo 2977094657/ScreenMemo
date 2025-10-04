@@ -5,6 +5,7 @@ import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../theme/app_theme.dart';
 import 'nsfw_guard.dart';
+import '../services/nsfw_preference_service.dart';
 
 /// 截图项组件 - 统一的截图显示样式
 /// 
@@ -52,32 +53,44 @@ class ScreenshotItemWidget extends StatelessWidget {
   
   /// 收藏按钮点击回调
   final VoidCallback? onFavoriteToggle;
+
+  /// 是否显示 NSFW 按钮（与收藏并列）
+  final bool showNsfwButton;
+
+  /// 是否已手动标记为 NSFW（用于按钮图标状态）
+  final bool isNsfwFlagged;
+
+  /// NSFW 按钮点击回调（切换标记）
+  final VoidCallback? onNsfwToggle;
   
   /// 自定义叠加层（如 OCR 标注）
   final Widget? customOverlay;
   
   const ScreenshotItemWidget({
-    super.key,
-    required this.screenshot,
-    this.baseDir,
-    this.appInfoMap,
-    this.privacyMode = true,
-    this.onTap,
-    this.onLongPress,
-    this.onLinkTap,
-    this.showCheckbox = false,
-    this.isSelected = false,
-    this.showFavoriteButton = false,
-    this.isFavorited = false,
-    this.onFavoriteToggle,
-    this.customOverlay,
-  });
+     super.key,
+     required this.screenshot,
+     this.baseDir,
+     this.appInfoMap,
+     this.privacyMode = true,
+     this.onTap,
+     this.onLongPress,
+     this.onLinkTap,
+     this.showCheckbox = false,
+     this.isSelected = false,
+     this.showFavoriteButton = false,
+     this.isFavorited = false,
+     this.onFavoriteToggle,
+     this.showNsfwButton = false,
+     this.isNsfwFlagged = false,
+     this.onNsfwToggle,
+     this.customOverlay,
+   });
 
   @override
   Widget build(BuildContext context) {
     final file = _resolveFile();
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool nsfwMasked = privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final bool nsfwMasked = privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
     
     return GestureDetector(
       onTap: onTap,
@@ -112,6 +125,9 @@ class ScreenshotItemWidget extends StatelessWidget {
           
           // 收藏按钮
           if (showFavoriteButton) _buildFavoriteButton(context),
+   
+          // NSFW 按钮（与收藏并列）
+          if (showNsfwButton) _buildNsfwButton(context),
         ],
       ),
     );
@@ -369,6 +385,31 @@ class ScreenshotItemWidget extends StatelessWidget {
             isFavorited ? Icons.favorite : Icons.favorite_border,
             size: 18,
             color: isFavorited ? Colors.red : Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建 NSFW 按钮（与收藏并列，位于其右侧）
+  Widget _buildNsfwButton(BuildContext context) {
+    return Positioned(
+      top: 6,
+      left: 44, // 6(边距) + 32(收藏按钮宽度) + 6(间距)
+      child: GestureDetector(
+        onTap: onNsfwToggle,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            isNsfwFlagged ? Icons.visibility_off : Icons.visibility,
+            size: 18,
+            color: isNsfwFlagged ? Colors.amber : Colors.white,
           ),
         ),
       ),
