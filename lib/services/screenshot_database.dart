@@ -292,6 +292,9 @@ class ScreenshotDatabase {
     
     // 收藏表
     await _createFavoritesTable(db);
+
+    // NSFW 偏好相关表（域名规则 + 手动标记）
+    await _createNsfwTables(db);
   }
 
   /// 升级回调：按版本增量迁移
@@ -309,6 +312,9 @@ class ScreenshotDatabase {
     }
     // 幂等确保收藏表
     await _createFavoritesTable(db);
+
+    // 幂等确保 NSFW 相关表
+    await _createNsfwTables(db);
   }
 
   /// 创建汇总统计表（用于版本升级）
@@ -1350,22 +1356,23 @@ class ScreenshotDatabase {
   /// 返回实际删除的数据库记录数
   Future<int> deleteScreenshotsByIds(String packageName, List<int> ids) async {
     final db = await database; // 主库
+    if (ids.isEmpty) return 0;
     try {
-      if (ids.isEmpty) return 0;
+      final sw = Stopwatch()..start();
 
-          final sw = Stopwatch()..start();
       // 将 gid 解码并按 (year, month) 分组
       final Map<int, List<int>> byYm = {};
       for (final gid in ids) {
         final d = _decodeGid(gid);
         if (d == null) continue;
         final key = d[0] * 100 + d[1];
-        byYm.putIfAbsent(key, () => <int>[]).add(d[2]);
+        (byYm[key] ??= <int>[]).add(d[2]);
       }
 
-      // 预取所有文件路径
+      // 预取所有文件路径并删除记录
       final List<String> filePaths = [];
       int deletedTotal = 0;
+
       for (final entry in byYm.entries) {
         final int key = entry.key;
         final int year = key ~/ 100;
@@ -1374,11 +1381,13 @@ class ScreenshotDatabase {
         if (shardDb == null) continue;
         final tableName = _monthTableName(year, month);
         if (!await _tableExists(shardDb, tableName)) continue;
+
         try {
           final localIds = entry.value;
           if (localIds.isEmpty) continue;
+
+          // 查询要删除的文件路径
           final ph = List.filled(localIds.length, '?').join(',');
-          // 查询路径
           final rows = await shardDb.query(
             tableName,
             columns: ['file_path'],
@@ -1386,22 +1395,23 @@ class ScreenshotDatabase {
             whereArgs: localIds,
           );
           for (final r in rows) {
-            final p = (r['file_path'] as String?);
+            final p = r['file_path'] as String?;
             if (p != null) filePaths.add(p);
           }
-          // 分片删除
+
+          // 分片删除DB记录
           const int chunk = 900;
           for (int i = 0; i < localIds.length; i += chunk) {
             final sub = localIds.sublist(i, i + chunk > localIds.length ? localIds.length : i + chunk);
             final ph2 = List.filled(sub.length, '?').join(',');
             final count = await shardDb.rawDelete('DELETE FROM $tableName WHERE id IN ($ph2)', sub);
             deletedTotal += count;
-              }
-            } catch (_) {}
+          }
+        } catch (_) {}
       }
 
       // 重算聚合
-        await _recomputeAppStatForPackage(db, packageName);
+      await _recomputeAppStatForPackage(db, packageName);
 
       // 并发删除物理文件
       await _deleteFilesConcurrently(filePaths, maxConcurrent: 6);
@@ -2671,6 +2681,34 @@ class ScreenshotDatabase {
     }
   }
 
+  /// 批量检查手动 NSFW 标记状态
+  Future<Map<int, bool>> checkManualNsfw({
+    required List<int> screenshotIds,
+    required String appPackageName,
+  }) async {
+    final db = await database;
+    final Map<int, bool> result = {};
+    if (screenshotIds.isEmpty) return result;
+    try {
+      final placeholders = List.filled(screenshotIds.length, '?').join(',');
+      final rows = await db.query(
+        'nsfw_manual_flags',
+        columns: ['screenshot_id'],
+        where: 'screenshot_id IN ($placeholders) AND app_package_name = ? AND flag = 1',
+        whereArgs: [...screenshotIds, appPackageName],
+      );
+      final flagged = rows.map((r) => r['screenshot_id'] as int).toSet();
+      for (final id in screenshotIds) {
+        result[id] = flagged.contains(id);
+      }
+    } catch (e) {
+      for (final id in screenshotIds) {
+        result[id] = false;
+      }
+    }
+    return result;
+  }
+
   /// 更新收藏备注
   Future<bool> updateFavoriteNote({
     required int screenshotId,
@@ -2694,6 +2732,219 @@ class ScreenshotDatabase {
       return false;
     }
   }
+  
+  // ===================== NSFW 偏好表（域名规则 + 手动标记） =====================
+ 
+    Future<void> _createNsfwTables(DatabaseExecutor db) async {
+      // 域名禁用规则：pattern 为规范化后的域名或前缀通配符"*.example.com"
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS nsfw_domain_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pattern TEXT NOT NULL UNIQUE,
+          is_wildcard INTEGER NOT NULL DEFAULT 0,
+          comment TEXT,
+          created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+          updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+        )
+      ''');
+ 
+      // 手动 NSFW 标记：与收藏表保持一致的主键设计（screenshot_id + app_package_name）
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS nsfw_manual_flags (
+          screenshot_id INTEGER NOT NULL,
+          app_package_name TEXT NOT NULL,
+          flag INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+          updated_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+          PRIMARY KEY (screenshot_id, app_package_name)
+        )
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_nsfw_manual_app ON nsfw_manual_flags(app_package_name, screenshot_id)');
+    }
+ 
+    // ----- 域名规则 CRUD -----
+ 
+    Future<List<Map<String, dynamic>>> listNsfwDomainRules() async {
+      final db = await database;
+      try {
+        final rows = await db.query(
+          'nsfw_domain_rules',
+          orderBy: 'is_wildcard DESC, pattern ASC',
+        );
+        return rows;
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    }
+ 
+    Future<bool> addNsfwDomainRule({
+      required String pattern,
+      required bool isWildcard,
+      String? comment,
+    }) async {
+      final db = await database;
+      try {
+        await db.insert(
+          'nsfw_domain_rules',
+          {
+            'pattern': pattern,
+            'is_wildcard': isWildcard ? 1 : 0,
+            'comment': comment,
+            'created_at': DateTime.now().millisecondsSinceEpoch,
+            'updated_at': DateTime.now().millisecondsSinceEpoch,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+ 
+    Future<bool> removeNsfwDomainRule(String pattern) async {
+      final db = await database;
+      try {
+        final count = await db.delete(
+          'nsfw_domain_rules',
+          where: 'pattern = ?',
+          whereArgs: [pattern],
+        );
+        return count > 0;
+      } catch (_) {
+        return false;
+      }
+    }
+ 
+    Future<int> clearNsfwDomainRules() async {
+      final db = await database;
+      try {
+        return await db.delete('nsfw_domain_rules');
+      } catch (_) {
+        return 0;
+      }
+    }
+ 
+    /// 近似统计：当前库中 page_url 命中指定主域名（可选含子域）的截图数量
+    /// 注意：分库+分月结构下，该方法为尽力统计，可能略有误差但足够提供“预览确认”
+    Future<int> countScreenshotsMatchingDomain({
+      required String host,
+      required bool includeSubdomains,
+    }) async {
+      final db = await database;
+      try {
+        int total = 0;
+        final shards = await db.query(
+          'shard_registry',
+          columns: ['app_package_name', 'year'],
+          orderBy: 'year DESC',
+        );
+        if (shards.isEmpty) return 0;
+ 
+        final String hostLower = host.toLowerCase();
+        // LIKE 模式：尽量减少误匹配（匹配 scheme://host/ 或 .host/ 或 //host）
+        // 但不同应用记录的 page_url 不完全一致，这里采用多个 LIKE 条件的 OR 组合
+        final like1 = '%://' + hostLower + '/%';
+        final like2 = '%.' + hostLower + '/%';
+        final like3 = '%//' + hostLower + '%';
+        final like4 = '%.' + hostLower + '%';
+ 
+        for (final sh in shards) {
+          final String pkg = sh['app_package_name'] as String;
+          final int y = sh['year'] as int;
+          final shardDb = await _openShardDb(pkg, y);
+          if (shardDb == null) continue;
+          for (int m = 1; m <= 12; m++) {
+            final t = _monthTableName(y, m);
+            if (!await _tableExists(shardDb, t)) continue;
+            try {
+              if (includeSubdomains) {
+                final rows = await shardDb.rawQuery(
+                  "SELECT COUNT(*) AS c FROM $t WHERE page_url IS NOT NULL AND (LOWER(page_url) LIKE ? OR LOWER(page_url) LIKE ? OR LOWER(page_url) LIKE ? OR LOWER(page_url) LIKE ?)",
+                  [like1, like2, like3, like4],
+                );
+                total += (rows.first['c'] as int?) ?? 0;
+              } else {
+                final rows = await shardDb.rawQuery(
+                  "SELECT COUNT(*) AS c FROM $t WHERE page_url IS NOT NULL AND (LOWER(page_url) LIKE ? OR LOWER(page_url) LIKE ?)",
+                  [like1, like3],
+                );
+                total += (rows.first['c'] as int?) ?? 0;
+              }
+            } catch (_) {}
+          }
+        }
+        return total;
+      } catch (_) {
+        return 0;
+      }
+    }
+ 
+    // ----- 手动 NSFW 标记 -----
+ 
+    Future<bool> setManualNsfwFlag({
+      required int screenshotId,
+      required String appPackageName,
+      required bool flag,
+    }) async {
+      final db = await database;
+      try {
+        if (flag) {
+          await db.insert(
+            'nsfw_manual_flags',
+            {
+              'screenshot_id': screenshotId,
+              'app_package_name': appPackageName,
+              'flag': 1,
+              'updated_at': DateTime.now().millisecondsSinceEpoch,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        } else {
+          // 取消标记：直接删除记录更直观
+          await db.delete(
+            'nsfw_manual_flags',
+            where: 'screenshot_id = ? AND app_package_name = ?',
+            whereArgs: [screenshotId, appPackageName],
+          );
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+ 
+    Future<bool> isManuallyNsfw({
+      required int screenshotId,
+      required String appPackageName,
+    }) async {
+      final db = await database;
+      try {
+        final rows = await db.query(
+          'nsfw_manual_flags',
+          columns: ['flag'],
+          where: 'screenshot_id = ? AND app_package_name = ?',
+          whereArgs: [screenshotId, appPackageName],
+          limit: 1,
+        );
+        if (rows.isEmpty) return false;
+        return ((rows.first['flag'] as int?) ?? 0) == 1;
+      } catch (_) {
+        return false;
+      }
+    }
+ 
+    Future<int> clearManualNsfwForApp(String appPackageName) async {
+      final db = await database;
+      try {
+        return await db.delete(
+          'nsfw_manual_flags',
+          where: 'app_package_name = ?',
+          whereArgs: [appPackageName],
+        );
+      } catch (_) {
+        return 0;
+      }
+    }
 
   /// 获取特定收藏的详情
   Future<Map<String, dynamic>?> getFavoriteDetail({
