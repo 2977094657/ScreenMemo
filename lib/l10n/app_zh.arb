@@ -698,5 +698,39 @@
   "noteSaved": "备注已保存",
   "favoritesRemoved": "已取消收藏",
   "operationFailed": "操作失败",
-  "cannotGetAppDir": "无法获取应用目录"
+  "cannotGetAppDir": "无法获取应用目录",
+
+  "nsfwSettingsSectionTitle": "NSFW 设置",
+  "blockedDomainListTitle": "禁用域名清单",
+  "addDomainPlaceholder": "输入域名或 *.example.com",
+  "addRuleAction": "添加",
+  "previewAction": "预览",
+  "removeAction": "移除",
+  "clearAction": "清空",
+  "clearAllRules": "清空所有规则",
+  "clearAllRulesConfirmTitle": "确认清空规则",
+  "clearAllRulesMessage": "将移除所有禁用域名规则，此操作不可恢复。",
+  "previewAffectsCount": "预计影响 {count} 张图片",
+  "@previewAffectsCount": {
+    "placeholders": { "count": {} }
+  },
+  "affectCountLabel": "影响：{count} 张",
+  "@affectCountLabel": {
+    "placeholders": { "count": {} }
+  },
+  "confirmAddRuleTitle": "确认添加规则",
+  "confirmAddRuleMessage": "将添加规则：{rule}",
+  "@confirmAddRuleMessage": {
+    "placeholders": { "rule": {} }
+  },
+  "ruleAddedToast": "规则已添加",
+  "ruleRemovedToast": "规则已移除",
+  "invalidDomainInputError": "请输入合法域名（支持 *.example.com）",
+
+  "manualMarkNsfw": "标记为 NSFW",
+  "manualUnmarkNsfw": "取消 NSFW 标记",
+  "manualMarkSuccess": "已标记为 NSFW",
+  "manualUnmarkSuccess": "已取消 NSFW 标记",
+  "manualMarkFailed": "操作失败",
+  "nsfwTagLabel": "NSFW"
   }

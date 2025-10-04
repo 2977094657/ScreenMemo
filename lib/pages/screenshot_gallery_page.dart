@@ -22,6 +22,7 @@ import '../services/flutter_logger.dart';
 import '../services/favorite_service.dart';
 import '../widgets/nsfw_guard.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../services/nsfw_preference_service.dart';
 
 /// 内部：日期Tab信息（一天为单位）
 class _DayTabInfo {
@@ -190,6 +191,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _hasMore = _tabHasMore[index] ?? false;
         }
       });
+      // 预加载该批手动标记
+      // ignore: unawaited_futures
+      _preloadManualFlagsFor(filtered);
     } catch (_) {}
   }
 
@@ -205,6 +209,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     super.initState();
     // 主控制器用于当前Tab，其他Tab使用各自controller
     _loadPrivacyMode();
+    // 预加载 NSFW 规则（异步，不阻塞UI）
+    // ignore: unawaited_futures
+    NsfwPreferenceService.instance.ensureRulesLoaded();
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
@@ -356,6 +363,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _selectedIds.clear();
       _isFullySelected = false;
     });
+    // 预加载当前可见集的手动 NSFW 标记
+    // ignore: unawaited_futures
+    _preloadManualFlagsFor(_screenshots);
     await _refreshCurrentTabCount();
     // 若缺少首屏缓存，补一次加载；否则按需继续加载更多
     if ((_tabCache[index]?.isEmpty ?? true)) {
@@ -476,6 +486,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         }
         _isLoadingMore = false;
       });
+      // 预加载本批手动 NSFW 标记
+      // ignore: unawaited_futures
+      _preloadManualFlagsFor(batch);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -618,6 +631,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _isLoading = false;
         });
       }
+      // 预加载本页的手动 NSFW 标记缓存
+      // ignore: unawaited_futures
+      _preloadManualFlagsFor(_screenshots);
     } catch (e) {
       print('加载截图失败: $e');
       setState(() {
@@ -1269,7 +1285,12 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+    final bool isNsfwFlagged = screenshot.id != null &&
+        NsfwPreferenceService.instance.isManuallyFlaggedCached(
+          screenshotId: screenshot.id!,
+          appPackageName: screenshot.appPackageName,
+        );
     
     final itemContent = ScreenshotItemWidget(
       screenshot: screenshot,
@@ -1300,6 +1321,25 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       showFavoriteButton: _selectionMode && screenshot.id != null,
       isFavorited: _favoriteStatus[screenshot.id] ?? false,
       onFavoriteToggle: () => _toggleFavorite(screenshot),
+      showNsfwButton: _selectionMode && screenshot.id != null,
+      isNsfwFlagged: isNsfwFlagged,
+      onNsfwToggle: () async {
+        if (screenshot.id == null) return;
+        final newFlag = !isNsfwFlagged;
+        final ok = await NsfwPreferenceService.instance.setManualFlag(
+          screenshotId: screenshot.id!,
+          appPackageName: screenshot.appPackageName,
+          flag: newFlag,
+        );
+        if (!mounted) return;
+        if (ok) {
+          setState(() {});
+          final l10n = AppLocalizations.of(context);
+          UINotifier.success(context, newFlag ? l10n.manualMarkSuccess : l10n.manualUnmarkSuccess);
+        } else {
+          UINotifier.error(context, AppLocalizations.of(context).manualMarkFailed);
+        }
+      },
     );
     
     return KeyedSubtree(key: itemKey, child: itemContent);
@@ -2026,6 +2066,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   }
 
   // （测试截图生成功能已移除）
+
+  Future<void> _preloadManualFlagsFor(List<ScreenshotRecord> data) async {
+    try {
+      final ids = data.where((s) => s.id != null).map((s) => s.id!).toList();
+      if (ids.isEmpty) return;
+      await NsfwPreferenceService.instance.preloadManualFlags(
+        appPackageName: _packageName,
+        screenshotIds: ids,
+      );
+    } catch (_) {}
+  }
 }
 
 class _OcrBoxesPainter extends CustomPainter {

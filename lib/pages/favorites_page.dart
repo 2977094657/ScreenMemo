@@ -476,7 +476,7 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
                 ScreenshotImageWidget(
                   file: file,
                   privacyMode: widget.privacyMode,
-                  pageUrl: widget.item.screenshot.pageUrl,
+                  screenshot: widget.item.screenshot,
                   width: imageWidth,
                   height: imageHeight,
                   fit: BoxFit.cover,

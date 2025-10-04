@@ -704,5 +704,39 @@
   "noteSaved": "Note saved",
   "favoritesRemoved": "Removed from favorites",
   "operationFailed": "Operation failed",
-  "cannotGetAppDir": "Cannot get app directory"
+  "cannotGetAppDir": "Cannot get app directory",
+
+  "nsfwSettingsSectionTitle": "NSFW Settings",
+  "blockedDomainListTitle": "Blocked Domain List",
+  "addDomainPlaceholder": "Enter domain or *.example.com",
+  "addRuleAction": "Add",
+  "previewAction": "Preview",
+  "removeAction": "Remove",
+  "clearAction": "Clear",
+  "clearAllRules": "Clear all rules",
+  "clearAllRulesConfirmTitle": "Confirm clearing rules",
+  "clearAllRulesMessage": "This will remove all blocked domain rules. This action cannot be undone.",
+  "previewAffectsCount": "Will affect {count} images",
+  "@previewAffectsCount": {
+    "placeholders": { "count": {} }
+  },
+  "affectCountLabel": "Affects: {count}",
+  "@affectCountLabel": {
+    "placeholders": { "count": {} }
+  },
+  "confirmAddRuleTitle": "Confirm add rule",
+  "confirmAddRuleMessage": "Add rule: {rule}",
+  "@confirmAddRuleMessage": {
+    "placeholders": { "rule": {} }
+  },
+  "ruleAddedToast": "Rule added",
+  "ruleRemovedToast": "Rule removed",
+  "invalidDomainInputError": "Please enter a valid domain (supports *.example.com)",
+
+  "manualMarkNsfw": "Mark as NSFW",
+  "manualUnmarkNsfw": "Unmark NSFW",
+  "manualMarkSuccess": "Marked as NSFW",
+  "manualUnmarkSuccess": "NSFW mark removed",
+  "manualMarkFailed": "Operation failed",
+  "nsfwTagLabel": "NSFW"
   }

@@ -2623,6 +2623,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cannot get app directory'**
   String get cannotGetAppDir;
+
+  /// No description provided for @nsfwSettingsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'NSFW Settings'**
+  String get nsfwSettingsSectionTitle;
+
+  /// No description provided for @blockedDomainListTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked Domain List'**
+  String get blockedDomainListTitle;
+
+  /// No description provided for @addDomainPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter domain or *.example.com'**
+  String get addDomainPlaceholder;
+
+  /// No description provided for @addRuleAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get addRuleAction;
+
+  /// No description provided for @previewAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get previewAction;
+
+  /// No description provided for @removeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get removeAction;
+
+  /// No description provided for @clearAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clearAction;
+
+  /// No description provided for @clearAllRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all rules'**
+  String get clearAllRules;
+
+  /// No description provided for @clearAllRulesConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm clearing rules'**
+  String get clearAllRulesConfirmTitle;
+
+  /// No description provided for @clearAllRulesMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This will remove all blocked domain rules. This action cannot be undone.'**
+  String get clearAllRulesMessage;
+
+  /// No description provided for @previewAffectsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Will affect {count} images'**
+  String previewAffectsCount(Object count);
+
+  /// No description provided for @affectCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Affects: {count}'**
+  String affectCountLabel(Object count);
+
+  /// No description provided for @confirmAddRuleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm add rule'**
+  String get confirmAddRuleTitle;
+
+  /// No description provided for @confirmAddRuleMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Add rule: {rule}'**
+  String confirmAddRuleMessage(Object rule);
+
+  /// No description provided for @ruleAddedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Rule added'**
+  String get ruleAddedToast;
+
+  /// No description provided for @ruleRemovedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Rule removed'**
+  String get ruleRemovedToast;
+
+  /// No description provided for @invalidDomainInputError.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid domain (supports *.example.com)'**
+  String get invalidDomainInputError;
+
+  /// No description provided for @manualMarkNsfw.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as NSFW'**
+  String get manualMarkNsfw;
+
+  /// No description provided for @manualUnmarkNsfw.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmark NSFW'**
+  String get manualUnmarkNsfw;
+
+  /// No description provided for @manualMarkSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked as NSFW'**
+  String get manualMarkSuccess;
+
+  /// No description provided for @manualUnmarkSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'NSFW mark removed'**
+  String get manualUnmarkSuccess;
+
+  /// No description provided for @manualMarkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation failed'**
+  String get manualMarkFailed;
+
+  /// No description provided for @nsfwTagLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'NSFW'**
+  String get nsfwTagLabel;
 }
 
 class _AppLocalizationsDelegate

@@ -829,9 +829,12 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         titleSpacing: 0,
         actions: appBarActions,
         title: _selectionMode
-          ? Text(
-              AppLocalizations.of(context).selectedItemsCount(_selectedPackages.length),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ? Padding(
+              padding: const EdgeInsets.only(left: AppTheme.spacing4),
+              child: Text(
+                AppLocalizations.of(context).selectedItemsCount(_selectedPackages.length),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
             )
           : Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),

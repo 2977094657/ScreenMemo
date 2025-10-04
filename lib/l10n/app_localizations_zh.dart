@@ -1400,4 +1400,79 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get cannotGetAppDir => '无法获取应用目录';
+
+  @override
+  String get nsfwSettingsSectionTitle => 'NSFW 设置';
+
+  @override
+  String get blockedDomainListTitle => '禁用域名清单';
+
+  @override
+  String get addDomainPlaceholder => '输入域名或 *.example.com';
+
+  @override
+  String get addRuleAction => '添加';
+
+  @override
+  String get previewAction => '预览';
+
+  @override
+  String get removeAction => '移除';
+
+  @override
+  String get clearAction => '清空';
+
+  @override
+  String get clearAllRules => '清空所有规则';
+
+  @override
+  String get clearAllRulesConfirmTitle => '确认清空规则';
+
+  @override
+  String get clearAllRulesMessage => '将移除所有禁用域名规则，此操作不可恢复。';
+
+  @override
+  String previewAffectsCount(Object count) {
+    return '预计影响 $count 张图片';
+  }
+
+  @override
+  String affectCountLabel(Object count) {
+    return '影响：$count 张';
+  }
+
+  @override
+  String get confirmAddRuleTitle => '确认添加规则';
+
+  @override
+  String confirmAddRuleMessage(Object rule) {
+    return '将添加规则：$rule';
+  }
+
+  @override
+  String get ruleAddedToast => '规则已添加';
+
+  @override
+  String get ruleRemovedToast => '规则已移除';
+
+  @override
+  String get invalidDomainInputError => '请输入合法域名（支持 *.example.com）';
+
+  @override
+  String get manualMarkNsfw => '标记为 NSFW';
+
+  @override
+  String get manualUnmarkNsfw => '取消 NSFW 标记';
+
+  @override
+  String get manualMarkSuccess => '已标记为 NSFW';
+
+  @override
+  String get manualUnmarkSuccess => '已取消 NSFW 标记';
+
+  @override
+  String get manualMarkFailed => '操作失败';
+
+  @override
+  String get nsfwTagLabel => 'NSFW';
 }

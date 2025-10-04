@@ -1444,4 +1444,81 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cannotGetAppDir => 'Cannot get app directory';
+
+  @override
+  String get nsfwSettingsSectionTitle => 'NSFW Settings';
+
+  @override
+  String get blockedDomainListTitle => 'Blocked Domain List';
+
+  @override
+  String get addDomainPlaceholder => 'Enter domain or *.example.com';
+
+  @override
+  String get addRuleAction => 'Add';
+
+  @override
+  String get previewAction => 'Preview';
+
+  @override
+  String get removeAction => 'Remove';
+
+  @override
+  String get clearAction => 'Clear';
+
+  @override
+  String get clearAllRules => 'Clear all rules';
+
+  @override
+  String get clearAllRulesConfirmTitle => 'Confirm clearing rules';
+
+  @override
+  String get clearAllRulesMessage =>
+      'This will remove all blocked domain rules. This action cannot be undone.';
+
+  @override
+  String previewAffectsCount(Object count) {
+    return 'Will affect $count images';
+  }
+
+  @override
+  String affectCountLabel(Object count) {
+    return 'Affects: $count';
+  }
+
+  @override
+  String get confirmAddRuleTitle => 'Confirm add rule';
+
+  @override
+  String confirmAddRuleMessage(Object rule) {
+    return 'Add rule: $rule';
+  }
+
+  @override
+  String get ruleAddedToast => 'Rule added';
+
+  @override
+  String get ruleRemovedToast => 'Rule removed';
+
+  @override
+  String get invalidDomainInputError =>
+      'Please enter a valid domain (supports *.example.com)';
+
+  @override
+  String get manualMarkNsfw => 'Mark as NSFW';
+
+  @override
+  String get manualUnmarkNsfw => 'Unmark NSFW';
+
+  @override
+  String get manualMarkSuccess => 'Marked as NSFW';
+
+  @override
+  String get manualUnmarkSuccess => 'NSFW mark removed';
+
+  @override
+  String get manualMarkFailed => 'Operation failed';
+
+  @override
+  String get nsfwTagLabel => 'NSFW';
 }
