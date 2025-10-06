@@ -15,6 +15,7 @@ import 'services/navigation_service.dart';
 import 'services/daily_summary_service.dart';
 import 'services/locale_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import 'pages/app_screenshot_settings_page.dart';
 
 
 Future<void> main() async {
@@ -111,6 +112,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
         '/search': (context) => const SearchPage(),
+        '/app_screenshot_settings': (context) => const AppScreenshotSettingsPage(),
       },
     );
   }

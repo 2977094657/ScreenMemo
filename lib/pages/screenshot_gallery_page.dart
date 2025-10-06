@@ -909,9 +909,17 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         actions: [
           if (!_selectionMode) ...[
             IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadScreenshots,
-              tooltip: AppLocalizations.of(context).actionRefresh,
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () {
+                Navigator.of(context).pushNamed(
+                  '/app_screenshot_settings',
+                  arguments: {
+                    'appInfo': _appInfo,
+                    'packageName': _packageName,
+                  },
+                );
+              },
+              tooltip: AppLocalizations.of(context).screenshotSectionTitle,
             ),
           ] else ...[
             TextButton(
@@ -1062,7 +1070,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     }
     return Padding(
       padding: const EdgeInsets.all(AppTheme.spacing1),
-      child: GridView.builder(
+      child: RefreshIndicator(
+        onRefresh: _loadScreenshots,
+        child: GridView.builder(
         key: PageStorageKey<String>('screenshot_gallery_search_${_packageName}'),
         // 仅缓存当前视窗上下各一屏，超出即回收
         cacheExtent: MediaQuery.of(context).size.height,
@@ -1121,6 +1131,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             ],
           );
         },
+        ),
       ),
     );
   }
@@ -1214,7 +1225,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           padding: const EdgeInsets.all(AppTheme.spacing1),
           child: Container(
             key: isCurrent ? _gridKey : null,
-            child: GridView.builder(
+            child: RefreshIndicator(
+              onRefresh: _loadScreenshots,
+              child: GridView.builder(
               key: PageStorageKey<String>('screenshot_gallery_grid_${_packageName}_tab_$tabIndex'),
               controller: _controllerForTab(tabIndex),
               // 仅缓存当前视窗上下各一屏，超出即回收
@@ -1235,6 +1248,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                 final s = data[index];
                 return isCurrent ? _buildScreenshotItem(s, index) : _buildPreviewItem(s);
               },
+              ),
             ),
           ),
         ),

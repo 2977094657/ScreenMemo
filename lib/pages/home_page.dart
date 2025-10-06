@@ -12,6 +12,7 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/ime_exclusion_service.dart';
 import '../widgets/app_selection_widget.dart';
+import '../services/per_app_screenshot_settings_service.dart';
 import 'exclusion_help_page.dart';
 import 'settings_page.dart';
 import '../services/flutter_logger.dart';
@@ -42,6 +43,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   Map<String, dynamic> _totals = {}; // 新增：汇总统计数据
   bool _selectionMode = false;
   final Set<String> _selectedPackages = <String>{};
+  // 记录已开启“每应用自定义设置”的应用包名集合
+  final Set<String> _customEnabledPackages = <String>{};
 
   @override
   void initState() {
@@ -51,6 +54,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     // 将数据加载与权限检查延后到首帧之后，避免阻塞首帧
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadData();
+      // 首次进入时加载每应用自定义开关
+      // ignore: unawaited_futures
+      _loadPerAppCustomFlags();
       // 首帧后后台刷新应用列表（如缓存过期）
       // ignore: unawaited_futures
       AppSelectionService.instance.refreshAppsInBackgroundIfStale();
@@ -96,6 +102,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       // 应用从后台返回前台：强制同步文件到数据库并刷新统计，避免节流导致读到旧数据
       Future.delayed(const Duration(milliseconds: 300), () async {
         await _loadStatsFresh();
+        // 回到前台后同步刷新自定义标记
+        // ignore: unawaited_futures
+        _loadPerAppCustomFlags();
       });
     }
   }
@@ -225,6 +234,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         });
       }
 
+      // 根据当前选中应用刷新每应用自定义标记
+      // ignore: unawaited_futures
+      _loadPerAppCustomFlags(selectedApps);
+
       // 再加载统计数据（缓存优先），不阻塞应用列表
       await _loadStats();
 
@@ -245,6 +258,33 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       // 出错也不显示全屏加载
     }
     StartupProfiler.end('HomePage._loadData');
+  }
+
+  /// 加载“每应用自定义设置(use_custom)”开启状态集合
+  Future<void> _loadPerAppCustomFlags([List<AppInfo>? apps]) async {
+    try {
+      final list = apps ?? _selectedApps;
+      if (list.isEmpty) {
+        if (mounted) {
+          setState(() => _customEnabledPackages.clear());
+        }
+        return;
+      }
+      final service = PerAppScreenshotSettingsService.instance;
+      final futures = list.map((a) async {
+        final enabled = await service.getUseCustom(a.packageName);
+        return MapEntry(a.packageName, enabled);
+      }).toList();
+      final results = await Future.wait(futures);
+      if (!mounted) return;
+      setState(() {
+        _customEnabledPackages
+          ..clear()
+          ..addAll(results.where((e) => e.value).map((e) => e.key));
+      });
+    } catch (_) {
+      // 静默失败，避免影响首页
+    }
   }
 
   void _sortApps() {
@@ -602,6 +642,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     );
     // 返回后强制获取最新统计（不走缓存，不受节流影响）
     await _loadStatsFresh();
+    // 返回后也刷新每应用自定义标记（用户可能在子页修改了设置）
+    // ignore: unawaited_futures
+    _loadPerAppCustomFlags();
   }
 
 
@@ -1232,22 +1275,55 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           ),
           child: Row(
             children: [
-            // 应用图标 - 直接显示，无容器背景
+            // 应用图标 + 自定义标记徽章
             SizedBox(
               width: 48,
               height: 48,
-              child: app.icon != null
-                  ? Image.memory(
-                      app.icon!,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.contain,
-                    )
-                  : const Icon(
-                      Icons.android,
-                      color: AppTheme.mutedForeground,
-                      size: 32,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: app.icon != null
+                        ? Image.memory(
+                            app.icon!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.contain,
+                          )
+                        : const Icon(
+                            Icons.android,
+                            color: AppTheme.mutedForeground,
+                            size: 32,
+                          ),
+                  ),
+                  if (_customEnabledPackages.contains(app.packageName))
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Tooltip(
+                        message: AppLocalizations.of(context).customLabel,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.secondaryContainer,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.surface,
+                              width: 1,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.tune,
+                            size: 10,
+                            color: Theme.of(context).colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
                     ),
+                ],
+              ),
             ),
 
             const SizedBox(width: AppTheme.spacing3),

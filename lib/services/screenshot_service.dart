@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'per_app_screenshot_settings_service.dart';
 import 'permission_service.dart';
 import 'screenshot_database.dart';
 import 'path_service.dart';
@@ -1076,10 +1077,10 @@ class ScreenshotService {
   Future<void> cleanupExpiredScreenshotsIfNeeded({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final enabled = prefs.getBool(_expireEnabledKey) ?? false;
-      if (!enabled) return;
-      int days = prefs.getInt(_expireDaysKey) ?? 30;
-      if (days < 1) days = 1;
+      // 全局默认设置（当某应用未开启自定义时使用）
+      final globalEnabled = prefs.getBool(_expireEnabledKey) ?? false;
+      int globalDays = prefs.getInt(_expireDaysKey) ?? 30;
+      if (globalDays < 1) globalDays = 1;
       final now = DateTime.now().millisecondsSinceEpoch;
       final last = prefs.getInt(_expireLastTsKey) ?? 0;
       // 节流：12 小时内最多执行一次
@@ -1089,13 +1090,27 @@ class ScreenshotService {
       }
       if (_cleanupRunning) return;
       _cleanupRunning = true;
-      final threshold = now - days * 24 * 60 * 60 * 1000;
-      // 读取数据库 app_stats 统计，遍历所有包名
+      // 读取数据库 app_stats 统计，遍历所有包名（按应用生效各自过期策略）
       final stats = await _database.getScreenshotStatistics();
       final packages = stats.keys.toList();
       int totalDeleted = 0;
       for (final pkg in packages) {
         try {
+          // 读取每应用自定义设置
+          final perApp = await PerAppScreenshotSettingsService.instance.getExpireSettings(pkg);
+          final useCustom = await PerAppScreenshotSettingsService.instance.getUseCustom(pkg);
+          final bool effectiveEnabled = useCustom
+              ? (perApp['enabled'] as bool? ?? false)
+              : globalEnabled;
+          if (!effectiveEnabled) {
+            continue;
+          }
+          int effectiveDays = useCustom
+              ? ((perApp['days'] as int?) ?? globalDays)
+              : globalDays;
+          if (effectiveDays < 1) effectiveDays = 1;
+          final threshold = now - effectiveDays * 24 * 60 * 60 * 1000;
+
           final ids = await _database.getScreenshotIdsByAppBetween(
             pkg,
             startMillis: 0,
@@ -1116,7 +1131,7 @@ class ScreenshotService {
       if (totalDeleted > 0) {
         _screenshotStreamController.add(null);
       }
-      FlutterLogger.info('SERVICE.cleanupExpired done: days=' + days.toString() + ' deleted=' + totalDeleted.toString());
+      FlutterLogger.info('SERVICE.cleanupExpired done: days=' + globalDays.toString() + ' deleted=' + totalDeleted.toString());
     } catch (e) {
     } finally {
       _cleanupRunning = false;

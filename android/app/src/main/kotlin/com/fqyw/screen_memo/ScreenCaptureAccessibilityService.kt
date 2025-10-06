@@ -907,8 +907,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             isTimedScreenshotRunning = true
             pausedByScreenOff = false
 
-            // 启动定时器
-            screenshotTimer = timer(name = "ScreenshotTimer", daemon = true, period = (intervalSeconds * 1000).toLong()) {
+            // 启动定时器（初始用全局间隔，后续按应用动态调整）
+            screenshotTimer = timer(name = "ScreenshotTimer", daemon = true, period = (screenshotInterval * 1000).toLong()) {
                 if (isTimedScreenshotRunning) {
                     performTimedScreenshot()
                 }
@@ -1026,6 +1026,33 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             if (targetApp == null) {
                 FileLogger.d(TAG, "没有需要截图的目标应用，跳过截屏")
                 return
+            }
+
+            // 动态应用每应用自定义间隔：若与当前不同则重建计时器
+            try {
+                val customIv = PerAppSettingsBridge.readIntervalIfCustom(this, targetApp)
+                if (customIv != null && customIv > 0 && customIv != screenshotInterval) {
+                    FileLogger.i(TAG, "应用($targetApp)自定义间隔=${customIv}s，当前=${screenshotInterval}s -> 重置计时器")
+                    screenshotInterval = customIv
+                    // 重建计时器以应用新间隔
+                    screenshotTimer?.cancel()
+                    screenshotTimer = timer(name = "ScreenshotTimer", daemon = true, period = (screenshotInterval * 1000).toLong()) {
+                        if (isTimedScreenshotRunning) {
+                            performTimedScreenshot()
+                        }
+                    }
+                    // 备份到SharedPreferences，便于恢复
+                    try {
+                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                        sp.edit().apply {
+                            putInt("timed_screenshot_interval", screenshotInterval)
+                            putInt("screenshot_interval", screenshotInterval)
+                            apply()
+                        }
+                    } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "读取每应用间隔失败: ${e.message}")
             }
 
             FileLogger.d(TAG, "开始截屏：$targetApp (会话应用: $currentSessionApp, 前台应用: $currentForegroundApp)")
@@ -1544,13 +1571,24 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     // 返回 Pair<字节数组, 扩展名>
     private fun encodeToBytesAccordingToSettings(src: Bitmap): Pair<ByteArray?, String> {
-        val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val format = (sp.getString("flutter.image_format", null)
+            val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            var format = (sp.getString("flutter.image_format", null)
             ?: (sp.all["flutter.image_format"] as? String)
             ?: "webp_lossless")
-        val quality = spGetIntCompat(sp, "flutter.image_quality", 90).coerceIn(1, 100)
-        val useTarget = spGetBoolCompat(sp, "flutter.use_target_size", false)
-        val targetKb = spGetIntCompat(sp, "flutter.target_size_kb", 50).coerceAtLeast(50)
+            var quality = spGetIntCompat(sp, "flutter.image_quality", 90).coerceIn(1, 100)
+            var useTarget = spGetBoolCompat(sp, "flutter.use_target_size", false)
+            var targetKb = spGetIntCompat(sp, "flutter.target_size_kb", 50).coerceAtLeast(50)
+
+            // 覆盖为每应用设置：从每应用 SQLite settings 读取（若 use_custom=true）
+            try {
+                val per = PerAppSettingsBridge.readQualitySettingsIfCustom(this, getScreenshotTargetApp())
+                if (per != null) {
+                    format = per.format ?: format
+                    quality = per.quality ?: quality
+                    useTarget = per.useTargetSize ?: useTarget
+                    targetKb = per.targetSizeKb ?: targetKb
+                }
+            } catch (_: Exception) {}
 
         // 可选灰度转换（不改变尺寸）
         val bitmap = src // 灰度已移除
@@ -1598,7 +1636,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private fun compressOnce(bm: Bitmap, cf: Bitmap.CompressFormat, q: Int): ByteArray {
         val baos = java.io.ByteArrayOutputStream()
         bm.compress(cf, q.coerceIn(1,100), baos)
-        return baos.toByteArray()
+            return baos.toByteArray()
     }
 
     /**
