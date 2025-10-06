@@ -587,9 +587,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get targetSizeInvalidError => '请输入 >= 50 的有效整数';
 
   @override
-  String get targetSizeHint => '为保证 OCR 质量，最低仅支持 50KB；系统会在不改变分辨率的情况下尽量逼近该大小。';
-
-  @override
   String targetSizeSavedSuccess(Object kb) {
     return '目标大小已设置为 $kb KB';
   }
@@ -605,9 +602,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get expireDaysInvalidError => '请输入 >= 1 的有效整数';
-
-  @override
-  String get expireDaysHint => '下限为 1 天；开启后，应用会在启动和每次截图后按周期自动清理过期文件（12小时节流保护）。';
 
   @override
   String expireDaysSavedSuccess(Object days) {

@@ -1184,12 +1184,6 @@ abstract class AppLocalizations {
   /// **'Please enter a valid integer >= 50'**
   String get targetSizeInvalidError;
 
-  /// No description provided for @targetSizeHint.
-  ///
-  /// In en, this message translates to:
-  /// **'To ensure OCR quality, minimum 50KB is supported; system will try to approach this size without changing resolution.'**
-  String get targetSizeHint;
-
   /// No description provided for @targetSizeSavedSuccess.
   ///
   /// In en, this message translates to:
@@ -1219,12 +1213,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please enter a valid integer >= 1'**
   String get expireDaysInvalidError;
-
-  /// No description provided for @expireDaysHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Minimum 1 day; when enabled, app will automatically clean expired files periodically after startup and each screenshot (12-hour throttle protection).'**
-  String get expireDaysHint;
 
   /// No description provided for @expireDaysSavedSuccess.
   ///

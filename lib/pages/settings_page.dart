@@ -1003,18 +1003,7 @@ class _SettingsPageState extends State<SettingsPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
-          const SizedBox(height: AppTheme.spacing3),
-          Container(
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Text(
-              AppLocalizations.of(context).targetSizeHint,
-              style: TextStyle(fontSize: 12, color: AppTheme.info),
-            ),
-          ),
+          // hint removed
         ],
       ),
       actions: [
@@ -1861,18 +1850,6 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.spacing3),
-          Container(
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Text(
-              AppLocalizations.of(context).targetSizeHint,
-              style: TextStyle(fontSize: 12, color: AppTheme.info),
-            ),
-          ),
         ],
       ),
       actions: [
@@ -2070,18 +2047,6 @@ class _SettingsPageState extends State<SettingsPage>
                   color: Theme.of(context).colorScheme.onSurface,
                   fontSize: AppTheme.fontSizeBase,
                 ),
-              ),
-            ),
-            const SizedBox(height: AppTheme.spacing3),
-            Container(
-              padding: const EdgeInsets.all(AppTheme.spacing3),
-              decoration: BoxDecoration(
-                color: AppTheme.info.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              ),
-              child: Text(
-                AppLocalizations.of(context).expireDaysHint,
-                style: TextStyle(fontSize: 12, color: AppTheme.info),
               ),
             ),
           ],

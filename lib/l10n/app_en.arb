@@ -294,7 +294,6 @@
   "setTargetSizeDialogTitle": "Set target size (KB)",
   "targetSizeKbLabel": "Target size (KB)",
   "targetSizeInvalidError": "Please enter a valid integer >= 50",
-  "targetSizeHint": "To ensure OCR quality, minimum 50KB is supported; system will try to approach this size without changing resolution.",
   "targetSizeSavedSuccess": "Target size set to {kb} KB",
   "@targetSizeSavedSuccess": {
     "placeholders": {
@@ -306,7 +305,7 @@
   "expireDaysLabel": "Expiration days",
   "expireDaysInputHint": "Enter an integer >= 1",
   "expireDaysInvalidError": "Please enter a valid integer >= 1",
-  "expireDaysHint": "Minimum 1 day; when enabled, app will automatically clean expired files periodically after startup and each screenshot (12-hour throttle protection).",
+  
   "expireDaysSavedSuccess": "Set to {days} days",
   "@expireDaysSavedSuccess": {
     "placeholders": {

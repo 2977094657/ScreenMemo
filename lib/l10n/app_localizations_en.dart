@@ -618,10 +618,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get targetSizeInvalidError => 'Please enter a valid integer >= 50';
 
   @override
-  String get targetSizeHint =>
-      'To ensure OCR quality, minimum 50KB is supported; system will try to approach this size without changing resolution.';
-
-  @override
   String targetSizeSavedSuccess(Object kb) {
     return 'Target size set to $kb KB';
   }
@@ -637,10 +633,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get expireDaysInvalidError => 'Please enter a valid integer >= 1';
-
-  @override
-  String get expireDaysHint =>
-      'Minimum 1 day; when enabled, app will automatically clean expired files periodically after startup and each screenshot (12-hour throttle protection).';
 
   @override
   String expireDaysSavedSuccess(Object days) {
