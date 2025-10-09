@@ -6,7 +6,8 @@ enum LogLevel { debug, info, warn, error }
 /// Flutter 侧日志封装：统一通过原生 FileLogger -> OutputFileLogger 落盘到
 /// output/logs/YYYY/MM/DD/{DD}_info.log / {DD}_error.log。
 class FlutterLogger {
-  static LogLevel minLevel = kReleaseMode ? LogLevel.info : LogLevel.debug;
+  // Release 构建：仅 error；Debug 构建：debug
+  static LogLevel minLevel = kReleaseMode ? LogLevel.error : LogLevel.debug;
   static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
 
   // 兼容旧接口

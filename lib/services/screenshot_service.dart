@@ -1038,8 +1038,11 @@ class ScreenshotService {
   Future<void> _saveStatsCache(Map<String, dynamic> stats) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_statsCacheKey, _serializeStats(stats));
-      await prefs.setInt(_statsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
+      // 合并写入，减少多次磁盘操作
+      final batchTs = DateTime.now().millisecondsSinceEpoch;
+      final ser = _serializeStats(stats);
+      await prefs.setString(_statsCacheKey, ser);
+      await prefs.setInt(_statsCacheTsKey, batchTs);
       if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
         await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
       }

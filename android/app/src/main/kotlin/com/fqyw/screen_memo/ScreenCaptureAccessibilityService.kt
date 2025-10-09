@@ -76,12 +76,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     // 段落推进心跳（无新截图时也能结束 collecting）
     private var segmentTickTimer: Timer? = null
-    private val segmentTickIntervalMs = 1_000L
+    private val segmentTickIntervalMs = 60_000L
 
     // 前台应用检测定时器
     private var foregroundAppTimer: Timer? = null
     private var isForegroundDetectionRunning = false
-    private val foregroundDetectionInterval = 500L // 0.5秒检测间隔
+    private val foregroundDetectionInterval = 2_000L // 调整为2秒，降低轮询功耗
     private var usageStatsManager: UsageStatsManager? = null
 
     // 当前前台应用包名
@@ -157,6 +157,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private var lastStableSeenAt: Long = 0L
     private var pendingCandidateApp: String? = null
     private var pendingCandidateSince: Long = 0L
+    // 事件优先：记录最近一次 AccessibilityEvent 到达时间
+    @Volatile private var lastAccessibilityEventAt: Long = 0L
+
+    // 复用 OCR 识别器，避免频繁创建带来的CPU/内存抖动
+    @Volatile private var sharedTextRecognizer: com.google.mlkit.vision.text.TextRecognizer? = null
+
 
     // 启用输入法(IME)集合与正则兜底，用于排除键盘被误判为前台应用
     @Volatile private var imePackages: Set<String> = emptySet()
@@ -329,9 +335,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     startForegroundService()
                     FileLogger.e(TAG, "前台服务已启动")
 
-                    // 获取WakeLock
-                    acquireWakeLock()
-                    FileLogger.e(TAG, "WakeLock已获取")
+                    // 移除服务级长期持锁：截屏时再短时获取WakeLock
 
                     // 初始化UsageStatsManager
                     usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -340,9 +344,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     // 刷新启用的输入法集合，避免输入法被判为前台
                     refreshImePackages(force = true)
 
-                    // 启动前台应用检测
-                    startForegroundAppDetection()
-                    FileLogger.e(TAG, "前台应用检测已启动")
+                    // 前台应用检测改为在定时截屏运行时启动（降低后台轮询功耗）
 
                     // 启动段落推进心跳（每60秒推进所有collecting并回填）
                     startSegmentTickTimer()
@@ -429,6 +431,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 释放WakeLock
         releaseWakeLock()
+
+        // 关闭共享 OCR 识别器
+        try {
+            sharedTextRecognizer?.close()
+        } catch (_: Exception) {}
+        sharedTextRecognizer = null
 
         // 保存服务停止状态
         saveServiceState(false)
@@ -527,6 +535,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 处理无障碍事件，检测当前前台应用（引入稳定化与遮罩容错）
         event?.let {
+            lastAccessibilityEventAt = System.currentTimeMillis()
             if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 val candidate = it.packageName?.toString()
                 val prevStable = lastStableMonitoredApp
@@ -661,7 +670,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 FileLogger.d(TAG, "使用无障碍服务takeScreenshot API截屏")
-                
+                // 截屏前短时获取WakeLock，避免在息屏边缘时CPU被挂起
+                acquireWakeLock()
                 takeScreenshot(
                     android.view.Display.DEFAULT_DISPLAY,
                     { runnable -> runnable.run() },
@@ -690,19 +700,24 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                     }
 
                                     val savedPath = saveScreenshotBitmap(bitmap, targetApp)
+                                    // 释放WakeLock后再回调
+                                    releaseWakeLock()
                                     callback(true, savedPath)
                                 } else {
                                     FileLogger.e(TAG, "无法从截屏结果创建Bitmap")
+                                    releaseWakeLock()
                                     callback(false, null)
                                 }
                             } catch (e: Exception) {
                                 FileLogger.e(TAG, "处理截屏结果失败", e)
+                                releaseWakeLock()
                                 callback(false, null)
                             }
                         }
 
                         override fun onFailure(errorCode: Int) {
                             FileLogger.e(TAG, "截屏失败，错误码: $errorCode")
+                            releaseWakeLock()
                             callback(false, null)
                         }
                     }
@@ -713,6 +728,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "无障碍截屏异常", e)
+            // 出错时确保释放WakeLock（若已获取）
+            releaseWakeLock()
             callback(false, null)
         }
     }
@@ -914,6 +931,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // 在定时截屏运行期间启动前台应用检测（事件优先+兜底轮询）
+            startForegroundAppDetection()
+
             // 立即持久化运行状态，便于崩溃/被杀后自动恢复
             try {
                 val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
@@ -944,6 +964,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             isTimedScreenshotRunning = false
             screenshotTimer?.cancel()
             screenshotTimer = null
+
+            // 停止前台应用检测，降低后台轮询功耗
+            stopForegroundAppDetection()
             
             FileLogger.i(TAG, "定时截屏已停止")
             // 清理持久化的运行标记，避免误恢复
@@ -1395,8 +1418,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun runOcrAsyncAndPersist(srcBitmap: Bitmap, absolutePath: String) {
         try {
-            val options = ChineseTextRecognizerOptions.Builder().build()
-            val recognizer = TextRecognition.getClient(options)
+            val recognizer = ensureTextRecognizer()
             Thread {
                 try {
                     val portrait = try { srcBitmap.height >= srcBitmap.width } catch (_: Exception) { true }
@@ -1426,6 +1448,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             FileLogger.w(TAG, "启动OCR异常: ${e.message}")
         }
+    }
+
+    private fun ensureTextRecognizer(): com.google.mlkit.vision.text.TextRecognizer {
+        val existing = sharedTextRecognizer
+        if (existing != null) return existing
+        val created = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        sharedTextRecognizer = created
+        return created
     }
 
     /**
@@ -1971,7 +2001,13 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "ScreenMemory:AccessibilityWakeLock"
             )
-            wakeLock?.acquire()
+            // 短时持锁：10秒超时，避免长期占用
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                wakeLock?.acquire(10_000L)
+            } else {
+                wakeLock?.acquire()
+                // 旧版本：在截屏完成路径与定时器停止时主动释放
+            }
             FileLogger.e(TAG, "WakeLock已获取")
         } catch (e: Exception) {
             FileLogger.e(TAG, "获取WakeLock失败", e)
@@ -2018,7 +2054,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // 设置在5秒后触发重启
+            // 设置在5秒后触发重启（核心保活，快速拉起）
             val triggerTime = android.os.SystemClock.elapsedRealtime() + 5000
 
             // 使用setExactAndAllowWhileIdle确保在Doze模式下也能触发
@@ -2212,6 +2248,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     private fun detectForegroundAppPeriodically() {
         try {
+            val now = System.currentTimeMillis()
+            val elapsedSinceEvent = now - lastAccessibilityEventAt
+            // 事件优先：若最近2秒内收到过事件，则跳过本次轮询，降低轮询频率
+            if (elapsedSinceEvent <= 2000L) {
+                return
+            }
             val candidate = getForegroundAppUsingUsageStats()
             val prevStable = lastStableMonitoredApp
             if (candidate != null) {
@@ -2235,7 +2277,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         try {
             val usageStats = usageStatsManager ?: return null
             val currentTime = System.currentTimeMillis()
-            val startTime = currentTime - 6000 // 放宽到最近6秒，兼容事件延迟
+            val startTime = currentTime - 3000 // 收窄到最近3秒，减少遍历事件成本
 
             // 获取使用事件
             val usageEvents = usageStats.queryEvents(startTime, currentTime)

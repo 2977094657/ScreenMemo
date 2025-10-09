@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'services/startup_profiler.dart';
 import 'theme/app_theme.dart';
@@ -20,20 +22,35 @@ import 'pages/app_screenshot_settings_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 简易 Flutter 侧日志初始化
+  // 简易 Flutter 侧日志初始化（release 下因最小级别为 ERROR，实际不会写入）
   await FlutterLogger.log('app start');
   StartupProfiler.mark('main.ensureInitialized.done');
 
-  // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
-  // 这样冷启动时原生触发的通知点击事件能被 Flutter 接住
+  if (kReleaseMode) {
+    // 在 release 下用 Zone 拦截所有 print
+    runZonedGuarded(() {
+      // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
+      // ignore: unnecessary_statements
+      ScreenshotService.instance;
+
+      StartupProfiler.begin('runApp');
+      runApp(const ScreenMemoApp());
+      StartupProfiler.end('runApp');
+    }, (e, s) {},
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) {
+            // no-op in release
+          },
+        ));
+    return;
+  }
+
+  // Debug/Profiler 构建保持原有行为
   // ignore: unnecessary_statements
   ScreenshotService.instance;
-
-  // 立刻构建首帧，避免阻塞到 runApp 之前
   StartupProfiler.begin('runApp');
   runApp(const ScreenMemoApp());
   StartupProfiler.end('runApp');
-  // 取消首帧前的预加载，避免重复耗时；首页将按需加载
 }
 
 class ScreenMemoApp extends StatefulWidget {

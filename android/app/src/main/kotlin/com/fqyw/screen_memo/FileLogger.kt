@@ -21,12 +21,19 @@ object FileLogger {
     private const val LEVEL_DEBUG = 4
 
     private val isDebugBuild: Boolean = try {
-        val type = android.os.Build.TYPE?.lowercase(Locale.getDefault()) ?: ""
-        type.contains("debug") || type.contains("eng")
-    } catch (_: Exception) { false }
+        // 优先使用应用 debuggable 标志；若不可用则回退到 Build.TYPE
+        val flags = AppContextProvider.context()?.applicationInfo?.flags ?: 0
+        (flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    } catch (_: Exception) {
+        try {
+            val type = android.os.Build.TYPE?.lowercase(Locale.getDefault()) ?: ""
+            type.contains("debug") || type.contains("eng")
+        } catch (_: Exception) { false }
+    }
 
-    private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_INFO
-    private var writeFileEnabled = true
+    // Debug 构建：DEBUG 级别并落盘；Release 构建：仅 ERROR 级别，且不落盘
+    private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_ERROR
+    private var writeFileEnabled = isDebugBuild
 
     fun init(context: Context) {
         // 仅标记初始化；输出文件由 OutputFileLogger 动态创建
@@ -95,11 +102,13 @@ object FileLogger {
     }
 
     fun writeSeparator(title: String = "") {
+        if (!writeFileEnabled) return
         val line = if (title.isNotEmpty()) "=== $title ===" else "=========================="
         AppContextProvider.context()?.let { OutputFileLogger.info(it, TAG, line) }
     }
 
     fun writeSystemInfo(context: Context) {
+        if (!writeFileEnabled) return
         writeSeparator("系统信息")
         OutputFileLogger.info(context, TAG, "应用包名: ${context.packageName}")
         OutputFileLogger.info(context, TAG, "进程ID: ${android.os.Process.myPid()}")
