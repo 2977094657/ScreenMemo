@@ -16,7 +16,6 @@ import '../widgets/ui_components.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/screenshot_item_widget.dart';
 import '../widgets/screenshot_image_widget.dart';
-
 /// 收藏页面
 class FavoritesPage extends StatefulWidget {
   const FavoritesPage({super.key});

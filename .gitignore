@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+devtools_options.yaml
 
 # Symbolication related
 app.*.symbols
@@ -64,6 +65,7 @@ ios/Runner.xcodeproj/xcuserdata/
 # macOS related
 macos/Flutter/flutter_assets
 macos/Flutter/flutter_export_environment.sh
+macos/Flutter/GeneratedPluginRegistrant.swift
 macos/Runner.xcworkspace/xcshareddata/
 macos/Runner.xcworkspace/xcuserdata/
 macos/Runner.xcodeproj/xcshareddata/
@@ -71,9 +73,15 @@ macos/Runner.xcodeproj/xcuserdata/
 
 # Linux related
 linux/flutter/ephemeral/
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugin_registrant.h
+linux/flutter/generated_plugins.cmake
 
 # Windows related
 windows/flutter/ephemeral/
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
 
 # Web related
 web/flutter_assets
@@ -91,3 +99,4 @@ screenmemo_tech_selection.html
 /.claude/
 /.kiro/
 /AGENTS.md
+rikkahub-master

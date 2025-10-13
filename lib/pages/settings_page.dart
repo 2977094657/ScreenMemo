@@ -14,7 +14,6 @@ import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
-import 'ai_settings_page.dart';
 import 'nsfw_settings_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/locale_service.dart';
@@ -756,15 +755,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
 
                 const SizedBox(height: AppTheme.spacing4),
-                // AI 助手
-                _buildSection(
-                  context: context,
-                  title: AppLocalizations.of(context).aiAssistantSectionTitle,
-                  children: [
-                    _buildAIEntryItem(context),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.spacing4),
                 // 数据与备份
                 _buildSection(
                   context: context,
@@ -1332,69 +1322,6 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildAIEntryItem(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.smart_toy_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppLocalizations.of(context).aiAssistantTitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  AppLocalizations.of(context).aiAssistantDesc,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AISettingsPage(),
-                ),
-              );
-            },
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-            ),
-            child: Text(AppLocalizations.of(context).actionEnter),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildNsfwEntryItem(BuildContext context) {
     return Container(

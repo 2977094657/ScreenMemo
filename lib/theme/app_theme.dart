@@ -96,19 +96,24 @@ class AppTheme {
   
   /// 获取主题数据
   static ThemeData get lightTheme {
+    const ColorScheme cs = ColorScheme.light(
+      primary: primary,
+      onPrimary: primaryForeground,
+      secondary: secondary,
+      onSecondary: secondaryForeground,
+      surface: background,
+      onSurface: foreground,
+      error: destructive,
+      onError: destructiveForeground,
+      outline: border,
+      surfaceVariant: muted, // 使用 muted 作为 surfaceVariant
+    );
     return ThemeData(
       useMaterial3: true,
-      colorScheme: const ColorScheme.light(
-        primary: primary,
-        onPrimary: primaryForeground,
-        secondary: secondary,
-        onSecondary: secondaryForeground,
-        surface: background,
-        onSurface: foreground,
-        error: destructive,
-        onError: destructiveForeground,
-        outline: border,
-        surfaceVariant: muted,  // 添加surfaceVariant定义，使用muted色作为背景
+      colorScheme: cs,
+      bottomSheetTheme: BottomSheetThemeData(
+        // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
+        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
       ),
       scaffoldBackgroundColor: background,
       cardTheme: const CardThemeData(
@@ -267,19 +272,24 @@ class AppTheme {
   
   /// 获取黑夜模式主题数据
   static ThemeData get darkTheme {
+    const ColorScheme cs = ColorScheme.dark(
+      primary: darkPrimary,
+      onPrimary: darkPrimaryForeground,
+      secondary: darkSecondary,
+      onSecondary: darkSecondaryForeground,
+      surface: darkCard,
+      onSurface: darkForeground,
+      error: darkDestructive,
+      onError: darkDestructiveForeground,
+      outline: darkBorder,
+      surfaceVariant: darkInput,
+    );
     return ThemeData(
       useMaterial3: true,
-      colorScheme: const ColorScheme.dark(
-        primary: darkPrimary,
-        onPrimary: darkPrimaryForeground,
-        secondary: darkSecondary,
-        onSecondary: darkSecondaryForeground,
-        surface: darkCard,
-        onSurface: darkForeground,
-        error: darkDestructive,
-        onError: darkDestructiveForeground,
-        outline: darkBorder,
-        surfaceVariant: darkInput,
+      colorScheme: cs,
+      bottomSheetTheme: BottomSheetThemeData(
+        // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
+        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
       ),
       scaffoldBackgroundColor: darkBackground,
       appBarTheme: const AppBarTheme(

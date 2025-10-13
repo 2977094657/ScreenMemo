@@ -436,7 +436,7 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
                 _buildFeatureItem(Icons.memory, AppLocalizations.of(context).featureSmartNotes),
                 _buildFeatureItem(Icons.search, AppLocalizations.of(context).featureQuickSearch),
                 _buildFeatureItem(Icons.privacy_tip, AppLocalizations.of(context).featureLocalStorage),
-                _buildFeatureItem(Icons.analytics, AppLocalizations.of(context).featureUsageAnalytics),
+                // 移除“使用习惯分析”展示
               ],
             ),
           ),
