@@ -957,7 +957,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pressBackAgainToExit => 'Press back again to exit';
 
   @override
-  String get segmentStatusTitle => 'Event Status';
+  String get segmentStatusTitle => 'Activity';
 
   @override
   String get autoWatchingHint => 'Auto watching in background…';
@@ -1513,4 +1513,189 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nsfwTagLabel => 'NSFW';
+
+  @override
+  String get providersTitle => 'Providers';
+
+  @override
+  String get actionNew => 'New';
+
+  @override
+  String get actionAdd => 'Add';
+
+  @override
+  String get noProvidersYetHint =>
+      'No providers yet. Tap \"New\" to create one.';
+
+  @override
+  String confirmDeleteProviderMessage(Object name) {
+    return 'Delete provider \"$name\"? This cannot be undone.';
+  }
+
+  @override
+  String get loadingConversations => 'Loading conversations…';
+
+  @override
+  String get noConversations => 'No conversations';
+
+  @override
+  String get deleteConversationTitle => 'Delete conversation';
+
+  @override
+  String confirmDeleteConversationMessage(Object title) {
+    return 'Delete conversation \"$title\"?';
+  }
+
+  @override
+  String get untitledConversationLabel => 'Untitled conversation';
+
+  @override
+  String get searchProviderPlaceholder => 'Search providers';
+
+  @override
+  String get searchModelPlaceholder => 'Search models';
+
+  @override
+  String providerSelectedToast(Object name) {
+    return 'Selected provider: $name';
+  }
+
+  @override
+  String get pleaseSelectProviderFirst => 'Please select a provider first';
+
+  @override
+  String get noModelsForProviderHint =>
+      'No models available. Refresh on Providers page or add manually.';
+
+  @override
+  String get noModelsDetectedHint =>
+      'No models detected. Try Refresh or add manually.';
+
+  @override
+  String modelSwitchedToast(Object model) {
+    return 'Switched model: $model';
+  }
+
+  @override
+  String get providerLabel => 'Provider';
+
+  @override
+  String sendMessageToModelPlaceholder(Object model) {
+    return 'Send a message to $model';
+  }
+
+  @override
+  String get deepThinkingLabel => 'Deep thinking';
+
+  @override
+  String get thinkingInProgress => 'Thinking…';
+
+  @override
+  String get requestStoppedInfo => 'Request stopped';
+
+  @override
+  String get reasoningLabel => 'Reasoning:';
+
+  @override
+  String get answerLabel => 'Answer:';
+
+  @override
+  String selectModelWithCounts(Object filtered, Object total) {
+    return 'Select model ($filtered/$total)';
+  }
+
+  @override
+  String modelsCountLabel(Object count) {
+    return 'Models ($count)';
+  }
+
+  @override
+  String get manualAddModelLabel => 'Add model manually';
+
+  @override
+  String get inputAndAddModelHint => 'Enter and add, e.g. gpt-4o-mini';
+
+  @override
+  String get fetchModelsHint =>
+      'Click \"Refresh\" to fetch automatically; if it fails, add model names manually.';
+
+  @override
+  String get interfaceTypeLabel => 'Interface type';
+
+  @override
+  String currentTypeLabel(Object type) {
+    return 'Current: $type';
+  }
+
+  @override
+  String get nameRequiredError => 'Name is required';
+
+  @override
+  String get nameAlreadyExistsError => 'Name already exists';
+
+  @override
+  String get apiKeyRequiredError => 'API Key is required';
+
+  @override
+  String get baseUrlRequiredForAzureError =>
+      'Base URL required for Azure OpenAI';
+
+  @override
+  String get atLeastOneModelRequiredError => 'At least one model is required';
+
+  @override
+  String modelsUpdatedToast(Object count) {
+    return 'Models updated ($count)';
+  }
+
+  @override
+  String get fetchModelsFailedHint =>
+      'Fetch models failed. You may add manually.';
+
+  @override
+  String get useResponseApiLabel =>
+      'Use Response API (only official OpenAI supports; third-party services are not recommended)';
+
+  @override
+  String get chatPathOptionalLabel => 'Chat Path (optional)';
+
+  @override
+  String get azureApiVersionLabel => 'Azure API Version';
+
+  @override
+  String get azureApiVersionHint => 'e.g. 2024-02-15';
+
+  @override
+  String get baseUrlHintOpenAI =>
+      'e.g. https://api.openai.com (empty for default)';
+
+  @override
+  String get baseUrlHintClaude => 'e.g. https://api.anthropic.com';
+
+  @override
+  String get baseUrlHintGemini =>
+      'e.g. https://generativelanguage.googleapis.com';
+
+  @override
+  String baseUrlHintAzure(Object resource) {
+    return 'Required, e.g. https://$resource.openai.azure.com';
+  }
+
+  @override
+  String get baseUrlHintCustom => 'Enter an OpenAI-compatible Base URL';
+
+  @override
+  String get createProviderTitle => 'New provider';
+
+  @override
+  String get editProviderTitle => 'Edit provider';
+
+  @override
+  String get deletedToast => 'Deleted';
+
+  @override
+  String get providerNotFound => 'Provider not found';
+
+  @override
+  String get conversationsSectionTitle => 'Conversations';
 }

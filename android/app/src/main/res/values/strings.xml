@@ -21,11 +21,14 @@
 - Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；
 - 后续小节建议包含："## 关键操作"（按时间的要点清单）、"## 主要活动"（按应用/主题的要点清单）、"## 重点内容"（可保留的标题/作者/品牌等）；
 - 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”（例如“08:16:41-08:27:21：浏览视频评论”）；仅在行为中断或切换时新起一条；控制 3-8 条精要；
-以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
+- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；其余图片不得逐图描述；
+- 所有 content_groups[].representative_images 在所有分组中的总和不得超过上述上限；
+- 所有 key_actions[].ref_image 必须复用已选代表图片，不得新增超出上限的图片引用；
+以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], described_images[], overall_summary；
 仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；
 字段约定：
 key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"应用名","ref_image":"文件名","ref_time":"HH:mm:ss","detail":"(Markdown) 精简说明，避免敏感信息","confidence":0.0}],
-content_groups[]: [{"group_type":"article|video|page|playlist|feed","title":"可为空","app":"应用名","start_time":"HH:mm:ss","end_time":"HH:mm:ss","image_count":1,"representative_images":["文件名1","文件名2"],"summary":"(Markdown) 本组内容的要点"}],
+described_images[]: [{"file":"文件名","ref_time":"HH:mm:ss","app":"应用名","summary":"(Markdown) 单图关键信息与选择理由"}],
 timeline[]: [{"time":"HH:mm:ss","app":"应用名","action":"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他","summary":"(Markdown) 一句话行为（可简短强调）"}],
 overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使用小节与要点，避免流水账并尽可能保留信息"]]> </string>
 
@@ -42,11 +45,14 @@ overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使
   "## Key Content"
   Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
 - In "## Key Actions", merge adjacent/continuous same-type actions as a time range "HH:mm:ss-HH:mm:ss: description"; only when action breaks/changes start a new item; keep 3–8 concise items.
-Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
+- Provide textual descriptions for at most one-third of the images (floor; may be 0). Do not narrate the rest image-by-image.
+- The total across all content_groups[].representative_images must not exceed this cap.
+- key_actions[].ref_image must reuse the chosen representative images; do not introduce additional images beyond the cap.
+Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], described_images[], overall_summary.
 Only output a single JSON object; do not add explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).
 Field conventions:
 key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"App","ref_image":"filename","ref_time":"HH:mm:ss","detail":"(Markdown) brief, avoid sensitive info","confidence":0.0}],
-content_groups[]: [{"group_type":"article|video|page|playlist|feed","title":"optional","app":"App","start_time":"HH:mm:ss","end_time":"HH:mm:ss","image_count":1,"representative_images":["file1","file2"],"summary":"(Markdown) group highlights"}],
+described_images[]: [{"file":"filename","ref_time":"HH:mm:ss","app":"App","summary":"(Markdown) key info and selection reason for the single image"}],
 timeline[]: [{"time":"HH:mm:ss","app":"App","action":"browse|watch|chat|shop|search|edit|game|settings|download|share|other","summary":"(Markdown) one-liner (may emphasize briefly)"}],
 overall_summary: "(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info"]]> </string>
 
@@ -61,6 +67,7 @@ overall_summary: "(Markdown) start with a single untitled paragraph; then sectio
 - 后续小节建议包含："## 关键操作"、"## 主要活动"、"## 重点内容"；
 - 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”；仅在行为中断或切换时新起一条；控制 3-8 条精要；
 - content_groups[].summary 使用 1–3 条 Markdown 要点描述话题/代表性标题/意图；
+- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；所有 content_groups[].representative_images 的合计不得超过该上限；key_actions[].ref_image 必须复用代表图片，不得新增超限图片；
 以 JSON 输出字段：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary。
 仅输出一个 JSON 对象；不要输出解释或 JSON 外的 Markdown；展示内容写入 overall_summary。]]></string>
 
@@ -78,6 +85,7 @@ overall_summary: "(Markdown) start with a single untitled paragraph; then sectio
   Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
 - In "## Key Actions", merge adjacent same-type actions into ranges "HH:mm:ss-HH:mm:ss: description"; only new item when action breaks; keep 3–8 concise lines.
 - content_groups[].summary uses 1–3 Markdown bullets for group topic/representative titles/intent.
+- Provide textual descriptions for at most one-third of images (floor; may be 0). The total across all content_groups[].representative_images must not exceed this cap; key_actions[].ref_image must reuse those representative images and must not exceed the cap.
 Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
 Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).]]></string>
 

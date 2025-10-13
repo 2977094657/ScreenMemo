@@ -1775,7 +1775,7 @@ abstract class AppLocalizations {
   /// No description provided for @segmentStatusTitle.
   ///
   /// In en, this message translates to:
-  /// **'Event Status'**
+  /// **'Activity'**
   String get segmentStatusTitle;
 
   /// No description provided for @autoWatchingHint.
@@ -2749,6 +2749,318 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'NSFW'**
   String get nsfwTagLabel;
+
+  /// No description provided for @providersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Providers'**
+  String get providersTitle;
+
+  /// No description provided for @actionNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get actionNew;
+
+  /// No description provided for @actionAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get actionAdd;
+
+  /// No description provided for @noProvidersYetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No providers yet. Tap \"New\" to create one.'**
+  String get noProvidersYetHint;
+
+  /// No description provided for @confirmDeleteProviderMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete provider \"{name}\"? This cannot be undone.'**
+  String confirmDeleteProviderMessage(Object name);
+
+  /// No description provided for @loadingConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading conversations…'**
+  String get loadingConversations;
+
+  /// No description provided for @noConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'No conversations'**
+  String get noConversations;
+
+  /// No description provided for @deleteConversationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete conversation'**
+  String get deleteConversationTitle;
+
+  /// No description provided for @confirmDeleteConversationMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete conversation \"{title}\"?'**
+  String confirmDeleteConversationMessage(Object title);
+
+  /// No description provided for @untitledConversationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Untitled conversation'**
+  String get untitledConversationLabel;
+
+  /// No description provided for @searchProviderPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Search providers'**
+  String get searchProviderPlaceholder;
+
+  /// No description provided for @searchModelPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Search models'**
+  String get searchModelPlaceholder;
+
+  /// No description provided for @providerSelectedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected provider: {name}'**
+  String providerSelectedToast(Object name);
+
+  /// No description provided for @pleaseSelectProviderFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select a provider first'**
+  String get pleaseSelectProviderFirst;
+
+  /// No description provided for @noModelsForProviderHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No models available. Refresh on Providers page or add manually.'**
+  String get noModelsForProviderHint;
+
+  /// No description provided for @noModelsDetectedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No models detected. Try Refresh or add manually.'**
+  String get noModelsDetectedHint;
+
+  /// No description provided for @modelSwitchedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Switched model: {model}'**
+  String modelSwitchedToast(Object model);
+
+  /// No description provided for @providerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider'**
+  String get providerLabel;
+
+  /// No description provided for @sendMessageToModelPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a message to {model}'**
+  String sendMessageToModelPlaceholder(Object model);
+
+  /// No description provided for @deepThinkingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Deep thinking'**
+  String get deepThinkingLabel;
+
+  /// No description provided for @thinkingInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Thinking…'**
+  String get thinkingInProgress;
+
+  /// No description provided for @requestStoppedInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Request stopped'**
+  String get requestStoppedInfo;
+
+  /// No description provided for @reasoningLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning:'**
+  String get reasoningLabel;
+
+  /// No description provided for @answerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer:'**
+  String get answerLabel;
+
+  /// No description provided for @selectModelWithCounts.
+  ///
+  /// In en, this message translates to:
+  /// **'Select model ({filtered}/{total})'**
+  String selectModelWithCounts(Object filtered, Object total);
+
+  /// No description provided for @modelsCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Models ({count})'**
+  String modelsCountLabel(Object count);
+
+  /// No description provided for @manualAddModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Add model manually'**
+  String get manualAddModelLabel;
+
+  /// No description provided for @inputAndAddModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter and add, e.g. gpt-4o-mini'**
+  String get inputAndAddModelHint;
+
+  /// No description provided for @fetchModelsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Click \"Refresh\" to fetch automatically; if it fails, add model names manually.'**
+  String get fetchModelsHint;
+
+  /// No description provided for @interfaceTypeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Interface type'**
+  String get interfaceTypeLabel;
+
+  /// No description provided for @currentTypeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {type}'**
+  String currentTypeLabel(Object type);
+
+  /// No description provided for @nameRequiredError.
+  ///
+  /// In en, this message translates to:
+  /// **'Name is required'**
+  String get nameRequiredError;
+
+  /// No description provided for @nameAlreadyExistsError.
+  ///
+  /// In en, this message translates to:
+  /// **'Name already exists'**
+  String get nameAlreadyExistsError;
+
+  /// No description provided for @apiKeyRequiredError.
+  ///
+  /// In en, this message translates to:
+  /// **'API Key is required'**
+  String get apiKeyRequiredError;
+
+  /// No description provided for @baseUrlRequiredForAzureError.
+  ///
+  /// In en, this message translates to:
+  /// **'Base URL required for Azure OpenAI'**
+  String get baseUrlRequiredForAzureError;
+
+  /// No description provided for @atLeastOneModelRequiredError.
+  ///
+  /// In en, this message translates to:
+  /// **'At least one model is required'**
+  String get atLeastOneModelRequiredError;
+
+  /// No description provided for @modelsUpdatedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Models updated ({count})'**
+  String modelsUpdatedToast(Object count);
+
+  /// No description provided for @fetchModelsFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch models failed. You may add manually.'**
+  String get fetchModelsFailedHint;
+
+  /// No description provided for @useResponseApiLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Response API (only official OpenAI supports; third-party services are not recommended)'**
+  String get useResponseApiLabel;
+
+  /// No description provided for @chatPathOptionalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat Path (optional)'**
+  String get chatPathOptionalLabel;
+
+  /// No description provided for @azureApiVersionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Azure API Version'**
+  String get azureApiVersionLabel;
+
+  /// No description provided for @azureApiVersionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 2024-02-15'**
+  String get azureApiVersionHint;
+
+  /// No description provided for @baseUrlHintOpenAI.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. https://api.openai.com (empty for default)'**
+  String get baseUrlHintOpenAI;
+
+  /// No description provided for @baseUrlHintClaude.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. https://api.anthropic.com'**
+  String get baseUrlHintClaude;
+
+  /// No description provided for @baseUrlHintGemini.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. https://generativelanguage.googleapis.com'**
+  String get baseUrlHintGemini;
+
+  /// No description provided for @baseUrlHintAzure.
+  ///
+  /// In en, this message translates to:
+  /// **'Required, e.g. https://{resource}.openai.azure.com'**
+  String baseUrlHintAzure(Object resource);
+
+  /// No description provided for @baseUrlHintCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an OpenAI-compatible Base URL'**
+  String get baseUrlHintCustom;
+
+  /// No description provided for @createProviderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New provider'**
+  String get createProviderTitle;
+
+  /// No description provided for @editProviderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit provider'**
+  String get editProviderTitle;
+
+  /// No description provided for @deletedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted'**
+  String get deletedToast;
+
+  /// No description provided for @providerNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider not found'**
+  String get providerNotFound;
+
+  /// No description provided for @conversationsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get conversationsSectionTitle;
 }
 
 class _AppLocalizationsDelegate

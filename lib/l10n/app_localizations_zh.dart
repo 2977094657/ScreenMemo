@@ -921,7 +921,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pressBackAgainToExit => '再按一次退出屏忆';
 
   @override
-  String get segmentStatusTitle => '事件状态';
+  String get segmentStatusTitle => '动态';
 
   @override
   String get autoWatchingHint => '后台自动检测中…';
@@ -1469,4 +1469,181 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get nsfwTagLabel => 'NSFW';
+
+  @override
+  String get providersTitle => '提供商';
+
+  @override
+  String get actionNew => '新建';
+
+  @override
+  String get actionAdd => '添加';
+
+  @override
+  String get noProvidersYetHint => '暂无提供商，可点击“新建”创建。';
+
+  @override
+  String confirmDeleteProviderMessage(Object name) {
+    return '确定删除提供商“$name”吗？此操作不可恢复。';
+  }
+
+  @override
+  String get loadingConversations => '正在加载会话…';
+
+  @override
+  String get noConversations => '暂无会话';
+
+  @override
+  String get deleteConversationTitle => '删除会话';
+
+  @override
+  String confirmDeleteConversationMessage(Object title) {
+    return '确定要删除会话“$title”吗？';
+  }
+
+  @override
+  String get untitledConversationLabel => '未命名会话';
+
+  @override
+  String get searchProviderPlaceholder => '搜索提供商';
+
+  @override
+  String get searchModelPlaceholder => '搜索模型';
+
+  @override
+  String providerSelectedToast(Object name) {
+    return '已选择提供商：$name';
+  }
+
+  @override
+  String get pleaseSelectProviderFirst => '请先选择提供商';
+
+  @override
+  String get noModelsForProviderHint => '该提供商无可用模型，请在“提供商”页刷新或手动添加';
+
+  @override
+  String get noModelsDetectedHint => '未检测到可用模型，可点击“刷新”或手动添加。';
+
+  @override
+  String modelSwitchedToast(Object model) {
+    return '已切换模型：$model';
+  }
+
+  @override
+  String get providerLabel => '提供商';
+
+  @override
+  String sendMessageToModelPlaceholder(Object model) {
+    return '给 $model 发送消息';
+  }
+
+  @override
+  String get deepThinkingLabel => '深度思考';
+
+  @override
+  String get thinkingInProgress => '思考中…';
+
+  @override
+  String get requestStoppedInfo => '已停止请求';
+
+  @override
+  String get reasoningLabel => 'Reasoning:';
+
+  @override
+  String get answerLabel => 'Answer:';
+
+  @override
+  String selectModelWithCounts(Object filtered, Object total) {
+    return '选择模型（$filtered/$total）';
+  }
+
+  @override
+  String modelsCountLabel(Object count) {
+    return '模型（$count）';
+  }
+
+  @override
+  String get manualAddModelLabel => '手动添加模型';
+
+  @override
+  String get inputAndAddModelHint => '输入并添加，如 gpt-4o-mini';
+
+  @override
+  String get fetchModelsHint => '可点击“刷新”自动获取；失败时可手动添加模型名称。';
+
+  @override
+  String get interfaceTypeLabel => '接口类型';
+
+  @override
+  String currentTypeLabel(Object type) {
+    return '当前：$type';
+  }
+
+  @override
+  String get nameRequiredError => '名称必填';
+
+  @override
+  String get nameAlreadyExistsError => '名称已存在';
+
+  @override
+  String get apiKeyRequiredError => 'API Key 必填';
+
+  @override
+  String get baseUrlRequiredForAzureError => 'Azure OpenAI 需填写 Base URL';
+
+  @override
+  String get atLeastOneModelRequiredError => '至少添加一个模型';
+
+  @override
+  String modelsUpdatedToast(Object count) {
+    return '已更新模型（$count）';
+  }
+
+  @override
+  String get fetchModelsFailedHint => '获取模型失败，可手动添加。';
+
+  @override
+  String get useResponseApiLabel => '使用 Response API（仅OpenAI官方支持，第三方服务建议关闭）';
+
+  @override
+  String get chatPathOptionalLabel => 'Chat Path（可选）';
+
+  @override
+  String get azureApiVersionLabel => 'Azure API Version';
+
+  @override
+  String get azureApiVersionHint => '如 2024-02-15';
+
+  @override
+  String get baseUrlHintOpenAI => '例如：https://api.openai.com（留空则默认）';
+
+  @override
+  String get baseUrlHintClaude => '例如：https://api.anthropic.com';
+
+  @override
+  String get baseUrlHintGemini =>
+      '例如：https://generativelanguage.googleapis.com';
+
+  @override
+  String baseUrlHintAzure(Object resource) {
+    return '必填，例如：https://$resource.openai.azure.com';
+  }
+
+  @override
+  String get baseUrlHintCustom => '请输入兼容 OpenAI 的 Base URL';
+
+  @override
+  String get createProviderTitle => '新建提供商';
+
+  @override
+  String get editProviderTitle => '编辑提供商';
+
+  @override
+  String get deletedToast => '已删除';
+
+  @override
+  String get providerNotFound => '提供商不存在';
+
+  @override
+  String get conversationsSectionTitle => '对话';
 }
