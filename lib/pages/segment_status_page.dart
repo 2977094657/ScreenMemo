@@ -5,12 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../services/screenshot_database.dart';
+import '../services/ai_providers_service.dart';
+import '../services/ai_settings_service.dart';
 import '../services/flutter_logger.dart';
+import '../utils/model_icon_utils.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
+import '../models/screenshot_record.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
@@ -34,6 +39,14 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
   bool _loading = false;
   bool _onlyNoSummary = false; // 仅看暂无AI总结
+  // 底部弹窗查询输入持久化，避免失焦或重建清空
+  String _segProviderQueryText = '';
+  String _segModelQueryText = '';
+
+  // —— 基于提供商表的“动态(segments)”上下文（与对话隔离） ——
+  AIProvider? _ctxSegProvider;
+  String? _ctxSegModel;
+  bool _ctxSegLoading = true;
 
   // 应用图标缓存（包名 -> AppInfo）
   final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
@@ -51,6 +64,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     super.initState();
     _initApps();
     _loadPrivacyMode();
+    _loadSegmentsContextSelection();
     _refresh();
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
@@ -58,6 +72,300 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       setState(() { _privacyMode = enabled; });
     });
   }
+
+  // 载入“动态(segments)”的提供商/模型选择（独立于对话页）
+  Future<void> _loadSegmentsContextSelection() async {
+    try {
+      final svc = AIProvidersService.instance;
+      final providers = await svc.listProviders();
+      if (providers.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _ctxSegProvider = null;
+            _ctxSegModel = null;
+            _ctxSegLoading = false;
+          });
+        }
+        return;
+      }
+      final ctxRow = await AISettingsService.instance.getAIContextRow('segments');
+      AIProvider? sel;
+      if (ctxRow != null && ctxRow['provider_id'] is int) {
+        sel = await svc.getProvider(ctxRow['provider_id'] as int);
+      }
+      sel ??= await svc.getDefaultProvider();
+      sel ??= providers.first;
+
+      String model = (ctxRow != null && (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
+          ? (ctxRow['model'] as String).trim()
+          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel).toString();
+      if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
+
+      if (mounted) {
+        setState(() {
+          _ctxSegProvider = sel;
+          _ctxSegModel = model;
+          _ctxSegLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _ctxSegLoading = false);
+    }
+  }
+
+  Future<void> _showProviderSheetSegments() async {
+    final svc = AIProvidersService.instance;
+    final list = await svc.listProviders();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final currentId = _ctxSegProvider?.id ?? -1;
+        // 使用持久化查询文本，避免键盘开合/重建导致输入被清空
+        final TextEditingController queryCtrl = TextEditingController(text: _segProviderQueryText);
+        return StatefulBuilder(
+          builder: (c, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                final q = queryCtrl.text.trim().toLowerCase();
+                final filtered = list.where((p) {
+                  if (q.isEmpty) return true;
+                  final name = p.name.toLowerCase();
+                  final type = p.type.toLowerCase();
+                  final base = (p.baseUrl ?? '').toString().toLowerCase();
+                  return name.contains(q) || type.contains(q) || base.contains(q);
+                }).toList();
+                // 将当前选中的提供商置顶，便于观察
+                final selIdx = filtered.indexWhere((e) => e.id == currentId);
+                if (selIdx > 0) {
+                  final sel = filtered.removeAt(selIdx);
+                  filtered.insert(0, sel);
+                }
+                return SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: TextField(
+                          controller: queryCtrl,
+                          autofocus: true,
+                          onChanged: (_) {
+                            _segProviderQueryText = queryCtrl.text;
+                            setModalState(() {});
+                          },
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: AppLocalizations.of(context).searchProviderPlaceholder,
+                            isDense: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          controller: scrollCtrl,
+                          itemCount: filtered.length,
+                          separatorBuilder: (c, i) => Container(
+                            height: 1,
+                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                          ),
+                          itemBuilder: (c, i) {
+                            final p = filtered[i];
+                            final selected = p.id == currentId;
+                            return ListTile(
+                              leading: SvgPicture.asset(
+                                ModelIconUtils.getProviderIconPath(p.type),
+                                width: 20, height: 20,
+                              ),
+                              title: Text(p.name, style: Theme.of(c).textTheme.bodyMedium),
+                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              onTap: () async {
+                                String model = (_ctxSegModel ?? '').trim();
+                                if (model.isEmpty) {
+                                  model = (p.extra['active_model'] as String? ?? p.defaultModel).toString().trim();
+                                }
+                                if (model.isEmpty && p.models.isNotEmpty) model = p.models.first;
+                                await AISettingsService.instance.setAIContextSelection(context: 'segments', providerId: p.id!, model: model);
+                                if (mounted) {
+                                  setState(() {
+                                    _ctxSegProvider = p;
+                                    _ctxSegModel = model;
+                                  });
+                                  Navigator.of(ctx).pop();
+                                  UINotifier.success(context, AppLocalizations.of(context).providerSelectedToast(p.name));
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showModelSheetSegments() async {
+    final p = _ctxSegProvider;
+    if (p == null) {
+      UINotifier.info(context, AppLocalizations.of(context).pleaseSelectProviderFirst);
+      return;
+    }
+    final models = p.models;
+    if (models.isEmpty) {
+      UINotifier.info(context, AppLocalizations.of(context).noModelsForProviderHint);
+      return;
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final active = (_ctxSegModel ?? '').trim();
+        // 使用持久化查询文本，避免失焦时文本被清空
+        final TextEditingController queryCtrl = TextEditingController(text: _segModelQueryText);
+        return StatefulBuilder(
+          builder: (c, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.85,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                final q = queryCtrl.text.trim().toLowerCase();
+                final filtered = models.where((mm) {
+                  if (q.isEmpty) return true;
+                  return mm.toLowerCase().contains(q);
+                }).toList();
+                // 将当前选中的模型置顶
+                if (active.isNotEmpty && filtered.contains(active)) {
+                  final idx = filtered.indexOf(active);
+                  if (idx > 0) {
+                    final sel = filtered.removeAt(idx);
+                    filtered.insert(0, sel);
+                  }
+                }
+                return SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: TextField(
+                          controller: queryCtrl,
+                          autofocus: true,
+                          onChanged: (_) {
+                            _segModelQueryText = queryCtrl.text;
+                            setModalState(() {});
+                          },
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: AppLocalizations.of(context).searchModelPlaceholder,
+                            isDense: true,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          controller: scrollCtrl,
+                          itemCount: filtered.length,
+                          separatorBuilder: (c, i) => Container(
+                            height: 1,
+                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                          ),
+                          itemBuilder: (c, i) {
+                            final m = filtered[i];
+                            final selected = m == active;
+                            return ListTile(
+                              leading: SvgPicture.asset(
+                                ModelIconUtils.getIconPath(m),
+                                width: 20, height: 20,
+                              ),
+                              title: Text(m, style: Theme.of(c).textTheme.bodyMedium),
+                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              onTap: () async {
+                                await AISettingsService.instance.setAIContextSelection(context: 'segments', providerId: p.id!, model: m);
+                                if (mounted) {
+                                  setState(() => _ctxSegModel = m);
+                                  Navigator.of(ctx).pop();
+                                  UINotifier.success(context, AppLocalizations.of(context).modelSwitchedToast(m));
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// AppBar 顶部：仅显示内容并加下划线（provider / model），不显示“提供商”字样
+  Widget _buildSegmentsProviderModelAppBarTitle() {
+    final theme = Theme.of(context);
+    final String providerName = _ctxSegProvider?.name ?? '—';
+    final String modelName = _ctxSegModel ?? '—';
+    final TextStyle? linkStyle = theme.textTheme.labelSmall?.copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: theme.colorScheme.primary.withOpacity(0.6),
+      color: theme.colorScheme.primary,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (modelName.trim().isNotEmpty && modelName != '—') ...[
+          SvgPicture.asset(
+            ModelIconUtils.getIconPath(modelName),
+            width: 18,
+            height: 18,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: GestureDetector(
+            onTap: _showProviderSheetSegments,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              providerName,
+              style: linkStyle,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: GestureDetector(
+            onTap: _showModelSheetSegments,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              modelName,
+              style: linkStyle,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
 
   Future<void> _loadPrivacyMode() async {
     try {
@@ -83,7 +391,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     try {
       final active = await _db.getActiveSegment();
       // 使用带 has_summary 的查询；当开启“仅看无总结”时直接从SQL过滤
-      final segments = await _db.listSegmentsEx(limit: 100, onlyNoSummary: _onlyNoSummary);
+      // 显示全部日期Tab：非“仅看无总结”时扩大查询范围，避免因行数限制而丢失更早日期
+      final int fetchLimit = _onlyNoSummary ? 100 : 1000000;
+      final segments = await _db.listSegmentsEx(limit: fetchLimit, onlyNoSummary: _onlyNoSummary);
       setState(() {
         _active = active;
         _segments = segments;
@@ -125,44 +435,73 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
   Future<void> _openImageGallery(List<Map<String, dynamic>> samples, int initialIndex) async {
     if (!mounted) return;
-    final PageController controller = PageController(initialPage: initialIndex);
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogCtx) {
-        return Scaffold(
-          body: Stack(
-            children: [
-              PhotoViewGallery.builder(
-                itemCount: samples.length,
-                pageController: controller,
-                backgroundDecoration: const BoxDecoration(),
-                builder: (ctx, index) {
-                  final path = (samples[index]['file_path'] as String?) ?? '';
-                  return PhotoViewGalleryPageOptions(
-                    imageProvider: FileImage(File(path)),
-                    initialScale: PhotoViewComputedScale.contained,
-                    minScale: PhotoViewComputedScale.contained,
-                    maxScale: PhotoViewComputedScale.covered * 4.0,
-                    errorBuilder: (c, e, s) => const Center(
-                      child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
-                    ),
-                  );
-                },
-              ),
-              Positioned(
-                top: MediaQuery.of(dialogCtx).padding.top + 8,
-                right: 8,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.of(dialogCtx).maybePop(),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    try {
+      // 将样本映射为 ScreenshotRecord 列表；优先从数据库补全原始记录（含 id / page_url 等）
+      final List<Future<ScreenshotRecord>> futures = <Future<ScreenshotRecord>>[];
+      for (final Map<String, dynamic> m in samples) {
+        futures.add(() async {
+          final String filePath = (m['file_path'] as String?) ?? '';
+          if (filePath.isEmpty) {
+            return ScreenshotRecord(
+              id: null,
+              appPackageName: (m['app_package_name'] as String?) ?? '',
+              appName: (m['app_name'] as String?) ?? '',
+              filePath: '',
+              captureTime: DateTime.now(),
+              fileSize: 0,
+            );
+          }
+          try {
+            final rec = await ScreenshotDatabase.instance.getScreenshotByPath(filePath);
+            if (rec != null) return rec;
+          } catch (_) {}
+          // 回退：使用样本字段快速构造
+          final String pkg = (m['app_package_name'] as String?) ?? '';
+          final String appName = (m['app_name'] as String?) ?? pkg;
+          final int ct = (m['capture_time'] as int?) ?? 0;
+          return ScreenshotRecord(
+            id: null,
+            appPackageName: pkg,
+            appName: appName,
+            filePath: filePath,
+            captureTime: ct > 0 ? DateTime.fromMillisecondsSinceEpoch(ct) : DateTime.now(),
+            fileSize: 0,
+            pageUrl: (m['page_url'] as String?)?.toString(),
+            ocrText: (m['ocr_text'] as String?)?.toString(),
+          );
+        }());
+      }
+      final List<ScreenshotRecord> shots = await Future.wait(futures);
+      if (shots.isEmpty) return;
+
+      // 选定当前图片对应的 App 信息
+      final int safeIndex = initialIndex < 0
+          ? 0
+          : (initialIndex >= shots.length ? shots.length - 1 : initialIndex);
+      final Map<String, dynamic> cur = samples[safeIndex];
+      final String curPkg = (cur['app_package_name'] as String?) ?? shots[safeIndex].appPackageName;
+      final String curAppName = (cur['app_name'] as String?) ?? shots[safeIndex].appName;
+      final AppInfo app = _appInfoByPackage[curPkg]
+          ?? AppInfo(packageName: curPkg, appName: curAppName, icon: null, version: '', isSystemApp: false);
+
+      if (!mounted) return;
+      Navigator.pushNamed(
+        context,
+        '/screenshot_viewer',
+        arguments: {
+          'screenshots': shots,
+          'initialIndex': safeIndex,
+          'appName': app.appName,
+          'appInfo': app,
+          'multiApp': true,
+        },
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).operationFailed)),
+      );
+    }
   }
 
   Widget _buildSamplesGrid(List<Map<String, dynamic>> samples) {
@@ -426,11 +765,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       appBar: AppBar(
         toolbarHeight: 36,
         centerTitle: true,
-        automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(AppLocalizations.of(context).segmentStatusTitle),
-        ),
+        automaticallyImplyLeading: true,
+        title: _buildSegmentsProviderModelAppBarTitle(),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -1013,6 +1349,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
               ),
             ],
           ),
+          // 关键图片 UI 暂时隐藏：仅移除展示，不影响功能数据
           if (_expanded)
             (_samplesLoading
                 ? const SizedBox(
@@ -1317,6 +1654,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
     return set.toList();
   }
+
+  // （已移除）关键图片卡片相关 UI 代码
 }
 
 

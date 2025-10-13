@@ -48,6 +48,14 @@ object SegmentSummaryManager {
         return v.coerceAtLeast(60)
     }
 
+    /** 合并图片上限（仅数量，不按时长），默认 50，可通过 SharedPreferences("merge_max_images_per_event") 覆盖 */
+    private fun getMergeMaxImagesPerEvent(ctx: Context): Int {
+        return try {
+            val v = prefs(ctx).getInt("merge_max_images_per_event", 50)
+            if (v <= 0) 50 else v
+        } catch (_: Exception) { 50 }
+    }
+
     // 活动段落缓存（仅存ID，其他实时查库）
     @Volatile private var activeSegmentId: Long = -1L
 
@@ -582,8 +590,8 @@ object SegmentSummaryManager {
         val apiKey = cfg.apiKey
         val client = OkHttpClient.Builder()
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(0, java.util.concurrent.TimeUnit.SECONDS) // 0 = no read timeout
+            .writeTimeout(0, java.util.concurrent.TimeUnit.SECONDS) // 0 = no write timeout
             .retryOnConnectionFailure(true)
             .build()
 
@@ -596,6 +604,36 @@ object SegmentSummaryManager {
         val effectiveCap = kotlin.math.min(capBySeg, PROVIDER_IMAGE_HARD_LIMIT)
         val samplesOrdered = samples.sortedBy { it.captureTime }
         val effSamples = if (samplesOrdered.size > effectiveCap) evenPick(samplesOrdered, effectiveCap) else samplesOrdered
+
+        // 基于应用语言计算“最多三分之一图片可被文字描述”的动态规则（向下取整，允许0张）
+        val langOptForRule = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
+        val sysLangForRule = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
+        val isZhForRule = (langOptForRule == "zh") || (langOptForRule != "en" && sysLangForRule.startsWith("zh"))
+        val totalImagesToSend = effSamples.size
+        val maxDescImages = (totalImagesToSend / 3)
+        val dynamicCapRule = if (isZhForRule) {
+            """
+- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进摘要。
+- 仅使用 described_images[] 列出这些“被文字描述”的单张图片，数组长度<=上述上限；每项结构：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
+- 禁止输出 content_groups；key_actions[].ref_image 必须复用 described_images[] 中的文件名，不得新增超出上限的图片引用。
+""".trim()
+        } else {
+            """
+- Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
+- Use described_images[] ONLY to list the individually described images, length <= the cap; each item: {file:"filename", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason for the single image"}.
+- Do NOT output content_groups; key_actions[].ref_image MUST reuse filenames in described_images[] and MUST NOT exceed the cap.
+""".trim()
+        }
+
+        // 结构化呈现规则：开头一段纯文本总结，随后 Markdown 小节
+        val dynamicStructureRule = if (isZhForRule) {
+            "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容。"
+        } else {
+            "- Start with one plain paragraph (no heading) summarizing the time window; then present details using Markdown subsections."
+        }
+        // 将规则同时注入到开头与结尾，增强模型注意力与遵循度
+        val headRules = listOf(dynamicCapRule, dynamicStructureRule).filter { it.isNotEmpty() }.joinToString("\n")
+        val promptWithRule = if (headRules.isNotEmpty()) "$headRules\n\n$prompt\n$headRules" else prompt
 
         // 速率限制：必要时等待
         val waited = acquireAiRateSlot(ctx)
@@ -629,20 +667,40 @@ object SegmentSummaryManager {
             } catch (_: Exception) { missingImages++ }
         }
         val textLen = prompt.length
+        val textLenWithRule = promptWithRule.length
         try {
             FileLogger.i(
                 TAG,
-                "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}" 
+                "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}" 
             )
+        } catch (_: Exception) {}
+        try {
+            android.util.Log.i(TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
+        } catch (_: Exception) {}
+        try {
+            OutputFileLogger.info(ctx, TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
+        } catch (_: Exception) {}
+
+        // 额外打印提示词预览（不含图片/密钥）：Logcat 截断 + 文件完整
+        try {
+            val promptPreview = truncateForLog(promptWithRule, 800)
+            android.util.Log.i(TAG, "AI prompt preview: ${promptPreview}")
+        } catch (_: Exception) {}
+        try {
+            OutputFileLogger.info(ctx, TAG, "AI prompt full BEGIN >>>")
+            OutputFileLogger.info(ctx, TAG, promptWithRule)
+            OutputFileLogger.info(ctx, TAG, "AI prompt full END <<<")
         } catch (_: Exception) {}
 
         if (isGoogle) {
             // Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
             val url = "$base/v1beta/models/$model:generateContent?key=$apiKey"
-            try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${samples.size}") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { android.util.Log.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { OutputFileLogger.info(ctx, TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
 
             val parts = JSONArray()
-            parts.put(JSONObject().put("text", prompt))
+            parts.put(JSONObject().put("text", promptWithRule))
             for (s in effSamples) {
                 val imgBytes = try { File(s.filePath).readBytes() } catch (_: Exception) { null }
                 if (imgBytes == null || imgBytes.isEmpty()) continue
@@ -670,6 +728,8 @@ object SegmentSummaryManager {
                         val end = System.currentTimeMillis()
                         lastCode = resp.code
                         try { FileLogger.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { android.util.Log.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { OutputFileLogger.info(ctx, TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         if (resp.isSuccessful) {
                             respText = resp.body?.string() ?: ""
                             break
@@ -677,14 +737,20 @@ object SegmentSummaryManager {
                             lastBody = resp.body?.string()
                             val shouldRetry = resp.code >= 500
                             try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { android.util.Log.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { OutputFileLogger.error(ctx, TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { android.util.Log.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { OutputFileLogger.error(ctx, TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         // 继续重试
                     } catch (e: Exception) {
                         // 其他IO异常：仅第一次尝试记录，仍然重试
                         try { FileLogger.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { android.util.Log.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { OutputFileLogger.error(ctx, TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                     }
                     attempt++
                     if (attempt < maxAttempts) {
@@ -701,6 +767,27 @@ object SegmentSummaryManager {
                 FileLogger.d(TAG, "AI response size=${respText.length}")
                 val preview = truncateForLog(respText, 2000)
                 FileLogger.i(TAG, "AI response preview: ${preview}")
+            } catch (_: Exception) {}
+            try {
+                val preview = truncateForLog(respText, 2000)
+                android.util.Log.i(TAG, "AI response preview: ${preview}")
+            } catch (_: Exception) {}
+            // 完整响应落盘（分块写入）
+            try {
+                OutputFileLogger.info(ctx, TAG, "AI response full BEGIN >>>")
+                val text = respText
+                val chunk = 1800
+                var i = 0
+                while (i < text.length) {
+                    val end = kotlin.math.min(i + chunk, text.length)
+                    OutputFileLogger.info(ctx, TAG, text.substring(i, end))
+                    i = end
+                }
+                OutputFileLogger.info(ctx, TAG, "AI response full END <<<")
+            } catch (_: Exception) {}
+            try {
+                val preview = truncateForLog(respText, 2000)
+                OutputFileLogger.info(ctx, TAG, "AI response preview: ${preview}")
             } catch (_: Exception) {}
 
             var outputText = ""
@@ -727,14 +814,46 @@ object SegmentSummaryManager {
                 } catch (_: Exception) {}
             }
             val (structured, cats) = extractJsonBlocks(outputText)
+            // 结构化 JSON 完整输出（Pretty JSON + 分块）
+            try {
+                if (structured != null && structured.trim().isNotEmpty()) {
+                    var pretty = structured
+                    try {
+                        val jo = JSONObject(structured)
+                        pretty = jo.toString(2)
+                    } catch (_: Exception) {
+                        try {
+                            val ja = JSONArray(structured)
+                            pretty = ja.toString(2)
+                        } catch (_: Exception) {}
+                    }
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json BEGIN >>>")
+                    val textSJ = pretty
+                    val chunkSJ = 1800
+                    var p = 0
+                    while (p < textSJ.length) {
+                        val end = kotlin.math.min(p + chunkSJ, textSJ.length)
+                        OutputFileLogger.info(ctx, TAG, textSJ.substring(p, end))
+                        p = end
+                    }
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json END <<<")
+                } else {
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json is null/empty")
+                }
+                if (cats != null && cats.trim().isNotEmpty()) {
+                    OutputFileLogger.info(ctx, TAG, "AI categories: ${cats}")
+                }
+            } catch (_: Exception) {}
             return Quad(model, outputText, structured, cats)
         } else {
             // OpenAI 兼容 REST: POST {base}/v1/chat/completions
             val url = "$base/v1/chat/completions"
-            try { FileLogger.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${samples.size}") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { android.util.Log.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { OutputFileLogger.info(ctx, TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
 
             val contentArr = JSONArray()
-            contentArr.put(JSONObject().put("type", "text").put("text", prompt))
+            contentArr.put(JSONObject().put("type", "text").put("text", promptWithRule))
             for (s in effSamples) {
                 val imgBytes = try { File(s.filePath).readBytes() } catch (_: Exception) { null }
                 if (imgBytes == null || imgBytes.isEmpty()) continue
@@ -775,6 +894,8 @@ object SegmentSummaryManager {
                         val end = System.currentTimeMillis()
                         lastCode = resp.code
                         try { FileLogger.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { android.util.Log.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { OutputFileLogger.info(ctx, TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         if (resp.isSuccessful) {
                             respText = resp.body?.string() ?: ""
                             // 检测 200 成功但响应体为错误或无候选的情况（如 {"error":{...}}）
@@ -790,7 +911,8 @@ object SegmentSummaryManager {
                             }
                             if (hasPayloadError) {
                                 // 记录并视为“带错误负载的成功”，交由下游保存错误预览供前端展示，避免自动重试
-                                try { FileLogger.w(TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
+                            try { FileLogger.w(TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
+                            try { OutputFileLogger.error(ctx, TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
                                 break
                             } else {
                                 // 正常成功
@@ -800,13 +922,19 @@ object SegmentSummaryManager {
                             lastBody = resp.body?.string()
                             val shouldRetry = resp.code >= 500
                             try { FileLogger.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { android.util.Log.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { OutputFileLogger.error(ctx, TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { android.util.Log.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { OutputFileLogger.error(ctx, TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         // 继续重试
                     } catch (e: Exception) {
                         try { FileLogger.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { android.util.Log.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { OutputFileLogger.error(ctx, TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                     }
                     attempt++
                     if (attempt < maxAttempts) {
@@ -823,6 +951,27 @@ object SegmentSummaryManager {
                 FileLogger.d(TAG, "AI response size(OpenAI compat)=${respText.length}")
                 val preview = truncateForLog(respText, 2000)
                 FileLogger.i(TAG, "AI response preview(OpenAI): ${preview}")
+            } catch (_: Exception) {}
+            try {
+                val preview = truncateForLog(respText, 2000)
+                android.util.Log.i(TAG, "AI response preview(OpenAI): ${preview}")
+            } catch (_: Exception) {}
+            // 完整响应落盘（分块写入）
+            try {
+                OutputFileLogger.info(ctx, TAG, "AI response full(OpenAI) BEGIN >>>")
+                val text2 = respText
+                val chunk2 = 1800
+                var j = 0
+                while (j < text2.length) {
+                    val end = kotlin.math.min(j + chunk2, text2.length)
+                    OutputFileLogger.info(ctx, TAG, text2.substring(j, end))
+                    j = end
+                }
+                OutputFileLogger.info(ctx, TAG, "AI response full(OpenAI) END <<<")
+            } catch (_: Exception) {}
+            try {
+                val preview = truncateForLog(respText, 2000)
+                OutputFileLogger.info(ctx, TAG, "AI response preview(OpenAI): ${preview}")
             } catch (_: Exception) {}
             var outputText = ""
             try {
@@ -844,6 +993,36 @@ object SegmentSummaryManager {
                 } catch (_: Exception) {}
             }
             val (structured, cats) = extractJsonBlocks(outputText)
+            // 结构化 JSON 完整输出（Pretty JSON + 分块）
+            try {
+                if (structured != null && structured.trim().isNotEmpty()) {
+                    var pretty = structured
+                    try {
+                        val jo = JSONObject(structured)
+                        pretty = jo.toString(2)
+                    } catch (_: Exception) {
+                        try {
+                            val ja = JSONArray(structured)
+                            pretty = ja.toString(2)
+                        } catch (_: Exception) {}
+                    }
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json(OpenAI) BEGIN >>>")
+                    val textSJ2 = pretty
+                    val chunkSJ2 = 1800
+                    var q = 0
+                    while (q < textSJ2.length) {
+                        val end = kotlin.math.min(q + chunkSJ2, textSJ2.length)
+                        OutputFileLogger.info(ctx, TAG, textSJ2.substring(q, end))
+                        q = end
+                    }
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json(OpenAI) END <<<")
+                } else {
+                    OutputFileLogger.info(ctx, TAG, "AI structured_json(OpenAI) is null/empty")
+                }
+                if (cats != null && cats.trim().isNotEmpty()) {
+                    OutputFileLogger.info(ctx, TAG, "AI categories(OpenAI): ${cats}")
+                }
+            } catch (_: Exception) {}
             return Quad(model, outputText, structured, cats)
         }
     }
@@ -864,6 +1043,18 @@ object SegmentSummaryManager {
         val prev = SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
         if (prev == null) {
             try { FileLogger.i(TAG, "merge: no previous completed-with-result segment before ${fmt(cur.startTime)}") } catch (_: Exception) {}
+            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+            return
+        }
+
+        // 合并上限前置判断：合并后的时间窗口内截图数量上限（仅按数量限制，不做采样）
+        val maxImagesPerMergedEvent = getMergeMaxImagesPerEvent(ctx)
+        val mergedStart = prev.startTime
+        val mergedEnd = cur.endTime
+        val mergedCount = try { SegmentDatabaseHelper.countShotsBetween(ctx, mergedStart, mergedEnd, hardLimit = maxImagesPerMergedEvent) } catch (_: Exception) { Int.MAX_VALUE }
+        try { FileLogger.i(TAG, "merge: merged window count estimate=${mergedCount} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
+        if (mergedCount > maxImagesPerMergedEvent) {
+            try { FileLogger.i(TAG, "merge: skip because merged images would exceed limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
             SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
             return
         }

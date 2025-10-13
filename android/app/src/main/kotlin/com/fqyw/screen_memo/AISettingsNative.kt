@@ -54,6 +54,54 @@ object AISettingsNative {
             db = openMasterDb(context)
             if (db == null) throw IllegalStateException("AI settings database unavailable")
 
+            // 0) v6+ 新架构：优先使用 ai_contexts('segments') + ai_providers
+            // - provider 与 model 从 ai_contexts 读取
+            // - base_url 从 ai_providers 读取；若为空回退默认
+            // - api_key 优先读取 ai_settings.api_key_segments；再回退 ai_settings.api_key（兼容旧版）
+            try {
+                val ctxCursor = db!!.query(
+                    "ai_contexts",
+                    arrayOf("provider_id", "model"),
+                    "context = ?",
+                    arrayOf("segments"),
+                    null, null, null, "1"
+                )
+                ctxCursor.use { cc ->
+                    if (cc.moveToFirst()) {
+                        val pidIdx = cc.getColumnIndex("provider_id")
+                        val modelIdx = cc.getColumnIndex("model")
+                        val providerId = if (pidIdx >= 0) cc.getInt(pidIdx) else -1
+                        val model = if (modelIdx >= 0) (cc.getString(modelIdx)?.trim() ?: "") else ""
+
+                        var baseUrl: String? = null
+                        try {
+                            val prov = db!!.query(
+                                "ai_providers",
+                                arrayOf("base_url"),
+                                "id = ?",
+                                arrayOf(providerId.toString()),
+                                null, null, null, "1"
+                            )
+                            prov.use { cp ->
+                                if (cp.moveToFirst()) {
+                                    val bIdx = cp.getColumnIndex("base_url")
+                                    baseUrl = if (bIdx >= 0) cp.getString(bIdx)?.trim() else null
+                                }
+                            }
+                        } catch (_: Exception) { }
+
+                        val keySeg = readSetting(db!!, "api_key_segments")?.trim()
+                        val keyLegacy = readSetting(db!!, "api_key")?.trim()
+                        val apiKey = if (!keySeg.isNullOrEmpty()) keySeg else keyLegacy
+                        val effectiveBase = if (baseUrl.isNullOrEmpty()) "https://api.openai.com" else baseUrl!!
+
+                        if (!apiKey.isNullOrEmpty() && model.isNotEmpty()) {
+                            return AIConfig(baseUrl = effectiveBase, apiKey = apiKey!!, model = model)
+                        }
+                    }
+                }
+            } catch (_: Exception) { }
+
             // 1) 优先使用“激活分组”的配置（ai_site_groups）
             val activeIdStr = readSetting(db!!, "active_group_id")?.trim()
             val activeId = try { activeIdStr?.toInt() } catch (_: Exception) { null }

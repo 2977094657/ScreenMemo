@@ -6,6 +6,7 @@ import 'settings_page.dart';
 import 'segment_status_page.dart';
 import 'timeline_page.dart';
 import 'favorites_page.dart';
+import 'event_home_page.dart';
 import '../theme/app_theme.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
@@ -32,8 +33,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _pages = [
       HomePage(themeService: widget.themeService),
       const FavoritesPage(),
+      const EventHomePage(),
       const TimelinePage(),
-      const SegmentStatusPage(),
       SettingsPage(themeService: widget.themeService),
     ];
   }
@@ -49,14 +50,26 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       activeIcon: Icon(Icons.favorite),
       label: '',
     ),
+    // 事件（AI）Tab：星星图标 + 渐变激活态
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.auto_awesome_outlined),
+      activeIcon: ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF6366F1), Color(0xFF22D3EE)],
+          ).createShader(bounds);
+        },
+        blendMode: BlendMode.srcIn,
+        child: const Icon(Icons.auto_awesome, color: Colors.white),
+      ),
+      label: '',
+    ),
+    // 时间线 Tab
     const BottomNavigationBarItem(
       icon: Icon(Icons.timeline_outlined),
       activeIcon: Icon(Icons.timeline),
-      label: '',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.event_note_outlined),
-      activeIcon: Icon(Icons.event_note),
       label: '',
     ),
     const BottomNavigationBarItem(
@@ -69,11 +82,18 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   void _onTabTapped(int index) {
     // 切换底部标签时，统一取消当前焦点，避免隐藏页的输入框仍然保留焦点导致键盘误弹
     FocusManager.instance.primaryFocus?.unfocus();
+    // 事件（AI）Tab：沉浸式全屏进入，不显示底部菜单
+    if (index == 2) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const EventHomePage()),
+      );
+      return;
+    }
     setState(() {
       _currentIndex = index;
     });
-    // 每次进入"时间线"页（索引2，因为收藏页插入到了索引1）都触发刷新事件
-    if (index == 2) {
+    // 每次进入"时间线"页（索引3，因为收藏页插入到了索引1）都触发刷新事件
+    if (index == 3) {
       AppLifecycleService.instance.emitTimelineShown();
     }
   }

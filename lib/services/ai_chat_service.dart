@@ -7,6 +7,13 @@ import 'ai_settings_service.dart';
 import 'screenshot_database.dart';
 import 'locale_service.dart';
 
+/// 基础流事件（content/reasoning），用于流式 UI 显示“思考内容”
+class AIStreamEvent {
+  final String kind; // 'content' | 'reasoning'
+  final String data;
+  AIStreamEvent(this.kind, this.data);
+}
+
 /// OpenAI Chat Completions 兼容服务
 /// - 使用 baseUrl + /v1/chat/completions
 /// - 使用持久化的历史并在每次对话后保存
@@ -19,20 +26,22 @@ class AIChatService {
   /// 发送一条用户消息，返回助手回复。
   /// - 会保留历史上下文，实现多轮会话
   Future<AIMessage> sendMessage(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async {
-    final endpoints = await _settings.getEndpointCandidates();
+    final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
+    String? usedModel;
   
     for (final ep in endpoints) {
+      usedModel = ep.model;
       final apiKey = ep.apiKey;
       if (apiKey == null || apiKey.isEmpty) {
         lastError = Exception('API key is empty');
         continue;
       }
       try {
-        final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
+        final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
   
-        // 历史按分组隔离 + 注入系统语言指示（本地化读取，忽略上下文语言）
-        final history = await _settings.getChatHistoryByGroup(ep.groupId);
+        // 历史按会话CID隔离 + 注入系统语言指示（本地化读取，忽略上下文语言）
+        final history = await _settings.getChatHistory();
         final String langCode = (LocaleService.instance.locale?.languageCode ??
                 WidgetsBinding.instance.platformDispatcher.locale.languageCode)
             .toLowerCase();
@@ -73,12 +82,34 @@ class AIChatService {
           throw Exception('Invalid response');
         }
         final content = (msg['content'] as String?) ?? '';
+        // 非流式接口一般不返回 reasoning；此处保持空
         final assistant = AIMessage(role: 'assistant', content: content);
   
-        // 更新并保存历史（写入对应分组的会话）
+        // 更新并保存历史（写入当前激活会话）
         final newHistory = <AIMessage>[...history, AIMessage(role: 'user', content: userMessage), assistant];
-        await _settings.saveChatHistoryByGroup(ep.groupId, newHistory);
-        await _settings.setActiveGroupId(ep.groupId);
+        await _settings.saveChatHistoryActive(newHistory);
+        
+        // 保存当前使用的模型到会话
+        try {
+          final cid = await _settings.getActiveConversationCid();
+          final db = ScreenshotDatabase.instance;
+          await db.database.then((d) => d.execute(
+            'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+            [usedModel, cid],
+          ));
+        } catch (_) {}
+        
+        // 若为会话的第一条用户消息，自动设置会话标题为该消息（截取前30字符）
+        if (history.isEmpty) {
+          try {
+            final cid = await _settings.getActiveConversationCid();
+            final title = userMessage.length > 30
+                ? userMessage.substring(0, 30) + '...'
+                : userMessage;
+            await _settings.renameConversation(cid, title);
+          } catch (_) {}
+        }
+        
         return assistant;
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
@@ -89,21 +120,22 @@ class AIChatService {
     throw lastError ?? Exception('No valid AI endpoint available');
   }
 
-  /// 流式发送用户消息，返回一个按增量文本推送的 Stream。
-  /// - 结束后会将完整回复写入历史。
-  Stream<String> sendMessageStreamed(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async* {
-    final endpoints = await _settings.getEndpointCandidates();
+  /// 新版流式：返回 AIStreamEvent（content 与 reasoning），用于显示"思考内容"
+  Stream<AIStreamEvent> sendMessageStreamedV2(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async* {
+    final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
-  
+    String? usedModel;
+
     for (final ep in endpoints) {
+      usedModel = ep.model;
       final apiKey = ep.apiKey;
       if (apiKey == null || apiKey.isEmpty) {
         lastError = Exception('API key is empty');
         continue;
       }
-  
-      final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
-      final history = await _settings.getChatHistoryByGroup(ep.groupId);
+
+      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+      final history = await _settings.getChatHistory();
       final String langCode = (LocaleService.instance.locale?.languageCode ??
               WidgetsBinding.instance.platformDispatcher.locale.languageCode)
           .toLowerCase();
@@ -116,7 +148,7 @@ class AIChatService {
         ...history.map((m) => m.toJson()),
         AIMessage(role: 'user', content: userMessage).toJson(),
       ];
-  
+
       final headers = <String, String>{
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + apiKey,
@@ -127,10 +159,11 @@ class AIChatService {
         'temperature': 0.2,
         'stream': true,
       });
-  
+
       final client = http.Client();
       StringBuffer full = StringBuffer();
-      bool opened = false;
+      final StringBuffer reasoningBuf = StringBuffer();
+      final DateTime reasoningStart = DateTime.now();
       try {
         final req = http.Request('POST', uri);
         req.headers.addAll(headers);
@@ -140,9 +173,8 @@ class AIChatService {
           final r = await http.Response.fromStream(streamed);
           throw Exception('Request failed: ' + streamed.statusCode.toString() + ' ' + r.body);
         }
-        opened = true;
-  
-        // 解析 SSE: 按行读取，提取以 "data: " 开头的 JSON 块
+
+        // 解析 SSE 行
         String buffer = '';
         await for (final chunk in streamed.stream.transform(utf8.decoder)) {
           buffer += chunk;
@@ -166,10 +198,19 @@ class AIChatService {
                 if (first is Map<String, dynamic>) {
                   final delta = first['delta'];
                   if (delta is Map<String, dynamic>) {
+                    // 兼容多供应商“思考内容”字段
+                    final rc1 = delta['reasoning_content'];
+                    final rc2 = (delta['reasoning'] is Map) ? (delta['reasoning']['content']) : null;
+                    final rc3 = delta['thinking'];
+                    final reasoningPart = rc1 ?? rc2 ?? rc3;
+                    if (reasoningPart is String && reasoningPart.isNotEmpty) {
+                      reasoningBuf.write(reasoningPart);
+                      yield AIStreamEvent('reasoning', reasoningPart);
+                    }
                     final part = delta['content'];
                     if (part is String && part.isNotEmpty) {
                       full.write(part);
-                      yield part;
+                      yield AIStreamEvent('content', part);
                     }
                   }
                 }
@@ -179,32 +220,60 @@ class AIChatService {
             }
           }
         }
-  
-        // 流式完成：写入历史至对应分组，并切换激活分组
-        final assistant = AIMessage(role: 'assistant', content: full.toString());
+
+        // 完整结果写入历史（当前激活会话），并带上推理内容与耗时
+        final reasoningText = reasoningBuf.toString();
+        final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
+        final assistant = AIMessage(
+          role: 'assistant',
+          content: full.toString(),
+          reasoningContent: reasoningText.isEmpty ? null : reasoningText,
+          reasoningDuration: reasoningText.isEmpty ? null : reasoningDuration,
+        );
         final newHistory = <AIMessage>[...history, AIMessage(role: 'user', content: userMessage), assistant];
-        await _settings.saveChatHistoryByGroup(ep.groupId, newHistory);
-        await _settings.setActiveGroupId(ep.groupId);
+        await _settings.saveChatHistoryActive(newHistory);
+        
+        // 保存当前使用的模型到会话
+        try {
+          final cid = await _settings.getActiveConversationCid();
+          final db = ScreenshotDatabase.instance;
+          await db.database.then((d) => d.execute(
+            'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+            [usedModel, cid],
+          ));
+        } catch (_) {}
+        
+        // 若为会话的第一条用户消息，自动设置会话标题为该消息（截取前30字符）
+        if (history.isEmpty) {
+          try {
+            final cid = await _settings.getActiveConversationCid();
+            final title = userMessage.length > 30
+                ? userMessage.substring(0, 30) + '...'
+                : userMessage;
+            await _settings.renameConversation(cid, title);
+          } catch (_) {}
+        }
+        
         return;
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
-        if (opened) {
-          // 中途失败不再尝试其他端点，直接退出
-          break;
-        }
-        // 未建立连接，尝试下一个端点
+        // 尝试下一个端点
       } finally {
         try { client.close(); } catch (_) {}
       }
     }
-  
     throw lastError ?? Exception('No valid AI endpoint available');
   }
 
   /// 独立一次性请求（不使用与不保存会话历史）
   /// - 仅发送单条 user 消息到当前端点，不写 ai_messages，不影响 AI 设置页会话
-  Future<AIMessage> sendMessageOneShot(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async {
-    final endpoints = await _settings.getEndpointCandidates();
+  /// - context: 使用哪类上下文的提供商/模型（如 'chat' | 'segments'）
+  Future<AIMessage> sendMessageOneShot(
+    String userMessage, {
+    String context = 'chat',
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    final endpoints = await _settings.getEndpointCandidates(context: context);
     Exception? lastError;
 
     for (final ep in endpoints) {
@@ -214,7 +283,7 @@ class AIChatService {
         continue;
       }
       try {
-        final uri = Uri.parse(_joinUrl(ep.baseUrl, '/v1/chat/completions'));
+        final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
         final headers = <String, String>{
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + apiKey,

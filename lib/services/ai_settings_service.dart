@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'screenshot_database.dart';
 import 'locale_service.dart';
+import 'ai_providers_service.dart';
 
 /// 站点分组实体（用户可配置多个接口站点作为备用）
 class AISiteGroup {
@@ -57,12 +59,19 @@ class AISiteGroup {
 
 /// 发送请求所需的端点（可为分组，也可为“未分组”单站点）
 class AIEndpoint {
-  final int? groupId; // null 表示使用未分组（ai_settings）
+  final int? groupId; // null 表示使用未分组（ai_settings）；负数表示 ProviderID 映射
   final String baseUrl;
   final String? apiKey;
   final String model;
+  final String chatPath; // 基于 Provider 的可配置路径，默认 /v1/chat/completions
 
-  AIEndpoint({required this.groupId, required this.baseUrl, required this.apiKey, required this.model});
+  AIEndpoint({
+    required this.groupId,
+    required this.baseUrl,
+    required this.apiKey,
+    required this.model,
+    this.chatPath = '/v1/chat/completions',
+  });
 }
 
 /// AI 设置与会话持久化服务
@@ -71,6 +80,10 @@ class AIEndpoint {
 class AISettingsService {
   AISettingsService._internal();
   static final AISettingsService instance = AISettingsService._internal();
+
+  // 上下文变更事件（如 chat 选择变更）广播
+  final StreamController<String> _ctxChangedController = StreamController<String>.broadcast();
+  Stream<String> get onContextChanged => _ctxChangedController.stream;
 
   // 存储键名（SQLite ai_settings 表）
   static const String _keyBaseUrl = 'base_url';
@@ -110,36 +123,34 @@ class AISettingsService {
     await db.setAiSetting(_keyStreamEnabled, enabled ? '1' : '0');
   }
 
-  // ========== 分组管理 ==========
-
+  // ========== 分组管理（v6 起移除 legacy，统一使用提供商+上下文） ==========
+ 
   Future<int?> getActiveGroupId() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyActiveGroupId);
-    if (v == null || v.trim().isEmpty) return null;
-    return int.tryParse(v.trim());
+    try {
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      if (ctx != null && ctx['provider_id'] is int) {
+        final int pid = ctx['provider_id'] as int;
+        return -pid.abs(); // 使用负的 ProviderID 作为 groupId
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
-
+ 
   Future<void> setActiveGroupId(int? id) async {
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyActiveGroupId, id == null ? null : id.toString());
+    // v6: 不再使用独立的激活组键，改为依赖 ai_contexts('chat')
+    return;
   }
-
+ 
   Future<List<AISiteGroup>> listSiteGroups() async {
-    final master = await ScreenshotDatabase.instance.database;
-    final rows = await master.query(
-      'ai_site_groups',
-      orderBy: 'enabled DESC, order_index ASC, id ASC',
-    );
-    return rows.map((e) => AISiteGroup.fromMap(e)).toList();
+    return <AISiteGroup>[];
   }
-
+ 
   Future<AISiteGroup?> getSiteGroupById(int id) async {
-    final master = await ScreenshotDatabase.instance.database;
-    final rows = await master.query('ai_site_groups', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (rows.isEmpty) return null;
-    return AISiteGroup.fromMap(rows.first);
+    return null;
   }
-
+ 
   Future<int> addSiteGroup({
     required String name,
     required String baseUrl,
@@ -147,112 +158,120 @@ class AISettingsService {
     required String model,
     bool enabled = true,
   }) async {
-    final master = await ScreenshotDatabase.instance.database;
-    int maxOrder = 0;
-    try {
-      final res = await master.rawQuery('SELECT COALESCE(MAX(order_index), -1) AS m FROM ai_site_groups');
-      maxOrder = ((res.first['m'] as int?) ?? -1) + 1;
-    } catch (_) {
-      maxOrder = 0;
-    }
-    final id = await master.insert('ai_site_groups', {
-      'name': name.trim(),
-      'base_url': baseUrl.trim(),
-      'api_key': (apiKey ?? '').trim().isEmpty ? null : apiKey!.trim(),
-      'model': model.trim(),
-      'order_index': maxOrder,
-      'enabled': enabled ? 1 : 0,
-    });
-    return id;
+    return 0;
   }
-
+ 
   Future<void> updateSiteGroup(AISiteGroup g) async {
-    final master = await ScreenshotDatabase.instance.database;
-    await master.update('ai_site_groups', {
-      'name': g.name.trim(),
-      'base_url': g.baseUrl.trim(),
-      'api_key': (g.apiKey ?? '').trim().isEmpty ? null : g.apiKey!.trim(),
-      'model': g.model.trim(),
-      'order_index': g.orderIndex,
-      'enabled': g.enabled ? 1 : 0,
-    }, where: 'id = ?', whereArgs: [g.id]);
+    return;
   }
-
+ 
   Future<void> deleteSiteGroup(int id) async {
-    final master = await ScreenshotDatabase.instance.database;
-    try {
-      await master.delete('ai_site_groups', where: 'id = ?', whereArgs: [id]);
-    } catch (_) {}
-    // 清理该分组的会话历史
-    try {
-      await ScreenshotDatabase.instance.clearAiConversation(_conversationIdForGroup(id));
-    } catch (_) {}
-    // 如果当前激活组是它，则清空激活
-    try {
-      final active = await getActiveGroupId();
-      if (active == id) {
-        await setActiveGroupId(null);
-      }
-    } catch (_) {}
+    return;
   }
 
   // ========== 单站点（未分组）键值对（保持兼容） ==========
 
   Future<String> getBaseUrl() async {
-    final activeId = await getActiveGroupId();
-    if (activeId != null) {
-      final g = await getSiteGroupById(activeId);
-      if (g != null) return g.baseUrl;
+    try {
+      final providers = await AIProvidersService.instance.listProviders();
+      if (providers.isEmpty) return _defaultBaseUrl;
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      AIProvider? sel;
+      if (ctx != null && ctx['provider_id'] is int) {
+        sel = providers.firstWhere(
+          (p) => (p.id ?? -1) == (ctx['provider_id'] as int),
+          orElse: () => providers.first,
+        );
+      }
+      sel ??= (await AIProvidersService.instance.getDefaultProvider()) ?? providers.first;
+      final base = sel.baseUrl;
+      if (base == null || base.trim().isEmpty) return _defaultBaseUrl;
+      return base.trim();
+    } catch (_) {
+      return _defaultBaseUrl;
     }
-    // 回退到未分组
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyBaseUrl);
-    return (v == null || v.isEmpty) ? _defaultBaseUrl : v;
   }
 
   Future<void> setBaseUrl(String url) async {
-    // 未分组场景更新（分组下请使用 updateSiteGroup）
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyBaseUrl, url.trim());
+    // v6: baseUrl 请在“提供商”中配置；此处不再写 ai_settings
+    return;
   }
 
   Future<String?> getApiKey() async {
-    final activeId = await getActiveGroupId();
-    if (activeId != null) {
-      final g = await getSiteGroupById(activeId);
-      if (g != null) return (g.apiKey ?? '').isEmpty ? null : g.apiKey;
+    try {
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      if (ctx != null && ctx['provider_id'] is int) {
+        return await AIProvidersService.instance.getApiKey(ctx['provider_id'] as int);
+      }
+      final def = await AIProvidersService.instance.getDefaultProvider();
+      if (def?.id != null) {
+        return await AIProvidersService.instance.getApiKey(def!.id!);
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyApiKey);
-    if (v == null || v.isEmpty) return null;
-    return v;
   }
 
   Future<void> setApiKey(String? key) async {
-    // 未分组场景更新（分组下请使用 updateSiteGroup）
-    final db = ScreenshotDatabase.instance;
-    if (key == null || key.trim().isEmpty) {
-      await db.setAiSetting(_keyApiKey, null);
-    } else {
-      await db.setAiSetting(_keyApiKey, key.trim());
-    }
+    try {
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      AIProvider? sel;
+      if (ctx != null && ctx['provider_id'] is int) {
+        sel = await AIProvidersService.instance.getProvider(ctx['provider_id'] as int);
+      } else {
+        sel = await AIProvidersService.instance.getDefaultProvider();
+      }
+      final int? pid = sel?.id;
+      if (pid == null) return;
+      if (key == null || key.trim().isEmpty) {
+        await AIProvidersService.instance.deleteApiKey(pid);
+      } else {
+        await AIProvidersService.instance.saveApiKey(pid, key.trim());
+      }
+    } catch (_) {}
   }
 
   Future<String> getModel() async {
-    final activeId = await getActiveGroupId();
-    if (activeId != null) {
-      final g = await getSiteGroupById(activeId);
-      if (g != null) return g.model;
+    try {
+      final providers = await AIProvidersService.instance.listProviders();
+      if (providers.isEmpty) return _defaultModel;
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      AIProvider? sel;
+      if (ctx != null && ctx['provider_id'] is int) {
+        sel = providers.firstWhere(
+          (p) => (p.id ?? -1) == (ctx['provider_id'] as int),
+          orElse: () => providers.first,
+        );
+      }
+      sel ??= (await AIProvidersService.instance.getDefaultProvider()) ?? providers.first;
+      String model = (ctx != null && (ctx['model'] as String?)?.trim().isNotEmpty == true)
+          ? (ctx['model'] as String).trim()
+          : (sel.extra['active_model'] as String? ?? sel.defaultModel).toString().trim();
+      if (model.isEmpty) {
+        model = sel.models.isNotEmpty ? sel.models.first : _defaultModel;
+      }
+      return model;
+    } catch (_) {
+      return _defaultModel;
     }
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyModel);
-    return (v == null || v.isEmpty) ? _defaultModel : v;
   }
 
   Future<void> setModel(String model) async {
-    // 未分组场景更新（分组下请使用 updateSiteGroup）
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyModel, model.trim());
+    try {
+      // 更新聊天上下文的模型，保持 provider 不变
+      final ctx = await ScreenshotDatabase.instance.getAIContext('chat');
+      int providerId;
+      if (ctx != null && ctx['provider_id'] is int) {
+        providerId = ctx['provider_id'] as int;
+      } else {
+        final def = await AIProvidersService.instance.getDefaultProvider();
+        if (def?.id == null) return;
+        providerId = def!.id!;
+      }
+      await ScreenshotDatabase.instance.setAIContext(context: 'chat', providerId: providerId, model: model.trim());
+      try { _ctxChangedController.add('chat'); } catch (_) {}
+    } catch (_) {}
   }
 
   // ========== 提示词管理 ==========
@@ -320,89 +339,243 @@ class AISettingsService {
 
   // ========== 端点候选（用于失败自动切换） ==========
 
-  Future<List<AIEndpoint>> getEndpointCandidates() async {
-    final groups = await listSiteGroups();
-    if (groups.isNotEmpty) {
-      final active = await getActiveGroupId();
-      final enabledGroups = groups.where((g) => g.enabled).toList();
-      enabledGroups.sort((a, b) {
-        if (active != null) {
-          if (a.id == active && b.id != active) return -1;
-          if (b.id == active && a.id != active) return 1;
-        }
-        final oi = a.orderIndex.compareTo(b.orderIndex);
-        if (oi != 0) return oi;
-        return a.id.compareTo(b.id);
-      });
-      return enabledGroups
-          .map((g) => AIEndpoint(groupId: g.id, baseUrl: g.baseUrl, apiKey: g.apiKey, model: g.model))
-          .toList();
+  /// 基于 Provider 的端点候选（仅提供商+上下文）
+  /// - context: 'chat' | 其他（如 'segments'）
+  /// - 不再回退到 site_groups/ai_settings
+  Future<List<AIEndpoint>> getEndpointCandidates({String context = 'chat'}) async {
+    final providers = await AIProvidersService.instance.listProviders();
+    if (providers.isEmpty) {
+      return <AIEndpoint>[];
     }
-
-    // 未分组回退
+ 
+    // 读取上下文选择：优先 ai_contexts(context)，否则默认提供商，否则列表首项
     final db = ScreenshotDatabase.instance;
-    final rawBase = await db.getAiSetting(_keyBaseUrl);
-    final baseUrl = (rawBase == null || rawBase.isEmpty) ? _defaultBaseUrl : rawBase;
-    final apiKey = await db.getAiSetting(_keyApiKey);
-    final rawModel = await db.getAiSetting(_keyModel);
-    final model = (rawModel == null || rawModel.isEmpty) ? _defaultModel : rawModel;
-    return <AIEndpoint>[AIEndpoint(groupId: null, baseUrl: baseUrl, apiKey: apiKey, model: model)];
+    final ctx = await db.getAIContext(context);
+    AIProvider? pSelected;
+    if (ctx != null && ctx['provider_id'] is int) {
+      pSelected = providers.firstWhere(
+        (p) => (p.id ?? -1) == (ctx['provider_id'] as int),
+        orElse: () => providers.first,
+      );
+    }
+    pSelected ??= (await AIProvidersService.instance.getDefaultProvider()) ?? providers.first;
+ 
+    // 解析模型：上下文显式 -> extra.active_model -> default_model -> models.first -> 默认
+    String model = (ctx != null && (ctx['model'] as String?)?.trim().isNotEmpty == true)
+        ? (ctx['model'] as String).trim()
+        : (pSelected.extra['active_model'] as String? ?? pSelected.defaultModel).toString().trim();
+    if (model.isEmpty) {
+      model = pSelected.models.isNotEmpty ? pSelected.models.first : _defaultModel;
+    }
+ 
+    // 读取 API Key
+    final apiKey = await AIProvidersService.instance.getApiKey(pSelected.id!);
+ 
+    // 规范化 base 与 chatPath
+    final String baseUrl = (pSelected.baseUrl == null || pSelected.baseUrl!.trim().isEmpty)
+        ? _defaultBaseUrl
+        : pSelected.baseUrl!.trim();
+    final String chatPath = (pSelected.chatPath == null || pSelected.chatPath!.trim().isEmpty)
+        ? '/v1/chat/completions'
+        : pSelected.chatPath!.trim();
+ 
+    // 使用负的 ProviderID 作为 groupId，隔离会话历史
+    final int groupId = -1 * (pSelected.id ?? 0).abs();
+ 
+    return <AIEndpoint>[
+      AIEndpoint(
+        groupId: groupId,
+        baseUrl: baseUrl,
+        apiKey: apiKey,
+        model: model,
+        chatPath: chatPath,
+      )
+    ];
   }
 
-  // ========== 会话历史（按分组隔离） ==========
-
+  // ========== 会话（Conversation）管理与历史 ==========
+ 
   String _conversationIdForGroup(int? groupId) => groupId == null ? 'default' : 'group:$groupId';
-
-  Future<List<AIMessage>> getChatHistory() async {
-    final gid = await getActiveGroupId();
-    return getChatHistoryByGroup(gid);
+ 
+  // 读取/初始化当前激活会话CID（ai_settings.chat_active_cid）
+  Future<String> getActiveConversationCid() async {
+    try {
+      final db = ScreenshotDatabase.instance;
+      String? cid = await db.getAiSetting('chat_active_cid');
+      if (cid != null && cid.trim().isNotEmpty) return cid.trim();
+      // 初始化：确保 default 存在并设为激活
+      try {
+        // 不使用硬编码标题，留空以便前端按本地化占位显示
+        final created = await db.createAiConversation(title: '', cid: 'default');
+        cid = created;
+      } catch (_) {
+        cid = 'default';
+      }
+      await db.setAiSetting('chat_active_cid', cid);
+      return cid;
+    } catch (_) {
+      return 'default';
+    }
   }
-
-  Future<List<AIMessage>> getChatHistoryByGroup(int? groupId) async {
+ 
+  Future<void> setActiveConversationCid(String cid) async {
+    try {
+      final db = ScreenshotDatabase.instance;
+      await db.setAiSetting('chat_active_cid', cid.trim());
+      try { await db.touchAiConversation(cid.trim()); } catch (_) {}
+      try { _ctxChangedController.add('chat'); } catch (_) {}
+    } catch (_) {}
+  }
+ 
+  Future<List<Map<String, dynamic>>> listAiConversations({int? limit, int? offset}) {
+    return ScreenshotDatabase.instance.listAiConversations(limit: limit, offset: offset);
+  }
+ 
+  Future<String> createConversation({String? title}) async {
     final db = ScreenshotDatabase.instance;
-    final rows = await db.getAiMessages(_conversationIdForGroup(groupId));
+    // 留空标题，UI 层使用本地化的无标题占位
+    final cid = await db.createAiConversation(title: (title == null || title.trim().isEmpty) ? '' : title.trim());
+    await setActiveConversationCid(cid);
+    return cid;
+  }
+ 
+  Future<bool> renameConversation(String cid, String title) {
+    return ScreenshotDatabase.instance.renameAiConversation(cid, title);
+  }
+ 
+  Future<bool> deleteConversation(String cid) async {
+    final db = ScreenshotDatabase.instance;
+    final ok = await db.deleteAiConversation(cid);
+    if (ok) {
+      // 若删除的是当前激活，则选择最新一条或 default
+      try {
+        final active = await getActiveConversationCid();
+        if (active == cid) {
+          final rows = await db.listAiConversations(limit: 1, offset: 0);
+          if (rows.isNotEmpty) {
+            final nextCid = (rows.first['cid'] as String?) ?? 'default';
+            await setActiveConversationCid(nextCid);
+          } else {
+            await setActiveConversationCid('default');
+          }
+        }
+      } catch (_) {}
+      try { _ctxChangedController.add('chat'); } catch (_) {}
+    }
+    return ok;
+  }
+ 
+  Future<List<AIMessage>> getChatHistory() async {
+    final cid = await getActiveConversationCid();
+    return getChatHistoryByCid(cid);
+  }
+ 
+  Future<List<AIMessage>> getChatHistoryByCid(String conversationCid) async {
+    final db = ScreenshotDatabase.instance;
+    final rows = await db.getAiMessages(conversationCid);
     return rows
         .map((e) => AIMessage(
               role: (e['role'] as String?) ?? 'user',
               content: (e['content'] as String?) ?? '',
+              createdAt: DateTime.fromMillisecondsSinceEpoch(
+                (e['created_at'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
+              ),
+              reasoningContent: (e['reasoning_content'] as String?),
+              reasoningDuration: ((e['reasoning_duration_ms'] as int?) != null)
+                  ? Duration(milliseconds: (e['reasoning_duration_ms'] as int))
+                  : null,
             ))
         .toList();
   }
-
+ 
   Future<void> saveChatHistory(List<AIMessage> messages) async {
-    final gid = await getActiveGroupId();
-    await saveChatHistoryByGroup(gid, messages);
+    await saveChatHistoryActive(messages);
   }
-
-  Future<void> saveChatHistoryByGroup(int? groupId, List<AIMessage> messages) async {
+ 
+  Future<void> saveChatHistoryActive(List<AIMessage> messages) async {
+    final cid = await getActiveConversationCid();
+    await saveChatHistoryByCid(cid, messages);
+  }
+ 
+  Future<void> saveChatHistoryByCid(String conversationCid, List<AIMessage> messages) async {
     final db = ScreenshotDatabase.instance;
     final trimmed = messages.length > _maxHistoryMessages
         ? messages.sublist(messages.length - _maxHistoryMessages)
         : messages;
-    final conv = _conversationIdForGroup(groupId);
-    await db.clearAiConversation(conv);
+    await db.clearAiConversation(conversationCid);
     for (final m in trimmed) {
-      await db.appendAiMessage(conv, m.role, m.content);
+      await db.appendAiMessage(
+        conversationCid,
+        m.role,
+        m.content,
+        createdAt: m.createdAt.millisecondsSinceEpoch,
+        reasoningContent: m.reasoningContent,
+        reasoningDurationMs: m.reasoningDuration?.inMilliseconds,
+      );
     }
+    try { await db.touchAiConversation(conversationCid); } catch (_) {}
   }
-
+ 
   Future<void> clearChatHistory() async {
-    final gid = await getActiveGroupId();
-    await clearChatHistoryByGroup(gid);
+    final cid = await getActiveConversationCid();
+    await clearChatHistoryByCid(cid);
   }
 
-  Future<void> clearChatHistoryByGroup(int? groupId) async {
-    final db = ScreenshotDatabase.instance;
-    await db.clearAiConversation(_conversationIdForGroup(groupId));
+  // ========== Provider 上下文选择（供 UI 设置与显示） ==========
+
+  Future<Map<String, dynamic>?> getAIContextRow(String context) async {
+    return await ScreenshotDatabase.instance.getAIContext(context);
   }
+
+  Future<void> setAIContextSelection({
+    required String context,
+    required int providerId,
+    required String model,
+  }) async {
+    await ScreenshotDatabase.instance.setAIContext(context: context, providerId: providerId, model: model.trim());
+    // 若为聊天上下文，则同时切换激活会话组到“负的 ProviderID”，以隔离历史
+    if (context == 'chat') {
+      await setActiveGroupId(-providerId.abs());
+    }
+    // 若为“动态(segments)”上下文：同步当前所选提供商的 API Key 至 ai_settings.api_key_segments，供原生侧读取
+    if (context == 'segments') {
+      try {
+        final key = await AIProvidersService.instance.getApiKey(providerId);
+        await ScreenshotDatabase.instance.setAiSetting('api_key_segments', (key == null || key.trim().isEmpty) ? null : key.trim());
+      } catch (_) {}
+    }
+    // 广播上下文变更事件，驱动相关页面（如对话页）刷新
+    try { _ctxChangedController.add(context); } catch (_) {}
+  }
+
+ Future<void> clearChatHistoryByGroup(int? groupId) async {
+   final db = ScreenshotDatabase.instance;
+   await db.clearAiConversation(_conversationIdForGroup(groupId));
+ }
+
+ Future<void> clearChatHistoryByCid(String conversationCid) async {
+   final db = ScreenshotDatabase.instance;
+   await db.clearAiConversation(conversationCid);
+   try { await db.touchAiConversation(conversationCid); } catch (_) {}
+ }
 }
 
 /// 简单的对话消息模型
 class AIMessage {
   final String role; // system | user | assistant
   final String content;
+  final DateTime createdAt;
+  // 新增：深度思考内容与耗时（仅用于本地持久化与 UI 展示，不参与上行）
+  final String? reasoningContent;
+  final Duration? reasoningDuration;
 
-  AIMessage({required this.role, required this.content});
+  AIMessage({
+    required this.role,
+    required this.content,
+    DateTime? createdAt,
+    this.reasoningContent,
+    this.reasoningDuration,
+  }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
         'role': role,
@@ -413,6 +586,10 @@ class AIMessage {
     return AIMessage(
       role: (json['role'] as String?) ?? 'user',
       content: (json['content'] as String?) ?? '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['created_at'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      // 注意：fromJson 仅用于与上游 API 的消息互转，不含 reasoning 字段
     );
   }
 }

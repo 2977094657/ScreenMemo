@@ -369,6 +369,54 @@ object SegmentDatabaseHelper {
     }
 
     /**
+     * 统计指定时间范围内的截图总数（全局，包含边界）。
+     * - 为性能考虑提供 hardLimit，计数超过该值时提前返回（用于合并上限判断）。
+     */
+    fun countShotsBetween(context: Context, startMillis: Long, endMillis: Long, hardLimit: Int = Int.MAX_VALUE): Int {
+        var master: SQLiteDatabase? = null
+        var total = 0
+        try {
+            master = openMasterDb(context, writable = false) ?: return 0
+
+            // 需要涉及的 (package, year)
+            val shards = master.query("shard_registry", arrayOf("app_package_name","year","db_path"), null, null, null, null, "year DESC")
+            shards.use { cur ->
+                // 年份范围
+                val sy = java.util.Calendar.getInstance().apply { timeInMillis = startMillis }.get(java.util.Calendar.YEAR)
+                val ey = java.util.Calendar.getInstance().apply { timeInMillis = endMillis }.get(java.util.Calendar.YEAR)
+                while (cur.moveToNext()) {
+                    val year = cur.getInt(1)
+                    if (year < sy || year > ey) continue
+                    val dbPath = cur.getString(2)
+                    var shard: SQLiteDatabase? = null
+                    try {
+                        shard = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
+                        // 遍历所有月份
+                        for (m in 1..12) {
+                            val table = monthTableName(year, m)
+                            if (!tableExists(shard, table)) continue
+                            try {
+                                val rows = shard.rawQuery(
+                                    "SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0",
+                                    arrayOf(startMillis.toString(), endMillis.toString())
+                                )
+                                rows.use { rc ->
+                                    if (rc.moveToFirst()) total += (rc.getLong(0)).toInt()
+                                }
+                                if (total >= hardLimit) return total
+                            } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {
+                    } finally { try { shard?.close() } catch (_: Exception) {} }
+                    if (total >= hardLimit) return total
+                }
+            }
+        } catch (_: Exception) {
+        } finally { try { master?.close() } catch (_: Exception) {} }
+        return total
+    }
+
+    /**
      * 查询某时间范围内，最新一个段落的 end_time（降序取第一）。
      * 若不存在则返回 null。
      */

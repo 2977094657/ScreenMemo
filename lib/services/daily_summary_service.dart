@@ -67,7 +67,8 @@ class DailySummaryService {
     // ignore: discarded_futures
     FlutterLogger.nativeDebug('DailySummary', 'prompt length=${prompt.length}');
 
-    final resp = await _chat.sendMessageOneShot(prompt);
+    // 使用“动态(segments)”上下文对应的提供商/模型进行一次性请求，确保与动态 AppBar 选择一致
+    final resp = await _chat.sendMessageOneShot(prompt, context: 'segments');
     final raw = _stripFences(resp.content.trim());
     // ignore: discarded_futures
     FlutterLogger.nativeInfo('DailySummary', 'AI raw length=${raw.length}');
@@ -89,7 +90,15 @@ class DailySummaryService {
       // 非 JSON 回复：直接存入 output_text
     }
 
-    final model = await _settings.getModel();
+    // 记录使用的模型：读取 segments 上下文的模型，避免与 chat 上下文不一致
+    String model;
+    try {
+      final ctx = await _settings.getAIContextRow('segments');
+      final m = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
+      model = (m == null || m.isEmpty) ? await _settings.getModel() : m;
+    } catch (_) {
+      model = await _settings.getModel();
+    }
     await _db.upsertDailySummary(
       dateKey: dateKey,
       aiProvider: 'openai-compatible',
