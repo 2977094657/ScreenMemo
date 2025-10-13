@@ -187,3 +187,18 @@ cd android && ./gradlew test
 - 关键点：
   - 新增 `browserWhitelist` 与 `isBrowserPackage(pkg)`
   - 仅当 `isBrowserPackage(packageName)` 为 true 时调用 `extractCurrentPageUrlSafe()`
+
+### v1.0.3 (2025-10-11)
+- 🛠️ 修复：在 AI 对话与提供商相关页面中，从底部弹出的“选择提供商/选择模型”面板里，搜索输入框点击可弹出键盘但无法输入文字的问题。
+- 原因：`TextEditingController` 被创建在 `StatefulBuilder` 内部，`onChanged` 时调用 `setState` 导致整个子树重建，从而重置控制器与输入内容，表现为无法输入。
+- 处理：将面板中的查询 `TextEditingController` 提升至 `StatefulBuilder` 外部，并保持 `autofocus: true`；其余逻辑不变。
+- 影响范围：
+  - `lib/pages/event_home_page.dart` 的提供商/模型选择面板
+  - `lib/pages/ai_settings_page.dart` 的提供商/模型选择面板
+  - `lib/pages/provider_list_page.dart` 的模型选择面板
+- 自检步骤：
+  1) 进入“动态”页 AppBar 点击提供商/模型，输入关键字筛选，确认可正常输入；
+  2) 进入“AI 设置”页顶部提供商/模型点击，重复上述；
+  3) 进入“提供商”页，点模型标签打开选择面板，输入关键字筛选，确认可输入；
+  4) Android 上返回再进入，输入仍保持正常；
+  5) 滑动列表、切换筛选词，输入框不被清空且可持续输入。
