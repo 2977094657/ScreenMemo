@@ -146,9 +146,7 @@ class AIProvidersService {
 
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
 
-  // 使用原生安全存储保存 API Key（不落库）
-  final FlutterSecureStorage _secure = const FlutterSecureStorage();
-
+  // 旧版安全存储键名（用于迁移）
   String _apiKeyKey(int providerId) => 'ai_provider_key_$providerId';
 
   // ---------------- 基础 CRUD ----------------
@@ -174,7 +172,7 @@ class AIProvidersService {
 
   Future<bool> deleteProvider(int id) async {
     try {
-      await _secure.delete(key: _apiKeyKey(id));
+      await const FlutterSecureStorage().delete(key: _apiKeyKey(id));
     } catch (_) {}
     return _db.deleteAIProvider(id);
   }
@@ -205,6 +203,7 @@ class AIProvidersService {
       modelsJson: jsonEncode(models ?? const <String>[]),
       extraJson: jsonEncode(extra ?? const <String, dynamic>{}),
       orderIndex: orderIndex,
+      apiKey: apiKey?.trim(),
     );
     if (id != null && apiKey != null && apiKey.trim().isNotEmpty) {
       await saveApiKey(id, apiKey.trim());
@@ -242,6 +241,7 @@ class AIProvidersService {
       modelsJson: models != null ? jsonEncode(models) : null,
       extraJson: extra != null ? jsonEncode(extra) : null,
       orderIndex: orderIndex,
+      apiKey: apiKey,
     );
     if (!ok) return false;
     if (apiKey != null) {
@@ -257,18 +257,32 @@ class AIProvidersService {
     return true;
   }
 
-  // ---------------- API Key 安全存储 ----------------
+  // ---------------- API Key 存储（数据库） + 兼容迁移 ----------------
 
   Future<void> saveApiKey(int providerId, String apiKey) async {
-    await _secure.write(key: _apiKeyKey(providerId), value: apiKey);
+    await _db.setAIProviderApiKey(id: providerId, apiKey: apiKey);
+    // 清理旧版安全存储
+    try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
   }
 
-  Future<String?> getApiKey(int providerId) {
-    return _secure.read(key: _apiKeyKey(providerId));
+  Future<String?> getApiKey(int providerId) async {
+    final v = await _db.getAIProviderApiKey(providerId);
+    if (v != null && v.trim().isNotEmpty) return v.trim();
+    // 一次性迁移：若 DB 为空，尝试从安全存储读取并写回 DB
+    try {
+      final old = await const FlutterSecureStorage().read(key: _apiKeyKey(providerId));
+      if (old != null && old.trim().isNotEmpty) {
+        await _db.setAIProviderApiKey(id: providerId, apiKey: old.trim());
+        try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
+        return old.trim();
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<void> deleteApiKey(int providerId) async {
-    await _secure.delete(key: _apiKeyKey(providerId));
+    await _db.setAIProviderApiKey(id: providerId, apiKey: null);
+    try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
   }
 
   // ---------------- 名称唯一性校验 ----------------

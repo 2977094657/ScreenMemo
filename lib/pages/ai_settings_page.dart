@@ -15,6 +15,7 @@ import '../services/ai_providers_service.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/markdown_math.dart';
 import '../widgets/reasoning_card.dart';
+import '../widgets/app_side_drawer.dart';
 
 /// AI 设置与测试页面：配置 OpenAI 兼容接口并进行多轮聊天测试
 class AISettingsPage extends StatefulWidget {
@@ -80,6 +81,48 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   bool _savingPromptSegment = false;
   bool _savingPromptMerge = false;
   bool _savingPromptDaily = false;
+
+  // —— 全屏横向滑动呼出 Drawer ——
+  double _drawerGestureAccumDx = 0.0;
+  bool _drawerGestureTriggered = false;
+  Widget _withDrawerSwipe(Widget child) {
+    // 在任意位置从左向右滑动达到一定阈值后，打开上层 Scaffold 的 Drawer
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: (_) {
+        _drawerGestureAccumDx = 0.0;
+        _drawerGestureTriggered = false;
+      },
+      onHorizontalDragUpdate: (details) {
+        if (_drawerGestureTriggered) return;
+        final double dx = (details.primaryDelta ?? details.delta.dx);
+        if (dx > 0) {
+          _drawerGestureAccumDx += dx;
+        } else {
+          // 向左滑动重置累计，避免误触
+          _drawerGestureAccumDx = 0.0;
+        }
+        // 触发阈值（约 56 像素），避免轻微抖动误开
+        if (_drawerGestureAccumDx >= 56.0) {
+          final scaffold = Scaffold.maybeOf(context);
+          if (scaffold != null && !scaffold.isDrawerOpen) {
+            FocusScope.of(context).unfocus();
+            scaffold.openDrawer();
+          }
+          _drawerGestureTriggered = true;
+        }
+      },
+      onHorizontalDragEnd: (_) {
+        _drawerGestureAccumDx = 0.0;
+        _drawerGestureTriggered = false;
+      },
+      onHorizontalDragCancel: () {
+        _drawerGestureAccumDx = 0.0;
+        _drawerGestureTriggered = false;
+      },
+      child: child,
+    );
+  }
 
   // —— 基于提供商表的对话上下文（chat 专用） ——
   AIProvider? _ctxChatProvider;
@@ -1260,7 +1303,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
 
   @override
   Widget build(BuildContext context) {
-    final Widget body = _loading
+    final Widget bodyCore = _loading
         ? const Center(child: CircularProgressIndicator())
         : NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
@@ -1290,6 +1333,9 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             ),
           );
 
+    // 包裹全屏横向滑动手势（嵌入/独立模式均生效）
+    final Widget body = _withDrawerSwipe(bodyCore);
+
     if (widget.embedded) {
       return body;
     }
@@ -1299,6 +1345,8 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
       ),
+      drawer: const AppSideDrawer(),
+      drawerEnableOpenDragGesture: false, // 关闭默认边缘拖拽，改用自定义“任意位置”滑动
       body: body,
     );
   }

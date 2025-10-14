@@ -1300,11 +1300,14 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
     final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
-    final bool isNsfwFlagged = screenshot.id != null &&
+    // 手动标记状态（仅 DB）
+    final bool isManualNsfw = screenshot.id != null &&
         NsfwPreferenceService.instance.isManuallyFlaggedCached(
           screenshotId: screenshot.id!,
           appPackageName: screenshot.appPackageName,
         );
+    // UI 显示状态：若被域名规则/自动识别遮罩，也显示“斜杠眼睛”
+    final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
     
     final itemContent = ScreenshotItemWidget(
       screenshot: screenshot,
@@ -1336,10 +1339,16 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       isFavorited: _favoriteStatus[screenshot.id] ?? false,
       onFavoriteToggle: () => _toggleFavorite(screenshot),
       showNsfwButton: _selectionMode && screenshot.id != null,
-      isNsfwFlagged: isNsfwFlagged,
+      isNsfwFlagged: isNsfwDisplay,
       onNsfwToggle: () async {
         if (screenshot.id == null) return;
-        final newFlag = !isNsfwFlagged;
+        // 若当前因域名规则/自动识别被遮罩，但未手动标记，则提示在设置中管理域名规则
+        if (!isManualNsfw && nsfwMasked) {
+          if (!mounted) return;
+          UINotifier.info(context, AppLocalizations.of(context).nsfwBlockedByRulesHint);
+          return;
+        }
+        final newFlag = !isManualNsfw;
         final ok = await NsfwPreferenceService.instance.setManualFlag(
           screenshotId: screenshot.id!,
           appPackageName: screenshot.appPackageName,

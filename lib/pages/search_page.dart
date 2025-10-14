@@ -13,6 +13,7 @@ import '../services/screenshot_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/nsfw_guard.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../services/nsfw_preference_service.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -599,11 +600,21 @@ class _SearchPageState extends State<SearchPage> {
             );
           }
           
+          final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(s);
+          final bool isManualNsfw = s.id != null &&
+              NsfwPreferenceService.instance.isManuallyFlaggedCached(
+                screenshotId: s.id!,
+                appPackageName: s.appPackageName,
+              );
+          final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+
           return ScreenshotItemWidget(
             screenshot: s,
             baseDir: _baseDir,
             appInfoMap: _appInfoByPackage,
             privacyMode: _privacyMode,
+            showNsfwButton: false,
+            isNsfwFlagged: isNsfwDisplay,
             onTap: () => _openViewer(s, index),
             customOverlay: ocrOverlay,
           );

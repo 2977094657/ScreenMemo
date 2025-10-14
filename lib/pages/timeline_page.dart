@@ -7,6 +7,7 @@ import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
 import '../widgets/nsfw_guard.dart';
+import '../services/nsfw_preference_service.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
@@ -699,12 +700,21 @@ class _TimelinePageState extends State<TimelinePage>
 
   Widget _buildItem(ScreenshotRecord screenshot, int index) {
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool nsfwMasked = _privacyMode && NsfwDetector.isNsfwUrl(screenshot.pageUrl);
+    final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
     
+    final bool isManualNsfw = screenshot.id != null &&
+        NsfwPreferenceService.instance.isManuallyFlaggedCached(
+          screenshotId: screenshot.id!,
+          appPackageName: screenshot.appPackageName,
+        );
+    final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+
     final content = ScreenshotItemWidget(
       screenshot: screenshot,
       appInfoMap: _appInfoByPackage,
       privacyMode: _privacyMode,
+      showNsfwButton: false,
+      isNsfwFlagged: isNsfwDisplay,
       onTap: () {
         if (!nsfwMasked) {
           _viewFromCurrent(index);
