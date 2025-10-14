@@ -2750,6 +2750,12 @@ abstract class AppLocalizations {
   /// **'NSFW'**
   String get nsfwTagLabel;
 
+  /// No description provided for @nsfwBlockedByRulesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked by NSFW rules. Manage in Settings > NSFW domains.'**
+  String get nsfwBlockedByRulesHint;
+
   /// No description provided for @providersTitle.
   ///
   /// In en, this message translates to:

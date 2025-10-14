@@ -739,6 +739,7 @@
   "manualMarkFailed": "Operation failed",
   "nsfwTagLabel": "NSFW"
   ,
+  "nsfwBlockedByRulesHint": "Blocked by NSFW rules. Manage in Settings > NSFW domains.",
   "providersTitle": "Providers",
   "actionNew": "New",
   "actionAdd": "Add",

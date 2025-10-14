@@ -733,6 +733,7 @@
   "manualMarkFailed": "操作失败",
   "nsfwTagLabel": "NSFW"
   ,
+  "nsfwBlockedByRulesHint": "该图片因域名规则被遮罩。请前往“设置 > NSFW 域名”管理。",
   "providersTitle": "提供商",
   "actionNew": "新建",
   "actionAdd": "添加",

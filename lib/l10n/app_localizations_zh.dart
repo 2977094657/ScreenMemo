@@ -1471,6 +1471,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nsfwTagLabel => 'NSFW';
 
   @override
+  String get nsfwBlockedByRulesHint => '该图片因域名规则被遮罩。请前往“设置 > NSFW 域名”管理。';
+
+  @override
   String get providersTitle => '提供商';
 
   @override

@@ -1515,6 +1515,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nsfwTagLabel => 'NSFW';
 
   @override
+  String get nsfwBlockedByRulesHint =>
+      'Blocked by NSFW rules. Manage in Settings > NSFW domains.';
+
+  @override
   String get providersTitle => 'Providers';
 
   @override
