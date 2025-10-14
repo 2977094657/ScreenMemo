@@ -283,11 +283,12 @@ class AIChatService {
         continue;
       }
       try {
-        final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
-        final headers = <String, String>{
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + apiKey,
-        };
+        final String base = ep.baseUrl;
+        final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+        final headers = <String, String>{ 'Content-Type': 'application/json' };
+        if (!isGoogle) {
+          headers['Authorization'] = 'Bearer ' + apiKey;
+        }
         final String langCode = (LocaleService.instance.locale?.languageCode ??
                 WidgetsBinding.instance.platformDispatcher.locale.languageCode)
             .toLowerCase();
@@ -295,33 +296,80 @@ class AIChatService {
         final locale = isZh ? const Locale('zh') : const Locale('en');
         final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-        final body = jsonEncode({
-          'model': ep.model,
-          'messages': [
-            {'role': 'system', 'content': systemMsg},
-            {'role': 'user', 'content': userMessage},
-          ],
-          'temperature': 0.2,
-          'stream': false,
-        });
-
-        final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
-        if (resp.statusCode < 200 || resp.statusCode >= 300) {
-          throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+        if (isGoogle) {
+          // Google Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
+          final String url = (base.endsWith('/'))
+              ? base.substring(0, base.length - 1)
+              : base;
+          final uri = Uri.parse('$url/v1beta/models/${ep.model}:generateContent?key=$apiKey');
+          final body = jsonEncode({
+            'contents': [
+              {
+                'parts': [
+                  {'text': systemMsg},
+                  {'text': userMessage},
+                ]
+              }
+            ]
+          });
+          final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+          if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            throw Exception('Request failed: ${resp.statusCode} ${resp.body}');
+          }
+          String content = '';
+          try {
+            final Map<String, dynamic> j = jsonDecode(resp.body) as Map<String, dynamic>;
+            final candidates = j['candidates'];
+            if (candidates is List && candidates.isNotEmpty) {
+              final c0 = candidates.first;
+              if (c0 is Map<String, dynamic>) {
+                final ct = c0['content'];
+                if (ct is Map<String, dynamic>) {
+                  final parts = ct['parts'];
+                  if (parts is List && parts.isNotEmpty) {
+                    final p0 = parts.first;
+                    if (p0 is Map<String, dynamic>) {
+                      content = (p0['text'] as String?) ?? '';
+                    }
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+          // 若响应为错误负载但状态码为200，也要抛出，避免写入空白
+          if (content.trim().isEmpty) {
+            throw Exception('Empty content: ' + resp.body);
+          }
+          return AIMessage(role: 'assistant', content: content);
+        } else {
+          // OpenAI 兼容 REST: /v1/chat/completions
+          final uri = Uri.parse(_joinUrl(base, ep.chatPath));
+          final body = jsonEncode({
+            'model': ep.model,
+            'messages': [
+              {'role': 'system', 'content': systemMsg},
+              {'role': 'user', 'content': userMessage},
+            ],
+            'temperature': 0.2,
+            'stream': false,
+          });
+          final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+          if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+          }
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final choices = data['choices'] as List<dynamic>?;
+          if (choices == null || choices.isEmpty) {
+            throw Exception('Empty choices');
+          }
+          final first = choices.first as Map<String, dynamic>;
+          final msg = first['message'] as Map<String, dynamic>?;
+          if (msg == null) {
+            throw Exception('Invalid response');
+          }
+          final content = (msg['content'] as String?) ?? '';
+          return AIMessage(role: 'assistant', content: content);
         }
-
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final choices = data['choices'] as List<dynamic>?;
-        if (choices == null || choices.isEmpty) {
-          throw Exception('Empty choices');
-        }
-        final first = choices.first as Map<String, dynamic>;
-        final msg = first['message'] as Map<String, dynamic>?;
-        if (msg == null) {
-          throw Exception('Invalid response');
-        }
-        final content = (msg['content'] as String?) ?? '';
-        return AIMessage(role: 'assistant', content: content);
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
         continue; // 尝试下一个端点

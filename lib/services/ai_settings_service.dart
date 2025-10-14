@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'screenshot_database.dart';
 import 'locale_service.dart';
 import 'ai_providers_service.dart';
+import 'package:flutter/services.dart'; // Added for MethodChannel
 
 /// 站点分组实体（用户可配置多个接口站点作为备用）
 class AISiteGroup {
@@ -345,6 +346,29 @@ class AISettingsService {
   Future<List<AIEndpoint>> getEndpointCandidates({String context = 'chat'}) async {
     final providers = await AIProvidersService.instance.listProviders();
     if (providers.isEmpty) {
+      // 对于 segments 上下文，尝试直接从原生配置复用（确保与动态一致）
+      if (context == 'segments') {
+        try {
+          const MethodChannel ch = MethodChannel('com.fqyw.screen_memo/accessibility');
+          final Map<dynamic, dynamic>? segCfg = await ch.invokeMethod('getSegmentsAIConfig');
+          if (segCfg != null) {
+            final String baseUrl = ((segCfg['baseUrl'] as String?) ?? '').trim();
+            final String model = ((segCfg['model'] as String?) ?? '').trim();
+            final String? apiKey = ((segCfg['apiKey'] as String?) ?? '').trim();
+            if (model.isNotEmpty && (apiKey != null && apiKey.isNotEmpty)) {
+              return <AIEndpoint>[
+                AIEndpoint(
+                  groupId: -1,
+                  baseUrl: baseUrl.isEmpty ? _defaultBaseUrl : baseUrl,
+                  apiKey: apiKey,
+                  model: model,
+                  chatPath: '/v1/chat/completions',
+                )
+              ];
+            }
+          }
+        } catch (_) {}
+      }
       return <AIEndpoint>[];
     }
  
@@ -369,12 +393,43 @@ class AISettingsService {
     }
  
     // 读取 API Key
-    final apiKey = await AIProvidersService.instance.getApiKey(pSelected.id!);
+    String? apiKey = await AIProvidersService.instance.getApiKey(pSelected.id!);
+    // 对于“动态(segments)”上下文：
+    // 1) 优先原生配置（与动态完全一致）
+    // 2) 其次 DB 中的 ai_settings.api_key_segments
+    String baseUrlOverride = '';
+    if (context == 'segments') {
+      bool setFromNative = false;
+      try {
+        const MethodChannel ch = MethodChannel('com.fqyw.screen_memo/accessibility');
+        final Map<dynamic, dynamic>? segCfg = await ch.invokeMethod('getSegmentsAIConfig');
+        if (segCfg != null) {
+          final String baseFromNative = ((segCfg['baseUrl'] as String?) ?? '').trim();
+          final String modelFromNative = ((segCfg['model'] as String?) ?? '').trim();
+          final String? keyFromNative = ((segCfg['apiKey'] as String?) ?? '').trim();
+          if ((keyFromNative != null && keyFromNative.isNotEmpty)) {
+            apiKey = keyFromNative;
+            setFromNative = true;
+          }
+          if (modelFromNative.isNotEmpty) model = modelFromNative;
+          if (baseFromNative.isNotEmpty) baseUrlOverride = baseFromNative;
+        }
+      } catch (_) {}
+      if (!setFromNative) {
+        try {
+          final k = await ScreenshotDatabase.instance.getAiSetting('api_key_segments');
+          if (k != null && k.trim().isNotEmpty) {
+            apiKey = k.trim();
+          }
+        } catch (_) {}
+      }
+    }
  
-    // 规范化 base 与 chatPath
-    final String baseUrl = (pSelected.baseUrl == null || pSelected.baseUrl!.trim().isEmpty)
+    // 规范化 base 与 chatPath（若上方从原生覆盖 model/base，应在此处理）
+    String baseUrl = (pSelected.baseUrl == null || pSelected.baseUrl!.trim().isEmpty)
         ? _defaultBaseUrl
         : pSelected.baseUrl!.trim();
+    if (baseUrlOverride.isNotEmpty) baseUrl = baseUrlOverride;
     final String chatPath = (pSelected.chatPath == null || pSelected.chatPath!.trim().isEmpty)
         ? '/v1/chat/completions'
         : pSelected.chatPath!.trim();

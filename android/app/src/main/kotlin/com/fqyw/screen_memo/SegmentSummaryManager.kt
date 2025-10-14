@@ -1155,6 +1155,16 @@ object SegmentSummaryManager {
         } catch (_: Exception) {}
         // 同步更新当前段的时间窗口到合并范围
         SegmentDatabaseHelper.updateSegmentWindow(ctx, cur.id, prev.startTime, cur.endTime)
+        // 重建并保存合并后的样本，确保前端能够显示两段图片（而非仅当前段）
+        try {
+            val curAfter = SegmentDatabaseHelper.getSegmentById(ctx, cur.id)
+            if (curAfter != null) {
+                val rebuilt = buildSamplesForSegment(ctx, curAfter)
+                if (rebuilt.isNotEmpty()) {
+                    try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, rebuilt) } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
         // 覆写当前段的结果（保持上一个不变），并标记上一个段状态为 completed-merged 可选
         SegmentDatabaseHelper.saveResult(
             ctx,

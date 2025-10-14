@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'ai_chat_service.dart';
 import 'ai_settings_service.dart';
+import 'ai_providers_service.dart';
 import 'screenshot_database.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
@@ -67,11 +68,67 @@ class DailySummaryService {
     // ignore: discarded_futures
     FlutterLogger.nativeDebug('DailySummary', 'prompt length=${prompt.length}');
 
+    // 读取“动态(segments)”上下文的提供商与模型，用于日志与写库，保证与动态一致
+    String providerTypeUsed = 'openai-compatible';
+    String modelUsed = await _settings.getModel();
+    try {
+      final ctx = await _settings.getAIContextRow('segments');
+      final m = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
+      if (m != null && m.isNotEmpty) modelUsed = m;
+      final pid = (ctx != null ? ctx['provider_id'] : null);
+      if (pid is int) {
+        try {
+          final p = await AIProvidersService.instance.getProvider(pid);
+          if (p != null && (p.type.trim().isNotEmpty)) providerTypeUsed = p.type.trim();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 打印请求准备信息（与原生侧风格一致：预览 + 完整分块）
+    try { await FlutterLogger.nativeInfo('DailySummary', 'AI prepare: context=segments provider='+providerTypeUsed+' model='+modelUsed+' promptLen='+prompt.length.toString()); } catch (_) {}
+    try {
+      final prev = prompt.length <= 1200 ? prompt : (prompt.substring(0, 1200) + '…');
+      await FlutterLogger.nativeDebug('DailySummary', 'prompt preview: '+prev);
+    } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'prompt full BEGIN >>>');
+      final s = prompt;
+      const int chunk = 1800;
+      for (int i = 0; i < s.length; i += chunk) {
+        final end = (i + chunk < s.length) ? (i + chunk) : s.length;
+        await FlutterLogger.nativeInfo('DailySummary', s.substring(i, end));
+      }
+      await FlutterLogger.nativeInfo('DailySummary', 'prompt full END <<<');
+    } catch (_) {}
+
     // 使用“动态(segments)”上下文对应的提供商/模型进行一次性请求，确保与动态 AppBar 选择一致
-    final resp = await _chat.sendMessageOneShot(prompt, context: 'segments');
+    AIMessage resp;
+    try {
+      resp = await _chat.sendMessageOneShot(prompt, context: 'segments');
+    } catch (e, st) {
+      // ignore: discarded_futures
+      await FlutterLogger.nativeError('DailySummary', 'AI request failed: '+e.toString());
+      // ignore: discarded_futures
+      await FlutterLogger.nativeDebug('DailySummary', 'AI exception stack: '+st.toString());
+      rethrow;
+    }
     final raw = _stripFences(resp.content.trim());
     // ignore: discarded_futures
     FlutterLogger.nativeInfo('DailySummary', 'AI raw length=${raw.length}');
+    try {
+      final prev = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
+      await FlutterLogger.nativeDebug('DailySummary', 'AI response preview: '+prev);
+    } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'AI response full BEGIN >>>');
+      final s = raw;
+      const int chunk = 1800;
+      for (int i = 0; i < s.length; i += chunk) {
+        final end = (i + chunk < s.length) ? (i + chunk) : s.length;
+        await FlutterLogger.nativeInfo('DailySummary', s.substring(i, end));
+      }
+      await FlutterLogger.nativeInfo('DailySummary', 'AI response full END <<<');
+    } catch (_) {}
 
     Map<String, dynamic>? sj;
     String outputText = raw;
@@ -90,19 +147,11 @@ class DailySummaryService {
       // 非 JSON 回复：直接存入 output_text
     }
 
-    // 记录使用的模型：读取 segments 上下文的模型，避免与 chat 上下文不一致
-    String model;
-    try {
-      final ctx = await _settings.getAIContextRow('segments');
-      final m = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
-      model = (m == null || m.isEmpty) ? await _settings.getModel() : m;
-    } catch (_) {
-      model = await _settings.getModel();
-    }
+    // 写入记录时复用上方解析到的 provider 与 model
     await _db.upsertDailySummary(
       dateKey: dateKey,
-      aiProvider: 'openai-compatible',
-      aiModel: model,
+      aiProvider: providerTypeUsed,
+      aiModel: modelUsed,
       outputText: outputText,
       structuredJson: sj == null ? null : jsonEncode(sj),
     );
@@ -138,7 +187,7 @@ class DailySummaryService {
       FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief failed: $e');
     }
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'upsert ok model=$model outLen=${outputText.length}');
+    FlutterLogger.nativeInfo('DailySummary', 'upsert ok model='+modelUsed+' outLen='+outputText.length.toString());
     return await _db.getDailySummary(dateKey);
   }
 

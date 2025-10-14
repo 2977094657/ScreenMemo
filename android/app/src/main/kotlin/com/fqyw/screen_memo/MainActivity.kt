@@ -153,11 +153,24 @@ class MainActivity : FlutterActivity() {
                         val level = call.argument<String>("level") ?: "info"
                         val tag = call.argument<String>("tag") ?: "Flutter"
                         val msg = call.argument<String>("message") ?: ""
+                        // 控制台 + 尝试落盘（与动态请求一致使用 OutputFileLogger）
                         when (level.lowercase()) {
-                            "debug" -> FileLogger.d(tag, msg)
-                            "warn" -> FileLogger.w(tag, msg)
-                            "error" -> FileLogger.e(tag, msg)
-                            else -> FileLogger.i(tag, msg)
+                            "debug" -> {
+                                FileLogger.d(tag, msg)
+                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
+                            }
+                            "warn" -> {
+                                FileLogger.w(tag, msg)
+                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
+                            }
+                            "error" -> {
+                                FileLogger.e(tag, msg)
+                                try { OutputFileLogger.error(this, tag, msg) } catch (_: Exception) {}
+                            }
+                            else -> {
+                                FileLogger.i(tag, msg)
+                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
+                            }
                         }
                         result.success(true)
                     } catch (e: Exception) {
@@ -190,6 +203,19 @@ class MainActivity : FlutterActivity() {
                 "getOutputLogsDirToday" -> {
                     val dir = OutputFileLogger.getTodayDir(this)
                     result.success(dir?.absolutePath)
+                }
+                "getSegmentsAIConfig" -> {
+                    try {
+                        val cfg = AISettingsNative.readConfig(this)
+                        val map = mapOf(
+                            "baseUrl" to (cfg.baseUrl ?: ""),
+                            "model" to (cfg.model ?: ""),
+                            "apiKey" to (cfg.apiKey ?: "")
+                        )
+                        result.success(map)
+                    } catch (e: Exception) {
+                        result.error("read_failed", e.message, null)
+                    }
                 }
                 "setSegmentSettings" -> {
                     // { sampleIntervalSec, segmentDurationSec }
