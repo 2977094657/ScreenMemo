@@ -1,204 +1,199 @@
-# 屏忆
+<div align="center">
 
-一个基于Flutter的智能屏幕截图和备忘录应用，专为Android平台设计，具备强大的无障碍服务截图功能。
+<img src="logo.png" alt="ScreenMemo Logo" width="120"/>
+
+# ScreenMemo
+
+智能截屏备忘录 & 信息管理工具
+
+「屏幕无痕，记忆有痕」
+
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License](https://img.shields.io/badge/License-Private-red.svg)](LICENSE)
+
+一款基于 Flutter 开发的智能截屏管理应用，帮助你高效捕获、组织和回顾重要信息
+
+[项目简介与应用场景](#项目简介与应用场景) • [功能特性](#功能特性) • [技术架构](#技术架构) • [快速开始](#快速开始) • [构建发布](#构建发布)
+
+</div>
+
+---
+
+## 项目简介与应用场景
+
+ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动记录你在 Android 设备上的屏幕画面，通过 OCR 与 AI 总结让信息可检索、可回顾、可沉淀，帮助你在需要时迅速找回线索、还原上下文。
+
+可以做什么：
+- 找回曾在不同 App 里出现过的文字内容（如文章片段、聊天记录、字幕台词等），即使原内容已被撤回或下架，也能在本地历史中检索到。
+- 追溯“我看过但想不起来在哪看到”的线索，支持时间范围与应用筛选，快速定位当时屏幕画面。
+- 对同一时间段的多张截图进行 AI 总结，形成“每日总结”，用于回顾一天的重点活动、关键操作与内容要点。
+- 导出/备份本地资料库，迁移或归档你的“第二记忆”。
+
+典型使用场景：
+- 回忆被撤回/删除的消息或页面内容；找回误点关闭的窗口信息。
+- 通过关键词检索多日来回出现的台词、术语或关键字段，串联记忆碎片，支持多次出现的统计与回看。
+- 复盘重要阶段（如做项目、写毕业设计、准备评审/绩效），用“每日总结”快速回顾当日要点，降低整理成本。
+- 用于“记忆寻宝”：翻看以往被忽略的细节或灵感片段，启发创作与决策。
+
+---
 
 ## 功能特性
 
-### 🔥 核心功能
-- **智能截图**: 基于AccessibilityService的无权限截图
-- **定时监控**: 可设置间隔时间自动截图
-- **应用识别**: 智能识别前台应用并分类保存
-- **图库管理**: 完整的截图浏览和管理功能
-- **统计分析**: 详细的使用统计和数据分析
+- 无感截屏
+- 单应用自定义设置
+- 自定义截屏间隔
+- 深度链接
+- 过期清理
+- 智能压缩
+- 图片搜索
+- AI事件和每日总结
+- 数据导入导出
+- 多语言国际化
 
-### 🛡️ 权限管理
-- **无障碍服务**: 核心截图功能
-- **存储权限**: 截图文件保存
-- **通知权限**: 服务状态提醒
-- **电池优化**: 智能保活机制
-- **OEM兼容**: 支持小米、华为、OPPO等厂商
-
-### 🎨 用户界面
-- **Material Design 3**: 现代化设计语言
-- **深色/浅色主题**: 自适应主题切换
-- **响应式布局**: 适配不同屏幕尺寸
-- **流畅动画**: 优雅的交互体验
- - **首页排序与导航优化**:
-   - 默认按“最后截图时间”倒序展示监控应用
-   - 支持按 时间/大小/数量 的升序与降序切换（设置页可配置，首页可快速切换）
-   - 首页导航：移除顶部刷新与主题切换；“+” 移至搜索框左侧；右侧为圆角矩形开关，风格与搜索框一致
-
-## 技术架构
-
-### 前端技术栈
-- **Flutter 3.x**: 跨平台UI框架
-- **Dart**: 编程语言
-- **Material Design 3**: UI设计系统
-- **SQLite**: 本地数据库
-
-### Android原生技术
-- **Kotlin**: Android开发语言
-- **AccessibilityService**: 无障碍截图服务
-- **AIDL**: 进程间通信
-- **JobScheduler**: 后台任务调度
-- **Foreground Service**: 前台服务保活
-
-### 服务架构
-```
-┌─────────────────────┐
-│   Flutter UI Layer  │
-├─────────────────────┤
-│   Method Channel    │
-├─────────────────────┤
-│   MainActivity      │
-├─────────────────────┤
-│ AccessibilityBridge │
-├─────────────────────┤
-│AccessibilityService │
-└─────────────────────┘
-```
+---
 
 ## 快速开始
 
 ### 环境要求
-- Flutter SDK 3.0+
-- Android SDK 21+
-- Kotlin 1.8+
-- Gradle 8.0+
+
+- **Flutter SDK**: 3.8.1 或更高版本
+- **Dart SDK**: 3.8.1+
+- **Android Studio** / **VS Code** + Flutter 插件
+- **Android SDK**:
+  - 最低版本（minSdkVersion）: 21
+  - 目标版本（targetSdkVersion）: 34
+- 平台要求：自动截屏功能依赖 Android 11（API 30）及以上（使用无障碍 `takeScreenshot`）
+- **JDK**: 11 或更高版本
 
 ### 安装步骤
 
 1. **克隆项目**
-```bash
-git clone <repository-url>
-cd screen_memo
-```
+   ```bash
+   git clone <repository-url>
+   cd screen_memo
+   ```
 
 2. **安装依赖**
+   ```bash
+   flutter pub get
+   ```
+
+3. **生成国际化文件**
+   ```bash
+   flutter gen-l10n
+   ```
+
+4. **运行应用**（开发模式）
+   ```bash
+   # 连接 Android 设备或启动模拟器
+   flutter run
+   ```
+
+### 开发命令
+
 ```bash
+# 构建 Debug APK
+flutter build apk --debug
+
+# 安装到设备
+flutter install
+
+# 查看日志
+adb logcat | findstr "ScreenMemo"  # Windows
+adb logcat | grep "ScreenMemo"     # Linux/macOS
+
+# 代码检查
+flutter analyze
+```
+
+---
+
+## 构建发布
+
+### 一键优化构建（推荐）
+
+生成按 ABI 拆分的优化 APK（体积最小化）：
+
+```powershell
+flutter clean
 flutter pub get
+flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
 ```
 
-3. **运行应用**
-```bash
-flutter run
+**产物位置**：
+- `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` （约 8-9 MB）
+- `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
+- `build/app/outputs/flutter-apk/app-x86_64-release.apk`
+
+### Google Play 上架
+
+使用 App Bundle 格式上传：
+
+```powershell
+flutter build appbundle --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols
 ```
 
-### 权限配置
+**产物位置**：`build/app/outputs/bundle/release/app-release.aab`
 
-应用首次运行时需要配置以下权限：
+---
 
-1. **无障碍服务**: 设置 → 辅助功能 → 屏忆 → 启用
-2. **存储权限**: 应用会自动请求
-3. **通知权限**: 应用会自动请求
-4. **电池优化**: 设置 → 电池 → 电池优化 → 屏忆 → 不优化
+## 权限说明
 
-## 项目结构
+应用需要以下权限以提供完整功能：
 
-```
-lib/
-├── main.dart                 # 应用入口
-├── models/                   # 数据模型
-├── pages/                    # 页面组件
-├── services/                 # 业务服务
-├── theme/                    # 主题配置
-└── widgets/                  # 通用组件
+| 权限 | 用途 | 必需性 |
+|------|------|--------|
+| 存储权限 | 保存截屏和数据文件 | 必需 |
+| 通知权限 | 展示服务状态与提醒通知 | 必需 |
+| 无障碍服务 | 自动截屏与前台应用识别 | 必需 |
+| 使用统计权限 | 获取前台应用（Usage Stats） | 必需 |
 
-android/app/src/main/kotlin/com/fqyw/screen_memo/
-├── MainActivity.kt                        # 主Activity
-├── ScreenCaptureAccessibilityService.kt   # 无障碍服务
-├── AccessibilityBridgeService.kt          # AIDL桥接服务
-├── ScreenCaptureService.kt               # 前台服务
-├── KeepAliveJobService.kt                # 保活服务
-├── FileLogger.kt                         # 日志系统
-├── PermissionGuideHelper.kt              # 权限助手
-└── OEMCompatibilityHelper.kt             # OEM兼容
-```
+> 所有权限均在首次运行时引导用户授予，并可随时在系统设置中撤销。
 
-## 开发说明
+---
 
-### 调试模式
-应用内置了完整的调试功能：
-- 服务状态监控
-- 权限状态检查
-- 日志文件查看
-- 性能统计
+## 国际化
 
-### 日志系统
-- 自动生成调试日志
-- 文件路径: `/Android/data/com.fqyw.screen_memo/files/logs/`
-- 支持实时查看和导出
+当前支持语言：
+- 简体中文（默认）
+- English
 
-### 测试
-```bash
-# 运行单元测试
-flutter test
+### 添加新语言
 
-# 运行Android测试
-cd android && ./gradlew test
-```
+1. 在 `lib/l10n/` 目录创建新的 `.arb` 文件（如 `app_ja.arb`）
+2. 复制 `app_en.arb` 的内容并翻译
+3. 运行 `flutter gen-l10n` 生成代码
+4. 在 `LocaleService` 中注册新语言
 
-## 兼容性
+---
 
-### Android版本
-- 最低支持: Android 5.0 (API 21)
-- 推荐版本: Android 8.0+ (API 26)
-- 完全兼容: Android 14 (API 34)
+## 贡献指南
 
-### 设备厂商
-- ✅ 小米 (MIUI)
-- ✅ 华为 (EMUI/HarmonyOS)
-- ✅ OPPO (ColorOS)
-- ✅ Vivo (FuntouchOS)
-- ✅ 三星 (One UI)
-- ✅ 原生Android
+欢迎贡献代码、报告问题或提出建议！
 
-## 许可证
+1. Fork 本项目
+2. 创建特性分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'feat: add some amazing feature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
+5. 提交 Pull Request
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+请确保：
+- 代码通过 `flutter analyze` 检查
+- 添加必要的测试用例
+- 更新相关文档
 
-## 贡献
+---
 
-欢迎提交 Issue 和 Pull Request！
+## License
 
-## 更新日志
+本项目为私有项目，未经授权不得使用、复制或分发。
 
-### v1.0.0 (2025-01-25)
-- 🎉 初始版本发布
-- ✅ 完整的截图功能
-- ✅ 无障碍服务实现
-- ✅ 多平台支持
-- ✅ 权限管理系统
-- ✅ OEM厂商兼容
+---
 
-### v1.0.1 (2025-08-31)
-- 🧭 首页排序：新增 时间/大小/数量 升降序选项，默认按最后截图时间倒序
-- 🧰 设置项：新增“首页排序”入口，持久化偏好
-- 🧼 导航优化：首页移除刷新与主题按钮，“+”移至搜索框左侧，右侧替换为圆角矩形开关
-- 🖼️ UI 细节：缩略图圆角减小为小圆角，视觉更协调
+## 致谢
 
-### v1.0.2 (2025-09-02)
-- 🌐 URL 提取仅限浏览器：原生无障碍服务现在只在“浏览器白名单”内的包名时才启用页面 URL 启发式提取，避免在非浏览器应用中误识别文本为链接。
-- 🔒 浏览器白名单：内置常见国内外浏览器包名（如 `com.android.chrome`、`org.mozilla.firefox`、`com.microsoft.emmx`、`com.tencent.mtt`、`com.UCMobile` 等）。
-- ⚙️ 扩展方式：如需新增或移除某浏览器，可在 `ScreenCaptureAccessibilityService.kt` 的 `browserWhitelist` 集合中编辑；后续版本将提供设置项在应用内管理。
+感谢以下开源项目：
+- [Flutter](https://flutter.dev) - UI 框架
+- [Google ML Kit](https://developers.google.com/ml-kit) - 文本识别
+- [SQLite](https://www.sqlite.org/) - 数据库引擎
+- 所有贡献者和依赖包的维护者
 
-#### 相关实现
-- 文件：`android/app/src/main/kotlin/com/fqyw/screen_memo/ScreenCaptureAccessibilityService.kt`
-- 关键点：
-  - 新增 `browserWhitelist` 与 `isBrowserPackage(pkg)`
-  - 仅当 `isBrowserPackage(packageName)` 为 true 时调用 `extractCurrentPageUrlSafe()`
-
-### v1.0.3 (2025-10-11)
-- 🛠️ 修复：在 AI 对话与提供商相关页面中，从底部弹出的“选择提供商/选择模型”面板里，搜索输入框点击可弹出键盘但无法输入文字的问题。
-- 原因：`TextEditingController` 被创建在 `StatefulBuilder` 内部，`onChanged` 时调用 `setState` 导致整个子树重建，从而重置控制器与输入内容，表现为无法输入。
-- 处理：将面板中的查询 `TextEditingController` 提升至 `StatefulBuilder` 外部，并保持 `autofocus: true`；其余逻辑不变。
-- 影响范围：
-  - `lib/pages/event_home_page.dart` 的提供商/模型选择面板
-  - `lib/pages/ai_settings_page.dart` 的提供商/模型选择面板
-  - `lib/pages/provider_list_page.dart` 的模型选择面板
-- 自检步骤：
-  1) 进入“动态”页 AppBar 点击提供商/模型，输入关键字筛选，确认可正常输入；
-  2) 进入“AI 设置”页顶部提供商/模型点击，重复上述；
-  3) 进入“提供商”页，点模型标签打开选择面板，输入关键字筛选，确认可输入；
-  4) Android 上返回再进入，输入仍保持正常；
-  5) 滑动列表、切换筛选词，输入框不被清空且可持续输入。
