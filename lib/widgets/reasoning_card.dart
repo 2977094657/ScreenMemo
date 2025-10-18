@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../theme/app_theme.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import 'markdown_math.dart';
 
 /// 深度思考卡片的展开状态
 enum ReasoningCardState {
@@ -218,13 +220,18 @@ class _ReasoningCardState extends State<ReasoningCard> {
   }
 
   Widget _buildReasoningContent(BuildContext context, Color textColor) {
-    final content = SelectableText(
-      widget.reasoning,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: textColor,
-            fontFamily: 'monospace',
-            height: 1.25,
-          ),
+    final cfg = MarkdownMathConfig(
+      inlineTextStyle: Theme.of(context).textTheme.bodySmall?.copyWith(color: textColor),
+      blockTextStyle: Theme.of(context).textTheme.bodySmall?.copyWith(color: textColor),
+    );
+    final mdData = preprocessForChatMarkdown(widget.reasoning);
+    final mdWidget = MarkdownBody(
+      data: mdData,
+      builders: cfg.builders,
+      inlineSyntaxes: cfg.inlineSyntaxes,
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: Theme.of(context).textTheme.bodySmall?.copyWith(color: textColor, height: 1.25),
+      ),
     );
 
     if (_expandState == ReasoningCardState.preview) {
@@ -255,13 +262,13 @@ class _ReasoningCardState extends State<ReasoningCard> {
           child: SingleChildScrollView(
             controller: _scrollController,
             physics: const ClampingScrollPhysics(),
-            child: content,
+            child: mdWidget,
           ),
         ),
       );
     } else {
       // 完全展开模式：无高度限制
-      return content;
+      return mdWidget;
     }
   }
 }
