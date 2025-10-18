@@ -56,6 +56,10 @@
         <meta-data
             android:name="io.flutter.embedding.android.Impeller.Renderer"
             android:value="opengles" />
+        <!-- 启用 Sqflite WAL（Write-Ahead Logging）以提升写入并发性能 -->
+        <meta-data
+            android:name="com.tekartik.sqflite.wal_enabled"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

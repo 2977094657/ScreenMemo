@@ -1047,105 +1047,33 @@ object SegmentSummaryManager {
             return
         }
 
-        // 合并上限前置判断：合并后的时间窗口内截图数量上限（仅按数量限制，不做采样）
+        // 读取上一个段的样本与文本（用于“已引用图片数”判断）
+        val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
+        try { FileLogger.i(TAG, "merge: prev=${prev.id} A=${prevSamples.size} imgs, cur=${cur.id} B=${curSamples.size} imgs") } catch (_: Exception) {}
+        // 合并上限前置判断：依据“两事件已引用的图片数（样本数之和）”，而非时间窗总截图数
         val maxImagesPerMergedEvent = getMergeMaxImagesPerEvent(ctx)
-        val mergedStart = prev.startTime
-        val mergedEnd = cur.endTime
-        val mergedCount = try { SegmentDatabaseHelper.countShotsBetween(ctx, mergedStart, mergedEnd, hardLimit = maxImagesPerMergedEvent) } catch (_: Exception) { Int.MAX_VALUE }
-        try { FileLogger.i(TAG, "merge: merged window count estimate=${mergedCount} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
-        if (mergedCount > maxImagesPerMergedEvent) {
-            try { FileLogger.i(TAG, "merge: skip because merged images would exceed limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
+        val seenFiles = java.util.HashSet<String>()
+        for (s in prevSamples) { seenFiles.add(s.filePath) }
+        for (s in curSamples) { seenFiles.add(s.filePath) }
+        val referencedCount = prevSamples.size + curSamples.size
+        val referencedUnique = seenFiles.size
+        try { FileLogger.i(TAG, "merge: referenced images total=${referencedCount} unique=${referencedUnique} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
+        if (referencedUnique > maxImagesPerMergedEvent) {
+            try { FileLogger.i(TAG, "merge: skip because referenced images would exceed limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
             SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
             return
         }
 
-        // 读取上一个段的样本与文本
-        val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
-        try { FileLogger.i(TAG, "merge: prev=${prev.id} A=${prevSamples.size} imgs, cur=${cur.id} B=${curSamples.size} imgs") } catch (_: Exception) {}
         val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
         val prevOutput = prevRes.first ?: ""
 
-        // 构造“是否同一事件”的判定提示（放宽：同一行为的持续可合并）
-        val sb = StringBuilder()
-        val langOpt2 = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
-        val sysLang2 = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
-        val isZh2 = (langOpt2 == "zh") || (langOpt2 != "en" && sysLang2.startsWith("zh"))
-        val langPolicy2 = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZh2)
-        sb.append(langPolicy2).append('\n').append('\n')
-        if (isZh2) {
-            sb.append("请判断两段时间是否属于同一用户事件：\n")
-                .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
-                .append("两段各自的 overall_summary：\n")
-                .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
-                .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
-            val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
-            sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
-                .append("合并判定策略（放宽）：\n")
-                .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
-                .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
-                .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
-                .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
-        } else {
-            sb.append("Decide whether the two time ranges belong to the same user event:\n")
-                .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
-                .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
-                .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
-                .append("Each range overall_summary:\n")
-                .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
-                .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
-            val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
-            sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
-                .append("Merge decision guidelines (relaxed):\n")
-                .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
-                .append("- If the gap ≤ 3 minutes, or the latter continues the former activity type, prefer same_event=true.\n")
-                .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
-                .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
-        }
-
-        // 采样图片：限制总数 MAX_COMPARE_IMAGES
-        val mergedDurationSec = (((cur.endTime) - prev.startTime) / 1000L).toInt().coerceAtLeast(1)
-        val dynamicCap = kotlin.math.min(mergedDurationSec / cur.sampleIntervalSec, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
-        val (imgsA, imgsB) = pickCompareImages(prevSamples, curSamples, dynamicCap)
-        try { FileLogger.i(TAG, "merge: pick cap=${dynamicCap} -> A=${imgsA.size}, B=${imgsB.size}") } catch (_: Exception) {}
-        val decide = callGeminiWithImages(ctx, cur, imgsA + imgsB, sb.toString())
-        val decisionText = decide.second
-        // 兼容多种输出：代码块/带空格/大小写，优先解析JSON片段
-        val same: Boolean = try {
-            val pair = extractJsonBlocks(decisionText)
-            val jsonStr = pair.first
-            if (jsonStr != null) {
-                try {
-                    val obj = org.json.JSONObject(jsonStr)
-                    obj.optBoolean("same_event", false)
-                } catch (_: Exception) {
-                    // 回退：正则匹配，允许空格
-                    Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
-                }
-            } else {
-                Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
-            }
-        } catch (_: Exception) {
-            Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
-        }
-        try { FileLogger.i(TAG, "merge: decision same_event=${same} textLen=${decisionText.length}") } catch (_: Exception) {}
-        // 仅打印合并“判定”AI响应（避免打印普通总结响应）
-        try {
-            val preview = truncateForLog(decisionText, 3000)
-            FileLogger.i(TAG, "合并判定响应: ${preview}")
-        } catch (_: Exception) {}
-        if (!same) { SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true); return }
-
-        // 合并：窗口 [prev.start, cur.end]，样本按“均分限额”后再合并，严格限制图片上限
-        // 规则：总上限 = floor(cur.durationSec / cur.sampleIntervalSec)，并与 PROVIDER_IMAGE_HARD_LIMIT 取最小
+        // 直接使用合并提示词与采样，首次即生成合并结果（不追加自定义文案）
         val capFinal = (cur.durationSec / cur.sampleIntervalSec).coerceAtLeast(1)
         val finalCap = kotlin.math.min(capFinal, PROVIDER_IMAGE_HARD_LIMIT)
-        // 两段均分：各自各取一半（奇数时后者多1）
         val picks = pickCompareImages(prevSamples, curSamples, finalCap)
         val limitedMerged = mergeSamples(picks.first, picks.second)
         val mergePrompt = buildMergePrompt(ctx, prev, cur, limitedMerged)
-        try { FileLogger.i(TAG, "merge: same_event=true -> merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${limitedMerged.size} (cap=${finalCap})") } catch (_: Exception) {}
+        try { FileLogger.i(TAG, "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${limitedMerged.size} (cap=${finalCap}) using merge prompt") } catch (_: Exception) {}
         val merged = callGeminiWithImages(ctx, cur, limitedMerged, mergePrompt)
         try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
         // 仅打印合并“生成新总结”的AI响应
