@@ -200,6 +200,24 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
+  /// 仅返回会话的“最新 N 条”消息，按 id DESC 读取后再倒序为升序返回
+  Future<List<Map<String, dynamic>>> getAiMessagesTail(String conversationId, {int limit = 40}) async {
+    try {
+      final db = await database;
+      final rowsDesc = await db.query(
+        'ai_messages',
+        where: 'conversation_id = ?',
+        whereArgs: [conversationId],
+        orderBy: 'id DESC',
+        limit: limit,
+      );
+      // UI 仍按时间顺序展示
+      return rowsDesc.reversed.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   Future<void> appendAiMessage(String conversationId, String role, String content, {int? createdAt, String? reasoningContent, int? reasoningDurationMs}) async {
     try {
       final db = await database;
@@ -384,10 +402,18 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<bool> deleteAiConversation(String cid) async {
     final db = await database;
     try {
+      final swTotal = Stopwatch()..start();
       await db.transaction((txn) async {
+        final swMsg = Stopwatch()..start();
         try { await txn.delete('ai_messages', where: 'conversation_id = ?', whereArgs: [cid]); } catch (_) {}
+        swMsg.stop();
+        final swConv = Stopwatch()..start();
         await txn.delete('ai_conversations', where: 'cid = ?', whereArgs: [cid]);
+        swConv.stop();
+        try { await FlutterLogger.nativeInfo('DB', 'deleteAiConversation txn parts ms msg='+swMsg.elapsedMilliseconds.toString()+' conv='+swConv.elapsedMilliseconds.toString()); } catch (_) {}
       });
+      swTotal.stop();
+      try { await FlutterLogger.nativeInfo('DB', 'deleteAiConversation total ms='+swTotal.elapsedMilliseconds.toString()+' cid='+cid); } catch (_) {}
       return true;
     } catch (_) {
       return false;
@@ -703,7 +729,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     try {
       final res = await ScreenshotDatabase._channel.invokeMethod('retrySegments', {
         'ids': ids,
-        'force': false,
+        'force': force,
       });
       if (res is int) return res;
       if (res is num) return res.toInt();
@@ -716,6 +742,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
     final db = await database;
     try {
+      final String sql = 'SELECT id, segment_id, capture_time, file_path, app_package_name, app_name, position_index FROM segment_samples WHERE segment_id = ? ORDER BY position_index ASC';
+      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceAll('?', segmentId.toString())); } catch (_) {}
       final rows = await db.query(
         'segment_samples',
         where: 'segment_id = ?',
@@ -729,6 +757,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<Map<String, dynamic>?> getSegmentResult(int segmentId) async {
     final db = await database;
     try {
+      final String sql = 'SELECT segment_id, ai_provider, ai_model, output_text, structured_json, categories, created_at FROM segment_results WHERE segment_id = ? LIMIT 1';
+      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceAll('?', segmentId.toString())); } catch (_) {}
       final rows = await db.query(
         'segment_results',
         where: 'segment_id = ?',
@@ -806,7 +836,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      final rows = await db.rawQuery('''
+      final String sql = '''
         SELECT
           s.*,
           r.output_text,
@@ -816,7 +846,43 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         JOIN segment_results r ON r.segment_id = s.id
         WHERE s.start_time >= ? AND s.start_time <= ?
         ORDER BY s.start_time ASC
-      ''', [startMillis, endMillis]);
+      ''';
+      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceFirst('?', startMillis.toString()).replaceFirst('?', endMillis.toString())); } catch (_) {}
+      final rows = await db.rawQuery(sql, [startMillis, endMillis]);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 列出与时间窗“有重叠”的段落（要求至少有样本图片），同时返回可能存在的 AI 结果
+  /// - 选择逻辑：s.start_time <= endMillis AND s.end_time >= startMillis
+  /// - 目的：避免仅按 start_time 命中导致跨窗事件被漏掉
+  Future<List<Map<String, dynamic>>> listSegmentsOverlapWithSamplesBetween({
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    final db = await database;
+    try {
+      final String sql = '''
+        SELECT
+          s.*,
+          -- 展示用应用集合：优先 segments.app_packages；为空则回退样本去重聚合
+          COALESCE(
+            NULLIF(TRIM(s.app_packages), ''),
+            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+          ) AS app_packages_display,
+          r.output_text,
+          r.structured_json,
+          r.categories
+        FROM segments s
+        LEFT JOIN segment_results r ON r.segment_id = s.id
+        WHERE s.start_time <= ? AND s.end_time >= ?
+          AND EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)
+        ORDER BY s.start_time ASC
+      ''';
+      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceFirst('?', endMillis.toString()).replaceFirst('?', startMillis.toString())); } catch (_) {}
+      final rows = await db.rawQuery(sql, [endMillis, startMillis]);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return <Map<String, dynamic>>[];

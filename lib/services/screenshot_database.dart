@@ -58,6 +58,12 @@ class ScreenshotDatabase {
         final db = await openDatabase(
           path,
           version: 9,
+          onConfigure: (db) async {
+            // 启用 WAL 提升并发写入与长事务期间读取能力
+            try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
+            // 对于新库，尽早设置增量回收（必须在建表前设置）
+            try { await db.execute('PRAGMA auto_vacuum=2'); } catch (_) {}
+          },
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );
@@ -73,6 +79,10 @@ class ScreenshotDatabase {
         final db = await openDatabase(
           path,
           version: 9,
+          onConfigure: (db) async {
+            try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
+            try { await db.execute('PRAGMA auto_vacuum=2'); } catch (_) {}
+          },
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
         );

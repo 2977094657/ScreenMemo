@@ -296,10 +296,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final table = _monthTableName(year, month);
           if (!await _tableExists(shardDb, table)) continue;
           try {
-            final res = await shardDb.rawQuery(
-              'SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ?',
-              [startMillis, endMillis],
-            );
+          final res = await shardDb.rawQuery(
+            'SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
+            [startMillis, endMillis],
+          );
             total += (res.first['c'] as int?) ?? 0;
           } catch (_) {}
         }
@@ -340,6 +340,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         }
       } catch (_) {}
 
+      // 预估需求量：按需设置每表抓取上限，避免一次性加载全部再排序
+      final int requested = ((offset ?? 0) + (limit ?? 100));
+      final int perTableLimit = (() {
+        final int base = requested <= 0 ? 400 : (requested * 2);
+        if (base < 200) return 200;
+        if (base > 5000) return 5000;
+        return base;
+      })();
+
       for (final sh in shards) {
         final String pkg = sh['app_package_name'] as String;
         final int y = sh['year'] as int;
@@ -355,11 +364,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final t = _monthTableName(year, month);
           if (!await _tableExists(shardDb, t)) continue;
           try {
+            // 限流：每个分表仅取部分数据，后续统一排序并切片
             final maps = await shardDb.query(
               t,
               where: 'capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
               whereArgs: [startMillis, endMillis],
               orderBy: 'capture_time DESC',
+              limit: perTableLimit,
+              offset: 0,
             );
             for (final m in maps) {
               final full = Map<String, dynamic>.from(m);
@@ -688,6 +700,113 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       print('根据路径查询截屏记录失败: $e');
       return null;
     }
+  }
+
+  /// 通过文件名在所有分库中查找截图的绝对路径（找到一条即返回）
+  Future<String?> findScreenshotPathByBasename(String filename) async {
+    try {
+      if (filename.trim().isEmpty) return null;
+      String name = filename.trim();
+      // 提取不含扩展名的基名与候选扩展名集合
+      String base = name;
+      String? ext;
+      final dot = name.lastIndexOf('.');
+      if (dot > 0 && dot < name.length - 1) {
+        base = name.substring(0, dot);
+        ext = name.substring(dot + 1).toLowerCase();
+      }
+      final Set<String> extCandidates = <String>{};
+      if (ext != null && ext.isNotEmpty) extCandidates.add(ext);
+      extCandidates.addAll(<String>{'jpg','jpeg','png','webp'});
+      final master = await database;
+      // 先在 segment_samples（主库）中搜索，按可能扩展名匹配
+      for (final e in extCandidates) {
+        try {
+          final rows = await master.query(
+            'segment_samples',
+            columns: ['file_path'],
+            where: 'file_path LIKE ?',
+            whereArgs: ['%' + base + '.' + e],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final p = (rows.first['file_path'] as String?) ?? '';
+            if (p.isNotEmpty) return p;
+          }
+        } catch (_) {}
+      }
+
+      // 列出所有应用包（从 shard_registry 或 app_registry 猜测）
+      List<String> packages = <String>[];
+      try {
+        final rows = await master.query('shard_registry', columns: ['app_package_name'], distinct: true);
+        packages = rows.map((e) => (e['app_package_name'] as String?) ?? '').where((e) => e.isNotEmpty).toList();
+      } catch (_) {
+        try {
+          final rows = await master.query('app_registry', columns: ['app_package_name']);
+          packages = rows.map((e) => (e['app_package_name'] as String?) ?? '').where((e) => e.isNotEmpty).toList();
+        } catch (_) {}
+      }
+      if (packages.isEmpty) return null;
+
+      for (final pkg in packages) {
+        final years = await _listShardYearsForApp(pkg);
+        for (final y in years) {
+          final shardDb = await _openShardDb(pkg, y);
+          if (shardDb == null) continue;
+          for (int m = 12; m >= 1; m--) {
+            final t = _monthTableName(y, m);
+            if (!await _tableExists(shardDb, t)) continue;
+            try {
+              for (final e in extCandidates) {
+                final pattern = '%' + base + '.' + e;
+                final rows = await shardDb.query(
+                  t,
+                  columns: ['file_path'],
+                  where: 'file_path LIKE ?',
+                  whereArgs: [pattern],
+                  limit: 1,
+                );
+                if (rows.isNotEmpty) {
+                  final p = (rows.first['file_path'] as String?) ?? '';
+                  if (p.isNotEmpty) return p;
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
+      // 若数据库未命中，回退到文件系统快速扫描（限定 output/screen 根目录下）
+      try {
+        final root = await PathService.getScreenshotDirectory();
+        if (root != null) {
+          final ent = root.list(recursive: true, followLinks: false);
+          await for (final e in ent) {
+            if (e is File) {
+              final String pth = e.path;
+              for (final ex in extCandidates) {
+                if (pth.endsWith('/' + base + '.' + ex) || pth.endsWith('\\' + base + '.' + ex) || pth.endsWith(base + '.' + ex)) {
+                  return pth;
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 批量：通过文件名集合查找路径映射
+  Future<Map<String, String>> findPathsByBasenames(Set<String> filenames) async {
+    final Map<String, String> result = <String, String>{};
+    for (final name in filenames) {
+      final p = await findScreenshotPathByBasename(name);
+      if (p != null && p.isNotEmpty) result[name] = p;
+    }
+    return result;
   }
 
   Future<bool> updateScreenshot(ScreenshotRecord record) async {

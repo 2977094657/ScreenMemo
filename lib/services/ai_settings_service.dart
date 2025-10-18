@@ -4,6 +4,7 @@ import 'screenshot_database.dart';
 import 'locale_service.dart';
 import 'ai_providers_service.dart';
 import 'package:flutter/services.dart'; // Added for MethodChannel
+import 'flutter_logger.dart';
 
 /// 站点分组实体（用户可配置多个接口站点作为备用）
 class AISiteGroup {
@@ -500,7 +501,10 @@ class AISettingsService {
  
   Future<bool> deleteConversation(String cid) async {
     final db = ScreenshotDatabase.instance;
+    final sw = Stopwatch()..start();
     final ok = await db.deleteAiConversation(cid);
+    sw.stop();
+    try { await FlutterLogger.nativeInfo('UI', 'deleteConversation done ms='+sw.elapsedMilliseconds.toString()+' cid='+cid); } catch (_) {}
     if (ok) {
       // 若删除的是当前激活，则选择最新一条或 default
       try {
@@ -516,6 +520,8 @@ class AISettingsService {
         }
       } catch (_) {}
       try { _ctxChangedController.add('chat'); } catch (_) {}
+      // 广播删除事件，供 UI 进行“立即清空并计时到首帧完成”
+      try { _ctxChangedController.add('chat:deleted'); } catch (_) {}
     }
     return ok;
   }
@@ -527,7 +533,8 @@ class AISettingsService {
  
   Future<List<AIMessage>> getChatHistoryByCid(String conversationCid) async {
     final db = ScreenshotDatabase.instance;
-    final rows = await db.getAiMessages(conversationCid);
+    // 仅取尾部 N 条，避免 UI 在大历史下卡顿
+    final rows = await db.getAiMessagesTail(conversationCid, limit: _maxHistoryMessages);
     return rows
         .map((e) => AIMessage(
               role: (e['role'] as String?) ?? 'user',
