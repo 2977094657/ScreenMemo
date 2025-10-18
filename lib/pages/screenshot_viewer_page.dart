@@ -35,6 +35,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   late PageController _pageController;
   bool _showAppBar = true;
   bool _initialized = false;
+  bool _fromPathsOnly = false; // 是否通过路径进入（点击前未构造完整记录）
+  bool _singleMode = false; // 单图模式（对话内联图：强制1/1）
 
   // 已揭示的 NSFW 图片（本会话内）
   final Set<int> _revealedIds = <int>{};
@@ -132,10 +134,51 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     // 获取路由参数（仅初始化一次，避免后续依赖变化导致索引重置）
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
-      _screenshots = args['screenshots'] as List<ScreenshotRecord>;
-      _currentIndex = args['initialIndex'] as int;
-      _appName = args['appName'] as String;
-      _appInfo = args['appInfo'] as AppInfo;
+      final List<dynamic>? rawPaths = args['paths'] as List<dynamic>?;
+      if (rawPaths != null && rawPaths.isNotEmpty) {
+        _fromPathsOnly = true;
+        final List<String> paths = rawPaths.map((e) => e.toString()).toList();
+        _currentIndex = (args['initialIndex'] as int?) ?? 0;
+        // 若标记为单图模式或未显式指定，则对话证据默认单图模式
+        _singleMode = (args['singleMode'] as bool?) ?? true;
+        if (_singleMode) {
+          // 仅保留当前索引对应的那一张
+          final String currentPath = paths[(_currentIndex >= 0 && _currentIndex < paths.length) ? _currentIndex : 0];
+          _screenshots = [
+            ScreenshotRecord(
+              id: null,
+              appPackageName: 'unknown',
+              appName: 'Unknown',
+              filePath: currentPath,
+              captureTime: DateTime.now(),
+              fileSize: 0,
+            )
+          ];
+          _currentIndex = 0;
+        } else {
+          _screenshots = paths
+              .map((p) => ScreenshotRecord(
+                    id: null,
+                    appPackageName: 'unknown',
+                    appName: 'Unknown',
+                    filePath: p,
+                    captureTime: DateTime.now(),
+                    fileSize: 0,
+                  ))
+              .toList();
+        }
+        _appName = (args['appName'] as String?) ?? 'Unknown';
+        _appInfo = (args['appInfo'] as AppInfo?) ??
+            AppInfo(packageName: 'unknown', appName: 'Unknown', icon: null, version: '', isSystemApp: false);
+        // 后台补全元数据（不阻塞UI）
+        // ignore: unawaited_futures
+        _hydrateRecordsAndAppInfo(_singleMode ? [_screenshots[0].filePath] : paths);
+      } else {
+        _screenshots = args['screenshots'] as List<ScreenshotRecord>;
+        _currentIndex = args['initialIndex'] as int;
+        _appName = args['appName'] as String;
+        _appInfo = args['appInfo'] as AppInfo;
+      }
       _pageController = PageController(initialPage: _currentIndex);
       _initialized = true;
 
@@ -153,6 +196,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       // 同步隐私模式
       // ignore: unawaited_futures
       _loadPrivacyMode();
+
+      // 预热当前与相邻图片，降低首帧解码卡顿
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _precacheAround(_currentIndex);
+      });
     }
   }
 
@@ -170,6 +218,58 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     setState(() {
       _showAppBar = !_showAppBar;
     });
+  }
+
+  /// 后台补全记录与应用信息
+  Future<void> _hydrateRecordsAndAppInfo(List<String> paths) async {
+    try {
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.Viewer: hydrate begin count='+paths.length.toString());
+      final recs = await Future.wait(paths.map((p) => ScreenshotDatabase.instance.getScreenshotByPath(p).catchError((_) => null)));
+      bool changed = false;
+      final List<ScreenshotRecord> hydrated = List<ScreenshotRecord>.from(_screenshots);
+      for (int i = 0; i < hydrated.length && i < recs.length; i++) {
+        final r = recs[i];
+        if (r != null) {
+          hydrated[i] = r;
+          changed = true;
+        }
+      }
+      // 尝试基于当前项更新 AppInfo
+      AppInfo? app;
+      try {
+        final head = hydrated[(_currentIndex >= 0 && _currentIndex < hydrated.length) ? _currentIndex : 0];
+        final pkg = head.appPackageName;
+        final apps = await AppSelectionService.instance.getAllInstalledApps();
+        app = apps.firstWhere((a) => a.packageName == pkg, orElse: () => AppInfo(packageName: pkg, appName: head.appName, icon: null, version: '', isSystemApp: false));
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        if (changed) _screenshots = hydrated;
+        if (app != null) {
+          _appInfo = app!;
+          _appName = app!.appName;
+        }
+      });
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.Viewer: hydrate done changed='+(changed ? '1' : '0'));
+    } catch (_) {}
+  }
+
+  /// 预热当前与相邻图片
+  Future<void> _precacheAround(int index) async {
+    if (!mounted || _screenshots.isEmpty) return;
+    final List<int> candidates = <int>{index, index - 1, index + 1}
+        .where((i) => i >= 0 && i < _screenshots.length)
+        .toList();
+    for (final i in candidates) {
+      final f = File(_screenshots[i].filePath);
+      try {
+        // ignore: unawaited_futures
+        FlutterLogger.debug('UI.Viewer: precache index='+i.toString());
+        await precacheImage(FileImage(f), context);
+      } catch (_) {}
+    }
   }
 
 
@@ -335,7 +435,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   // 应用名称和计数
                   Flexible(
                     child: Text(
-                      '$_appName (${_currentIndex + 1}/${_screenshots.length})',
+                      _singleMode
+                          ? '$_appName (1/1)'
+                          : '$_appName (${_currentIndex + 1}/${_screenshots.length})',
                       style: const TextStyle(color: Colors.white),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -402,7 +504,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   },
                 );
               },
-              itemCount: _screenshots.length,
+              itemCount: _singleMode ? 1 : _screenshots.length,
               loadingBuilder: (context, event) => const Center(
                 child: CircularProgressIndicator(color: Colors.white),
               ),
@@ -412,11 +514,12 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                     : Colors.black,
               ),
               pageController: _pageController,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
+              onPageChanged: _singleMode
+                  ? null
+                  : (index) {
+                      setState(() { _currentIndex = index; });
+                      _precacheAround(index);
+                    },
             ),
 
             // NSFW 遮罩（规则 + 手动标记 + 自动识别聚合；用户点“显示”后本会话内记忆）

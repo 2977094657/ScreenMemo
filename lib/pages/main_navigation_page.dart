@@ -9,7 +9,9 @@ import 'favorites_page.dart';
 import 'event_home_page.dart';
 import '../theme/app_theme.dart';
 import '../services/app_lifecycle_service.dart';
+import '../services/timeline_jump_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import '../services/flutter_logger.dart';
 
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
@@ -26,6 +28,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   DateTime? _lastBackPressedAt;
   
   late final List<Widget> _pages;
+  VoidCallback? _jumpListener;
   
   @override
   void initState() {
@@ -37,6 +40,18 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       const TimelinePage(),
       SettingsPage(themeService: widget.themeService),
     ];
+
+    // 监听时间线跳转请求：切换到底部索引3（时间线）
+    _jumpListener = () {
+      final req = TimelineJumpService.instance.requestNotifier.value;
+      if (req != null) {
+        if (mounted && _currentIndex != 3) {
+          setState(() { _currentIndex = 3; });
+          AppLifecycleService.instance.emitTimelineShown();
+        }
+      }
+    };
+    TimelineJumpService.instance.requestNotifier.addListener(_jumpListener!);
   }
 
   final List<BottomNavigationBarItem> _navigationItems = [
@@ -94,6 +109,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     });
     // 每次进入"时间线"页（索引3，因为收藏页插入到了索引1）都触发刷新事件
     if (index == 3) {
+      try { FlutterLogger.nativeInfo('MainNav', '切换到时间线Tab，发出timelineShown'); } catch (_) {}
       AppLifecycleService.instance.emitTimelineShown();
     }
   }
@@ -150,5 +166,15 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    try {
+      if (_jumpListener != null) {
+        TimelineJumpService.instance.requestNotifier.removeListener(_jumpListener!);
+      }
+    } catch (_) {}
+    super.dispose();
   }
 }

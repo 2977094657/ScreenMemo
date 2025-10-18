@@ -13,6 +13,7 @@ import 'provider_list_page.dart';
 import '../utils/model_icon_utils.dart';
 import '../services/ai_providers_service.dart';
 import '../widgets/ui_dialog.dart';
+import '../services/flutter_logger.dart';
 
 class EventHomePage extends StatefulWidget {
   const EventHomePage({super.key});
@@ -48,11 +49,19 @@ class _EventHomePageState extends State<EventHomePage> {
    super.initState();
    _loadChatContextSelection();
    _loadConversations();
-   _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
+    _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
      if (ctx == 'chat' && mounted) {
        _loadChatContextSelection();
        _loadConversations();
      }
+      if (ctx == 'chat:deleted' && mounted) {
+        // UI 完全清空计时：从收到事件开始到列表空并首次帧绘制
+        final sw = Stopwatch()..start();
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          sw.stop();
+          try { await FlutterLogger.nativeInfo('UI', 'EventHome cleared first-frame ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+        });
+      }
    });
    // 不再需要等待旧的模型加载；直接进入正文视图
    _loading = false;
@@ -777,8 +786,24 @@ class _EventHomePageState extends State<EventHomePage> {
                   style: UIDialogActionStyle.destructive,
                   onPressed: (ctx) async {
                     try {
-                      await _settings.deleteConversation(cid);
+                      final sw = Stopwatch()..start();
+                      // 乐观更新，避免UI等待数据库事务
+                      final prev = List<Map<String, dynamic>>.from(_conversations);
+                      setState(() {
+                        _conversations.removeWhere((m) => ((m['cid'] as String?) ?? '') == cid);
+                        if (_activeConversationCid == cid) {
+                          _activeConversationCid = _conversations.isNotEmpty ? (_conversations.first['cid'] as String?) : 'default';
+                        }
+                      });
                       Navigator.of(ctx).pop();
+                      final ok = await _settings.deleteConversation(cid);
+                      sw.stop();
+                      try { await FlutterLogger.nativeInfo('UI', 'EventHome.deleteConversation total ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                      if (!ok) {
+                        if (mounted) setState(() { _conversations = prev; });
+                        if (mounted) UINotifier.error(context, '删除失败');
+                        return;
+                      }
                       await _loadConversations();
                       if (mounted) {
                         UINotifier.success(context, '会话已删除');

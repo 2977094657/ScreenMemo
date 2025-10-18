@@ -10,6 +10,7 @@ import '../services/ai_settings_service.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
+import '../services/flutter_logger.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
 class AppSideDrawer extends StatelessWidget {
@@ -247,10 +248,26 @@ class AppSideDrawer extends StatelessWidget {
                 style: UIDialogActionStyle.destructive,
                 onPressed: (ctx) async {
                   try {
-                    await AISettingsService.instance.deleteConversation(cid);
+                    final sw = Stopwatch()..start();
                     Navigator.of(ctx).pop();
-                    // 触发重建
+                    // 触发重建（数据源来自 FutureBuilder，不做本地列表回滚）
                     (context as Element).markNeedsBuild();
+                    final ok = await AISettingsService.instance.deleteConversation(cid);
+                    sw.stop();
+                    try { await FlutterLogger.nativeInfo('UI', 'SideDrawer.deleteConversation total ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                    // 记录“完全清空”耗时：从删除返回到FutureBuilder下一次完成的时间
+                    final sw2 = Stopwatch()..start();
+                    // 触发一次 rebuild 后，在下一帧读取列表为空的时刻打印
+                    WidgetsBinding.instance.addPostFrameCallback((_) async {
+                      sw2.stop();
+                      try { await FlutterLogger.nativeInfo('UI', 'SideDrawer cleared first-frame ms='+sw2.elapsedMilliseconds.toString()); } catch (_) {}
+                    });
+                    if (!ok) {
+                      UINotifier.error(context, t.deleteFailed);
+                      (context as Element).markNeedsBuild();
+                    } else {
+                      UINotifier.success(context, t.deletedToast);
+                    }
                   } catch (e) {
                     UINotifier.error(ctx, t.deleteFailedWithError(e.toString()));
                   }
