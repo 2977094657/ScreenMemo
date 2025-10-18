@@ -772,6 +772,9 @@
   "reasoningLabel": "Reasoning:",
   "answerLabel": "Answer:",
 
+  "aiSelfModeEnabledToast": "Self mode: using your data as context",
+  "aiDirectChatModeEnabledToast": "Direct chat: no personal context",
+
   "selectModelWithCounts": "Select model ({filtered}/{total})",
   "@selectModelWithCounts": { "placeholders": { "filtered": {}, "total": {} } },
   "modelsCountLabel": "Models ({count})",

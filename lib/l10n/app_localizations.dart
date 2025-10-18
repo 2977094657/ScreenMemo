@@ -2900,6 +2900,18 @@ abstract class AppLocalizations {
   /// **'Answer:'**
   String get answerLabel;
 
+  /// No description provided for @aiSelfModeEnabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Self mode: using your data as context'**
+  String get aiSelfModeEnabledToast;
+
+  /// No description provided for @aiDirectChatModeEnabledToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Direct chat: no personal context'**
+  String get aiDirectChatModeEnabledToast;
+
   /// No description provided for @selectModelWithCounts.
   ///
   /// In en, this message translates to:

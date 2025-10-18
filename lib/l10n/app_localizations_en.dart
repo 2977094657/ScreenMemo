@@ -1604,6 +1604,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get answerLabel => 'Answer:';
 
   @override
+  String get aiSelfModeEnabledToast => 'Self mode: using your data as context';
+
+  @override
+  String get aiDirectChatModeEnabledToast => 'Direct chat: no personal context';
+
+  @override
   String selectModelWithCounts(Object filtered, Object total) {
     return 'Select model ($filtered/$total)';
   }

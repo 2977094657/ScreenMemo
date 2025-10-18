@@ -1556,6 +1556,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get answerLabel => 'Answer:';
 
   @override
+  String get aiSelfModeEnabledToast => '已切换到“自我模式”：对话将使用您的数据上下文';
+
+  @override
+  String get aiDirectChatModeEnabledToast => '已切换到“普通对话”：不使用个人数据上下文';
+
+  @override
   String selectModelWithCounts(Object filtered, Object total) {
     return '选择模型（$filtered/$total）';
   }
