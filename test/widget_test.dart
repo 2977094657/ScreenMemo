@@ -9,13 +9,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:screen_memo/main.dart';
+import 'package:screen_memo/services/intent_analysis_service.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
     await tester.pumpWidget(const ScreenMemoApp());
-
-    // Verify that the app starts properly
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
+
+  test('IntentAnalysisService basic structure fallback', () async {
+    final svc = IntentAnalysisService.instance;
+    final r = await svc.analyze('测试一个不明确的查询');
+    expect(r.intentSummary.isNotEmpty, true);
+    expect(r.hasValidRange, true);
+    expect(r.sqlFill.containsKey('segments_between'), true);
+  }, timeout: const Timeout(Duration(seconds: 90)));
 }

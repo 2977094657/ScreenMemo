@@ -68,6 +68,9 @@ dependencies:
 
   flutter_secure_storage: ^9.2.2
 
+  # 基于索引的滚动与高亮
+  scroll_to_index: ^3.0.1
+
 
 
 dev_dependencies:

@@ -51,6 +51,17 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 
 ---
 
+## 性能优化
+
+- AI 对话页面图片点击卡顿优化（2025-10）
+  - 将 Markdown 内联证据图片点击的前置数据库与应用列表查询改为“立即导航 + 页面内懒加载”，显著缩短点击到进入查看器的时间。
+  - 查看器支持仅传入 `paths`，在页面内部后台补全 `ScreenshotRecord/AppInfo`。
+  - 在查看器中对当前与相邻图片执行 `precacheImage`，降低首帧/翻页时解码卡顿。
+  - 缩略图组件 `ScreenshotImageWidget` 支持 `targetWidth`，默认用 `ResizeImage(FileImage)` 降低缩略图解码成本。
+  - 关键路径添加轻量日志，便于复现与跟踪（Release 下自动降级为 error 级别）。
+
+---
+
 ## 快速开始
 
 ### 环境要求
