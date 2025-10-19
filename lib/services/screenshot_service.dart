@@ -661,23 +661,182 @@ class ScreenshotService {
     }
   }
 
-  /// 全局按 OCR 文本搜索
-  Future<List<ScreenshotRecord>> searchScreenshotsByOcr(String query, {int? limit, int? offset}) async {
+  /// 全局按 OCR 文本搜索（支持时间与大小过滤）
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcr(
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
     try {
-      return await _database.searchScreenshotsByOcr(query, limit: limit, offset: offset);
+      return await _database.searchScreenshotsByOcr(
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
     } catch (e) {
       print('OCR 搜索失败: $e');
       return [];
     }
   }
 
-  /// 指定应用按 OCR 文本搜索
-  Future<List<ScreenshotRecord>> searchScreenshotsByOcrForApp(String appPackageName, String query, {int? limit, int? offset}) async {
+  /// 统计全局按 OCR 文本匹配的总数量（强制使用 FTS）
+  Future<int> countScreenshotsByOcr(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
     try {
-      return await _database.searchScreenshotsByOcrForApp(appPackageName, query, limit: limit, offset: offset);
+      return await _database.countScreenshotsByOcr(
+        query,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
+    } catch (e) {
+      print('统计 OCR 总数失败: $e');
+      return 0;
+    }
+  }
+
+  /// 指定应用按 OCR 文本搜索（支持时间与大小过滤）
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrForApp(
+    String appPackageName,
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    try {
+      return await _database.searchScreenshotsByOcrForApp(
+        appPackageName,
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
     } catch (e) {
       print('应用内 OCR 搜索失败: $e');
       return [];
+    }
+  }
+
+  /// 统计指定应用按 OCR 文本匹配的总数量（强制使用 FTS）
+  Future<int> countScreenshotsByOcrForApp(
+    String appPackageName,
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    try {
+      return await _database.countScreenshotsByOcrForApp(
+        appPackageName,
+        query,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
+    } catch (e) {
+      print('统计应用内 OCR 总数失败: $e');
+      return 0;
+    }
+  }
+
+  /// 索引可用性：检测 SQLite 是否支持 FTS（fts5/fts4）。
+  Future<bool> isOcrIndexAvailable() async {
+    try {
+      return await _database.isOcrIndexAvailable();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ========== 带回退的全局 OCR 搜索与计数 ==========
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrWithFallback(
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    try {
+      // 首选 FTS；若抛错或不可用，回退 LIKE
+      try {
+        if (await _database.isOcrIndexAvailable()) {
+          return await _database.searchScreenshotsByOcr(
+            query,
+            limit: limit,
+            offset: offset,
+            startMillis: startMillis,
+            endMillis: endMillis,
+            minSize: minSize,
+            maxSize: maxSize,
+          );
+        }
+      } catch (_) {}
+      return await _database.searchScreenshotsByOcrLike(
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
+    } catch (_) {
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  Future<int> countScreenshotsByOcrWithFallback(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    try {
+      try {
+        if (await _database.isOcrIndexAvailable()) {
+          return await _database.countScreenshotsByOcr(
+            query,
+            startMillis: startMillis,
+            endMillis: endMillis,
+            minSize: minSize,
+            maxSize: maxSize,
+          );
+        }
+      } catch (_) {}
+      return await _database.countScreenshotsByOcrLike(
+        query,
+        startMillis: startMillis,
+        endMillis: endMillis,
+        minSize: minSize,
+        maxSize: maxSize,
+      );
+    } catch (_) {
+      return 0;
     }
   }
 

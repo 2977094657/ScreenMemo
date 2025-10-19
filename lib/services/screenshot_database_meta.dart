@@ -2,6 +2,243 @@ part of 'screenshot_database.dart';
 
 // 收藏与 NSFW 偏好相关方法拆分为扩展
 extension ScreenshotDatabaseMeta on ScreenshotDatabase {
+  /// 检查本机 SQLite 是否支持 FTS（fts5/fts4 任一即可）
+  /// 成功则返回 true，否则返回 false。
+  Future<bool> isOcrIndexAvailable() async {
+    final db = await database;
+    bool ok = false;
+    // 使用主库上临时虚拟表进行探测，避免遍历分库
+    try {
+      await db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts5(x)");
+      ok = true;
+    } catch (_) {
+      try {
+        await db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts4(x)");
+        ok = true;
+      } catch (_) {}
+    }
+    if (ok) {
+      try { await db.execute("DROP TABLE IF EXISTS _fts_probe"); } catch (_) {}
+    }
+    return ok;
+  }
+
+  // ===================== OCR LIKE 回退搜索（非索引） =====================
+  Future<List<ScreenshotRecord>> searchScreenshotsByOcrLike(
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim().toLowerCase();
+      if (q.isEmpty) return <ScreenshotRecord>[];
+
+      // 预取应用名缓存
+      final Map<String, String> appNameCache = <String, String>{};
+      try {
+        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        for (final r in reg) {
+          final pkg = r['app_package_name'] as String;
+          final name = (r['app_name'] as String?) ?? pkg;
+          appNameCache[pkg] = name;
+        }
+      } catch (_) {}
+
+      // 估算每表抓取上限
+      final int requested = ((offset ?? 0) + (limit ?? 100));
+      final int target = (requested <= 0 ? 400 : requested * 4);
+      final int perTableLimit = (() {
+        final int base = requested <= 0 ? 400 : requested * 2;
+        if (base < 200) return 200;
+        if (base > 5000) return 5000;
+        return base;
+      })();
+
+      // 时间范围限制到需扫描的年月
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+
+      outer:
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final String appName = appNameCache[pkg] ?? pkg;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            // 构建 LIKE 条件（多词 AND）
+            final parts = q.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+            final List<String> filters = <String>['m.is_deleted = 0', 'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0'];
+            final List<Object?> args = <Object?>[];
+            for (final w in parts) {
+              filters.add('LOWER(m.ocr_text) LIKE ?');
+              args.add('%' + w + '%');
+            }
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args..add(s)..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args..add(minSize)..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+
+            final String sql = 'SELECT m.* FROM ' + t + ' m WHERE ' + filters.join(' AND ') + ' ORDER BY m.capture_time DESC LIMIT ?';
+            args.add(perTableLimit);
+            final List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
+            for (final mapp in maps) {
+              final full = Map<String, dynamic>.from(mapp);
+              full['app_package_name'] = pkg;
+              full['app_name'] = appName;
+              final localId = (mapp['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(y, m, localId);
+              rows.add(full);
+              if (rows.length >= target) break outer;
+            }
+          } catch (_) {}
+        }
+      }
+
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return tb.compareTo(ta);
+      });
+      int start = offset ?? 0; if (start < 0) start = 0;
+      int end = limit != null ? (start + limit) : rows.length;
+      if (start > rows.length) return <ScreenshotRecord>[];
+      if (end > rows.length) end = rows.length;
+      final slice = rows.sublist(start, end);
+      return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (_) {
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  Future<int> countScreenshotsByOcrLike(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim().toLowerCase();
+      if (q.isEmpty) return 0;
+
+      // 时间范围限制到需扫描的年月
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      int total = 0;
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final parts = q.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+            final List<String> filters = <String>['m.is_deleted = 0', 'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0'];
+            final List<Object?> args = <Object?>[];
+            for (final w in parts) {
+              filters.add('LOWER(m.ocr_text) LIKE ?');
+              args.add('%' + w + '%');
+            }
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args..add(s)..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args..add(minSize)..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+            final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m WHERE ' + filters.join(' AND ');
+            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+            total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+          } catch (_) {}
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
   /// 创建收藏表
   Future<void> _createFavoritesTable(DatabaseExecutor db) async {
     await db.execute('''
@@ -839,6 +1076,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     String query, {
     int? limit,
     int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
   }) async {
     final db = await database; // 主库
     try {
@@ -864,7 +1105,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         return base;
       })();
 
-      final String lowerQuery = '%${q.toLowerCase()}%';
+      // FTS 模式，不使用 LIKE 兜底
       final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
 
       final shards = await db.query(
@@ -873,6 +1114,17 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         orderBy: 'year DESC',
       );
 
+      // 若提供时间范围，则优先限定需要扫描的年月集合
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
       outer:
       for (final sh in shards) {
         final String pkg = sh['app_package_name'] as String;
@@ -880,17 +1132,67 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         final shardDb = await _openShardDb(pkg, y);
         if (shardDb == null) continue;
         final String appName = appNameCache[pkg] ?? pkg;
-        for (int m = 12; m >= 1; m--) {
+        // 选择需要扫描的月份
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final maps = await shardDb.query(
-              t,
-              where: "is_deleted = 0 AND ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0 AND LOWER(ocr_text) LIKE ?",
-              whereArgs: [lowerQuery],
-              orderBy: 'capture_time DESC',
-              limit: perTableLimit,
-            );
+            // 尝试优先 FTS：确保当月FTS存在（首次会自动回填）
+            try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+
+            // 构建 FTS MATCH 字符串（简单 AND + 前缀）
+            String buildMatch(String text) {
+              final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+              if (parts.isEmpty) return text;
+              // 限制最多5个词，避免过长查询
+              final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+              return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+            }
+            final String match = buildMatch(q);
+
+            // 组合 SQL：fts JOIN 主表并应用过滤
+            final String fts = '${t}_fts';
+            // 禁止回退：如未成功创建/存在 FTS 表，直接抛错
+            final bool ftsExists = await _tableExists(shardDb, fts);
+            if (!ftsExists) {
+              throw StateError('FTS not available for table '+t);
+            }
+            final List<Object?> args = <Object?>[match];
+            final List<String> filters = <String>['m.is_deleted = 0'];
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args..add(s)..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args..add(minSize)..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+
+            final sql = 'SELECT m.* FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
+                'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ') + ' ' +
+                'ORDER BY m.capture_time DESC LIMIT ?';
+            args.add(perTableLimit);
+
+            List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = pkg;
@@ -919,7 +1221,106 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
     } catch (e) {
       print('searchScreenshotsByOcr 失败: $e');
-      return <ScreenshotRecord>[];
+      rethrow;
+    }
+  }
+
+  /// 统计全局按 OCR 文本匹配的总数量（强制使用 FTS）
+  Future<int> countScreenshotsByOcr(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return 0;
+
+      // 时间范围转换为年月集合（用于限缩扫描表）
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      // 构建 MATCH 字符串
+      String buildMatch(String text) {
+        final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+        if (parts.isEmpty) return text;
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+        return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+      }
+      final String match = buildMatch(q);
+
+      int total = 0;
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          // 确保 FTS 存在
+          try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+          final String fts = '${t}_fts';
+          final bool ftsExists = await _tableExists(shardDb, fts);
+          if (!ftsExists) {
+            throw StateError('FTS not available for table ' + t);
+          }
+
+          final List<Object?> args = <Object?>[match];
+          final List<String> filters = <String>['m.is_deleted = 0'];
+          if (startMillis != null || endMillis != null) {
+            final int s = startMillis ?? 0;
+            final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+            filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+            args..add(s)..add(e);
+          }
+          if (minSize != null && maxSize != null) {
+            filters.add('m.file_size >= ? AND m.file_size <= ?');
+            args..add(minSize)..add(maxSize);
+          } else if (minSize != null) {
+            filters.add('m.file_size >= ?');
+            args.add(minSize);
+          } else if (maxSize != null) {
+            filters.add('m.file_size <= ?');
+            args.add(maxSize);
+          }
+
+          final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
+              'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ');
+          final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+          total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+        }
+      }
+      return total;
+    } catch (e) {
+      print('countScreenshotsByOcr 失败: $e');
+      rethrow;
     }
   }
 
@@ -928,6 +1329,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     String query, {
     int? limit,
     int? offset,
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
   }) async {
     final db = await database; // 主库
     try {
@@ -955,26 +1360,81 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         return base;
       })();
 
-      final String lowerQuery = '%${q.toLowerCase()}%';
+      // FTS 模式，不使用 LIKE 兜底
       final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
 
       final years = await _listShardYearsForApp(appPackageName);
       if (years.isEmpty) return <ScreenshotRecord>[];
+      // 时间过滤下的年月集合
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
       outer:
       for (final y in years) {
+        if (ymFilter != null && ymFilter.every((ym) => ym[0] != y)) continue;
         final shardDb = await _openShardDb(appPackageName, y);
         if (shardDb == null) continue;
-        for (int m = 12; m >= 1; m--) {
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final maps = await shardDb.query(
-              t,
-              where: "is_deleted = 0 AND ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0 AND LOWER(ocr_text) LIKE ?",
-              whereArgs: [lowerQuery],
-              orderBy: 'capture_time DESC',
-              limit: perTableLimit,
-            );
+            // 确保 FTS
+            try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+
+            String buildMatch(String text) {
+              final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+              if (parts.isEmpty) return text;
+              final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+              return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+            }
+            final String match = buildMatch(q);
+
+            final String fts = '${t}_fts';
+            final bool ftsExists = await _tableExists(shardDb, fts);
+            if (!ftsExists) {
+              throw StateError('FTS not available for table '+t);
+            }
+            final List<Object?> args = <Object?>[match];
+            final List<String> filters = <String>['m.is_deleted = 0'];
+            if (startMillis != null || endMillis != null) {
+              final int s = startMillis ?? 0;
+              final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+              filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+              args..add(s)..add(e);
+            }
+            if (minSize != null && maxSize != null) {
+              filters.add('m.file_size >= ? AND m.file_size <= ?');
+              args..add(minSize)..add(maxSize);
+            } else if (minSize != null) {
+              filters.add('m.file_size >= ?');
+              args.add(minSize);
+            } else if (maxSize != null) {
+              filters.add('m.file_size <= ?');
+              args.add(maxSize);
+            }
+            final sql = 'SELECT m.* FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
+                'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ') + ' ' +
+                'ORDER BY m.capture_time DESC LIMIT ?';
+            args.add(perTableLimit);
+
+            List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = appPackageName;
@@ -1003,7 +1463,98 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
     } catch (e) {
       print('searchScreenshotsByOcrForApp 失败: $e');
-      return <ScreenshotRecord>[];
+      rethrow;
+    }
+  }
+
+  /// 统计指定应用按 OCR 文本匹配的总数量（强制使用 FTS）
+  Future<int> countScreenshotsByOcrForApp(
+    String appPackageName,
+    String query, {
+    int? startMillis,
+    int? endMillis,
+    int? minSize,
+    int? maxSize,
+  }) async {
+    final db = await database; // 主库
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return 0;
+
+      List<List<int>>? ymFilter;
+      if (startMillis != null || endMillis != null) {
+        final int s = startMillis ?? 0;
+        final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+        ymFilter = _listYearMonthBetween(
+          DateTime.fromMillisecondsSinceEpoch(s),
+          DateTime.fromMillisecondsSinceEpoch(e),
+        );
+      }
+
+      String buildMatch(String text) {
+        final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+        if (parts.isEmpty) return text;
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+        return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+      }
+      final String match = buildMatch(q);
+
+      int total = 0;
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return 0;
+      for (final y in years) {
+        if (ymFilter != null && ymFilter.every((ym) => ym[0] != y)) continue;
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        final Iterable<int> months = () {
+          if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
+          final ms = ymFilter!
+              .where((ym) => ym[0] == y)
+              .map((ym) => ym[1])
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+          if (ms.isEmpty) return const <int>[];
+          return ms;
+        }();
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+          final String fts = '${t}_fts';
+          if (!await _tableExists(shardDb, fts)) {
+            throw StateError('FTS not available for table ' + t);
+          }
+
+          final List<Object?> args = <Object?>[match];
+          final List<String> filters = <String>['m.is_deleted = 0'];
+          if (startMillis != null || endMillis != null) {
+            final int s = startMillis ?? 0;
+            final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
+            filters.add('m.capture_time >= ? AND m.capture_time <= ?');
+            args..add(s)..add(e);
+          }
+          if (minSize != null && maxSize != null) {
+            filters.add('m.file_size >= ? AND m.file_size <= ?');
+            args..add(minSize)..add(maxSize);
+          } else if (minSize != null) {
+            filters.add('m.file_size >= ?');
+            args.add(minSize);
+          } else if (maxSize != null) {
+            filters.add('m.file_size <= ?');
+            args.add(maxSize);
+          }
+
+          final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
+              'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ');
+          final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+          total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+        }
+      }
+      return total;
+    } catch (e) {
+      print('countScreenshotsByOcrForApp 失败: $e');
+      rethrow;
     }
   }
 

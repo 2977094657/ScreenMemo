@@ -195,8 +195,91 @@ class ScreenshotDatabase {
     ''');
     await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_capture_time ON $table(capture_time)');
     await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)');
+    // 可选：为 ocr_text 建立索引（对前缀匹配有帮助；LIKE '%term%' 仍会扫描）
+    try { await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_ocr_text ON $table(ocr_text)'); } catch (_) {}
     // 兜底：老表添加缺失列
     try { await shardDb.execute("ALTER TABLE $table ADD COLUMN ocr_text TEXT"); } catch (_) {}
+    // 确保 FTS 虚拟表与触发器存在，并完成历史数据回填
+    await _ensureMonthFts(shardDb, year, month);
+  }
+
+  /// 确保每月表具备 FTS（优先 FTS5，回退 FTS4），带触发器与一次性回填
+  Future<void> _ensureMonthFts(DatabaseExecutor shardDb, int year, int month) async {
+    final String table = _monthTableName(year, month);
+    final String fts = '${table}_fts';
+    try {
+      if (!await _tableExists(shardDb, table)) return;
+    } catch (_) { return; }
+
+    // 记录构建状态
+    try {
+      await shardDb.execute('''
+        CREATE TABLE IF NOT EXISTS fts_registry (
+          table_name TEXT PRIMARY KEY,
+          built INTEGER NOT NULL DEFAULT 0,
+          last_built_at INTEGER
+        )
+      ''');
+    } catch (_) {}
+
+    bool ok = false;
+    // 尝试 FTS5
+    try {
+      await shardDb.execute("CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts5(ocr_text, content=$table, content_rowid=id, tokenize='unicode61', prefix='2 3 4')");
+      ok = true;
+    } catch (_) {
+      // 回退 FTS4
+      try {
+        await shardDb.execute("CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts4(ocr_text, content=$table)");
+        ok = true;
+      } catch (_) {}
+    }
+    if (!ok) return;
+
+    // 触发器保持同步
+    try {
+      await shardDb.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${table}_ai AFTER INSERT ON $table BEGIN
+          INSERT INTO $fts(rowid, ocr_text) VALUES (new.id, new.ocr_text);
+        END;
+      ''');
+    } catch (_) {}
+    try {
+      await shardDb.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${table}_au AFTER UPDATE OF ocr_text ON $table BEGIN
+          UPDATE $fts SET ocr_text = new.ocr_text WHERE rowid = new.id;
+        END;
+      ''');
+    } catch (_) {}
+    try {
+      await shardDb.execute('''
+        CREATE TRIGGER IF NOT EXISTS ${table}_ad AFTER DELETE ON $table BEGIN
+          DELETE FROM $fts WHERE rowid = old.id;
+        END;
+      ''');
+    } catch (_) {}
+
+    // 回填：若未构建则重建索引
+    try {
+      final rows = await (shardDb as Database).query('fts_registry', columns: ['built'], where: 'table_name = ?', whereArgs: [table], limit: 1);
+      final built = rows.isNotEmpty && ((rows.first['built'] as int?) ?? 0) == 1;
+      if (!built) {
+        try {
+          await shardDb.execute("INSERT INTO $fts($fts) VALUES('rebuild')");
+        } catch (_) {
+          try {
+            await shardDb.execute("INSERT OR IGNORE INTO $fts(rowid, ocr_text) SELECT id, ocr_text FROM $table WHERE ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0");
+          } catch (_) {}
+        }
+        try {
+          await (shardDb as Database).insert('fts_registry', {
+            'table_name': table,
+            'built': 1,
+            'last_built_at': DateTime.now().millisecondsSinceEpoch,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   int _encodeGid(int year, int month, int localId) {
