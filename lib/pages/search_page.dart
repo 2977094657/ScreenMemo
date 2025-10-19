@@ -37,8 +37,9 @@ class _SearchPageState extends State<SearchPage> {
   Timer? _debounce;
   Directory? _baseDir;
   bool _privacyMode = true;
+  bool? _ocrIndexAvailable; // null=未知, true=可用, false=不可用
 
-  static const int _pageSize = 120; // 单次获取数量
+  static const int _pageSize = 24; // 单次获取数量，降低内存与首屏压力
   int _offset = 0;
   bool _hasMore = false;
   bool _loadingMore = false;
@@ -51,6 +52,60 @@ class _SearchPageState extends State<SearchPage> {
   DateTime? _customEndDate;
   int _totalResultsCount = 0; // 总结果数(未筛选前)
 
+  // 可见范围索引（用于限制仅可见区域附近才进行OCR标注计算）
+  int _visibleStartIndex = 0;
+  int _visibleEndIndex = -1;
+  final GlobalKey _gridKey = GlobalKey();
+  final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
+  bool _scrollActive = false;
+  Timer? _scrollIdleTimer;
+
+  Rect? _getGridViewportRect() {
+    final ctx = _gridKey.currentContext;
+    if (ctx == null) return null;
+    final render = ctx.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) return null;
+    final topLeft = render.localToGlobal(Offset.zero);
+    return topLeft & render.size;
+  }
+
+  void _updateVisibleRange() {
+    if (_filteredResults.isEmpty || _itemKeys.isEmpty) {
+      _visibleStartIndex = 0;
+      _visibleEndIndex = -1;
+      return;
+    }
+    final viewport = _getGridViewportRect();
+    if (viewport == null) return;
+    int? firstIdx;
+    int? lastIdx;
+    _itemKeys.forEach((index, key) {
+      if (index < 0 || index >= _filteredResults.length) return;
+      final context = key.currentContext;
+      if (context == null) return;
+      final render = context.findRenderObject();
+      if (render is! RenderBox || !render.hasSize) return;
+      final rect = render.localToGlobal(Offset.zero) & render.size;
+      final visible = rect.bottom > viewport.top && rect.top < viewport.bottom;
+      if (!visible) return;
+      if (firstIdx == null || index < firstIdx!) firstIdx = index;
+      if (lastIdx == null || index > lastIdx!) lastIdx = index;
+    });
+    if (firstIdx != null && lastIdx != null) {
+      _visibleStartIndex = firstIdx!;
+      _visibleEndIndex = lastIdx!;
+    }
+  }
+
+  bool _shouldLoadBoxesForIndex(int index) {
+    if (_lastQuery.isEmpty) return false;
+    // 初次构建不可见范围未就绪时，允许首屏附近少量请求
+    if (_visibleEndIndex < 0) return index < 12;
+    final int start = (_visibleStartIndex - 10) < 0 ? 0 : (_visibleStartIndex - 10);
+    final int end = _visibleEndIndex + 10;
+    return index >= start && index <= end;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +113,7 @@ class _SearchPageState extends State<SearchPage> {
     _scrollController.addListener(_onScroll);
     _loadAppInfos();
     _loadPrivacyMode();
+    _probeIndexAvailability();
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
       setState(() => _privacyMode = enabled);
@@ -90,6 +146,17 @@ class _SearchPageState extends State<SearchPage> {
     } catch (_) {}
   }
 
+  Future<void> _probeIndexAvailability() async {
+    try {
+      final ok = await ScreenshotService.instance.isOcrIndexAvailable();
+      if (!mounted) return;
+      setState(() { _ocrIndexAvailable = ok; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _ocrIndexAvailable = false; });
+    }
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -105,6 +172,7 @@ class _SearchPageState extends State<SearchPage> {
     final max = _scrollController.position.maxScrollExtent;
     final pos = _scrollController.position.pixels;
     if (pos >= max * 0.85) {
+      try { print('[Search] onScroll loadMore pos=' + pos.toString() + ' max=' + max.toString()); } catch (_) {}
       _loadMore();
     }
   }
@@ -134,17 +202,37 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     try {
-      final list = await ScreenshotService.instance
-          .searchScreenshotsByOcr(query, limit: _pageSize, offset: 0);
+      final sw = Stopwatch()..start();
+      final range = _currentTimeRange();
+      final size = _currentSizeRange();
+      // 并行请求：第一页数据 + 总数
+      final list = await ScreenshotService.instance.searchScreenshotsByOcrWithFallback(
+        query,
+        limit: _pageSize,
+        offset: 0,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        minSize: size?.$1,
+        maxSize: size?.$2,
+      );
+      final total = await ScreenshotService.instance.countScreenshotsByOcrWithFallback(
+        query,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        minSize: size?.$1,
+        maxSize: size?.$2,
+      );
       if (!mounted) return;
       setState(() {
         _results = list;
-        _totalResultsCount = list.length;
+        _totalResultsCount = total;
         _applyFilters();
         _offset = list.length;
         _hasMore = list.length >= _pageSize;
         _isLoading = false;
       });
+      sw.stop();
+      try { print('[Search] query="' + query + '" list=' + list.length.toString() + ' total=' + total.toString() + ' ms=' + sw.elapsedMilliseconds.toString()); } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -158,21 +246,33 @@ class _SearchPageState extends State<SearchPage> {
     if (_lastQuery.isEmpty) return;
     setState(() => _loadingMore = true);
     try {
-      final more = await ScreenshotService.instance
-          .searchScreenshotsByOcr(_lastQuery, limit: _pageSize, offset: _offset);
+      final sw = Stopwatch()..start();
+      final range = _currentTimeRange();
+      final size = _currentSizeRange();
+      final more = await ScreenshotService.instance.searchScreenshotsByOcrWithFallback(
+        _lastQuery,
+        limit: _pageSize,
+        offset: _offset,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        minSize: size?.$1,
+        maxSize: size?.$2,
+      );
       if (!mounted) return;
       setState(() {
         if (more.isEmpty) {
           _hasMore = false;
         } else {
           _results.addAll(more);
-          _totalResultsCount = _results.length;
+          // 保持总结果数为数据库统计的总数，不用已加载数量覆盖
           _applyFilters();
           _offset += more.length;
           _hasMore = more.length >= _pageSize;
         }
         _loadingMore = false;
       });
+      sw.stop();
+      try { print('[Search] loadMore fetched=' + more.length.toString() + ' offset=' + _offset.toString() + ' hasMore=' + _hasMore.toString() + ' ms=' + sw.elapsedMilliseconds.toString()); } catch (_) {}
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -244,6 +344,64 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     _filteredResults = filtered;
+    // 清理超出范围的 itemKeys，避免内存泄漏
+    _itemKeys.removeWhere((index, _) => index >= _filteredResults.length);
+    // 重置可见范围，等待下一帧计算
+    _visibleStartIndex = 0;
+    _visibleEndIndex = -1;
+  }
+
+  // 将当前筛选转换为数据库参数
+  (int, int)? _currentTimeRange() {
+    if (_timeFilter == 'all') return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    int? s;
+    int? e;
+    switch (_timeFilter) {
+      case 'today':
+        s = today.millisecondsSinceEpoch;
+        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        break;
+      case 'yesterday':
+        final y = today.subtract(const Duration(days: 1));
+        s = y.millisecondsSinceEpoch;
+        e = today.millisecondsSinceEpoch - 1;
+        break;
+      case 'last7days':
+        final last7 = today.subtract(const Duration(days: 7));
+        s = last7.millisecondsSinceEpoch;
+        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        break;
+      case 'last30days':
+        final last30 = today.subtract(const Duration(days: 30));
+        s = last30.millisecondsSinceEpoch;
+        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        break;
+      case 'custom':
+        if (_customStartDate != null && _customEndDate != null) {
+          s = DateTime(_customStartDate!.year, _customStartDate!.month, _customStartDate!.day)
+              .millisecondsSinceEpoch;
+          e = DateTime(_customEndDate!.year, _customEndDate!.month, _customEndDate!.day, 23, 59, 59)
+              .millisecondsSinceEpoch;
+        }
+        break;
+    }
+    if (s == null || e == null) return null;
+    return (s, e);
+  }
+
+  (int, int)? _currentSizeRange() {
+    if (_sizeFilter == 'all') return null;
+    switch (_sizeFilter) {
+      case 'small':
+        return (0, 100 * 1024);
+      case 'medium':
+        return (100 * 1024, 1024 * 1024);
+      case 'large':
+        return (1024 * 1024, 1 << 31);
+    }
+    return null;
   }
 
   // 重置筛选条件
@@ -397,9 +555,47 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ],
         ),
-        actions: const [],
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: _buildIndexStatusIcon(),
+          ),
+        ],
       ),
       body: _buildBody(),
+    );
+  }
+
+  Widget _buildIndexStatusIcon() {
+    // 固定占位，不改变搜索框长度；仅对闪电图标做向左平移
+    if (_ocrIndexAvailable == null) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    if (_ocrIndexAvailable == true) {
+      return Tooltip(
+        message: 'Index OK: using FTS',
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: Transform.translate(
+            offset: const Offset(-6, 0),
+            child: const Icon(Icons.bolt, color: Colors.green, size: 20),
+          ),
+        ),
+      );
+    }
+    // 回退到 LIKE：显示黄色提示图标
+    return Tooltip(
+      message: 'Fallback: LIKE search',
+      child: const SizedBox(
+        width: 24,
+        height: 24,
+        child: Center(child: Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20)),
+      ),
     );
   }
 
@@ -462,7 +658,7 @@ class _SearchPageState extends State<SearchPage> {
             children: [
               Expanded(
                 child: Text(
-                  AppLocalizations.of(context).searchResultsCount(_filteredResults.length.toString()),
+                  AppLocalizations.of(context).searchResultsCount(_totalResultsCount.toString()),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppTheme.mutedForeground,
                     fontWeight: FontWeight.w500,
@@ -526,104 +722,137 @@ class _SearchPageState extends State<SearchPage> {
                         ?.copyWith(color: AppTheme.mutedForeground),
                   ),
                 )
-              : NotificationListener<ScrollEndNotification>(
-      onNotification: (_) {
-        _onScroll();
-        return false;
-      },
-      child: GridView.builder(
-        controller: _scrollController,
-        padding: EdgeInsets.only(
-          left: AppTheme.spacing1,
-          right: AppTheme.spacing1,
-          bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
-          top: AppTheme.spacing1,
-        ),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: AppTheme.spacing1,
-          mainAxisSpacing: AppTheme.spacing1,
-          childAspectRatio: 0.45,
-        ),
-        itemCount: _filteredResults.length + (_loadingMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (_loadingMore && index == _filteredResults.length) {
-            return const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          }
-          final s = _filteredResults[index];
-          
-          // 构建 OCR 标注叠加层
-          Widget? ocrOverlay;
-          if (_lastQuery.isNotEmpty) {
-            ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
-              future: _ensureBoxes(s.filePath),
-              builder: (context, snapshot) {
-                final data = snapshot.data;
-                if (data == null) return const SizedBox.shrink();
-                final int srcW = (data['width'] as int?) ?? 0;
-                final int srcH = (data['height'] as int?) ?? 0;
-                final List<dynamic> raw = (data['boxes'] as List?) ?? const [];
-                if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                final List<Rect> rects = <Rect>[];
-                for (final item in raw) {
-                  if (item is Map) {
-                    final m = Map<String, dynamic>.from(item);
-                    final l = (m['left'] as num?)?.toDouble() ?? 0;
-                    final t = (m['top'] as num?)?.toDouble() ?? 0;
-                    final r = (m['right'] as num?)?.toDouble() ?? 0;
-                    final b = (m['bottom'] as num?)?.toDouble() ?? 0;
-                    rects.add(Rect.fromLTRB(l, t, r, b));
-                  }
-                }
-                if (rects.isEmpty) return const SizedBox.shrink();
-                return Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: true,
-                    child: CustomPaint(
-                      painter: _OcrBoxesPainter(
-                        originalWidth: srcW.toDouble(),
-                        originalHeight: srcH.toDouble(),
-                        boxes: rects,
-                      ),
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    // 更新可见范围
+                    _updateVisibleRange();
+                    // 滚动活跃态：暂停OCR叠加，滚动空闲后再恢复
+                    bool shouldSetActive = false;
+                    if (n is ScrollUpdateNotification || n is UserScrollNotification || n is OverscrollNotification) {
+                      if (!_scrollActive) shouldSetActive = true;
+                      _scrollIdleTimer?.cancel();
+                      _scrollIdleTimer = Timer(const Duration(milliseconds: 120), () {
+                        if (!mounted) return;
+                        if (_scrollActive) {
+                          setState(() { _scrollActive = false; });
+                        }
+                      });
+                    }
+                    if (shouldSetActive) {
+                      setState(() { _scrollActive = true; });
+                    }
+                    // 接近底部时预取下一页
+                    if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+                      _onScroll();
+                    }
+                    return false;
+                  },
+                  child: GridView.builder(
+                    key: _gridKey,
+                    controller: _scrollController,
+                    cacheExtent: MediaQuery.of(context).size.height,
+                    addAutomaticKeepAlives: false,
+                    physics: const ClampingScrollPhysics(),
+                    padding: EdgeInsets.only(
+                      left: AppTheme.spacing1,
+                      right: AppTheme.spacing1,
+                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                      top: AppTheme.spacing1,
                     ),
-                  ),
-                );
-              },
-            );
-          }
-          
-          final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(s);
-          final bool isManualNsfw = s.id != null &&
-              NsfwPreferenceService.instance.isManuallyFlaggedCached(
-                screenshotId: s.id!,
-                appPackageName: s.appPackageName,
-              );
-          final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: AppTheme.spacing1,
+                      mainAxisSpacing: AppTheme.spacing1,
+                      childAspectRatio: 0.45,
+                    ),
+                    itemCount: _filteredResults.length + (_loadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (_loadingMore && index == _filteredResults.length) {
+                        return const Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      }
+                      final s = _filteredResults[index];
 
-          return ScreenshotItemWidget(
-            screenshot: s,
-            baseDir: _baseDir,
-            appInfoMap: _appInfoByPackage,
-            privacyMode: _privacyMode,
-            showNsfwButton: false,
-            isNsfwFlagged: isNsfwDisplay,
-            onTap: () => _openViewer(s, index),
-            customOverlay: ocrOverlay,
-          );
-        },
-      ),
-        ),
-        ),
-      ],
-    );
+                      // 构建 OCR 标注叠加层（仅可见附近范围才请求与绘制）
+                      Widget? ocrOverlay;
+                      if (!_scrollActive && _shouldLoadBoxesForIndex(index)) {
+                        if (_boxesFutureCache.length > 40) {
+                          _boxesFutureCache.remove(_boxesFutureCache.keys.first);
+                        }
+                        ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
+                          future: _ensureBoxes(s.filePath),
+                          builder: (context, snapshot) {
+                            final data = snapshot.data;
+                            if (data == null) return const SizedBox.shrink();
+                            final int srcW = (data['width'] as int?) ?? 0;
+                            final int srcH = (data['height'] as int?) ?? 0;
+                            final List<dynamic> raw = (data['boxes'] as List?) ?? const [];
+                            if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            final List<Rect> rects = <Rect>[];
+                            for (final item in raw) {
+                              if (item is Map) {
+                                final m = Map<String, dynamic>.from(item);
+                                final l = (m['left'] as num?)?.toDouble() ?? 0;
+                                final t = (m['top'] as num?)?.toDouble() ?? 0;
+                                final r = (m['right'] as num?)?.toDouble() ?? 0;
+                                final b = (m['bottom'] as num?)?.toDouble() ?? 0;
+                                rects.add(Rect.fromLTRB(l, t, r, b));
+                              }
+                            }
+                            if (rects.isEmpty) return const SizedBox.shrink();
+                            return Positioned.fill(
+                              child: IgnorePointer(
+                                ignoring: true,
+                                child: CustomPaint(
+                                  painter: _OcrBoxesPainter(
+                                    originalWidth: srcW.toDouble(),
+                                    originalHeight: srcH.toDouble(),
+                                    boxes: rects,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }
+
+                      final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(s);
+                      final bool isManualNsfw = s.id != null &&
+                          NsfwPreferenceService.instance.isManuallyFlaggedCached(
+                            screenshotId: s.id!,
+                            appPackageName: s.appPackageName,
+                          );
+                      final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+
+                      final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
+                      return KeyedSubtree(
+                        key: itemKey,
+                        child: RepaintBoundary(
+                          child: ScreenshotItemWidget(
+                          screenshot: s,
+                          baseDir: _baseDir,
+                          appInfoMap: _appInfoByPackage,
+                          privacyMode: _privacyMode,
+                          showNsfwButton: false,
+                          isNsfwFlagged: isNsfwDisplay,
+                          onTap: () => _openViewer(s, index),
+                            customOverlay: ocrOverlay,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ),
+          ],
+        );
   }
 
 }
