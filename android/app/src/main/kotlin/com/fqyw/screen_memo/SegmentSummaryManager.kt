@@ -584,7 +584,8 @@ object SegmentSummaryManager {
         ctx: Context,
         seg: SegmentDatabaseHelper.Segment,
         samples: List<SegmentDatabaseHelper.Sample>,
-        prompt: String
+        prompt: String,
+        isMerge: Boolean = false
     ): Quad<String, String, String?, String?> {
         val cfg = AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
@@ -611,18 +612,34 @@ object SegmentSummaryManager {
         val isZhForRule = (langOptForRule == "zh") || (langOptForRule != "en" && sysLangForRule.startsWith("zh"))
         val totalImagesToSend = effSamples.size
         val maxDescImages = (totalImagesToSend / 3)
-        val dynamicCapRule = if (isZhForRule) {
-            """
+        val dynamicCapRule = if (isMerge) {
+            if (isZhForRule) {
+                """
+- 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进整体总结。
+- 如需逐图说明，请使用 described_images[] 列出这些被描述的图片（长度≤上述上限）；每项：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
+- key_actions[].ref_image 必须复用 content_groups[].representative_images 中已选择的文件名，不得新增超出上限的图片引用。
+""".trim()
+            } else {
+                """
+- Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
+- If you describe any individual images, list them in described_images[] (length <= the cap); each item: {file:"filename", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason"}.
+- key_actions[].ref_image MUST reuse filenames chosen in content_groups[].representative_images and MUST NOT exceed the cap.
+""".trim()
+            }
+        } else {
+            if (isZhForRule) {
+                """
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进摘要。
 - 仅使用 described_images[] 列出这些“被文字描述”的单张图片，数组长度<=上述上限；每项结构：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
-- 禁止输出 content_groups；key_actions[].ref_image 必须复用 described_images[] 中的文件名，不得新增超出上限的图片引用。
+- key_actions[].ref_image 必须复用 described_images[] 中的文件名，不得新增超出上限的图片引用。
 """.trim()
-        } else {
-            """
+            } else {
+                """
 - Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
 - Use described_images[] ONLY to list the individually described images, length <= the cap; each item: {file:"filename", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason for the single image"}.
-- Do NOT output content_groups; key_actions[].ref_image MUST reuse filenames in described_images[] and MUST NOT exceed the cap.
+- key_actions[].ref_image MUST reuse filenames in described_images[] and MUST NOT exceed the cap.
 """.trim()
+            }
         }
 
         // 结构化呈现规则：开头一段纯文本总结，随后 Markdown 小节
@@ -671,14 +688,14 @@ object SegmentSummaryManager {
         try {
             FileLogger.i(
                 TAG,
-                "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}" 
+                "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, merge=${isMerge}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}" 
             )
         } catch (_: Exception) {}
         try {
-            android.util.Log.i(TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
+            android.util.Log.i(TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, merge=${isMerge}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
         } catch (_: Exception) {}
         try {
-            OutputFileLogger.info(ctx, TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
+            OutputFileLogger.info(ctx, TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, merge=${isMerge}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
         } catch (_: Exception) {}
 
         // 额外打印提示词预览（不含图片/密钥）：Logcat 截断 + 文件完整
@@ -1074,7 +1091,7 @@ object SegmentSummaryManager {
         val limitedMerged = mergeSamples(picks.first, picks.second)
         val mergePrompt = buildMergePrompt(ctx, prev, cur, limitedMerged)
         try { FileLogger.i(TAG, "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${limitedMerged.size} (cap=${finalCap}) using merge prompt") } catch (_: Exception) {}
-        val merged = callGeminiWithImages(ctx, cur, limitedMerged, mergePrompt)
+        val merged = callGeminiWithImages(ctx, cur, limitedMerged, mergePrompt, isMerge = true)
         try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
         // 仅打印合并“生成新总结”的AI响应
         try {
