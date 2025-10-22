@@ -13,11 +13,11 @@ import '../theme/app_theme.dart';
 import '../services/flutter_logger.dart';
 
 /// 说明：
-/// - 仅在 AI 对话页面使用，用于渲染 Markdown 中的 LaTeX 数学公式与 <think> 思考块。
+/// - 仅在 AI 对话页面使用，用于渲染 Markdown 中的 LaTeX 数学公式；<think> 思考块在此阶段被移除。
 /// - 复刻 rikkahub 的预处理：
 ///   * 将行内公式 \( ... \) 转为 <math-inline>...</math-inline>
 ///   * 将块级公式 \[ ... \] 转为 <math-block>...</math-block>
-///   * 将 <think>...</think> 转为 Markdown 引用块（每行前置 > ）
+///   * 移除 <think>...</think>（不在可见正文中显示；思考在 UI 的 Reasoning 卡片展示）
 ///   * 跳过代码块 (```...```) 与行内代码 (`...`)
 /// - 使用 flutter_markdown 的 builders 将 <math-inline>/<math-block> 渲染为 TeX。
 ///
@@ -63,8 +63,8 @@ String preprocessForChatMarkdown(String content) {
     if (seg.isCode) {
       buf.write(seg.text);
     } else {
-      // 对非代码块内容：先做 <think> 转引用，再做 LaTeX 转标签（跳过行内代码片段）
-      final s1 = _replaceThinkToBlockQuote(seg.text);
+      // 对非代码块内容：先移除 <think>，再做 LaTeX 转标签（跳过行内代码片段）
+      final s1 = _removeThinkBlocks(seg.text);
       final s2 = _replaceLatexToTagsSkippingInlineCode(s1);
       final s3 = _removeTrailingPunctuationAfterEvidence(s2);
       final s4 = _ensureEvidenceBlocksOnOwnLine(s3);
@@ -74,15 +74,10 @@ String preprocessForChatMarkdown(String content) {
   return buf.toString();
 }
 
-/// 将 <think>...</think> 的内容转为引用块（每行以 "> " 开头）。支持缺失闭合标签。
-String _replaceThinkToBlockQuote(String text) {
+/// 从可见正文中移除 <think>...</think>（支持缺失闭合标签）。
+String _removeThinkBlocks(String text) {
   final thinkRegex = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', multiLine: true);
-  return text.replaceAllMapped(thinkRegex, (match) {
-    final inner = (match.group(1) ?? '').replaceAll('\r\n', '\n');
-    final lines = inner.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (lines.isEmpty) return '';
-    return lines.map((l) => '> $l').join('\n');
-  });
+  return text.replaceAll(thinkRegex, '');
 }
 
 /// 去除紧跟在 [evidence: FILENAME.EXT] 后面的句号（英文 . 或中文 。）

@@ -15,6 +15,74 @@ class AIStreamEvent {
   AIStreamEvent(this.kind, this.data);
 }
 
+/// 流式 <think> 解析与剥离器：
+/// - 将增量文本中的 <think>... </think> 片段提取为“思考内容”
+/// - 返回可见文本与思考文本的增量对
+class _ThinkStreamFilterResult {
+  final String visibleDelta;
+  final String reasoningDelta;
+  const _ThinkStreamFilterResult(this.visibleDelta, this.reasoningDelta);
+}
+
+class _ThinkStreamFilter {
+  bool _insideThink = false;
+  bool anyTokensSeen = false;
+
+  _ThinkStreamFilterResult process(String chunk) {
+    if (chunk.isEmpty) return const _ThinkStreamFilterResult('', '');
+    final StringBuffer visible = StringBuffer();
+    final StringBuffer reasoning = StringBuffer();
+    int i = 0;
+    while (i < chunk.length) {
+      if (_insideThink) {
+        final int closeIdx = chunk.indexOf('</think>', i);
+        if (closeIdx == -1) {
+          // 尚未闭合，全部并入思考
+          reasoning.write(chunk.substring(i));
+          i = chunk.length;
+          break;
+        } else {
+          reasoning.write(chunk.substring(i, closeIdx));
+          i = closeIdx + 8; // 长度: </think>
+          _insideThink = false;
+          anyTokensSeen = true;
+        }
+      } else {
+        final int openIdx = chunk.indexOf('<think>', i);
+        final int strayCloseIdx = chunk.indexOf('</think>', i);
+        if (openIdx == -1 && strayCloseIdx == -1) {
+          // 无标记，全部作为可见
+          visible.write(chunk.substring(i));
+          i = chunk.length;
+          break;
+        }
+        if (strayCloseIdx != -1 && (openIdx == -1 || strayCloseIdx < openIdx)) {
+          // 遇到游离的 </think>（防御处理）：丢弃标签，保留前文
+          visible.write(chunk.substring(i, strayCloseIdx));
+          i = strayCloseIdx + 8;
+          anyTokensSeen = true;
+          continue;
+        }
+        if (openIdx != -1) {
+          // 写入开标签之前的可见文本，进入思考模式
+          visible.write(chunk.substring(i, openIdx));
+          i = openIdx + 7; // 长度: <think>
+          _insideThink = true;
+          anyTokensSeen = true;
+          continue;
+        }
+      }
+    }
+    return _ThinkStreamFilterResult(visible.toString(), reasoning.toString());
+  }
+
+  /// 结束时清理状态：若仍在思考段中，无需额外输出（增量已返回）。
+  String finalize() {
+    _insideThink = false;
+    return '';
+  }
+}
+
 /// OpenAI Chat Completions 兼容服务
 /// - 使用 baseUrl + /v1/chat/completions
 /// - 使用持久化的历史并在每次对话后保存
@@ -266,6 +334,7 @@ class AIChatService {
 
       final client = http.Client();
       StringBuffer full = StringBuffer();
+      final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
       final StringBuffer reasoningBuf = StringBuffer();
       final DateTime reasoningStart = DateTime.now();
       try {
@@ -312,8 +381,15 @@ class AIChatService {
                 if (t == 'response.output_text.delta') {
                   final d = j['delta'];
                   if (d is String && d.isNotEmpty) {
-                    full.write(d);
-                    yield AIStreamEvent('content', d);
+                    final _ThinkStreamFilterResult r = thinkFilter.process(d);
+                    if (r.visibleDelta.isNotEmpty) {
+                      full.write(r.visibleDelta);
+                      yield AIStreamEvent('content', r.visibleDelta);
+                    }
+                    if (r.reasoningDelta.isNotEmpty) {
+                      reasoningBuf.write(r.reasoningDelta);
+                      yield AIStreamEvent('reasoning', r.reasoningDelta);
+                    }
                   }
                   continue;
                 }
@@ -340,8 +416,15 @@ class AIChatService {
                     }
                     final part = delta['content'];
                     if (part is String && part.isNotEmpty) {
-                      full.write(part);
-                      yield AIStreamEvent('content', part);
+                      final _ThinkStreamFilterResult r = thinkFilter.process(part);
+                      if (r.visibleDelta.isNotEmpty) {
+                        full.write(r.visibleDelta);
+                        yield AIStreamEvent('content', r.visibleDelta);
+                      }
+                      if (r.reasoningDelta.isNotEmpty) {
+                        reasoningBuf.write(r.reasoningDelta);
+                        yield AIStreamEvent('reasoning', r.reasoningDelta);
+                      }
                     }
                   }
                 }
@@ -353,22 +436,13 @@ class AIChatService {
         }
 
         // 完整结果写入历史（当前激活会话），并带上推理内容与耗时
-        // 兼容 <think> 标签：提取为 reasoning，并从正文移除
-        final String originalContent = full.toString();
-        final RegExp thinkRe = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', dotAll: true);
-        String extractedFromThink = '';
-        for (final m in thinkRe.allMatches(originalContent)) {
-          final seg = (m.group(1) ?? '').trim();
-          if (seg.isNotEmpty) {
-            if (extractedFromThink.isNotEmpty) extractedFromThink += '\n\n';
-            extractedFromThink += seg;
-          }
+        // 使用流式 <think> 过滤后的内容与推理
+        final String trailing = thinkFilter.finalize();
+        if (trailing.isNotEmpty) {
+          reasoningBuf.write(trailing);
         }
-        final String cleanedContent = originalContent.replaceAll(thinkRe, '');
-        String reasoningText = reasoningBuf.toString();
-        if (extractedFromThink.isNotEmpty) {
-          reasoningText = reasoningText.isEmpty ? extractedFromThink : (reasoningText + '\n' + extractedFromThink);
-        }
+        final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
+        final String reasoningText = reasoningBuf.toString();
         final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
         final assistant = AIMessage(
           role: 'assistant',
@@ -461,6 +535,7 @@ class AIChatService {
 
       final client = http.Client();
       StringBuffer full = StringBuffer();
+      final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
       final StringBuffer reasoningBuf = StringBuffer();
       final DateTime reasoningStart = DateTime.now();
       try {
@@ -507,8 +582,15 @@ class AIChatService {
                     }
                     final part = delta['content'];
                     if (part is String && part.isNotEmpty) {
-                      full.write(part);
-                      yield AIStreamEvent('content', part);
+                      final _ThinkStreamFilterResult r = thinkFilter.process(part);
+                      if (r.visibleDelta.isNotEmpty) {
+                        full.write(r.visibleDelta);
+                        yield AIStreamEvent('content', r.visibleDelta);
+                      }
+                      if (r.reasoningDelta.isNotEmpty) {
+                        reasoningBuf.write(r.reasoningDelta);
+                        yield AIStreamEvent('reasoning', r.reasoningDelta);
+                      }
                     }
                   }
                 }
@@ -518,11 +600,16 @@ class AIChatService {
         }
 
         // 保存历史：user(原文可见) + system(最终提示隐藏UI) + assistant
-        final reasoningText = reasoningBuf.toString();
+        final String trailing = thinkFilter.finalize();
+        if (trailing.isNotEmpty) {
+          reasoningBuf.write(trailing);
+        }
+        final String reasoningText = reasoningBuf.toString();
+        final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
         final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
         final assistant = AIMessage(
           role: 'assistant',
-          content: full.toString(),
+          content: cleanedContent,
           reasoningContent: reasoningText.isEmpty ? null : reasoningText,
           reasoningDuration: reasoningText.isEmpty ? null : reasoningDuration,
         );
