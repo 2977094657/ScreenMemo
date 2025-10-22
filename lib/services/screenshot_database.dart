@@ -41,19 +41,15 @@ class ScreenshotDatabase {
       StartupProfiler.begin('ScreenshotDatabase._initDatabase');
       // 获取应用的外部存储目录
       final externalDir = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir(); 
-      try { await FlutterLogger.nativeInfo('DB', 'init externalDir=' + (externalDir?.path ?? 'null')); } catch (_) {}
       if (externalDir != null) {
         // 创建 output/databases 目录
         final databasesDir = Directory(join(externalDir.path, 'output', 'databases'));
         if (!await databasesDir.exists()) {
           await databasesDir.create(recursive: true);
-          print('数据库目录已创建: ${databasesDir.path}');
         }
         
         // 主库（聚合、注册表等）
         final path = join(databasesDir.path, 'screenshot_memo.db');
-        try { await FlutterLogger.nativeInfo('DB', 'open master db at ' + path); } catch (_) {}
-        print('数据库路径: $path');
         
         final db = await openDatabase(
           path,
@@ -71,7 +67,6 @@ class ScreenshotDatabase {
         return db;
       } else {
         // 备选方案：使用默认数据库路径
-        print('无法获取外部存储目录，使用默认数据库路径');
         final databasesPath = await getDatabasesPath();
         final path = join(databasesPath, 'screenshot_memo.db'); 
         try { await FlutterLogger.nativeWarn('DB', 'fallback internal db at ' + path); } catch (_) {}

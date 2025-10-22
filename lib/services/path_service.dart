@@ -21,11 +21,10 @@ class PathService {
         });
         
         if (path != null) {
-          print('PathService: Android getExternalFilesDir($subDir) = $path');
           StartupProfiler.end('PathService.getExternalFilesDir');
           return Directory(path);
         } else {
-          print('PathService: Android getExternalFilesDir返回null，使用备选方案');
+          try { await FlutterLogger.nativeWarn('PathService', 'getExternalFilesDir returned null, fallback'); } catch (_) {}
           // 如果失败，使用备选方案
           final dir = await _getFallbackDirectory();
           StartupProfiler.end('PathService.getExternalFilesDir');
@@ -38,7 +37,7 @@ class PathService {
         return dir;
       }
     } catch (e) {
-      print('PathService: 获取外部文件目录失败: $e');
+      try { await FlutterLogger.error('PathService.getExternalFilesDir failed: '+e.toString()); } catch (_) {}
       // 出错时使用备选方案
       final dir = await _getFallbackDirectory();
       StartupProfiler.end('PathService.getExternalFilesDir');
@@ -53,19 +52,19 @@ class PathService {
       try {
         final dir = await path_provider.getExternalStorageDirectory();
         if (dir != null) {
-          print('PathService: 使用getExternalStorageDirectory: ${dir.path}');
+          try { await FlutterLogger.debug('PathService.fallback externalStorage: '+dir.path); } catch (_) {}
           return dir;
         }
       } catch (e) {
-        print('PathService: getExternalStorageDirectory失败: $e');
+        try { await FlutterLogger.nativeWarn('PathService', 'externalStorageDirectory failed: '+e.toString()); } catch (_) {}
       }
       
       // 如果外部存储不可用，使用应用文档目录
       final dir = await path_provider.getApplicationDocumentsDirectory();
-      print('PathService: 使用getApplicationDocumentsDirectory: ${dir.path}');
+      try { await FlutterLogger.debug('PathService.fallback appDocuments: '+dir.path); } catch (_) {}
       return dir;
     } catch (e) {
-      print('PathService: 所有备选方案都失败: $e');
+      try { await FlutterLogger.error('PathService.fallback failed: '+e.toString()); } catch (_) {}
       return null;
     }
   }
@@ -77,7 +76,7 @@ class PathService {
       // 获取应用专用外部存储目录
       final baseDir = await getExternalFilesDir(null);
       if (baseDir == null) {
-        print('PathService: 无法获取基础目录');
+        try { await FlutterLogger.nativeWarn('PathService', 'baseDir is null'); } catch (_) {}
         return null;
       }
 
@@ -87,13 +86,13 @@ class PathService {
       // 确保目录存在
       if (!await screenshotDir.exists()) {
         await screenshotDir.create(recursive: true);
-        print('PathService: 创建截图目录: ${screenshotDir.path}');
+        try { await FlutterLogger.info('PathService created screenshot dir: '+screenshotDir.path); } catch (_) {}
       }
 
-      print('PathService: 截图目录: ${screenshotDir.path}');
+      try { await FlutterLogger.debug('PathService screenshot dir: '+screenshotDir.path); } catch (_) {}
       return screenshotDir;
     } catch (e) {
-      print('PathService: 获取截图目录失败: $e');
+      try { await FlutterLogger.error('PathService.getScreenshotDirectory failed: '+e.toString()); } catch (_) {}
       return null;
     }
   }
@@ -111,7 +110,7 @@ class PathService {
       // 确保目录存在
       if (!await appDir.exists()) {
         await appDir.create(recursive: true);
-        print('PathService: 创建应用截图目录: ${appDir.path}');
+        try { await FlutterLogger.info('PathService created app dir: '+appDir.path); } catch (_) {}
       }
 
       return appDir;

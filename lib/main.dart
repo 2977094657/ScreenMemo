@@ -22,35 +22,49 @@ import 'pages/app_screenshot_settings_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 简易 Flutter 侧日志初始化（release 下因最小级别为 ERROR，实际不会写入）
-  await FlutterLogger.log('app start');
+  // 初始化日志（默认开启；读取用户偏好）
+  await FlutterLogger.init();
+  await FlutterLogger.info('app start');
   StartupProfiler.mark('main.ensureInitialized.done');
 
-  if (kReleaseMode) {
-    // 在 release 下用 Zone 拦截所有 print
-    runZonedGuarded(() {
-      // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
-      // ignore: unnecessary_statements
-      ScreenshotService.instance;
+  // 统一使用 Zone 拦截所有 print，并通过 FlutterLogger 输出
+  runZonedGuarded(() {
+    // 拦截 debugPrint 与 FlutterError
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message == null) return;
+      // ignore: discarded_futures
+      FlutterLogger.debug(message);
+    };
+    FlutterError.onError = (FlutterErrorDetails details) {
+      // ignore: discarded_futures
+      FlutterLogger.error(details.exceptionAsString());
+    };
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      // ignore: discarded_futures
+      FlutterLogger.error('Uncaught: '+error.toString());
+      // ignore: discarded_futures
+      FlutterLogger.debug(stack.toString());
+      return false; // 继续默认处理
+    };
 
-      StartupProfiler.begin('runApp');
-      runApp(const ScreenMemoApp());
-      StartupProfiler.end('runApp');
-    }, (e, s) {},
-        zoneSpecification: ZoneSpecification(
-          print: (self, parent, zone, line) {
-            // no-op in release
-          },
-        ));
-    return;
-  }
+    // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
+    // ignore: unnecessary_statements
+    ScreenshotService.instance;
 
-  // Debug/Profiler 构建保持原有行为
-  // ignore: unnecessary_statements
-  ScreenshotService.instance;
-  StartupProfiler.begin('runApp');
-  runApp(const ScreenMemoApp());
-  StartupProfiler.end('runApp');
+    StartupProfiler.begin('runApp');
+    runApp(const ScreenMemoApp());
+    StartupProfiler.end('runApp');
+  }, (e, s) {
+    // ignore: discarded_futures
+    FlutterLogger.error('ZoneError: '+e.toString());
+    // ignore: discarded_futures
+    FlutterLogger.debug(s.toString());
+  }, zoneSpecification: ZoneSpecification(
+    print: (self, parent, zone, line) {
+      // ignore: discarded_futures
+      FlutterLogger.handlePrint(line);
+    },
+  ));
 }
 
 class ScreenMemoApp extends StatefulWidget {

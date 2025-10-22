@@ -18,6 +18,7 @@ import 'nsfw_settings_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/locale_service.dart';
 import '../services/nsfw_preference_service.dart';
+import '../services/flutter_logger.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -63,6 +64,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _dailyNotifyEnabled = true;
   int _dailyNotifyHour = 22;
   int _dailyNotifyMinute = 0;
+  // 日志开关（默认开启）
+  bool _loggingEnabled = true;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -232,6 +235,20 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  Future<void> _loadLoggingEnabled() async {
+    try {
+      _loggingEnabled = FlutterLogger.enabled;
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _updateLoggingEnabled(bool enabled) async {
+    try {
+      await FlutterLogger.setEnabled(enabled);
+      if (mounted) setState(() => _loggingEnabled = enabled);
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -245,6 +262,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadAiRequestInterval();
     _loadDailyNotifySettings();
     _loadNsfwRules();
+    _loadLoggingEnabled();
    }
 
   @override
@@ -715,6 +733,7 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [
                     _buildPrivacyModeItem(context),
                     _buildNsfwEntryItem(context),
+                    _buildLoggingToggleItem(context),
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
@@ -1444,6 +1463,69 @@ class _SettingsPageState extends State<SettingsPage>
               value: _privacyMode,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               onChanged: (v) => _updatePrivacyMode(v),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoggingToggleItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.event_note_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '日志打印',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '开启后统一打印所有日志（默认开启）',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          Transform.scale(
+            scale: 0.9,
+            child: Switch(
+              value: _loggingEnabled,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (v) => _updateLoggingEnabled(v),
             ),
           ),
         ],

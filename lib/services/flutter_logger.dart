@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
 enum LogLevel { debug, info, warn, error }
 
@@ -9,6 +11,35 @@ class FlutterLogger {
   // Release 构建：仅 error；Debug 构建：debug
   static LogLevel minLevel = kReleaseMode ? LogLevel.error : LogLevel.debug;
   static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+
+  // 全局开关（默认开启）+ 持久化键
+  static const String _enabledKey = 'logging_enabled';
+  static bool _enabled = true;
+
+  static bool get enabled => _enabled;
+
+  /// 初始化：加载开关并应用最小级别
+  static Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getBool(_enabledKey);
+      // 默认开启
+      await setEnabled(saved ?? true, persist: false);
+    } catch (_) {}
+  }
+
+  /// 设置是否启用日志打印（默认持久化）
+  static Future<void> setEnabled(bool value, {bool persist = true}) async {
+    _enabled = value;
+    // 开启时打印所有级别；关闭时虽然 minLevel 仍为 error，但下面 _write/native 会短路
+    minLevel = LogLevel.debug;
+    if (persist) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_enabledKey, value);
+      } catch (_) {}
+    }
+  }
 
   // 兼容旧接口
   static Future<void> log(String message) async => _write(LogLevel.info, message);
@@ -20,6 +51,7 @@ class FlutterLogger {
 
   // 直接写入原生日志
   static Future<void> native(String level, String tag, String message) async {
+    if (!enabled) return;
     try {
       await _channel.invokeMethod('nativeLog', {
         'level': level,
@@ -64,6 +96,7 @@ class FlutterLogger {
   static bool _shouldLog(LogLevel level) => level.index >= minLevel.index;
 
   static Future<void> _write(LogLevel level, String message) async {
+    if (!enabled) return;
     if (!_shouldLog(level)) return;
     try {
       final levelStr = () {
@@ -82,6 +115,18 @@ class FlutterLogger {
         'level': levelStr,
         'tag': 'Flutter',
         'message': message,
+      });
+    } catch (_) {}
+  }
+
+  /// 处理 Zone 拦截的 `print` 输出
+  static Future<void> handlePrint(String line) async {
+    if (!enabled) return;
+    try {
+      await _channel.invokeMethod('nativeLog', {
+        'level': 'info',
+        'tag': 'print',
+        'message': line,
       });
     } catch (_) {}
   }
