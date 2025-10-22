@@ -1084,7 +1084,78 @@ object SegmentSummaryManager {
         val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
         val prevOutput = prevRes.first ?: ""
 
-        // 直接使用合并提示词与采样，首次即生成合并结果（不追加自定义文案）
+        // —— 合并前判定：提示词引导模型输出 same_event ——
+        run {
+            val sb = StringBuilder()
+            val langOpt2 = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
+            val sysLang2 = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
+            val isZh2 = (langOpt2 == "zh") || (langOpt2 != "en" && sysLang2.startsWith("zh"))
+            val langPolicy2 = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZh2)
+            sb.append(langPolicy2).append('\n').append('\n')
+            if (isZh2) {
+                sb.append("请判断两段时间是否属于同一用户事件：\n")
+                    .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                    .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                    .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
+                    .append("两段各自的 overall_summary：\n")
+                    .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                    .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+                sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                    .append("合并判定策略（放宽）：\n")
+                    .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
+                    .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
+                    .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
+                    .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+            } else {
+                sb.append("Decide whether the two time ranges belong to the same user event:\n")
+                    .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                    .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                    .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
+                    .append("Each range overall_summary:\n")
+                    .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                    .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+                sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
+                    .append("Merge decision guidelines (relaxed):\n")
+                    .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
+                    .append("- If the gap ≤ 3 minutes, or the latter continues the former activity type, prefer same_event=true.\n")
+                    .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
+                    .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+            }
+
+            // 选择用于判定的少量代表图片（限额：随合并总时长与提供方硬上限）
+            val mergedDurationSec = (((cur.endTime) - prev.startTime) / 1000L).toInt().coerceAtLeast(1)
+            val dynamicCap = kotlin.math.min(mergedDurationSec / cur.sampleIntervalSec, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+            val picksForDecision = pickCompareImages(prevSamples, curSamples, dynamicCap)
+            try { FileLogger.i(TAG, "merge: pick cap=${dynamicCap} -> decision A=${picksForDecision.first.size}, B=${picksForDecision.second.size}") } catch (_: Exception) {}
+            val decide = callGeminiWithImages(ctx, cur, (picksForDecision.first + picksForDecision.second), sb.toString())
+            val decisionText = decide.second
+            val same: Boolean = try {
+                val pair = extractJsonBlocks(decisionText)
+                val jsonStr = pair.first
+                if (jsonStr != null) {
+                    try {
+                        val obj = org.json.JSONObject(jsonStr)
+                        obj.optBoolean("same_event", false)
+                    } catch (_: Exception) {
+                        Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                    }
+                } else {
+                    Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                }
+            } catch (_: Exception) {
+                Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+            }
+            try { FileLogger.i(TAG, "merge: decision same_event=${same} textLen=${decisionText.length}") } catch (_: Exception) {}
+            try {
+                val preview = truncateForLog(decisionText, 3000)
+                FileLogger.i(TAG, "合并判定响应: ${preview}")
+            } catch (_: Exception) {}
+            if (!same) { SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true); return }
+        }
+
+        // 通过判定后：使用合并提示词与采样，生成合并结果
         val capFinal = (cur.durationSec / cur.sampleIntervalSec).coerceAtLeast(1)
         val finalCap = kotlin.math.min(capFinal, PROVIDER_IMAGE_HARD_LIMIT)
         val picks = pickCompareImages(prevSamples, curSamples, finalCap)

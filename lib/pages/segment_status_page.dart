@@ -1188,7 +1188,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         children: [
           _timeSeparator(context, label: timeLabel, keyActionDetail: keyAction),
           const SizedBox(height: 4),
-          Row(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Wrap(
@@ -1196,35 +1196,33 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                 runSpacing: 6,
                 children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  alignment: WrapAlignment.start,
-                  children: [
-                    if (merged)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
-                        constraints: const BoxConstraints(minHeight: 20),
-                        decoration: BoxDecoration(
-                          color: AppTheme.warning.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                          border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
-                        ),
-                        child: Text(
-                          AppLocalizations.of(context).mergedEventTag,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.warning,
-                            height: 1.0,
-                            fontWeight: FontWeight.w500,
-                          ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.start,
+                children: [
+                  if (merged)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+                      constraints: const BoxConstraints(minHeight: 20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warning.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                      ),
+                      child: Text(
+                        AppLocalizations.of(context).mergedEventTag,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.warning,
+                          height: 1.0,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                    ...categories.map((c) => _buildChip(context, c)).toList(),
-                  ],
-                ),
+                    ),
+                  ...categories.map((c) => _buildChip(context, c)).toList(),
+                ],
               ),
             ],
           ),
