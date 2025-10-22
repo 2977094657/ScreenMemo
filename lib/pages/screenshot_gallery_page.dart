@@ -204,6 +204,61 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     }
   }
 
+  /// 当当前日期Tab被删空时，自动移除该Tab并跳转到上一可用日期
+  Future<void> _switchAwayIfCurrentDayEmpty() async {
+    if (!mounted) return;
+    if (_tabController == null || _dayTabs.isEmpty) return;
+    if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) return;
+    final int curCount = _dayTabs[_currentTabIndex].count;
+    if (curCount > 0) return;
+
+    // 清理当前Tab的缓存/滚动状态
+    _tabCache.remove(_currentTabIndex);
+    _tabOffset.remove(_currentTabIndex);
+    _tabHasMore.remove(_currentTabIndex);
+    _tabScrollOffset.remove(_currentTabIndex);
+
+    final int oldIndex = _currentTabIndex;
+    _tabController?.removeListener(_onTabControllerChanged);
+    _tabController?.dispose();
+    _tabController = null;
+
+    setState(() {
+      // 移除当前已为空的日期Tab
+      if (oldIndex >= 0 && oldIndex < _dayTabs.length) {
+        _dayTabs.removeAt(oldIndex);
+      }
+      // 清空当前展示，等待切换
+      _screenshots.clear();
+      _currentDisplayCount = 0;
+      _hasMore = true;
+      _selectionMode = false;
+      _isFullySelected = false;
+      _selectedIds.clear();
+    });
+
+    if (_dayTabs.isNotEmpty) {
+      final int newIndex = (oldIndex > 0) ? oldIndex - 1 : 0;
+      final TabController ctrl = TabController(length: _dayTabs.length, vsync: this);
+      ctrl.addListener(_onTabControllerChanged);
+      setState(() {
+        _tabController = ctrl;
+        _currentTabIndex = (newIndex >= 0 && newIndex < _dayTabs.length) ? newIndex : 0;
+        _tabController!.index = _currentTabIndex;
+        _dateFilterStartMillis = _dayTabs[_currentTabIndex].startMillis;
+        _dateFilterEndMillis = _dayTabs[_currentTabIndex].endMillis;
+      });
+      await _onTabIndexSelected(_currentTabIndex);
+    } else {
+      // 无任何日期Tab，允许显示空状态
+      setState(() {
+        _tabController = null;
+        _dateFilterStartMillis = null;
+        _dateFilterEndMillis = null;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1929,24 +1984,50 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           UINotifier.updateProgress(message: '正在清理缓存...', progress: 0.9);
         }
 
-        // 本地移除（从全量数据和显示数据中删除）
+        // 计算更准确的删除数量与日期Tab新计数（避免出现“删除0张”的提示）
+        int deletedShown = successCount;
+        int? newDayCount;
+        if (_dayTabs.isNotEmpty && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length && _dateFilterStartMillis != null && _dateFilterEndMillis != null) {
+          final prev = _dayTabs[_currentTabIndex].count;
+          try {
+            final refreshed = await ScreenshotService.instance.getScreenshotCountByAppBetween(
+              _packageName,
+              startMillis: _dayTabs[_currentTabIndex].startMillis,
+              endMillis: _dayTabs[_currentTabIndex].endMillis,
+            );
+            newDayCount = refreshed;
+            final delta = prev - refreshed;
+            if (delta > 0) {
+              deletedShown = delta;
+            }
+          } catch (_) {}
+        }
+
+        // 本地移除（从全量数据和显示数据中删除），并同步缓存与统计
         setState(() {
           _screenshots.removeWhere(
             (s) => s.id != null && _selectedIds.contains(s.id),
           );
-          // 更新统计信息（数量级修正）
-          _totalCount = (_totalCount - _selectedIds.length).clamp(0, 1 << 31);
+          final int minus = (newDayCount != null)
+              ? ((_dayTabs[_currentTabIndex].count - newDayCount!).clamp(0, 1 << 31))
+              : _selectedIds.length;
+          _totalCount = (_totalCount - minus).clamp(0, 1 << 31);
           _currentDisplayCount = _screenshots.length;
           _hasMore = _currentDisplayCount < _totalCount;
           _selectedIds.clear();
           _selectionMode = false;
           _isFullySelected = false; // 重置全选状态
-          // 更新当前日期Tab计数
-          if (_dayTabs.isNotEmpty && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length) {
-            final cur = _dayTabs[_currentTabIndex].count;
-            _dayTabs[_currentTabIndex].count = (cur - successCount).clamp(0, 1 << 31);
+          if (newDayCount != null) {
+            _dayTabs[_currentTabIndex].count = newDayCount!;
           }
+          // 同步当前Tab缓存，避免切换后才刷新
+          _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(_screenshots);
+          _tabOffset[_currentTabIndex] = _currentDisplayCount;
+          _tabHasMore[_currentTabIndex] = _hasMore;
         });
+
+        // 若当前日期Tab已被删空，自动切换到上一可用日期
+        await _switchAwayIfCurrentDayEmpty();
 
         // 缓存已在批量删除后统一刷新，这里只需失效本页面的截图缓存
         await _invalidateScreenshotsCache();
@@ -1955,10 +2036,10 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         }
         if (mounted) {
           // ignore: unawaited_futures
-          FlutterLogger.info('UI.批量删除-成功 删除数=$successCount');
+          FlutterLogger.info('UI.批量删除-成功 删除数=' + deletedShown.toString());
           // ignore: unawaited_futures
-          FlutterLogger.nativeInfo('UI', 'deleteBatch success deleted=$successCount');
-          UINotifier.success(context, '已删除 $successCount 张截图');
+          FlutterLogger.nativeInfo('UI', 'deleteBatch success deleted=' + deletedShown.toString());
+          UINotifier.success(context, '已删除 ' + deletedShown.toString() + ' 张截图');
         }
       } else {
         // 使用了“仅保留”快速删除：直接重载数据
