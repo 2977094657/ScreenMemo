@@ -182,11 +182,19 @@ object DailySummaryScheduler {
     private const val KEY_HOUR = "daily_summary_hour"
     private const val KEY_MINUTE = "daily_summary_minute"
     const val ACTION_ALARM = "com.fqyw.screen_memo.ACTION_DAILY_SUMMARY"
+    private const val REQUEST_CODE_SINGLE = 3001
+    private const val REQUEST_CODE_SLOT_BASE = 3100
+    private val FIXED_SLOTS = arrayOf(
+        intArrayOf(8, 0),
+        intArrayOf(12, 0),
+        intArrayOf(17, 0),
+        intArrayOf(22, 0),
+    )
 
     fun schedule(context: Context, hour: Int, minute: Int): Boolean {
         return try {
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pi = buildBroadcastPendingIntent(context)
+            val pi = buildBroadcastPendingIntent(context, REQUEST_CODE_SINGLE)
 
             val cal = Calendar.getInstance().apply {
                 timeInMillis = System.currentTimeMillis()
@@ -238,7 +246,7 @@ object DailySummaryScheduler {
     fun cancel(context: Context): Boolean {
         return try {
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val pi = buildBroadcastPendingIntent(context)
+            val pi = buildBroadcastPendingIntent(context, REQUEST_CODE_SINGLE)
             am.cancel(pi)
             try {
                 val sp = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -252,6 +260,69 @@ object DailySummaryScheduler {
         }
     }
 
+    /**
+     * 额外固定时段调度：08:00、12:00、17:00、22:00
+     * - 与单次用户自选时间并存；便于一天多次提醒和预热
+     */
+    fun scheduleFixedSlots(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            // 先全部取消再重设，避免重复
+            cancelFixedSlots(context)
+
+            var anyOk = false
+            val now = System.currentTimeMillis()
+            val cal = Calendar.getInstance()
+            for ((idx, hm) in FIXED_SLOTS.withIndex()) {
+                val h = hm[0]
+                val m = hm[1]
+                cal.timeInMillis = now
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                cal.set(Calendar.HOUR_OF_DAY, h.coerceIn(0, 23))
+                cal.set(Calendar.MINUTE, m.coerceIn(0, 59))
+                val trigger = if (cal.timeInMillis <= now) {
+                    cal.add(Calendar.DAY_OF_YEAR, 1); cal.timeInMillis
+                } else cal.timeInMillis
+
+                val pi = buildBroadcastPendingIntent(context, REQUEST_CODE_SLOT_BASE + idx)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                        am.setExact(AlarmManager.RTC_WAKEUP, trigger, pi)
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, trigger, pi)
+                    }
+                    anyOk = true
+                } catch (e: Exception) {
+                    try { FileLogger.w(TAG, "slot $idx setExact failed: ${e.message}") } catch (_: Exception) {}
+                    try {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
+                        anyOk = true
+                    } catch (_: Exception) {}
+                }
+
+                try { FileLogger.i(TAG, "scheduleFixedSlots: slot=$idx time=${fmt(trigger)}") } catch (_: Exception) {}
+            }
+            anyOk
+        } catch (e: Exception) {
+            try { FileLogger.e(TAG, "scheduleFixedSlots failed: ${e.message}", e) } catch (_: Exception) {}
+            false
+        }
+    }
+
+    fun cancelFixedSlots(context: Context) {
+        try {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            for (idx in FIXED_SLOTS.indices) {
+                val pi = buildBroadcastPendingIntent(context, REQUEST_CODE_SLOT_BASE + idx)
+                am.cancel(pi)
+            }
+            try { FileLogger.i(TAG, "cancelFixedSlots: all fixed slots cancelled") } catch (_: Exception) {}
+        } catch (_: Exception) {}
+    }
+
     fun restore(context: Context) {
         try {
             val sp = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -261,22 +332,26 @@ object DailySummaryScheduler {
             if (enabled) {
                 val ok = schedule(context, hour, minute)
                 try { FileLogger.i(TAG, "restore: enabled=true, schedule result=$ok ($hour:$minute)") } catch (_: Exception) {}
+                // 同步安排固定时段
+                val ok2 = scheduleFixedSlots(context)
+                try { FileLogger.i(TAG, "restore: fixed slots schedule result=$ok2") } catch (_: Exception) {}
             } else {
-                try { FileLogger.i(TAG, "restore: enabled=false, skip schedule") } catch (_: Exception) {}
+                cancelFixedSlots(context)
+                try { FileLogger.i(TAG, "restore: enabled=false, cancel fixed slots & skip schedule") } catch (_: Exception) {}
             }
         } catch (e: Exception) {
             try { FileLogger.e(TAG, "restore failed: ${e.message}", e) } catch (_: Exception) {}
         }
     }
 
-    private fun buildBroadcastPendingIntent(context: Context): PendingIntent {
+    private fun buildBroadcastPendingIntent(context: Context, requestCode: Int): PendingIntent {
         val intent = Intent(context, DailySummaryAlarmReceiver::class.java).apply {
             action = ACTION_ALARM
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
             PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
         else PendingIntent.FLAG_CANCEL_CURRENT
-        return PendingIntent.getBroadcast(context, 3001, intent, flags)
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
 
     private fun fmt(ts: Long): String {
@@ -321,6 +396,11 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
             val message = brief ?: "点击打开查看今日总结"
             val ok = DailySummaryNotifier.showBigText(context, title, message)
             try { FileLogger.i(TAG, "fired: show notification ok=$ok, briefLen=${message.length}") } catch (_: Exception) {}
+
+            // 异步触发真实后台生成（WorkManager），以便在应用未运行时也生成当日总结
+            try {
+                DailySummaryWorker.enqueueOnce(context.applicationContext, dateKey)
+            } catch (_: Exception) {}
 
             // 立即安排下一天
             try {

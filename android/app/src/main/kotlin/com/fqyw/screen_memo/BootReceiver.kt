@@ -55,6 +55,9 @@ class BootReceiver : BroadcastReceiver() {
                 try {
                     DailySummaryScheduler.restore(context)
                     Log.d(TAG, "每日提醒调度已恢复")
+                    // 同时安排固定时段
+                    val ok = DailySummaryScheduler.scheduleFixedSlots(context)
+                    Log.d(TAG, "固定时段调度结果: $ok")
                 } catch (e: Exception) {
                     Log.e(TAG, "恢复每日提醒调度失败", e)
                 }
