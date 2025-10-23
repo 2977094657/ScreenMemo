@@ -88,4 +88,7 @@ dependencies {
 
     // ML Kit: 中文文本识别（离线模型随 APK 打包）
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
+
+    // WorkManager：后台每日总结生成
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }
