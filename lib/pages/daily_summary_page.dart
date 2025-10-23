@@ -33,7 +33,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   Future<void> _load({bool initial = false}) async {
     setState(() => _loading = true);
     try {
-      final daily = await _db.getDailySummary(widget.dateKey);
+      Map<String, dynamic>? daily = await _db.getDailySummary(widget.dateKey);
       Map<String, dynamic>? sj;
       if (daily != null) {
         final raw = (daily['structured_json'] as String?) ?? '';
@@ -44,6 +44,26 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           } catch (_) {}
         }
       }
+
+      // 若为首次进入且当前无记录，则自动触发一次生成，避免用户长时间等待无内容
+      if (initial && daily == null) {
+        try {
+          await _svc.generateForDate(widget.dateKey);
+        } catch (_) {}
+        // 生成完成后重新读取
+        daily = await _db.getDailySummary(widget.dateKey);
+        sj = null;
+        if (daily != null) {
+          final raw2 = (daily['structured_json'] as String?) ?? '';
+          if (raw2.isNotEmpty) {
+            try {
+              final j2 = jsonDecode(raw2);
+              if (j2 is Map<String, dynamic>) sj = j2;
+            } catch (_) {}
+          }
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _daily = daily;
@@ -89,20 +109,31 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   // 自动补充必要的空行，以确保它们作为独立段落/小节渲染
   String _fixMarkdownLayout(String input) {
     if (input.trim().isEmpty) return input;
-    final lines = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    // 将字面 "\n" 转换为真实换行，将字面 "\"" 还原为双引号，统一换行符
+    final pre = input
+        .replaceAll('\\r\\n', '\n')
+        .replaceAll('\\r', '\n')
+        .replaceAll('\\n', '\n')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('\\"', '"');
+
+    final lines = pre.split('\n');
     final out = <String>[];
     bool lastWasBlank = true;
     final headingRe = RegExp(r'^\s{0,3}#{1,6}\s');
     final boldSubtitleRe = RegExp(r'^\s*\*\*[^*\n]+\*\*[:：]');
+    final listStartRe = RegExp(r'^\s*-\s+');
 
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
       final trimmed = line.trimRight();
       final isHeading = headingRe.hasMatch(trimmed);
       final isBoldSubtitle = boldSubtitleRe.hasMatch(trimmed);
+      final isListStart = listStartRe.hasMatch(trimmed);
 
-      // 确保在小节/标题前有一个空行
-      if ((isHeading || isBoldSubtitle) && !lastWasBlank && out.isNotEmpty && out.last.trim().isNotEmpty) {
+      // 确保在小节/标题/列表前有一个空行
+      if ((isHeading || isBoldSubtitle || isListStart) && !lastWasBlank && out.isNotEmpty && out.last.trim().isNotEmpty) {
         out.add('');
         lastWasBlank = true;
       }
@@ -127,7 +158,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     for (final l in out) {
       if (l.trim().isEmpty) {
         if (normalized.isEmpty || normalized.last.trim().isEmpty) {
-          normalized.add('');
+          // 若上一个也是空行则跳过，确保只保留一个
+          if (normalized.isEmpty) normalized.add('');
         } else {
           normalized.add('');
         }

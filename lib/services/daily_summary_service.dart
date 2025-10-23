@@ -104,7 +104,7 @@ class DailySummaryService {
     // 使用“动态(segments)”上下文对应的提供商/模型进行一次性请求，确保与动态 AppBar 选择一致
     AIMessage resp;
     try {
-      resp = await _chat.sendMessageOneShot(prompt, context: 'segments');
+      resp = await _chat.sendMessageOneShot(prompt, context: 'segments', timeout: null);
     } catch (e, st) {
       // ignore: discarded_futures
       await FlutterLogger.nativeError('DailySummary', 'AI request failed: '+e.toString());
@@ -143,8 +143,44 @@ class DailySummaryService {
       }
     } catch (e) {
       // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'non-JSON AI response, use raw; error=$e');
-      // 非 JSON 回复：直接存入 output_text
+      FlutterLogger.nativeWarn('DailySummary', 'non-JSON AI response, try repair then fallback; error=$e');
+      // 先尝试修复 overall_summary / notification_brief 中的未转义引号，然后再次解析
+      try {
+        final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['overall_summary', 'notification_brief']);
+        final j2 = jsonDecode(repaired);
+        if (j2 is Map<String, dynamic>) {
+          sj = j2;
+          final v2 = j2['overall_summary'];
+          if (v2 is String && v2.trim().isNotEmpty) {
+            outputText = v2.trim();
+          }
+        }
+      } catch (_) {
+        // 修复仍失败：使用“宽松截取”避免被内部引号截断
+        try {
+          final ov2 = _extractLooseField(raw, 'overall_summary', nextKeyHint: '"timeline"');
+          final nb2 = _extractLooseField(raw, 'notification_brief');
+          if (ov2 != null && ov2.trim().isNotEmpty) {
+            final ov3 = _unescapeJsonStringCandidate(ov2.trim());
+            final nb3 = nb2 == null ? null : _unescapeJsonStringCandidate(nb2.trim());
+            outputText = ov3;
+            final m = <String, dynamic>{'overall_summary': outputText};
+            if (nb3 != null && nb3.trim().isNotEmpty) m['notification_brief'] = nb3.trim();
+            sj = m;
+          } else {
+            // 最后尝试原先的简易正则提取
+            final ov = _extractJsonStringValue(raw, 'overall_summary');
+            final nb = _extractJsonStringValue(raw, 'notification_brief');
+            if (ov != null && ov.trim().isNotEmpty) {
+              outputText = ov.trim();
+              final m = <String, dynamic>{'overall_summary': outputText};
+              if (nb != null && nb.trim().isNotEmpty) m['notification_brief'] = nb.trim();
+              sj = m;
+            }
+          }
+        } catch (_) {}
+      }
+      // 仍失败则保持 outputText=raw
     }
 
     // 写入记录时复用上方解析到的 provider 与 model
@@ -292,6 +328,103 @@ class DailySummaryService {
     return trimmed;
   }
 
+  // 从原始文本中近似抽取 JSON 字符串字段（仅用于容错），支持简单转义还原
+  String? _extractJsonStringValue(String raw, String key) {
+    try {
+      final pattern = RegExp('"'+RegExp.escape(key)+'"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"', dotAll: true);
+      final m = pattern.firstMatch(raw);
+      if (m == null) return null;
+      final captured = m.group(1) ?? '';
+      // 使用 JSON 解析一次来还原转义字符
+      try {
+        final wrapped = '{"x":"$captured"}';
+        final obj = jsonDecode(wrapped);
+        final val = (obj is Map && obj['x'] is String) ? (obj['x'] as String) : captured;
+        return val.trim();
+      } catch (_) {
+        return captured.trim();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 修复指定键的值中未转义的双引号（只在解析失败时使用）
+  String _repairJsonUnescapedQuotes(String s, {required List<String> keys}) {
+    String out = s;
+    for (final key in keys) {
+      out = _repairOneField(out, key, nextKeyHint: key == 'overall_summary' ? '"timeline"' : null);
+    }
+    return out;
+  }
+
+  String _repairOneField(String s, String key, {String? nextKeyHint}) {
+    try {
+      final keyIdx = s.indexOf('"$key"');
+      if (keyIdx < 0) return s;
+      final colon = s.indexOf(':', keyIdx);
+      if (colon < 0) return s;
+      final firstQuote = s.indexOf('"', colon);
+      if (firstQuote < 0) return s;
+      int endQuote;
+      if (nextKeyHint != null) {
+        final nextIdx = s.indexOf(nextKeyHint, firstQuote + 1);
+        if (nextIdx < 0) return s;
+        endQuote = s.lastIndexOf('"', nextIdx - 1);
+      } else {
+        final brace = s.indexOf('}', firstQuote + 1);
+        if (brace < 0) return s;
+        endQuote = s.lastIndexOf('"', brace);
+      }
+      if (endQuote <= firstQuote) return s;
+      final value = s.substring(firstQuote + 1, endQuote);
+      // 仅替换未转义的引号
+      final escaped = value.replaceAllMapped(RegExp(r'(?<!\\)"'), (m) => '\\"');
+      return s.substring(0, firstQuote + 1) + escaped + s.substring(endQuote);
+    } catch (_) {
+      return s;
+    }
+  }
+
+  // 宽松截取：跨越未转义引号，按“下一字段”或“对象结束”来界定结束位置
+  String? _extractLooseField(String s, String key, {String? nextKeyHint}) {
+    try {
+      final keyIdx = s.indexOf('"$key"');
+      if (keyIdx < 0) return null;
+      final colon = s.indexOf(':', keyIdx);
+      if (colon < 0) return null;
+      final firstQuote = s.indexOf('"', colon);
+      if (firstQuote < 0) return null;
+      int endQuote;
+      if (nextKeyHint != null) {
+        final nextIdx = s.indexOf(nextKeyHint, firstQuote + 1);
+        if (nextIdx < 0) return null;
+        endQuote = s.lastIndexOf('"', nextIdx - 1);
+      } else {
+        final brace = s.indexOf('}', firstQuote + 1);
+        if (brace < 0) return null;
+        endQuote = s.lastIndexOf('"', brace);
+      }
+      if (endQuote <= firstQuote) return null;
+      final value = s.substring(firstQuote + 1, endQuote);
+      return value.trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 尝试将形如 "\n" 等 JSON 转义序列反转为真实字符
+  String _unescapeJsonStringCandidate(String s) {
+    try {
+      final wrapped = '{"x":"' + s.replaceAll('\\', '\\\\').replaceAll('"', '\\"') + '"}';
+      final obj = jsonDecode(wrapped);
+      if (obj is Map && obj['x'] is String) {
+        return (obj['x'] as String);
+      }
+    } catch (_) {}
+    return s;
+  }
+
   /// 获取今日通知用的简短文本（优先 structured_json.notification_brief，回退为摘要首句）
   Future<String> getNotificationBrief(String dateKey) async {
     // ignore: discarded_futures
@@ -400,6 +533,18 @@ class DailySummaryService {
       });
       // ignore: discarded_futures
       FlutterLogger.nativeInfo('DailySummary', 'scheduleDailyNotification result=$res');
+      // 同步安排固定时段（08:00/12:00/17:00/22:00）
+      try {
+        final ok = await _channel.invokeMethod('scheduleDailySummaryNotification', {
+          // 复用原生接收器：为固定时段单独调用由原生端恢复时统一设定
+          // 这里仅确保通道可用；具体固定时段在原生 Boot 恢复与 restore 时安排
+          'hour': hour,
+          'minute': minute,
+          'enabled': enabled,
+        });
+        // ignore: discarded_futures
+        FlutterLogger.nativeDebug('DailySummary', 'schedule fixed slots via native restore side-effect ok=$ok');
+      } catch (_) {}
       return res == true;
     } catch (e) {
       // ignore: discarded_futures
