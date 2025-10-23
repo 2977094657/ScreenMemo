@@ -740,7 +740,7 @@ class AIChatService {
   Future<AIMessage> sendMessageOneShot(
     String userMessage, {
     String context = 'chat',
-    Duration timeout = const Duration(seconds: 60),
+    Duration? timeout,
   }) async {
     final endpoints = await _settings.getEndpointCandidates(context: context);
     Exception? lastError;
@@ -781,7 +781,8 @@ class AIChatService {
               }
             ]
           });
-          final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+          final Future<http.Response> req = http.post(uri, headers: headers, body: body);
+          final resp = (timeout == null) ? await req : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
             throw Exception('Request failed: ${resp.statusCode} ${resp.body}');
           }
@@ -811,7 +812,7 @@ class AIChatService {
           }
           return AIMessage(role: 'assistant', content: content);
         } else {
-          // OpenAI 兼容 REST: /v1/chat/completions
+          // OpenAI 兼容 REST: /v1/chat/completions 或 /v1/responses（由 chatPath 决定）
           final uri = Uri.parse(_joinUrl(base, ep.chatPath));
           final body = jsonEncode({
             'model': ep.model,
@@ -822,21 +823,50 @@ class AIChatService {
             'temperature': 0.2,
             'stream': false,
           });
-          final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+          final Future<http.Response> req = http.post(uri, headers: headers, body: body);
+          final resp = (timeout == null) ? await req : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
             throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
           }
-          final data = jsonDecode(resp.body) as Map<String, dynamic>;
-          final choices = data['choices'] as List<dynamic>?;
-          if (choices == null || choices.isEmpty) {
-            throw Exception('Empty choices');
+          final Map<String, dynamic> data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+          // 兼容多种非流式结构：
+          // - Responses API: data.output[]
+          // - Chat Completions: data.choices[0].message.content
+          String content = '';
+          if (data['output'] is List) {
+            final outs = (data['output'] as List).cast<dynamic>();
+            final StringBuffer cbuf = StringBuffer();
+            for (final it in outs) {
+              if (it is! Map<String, dynamic>) continue;
+              final t = it['type'];
+              if (t == 'message') {
+                final cont = it['content'];
+                if (cont is List) {
+                  for (final p in cont) {
+                    if (p is Map<String, dynamic> && p['type'] == 'output_text') {
+                      final txt = (p['text'] as String?) ?? '';
+                      if (txt.isNotEmpty) cbuf.write(txt);
+                    }
+                  }
+                }
+              }
+            }
+            content = cbuf.toString();
+          } else {
+            final choices = data['choices'] as List<dynamic>?;
+            if (choices != null && choices.isNotEmpty) {
+              final first = choices.first as Map<String, dynamic>;
+              final msg = first['message'] as Map<String, dynamic>?;
+              if (msg != null) {
+                content = (msg['content'] as String?) ?? '';
+              }
+            }
           }
-          final first = choices.first as Map<String, dynamic>;
-          final msg = first['message'] as Map<String, dynamic>?;
-          if (msg == null) {
-            throw Exception('Invalid response');
+
+          if (content.trim().isEmpty) {
+            throw Exception('Empty content: ' + resp.body);
           }
-          final content = (msg['content'] as String?) ?? '';
           return AIMessage(role: 'assistant', content: content);
         }
       } catch (e) {
