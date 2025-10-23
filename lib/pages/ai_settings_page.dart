@@ -1718,7 +1718,64 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                               width: 20, height: 20,
                             ),
                             title: Text(p.name, style: Theme.of(c).textTheme.bodyMedium),
-                            trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (selected)
+                                  Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  tooltip: AppLocalizations.of(context).actionDelete,
+                                  icon: Icon(Icons.delete_outline, color: Theme.of(c).colorScheme.error),
+                                  onPressed: () async {
+                                    final t = AppLocalizations.of(context);
+                                    final confirmed = await showUIDialog<bool>(
+                                          context: context,
+                                          title: t.deleteGroup,
+                                          message: t.confirmDeleteProviderMessage(p.name),
+                                          actions: [
+                                            UIDialogAction<bool>(text: t.dialogCancel, result: false),
+                                            UIDialogAction<bool>(text: t.actionDelete, style: UIDialogActionStyle.destructive, result: true),
+                                          ],
+                                        ) ??
+                                        false;
+                                    if (!confirmed) return;
+                                    final ok = await svc.deleteProvider(p.id!);
+                                    if (!ok) {
+                                      // 二次校验：若已删除则按成功处理
+                                      final still = await svc.getProvider(p.id!);
+                                      if (still != null) {
+                                        UINotifier.error(context, t.deleteFailed);
+                                        return;
+                                      }
+                                    }
+                                    // 如果删除的是当前选中提供商，清空上下文并提示
+                                    if (selected) {
+                                      if (mounted) {
+                                        setState(() {
+                                          _ctxChatProvider = null;
+                                          _ctxChatModel = null;
+                                        });
+                                      }
+                                    }
+                                    // 刷新底部列表
+                                    final refreshed = await svc.listProviders();
+                                    items
+                                      ..clear()
+                                      ..addAll(q.isEmpty
+                                          ? refreshed
+                                          : refreshed.where((pp) {
+                                              final name = pp.name.toLowerCase();
+                                              final type = pp.type.toLowerCase();
+                                              final base = (pp.baseUrl ?? '').toString().toLowerCase();
+                                              return name.contains(q) || type.contains(q) || base.contains(q);
+                                            }));
+                                    setModalState(() {});
+                                    UINotifier.success(context, t.deletedToast);
+                                  },
+                                ),
+                              ],
+                            ),
                             onTap: () async {
                               String model = (_ctxChatModel ?? '').trim();
                               final List<String> available = p.models;

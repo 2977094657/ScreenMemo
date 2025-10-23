@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:screen_memo/widgets/ui_components.dart';
+import 'package:screen_memo/widgets/ui_dialog.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../services/ai_providers_service.dart';
@@ -107,24 +108,28 @@ class _ProviderListPageState extends State<ProviderListPage> {
   }
 
   Future<void> _onDelete(AIProvider p) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppLocalizations.of(ctx).dialogCancel.replaceAll('Cancel','').isEmpty ? AppLocalizations.of(ctx).deleteGroup : AppLocalizations.of(ctx).deleteGroup),
-        content: Text(AppLocalizations.of(ctx).confirmDeleteProviderMessage(p.name)),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(AppLocalizations.of(ctx).dialogCancel)),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(AppLocalizations.of(ctx).actionDelete)),
-        ],
-      ),
-    );
-    if (confirm != true) return;
+    final t = AppLocalizations.of(context);
+    final confirm = await showUIDialog<bool>(
+          context: context,
+          title: t.deleteGroup,
+          message: t.confirmDeleteProviderMessage(p.name),
+          actions: [
+            UIDialogAction<bool>(text: t.dialogCancel, result: false),
+            UIDialogAction<bool>(text: t.actionDelete, style: UIDialogActionStyle.destructive, result: true),
+          ],
+        ) ??
+        false;
+    if (!confirm) return;
     final ok = await _svc.deleteProvider(p.id!);
     if (!ok) {
-      UINotifier.error(context, AppLocalizations.of(context).deleteFailed);
-      return;
+      // 二次校验：若数据库中已无此记录，按成功处理，避免误报失败
+      final still = await _svc.getProvider(p.id!);
+      if (still != null) {
+        UINotifier.error(context, t.deleteFailed);
+        return;
+      }
     }
-    UINotifier.success(context, AppLocalizations.of(context).deletedToast);
+    UINotifier.success(context, t.deletedToast);
     await _load();
   }
 
@@ -422,6 +427,15 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                        ],
                                      ),
                                    ),
+                                  const SizedBox(width: AppTheme.spacing2),
+                                  IconButton(
+                                    tooltip: AppLocalizations.of(context).actionDelete,
+                                    icon: Icon(
+                                      Icons.delete_outline,
+                                      color: Theme.of(context).colorScheme.error,
+                                    ),
+                                    onPressed: () => _onDelete(p),
+                                  ),
                                  ],
                                ),
                              ),
