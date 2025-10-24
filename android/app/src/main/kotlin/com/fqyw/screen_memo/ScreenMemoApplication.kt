@@ -1,7 +1,7 @@
 package com.fqyw.screen_memo
 
 import android.app.Application
-import android.util.Log
+ 
 import android.content.Context
 import android.content.pm.PackageManager
 import com.umeng.commonsdk.UMConfigure
@@ -31,17 +31,17 @@ class ScreenMemoApplication : Application() {
                     val clazz = Class.forName("com.umeng.umcrash.UMCrash")
                     val m = clazz.getMethod("init", Context::class.java)
                     m.invoke(null, this)
-                    Log.d(TAG, "UMCrash initialized")
+                    FileLogger.i(TAG, "UMCrash initialized")
                     // 写一条初始化 info 到 output/logs/yyyy/MM/dd/
                     OutputFileLogger.info(this, TAG, "Umeng initialized, channel=$channel")
                 } catch (e: Exception) {
-                    Log.w(TAG, "UMCrash init not available", e)
+                    FileLogger.w(TAG, "UMCrash init not available: ${e.message}")
                 }
             } else {
-                Log.w(TAG, "UMENG_APPKEY is empty; skipped Umeng init")
+            FileLogger.w(TAG, "UMENG_APPKEY is empty; skipped Umeng init")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Umeng init failed", e)
+            FileLogger.e(TAG, "Umeng init failed", e)
             OutputFileLogger.error(this, TAG, "Umeng init failed: ${e.message}")
         }
 
@@ -52,10 +52,10 @@ class ScreenMemoApplication : Application() {
             if (cached == null) {
                 val engine = FlutterEngine(this)
                 FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
-                Log.d(TAG, "FlutterEngine cached without executing Dart: $ENGINE_ID")
+                FileLogger.i(TAG, "FlutterEngine cached without executing Dart: $ENGINE_ID")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to cache FlutterEngine", e)
+            FileLogger.e(TAG, "Failed to cache FlutterEngine", e)
         }
 
         // 应用启动时恢复每日提醒调度（读取 SharedPreferences 中的上次设置）
@@ -63,7 +63,7 @@ class ScreenMemoApplication : Application() {
             DailySummaryScheduler.restore(this)
             OutputFileLogger.info(this, TAG, "Daily summary schedule restored at app start")
         } catch (e: Exception) {
-            Log.w(TAG, "Daily schedule restore failed", e)
+            FileLogger.w(TAG, "Daily schedule restore failed: ${e.message}")
         }
     }
 

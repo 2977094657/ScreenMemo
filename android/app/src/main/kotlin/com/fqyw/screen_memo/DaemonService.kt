@@ -11,7 +11,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
-import android.util.Log
+ 
 import androidx.core.app.NotificationCompat
 import java.util.Timer
 import java.util.TimerTask

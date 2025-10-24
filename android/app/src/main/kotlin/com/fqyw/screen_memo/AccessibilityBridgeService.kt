@@ -3,7 +3,7 @@ package com.fqyw.screen_memo
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
-import android.util.Log
+ 
 
 /**
  * 桥接服务，用于提供AIDL接口访问AccessibilityService
@@ -36,7 +36,7 @@ class AccessibilityBridgeService : Service() {
     }
     
     override fun onBind(intent: Intent?): IBinder {
-        Log.d(TAG, "服务绑定")
+        FileLogger.d(TAG, "服务绑定")
         return binder
     }
 }

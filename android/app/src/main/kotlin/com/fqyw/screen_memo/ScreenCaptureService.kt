@@ -11,7 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
+ 
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
@@ -28,7 +28,10 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         isServiceRunning = true
-        Log.d(TAG, "前台服务已创建，进程ID: ${android.os.Process.myPid()}")
+        FileLogger.d(TAG, "前台服务已创建，进程ID: ${android.os.Process.myPid()}")
+
+        // 同步文件日志开关（避免 Accessibility 尚未就绪时丢日志）
+        try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
 
         // 创建通知渠道
         createNotificationChannel()

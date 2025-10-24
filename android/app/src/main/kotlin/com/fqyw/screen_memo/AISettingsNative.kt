@@ -2,7 +2,7 @@ package com.fqyw.screen_memo
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
+ 
 import java.io.File
 
 /**
@@ -36,7 +36,7 @@ object AISettingsNative {
             val path = resolveMasterDbPath(context) ?: return null
             SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
         } catch (e: Exception) {
-            Log.w(TAG, "openMasterDb failed: ${e.message}")
+            FileLogger.w(TAG, "openMasterDb failed: ${e.message}")
             null
         }
     }

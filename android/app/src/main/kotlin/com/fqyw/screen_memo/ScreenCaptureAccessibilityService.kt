@@ -28,7 +28,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
+ 
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -212,6 +212,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return
         }
 
+        // 本应用：永不作为候选，避免切回应用时被当作前台并误触发后续截图
+        if (candidatePackage == packageName) {
+            FileLogger.d(TAG, "检测到本应用窗口 ${candidatePackage}，忽略该候选")
+            return
+        }
+
         // 输入法：忽略，不参与稳定候选
         if (isImePackage(candidatePackage)) {
             FileLogger.d(TAG, "检测到输入法窗口 $candidatePackage，忽略该候选")
@@ -288,6 +294,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 初始化文件日志
         FileLogger.init(this)
+        // 同步 FlutterSharedPreferences 中的 logging_enabled
+        try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
         FileLogger.writeSeparator("AccessibilityService onCreate")
         FileLogger.writeSystemInfo(this)
 
@@ -654,7 +662,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
     
     override fun onInterrupt() {
-        Log.d(TAG, "无障碍服务被中断")
+        FileLogger.d(TAG, "无障碍服务被中断")
     }
     
     
@@ -1185,6 +1193,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 偶尔刷新IME集合
         refreshImePackages(force = false)
         val visibleTop = getForegroundAppUsingUsageStats() ?: currentForegroundApp
+
+        // 本应用置顶：暂停截屏，避免将截图归属到上一稳定前台
+        if (visibleTop != null && visibleTop == packageName) {
+            FileLogger.d(TAG, "顶层为本应用(${visibleTop})，暂停截屏，等待新会话")
+            return null
+        }
 
         // 系统遮罩/系统UI：继续把截图归属到稳定前台
         if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop) || isImePackage(visibleTop))) {
@@ -1899,9 +1913,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         try {
             val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
             sharedPrefs.edit().putBoolean("accessibility_service_running", isRunning).apply()
-            Log.d(TAG, "服务状态已保存: $isRunning")
+            FileLogger.d(TAG, "服务状态已保存: $isRunning")
         } catch (e: Exception) {
-            Log.e(TAG, "保存服务状态失败: $e")
+            FileLogger.e(TAG, "保存服务状态失败: $e")
         }
     }
 
@@ -1913,7 +1927,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
             sharedPrefs.getBoolean("accessibility_service_running", false)
         } catch (e: Exception) {
-            Log.e(TAG, "获取服务状态失败: $e")
+            FileLogger.e(TAG, "获取服务状态失败: $e")
             false
         }
     }
@@ -2254,7 +2268,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             if (elapsedSinceEvent <= 2000L) {
                 return
             }
-            val candidate = getForegroundAppUsingUsageStats()
+            var candidate = getForegroundAppUsingUsageStats()
             val prevStable = lastStableMonitoredApp
             if (candidate != null) {
                 onForegroundCandidateDetected(candidate)
@@ -2264,6 +2278,32 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 FileLogger.d(TAG, "定时检测稳定前台变化: $prevStable -> $stable")
                 currentForegroundApp = stable
                 updateAppSession(stable)
+            }
+
+            // 兜底：若本次 UsageStats 无结果且未稳定化，尝试长窗口事件与窗口列表
+            if (candidate == null && (lastStableMonitoredApp == null || lastStableMonitoredApp!!.isEmpty())) {
+                // 1) 长窗口 UsageEvents（例如 15 秒）
+                val longWindowPkg = getForegroundAppUsingUsageEventsLongWindow(15_000L)
+                if (longWindowPkg != null) {
+                    FileLogger.d(TAG, "UsageEvents(15s) 兜底命中前台: ${longWindowPkg}")
+                    onForegroundCandidateDetected(longWindowPkg)
+                } else {
+                    // 2) Accessibility 窗口列表兜底
+                    val fromWindows = getCurrentForegroundApp()
+                    if (!fromWindows.isNullOrEmpty()) {
+                        FileLogger.d(TAG, "窗口列表兜底命中前台: ${fromWindows}")
+                        onForegroundCandidateDetected(fromWindows)
+                    } else {
+                        FileLogger.d(TAG, "本轮未能通过 UsageStats/UsageEvents/窗口列表确定前台")
+                    }
+                }
+
+                val stable2 = lastStableMonitoredApp
+                if (stable2 != null && stable2 != prevStable) {
+                    FileLogger.d(TAG, "兜底后稳定前台变化: $prevStable -> $stable2")
+                    currentForegroundApp = stable2
+                    updateAppSession(stable2)
+                }
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "定时检测前台应用失败", e)
@@ -2311,6 +2351,47 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             FileLogger.e(TAG, "使用UsageStats获取前台应用失败", e)
             return null
+        }
+    }
+
+    /**
+     * 使用较长窗口的 UsageEvents 进行一次兜底前台判定（不作为主路径，以减少功耗）。
+     * 选取最近的 "前台相关" 事件对应的包名。
+     */
+    private fun getForegroundAppUsingUsageEventsLongWindow(windowMs: Long = 15_000L): String? {
+        return try {
+            val usageStats = usageStatsManager ?: return null
+            val now = System.currentTimeMillis()
+            val from = (now - windowMs).coerceAtLeast(0)
+            val events = usageStats.queryEvents(from, now)
+            var lastPkg: String? = null
+            var total = 0
+            var fgHits = 0
+            val tmp = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(tmp)
+                total++
+                val t = tmp.eventType
+                val isFg = (t == UsageEvents.Event.MOVE_TO_FOREGROUND
+                        || t == UsageEvents.Event.ACTIVITY_RESUMED)
+                if (isFg) {
+                    fgHits++
+                    // 排除本应用，避免把应用内前台当成候选
+                    val pkg = tmp.packageName
+                    if (pkg != null && pkg != packageName) {
+                        lastPkg = pkg
+                    }
+                }
+            }
+            if (lastPkg != null) {
+                FileLogger.d(TAG, "UsageEvents 长窗口: total=${total}, fgHits=${fgHits}, last=${lastPkg}")
+            } else {
+                FileLogger.d(TAG, "UsageEvents 长窗口: 无命中, total=${total}")
+            }
+            lastPkg
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "UsageEvents 长窗口兜底失败", e)
+            null
         }
     }
 

@@ -2,7 +2,7 @@ package com.fqyw.screen_memo
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
+ 
 
 /**
  * 服务状态管理器
@@ -81,9 +81,9 @@ object ServiceStateManager {
                 .putLong(KEY_LAST_UPDATE_TIME, System.currentTimeMillis())
                 .apply()
             
-            Log.d(TAG, "AccessibilityService启用状态已更新: $isEnabled")
+            FileLogger.d(TAG, "AccessibilityService启用状态已更新: $isEnabled")
         } catch (e: Exception) {
-            Log.e(TAG, "设置AccessibilityService启用状态失败", e)
+            FileLogger.e(TAG, "设置AccessibilityService启用状态失败", e)
         }
     }
     
@@ -95,7 +95,7 @@ object ServiceStateManager {
             val prefs = getPrefs(context)
             prefs.getBoolean(KEY_ACCESSIBILITY_SERVICE_ENABLED, false)
         } catch (e: Exception) {
-            Log.e(TAG, "获取AccessibilityService启用状态失败", e)
+            FileLogger.e(TAG, "获取AccessibilityService启用状态失败", e)
             false
         }
     }
@@ -111,9 +111,9 @@ object ServiceStateManager {
                 .putLong(KEY_LAST_UPDATE_TIME, System.currentTimeMillis())
                 .apply()
             
-            Log.d(TAG, "前台服务状态已更新: $isRunning")
+            FileLogger.d(TAG, "前台服务状态已更新: $isRunning")
         } catch (e: Exception) {
-            Log.e(TAG, "设置前台服务状态失败", e)
+            FileLogger.e(TAG, "设置前台服务状态失败", e)
         }
     }
     
@@ -125,7 +125,7 @@ object ServiceStateManager {
             val prefs = getPrefs(context)
             prefs.getBoolean(KEY_FOREGROUND_SERVICE_RUNNING, false)
         } catch (e: Exception) {
-            Log.e(TAG, "获取前台服务状态失败", e)
+            FileLogger.e(TAG, "获取前台服务状态失败", e)
             false
         }
     }
@@ -145,7 +145,7 @@ object ServiceStateManager {
                 "accessibilityProcessName" to (prefs.getString(KEY_ACCESSIBILITY_PROCESS_NAME, "") ?: "")
             )
         } catch (e: Exception) {
-            Log.e(TAG, "获取所有状态失败", e)
+            FileLogger.e(TAG, "获取所有状态失败", e)
             emptyMap()
         }
     }
@@ -157,9 +157,9 @@ object ServiceStateManager {
         try {
             val prefs = getPrefs(context)
             prefs.edit().clear().apply()
-            Log.d(TAG, "所有状态已清除")
+            FileLogger.d(TAG, "所有状态已清除")
         } catch (e: Exception) {
-            Log.e(TAG, "清除状态失败", e)
+            FileLogger.e(TAG, "清除状态失败", e)
         }
     }
     

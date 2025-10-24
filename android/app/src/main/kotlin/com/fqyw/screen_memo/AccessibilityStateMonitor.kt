@@ -10,7 +10,7 @@ import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
-import android.util.Log
+ 
 
 /**
  * 监听辅助功能服务状态变化的类
@@ -51,12 +51,12 @@ class AccessibilityStateMonitor(private val context: Context) {
                 contentObserver!!
             )
             
-            Log.d(TAG, "开始监听辅助功能状态")
+            FileLogger.d(TAG, "开始监听辅助功能状态")
             
             // 立即检查一次状态
             checkAccessibilityServiceStatus()
         } catch (e: Exception) {
-            Log.e(TAG, "启动监听失败", e)
+            FileLogger.e(TAG, "启动监听失败", e)
         }
     }
     
@@ -69,9 +69,9 @@ class AccessibilityStateMonitor(private val context: Context) {
                 context.contentResolver.unregisterContentObserver(it)
             }
             contentObserver = null
-            Log.d(TAG, "停止监听辅助功能状态")
+            FileLogger.d(TAG, "停止监听辅助功能状态")
         } catch (e: Exception) {
-            Log.e(TAG, "停止监听失败", e)
+            FileLogger.e(TAG, "停止监听失败", e)
         }
     }
     
@@ -81,17 +81,17 @@ class AccessibilityStateMonitor(private val context: Context) {
     private fun checkAccessibilityServiceStatus() {
         try {
             val isEnabled = isAccessibilityServiceEnabled()
-            Log.d(TAG, "辅助功能服务状态: $isEnabled")
+            FileLogger.d(TAG, "辅助功能服务状态: $isEnabled")
             
             if (!isEnabled) {
-                Log.w(TAG, "辅助功能服务已被禁用")
+                FileLogger.w(TAG, "辅助功能服务已被禁用")
                 onAccessibilityServiceDisabled()
             } else {
-                Log.d(TAG, "辅助功能服务正常运行")
+                FileLogger.d(TAG, "辅助功能服务正常运行")
                 onAccessibilityServiceEnabled()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "检查辅助功能状态失败", e)
+            FileLogger.e(TAG, "检查辅助功能状态失败", e)
         }
     }
     
@@ -155,7 +155,7 @@ class AccessibilityStateMonitor(private val context: Context) {
 
             return isEnabledInSettings || isEnabledInManager
         } catch (e: Exception) {
-            Log.e(TAG, "检查辅助功能服务状态失败", e)
+            FileLogger.e(TAG, "检查辅助功能服务状态失败", e)
             return false
         }
     }
@@ -165,14 +165,14 @@ class AccessibilityStateMonitor(private val context: Context) {
      */
     private fun onAccessibilityServiceEnabled() {
         // 可以在这里添加服务启用后的逻辑
-        Log.i(TAG, "辅助功能服务已启用")
+        FileLogger.i(TAG, "辅助功能服务已启用")
     }
     
     /**
      * 当辅助功能服务被禁用时调用
      */
     private fun onAccessibilityServiceDisabled() {
-        Log.w(TAG, "辅助功能服务已被禁用，需要用户重新启用")
+        FileLogger.w(TAG, "辅助功能服务已被禁用，需要用户重新启用")
         
         // 这里可以添加通知用户重新启用服务的逻辑
         // 例如发送通知、显示对话框等

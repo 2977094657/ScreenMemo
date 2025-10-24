@@ -99,7 +99,6 @@ object AccessibilityServiceWatchdog {
      */
     fun updateHeartbeat() {
         lastHeartbeat.set(System.currentTimeMillis())
-        FileLogger.d(TAG, "心跳已更新: ${System.currentTimeMillis()}")
     }
     
     /**

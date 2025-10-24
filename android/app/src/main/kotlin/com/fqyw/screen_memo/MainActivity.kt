@@ -22,7 +22,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.inputmethod.InputMethodInfo
 import android.view.inputmethod.InputMethodManager
-import android.util.Log
 import android.os.Environment
 import android.content.ContentValues
 import android.provider.MediaStore
@@ -96,7 +95,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         // 仅做必要初始化，避免阻塞首帧
-        Log.d(TAG, "configureFlutterEngine: minimal init start")
+        FileLogger.d(TAG, "configureFlutterEngine: minimal init start")
 
         // 初始化媒体投影管理器
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -153,28 +152,56 @@ class MainActivity : FlutterActivity() {
                         val level = call.argument<String>("level") ?: "info"
                         val tag = call.argument<String>("tag") ?: "Flutter"
                         val msg = call.argument<String>("message") ?: ""
-                        // 控制台 + 尝试落盘（与动态请求一致使用 OutputFileLogger）
+                        // 统一通过 FileLogger 控制，是否落盘由 FileLogger 决定
                         when (level.lowercase()) {
-                            "debug" -> {
-                                FileLogger.d(tag, msg)
-                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
-                            }
-                            "warn" -> {
-                                FileLogger.w(tag, msg)
-                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
-                            }
-                            "error" -> {
-                                FileLogger.e(tag, msg)
-                                try { OutputFileLogger.error(this, tag, msg) } catch (_: Exception) {}
-                            }
-                            else -> {
-                                FileLogger.i(tag, msg)
-                                try { OutputFileLogger.info(this, tag, msg) } catch (_: Exception) {}
-                            }
+                            "debug" -> FileLogger.d(tag, msg)
+                            "warn" -> FileLogger.w(tag, msg)
+                            "error" -> FileLogger.e(tag, msg)
+                            else -> FileLogger.i(tag, msg)
                         }
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("log_error", e.message, null)
+                    }
+                }
+                "setFileLoggingEnabled" -> {
+                    try {
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        val sp = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                        sp.edit().putBoolean("logging_enabled", enabled).apply()
+                        FileLogger.enableFileLogging(enabled)
+                        FileLogger.setLevel(if (enabled) 4 else 1)
+                        try { OutputFileLogger.setEnabled(enabled) } catch (_: Exception) {}
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("log_toggle_error", e.message, null)
+                    }
+                }
+                "setNativeLogLevel" -> {
+                    try {
+                        val level = call.argument<String>("level")?.lowercase() ?: "debug"
+                        val lvl = when(level) {
+                            "error" -> 1
+                            "warn" -> 2
+                            "info" -> 3
+                            else -> 4
+                        }
+                        FileLogger.setLevel(lvl)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("log_level_error", e.message, null)
+                    }
+                }
+                "setCategoryLoggingEnabled" -> {
+                    try {
+                        val category = call.argument<String>("category") ?: ""
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        if (category.isNotBlank()) {
+                            FileLogger.setCategoryEnabled(this, category, enabled)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("log_category_error", e.message, null)
                     }
                 }
                 "umengSetUserId" -> {
@@ -739,16 +766,16 @@ class MainActivity : FlutterActivity() {
         }
 
         // 其余重任务延迟到首帧后执行
-        Log.d(TAG, "configureFlutterEngine: minimal init done, waiting first frame")
+        FileLogger.d(TAG, "configureFlutterEngine: minimal init done, waiting first frame")
 
         // 保留兼容：若是仅检查服务的启动，立即结束，避免叠加界面
         if (intent?.getBooleanExtra("check_service_only", false) == true) {
-            Log.e(TAG, "静默启动模式，仅检查服务")
+            FileLogger.e(TAG, "静默启动模式，仅检查服务")
             finish()
             return
         }
 
-        Log.d(TAG, "configureFlutterEngine: completed")
+        FileLogger.d(TAG, "configureFlutterEngine: completed")
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
@@ -768,7 +795,7 @@ class MainActivity : FlutterActivity() {
         if (didRunPostFirstFrameInit) return
         didRunPostFirstFrameInit = true
         val delta = System.currentTimeMillis() - activityCreateTs
-        Log.d(TAG, "onFlutterUiDisplayed: first frame delta since onCreate = ${delta}ms; runPostFirstFrameInit start")
+        FileLogger.d(TAG, "onFlutterUiDisplayed: first frame delta since onCreate = ${delta}ms; runPostFirstFrameInit start")
         try { FileLogger.e(TAG, "首帧耗时(自onCreate): ${delta}ms") } catch (_: Exception) {}
         // 已不再显示开屏对话框，无需关闭
         // dismissSplashDialog()
@@ -831,7 +858,7 @@ class MainActivity : FlutterActivity() {
 
             FileLogger.e(TAG, "=== PostFirstFrame 初始化完成，耗时: ${System.currentTimeMillis() - startMs}ms ===")
         } catch (e: Exception) {
-            Log.e(TAG, "PostFirstFrame 初始化失败", e)
+            FileLogger.e(TAG, "PostFirstFrame 初始化失败", e)
             try { FileLogger.e(TAG, "PostFirstFrame 初始化失败", e) } catch (_: Exception) {}
         }
     }
@@ -987,7 +1014,7 @@ class MainActivity : FlutterActivity() {
      * 启动前台服务
      */
     private fun startForegroundService() {
-        Log.d(TAG, "启动前台服务（简化版本）")
+        FileLogger.d(TAG, "启动前台服务（简化版本）")
         // 简化版本，只记录日志
     }
 
@@ -995,7 +1022,7 @@ class MainActivity : FlutterActivity() {
      * 停止前台服务
      */
     private fun stopForegroundService() {
-        Log.d(TAG, "停止前台服务（简化版本）")
+        FileLogger.d(TAG, "停止前台服务（简化版本）")
         // 简化版本，只记录日志
     }
 
@@ -1006,7 +1033,7 @@ class MainActivity : FlutterActivity() {
         accessibilityObserver = object : ContentObserver(mainHandler) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 super.onChange(selfChange, uri)
-                Log.d(TAG, "检测到无障碍设置变化: $uri")
+                FileLogger.d(TAG, "检测到无障碍设置变化: $uri")
 
                 // 延迟检查，确保设置已经生效
                 mainHandler.postDelayed({
@@ -1029,7 +1056,7 @@ class MainActivity : FlutterActivity() {
             accessibilityObserver!!
         )
 
-        Log.d(TAG, "无障碍权限监听已设置")
+        FileLogger.d(TAG, "无障碍权限监听已设置")
     }
 
     /**
@@ -1041,7 +1068,7 @@ class MainActivity : FlutterActivity() {
         val previousEnabled = sharedPrefs.getBoolean("accessibility_enabled", false)
 
         if (currentEnabled != previousEnabled) {
-            Log.d(TAG, "无障碍权限状态变化: $previousEnabled -> $currentEnabled")
+            FileLogger.d(TAG, "无障碍权限状态变化: $previousEnabled -> $currentEnabled")
 
             // 保存新状态
             sharedPrefs.edit().putBoolean("accessibility_enabled", currentEnabled).apply()
@@ -1058,7 +1085,7 @@ class MainActivity : FlutterActivity() {
 
         when (requestCode) {
             REQUEST_MEDIA_PROJECTION -> {
-                Log.d(TAG, "媒体投影权限结果: resultCode=$resultCode")
+                FileLogger.d(TAG, "媒体投影权限结果: resultCode=$resultCode")
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     // 保存权限状态
                     val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
@@ -1068,9 +1095,9 @@ class MainActivity : FlutterActivity() {
                     val service = ScreenCaptureAccessibilityService.instance
                     if (service != null) {
                         service.setMediaProjectionData(resultCode, data)
-                        Log.d(TAG, "媒体投影权限数据已传递给AccessibilityService")
+                        FileLogger.d(TAG, "媒体投影权限数据已传递给AccessibilityService")
                     } else {
-                        Log.w(TAG, "AccessibilityService未运行，无法传递媒体投影权限数据")
+                        FileLogger.w(TAG, "AccessibilityService未运行，无法传递媒体投影权限数据")
                     }
 
                     // 通知Flutter端
@@ -1169,16 +1196,16 @@ class MainActivity : FlutterActivity() {
      */
     private fun testAutoStartPermission(): Boolean {
         return try {
-            Log.d(TAG, "测试自启动权限...")
+            FileLogger.d(TAG, "测试自启动权限...")
 
             // 尝试启动无障碍服务来测试权限
             val intent = Intent(this, ScreenCaptureAccessibilityService::class.java)
             startService(intent)
 
-            Log.d(TAG, "服务启动命令已发送")
+            FileLogger.d(TAG, "服务启动命令已发送")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "测试自启动权限失败", e)
+            FileLogger.e(TAG, "测试自启动权限失败", e)
             false
         }
     }
@@ -1201,19 +1228,19 @@ class MainActivity : FlutterActivity() {
             val isServiceRunning = ScreenCaptureAccessibilityService.isServiceRunning
             val isAccessibilityEnabled = ServiceDebugHelper.isAccessibilityServiceEnabledInSystem(this)
 
-            Log.d(TAG, "服务状态检查:")
-            Log.d(TAG, "- AIDL服务运行: $aidlRunning")
-            Log.d(TAG, "- AccessibilityService实例存在: $instanceExists")
-            Log.d(TAG, "- 服务运行标志: $isServiceRunning")
-            Log.d(TAG, "- 系统中启用状态: $isAccessibilityEnabled")
+            FileLogger.d(TAG, "服务状态检查:")
+            FileLogger.d(TAG, "- AIDL服务运行: $aidlRunning")
+            FileLogger.d(TAG, "- AccessibilityService实例存在: $instanceExists")
+            FileLogger.d(TAG, "- 服务运行标志: $isServiceRunning")
+            FileLogger.d(TAG, "- 系统中启用状态: $isAccessibilityEnabled")
 
             // 综合判断
             val result = aidlRunning || (instanceExists && isAccessibilityEnabled)
-            Log.d(TAG, "最终服务运行状态: $result")
+            FileLogger.d(TAG, "最终服务运行状态: $result")
 
             return result
         } catch (e: Exception) {
-            Log.e(TAG, "检查服务状态失败", e)
+            FileLogger.e(TAG, "检查服务状态失败", e)
             false
         }
     }
@@ -1227,20 +1254,20 @@ class MainActivity : FlutterActivity() {
             val sharedPrefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
             val savedPermission = sharedPrefs.getBoolean("media_projection_granted", false)
 
-            Log.d(TAG, "MediaProjection权限验证:")
-            Log.d(TAG, "- SharedPreferences中的状态: $savedPermission")
+            FileLogger.d(TAG, "MediaProjection权限验证:")
+            FileLogger.d(TAG, "- SharedPreferences中的状态: $savedPermission")
 
             // MediaProjection权限是独立的，不依赖AccessibilityService的运行状态
             // 只要用户授予了权限，就认为是有效的
             if (savedPermission) {
-                Log.d(TAG, "MediaProjection权限验证通过")
+                FileLogger.d(TAG, "MediaProjection权限验证通过")
                 return true
             } else {
-                Log.d(TAG, "MediaProjection权限未授予")
+                FileLogger.d(TAG, "MediaProjection权限未授予")
                 return false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "验证MediaProjection权限失败", e)
+            FileLogger.e(TAG, "验证MediaProjection权限失败", e)
             false
         }
     }
@@ -1254,11 +1281,11 @@ class MainActivity : FlutterActivity() {
             if (service != null) {
                 service.startScreenCapture()
             } else {
-                Log.e(TAG, "无障碍服务未运行")
+                FileLogger.e(TAG, "无障碍服务未运行")
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "开始屏幕截图失败", e)
+            FileLogger.e(TAG, "开始屏幕截图失败", e)
             false
         }
     }
@@ -1271,7 +1298,7 @@ class MainActivity : FlutterActivity() {
             val service = ScreenCaptureAccessibilityService.instance
             service?.stopScreenCapture()
         } catch (e: Exception) {
-            Log.e(TAG, "停止屏幕截图失败", e)
+            FileLogger.e(TAG, "停止屏幕截图失败", e)
         }
     }
 
@@ -1345,7 +1372,7 @@ class MainActivity : FlutterActivity() {
             val service = ScreenCaptureAccessibilityService.instance
             service?.stopTimedScreenshot()
         } catch (e: Exception) {
-            Log.e(TAG, "停止定时截屏失败", e)
+            FileLogger.e(TAG, "停止定时截屏失败", e)
         }
     }
 
@@ -1358,11 +1385,11 @@ class MainActivity : FlutterActivity() {
             if (service != null) {
                 service.captureScreenSync()
             } else {
-                Log.e(TAG, "无障碍服务未运行")
+                FileLogger.e(TAG, "无障碍服务未运行")
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "截取屏幕失败", e)
+            FileLogger.e(TAG, "截取屏幕失败", e)
             null
         }
     }
@@ -1380,7 +1407,6 @@ class MainActivity : FlutterActivity() {
 
             externalFilesDir?.absolutePath
         } catch (e: Exception) {
-            Log.e(TAG, "获取外部文件目录失败", e)
             FileLogger.e(TAG, "获取外部文件目录失败", e)
             null
         }
@@ -1399,7 +1425,7 @@ class MainActivity : FlutterActivity() {
             )
             mode == AppOpsManager.MODE_ALLOWED
         } catch (e: Exception) {
-            Log.e(TAG, "检查使用统计权限失败", e)
+            FileLogger.e(TAG, "检查使用统计权限失败", e)
             false
         }
     }
@@ -1413,13 +1439,13 @@ class MainActivity : FlutterActivity() {
             intent.data = Uri.parse("package:$packageName")
             startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "请求使用统计权限失败", e)
+            FileLogger.e(TAG, "请求使用统计权限失败", e)
             // 如果无法打开特定应用的设置页面，打开通用设置页面
             try {
                 val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                 startActivity(intent)
             } catch (e2: Exception) {
-                Log.e(TAG, "打开使用统计设置页面失败", e2)
+                FileLogger.e(TAG, "打开使用统计设置页面失败", e2)
             }
         }
     }
