@@ -6,6 +6,7 @@ import '../models/app_info.dart';
 import '../theme/app_theme.dart';
 import 'nsfw_guard.dart';
 import '../services/nsfw_preference_service.dart';
+import 'timeline_jump_overlay.dart';
 
 /// 截图项组件 - 统一的截图显示样式
 /// 
@@ -65,6 +66,9 @@ class ScreenshotItemWidget extends StatelessWidget {
   
   /// 自定义叠加层（如 OCR 标注）
   final Widget? customOverlay;
+
+  /// 是否显示“时间线跳转”按钮（默认关闭）
+  final bool showTimelineJumpButton;
   
   const ScreenshotItemWidget({
      super.key,
@@ -84,6 +88,7 @@ class ScreenshotItemWidget extends StatelessWidget {
      this.isNsfwFlagged = false,
      this.onNsfwToggle,
      this.customOverlay,
+     this.showTimelineJumpButton = false,
    });
 
   @override
@@ -92,44 +97,42 @@ class ScreenshotItemWidget extends StatelessWidget {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool nsfwMasked = privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
     
+    final List<Widget> layers = <Widget>[
+      _buildImage(context, file, isDark),
+    ];
+
+    if (customOverlay != null) layers.add(customOverlay!);
+
+    if (nsfwMasked) {
+      layers.add(
+        Positioned.fill(
+          child: NsfwBackdropOverlay(
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            onReveal: onTap,
+            showButton: true,
+          ),
+        ),
+      );
+    }
+
+    if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty) {
+      layers.add(_buildLinkOverlay(context));
+    }
+
+    layers.add(_buildBottomOverlay(context));
+
+    if (showCheckbox) layers.add(_buildCheckbox(context));
+    if (showFavoriteButton) layers.add(_buildFavoriteButton(context));
+    if (showNsfwButton) layers.add(_buildNsfwButton(context));
+
+    if (showTimelineJumpButton) {
+      layers.add(TimelineJumpOverlay(filePath: _resolveFile().path));
+    }
+
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Stack(
-        children: [
-          // 图片显示
-          _buildImage(context, file, isDark),
-          
-          // 自定义叠加层（如 OCR 标注）
-          if (customOverlay != null) customOverlay!,
-          
-          // NSFW 遮罩
-          if (nsfwMasked)
-            Positioned.fill(
-              child: NsfwBackdropOverlay(
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                onReveal: onTap,
-                showButton: true,
-              ),
-            ),
-          
-          // 顶部链接信息
-          if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
-            _buildLinkOverlay(context),
-          
-          // 底部信息遮罩
-          _buildBottomOverlay(context),
-          
-          // 选择框（多选模式）
-          if (showCheckbox) _buildCheckbox(context),
-          
-          // 收藏按钮
-          if (showFavoriteButton) _buildFavoriteButton(context),
-   
-          // NSFW 按钮（与收藏并列）
-          if (showNsfwButton) _buildNsfwButton(context),
-        ],
-      ),
+      child: Stack(children: layers),
     );
   }
   

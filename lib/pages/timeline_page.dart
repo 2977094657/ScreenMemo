@@ -136,27 +136,34 @@ class _TimelinePageState extends State<TimelinePage>
     } catch (_) {}
   }
 
-  Future<void> _prepareDayTabs({int days = 14}) async {
+  Future<void> _prepareDayTabs() async {
     final sw = Stopwatch()..start();
-    final DateTime today = DateTime.now();
-    final DateTime base = DateTime(today.year, today.month, today.day);
     final List<_DayTabInfo> tabs = <_DayTabInfo>[];
-
-    for (int i = 0; i < days; i++) {
-      final DateTime d = base.subtract(Duration(days: i));
-      final int start = DateTime(d.year, d.month, d.day).millisecondsSinceEpoch;
-      final int end = DateTime(d.year, d.month, d.day, 23, 59, 59).millisecondsSinceEpoch;
-      tabs.add(_DayTabInfo(day: d, startMillis: start, endMillis: end));
-    }
-
-    await _computeDayCountsConcurrently(tabs, concurrency: 4);
+    try {
+      final days = await ScreenshotService.instance.listAvailableDaysGlobal();
+      for (final m in days) {
+        final String ds = (m['date'] as String?) ?? '';
+        final int count = (m['count'] as int?) ?? 0;
+        if (ds.isEmpty || count <= 0) continue;
+        try {
+          final parts = ds.split('-');
+          if (parts.length != 3) continue;
+          final int y = int.parse(parts[0]);
+          final int mo = int.parse(parts[1]);
+          final int d = int.parse(parts[2]);
+          final DateTime day = DateTime(y, mo, d);
+          final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
+          final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
+          tabs.add(_DayTabInfo(day: day, startMillis: start, endMillis: end, count: count));
+        } catch (_) {}
+      }
+    } catch (_) {}
 
     if (!mounted) return;
-    final available = tabs.where((t) => t.count > 0).toList();
     setState(() {
       _dayTabs
         ..clear()
-        ..addAll(available);
+        ..addAll(tabs);
       _tabController?.removeListener(_onTabChanged);
       _tabController?.dispose();
       if (_dayTabs.isNotEmpty) {
@@ -170,7 +177,6 @@ class _TimelinePageState extends State<TimelinePage>
         _tabController = null;
       }
     });
-    // 首屏仅加载当前Tab，避免阻塞；相邻Tab后台预取
     await _prefetchFirstPageForTab(_currentTabIndex);
     // ignore: unawaited_futures
     _prefetchAdjacentTabs(_currentTabIndex);
@@ -619,6 +625,8 @@ class _TimelinePageState extends State<TimelinePage>
         try { FlutterLogger.nativeInfo('TimelineJump', '找到目标索引 idx=' + idx.toString()); } catch (_) {}
         await _scrollToIndexAndHighlight(idx);
         _pendingJump = null; // 完成
+        // 消费一次后清空全局跳转请求，避免下次进入仍然触发
+        try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
         return;
       }
 
@@ -661,6 +669,7 @@ class _TimelinePageState extends State<TimelinePage>
           try { FlutterLogger.nativeInfo('TimelineJump', '快速路径命中，目标位于当前切片 idx=' + idx.toString()); } catch (_) {}
           await _scrollToIndexAndHighlight(idx);
           _pendingJump = null;
+          try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
           jumped = true;
         } else {
           // 备选尝试：向前回退一页扩大窗口
@@ -688,6 +697,7 @@ class _TimelinePageState extends State<TimelinePage>
             try { FlutterLogger.nativeInfo('TimelineJump', '回退窗口命中，目标位于切片 idx=' + idx.toString()); } catch (_) {}
             await _scrollToIndexAndHighlight(idx);
             _pendingJump = null;
+            try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
             jumped = true;
           }
         }
@@ -705,6 +715,7 @@ class _TimelinePageState extends State<TimelinePage>
           try { FlutterLogger.nativeInfo('TimelineJump', '分页后找到目标索引 idx=' + idx.toString()); } catch (_) {}
           await _scrollToIndexAndHighlight(idx);
           _pendingJump = null;
+          try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
           break;
         }
       }

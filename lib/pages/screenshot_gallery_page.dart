@@ -319,46 +319,38 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     } catch (_) {}
   }
 
-  /// 生成最近若干天的Tab（默认14天），并计算每日数量
-  Future<void> _prepareDayTabs({int days = 14}) async {
+  /// 基于数据库返回的“有数据的所有日期”生成 Tabs（倒序），去除14天限制
+  Future<void> _prepareDayTabs() async {
     if (!mounted) return;
-    final DateTime today = DateTime.now();
-    final DateTime base = DateTime(today.year, today.month, today.day);
     final List<_DayTabInfo> tabs = <_DayTabInfo>[];
-
-    // 预生成天范围
-    for (int i = 0; i < days; i++) {
-      final DateTime d = base.subtract(Duration(days: i));
-      final int start = DateTime(d.year, d.month, d.day).millisecondsSinceEpoch;
-      final int end = DateTime(d.year, d.month, d.day, 23, 59, 59).millisecondsSinceEpoch;
-      tabs.add(_DayTabInfo(day: d, startMillis: start, endMillis: end));
-    }
-
-    // 并行获取每日数量（顺序更新，避免阻塞UI过久）
-    for (int i = 0; i < tabs.length; i++) {
-      try {
-        final c = await ScreenshotService.instance.getScreenshotCountByAppBetween(
-          _packageName,
-          startMillis: tabs[i].startMillis,
-          endMillis: tabs[i].endMillis,
-        );
-        tabs[i].count = c;
-      } catch (_) {}
-      if (!mounted) return;
-      setState(() {}); // 渐进刷新计数
-    }
+    try {
+      final days = await ScreenshotService.instance.listAvailableDaysForApp(_packageName);
+      for (final m in days) {
+        final String ds = (m['date'] as String?) ?? '';
+        final int count = (m['count'] as int?) ?? 0;
+        if (ds.isEmpty || count <= 0) continue;
+        try {
+          final parts = ds.split('-');
+          if (parts.length != 3) continue;
+          final int y = int.parse(parts[0]);
+          final int mo = int.parse(parts[1]);
+          final int d = int.parse(parts[2]);
+          final DateTime day = DateTime(y, mo, d);
+          final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
+          final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
+          tabs.add(_DayTabInfo(day: day, startMillis: start, endMillis: end, count: count));
+        } catch (_) {}
+      }
+    } catch (_) {}
 
     if (!mounted) return;
-    // 仅保留有截图的日期
-    final List<_DayTabInfo> available = tabs.where((t) => t.count > 0).toList();
     setState(() {
       _dayTabs
         ..clear()
-        ..addAll(available);
+        ..addAll(tabs);
       _tabController?.removeListener(_onTabControllerChanged);
       _tabController?.dispose();
       if (_dayTabs.isNotEmpty) {
-        // 默认选择最近一天（可为“今天”若有数据，否则为最近有数据的日期）
         _currentTabIndex = 0;
         _dateFilterStartMillis = _dayTabs[0].startMillis;
         _dateFilterEndMillis = _dayTabs[0].endMillis;
@@ -371,7 +363,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         _tabController = null;
       }
     });
-    // 预取所有Tab的前8张，并显示当前Tab的首屏缓存
     if (_dayTabs.isNotEmpty) {
       await _prefetchAllTabsFirst8();
       await _onTabIndexSelected(0);
@@ -602,7 +593,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       _loadInitialData();
       // 准备日期Tabs（异步）
       // ignore: unawaited_futures
-      _prepareDayTabs(days: 14);
+      _prepareDayTabs();
     } else {
       setState(() {
         _error = AppLocalizations.of(context).invalidArguments;
@@ -1919,8 +1910,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           _currentDisplayCount = 0;
           _hasMore = false;
         });
-        // 重新构建日期 Tabs
-        await _prepareDayTabs(days: 14);
+        // 重新构建日期 Tabs（去除14天限制）
+        await _prepareDayTabs();
 
         // 失效缓存
         await ScreenshotService.instance.invalidateStatsCache();

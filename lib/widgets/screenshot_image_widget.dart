@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../models/screenshot_record.dart';
 import '../services/nsfw_preference_service.dart';
 import 'nsfw_guard.dart';
+import 'timeline_jump_overlay.dart';
 
 /// 统一的截图图片显示组件
 ///
@@ -52,6 +53,9 @@ class ScreenshotImageWidget extends StatelessWidget {
   
   /// 错误占位文本
   final String? errorText;
+
+  /// 是否显示“时间线跳转”按钮（默认关闭）
+  final bool showTimelineJumpButton;
   
   const ScreenshotImageWidget({
     super.key,
@@ -68,6 +72,7 @@ class ScreenshotImageWidget extends StatelessWidget {
     this.showNsfwButton = true,
     this.targetWidth,
     this.errorText,
+    this.showTimelineJumpButton = false,
   });
 
   @override
@@ -79,41 +84,41 @@ class ScreenshotImageWidget extends StatelessWidget {
             ? NsfwPreferenceService.instance.shouldMaskCached(screenshot!)
             : NsfwDetector.isNsfwUrl(pageUrl));
     
-    Widget imageWidget = _buildImage(context, isDark);
-    
-    // 如果有 NSFW 遮罩，添加遮罩层
+    Widget base = _buildImage(context, isDark);
+
+    final List<Widget> layers = <Widget>[base];
+
+    // NSFW 遮罩（位于图片之上）
     if (nsfwMasked) {
-      imageWidget = Stack(
-        children: [
-          imageWidget,
-          Positioned.fill(
-            child: NsfwBackdropOverlay(
-              borderRadius: borderRadius,
-              onReveal: onReveal ?? onTap,
-              showButton: showNsfwButton,
-            ),
+      layers.add(
+        Positioned.fill(
+          child: NsfwBackdropOverlay(
+            borderRadius: borderRadius,
+            onReveal: onReveal ?? onTap,
+            showButton: showNsfwButton,
           ),
-        ],
+        ),
       );
     }
-    
-    // 添加点击手势
+
+    // 时间线跳转按钮（位于最上层）
+    if (showTimelineJumpButton) {
+      layers.add(TimelineJumpOverlay(filePath: file.path));
+    }
+
+    Widget result = layers.length == 1 ? base : Stack(children: layers);
+
+    // 添加点击手势（在未遮罩时允许点击）
     if (onTap != null && !nsfwMasked) {
-      imageWidget = GestureDetector(
-        onTap: onTap,
-        child: imageWidget,
-      );
+      result = GestureDetector(onTap: onTap, child: result);
     }
-    
+
     // 添加圆角裁剪
     if (borderRadius != null) {
-      imageWidget = ClipRRect(
-        borderRadius: borderRadius!,
-        child: imageWidget,
-      );
+      result = ClipRRect(borderRadius: borderRadius!, child: result);
     }
-    
-    return imageWidget;
+
+    return result;
   }
   
   /// 构建图片

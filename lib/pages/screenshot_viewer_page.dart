@@ -17,6 +17,7 @@ import '../widgets/nsfw_guard.dart';
 import '../services/screenshot_database.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/app_selection_service.dart';
+import 'package:gal/gal.dart';
 
 /// 截图查看器页面
 class ScreenshotViewerPage extends StatefulWidget {
@@ -447,6 +448,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               iconTheme: const IconThemeData(color: Colors.white),
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.download_outlined),
+                  onPressed: _saveCurrentToGallery,
+                  tooltip: AppLocalizations.of(context).saveImageTooltip,
+                ),
+                IconButton(
                   icon: const Icon(Icons.info_outline),
                   onPressed: _showImageInfo,
                   tooltip: AppLocalizations.of(context).imageInfoTooltip,
@@ -609,6 +615,36 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _saveCurrentToGallery() async {
+    if (_screenshots.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final path = _screenshots[_currentIndex].filePath;
+    try {
+      bool has = false;
+      try {
+        has = await Gal.hasAccess(toAlbum: true);
+      } catch (_) {}
+      if (!has) {
+        try {
+          await Gal.requestAccess(toAlbum: true);
+        } catch (_) {
+          if (!mounted) return;
+          UINotifier.error(context, l10n.requestGalleryPermissionFailed);
+          return;
+        }
+      }
+      await Gal.putImage(path);
+      if (!mounted) return;
+      UINotifier.success(context, l10n.saveImageSuccess);
+    } on GalException catch (_) {
+      if (!mounted) return;
+      UINotifier.error(context, l10n.saveImageFailed);
+    } catch (_) {
+      if (!mounted) return;
+      UINotifier.error(context, l10n.saveImageFailed);
+    }
   }
 
   Future<void> _loadPrivacyMode() async {

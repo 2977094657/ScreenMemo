@@ -565,6 +565,16 @@ class ScreenshotService {
     }
   }
 
+  /// 通过全局ID(gid)与包名获取单条截图记录
+  Future<ScreenshotRecord?> getScreenshotById(int gid, String appPackageName) async {
+    try {
+      return await _database.getScreenshotById(gid, appPackageName);
+    } catch (e) {
+      print('getScreenshotById 失败: $e');
+      return null;
+    }
+  }
+
   /// 获取指定应用在时间范围内的截屏数量（包含边界，毫秒）
   Future<int> getScreenshotCountByAppBetween(
     String appPackageName, {
@@ -1324,6 +1334,24 @@ class ScreenshotService {
     } catch (e) {
       print('按日期范围获取截图ID失败: $e');
       return <int>[];
+    }
+  }
+
+  /// 全局列出所有有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableDaysGlobal() async {
+    try {
+      return await _database.listAvailableDaysGlobal();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 指定应用列出所有有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(String appPackageName) async {
+    try {
+      return await _database.listAvailableDaysForApp(appPackageName);
+    } catch (_) {
+      return <Map<String, dynamic>>[];
     }
   }
 }
