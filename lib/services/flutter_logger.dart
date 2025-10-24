@@ -24,7 +24,17 @@ class FlutterLogger {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getBool(_enabledKey);
       // 默认开启
-      await setEnabled(saved ?? true, persist: false);
+      final enabled = saved ?? true;
+      await setEnabled(enabled, persist: false);
+      // 同步原生文件落盘与级别（确保 Release 下也能写文件）
+      try {
+        await _channel.invokeMethod('setFileLoggingEnabled', {
+          'enabled': enabled,
+        });
+        await _channel.invokeMethod('setNativeLogLevel', {
+          'level': enabled ? 'debug' : 'error',
+        });
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -33,11 +43,30 @@ class FlutterLogger {
     _enabled = value;
     // 开启时打印所有级别；关闭时虽然 minLevel 仍为 error，但下面 _write/native 会短路
     minLevel = LogLevel.debug;
+    // 立刻同步原生落盘与级别
+    try {
+      await _channel.invokeMethod('setFileLoggingEnabled', {
+        'enabled': value,
+      });
+      await _channel.invokeMethod('setNativeLogLevel', {
+        'level': value ? 'debug' : 'error',
+      });
+    } catch (_) {}
     if (persist) {
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_enabledKey, value);
       } catch (_) {}
+    }
+  }
+
+  /// 返回今天的日志目录绝对路径（Android 原生 output/logs/yyyy/MM/dd）
+  static Future<String?> getTodayLogsDir() async {
+    try {
+      final path = await _channel.invokeMethod<String>('getOutputLogsDirToday');
+      return path;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -129,6 +158,46 @@ class FlutterLogger {
         'message': line,
       });
     } catch (_) {}
+  }
+
+  // ===== 模块化日志分类开关（原生实现） =====
+  static Future<void> setCategoryEnabled(String category, bool enabled) async {
+    try {
+      await _channel.invokeMethod('setCategoryLoggingEnabled', {
+        'category': category,
+        'enabled': enabled,
+      });
+      // 本地同步一份，便于 UI 立即读取
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        switch (category) {
+          case 'ai':
+            await prefs.setBool('logging_ai_enabled', enabled);
+            break;
+          case 'screenshot':
+            await prefs.setBool('logging_screenshot_enabled', enabled);
+            break;
+          default:
+            break;
+        }
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  static Future<bool> getCategoryEnabled(String category) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      switch (category) {
+        case 'ai':
+          return prefs.getBool('logging_ai_enabled') ?? false;
+        case 'screenshot':
+          return prefs.getBool('logging_screenshot_enabled') ?? false;
+        default:
+          return false;
+      }
+    } catch (_) {
+      return false;
+    }
   }
 }
 

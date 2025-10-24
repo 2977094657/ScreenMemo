@@ -35,6 +35,21 @@ object FileLogger {
     private var logLevel = if (isDebugBuild) LEVEL_DEBUG else LEVEL_ERROR
     private var writeFileEnabled = isDebugBuild
 
+    // 模块化分类：general/ai/screenshot
+    private const val CAT_GENERAL = "general"
+    private const val CAT_AI = "ai"
+    private const val CAT_SCREENSHOT = "screenshot"
+
+    // 通过 tag -> category 的推断（尽量无侵入）
+    private val aiTags = setOf("SegmentSummaryManager")
+    private val screenshotTags = setOf("ScreenCaptureAccessibilityService", "ScreenCaptureService")
+
+    // 分类开关（默认 false = 关闭；依赖 UI 开启）
+    @Volatile private var categoryEnabled: MutableMap<String, Boolean> = mutableMapOf(
+        CAT_AI to false,
+        CAT_SCREENSHOT to false
+    )
+
     fun init(context: Context) {
         // 仅标记初始化；输出文件由 OutputFileLogger 动态创建
         isInitialized = true
@@ -44,7 +59,7 @@ object FileLogger {
     }
 
     fun d(tag: String, message: String) {
-        if (logLevel < LEVEL_DEBUG) return
+        if (!isAllowed(LEVEL_DEBUG, tag)) return
         Log.d(tag, message)
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
@@ -52,7 +67,7 @@ object FileLogger {
     }
 
     fun i(tag: String, message: String) {
-        if (logLevel < LEVEL_INFO) return
+        if (!isAllowed(LEVEL_INFO, tag)) return
         Log.i(tag, message)
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
@@ -60,7 +75,7 @@ object FileLogger {
     }
 
     fun w(tag: String, message: String) {
-        if (logLevel < LEVEL_WARNING) return
+        if (!isAllowed(LEVEL_WARNING, tag)) return
         Log.w(tag, message)
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
@@ -68,7 +83,7 @@ object FileLogger {
     }
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
-        if (logLevel < LEVEL_ERROR) return
+        if (!isAllowed(LEVEL_ERROR, tag)) return
         Log.e(tag, message, throwable)
         val full = if (throwable != null) "$message\n${Log.getStackTraceString(throwable)}" else message
         if (isInitialized && writeFileEnabled) {
@@ -79,6 +94,63 @@ object FileLogger {
     fun isDebugEnabled(): Boolean = logLevel >= LEVEL_DEBUG
     fun setLevel(level: Int) { logLevel = level }
     fun enableFileLogging(enable: Boolean) { writeFileEnabled = enable }
+
+    private fun inferCategory(tag: String): String {
+        return when {
+            aiTags.contains(tag) -> CAT_AI
+            screenshotTags.contains(tag) -> CAT_SCREENSHOT
+            else -> CAT_GENERAL
+        }
+    }
+
+    private fun isAllowed(level: Int, tag: String): Boolean {
+        if (logLevel < level) return false
+        val cat = inferCategory(tag)
+        // 分类已知时由分类开关决定；未知走全局文件开关
+        val known = (cat == CAT_AI || cat == CAT_SCREENSHOT)
+        val catOn = categoryEnabled[cat] == true
+        return if (known) catOn else true
+    }
+
+    // 提供给 OutputFileLogger 的只读判定
+    fun shouldWriteInfo(tag: String): Boolean = isAllowed(LEVEL_INFO, tag)
+    fun shouldWriteError(tag: String): Boolean = isAllowed(LEVEL_ERROR, tag)
+
+    fun syncFromFlutterPrefs(context: Context) {
+        try {
+            val sp = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val any = sp.all["logging_enabled"]
+            val enabled = when (any) {
+                is Boolean -> any
+                is String -> any.equals("true", ignoreCase = true)
+                is Int -> any != 0
+                is Long -> any != 0L
+                else -> sp.getBoolean("logging_enabled", true)
+            }
+            enableFileLogging(enabled)
+            setLevel(if (enabled) LEVEL_DEBUG else LEVEL_NONE)
+            // 分类开关
+            val ai = sp.getBoolean("logging_ai_enabled", false)
+            val shot = sp.getBoolean("logging_screenshot_enabled", false)
+            categoryEnabled[CAT_AI] = ai
+            categoryEnabled[CAT_SCREENSHOT] = shot
+            try { OutputFileLogger.setEnabled(enabled) } catch (_: Exception) {}
+        } catch (_: Exception) {}
+    }
+
+    fun setCategoryEnabled(context: Context, category: String, enabled: Boolean) {
+        try {
+            when (category) {
+                CAT_AI -> categoryEnabled[CAT_AI] = enabled
+                CAT_SCREENSHOT -> categoryEnabled[CAT_SCREENSHOT] = enabled
+            }
+            val sp = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            when (category) {
+                CAT_AI -> sp.edit().putBoolean("logging_ai_enabled", enabled).apply()
+                CAT_SCREENSHOT -> sp.edit().putBoolean("logging_screenshot_enabled", enabled).apply()
+            }
+        } catch (_: Exception) {}
+    }
 
     fun getLogFilePath(): String? {
         // 返回今日 info 文件路径，便于兼容旧接口

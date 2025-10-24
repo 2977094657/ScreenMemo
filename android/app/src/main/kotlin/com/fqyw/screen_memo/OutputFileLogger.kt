@@ -33,6 +33,13 @@ object OutputFileLogger {
     @Volatile
     private var lastDropWarnAt = 0L
 
+    @Volatile
+    private var enabled = true
+
+    fun setEnabled(enable: Boolean) {
+        enabled = enable
+    }
+
     private data class LogItem(
         val appContext: Context,
         val isError: Boolean,
@@ -66,6 +73,12 @@ object OutputFileLogger {
      */
     private fun enqueue(context: Context, isError: Boolean, tag: String, message: String) {
         try {
+            if (!enabled) return
+            // 分类/级别门控：未放行则不入队
+            try {
+                val allowed = if (isError) FileLogger.shouldWriteError(tag) else FileLogger.shouldWriteInfo(tag)
+                if (!allowed) return
+            } catch (_: Exception) {}
             ensureWorker()
             val appCtx = context.applicationContext
             val offered = queue.offer(LogItem(appCtx, isError, tag, message))

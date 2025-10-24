@@ -1,6 +1,6 @@
 package com.fqyw.screen_memo
 
-import android.util.Log
+ 
 import java.util.ArrayDeque
 
 /**
@@ -67,7 +67,7 @@ object UmengLogger {
             val m = cls.getMethod(name, *params)
             m.invoke(null, *args)
         } catch (e: Exception) {
-            Log.w(TAG, "UMCrash.$name not available", e)
+            FileLogger.w(TAG, "UMCrash.$name not available: ${e.message}")
         }
     }
 }

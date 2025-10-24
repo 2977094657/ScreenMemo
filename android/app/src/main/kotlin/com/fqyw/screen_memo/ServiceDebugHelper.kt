@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.content.Context
 import android.provider.Settings
 import android.text.TextUtils
-import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
@@ -111,17 +110,17 @@ object ServiceDebugHelper {
             val accessibilityProcessName = "${context.packageName}:accessibility"
             
             runningProcesses?.forEach { processInfo ->
-                Log.d(TAG, "运行中的进程: ${processInfo.processName}, PID: ${processInfo.pid}")
+                FileLogger.d(TAG, "运行中的进程: ${processInfo.processName}, PID: ${processInfo.pid}")
                 if (processInfo.processName == accessibilityProcessName) {
-                    Log.d(TAG, "AccessibilityService进程正在运行: ${processInfo.processName}")
+                    FileLogger.d(TAG, "AccessibilityService进程正在运行: ${processInfo.processName}")
                     return true
                 }
             }
             
-            Log.d(TAG, "AccessibilityService进程未运行")
+            FileLogger.d(TAG, "AccessibilityService进程未运行")
             return false
         } catch (e: Exception) {
-            Log.e(TAG, "检查服务进程失败", e)
+            FileLogger.e(TAG, "检查服务进程失败", e)
             return false
         }
     }
@@ -181,7 +180,7 @@ object ServiceDebugHelper {
             }
             "Unknown"
         } catch (e: Exception) {
-            Log.e(TAG, "获取进程名失败", e)
+            FileLogger.e(TAG, "获取进程名失败", e)
             "Error"
         }
     }
@@ -190,16 +189,16 @@ object ServiceDebugHelper {
      * 监控服务状态变化
      */
     fun startStatusMonitoring(context: Context, intervalMs: Long = 10000) {
-        Log.d(TAG, "开始监控服务状态，间隔: ${intervalMs}ms")
+        FileLogger.d(TAG, "开始监控服务状态，间隔: ${intervalMs}ms")
         
         val timer = Timer()
         timer.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 try {
-                    Log.d(TAG, "--- 定时状态检查 ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} ---")
+                    FileLogger.d(TAG, "--- 定时状态检查 ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} ---")
                     performFullStatusCheck(context)
                 } catch (e: Exception) {
-                    Log.e(TAG, "定时状态检查失败", e)
+                    FileLogger.e(TAG, "定时状态检查失败", e)
                 }
             }
         }, 0, intervalMs)
@@ -209,7 +208,7 @@ object ServiceDebugHelper {
      * 尝试重启AccessibilityService
      */
     fun attemptRestartAccessibilityService(context: Context) {
-        Log.d(TAG, "尝试重启AccessibilityService")
+        FileLogger.d(TAG, "尝试重启AccessibilityService")
         
         try {
             // 检查当前状态
@@ -220,13 +219,13 @@ object ServiceDebugHelper {
             val instanceExists = ScreenCaptureAccessibilityService.instance != null
             
             if (systemEnabled && !instanceExists) {
-                Log.w(TAG, "系统中已启用但实例不存在，可能需要用户重新启用服务")
+                FileLogger.w(TAG, "系统中已启用但实例不存在，可能需要用户重新启用服务")
             } else if (!systemEnabled) {
-                Log.w(TAG, "系统中未启用AccessibilityService，需要用户手动启用")
+                FileLogger.w(TAG, "系统中未启用AccessibilityService，需要用户手动启用")
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "重启AccessibilityService失败", e)
+            FileLogger.e(TAG, "重启AccessibilityService失败", e)
         }
     }
 }
