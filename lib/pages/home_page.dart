@@ -870,6 +870,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         automaticallyImplyLeading: false,
         leadingWidth: 0,
         titleSpacing: 0,
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.primary),
         actions: appBarActions,
         title: _selectionMode
           ? Padding(
@@ -1025,13 +1026,13 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                              ),
                      ),
                
-               // 右侧:主题切换图标
+                // 右侧:主题切换图标
                IconButton(
                  padding: EdgeInsets.zero,
                  constraints: const BoxConstraints.tightFor(width: 24, height: 36),
                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                  icon: Icon(widget.themeService.themeModeIcon, size: 20, weight: 300),
-                 tooltip: widget.themeService.themeModeDescription,
+                 tooltip: _themeModeTooltip(context),
                  onPressed: () async {
                    await widget.themeService.toggleTheme();
                  },
@@ -1053,6 +1054,18 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         ],
       ),
     );
+  }
+  String _themeModeTooltip(BuildContext context) {
+    final mode = widget.themeService.themeMode;
+    final t = AppLocalizations.of(context);
+    switch (mode) {
+      case ThemeMode.system:
+        return t.themeModeAuto;
+      case ThemeMode.light:
+        return t.themeModeLight;
+      case ThemeMode.dark:
+        return t.themeModeDark;
+    }
   }
 
   /// 构建副导航栏：统计信息 + 排序菜单
@@ -1172,7 +1185,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           color: Theme.of(context).colorScheme.surface,
           borderRadius: const BorderRadius.all(Radius.circular(8.0)),
           border: Border.all(
-            color: Colors.grey.withOpacity(0.5),
+            color: Theme.of(context).dividerColor.withOpacity(0.6),
             width: 1.0,
           ),
         ),
@@ -1207,23 +1220,23 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.apps,
               size: 64,
-              color: AppTheme.mutedForeground,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: AppTheme.spacing4),
             Text(
               AppLocalizations.of(context).homeEmptyTitle,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: AppTheme.mutedForeground,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: AppTheme.spacing2),
             Text(
               AppLocalizations.of(context).homeEmptySubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppTheme.mutedForeground,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -1289,10 +1302,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                             width: 48,
                             height: 48,
                             fit: BoxFit.contain,
-                          )
-                        : const Icon(
+                  )
+                        : Icon(
                             Icons.android,
-                            color: AppTheme.mutedForeground,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                             size: 32,
                           ),
                   ),
@@ -1340,7 +1353,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   Text(
                     _getAppStatText(app.packageName),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppTheme.mutedForeground,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -1348,22 +1361,29 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             ),
 
             if (!_selectionMode)
-              const Icon(
+              Icon(
                 Icons.chevron_right,
-                color: AppTheme.mutedForeground,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               )
             else
               Container(
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.black : Colors.grey.shade200,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.surfaceVariant,
                   borderRadius: const BorderRadius.all(Radius.circular(4.0)),
-                  border: Border.all(color: isSelected ? Colors.black : Colors.white, width: 2),
+                  border: Border.all(
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).dividerColor,
+                    width: 2,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: isSelected
-                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    ? Icon(Icons.check, size: 14, color: Theme.of(context).colorScheme.onPrimary)
                     : null,
               ),
           ],

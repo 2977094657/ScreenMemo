@@ -4,10 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 主题服务 - 管理应用的主题模式
 class ThemeService extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
+  static const String _seedKey = 'theme_seed_color';
   
   ThemeMode _themeMode = ThemeMode.system;
+  Color _seedColor = const Color(0xFF09090B); // 与 AppTheme.primary 保持一致的默认值
   
   ThemeMode get themeMode => _themeMode;
+  Color get seedColor => _seedColor;
   
   ThemeService() {
     _loadTheme();
@@ -18,6 +21,10 @@ class ThemeService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final themeModeIndex = prefs.getInt(_themeKey) ?? ThemeMode.system.index;
     _themeMode = ThemeMode.values[themeModeIndex];
+    final savedSeed = prefs.getInt(_seedKey);
+    if (savedSeed != null) {
+      _seedColor = Color(savedSeed);
+    }
     notifyListeners();
   }
   
@@ -55,6 +62,23 @@ class ThemeService extends ChangeNotifier {
     
     notifyListeners();
   }
+
+  /// 设置主题主色（seed color）
+  Future<void> setSeedColor(Color color) async {
+    if (_seedColor.value == color.value) return;
+    _seedColor = color;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_seedKey, _seedColor.value);
+    notifyListeners();
+  }
+
+  /// 重置主题主色为默认（与设计基色一致）
+  Future<void> resetSeedColor() async {
+    _seedColor = const Color(0xFF09090B);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_seedKey, _seedColor.value);
+    notifyListeners();
+  }
   
   /// 获取当前主题模式的图标
   IconData get themeModeIcon {
@@ -72,7 +96,7 @@ class ThemeService extends ChangeNotifier {
   String get themeModeDescription {
     switch (_themeMode) {
       case ThemeMode.system:
-        return 'Auto';
+        return 'Auto'; // 文案由 UI 侧使用本地化
       case ThemeMode.light:
         return 'Light';
       case ThemeMode.dark:

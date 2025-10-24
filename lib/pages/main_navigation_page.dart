@@ -54,45 +54,48 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     TimelineJumpService.instance.requestNotifier.addListener(_jumpListener!);
   }
 
-  final List<BottomNavigationBarItem> _navigationItems = [
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.home_outlined),
-      activeIcon: Icon(Icons.home),
-      label: '',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.favorite_outline),
-      activeIcon: Icon(Icons.favorite),
-      label: '',
-    ),
-    // 事件（AI）Tab：星星图标 + 渐变激活态
-    BottomNavigationBarItem(
-      icon: const Icon(Icons.auto_awesome_outlined),
-      activeIcon: ShaderMask(
-        shaderCallback: (Rect bounds) {
-          return const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF6366F1), Color(0xFF22D3EE)],
-          ).createShader(bounds);
-        },
-        blendMode: BlendMode.srcIn,
-        child: const Icon(Icons.auto_awesome, color: Colors.white),
+  List<BottomNavigationBarItem> _buildNavigationItems(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return [
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.home_outlined),
+        activeIcon: Icon(Icons.home),
+        label: '',
       ),
-      label: '',
-    ),
-    // 时间线 Tab
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.timeline_outlined),
-      activeIcon: Icon(Icons.timeline),
-      label: '',
-    ),
-    const BottomNavigationBarItem(
-      icon: Icon(Icons.settings_outlined),
-      activeIcon: Icon(Icons.settings),
-      label: '',
-    ),
-  ];
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.favorite_outline),
+        activeIcon: Icon(Icons.favorite),
+        label: '',
+      ),
+      // 事件（AI）Tab：星星图标 + 渐变激活态（随主题主色/次色）
+      BottomNavigationBarItem(
+        icon: const Icon(Icons.auto_awesome_outlined),
+        activeIcon: ShaderMask(
+          shaderCallback: (Rect bounds) {
+            return LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [cs.primary, cs.secondary],
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.srcIn,
+          child: const Icon(Icons.auto_awesome, color: Colors.white),
+        ),
+        label: '',
+      ),
+      // 时间线 Tab
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.timeline_outlined),
+        activeIcon: Icon(Icons.timeline),
+        label: '',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.settings_outlined),
+        activeIcon: Icon(Icons.settings),
+        label: '',
+      ),
+    ];
+  }
 
   void _onTabTapped(int index) {
     // 切换底部标签时，统一取消当前焦点，避免隐藏页的输入框仍然保留焦点导致键盘误弹
@@ -134,35 +137,15 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         index: _currentIndex,
         children: _pages,
       ),
-      bottomNavigationBar: Builder(
-        builder: (context) {
-          final theme = Theme.of(context);
-          final isDark = theme.brightness == Brightness.dark;
-          // 更直观的选中色：浅色主题用信息蓝，深色主题用更醒目的蓝色强调
-          final Color selectedColor = isDark ? AppTheme.darkSelectedAccent : AppTheme.info;
-          // 未选中色：浅色使用静默前景灰，深色使用 onSurface 70% 不透明度
-          final Color unselectedColor = isDark
-              ? theme.colorScheme.onSurface.withOpacity(0.7)
-              : AppTheme.mutedForeground;
-
-          return SizedBox(
-            height: 52,
-            child: BottomNavigationBar(
-              currentIndex: _currentIndex,
-              onTap: _onTabTapped,
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: selectedColor,
-              unselectedItemColor: unselectedColor,
-              selectedIconTheme: IconThemeData(color: selectedColor, size: 20),
-              unselectedIconTheme: IconThemeData(color: unselectedColor, size: 18),
-              backgroundColor: theme.colorScheme.surfaceVariant,
-              elevation: 0,
-              showSelectedLabels: false,
-              showUnselectedLabels: false,
-              items: _navigationItems,
-            ),
-          );
-        },
+      bottomNavigationBar: SizedBox(
+        height: 52,
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: _onTabTapped,
+          showSelectedLabels: false,
+          showUnselectedLabels: false,
+          items: _buildNavigationItems(context),
+        ),
       ),
       ),
     );

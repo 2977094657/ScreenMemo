@@ -843,6 +843,7 @@ class _SearchPageState extends State<SearchPage> {
                           showNsfwButton: false,
                           isNsfwFlagged: isNsfwDisplay,
                           onTap: () => _openViewer(s, index),
+                            showTimelineJumpButton: true,
                             customOverlay: ocrOverlay,
                           ),
                         ),

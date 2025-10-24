@@ -8,6 +8,7 @@ import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../services/favorite_service.dart';
 import '../services/screenshot_database.dart';
+import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
 import '../services/app_selection_service.dart';
 import '../theme/app_theme.dart';
@@ -97,8 +98,8 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
         final appPackageName = favMap['app_package_name'] as String;
         
         try {
-          // 获取截图记录（需要解码全局ID并从对应分库获取）
-          final screenshot = await _getScreenshotById(screenshotId, appPackageName);
+          // 优先：通过全局ID(gid)精确获取
+          final screenshot = await ScreenshotService.instance.getScreenshotById(screenshotId, appPackageName);
           if (screenshot != null) {
             items.add(_FavoriteItem(
               favorite: FavoriteRecord.fromMap(favMap),
@@ -108,6 +109,22 @@ class _FavoritesPageState extends State<FavoritesPage> with AutomaticKeepAliveCl
               ),
               appInfo: _appInfoCache[appPackageName],
             ));
+            continue;
+          }
+          // 兜底：旧逻辑按应用分页查找（防止少量边缘数据）
+          final screenshots = await ScreenshotService.instance.getScreenshotsByApp(appPackageName, limit: 800, offset: 0);
+          for (final s in screenshots) {
+            if (s.id == screenshotId) {
+              items.add(_FavoriteItem(
+                favorite: FavoriteRecord.fromMap(favMap),
+                screenshot: s,
+                updatedAt: DateTime.fromMillisecondsSinceEpoch(
+                  (favMap['updated_at'] as int?) ?? (favMap['created_at'] as int?) ?? favMap['favorite_time'] as int
+                ),
+                appInfo: _appInfoCache[appPackageName],
+              ));
+              break;
+            }
           }
         } catch (e) {
           print('获取截图失败 id=$screenshotId: $e');
@@ -418,8 +435,24 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
       if (mounted) {
         UINotifier.success(context, AppLocalizations.of(context).favoritesRemoved);
       }
-    } else if (mounted) {
-      UINotifier.error(context, AppLocalizations.of(context).operationFailed);
+    } else {
+      // 二次校验：若库中已无该收藏，也按成功处理，避免误报
+      bool stillFavorite = true;
+      try {
+        stillFavorite = await FavoriteService.instance.isFavorite(
+          screenshotId: widget.item.screenshot.id!,
+          appPackageName: widget.item.screenshot.appPackageName,
+        );
+      } catch (_) {}
+
+      if (!stillFavorite) {
+        widget.onRemove(widget.item);
+        if (mounted) {
+          UINotifier.success(context, AppLocalizations.of(context).favoritesRemoved);
+        }
+      } else if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).operationFailed);
+      }
     }
   }
   
@@ -485,6 +518,7 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
                   ),
                   onTap: _viewScreenshot,
                   errorText: 'Image Error',
+                  showTimelineJumpButton: true,
                 ),
                 // 收藏图标（左上角，点击直接取消收藏）
                 Positioned(

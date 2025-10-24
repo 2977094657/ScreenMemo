@@ -111,6 +111,22 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        iconTheme: IconThemeData(color: foreground),
+        elevation: 0,
+      ),
+      dividerColor: cs.outline,
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: cs.primary),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: cs.surfaceVariant,
+        selectedItemColor: cs.primary,
+        unselectedItemColor: cs.onSurfaceVariant,
+        type: BottomNavigationBarType.fixed,
+        selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
+        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+      ),
       bottomSheetTheme: BottomSheetThemeData(
         // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
         dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
@@ -287,17 +303,27 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
-      bottomSheetTheme: BottomSheetThemeData(
-        // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
-        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
-      ),
-      scaffoldBackgroundColor: darkBackground,
       appBarTheme: const AppBarTheme(
         backgroundColor: darkBackground,
         foregroundColor: darkForeground,
         iconTheme: IconThemeData(color: darkForeground),
         elevation: 0,
       ),
+      dividerColor: cs.outline,
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: cs.primary),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: cs.surfaceVariant,
+        selectedItemColor: cs.primary,
+        unselectedItemColor: cs.onSurfaceVariant,
+        type: BottomNavigationBarType.fixed,
+        selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
+        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
+        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+      ),
+      scaffoldBackgroundColor: darkBackground,
       iconTheme: const IconThemeData(color: darkForeground),
       cardTheme: const CardThemeData(
         color: darkCard,
@@ -434,6 +460,384 @@ class AppTheme {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
           borderSide: const BorderSide(color: darkRing, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: const BorderSide(color: darkDestructive, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: const BorderSide(color: darkDestructive, width: 2),
+        ),
+        filled: true,
+        fillColor: darkCard,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: spacing3,
+          vertical: spacing2,
+        ),
+      ),
+    );
+  }
+
+  /// 基于 seed color 构建浅色主题（仅影响 ColorScheme 与关键控件的强调色）
+  static ThemeData lightThemeFor(Color seed) {
+    final ColorScheme cs = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.light,
+    ).copyWith(
+      // 与现有设计保持一致的表面与分隔语义
+      surface: background,
+      onSurface: foreground,
+      outline: border,
+      surfaceVariant: muted,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: cs,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        iconTheme: IconThemeData(color: foreground),
+        elevation: 0,
+      ),
+      dividerColor: cs.outline,
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: cs.primary),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: cs.surfaceVariant,
+        selectedItemColor: cs.primary,
+        unselectedItemColor: cs.onSurfaceVariant,
+        type: BottomNavigationBarType.fixed,
+        selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
+        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+      ),
+      scaffoldBackgroundColor: background,
+      cardTheme: const CardThemeData(
+        color: card,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(radiusLg)),
+          side: BorderSide(color: border, width: 1),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: cs.primary,
+          foregroundColor: cs.onPrimary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: cs.onSurface,
+          elevation: 0,
+          side: BorderSide(color: cs.outline, width: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: cs.onSurface,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.outline, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.outline, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.primary, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: const BorderSide(color: destructive, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: const BorderSide(color: destructive, width: 2),
+        ),
+        filled: true,
+        fillColor: background,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: spacing3,
+          vertical: spacing2,
+        ),
+      ),
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(
+          fontSize: fontSize4xl,
+          fontWeight: FontWeight.bold,
+          color: foreground,
+        ),
+        displayMedium: TextStyle(
+          fontSize: fontSize3xl,
+          fontWeight: FontWeight.bold,
+          color: foreground,
+        ),
+        displaySmall: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.bold,
+          color: foreground,
+        ),
+        headlineLarge: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: fontSizeXl,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+        headlineSmall: TextStyle(
+          fontSize: fontSizeLg,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+        titleLarge: TextStyle(
+          fontSize: fontSizeBase,
+          fontWeight: FontWeight.w600,
+          color: foreground,
+        ),
+        titleMedium: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+        ),
+        titleSmall: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: fontSizeBase,
+          color: foreground,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: fontSizeSm,
+          color: foreground,
+        ),
+        bodySmall: TextStyle(
+          fontSize: fontSizeXs,
+          color: mutedForeground,
+        ),
+        labelLarge: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+        ),
+        labelMedium: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: foreground,
+        ),
+        labelSmall: TextStyle(
+          fontSize: 10.0,
+          fontWeight: FontWeight.w500,
+          color: mutedForeground,
+        ),
+      ),
+    );
+  }
+
+  /// 基于 seed color 构建暗色主题（仅影响 ColorScheme 与关键控件的强调色）
+  static ThemeData darkThemeFor(Color seed) {
+    final ColorScheme cs = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.dark,
+    ).copyWith(
+      surface: darkCard,
+      onSurface: darkForeground,
+      outline: darkBorder,
+      surfaceVariant: darkInput,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: cs,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: darkBackground,
+        foregroundColor: darkForeground,
+        iconTheme: IconThemeData(color: darkForeground),
+        elevation: 0,
+      ),
+      dividerColor: cs.outline,
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: cs.primary),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: cs.surfaceVariant,
+        selectedItemColor: cs.primary,
+        unselectedItemColor: cs.onSurfaceVariant,
+        type: BottomNavigationBarType.fixed,
+        selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
+        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+      ),
+      scaffoldBackgroundColor: darkBackground,
+      iconTheme: const IconThemeData(color: darkForeground),
+      cardTheme: const CardThemeData(
+        color: darkCard,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(radiusLg)),
+          side: BorderSide(color: darkBorder, width: 1),
+        ),
+      ),
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(
+          fontSize: fontSize4xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        displayMedium: TextStyle(
+          fontSize: fontSize3xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        displaySmall: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.bold,
+          color: darkForeground,
+        ),
+        headlineLarge: TextStyle(
+          fontSize: fontSize2xl,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: fontSizeXl,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        headlineSmall: TextStyle(
+          fontSize: fontSizeLg,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        titleLarge: TextStyle(
+          fontSize: fontSizeBase,
+          fontWeight: FontWeight.w600,
+          color: darkForeground,
+        ),
+        titleMedium: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        titleSmall: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: fontSizeBase,
+          color: darkForeground,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: fontSizeSm,
+          color: darkForeground,
+        ),
+        bodySmall: TextStyle(
+          fontSize: fontSizeXs,
+          color: darkMutedForeground,
+        ),
+        labelLarge: TextStyle(
+          fontSize: fontSizeSm,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        labelMedium: TextStyle(
+          fontSize: fontSizeXs,
+          fontWeight: FontWeight.w500,
+          color: darkForeground,
+        ),
+        labelSmall: TextStyle(
+          fontSize: 10.0,
+          fontWeight: FontWeight.w500,
+          color: darkMutedForeground,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: cs.primary,
+          foregroundColor: cs.onPrimary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: cs.onSurface,
+          elevation: 0,
+          side: BorderSide(color: cs.outline, width: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: cs.onSurface,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radiusMd),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: spacing4,
+            vertical: spacing2,
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.outline, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.outline, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radiusMd),
+          borderSide: BorderSide(color: cs.primary, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),

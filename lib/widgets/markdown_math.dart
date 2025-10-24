@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart' as fm;
 import 'package:markdown/markdown.dart' as md;
 import 'dart:io';
 import '../widgets/screenshot_image_widget.dart';
+import '../widgets/timeline_jump_overlay.dart';
 import '../services/screenshot_database.dart';
 import '../services/navigation_service.dart';
 import '../services/timeline_jump_service.dart';
@@ -299,6 +300,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
             borderRadius: br,
             targetWidth: 192,
             showNsfwButton: true,
+            showTimelineJumpButton: true,
             onReveal: () {
               // 保留原有：点击“显示”仍可进入大图查看
               () async {
@@ -375,44 +377,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
             child: Stack(
               children: [
                 thumbImage,
-                Positioned(
-                  right: 6,
-                  bottom: 6,
-                  child: Material(
-                    color: Colors.black.withOpacity(0.55),
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () async {
-                        try { await FlutterLogger.info('UI.Chat-ImageJump: to timeline for ' + path); } catch (_) {}
-                        try {
-                          // 懒加载依赖，避免循环引用
-                          // ignore: avoid_dynamic_calls
-                        } catch (_) {}
-                        try {
-                          // 使用服务发起跳转
-                          // 为避免循环导入，这里使用动态加载：通过导航服务路由回根，然后 Timeline 监听请求
-                          // 为简洁与可维护性，直接依赖 TimelineJumpService（已独立成服务文件）
-                        } catch (_) {}
-                        try {
-                          // ignore: avoid_print
-                          print('Jump to timeline requested for ' + path);
-                        } catch (_) {}
-                        try {
-                          // 直接导入服务调用（需要顶部添加 import）
-                          // 实际调用在文件顶部引入 timeline_jump_service.dart 后即可
-                        } catch (_) {}
-                        try {
-                          await TimelineJumpService.instance.jumpToFilePath(path);
-                        } catch (_) {}
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(6),
-                        child: Icon(Icons.timeline, size: 16, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
+                TimelineJumpOverlay(filePath: path),
               ],
             ),
           );

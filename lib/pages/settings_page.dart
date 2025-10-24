@@ -48,7 +48,7 @@ class _SettingsPageState extends State<SettingsPage>
   int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
-  int _imageQuality = 90; // 备用项，已被“目标大小”策略覆盖
+  int _imageQuality = 90; // 备用项，已被"目标大小"策略覆盖
   bool _useTargetSize = false; // 默认关闭
   int _targetSizeKb = 50; // 默认 50KB（最低仅支持 50KB）
   bool _grayscale = false; // 已移除，保持为 false
@@ -66,6 +66,9 @@ class _SettingsPageState extends State<SettingsPage>
   int _dailyNotifyMinute = 0;
   // 日志开关（默认开启）
   bool _loggingEnabled = true;
+  // 分类日志开关：AI 与 截图
+  bool _aiLoggingEnabled = false;
+  bool _screenshotLoggingEnabled = false;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -238,6 +241,8 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _loadLoggingEnabled() async {
     try {
       _loggingEnabled = FlutterLogger.enabled;
+      _aiLoggingEnabled = await FlutterLogger.getCategoryEnabled('ai');
+      _screenshotLoggingEnabled = await FlutterLogger.getCategoryEnabled('screenshot');
       if (mounted) setState(() {});
     } catch (_) {}
   }
@@ -246,6 +251,20 @@ class _SettingsPageState extends State<SettingsPage>
     try {
       await FlutterLogger.setEnabled(enabled);
       if (mounted) setState(() => _loggingEnabled = enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _updateAiLoggingEnabled(bool enabled) async {
+    try {
+      await FlutterLogger.setCategoryEnabled('ai', enabled);
+      if (mounted) setState(() => _aiLoggingEnabled = enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _updateScreenshotLoggingEnabled(bool enabled) async {
+    try {
+      await FlutterLogger.setCategoryEnabled('screenshot', enabled);
+      if (mounted) setState(() => _screenshotLoggingEnabled = enabled);
     } catch (_) {}
   }
 
@@ -729,8 +748,9 @@ class _SettingsPageState extends State<SettingsPage>
                 // 显示
                 _buildSection(
                   context: context,
-                  title: '显示',
+                  title: AppLocalizations.of(context).displaySectionTitle,
                   children: [
+                    _buildThemeColorItem(context),
                     _buildPrivacyModeItem(context),
                     _buildNsfwEntryItem(context),
                     _buildLoggingToggleItem(context),
@@ -938,6 +958,218 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+
+  Widget _buildThemeColorItem(BuildContext context) {
+    final Color current = widget.themeService.seedColor;
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.palette_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context).themeColorTitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      AppLocalizations.of(context).themeColorDesc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(width: AppTheme.spacing3),
+                    // 当前色预览
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: current,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showThemeColorSheet,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showThemeColorSheet() {
+    final presets = <Color>[
+      const Color(0xFF3B82F6), // Blue 500
+      const Color(0xFF22C55E), // Green 500
+      const Color(0xFFF59E0B), // Amber 500
+      const Color(0xFFEF4444), // Red 500
+      const Color(0xFF06B6D4), // Cyan 500
+      const Color(0xFF9333EA), // Purple 600
+      const Color(0xFF60A5FA), // Blue 400
+      const Color(0xFF10B981), // Emerald 500
+      const Color(0xFFFB7185), // Rose 400
+      const Color(0xFFF97316), // Orange 500
+      const Color(0xFF14B8A6), // Teal 500
+      const Color(0xFF0891B2), // Cyan 600
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final Color current = widget.themeService.seedColor;
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(AppTheme.radiusLg),
+              topRight: Radius.circular(AppTheme.radiusLg),
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppTheme.spacing4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 顶部指示器
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          AppLocalizations.of(context).chooseThemeColorTitle,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await widget.themeService.resetSeedColor();
+                          if (mounted) Navigator.of(context).pop();
+                          if (mounted) setState(() {});
+                        },
+                        child: Text(AppLocalizations.of(context).defaultLabel),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTheme.spacing3),
+                  GridView.count(
+                    crossAxisCount: 6,
+                    shrinkWrap: true,
+                    crossAxisSpacing: AppTheme.spacing3,
+                    mainAxisSpacing: AppTheme.spacing3,
+                    children: presets.map((c) {
+                      final bool selected = current.value == c.value;
+                      return InkWell(
+                        onTap: () async {
+                          await widget.themeService.setSeedColor(c);
+                          if (mounted) Navigator.of(context).pop();
+                          if (mounted) setState(() {});
+                        },
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: selected
+                                ? [
+                                    BoxShadow(
+                                      color: c.withOpacity(0.4),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          alignment: Alignment.center,
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: c,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.surface,
+                                width: 2,
+                              ),
+                            ),
+                            child: selected
+                                ? const Icon(Icons.check, color: Colors.white, size: 18)
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: AppTheme.spacing2),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
 
   void _showAiRequestIntervalDialog() {
@@ -1345,6 +1577,14 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildNsfwEntryItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Container(
@@ -1473,60 +1713,99 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildLoggingToggleItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.event_note_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '日志打印',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '开启后统一打印所有日志（默认开启）',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                child: Icon(
+                  Icons.event_note_outlined,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  size: 18,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context).loggingTitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      AppLocalizations.of(context).loggingDesc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              Transform.scale(
+                scale: 0.9,
+                child: Switch(
+                  value: _loggingEnabled,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) => _updateLoggingEnabled(v),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: AppTheme.spacing2),
-          Transform.scale(
-            scale: 0.9,
-            child: Switch(
-              value: _loggingEnabled,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              onChanged: (v) => _updateLoggingEnabled(v),
-            ),
+          const SizedBox(height: AppTheme.spacing3),
+          Row(
+            children: [
+              const SizedBox(width: 36),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Text(
+                  'AI Logs',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              Transform.scale(
+                scale: 0.9,
+                child: Switch(
+                  value: _aiLoggingEnabled,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) => _updateAiLoggingEnabled(v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Row(
+            children: [
+              const SizedBox(width: 36),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Text(
+                  'Screenshot Logs',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              Transform.scale(
+                scale: 0.9,
+                child: Switch(
+                  value: _screenshotLoggingEnabled,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) => _updateScreenshotLoggingEnabled(v),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1722,7 +2001,7 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             ],
           ),
-          // 与“截屏间隔”项保持一致的内边距与间距（去除多余的底部空白）
+          // 与"截屏间隔"项保持一致的内边距与间距（去除多余的底部空白）
         ],
       ),
     );
@@ -2419,7 +2698,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
         minute: _dailyNotifyMinute,
         enabled: _dailyNotifyEnabled,
       );
-      // 启动一次“自动预生成”调度
+      // 启动一次"自动预生成"调度
       await DailySummaryService.instance.refreshAutoRefreshSchedule();
       await FlutterLogger.nativeInfo('DailySummaryUI', 'restore schedule on load result=$ok');
     } catch (e) {
@@ -2456,7 +2735,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
         minute: newMinute,
         enabled: newEnabled,
       );
-      // 刷新“预生成”定时器，使得在提醒前1分钟自动刷新当日总结
+      // 刷新"预生成"定时器，使得在提醒前1分钟自动刷新当日总结
       await DailySummaryService.instance.refreshAutoRefreshSchedule();
       if (toast && mounted) {
         if (ok) {
@@ -2476,7 +2755,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   }
 
   Future<void> _pickDailyNotifyTime() async {
-    // 数字输入方式：点击时间数字后弹出输入框，类似“截图质量”的交互
+    // 数字输入方式：点击时间数字后弹出输入框，类似"截图质量"的交互
     final TextEditingController hourController =
         TextEditingController(text: _two(_dailyNotifyHour));
     final TextEditingController minuteController =
@@ -2741,7 +3020,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     );
   }
 
-  // 打开“每日总结提醒”渠道设置（开启横幅/悬浮通知等）
+  // 打开"每日总结提醒"渠道设置（开启横幅/悬浮通知等）
   Future<void> _openDailyChannelSettings() async {
     try {
       await FlutterLogger.nativeInfo('DailySummaryUI', 'open channel settings');
@@ -2752,7 +3031,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     }
   }
 
-  // 打开“应用通知”总设置（可选）
+  // 打开"应用通知"总设置（可选）
   Future<void> _openAppNotificationSettings() async {
     try {
       await FlutterLogger.nativeInfo('DailySummaryUI', 'open app notification settings');
