@@ -1025,6 +1025,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get copyResultsTooltip => 'Copy results';
 
   @override
+  String get saveImageTooltip => 'Save to gallery';
+
+  @override
+  String get saveImageSuccess => 'Saved to Gallery';
+
+  @override
+  String get saveImageFailed => 'Save failed';
+
+  @override
+  String get requestGalleryPermissionFailed =>
+      'Request gallery permission failed';
+
+  @override
   String get aiSystemPromptLanguagePolicy =>
       'Regardless of the language used in the input context (events, screenshot text, or user messages), you must strictly ignore it and always produce output in the application\'s current language. If the app is set to English, all answers, titles, summaries, tags, structured fields, and error messages must be written in English unless the user explicitly requests another language.';
 
@@ -1708,4 +1721,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get conversationsSectionTitle => 'Conversations';
+
+  @override
+  String get displaySectionTitle => 'Display';
+
+  @override
+  String get themeColorTitle => 'Theme color';
+
+  @override
+  String get themeColorDesc => 'Customize the app\'s primary color';
+
+  @override
+  String get chooseThemeColorTitle => 'Choose theme color';
+
+  @override
+  String get loggingTitle => 'Logging';
+
+  @override
+  String get loggingDesc => 'Enable centralized logging (enabled by default)';
+
+  @override
+  String get themeModeAuto => 'Auto';
+
+  @override
+  String get themeModeLight => 'Light';
+
+  @override
+  String get themeModeDark => 'Dark';
 }

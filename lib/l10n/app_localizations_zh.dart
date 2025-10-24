@@ -987,6 +987,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get copyResultsTooltip => '复制结果';
 
   @override
+  String get saveImageTooltip => '保存到相册';
+
+  @override
+  String get saveImageSuccess => '已保存到相册';
+
+  @override
+  String get saveImageFailed => '保存失败';
+
+  @override
+  String get requestGalleryPermissionFailed => '请求相册权限失败';
+
+  @override
   String get aiSystemPromptLanguagePolicy =>
       '无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。';
 
@@ -1655,4 +1667,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get conversationsSectionTitle => '对话';
+
+  @override
+  String get displaySectionTitle => '显示';
+
+  @override
+  String get themeColorTitle => '主题颜色';
+
+  @override
+  String get themeColorDesc => '自定义应用主色调';
+
+  @override
+  String get chooseThemeColorTitle => '选择主题颜色';
+
+  @override
+  String get loggingTitle => '日志打印';
+
+  @override
+  String get loggingDesc => '开启后统一打印所有日志（默认开启）';
+
+  @override
+  String get themeModeAuto => '自动';
+
+  @override
+  String get themeModeLight => '浅色';
+
+  @override
+  String get themeModeDark => '深色';
 }

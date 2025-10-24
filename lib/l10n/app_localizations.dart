@@ -1892,6 +1892,30 @@ abstract class AppLocalizations {
   /// **'Copy results'**
   String get copyResultsTooltip;
 
+  /// No description provided for @saveImageTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to gallery'**
+  String get saveImageTooltip;
+
+  /// No description provided for @saveImageSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to Gallery'**
+  String get saveImageSuccess;
+
+  /// No description provided for @saveImageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Save failed'**
+  String get saveImageFailed;
+
+  /// No description provided for @requestGalleryPermissionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Request gallery permission failed'**
+  String get requestGalleryPermissionFailed;
+
   /// System-level language policy prompt enforcing app language over context language
   ///
   /// In en, this message translates to:
@@ -3079,6 +3103,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Conversations'**
   String get conversationsSectionTitle;
+
+  /// No description provided for @displaySectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Display'**
+  String get displaySectionTitle;
+
+  /// No description provided for @themeColorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme color'**
+  String get themeColorTitle;
+
+  /// No description provided for @themeColorDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize the app\'s primary color'**
+  String get themeColorDesc;
+
+  /// No description provided for @chooseThemeColorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose theme color'**
+  String get chooseThemeColorTitle;
+
+  /// No description provided for @loggingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Logging'**
+  String get loggingTitle;
+
+  /// No description provided for @loggingDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable centralized logging (enabled by default)'**
+  String get loggingDesc;
+
+  /// No description provided for @themeModeAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto'**
+  String get themeModeAuto;
+
+  /// No description provided for @themeModeLight.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get themeModeLight;
+
+  /// No description provided for @themeModeDark.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get themeModeDark;
 }
 
 class _AppLocalizationsDelegate
