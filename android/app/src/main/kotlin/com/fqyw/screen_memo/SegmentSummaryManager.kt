@@ -2,7 +2,7 @@ package com.fqyw.screen_memo
 
 import android.content.Context
 import android.util.Base64
-import android.util.Log
+ 
 import com.fqyw.screen_memo.FileLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -22,9 +22,9 @@ import kotlin.math.roundToInt
  * 时间段总结管理器（原生）
  * - 入口：onScreenshotSaved(package, appName, filePathAbs, captureTime)
  * - 若不存在活动段落：以 当前图时间+durationSec 作为 endTime，startTime=endTime-durationSec
- *   注：根据需求1：需要“从当前图时间向后推1分钟，然后找大于该时间最近的一张图”，
+ *   注：根据需求1：需要"从当前图时间向后推1分钟，然后找大于该时间最近的一张图"，
  *       我们将此作为确定 startAnchor 的第一步，随后回溯 duration 构建段落范围。
- * - 在段落期间，按 sampleIntervalSec 从区间内寻找“最接近的截图（不限制±偏差，选最近）”，并缓存样本。
+ * - 在段落期间，按 sampleIntervalSec 从区间内寻找"最接近的截图（不限制±偏差，选最近）"，并缓存样本。
  * - 段落结束后，汇总去重应用+时间片，调用 Gemini 多模态生成结构化中文输出，持久化到 segment_results。
  */
 object SegmentSummaryManager {
@@ -59,7 +59,7 @@ object SegmentSummaryManager {
     // 活动段落缓存（仅存ID，其他实时查库）
     @Volatile private var activeSegmentId: Long = -1L
 
-    // 并发窗口去重：按 “start|end” 标识正在创建中的段落，避免同时间段重复创建
+    // 并发窗口去重：按 "start|end" 标识正在创建中的段落，避免同时间段重复创建
     private val creatingWindows: MutableSet<String> = Collections.synchronizedSet(HashSet())
     // 并发完成去重：避免同一 segment 被重复 finish/AI 调用
     private val finishingSegments: MutableSet<Long> = Collections.synchronizedSet(HashSet())
@@ -80,7 +80,7 @@ object SegmentSummaryManager {
 
     /**
      * 申请一次AI请求配额：若距离上次请求未超过最小间隔，则等待剩余时间。
-     * 采用“令牌时钟”：所有调用串行化到全局最小间隔，避免瞬时洪峰。
+     * 采用"令牌时钟"：所有调用串行化到全局最小间隔，避免瞬时洪峰。
      * 返回本次实际等待的毫秒数（便于日志观测）。
      */
     private fun acquireAiRateSlot(ctx: Context): Long {
@@ -108,7 +108,7 @@ object SegmentSummaryManager {
                 // 先回填历史窗口到最新的可完成段落
                 backfillToLatest(ctx)
 
-                // 若仍无活动段落，则以当前截图时间作为起点创建“仅含有图片的窗口”
+                // 若仍无活动段落，则以当前截图时间作为起点创建"仅含有图片的窗口"
                 val durationSec = getSegmentDurationSec(ctx)
                 val startTime = captureTime
                 val endTime = startTime + durationSec * 1000L
@@ -156,8 +156,7 @@ object SegmentSummaryManager {
                 backfillToLatest(ctx)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "onScreenshotSaved error: ${e.message}")
-            try { FileLogger.w(TAG, "onScreenshotSaved error: ${e.message}") } catch (_: Exception) {}
+            FileLogger.w(TAG, "onScreenshotSaved error: ${e.message}")
         }
     }
 
@@ -211,7 +210,7 @@ object SegmentSummaryManager {
             return
         }
 
-        // 为每个时间槽选择“最近”的截图（不限制±，选择距离最小者），并按文件路径去重
+        // 为每个时间槽选择"最近"的截图（不限制±，选择距离最小者），并按文件路径去重
         val samples = ArrayList<SegmentDatabaseHelper.Sample>()
         var inWindowCount = 0
         val seenPaths = HashSet<String>()
@@ -346,10 +345,10 @@ object SegmentSummaryManager {
             val shots = SegmentDatabaseHelper.listShotsBetween(ctx, todayStart, now)
             if (shots.isEmpty()) return
 
-            // 只允许从“已存在的最大 end_time”之后开始回填，避免回到过去窗口
+            // 只允许从"已存在的最大 end_time"之后开始回填，避免回到过去窗口
             val progressEnd = SegmentDatabaseHelper.getLastSegmentEndTimeInRange(ctx, todayStart, now) ?: todayStart
 
-            // 仅以“有图片的时间点”为起点，窗口为 [shotTime, shotTime + duration]
+            // 仅以"有图片的时间点"为起点，窗口为 [shotTime, shotTime + duration]
             var i = 0
             // 将 i 快速推进到首个 >= progressEnd 的截图
             while (i < shots.size && shots[i].captureTime < progressEnd) i++
@@ -400,7 +399,7 @@ object SegmentSummaryManager {
                     }
                 }
 
-                // 跳到“下一个有图片且时间 >= windowEnd”的索引
+                // 跳到"下一个有图片且时间 >= windowEnd"的索引
                 var j = i + 1
                 while (j < shots.size && shots[j].captureTime < windowEnd) j++
                 i = j
@@ -450,7 +449,7 @@ object SegmentSummaryManager {
                     byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
                 }
 
-                // 依据应用语言注入“语言强制策略”并选择对应提示词（支持 _zh/_en 与旧键回退）
+                // 依据应用语言注入"语言强制策略"并选择对应提示词（支持 _zh/_en 与旧键回退）
                 val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
                 val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
                 val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
@@ -465,13 +464,13 @@ object SegmentSummaryManager {
                 val defaultHeaderZh =
                     "请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：\n" +
                     "- 禁止使用OCR文本；直接理解图片内容；\n" +
-                    "- 不要逐图描述；按应用/主题整合用户在该时间段的‘行为总结’（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；\n" +
+                    "- 不要逐图描述；按应用/主题整合用户在该时间段的'行为总结'（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；\n" +
                     "- 对视频标题、作者、品牌等独特信息，按屏幕原样在输出中保留；\n" +
                     "- 对同一文章/视频/页面的连续图片，归为同一 content_group 做整体总结；\n" +
-                    "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容；\n" +
-                    "- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；\n" +
+                    "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现\\\"## 概览\\\"或\\\"## 总结\\\"等）；随后再使用 Markdown 小节呈现后续内容；\n" +
+                    "- Markdown 要求：所有\"用于展示的文本字段\"须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；\n" +
                     "- 后续小节建议包含：\"## 关键操作\"（按时间的要点清单）、\"## 主要活动\"（按应用/主题的要点清单）、\"## 重点内容\"（可保留的标题/作者/品牌等）；\n" +
-                    "- 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”（例如“08:16:41-08:27:21：浏览视频评论”）；仅在行为中断或切换时新起一条；控制 3-8 条精要；\n" +
+                    "- 在\"## 关键操作\"中，将相邻/连续同类行为合并为区间，格式\"HH:mm:ss-HH:mm:ss：行为描述\"（例如\"08:16:41-08:27:21：浏览视频评论\"）；仅在行为中断或切换时新起一条；控制 3-8 条精要；\n" +
                     "以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n" +
                     "仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；\n" +
                     "字段约定：\n" +
@@ -545,13 +544,10 @@ object SegmentSummaryManager {
                     tryCompareAndMergeBackward(ctx, seg, samples, result.second, result.third)
                 } catch (_: Exception) {}
             } catch (e: Exception) {
-                Log.w(TAG, "finishSegment ai error: ${e.message}")
-                try {
-                    FileLogger.w(TAG, "finishSegment ai error: ${e.message}")
-                    // 捕获更详细的异常类型与栈
-                    FileLogger.w(TAG, "ai exception class=${e::class.java.name}")
-                    FileLogger.w(TAG, "ai exception stack=\n" + (e.stackTraceToString()))
-                } catch (_: Exception) {}
+                FileLogger.w(TAG, "finishSegment ai error: ${e.message}")
+                // 捕获更详细的异常类型与栈
+                FileLogger.w(TAG, "ai exception class=${e::class.java.name}")
+                FileLogger.w(TAG, "ai exception stack=\n" + (e.stackTraceToString()))
                 // 将错误预览文本持久化，供前端错误样式展示
                 try {
                     val cfg = AISettingsNative.readConfig(ctx)
@@ -606,7 +602,7 @@ object SegmentSummaryManager {
         val samplesOrdered = samples.sortedBy { it.captureTime }
         val effSamples = if (samplesOrdered.size > effectiveCap) evenPick(samplesOrdered, effectiveCap) else samplesOrdered
 
-        // 基于应用语言计算“最多三分之一图片可被文字描述”的动态规则（向下取整，允许0张）
+        // 基于应用语言计算"最多三分之一图片可被文字描述"的动态规则（向下取整，允许0张）
         val langOptForRule = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
         val sysLangForRule = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
         val isZhForRule = (langOptForRule == "zh") || (langOptForRule != "en" && sysLangForRule.startsWith("zh"))
@@ -630,7 +626,7 @@ object SegmentSummaryManager {
             if (isZhForRule) {
                 """
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进摘要。
-- 仅使用 described_images[] 列出这些“被文字描述”的单张图片，数组长度<=上述上限；每项结构：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
+- 仅使用 described_images[] 列出这些"被文字描述"的单张图片，数组长度<=上述上限；每项结构：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
 - key_actions[].ref_image 必须复用 described_images[] 中的文件名，不得新增超出上限的图片引用。
 """.trim()
             } else {
@@ -644,7 +640,7 @@ object SegmentSummaryManager {
 
         // 结构化呈现规则：开头一段纯文本总结，随后 Markdown 小节
         val dynamicStructureRule = if (isZhForRule) {
-            "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容。"
+            "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现\\\"## 概览\\\"或\\\"## 总结\\\"等）；随后再使用 Markdown 小节呈现后续内容。"
         } else {
             "- Start with one plain paragraph (no heading) summarizing the time window; then present details using Markdown subsections."
         }
@@ -692,7 +688,8 @@ object SegmentSummaryManager {
             )
         } catch (_: Exception) {}
         try {
-            android.util.Log.i(TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, merge=${isMerge}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
+            val promptPreview = truncateForLog(promptWithRule, 800)
+            FileLogger.i(TAG, "AI prompt preview: ${promptPreview}")
         } catch (_: Exception) {}
         try {
             OutputFileLogger.info(ctx, TAG, "AI prepare: provider=${if (isGoogle) "google" else "openai-compat"}, model=${model}, base=${base}, seg=${seg.id}, merge=${isMerge}, textLen=${textLen}, textLenWithRule=${textLenWithRule}, images=${samples.size}, bytes=${totalImageBytes}, missing=${missingImages}, firstFiles=${firstNames.joinToString("|")}")
@@ -701,7 +698,7 @@ object SegmentSummaryManager {
         // 额外打印提示词预览（不含图片/密钥）：Logcat 截断 + 文件完整
         try {
             val promptPreview = truncateForLog(promptWithRule, 800)
-            android.util.Log.i(TAG, "AI prompt preview: ${promptPreview}")
+            FileLogger.i(TAG, "AI prompt preview: ${promptPreview}")
         } catch (_: Exception) {}
         try {
             OutputFileLogger.info(ctx, TAG, "AI prompt full BEGIN >>>")
@@ -713,7 +710,7 @@ object SegmentSummaryManager {
             // Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
             val url = "$base/v1beta/models/$model:generateContent?key=$apiKey"
             try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
-            try { android.util.Log.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
 
             val parts = JSONArray()
@@ -745,7 +742,7 @@ object SegmentSummaryManager {
                         val end = System.currentTimeMillis()
                         lastCode = resp.code
                         try { FileLogger.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { android.util.Log.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.info(ctx, TAG, "AI response meta: code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         if (resp.isSuccessful) {
                             respText = resp.body?.string() ?: ""
@@ -754,19 +751,19 @@ object SegmentSummaryManager {
                             lastBody = resp.body?.string()
                             val shouldRetry = resp.code >= 500
                             try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { android.util.Log.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             try { OutputFileLogger.error(ctx, TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { android.util.Log.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { FileLogger.w(TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI timeout attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         // 继续重试
                     } catch (e: Exception) {
                         // 其他IO异常：仅第一次尝试记录，仍然重试
                         try { FileLogger.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
-                        try { android.util.Log.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { FileLogger.w(TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI exception attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                     }
                     attempt++
@@ -787,7 +784,7 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
             try {
                 val preview = truncateForLog(respText, 2000)
-                android.util.Log.i(TAG, "AI response preview: ${preview}")
+                FileLogger.i(TAG, "AI response preview: ${preview}")
             } catch (_: Exception) {}
             // 完整响应落盘（分块写入）
             try {
@@ -866,7 +863,7 @@ object SegmentSummaryManager {
             // OpenAI 兼容 REST: POST {base}/v1/chat/completions
             val url = "$base/v1/chat/completions"
             try { FileLogger.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
-            try { android.util.Log.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI request (OpenAI compat): url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
 
             val contentArr = JSONArray()
@@ -911,7 +908,7 @@ object SegmentSummaryManager {
                         val end = System.currentTimeMillis()
                         lastCode = resp.code
                         try { FileLogger.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { android.util.Log.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.info(ctx, TAG, "AI response meta(OpenAI compat): code=${resp.code}, elapsedMs=${end - start}, attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         if (resp.isSuccessful) {
                             respText = resp.body?.string() ?: ""
@@ -927,7 +924,7 @@ object SegmentSummaryManager {
                                 // 非 JSON 或无法解析则按正常成功处理
                             }
                             if (hasPayloadError) {
-                                // 记录并视为“带错误负载的成功”，交由下游保存错误预览供前端展示，避免自动重试
+                                // 记录并视为"带错误负载的成功"，交由下游保存错误预览供前端展示，避免自动重试
                             try { FileLogger.w(TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
                             try { OutputFileLogger.error(ctx, TAG, "AI success(200) but error payload(OpenAI) body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
                                 break
@@ -939,18 +936,18 @@ object SegmentSummaryManager {
                             lastBody = resp.body?.string()
                             val shouldRetry = resp.code >= 500
                             try { FileLogger.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { android.util.Log.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                            try { FileLogger.w(TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             try { OutputFileLogger.error(ctx, TAG, "AI failed(OpenAI compat) code=${resp.code} attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { android.util.Log.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        try { FileLogger.w(TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI timeout(OpenAI) attempt=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         // 继续重试
                     } catch (e: Exception) {
                         try { FileLogger.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
-                        try { android.util.Log.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
+                        try { FileLogger.w(TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI exception(OpenAI) attempt=${attempt + 1}/${maxAttempts}: ${e.message}") } catch (_: Exception) {}
                     }
                     attempt++
@@ -971,7 +968,7 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
             try {
                 val preview = truncateForLog(respText, 2000)
-                android.util.Log.i(TAG, "AI response preview(OpenAI): ${preview}")
+                FileLogger.i(TAG, "AI response preview(OpenAI): ${preview}")
             } catch (_: Exception) {}
             // 完整响应落盘（分块写入）
             try {
@@ -1045,7 +1042,7 @@ object SegmentSummaryManager {
     }
 
     /**
-     * 与上一个已完成段进行“是否为同一事件”的判断，若相同则合并并生成新总结；
+     * 与上一个已完成段进行"是否为同一事件"的判断，若相同则合并并生成新总结；
      * 合并策略：将时间窗口扩展为 [prev.start, cur.end] 并基于合并后的样本重新请求AI。
      * 图片采样：若合计图片数超过 MAX_COMPARE_IMAGES，则两段各取一半，按时间均匀抽样。
      */
@@ -1064,10 +1061,10 @@ object SegmentSummaryManager {
             return
         }
 
-        // 读取上一个段的样本与文本（用于“已引用图片数”判断）
+        // 读取上一个段的样本与文本（用于"已引用图片数"判断）
         val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
         try { FileLogger.i(TAG, "merge: prev=${prev.id} A=${prevSamples.size} imgs, cur=${cur.id} B=${curSamples.size} imgs") } catch (_: Exception) {}
-        // 合并上限前置判断：依据“两事件已引用的图片数（样本数之和）”，而非时间窗总截图数
+        // 合并上限前置判断：依据"两事件已引用的图片数（样本数之和）"，而非时间窗总截图数
         val maxImagesPerMergedEvent = getMergeMaxImagesPerEvent(ctx)
         val seenFiles = java.util.HashSet<String>()
         for (s in prevSamples) { seenFiles.add(s.filePath) }
@@ -1103,7 +1100,7 @@ object SegmentSummaryManager {
                 val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
                 sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
                     .append("合并判定策略（放宽）：\n")
-                    .append("- 若两段主要应用相同，或同属‘视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作’等同类行为，即使内容不同也视为同一事件；\n")
+                    .append("- 若两段主要应用相同，或同属'视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作'等同类行为，即使内容不同也视为同一事件；\n")
                     .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
                     .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
                     .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
@@ -1164,7 +1161,7 @@ object SegmentSummaryManager {
         try { FileLogger.i(TAG, "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${limitedMerged.size} (cap=${finalCap}) using merge prompt") } catch (_: Exception) {}
         val merged = callGeminiWithImages(ctx, cur, limitedMerged, mergePrompt, isMerge = true)
         try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
-        // 仅打印合并“生成新总结”的AI响应
+        // 仅打印合并"生成新总结"的AI响应
         try {
             val preview2 = truncateForLog(merged.second, 3000)
             FileLogger.i(TAG, "合并总结响应: ${preview2}")
@@ -1191,7 +1188,7 @@ object SegmentSummaryManager {
             structuredJson = merged.third,
             categories = merged.fourth
         )
-        // 标记当前段为“已合并”，用于前端展示
+        // 标记当前段为"已合并"，用于前端展示
         try { SegmentDatabaseHelper.setMergedFlag(ctx, cur.id, true) } catch (_: Exception) {}
         // 合并成功后：删除被合并的前一事件，避免同时存在
         try {
@@ -1233,7 +1230,7 @@ object SegmentSummaryManager {
         return out
     }
 
-    /** 为任意 segment 按“每槽位最近一图 + 最后一槽尝试 end 之后第一张”规则重建样本列表 */
+    /** 为任意 segment 按"每槽位最近一图 + 最后一槽尝试 end 之后第一张"规则重建样本列表 */
     private fun buildSamplesForSegment(ctx: Context, seg: SegmentDatabaseHelper.Segment): List<SegmentDatabaseHelper.Sample> {
         val interval = seg.sampleIntervalSec
         val start = seg.startTime
@@ -1318,7 +1315,7 @@ object SegmentSummaryManager {
         val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
         for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
 
-        // 依据应用语言注入“语言强制策略”并选择合并提示词（支持 _zh/_en 与旧键回退）
+        // 依据应用语言注入"语言强制策略"并选择合并提示词（支持 _zh/_en 与旧键回退）
         val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
         val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
         val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
@@ -1329,13 +1326,13 @@ object SegmentSummaryManager {
         val defaultHeaderZh =
             "请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：\n" +
             "- 禁止使用OCR文本，直接理解图片内容；\n" +
-            "- 不要对每张图片逐条描述；请产出用户在该时间段的‘行为总结’，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；\n" +
+            "- 不要对每张图片逐条描述；请产出用户在该时间段的'行为总结'，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；\n" +
             "- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；\n" +
             "- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；\n" +
-            "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容；\n" +
-            "- Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；\n" +
+            "- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现\\\"## 概览\\\"或\\\"## 总结\\\"等）；随后再使用 Markdown 小节呈现后续内容；\n" +
+            "- Markdown 要求：所有\"用于展示的文本字段\"须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；\n" +
             "- 后续小节建议包含：\"## 关键操作\"（按时间的要点清单）、\"## 主要活动\"（按应用/主题的要点清单）、\"## 重点内容\"（可保留的标题/作者/品牌等）；\n" +
-            "- 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”（例如“08:16:41-08:27:21：浏览视频评论”）；仅在行为中断或切换时新起一条；控制 3-8 条精要；\n" +
+            "- 在\"## 关键操作\"中，将相邻/连续同类行为合并为区间，格式\"HH:mm:ss-HH:mm:ss：行为描述\"（例如\"08:16:41-08:27:21：浏览视频评论\"）；仅在行为中断或切换时新起一条；控制 3-8 条精要；\n" +
             "- 为尽可能保留信息，可在 Markdown 中使用无序/有序列表、加粗/斜体与内联代码高亮（但不要使用代码块）；\n" +
             "以 JSON 输出以下字段（与普通事件保持一致，不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n" +
             "字段约定：\n" +
@@ -1387,11 +1384,11 @@ object SegmentSummaryManager {
     }
 
     /**
-     * 扫描并补救：仅针对“当天”的 completed 段落，凡无内容（文本与结构化皆空）均尝试补救；
+     * 扫描并补救：仅针对"当天"的 completed 段落，凡无内容（文本与结构化皆空）均尝试补救；
      * 如不存在样本，则按规则即时重建样本后再补救。
      */
     private fun resumeMissingSummaries(ctx: Context, limit: Int = 2) {
-        // 默认只补救“当天”
+        // 默认只补救"当天"
         val since = startOfToday()
         val list = try { SegmentDatabaseHelper.listSegmentsNeedingSummary(ctx, limit = limit, sinceMillis = since) } catch (_: Exception) { emptyList() }
         try {
@@ -1445,7 +1442,7 @@ object SegmentSummaryManager {
 
     /**
      * 公开方法：按ID列表重试生成总结。
-     * - force=true 时无视“已有结果/同窗已有结果”直接重跑并覆盖写入。
+     * - force=true 时无视"已有结果/同窗已有结果"直接重跑并覆盖写入。
      */
     fun retrySegmentsByIds(ctx: Context, ids: List<Long>, force: Boolean = false): Int {
         if (ids.isEmpty()) return 0

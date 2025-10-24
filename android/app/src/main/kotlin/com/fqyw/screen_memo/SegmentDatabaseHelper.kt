@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
+ 
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -96,7 +96,7 @@ object SegmentDatabaseHelper {
             ensureSchema(db)
             db
         } catch (e: Exception) {
-            Log.w(TAG, "openMasterDb failed: ${e.message}")
+            FileLogger.w(TAG, "openMasterDb failed: ${e.message}")
             null
         }
     }
@@ -188,7 +188,7 @@ object SegmentDatabaseHelper {
             val rowId = db.insertWithOnConflict("segments", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
             if (rowId > 0) rowId else findSegmentIdByWindow(context, startMillis, endMillis)
         } catch (e: Exception) {
-            Log.w(TAG, "createSegment failed: ${e.message}")
+            FileLogger.w(TAG, "createSegment failed: ${e.message}")
             -1
         } finally { try { db?.close() } catch (_: Exception) {} }
     }

@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
+ 
 import java.io.File
 
 /**
@@ -30,7 +30,7 @@ object ScreenshotDatabaseHelper {
         var db: SQLiteDatabase? = null
         var shardDb: SQLiteDatabase? = null
         try {
-            Log.i(TAG, "insertIfNotExists begin, app=${appPackageName}, time=${captureTimeMillis}, path=${absoluteFilePath}")
+            FileLogger.i(TAG, "insertIfNotExists begin, app=${appPackageName}, time=${captureTimeMillis}, path=${absoluteFilePath}")
             val masterDbPath = resolveMasterDbPath(context) ?: return
             db = SQLiteDatabase.openDatabase(masterDbPath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
             ensureSchema(db)
@@ -56,13 +56,13 @@ object ScreenshotDatabaseHelper {
                 if (!pageUrl.isNullOrBlank()) put("page_url", pageUrl)
             }
             val rowId = shardDb!!.insert(tableName, null, values)
-            Log.i(TAG, "inserted into ${tableName}, rowId=${rowId}")
+            FileLogger.i(TAG, "inserted into ${tableName}, rowId=${rowId}")
 
             // 维护聚合统计（写主库）
             upsertAppStatsOnInsert(db, appPackageName, appName, fileSize, captureTimeMillis)
-            Log.i(TAG, "upsert app_stats ok, app=${appPackageName}, last=${captureTimeMillis}")
+            FileLogger.i(TAG, "upsert app_stats ok, app=${appPackageName}, last=${captureTimeMillis}")
         } catch (e: Exception) {
-            Log.w(TAG, "Native insertIfNotExists failed: ${e.message}")
+            FileLogger.w(TAG, "Native insertIfNotExists failed: ${e.message}")
             // 忽略原生侧入库异常，不影响截屏主流程
         } finally {
             try { db?.close() } catch (_: Exception) {}
@@ -452,7 +452,7 @@ object ScreenshotDatabaseHelper {
                 arrayOf(packageName, appName, totalCount, totalSize, lastCapture)
             )
         } catch (e: Exception) {
-            Log.w(TAG, "recomputeAppStatForPackage failed: ${e.message}")
+            FileLogger.w(TAG, "recomputeAppStatForPackage failed: ${e.message}")
         }
     }
 

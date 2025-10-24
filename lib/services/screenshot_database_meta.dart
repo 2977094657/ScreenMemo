@@ -368,6 +368,56 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  /// 通过全局ID(gid)与包名获取单条截图记录
+  Future<ScreenshotRecord?> getScreenshotById(int gid, String appPackageName) async {
+    final db = await database; // 主库
+    try {
+      final decoded = _decodeGid(gid);
+      if (decoded == null) return null;
+      final int year = decoded[0];
+      final int month = decoded[1];
+      final int localId = decoded[2];
+
+      final shardDb = await _openShardDb(appPackageName, year);
+      if (shardDb == null) return null;
+      final String table = _monthTableName(year, month);
+      if (!await _tableExists(shardDb, table)) return null;
+
+      // 查询该月表中的本地ID
+      final maps = await shardDb.query(
+        table,
+        where: 'id = ?',
+        whereArgs: [localId],
+        limit: 1,
+      );
+      if (maps.isEmpty) return null;
+
+      // 查 app 名称
+      String appName = appPackageName;
+      try {
+        final rows = await db.query(
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [appPackageName],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          appName = (rows.first['app_name'] as String?) ?? appPackageName;
+        }
+      } catch (_) {}
+
+      final full = Map<String, dynamic>.from(maps.first);
+      full['app_package_name'] = appPackageName;
+      full['app_name'] = appName;
+      full['id'] = gid;
+      return ScreenshotRecord.fromMap(full);
+    } catch (e) {
+      print('getScreenshotById 失败: $e');
+      return null;
+    }
+  }
+
   Future<List<int>> getScreenshotIdsByAppBetween(
     String appPackageName, {
     required int startMillis,
@@ -1665,6 +1715,84 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     } catch (e) {
       print('getScreenshotsByAppBetween 查询失败: $e');
       return <ScreenshotRecord>[];
+    }
+  }
+
+  /// 列出指定应用所有有数据的日期（本地时区），按日期倒序返回
+  /// 返回元素：{ 'date': 'YYYY-MM-DD', 'count': <int> }
+  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(String appPackageName) async {
+    final Map<String, int> dayToCount = <String, int>{};
+    try {
+      final years = await _listShardYearsForApp(appPackageName);
+      if (years.isEmpty) return <Map<String, dynamic>>[];
+      for (final y in years) {
+        final shardDb = await _openShardDb(appPackageName, y);
+        if (shardDb == null) continue;
+        for (int m = 1; m <= 12; m++) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(
+              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' + t + ' WHERE is_deleted = 0 GROUP BY d',
+            );
+            for (final r in rows) {
+              final String d = (r['d'] as String?) ?? '';
+              if (d.isEmpty) continue;
+              final int c = (r['c'] as int?) ?? 0;
+              dayToCount[d] = (dayToCount[d] ?? 0) + c;
+            }
+          } catch (_) {}
+        }
+      }
+      final List<Map<String, dynamic>> out = dayToCount.entries
+          .map((e) => <String, dynamic>{'date': e.key, 'count': e.value})
+          .toList();
+      out.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return out;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 全局列出所有有数据的日期（本地时区），按日期倒序返回
+  /// 返回元素：{ 'date': 'YYYY-MM-DD', 'count': <int> }
+  Future<List<Map<String, dynamic>>> listAvailableDaysGlobal() async {
+    final Map<String, int> dayToCount = <String, int>{};
+    try {
+      final db = await database; // 主库
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        for (int m = 1; m <= 12; m++) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(
+              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' + t + ' WHERE is_deleted = 0 GROUP BY d',
+            );
+            for (final r in rows) {
+              final String d = (r['d'] as String?) ?? '';
+              if (d.isEmpty) continue;
+              final int c = (r['c'] as int?) ?? 0;
+              dayToCount[d] = (dayToCount[d] ?? 0) + c;
+            }
+          } catch (_) {}
+        }
+      }
+      final List<Map<String, dynamic>> out = dayToCount.entries
+          .map((e) => <String, dynamic>{'date': e.key, 'count': e.value})
+          .toList();
+      out.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return out;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
     }
   }
   // ===================== 收藏相关方法 =====================

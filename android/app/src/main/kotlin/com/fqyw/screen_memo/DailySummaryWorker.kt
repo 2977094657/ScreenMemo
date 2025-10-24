@@ -2,7 +2,7 @@ package com.fqyw.screen_memo
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
+ 
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.NetworkType
@@ -87,7 +87,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 val path = resolveMasterDbPath(context) ?: return null
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
             } catch (e: Exception) {
-                Log.w(TAG, "openDbRW failed: ${e.message}")
+                FileLogger.w(TAG, "openDbRW failed: ${e.message}")
                 null
             }
         }
