@@ -818,7 +818,16 @@
   "chooseThemeColorTitle": "选择主题颜色",
   "loggingTitle": "日志打印",
   "loggingDesc": "开启后统一打印所有日志（默认开启）",
+  "loggingAiTitle": "AI 日志",
+  "loggingScreenshotTitle": "截图日志",
+  "loggingAiDesc": "记录 AI 请求与响应日志",
+  "loggingScreenshotDesc": "记录截图采集与清理过程日志",
   "themeModeAuto": "自动",
   "themeModeLight": "浅色",
   "themeModeDark": "深色"
+  ,
+  "aiEmptyDirectTitle": "开始对话",
+  "aiEmptyDirectSubtitle": "可以问我任何问题。当前为普通对话，不使用个人上下文。",
+  "aiEmptySelfTitle": "已开启自我模式",
+  "aiEmptySelfSubtitle": "直接提问。我会结合您的数据上下文来回答。"
 }

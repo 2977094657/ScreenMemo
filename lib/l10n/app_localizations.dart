@@ -3140,6 +3140,30 @@ abstract class AppLocalizations {
   /// **'Enable centralized logging (enabled by default)'**
   String get loggingDesc;
 
+  /// No description provided for @loggingAiTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI logs'**
+  String get loggingAiTitle;
+
+  /// No description provided for @loggingScreenshotTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot logs'**
+  String get loggingScreenshotTitle;
+
+  /// No description provided for @loggingAiDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Record AI request and response logs'**
+  String get loggingAiDesc;
+
+  /// No description provided for @loggingScreenshotDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Record screenshot capture and cleanup logs'**
+  String get loggingScreenshotDesc;
+
   /// No description provided for @themeModeAuto.
   ///
   /// In en, this message translates to:
@@ -3157,6 +3181,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dark'**
   String get themeModeDark;
+
+  /// No description provided for @aiEmptyDirectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a conversation'**
+  String get aiEmptyDirectTitle;
+
+  /// No description provided for @aiEmptyDirectSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask anything. Your messages will not use personal context.'**
+  String get aiEmptyDirectSubtitle;
+
+  /// No description provided for @aiEmptySelfTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Self mode is on'**
+  String get aiEmptySelfTitle;
+
+  /// No description provided for @aiEmptySelfSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask questions. I will use your data as context.'**
+  String get aiEmptySelfSubtitle;
 }
 
 class _AppLocalizationsDelegate

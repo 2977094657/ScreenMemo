@@ -824,7 +824,16 @@
   "chooseThemeColorTitle": "Choose theme color",
   "loggingTitle": "Logging",
   "loggingDesc": "Enable centralized logging (enabled by default)",
+  "loggingAiTitle": "AI logs",
+  "loggingScreenshotTitle": "Screenshot logs",
+  "loggingAiDesc": "Record AI request and response logs",
+  "loggingScreenshotDesc": "Record screenshot capture and cleanup logs",
   "themeModeAuto": "Auto",
   "themeModeLight": "Light",
   "themeModeDark": "Dark"
+  ,
+  "aiEmptyDirectTitle": "Start a conversation",
+  "aiEmptyDirectSubtitle": "Ask anything. Your messages will not use personal context.",
+  "aiEmptySelfTitle": "Self mode is on",
+  "aiEmptySelfSubtitle": "Ask questions. I will use your data as context."
 }

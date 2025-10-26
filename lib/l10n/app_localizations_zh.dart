@@ -1687,6 +1687,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loggingDesc => '开启后统一打印所有日志（默认开启）';
 
   @override
+  String get loggingAiTitle => 'AI 日志';
+
+  @override
+  String get loggingScreenshotTitle => '截图日志';
+
+  @override
+  String get loggingAiDesc => '记录 AI 请求与响应日志';
+
+  @override
+  String get loggingScreenshotDesc => '记录截图采集与清理过程日志';
+
+  @override
   String get themeModeAuto => '自动';
 
   @override
@@ -1694,4 +1706,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get themeModeDark => '深色';
+
+  @override
+  String get aiEmptyDirectTitle => '开始对话';
+
+  @override
+  String get aiEmptyDirectSubtitle => '可以问我任何问题。当前为普通对话，不使用个人上下文。';
+
+  @override
+  String get aiEmptySelfTitle => '已开启自我模式';
+
+  @override
+  String get aiEmptySelfSubtitle => '直接提问。我会结合您的数据上下文来回答。';
 }

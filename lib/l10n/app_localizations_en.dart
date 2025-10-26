@@ -1741,6 +1741,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loggingDesc => 'Enable centralized logging (enabled by default)';
 
   @override
+  String get loggingAiTitle => 'AI logs';
+
+  @override
+  String get loggingScreenshotTitle => 'Screenshot logs';
+
+  @override
+  String get loggingAiDesc => 'Record AI request and response logs';
+
+  @override
+  String get loggingScreenshotDesc =>
+      'Record screenshot capture and cleanup logs';
+
+  @override
   String get themeModeAuto => 'Auto';
 
   @override
@@ -1748,4 +1761,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get themeModeDark => 'Dark';
+
+  @override
+  String get aiEmptyDirectTitle => 'Start a conversation';
+
+  @override
+  String get aiEmptyDirectSubtitle =>
+      'Ask anything. Your messages will not use personal context.';
+
+  @override
+  String get aiEmptySelfTitle => 'Self mode is on';
+
+  @override
+  String get aiEmptySelfSubtitle =>
+      'Ask questions. I will use your data as context.';
 }
