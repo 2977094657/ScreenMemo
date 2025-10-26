@@ -1716,96 +1716,220 @@ class _SettingsPageState extends State<SettingsPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Stack(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.event_note_outlined,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context).loggingTitle,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      AppLocalizations.of(context).loggingDesc,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                    child: Icon(
+                      Icons.event_note_outlined,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                      size: 18,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 72),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            AppLocalizations.of(context).loggingTitle,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            AppLocalizations.of(context).loggingDesc,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppTheme.spacing2),
-              Transform.scale(
-                scale: 0.9,
-                child: Switch(
-                  value: _loggingEnabled,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (v) => _updateLoggingEnabled(v),
+              Positioned(
+                top: -1,
+                right: 0,
+                child: Transform.scale(
+                  scale: 0.9,
+                  child: Switch(
+                    value: _loggingEnabled,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onChanged: (v) => _updateLoggingEnabled(v),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: AppTheme.spacing3),
-          Row(
-            children: [
-              const SizedBox(width: 36),
-              const SizedBox(width: AppTheme.spacing3),
-              Expanded(
-                child: Text(
-                  'AI Logs',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+          // 子列表整体：随主开关禁用并灰化
+          IgnorePointer(
+            ignoring: !_loggingEnabled,
+            child: Opacity(
+              opacity: _loggingEnabled ? 1.0 : 0.5,
+              child: Column(
+                children: [
+                  // 子项：AI 日志
+                  Container(
+                    padding: const EdgeInsets.only(
+                      left: AppTheme.spacing3,
+                      top: AppTheme.spacing3,
+                      bottom: AppTheme.spacing3,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                              ),
+                              child: Icon(
+                                Icons.smart_toy_outlined,
+                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: AppTheme.spacing3),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 72),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context).loggingAiTitle,
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      AppLocalizations.of(context).loggingAiDesc,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          top: -1,
+                          right: 0,
+                          child: Transform.scale(
+                            scale: 0.9,
+                            child: Switch(
+                              value: _aiLoggingEnabled,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (v) => _updateAiLoggingEnabled(v),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 子项：截图日志
+                  Container(
+                    padding: const EdgeInsets.only(
+                      left: AppTheme.spacing3,
+                      top: AppTheme.spacing3,
+                      bottom: AppTheme.spacing3,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                              ),
+                              child: Icon(
+                                Icons.image_search_outlined,
+                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: AppTheme.spacing3),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 72),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context).loggingScreenshotTitle,
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      AppLocalizations.of(context).loggingScreenshotDesc,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          top: -1,
+                          right: 0,
+                          child: Transform.scale(
+                            scale: 0.9,
+                            child: Switch(
+                              value: _screenshotLoggingEnabled,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (v) => _updateScreenshotLoggingEnabled(v),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              Transform.scale(
-                scale: 0.9,
-                child: Switch(
-                  value: _aiLoggingEnabled,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (v) => _updateAiLoggingEnabled(v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Row(
-            children: [
-              const SizedBox(width: 36),
-              const SizedBox(width: AppTheme.spacing3),
-              Expanded(
-                child: Text(
-                  'Screenshot Logs',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              Transform.scale(
-                scale: 0.9,
-                child: Switch(
-                  value: _screenshotLoggingEnabled,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (v) => _updateScreenshotLoggingEnabled(v),
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -1935,24 +2059,18 @@ class _SettingsPageState extends State<SettingsPage>
                                     onTap: _useTargetSize
                                         ? _showTargetSizeDialog
                                         : null,
-                                    child: Text(
-                                      '${_targetSizeKb}KB',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: _useTargetSize
-                                                ? Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary
-                                                : Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                            decoration: _useTargetSize
-                                                ? TextDecoration.underline
-                                                : TextDecoration.none,
-                                          ),
-                                    ),
+                                  child: Text(
+                                    '${_targetSizeKb}KB',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                          decoration: _useTargetSize
+                                              ? TextDecoration.underline
+                                              : TextDecoration.none,
+                                        ),
+                                  ),
                                   ),
                                   const SizedBox(width: AppTheme.spacing1),
                                   Flexible(
@@ -2227,23 +2345,12 @@ class _SettingsPageState extends State<SettingsPage>
                                 ),
                                 const SizedBox(width: AppTheme.spacing1),
                                 GestureDetector(
-                                  onTap: _expireEnabled
-                                      ? _showExpireDaysDialog
-                                      : null,
+                                  onTap: _expireEnabled ? _showExpireDaysDialog : null,
                                   child: Text(
                                     AppLocalizations.of(context).expireDaysUnit(_expireDays),
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: _expireEnabled
-                                              ? Theme.of(
-                                                  context,
-                                                ).colorScheme.primary
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
-                                          decoration: _expireEnabled
-                                              ? TextDecoration.underline
-                                              : TextDecoration.none,
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                          decoration: _expireEnabled ? TextDecoration.underline : TextDecoration.none,
                                         ),
                                   ),
                                 ),
@@ -2811,18 +2918,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.spacing3),
-          Container(
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Text(
-              AppLocalizations.of(context).timeInputHint,
-              style: TextStyle(fontSize: 12, color: AppTheme.info),
-            ),
-          ),
+          // 移除底部提示文案
         ],
       ),
       actions: [
@@ -2907,12 +3003,8 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                           child: Text(
                             '${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: _dailyNotifyEnabled
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  decoration: _dailyNotifyEnabled
-                                      ? TextDecoration.underline
-                                      : TextDecoration.none,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  decoration: _dailyNotifyEnabled ? TextDecoration.underline : TextDecoration.none,
                                 ),
                           ),
                         ),
