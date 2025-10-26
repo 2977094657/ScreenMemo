@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -63,7 +64,7 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
 
   // ——— AI 交互样式与流式状态（仅影响本页 UI，不改动全局样式） ———
   // 自我模式：开启后走意图分析+上下文检索流程；关闭则为普通对话
-  bool _selfMode = false;
+  bool _selfMode = true;
   bool _deepThinking = false; // "深度思考"开关（先做样式，后续可接推理参数）
   bool _webSearch = false;    // "联网搜索"开关（先做样式，后续可接搜索参数）
   bool _inStreaming = false;  // 当前是否处于助手流式回复中（驱动"思考中"可视化）
@@ -140,6 +141,39 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
     );
   }
 
+  // —— Gemini 风蓝色系颜色（供图标/弥散光使用；明暗自适应） ——
+  List<Color> _geminiGradientColors(Brightness brightness) {
+    // 进一步提亮与增饱和：按“至少值”提升，避免乘法带来的变暗
+    Color tune(Color c, {double sMinLight = 0.98, double sMinDark = 0.96, double lMinLight = 0.80, double lMinDark = 0.72}) {
+      final h = HSLColor.fromColor(c);
+      final double sTarget = brightness == Brightness.dark ? sMinDark : sMinLight;
+      final double lTarget = brightness == Brightness.dark ? lMinDark : lMinLight;
+      final double s = (h.saturation < sTarget) ? sTarget : h.saturation;
+      final double l = (h.lightness < lTarget) ? lTarget : h.lightness;
+      return h.withSaturation(s).withLightness(l).toColor();
+    }
+    // 蓝色主调 + 黄色（去掉青色）
+    final Color c1 = tune(const Color(0xFF1F6FEB)); // 深蓝
+    final Color c2 = tune(const Color(0xFF3B82F6)); // 标准蓝
+    final Color c3 = tune(const Color(0xFF60A5FA)); // 浅蓝
+    final Color c4 = tune(const Color(0xFF7C83FF)); // 蓝紫
+    // 黄色单独进一步提亮，确保更“亮”更显眼
+    final Color cY = tune(const Color(0xFFF59E0B), lMinLight: 0.86, lMinDark: 0.76);
+    return [
+      c1,
+      Color.lerp(c1, c2, 0.5)!,
+      c2,
+      Color.lerp(c2, c3, 0.5)!,
+      c3,
+      Color.lerp(c3, c4, 0.5)!,
+      c4,
+      Color.lerp(c4, cY, 0.45)!,
+      cY,
+    ];
+  }
+
+  //（页面级渐变已移除，应用户要求）
+
   // —— 基于提供商表的对话上下文（chat 专用） ——
   AIProvider? _ctxChatProvider;
   String? _ctxChatModel;
@@ -153,7 +187,7 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   // 输入框展开状态（默认单行，自适应随内容增高）
   bool _inputExpanded = false;
 
-  // 提供近期“仅用户消息”的文本，用于意图分析器判断是否续问
+  // 提供近期"仅用户消息"的文本，用于意图分析器判断是否续问
   List<String> _extractPreviousUserQueries({int maxCount = 3}) {
     if (_messages.isEmpty) return const <String>[];
     final List<String> out = <String>[];
@@ -1157,7 +1191,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   );
                 }
               }
-              // 在首个 token 写入前插入“已复用上一轮上下文”提示（仅一次）
+              // 在首个 token 写入前插入"已复用上一轮上下文"提示（仅一次）
               if (_replaceAssistantContentOnNextToken && reuse) {
                 incoming = '（已复用上一轮上下文）\n\n' + incoming;
               }
@@ -1174,7 +1208,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
           });
           _scheduleAutoScroll();
           }
-          // 成功路径：更新“上一轮”缓存
+          // 成功路径：更新"上一轮"缓存
           _lastCtxPack = ctxPack;
           _lastIntent = intent;
         } catch (e) {
@@ -1333,7 +1367,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             final List<AIMessage> toSave = List<AIMessage>.from(_messages);
             await _settings.saveChatHistoryActive(toSave);
           } catch (_) {}
-          // 成功路径：更新“上一轮”缓存
+          // 成功路径：更新"上一轮"缓存
           _lastCtxPack = ctxPack;
           _lastIntent = intent;
         } catch (e) {
@@ -1492,121 +1526,6 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     }
   }
 
-  /// 重试指定索引处的助手消息：
-  /// - 不新增一条相同的用户消息；
-  /// - 直接重算并覆盖该助手消息内容（保留其 createdAt 以维持耗时统计准确）。
-  Future<void> _retryAssistantAt(int assistantIndex) async {
-    if (_sending) return;
-    if (assistantIndex < 0 || assistantIndex >= _messages.length) return;
-    final msg = _messages[assistantIndex];
-    if (msg.role != 'assistant' && msg.role != 'error') return;
-
-    // 找到与该助手消息对应的上一条用户消息
-    final prevUserIndex = assistantIndex > 0
-        ? _messages.sublist(0, assistantIndex).lastIndexWhere((e) => e.role == 'user')
-        : -1;
-    if (prevUserIndex < 0) {
-      UINotifier.error(context, AppLocalizations.of(context).operationFailed);
-      return;
-    }
-    final userText = _messages[prevUserIndex].content;
-
-    setState(() { _sending = true; });
-    try {
-      // 完全重试：清空当前会话历史，让这次重试成为第一条消息
-      await _settings.clearChatHistory();
-
-      if (_streamEnabled) {
-        // 进入流式重试：视觉与数据均从零开始，仅保留这条用户消息
-        setState(() {
-          _inStreaming = true;
-          _thinkingText = '';
-          _showThinkingContent = false;
-          _reasoningByIndex
-            ..clear();
-          _reasoningDurationByIndex
-            ..clear();
-          _messages = <AIMessage>[
-            AIMessage(role: 'user', content: userText),
-            AIMessage(role: 'assistant', content: '', createdAt: DateTime.now()),
-          ];
-          _currentAssistantIndex = 1; // 新的第一条助手消息索引
-        });
-        _startDots();
-        _scheduleAutoScroll();
-        _scheduleReasoningPreviewScroll();
-
-        final stream = _chat.sendMessageStreamedV2(userText);
-        await for (final evt in stream) {
-          if (!mounted) return;
-          if (evt.kind == 'reasoning') {
-            setState(() {
-              _thinkingText += evt.data;
-              final idx = _currentAssistantIndex;
-              if (idx != null) {
-                _reasoningByIndex[idx] = (_reasoningByIndex[idx] ?? '') + evt.data;
-              }
-            });
-            _scheduleAutoScroll();
-            _scheduleReasoningPreviewScroll();
-            continue;
-          }
-          setState(() {
-            final lastIdx = _currentAssistantIndex ?? 1;
-            final cur = _messages[lastIdx];
-            if (cur.role == 'assistant') {
-              final updated = AIMessage(
-                role: 'assistant',
-                content: cur.content + evt.data,
-                createdAt: cur.createdAt,
-              );
-              final newList = List<AIMessage>.from(_messages);
-              newList[lastIdx] = updated;
-              _messages = newList;
-            }
-          });
-          _scheduleAutoScroll();
-        }
-        if (mounted) {
-          setState(() {
-            _inStreaming = false;
-            final idx = _currentAssistantIndex ?? 1;
-            if (idx >= 0 && idx < _messages.length) {
-              // 重试时思考时间从0开始，因此这里记录从新的 createdAt 开始的耗时
-              _reasoningDurationByIndex[idx] = DateTime.now().difference(_messages[idx].createdAt);
-            }
-            _currentAssistantIndex = null;
-          });
-          _stopDots();
-          _scheduleAutoScroll();
-        }
-      } else {
-        final assistant = await _chat.sendMessage(userText);
-        if (!mounted) return;
-        setState(() {
-          _messages = <AIMessage>[
-            AIMessage(role: 'user', content: userText),
-            AIMessage(role: 'assistant', content: assistant.content, createdAt: DateTime.now()),
-          ];
-          _inStreaming = false;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _inStreaming = false;
-        _messages = <AIMessage>[
-          AIMessage(role: 'user', content: userText),
-          AIMessage(role: 'error', content: e.toString(), createdAt: DateTime.now()),
-        ];
-      });
-      _stopDots();
-      UINotifier.error(context, AppLocalizations.of(context).sendFailedWithError(e.toString()));
-    } finally {
-      if (mounted) setState(() { _sending = false; });
-    }
-  }
-
   // 载入"对话页(chat)"的提供商/模型选择（独立于动态页）
   Future<void> _loadChatContextSelection() async {
     try {
@@ -1722,7 +1641,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 if (selected)
-                                  Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary),
+                                  Icon(Icons.check_circle, color: Theme.of(c).colorScheme.onSurface),
                                 const SizedBox(width: 8),
                                 IconButton(
                                   tooltip: AppLocalizations.of(context).actionDelete,
@@ -1876,7 +1795,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                               width: 20, height: 20,
                             ),
                             title: Text(m, style: Theme.of(c).textTheme.bodyMedium),
-                            trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                            trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.onSurface) : null,
                             onTap: () async {
                               await _settings.setAIContextSelection(context: 'chat', providerId: p.id!, model: m);
                               if (mounted) {
@@ -1907,8 +1826,8 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     final String modelName = _ctxChatModel ?? '—';
     final TextStyle? underlined = theme.textTheme.labelSmall?.copyWith(
       decoration: TextDecoration.underline,
-      decorationColor: theme.colorScheme.primary.withOpacity(0.6),
-      color: theme.colorScheme.primary,
+      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      color: theme.colorScheme.onSurface,
     );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
@@ -1976,7 +1895,6 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
 
     // 包裹全屏横向滑动手势（嵌入/独立模式均生效）
     final Widget body = _withDrawerSwipe(bodyCore);
-
     if (widget.embedded) {
       return body;
     }
@@ -1988,6 +1906,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
       ),
       drawer: const AppSideDrawer(),
       drawerEnableOpenDragGesture: false, // 关闭默认边缘拖拽，改用自定义"任意位置"滑动
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: body,
     );
   }
@@ -2313,7 +2232,107 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     );
   }
 
+  // 魔法渐变图标（auto_awesome）
+  // withGlow=true 时在图标背后叠加弥散光（主色/次色）
+  Widget _buildMagicIcon({double size = 18, bool withGlow = false}) {
+    // 不使用主题主/次色，改为 Gemini 风蓝色系（避免主题色影响视觉）
+    final br = Theme.of(context).brightness;
+    LinearGradient _maskGradient(Rect bounds) {
+      final colors = _geminiGradientColors(br);
+      // 蓝 -> 黄，提升黄端占比与亮度感（通过倾斜 stops）
+      return LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [colors[2], colors[8]],
+        stops: const [0.0, 0.75],
+      );
+    }
+
+    Widget _buildGradientGlowBackground(double iconSize) {
+      // 使用蓝色系圆形渐变，叠加模糊形成柔和弥散光，确保为圆形而非矩形
+      final double glowDiameter = iconSize * 3.0;
+      return SizedBox(
+        width: glowDiameter,
+        height: glowDiameter,
+        child: ClipOval(
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(
+              sigmaX: iconSize * 0.9,
+              sigmaY: iconSize * 0.9,
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 0.85,
+                  colors: [
+                    _geminiGradientColors(br)[2].withOpacity(br == Brightness.dark ? 0.42 : 0.52),
+                    _geminiGradientColors(br)[5].withOpacity(0.0),
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    // 使用蓝色系 ShaderMask 渐变方案，显式设置白色避免 IconTheme 重新上色
+    final Widget gradientIcon = ShaderMask(
+      shaderCallback: (Rect bounds) => _maskGradient(bounds).createShader(bounds),
+      blendMode: BlendMode.srcIn,
+      child: Icon(Icons.auto_awesome, size: size, color: Colors.white),
+    );
+    if (!withGlow) return gradientIcon;
+    // 使用渐变+模糊的柔光背景，替代主题色 BoxShadow，确保与菜单第三项一致的渐变观感
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        _buildGradientGlowBackground(size),
+        gradientIcon,
+      ],
+    );
+  }
+
   Widget _buildChatList() {
+    if (_messages.isEmpty) {
+      final l10n = AppLocalizations.of(context);
+      final String title = _selfMode ? l10n.aiEmptySelfTitle : l10n.aiEmptyDirectTitle;
+      final String subtitle = _selfMode ? l10n.aiEmptySelfSubtitle : l10n.aiEmptyDirectSubtitle;
+      try { FlutterLogger.nativeInfo('UI', 'ChatEmpty: self='+(_selfMode ? '1' : '0')+' useGradientGlow=1'); } catch (_) {}
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 自我模式：魔法图标；普通模式：默认颜色的聊天图标（非渐变）
+            _selfMode
+                ? _buildMagicIcon(size: 40, withGlow: false)
+                : Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            const SizedBox(height: AppTheme.spacing4),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
     return ListView.builder(
       controller: _chatScrollController,
       itemCount: _messages.length,
@@ -2545,20 +2564,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   ),
                   const SizedBox(width: 4),
                   // 重新生成（仅对助手消息提供）
-                  if (!isUser)
-                    IconButton(
-                      onPressed: _sending ? null : () async {
-                        await _retryAssistantAt(index);
-                      },
-                      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-                      padding: const EdgeInsets.all(0),
-                      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                      splashRadius: 16,
-                      iconSize: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8),
-                      icon: const Icon(Icons.refresh_rounded),
-                      tooltip: AppLocalizations.of(context).actionRegenerate,
-                    ),
+                  // 移除"重试/重新生成"功能
                   ],
                 ),
               ),
@@ -2827,11 +2833,9 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             Container(
               width: 32,
               height: 32,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                color: _selfMode
-                    ? theme.colorScheme.primary.withOpacity(0.12)
-                    : theme.colorScheme.surfaceVariant,
+                color: Colors.transparent,
               ),
               child: Material(
                 color: Colors.transparent,
@@ -2852,11 +2856,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                     }
                   },
                   child: Center(
-                    child: Icon(
-                      _selfMode ? Icons.person_rounded : Icons.chat_bubble_outline_rounded,
-                      size: 18,
-                      color: _selfMode ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
-                    ),
+                    child: _selfMode
+                        ? _buildMagicIcon(size: 18, withGlow: true)
+                        : Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                   ),
                 ),
               ),
@@ -2946,15 +2952,10 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
         ),
       );
 
-    // 自我模式：使用渐变边框与流光；普通模式：不使用渐变框
-    if (_selfMode) {
-      return _ShimmerBorder(
-        active: _inStreaming,
-        child: barInner,
-      );
-    } else {
-      return barInner;
-    }
+    // 自我模式：普通边框；在流式时叠加"流光"效果；普通模式：不叠加
+    return _selfMode
+        ? _ShimmerBorder(active: _inStreaming, child: barInner)
+        : barInner;
   }
    
   
@@ -3117,7 +3118,7 @@ class _ShimmerBorderState extends State<_ShimmerBorder> with SingleTickerProvide
   late final AnimationController _controller;
 
   static const double _kBorderRadius = 24.0;
-  static const double _kBorderWidth = 2.0;
+  static const double _kBorderWidth = 1.25; // 视觉宽度≈1.5（strokeWidth = 1.25 * 1.2）
 
   @override
   void initState() {
@@ -3165,17 +3166,8 @@ class _ShimmerBorderState extends State<_ShimmerBorder> with SingleTickerProvide
       stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
     );
 
-    if (!widget.active) {
-      // 静态彩色渐变边框（无动画）
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(_kBorderRadius),
-          gradient: staticGradient,
-        ),
-        padding: const EdgeInsets.all(_kBorderWidth),
-        child: widget.child,
-      );
-    }
+    // 非激活态：不再包一层渐变容器，避免尺寸变化；仅返回 child
+    if (!widget.active) return widget.child;
 
     // 流光动画边框（叠加高亮，不替换静态渐变）
     return AnimatedBuilder(
@@ -3183,38 +3175,29 @@ class _ShimmerBorderState extends State<_ShimmerBorder> with SingleTickerProvide
       builder: (context, _) {
         final angle = _controller.value * 6.283185307179586; // 2π
 
-        // 流光高亮（透明度较高，作为叠加层）
+        // 流光高亮：去掉灰色拖尾，仅保留彩色高亮，并以透明-彩色-透明的方式过渡
         final sweep = SweepGradient(
           center: Alignment.center,
           colors: const [
-            Color(0x004285F4),
-            Color(0x334285F4),
-            Color(0x6600BCD4),
-            Color(0xAA00E5FF),
-            Color(0xFF4285F4),
-            Color(0xFF9B72F2),
-            Color(0xFFD946EF),
-            Color(0xFFFF6B9D),
-            Color(0xFFFBBC04),
-            Color(0xAAFFA726),
-            Color(0x334285F4),
-            Color(0x004285F4),
+            Color(0x00FFFFFF), // 完全透明开始（透明白，避免黑色伪影）
+            Color(0x00FFFFFF),
+            Color(0xFF4285F4), // 蓝
+            Color(0xFF9B72F2), // 紫
+            Color(0xFFD946EF), // 品红
+            Color(0xFFFF6B9D), // 粉
+            Color(0xFFFBBC04), // 金
+            Color(0x00FFFFFF), // 透明收尾（透明白）
+            Color(0x00FFFFFF),
           ],
-          stops: const [0.00, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 1.00],
+          stops: const [0.00, 0.30, 0.40, 0.50, 0.58, 0.66, 0.74, 0.85, 1.00],
           transform: GradientRotation(angle),
         );
 
-        // 底层：静态渐变边框；顶层：仅在边框区域绘制的流光高亮
+        // 仅作为叠加层绘制流光高亮，不改变 child 尺寸
         return Stack(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(_kBorderRadius),
-                gradient: staticGradient,
-              ),
-              padding: const EdgeInsets.all(_kBorderWidth),
-              child: widget.child,
-            ),
+            // 底层直接是 child
+            widget.child,
             // 仅裁剪到"边框环形区域"的流光叠加层
             Positioned.fill(
               child: IgnorePointer(
@@ -3340,5 +3323,48 @@ MarkdownStyleSheet _mdStyle(BuildContext context) {
   );
   _cachedMdStyle = ns;
   return ns;
+}
+
+// 自绘渐变 Icon，避免被主题色覆盖
+class _GradientIconPainter extends CustomPainter {
+  final List<Color> colors;
+  final IconData icon;
+  _GradientIconPainter({required this.colors, required this.icon});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: size.height,
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+
+    final offset = Offset((size.width - textPainter.width) / 2, (size.height - textPainter.height) / 2);
+    final rect = Offset.zero & size;
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: colors,
+      ).createShader(rect)
+      ..blendMode = BlendMode.srcIn;
+
+    // 先绘制到图层，随后用渐变混合
+    canvas.saveLayer(rect, Paint());
+    textPainter.paint(canvas, offset);
+    canvas.drawRect(rect, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _GradientIconPainter oldDelegate) {
+    return oldDelegate.colors != colors || oldDelegate.icon != icon;
+  }
 }
 
