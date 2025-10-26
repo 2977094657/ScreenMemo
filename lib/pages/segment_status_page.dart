@@ -184,7 +184,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                                 width: 20, height: 20,
                               ),
                               title: Text(p.name, style: Theme.of(c).textTheme.bodyMedium),
-                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.onSurface) : null,
                               onTap: () async {
                                 String model = (_ctxSegModel ?? '').trim();
                                 if (model.isEmpty) {
@@ -325,8 +325,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     final String modelName = _ctxSegModel ?? '—';
     final TextStyle? linkStyle = theme.textTheme.labelSmall?.copyWith(
       decoration: TextDecoration.underline,
-      decorationColor: theme.colorScheme.primary.withOpacity(0.6),
-      color: theme.colorScheme.primary,
+      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      color: theme.colorScheme.onSurface,
     );
     return Row(
       mainAxisSize: MainAxisSize.min,

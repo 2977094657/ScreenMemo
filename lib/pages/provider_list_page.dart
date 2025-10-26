@@ -241,7 +241,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                 trailing: selected
                                   ? Icon(
                                       Icons.check_circle,
-                                      color: Theme.of(ctx).colorScheme.primary,
+                                      color: Theme.of(ctx).colorScheme.onSurface,
                                       size: 22,
                                     )
                                   : null,
@@ -379,10 +379,10 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                                  child: Text(
                                                    activeModel,
                                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                         color: Theme.of(context).colorScheme.primary,
+                                                         color: Theme.of(context).colorScheme.onSurface,
                                                          fontWeight: FontWeight.w500,
                                                          decoration: TextDecoration.underline,
-                                        decorationColor: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                                        decorationColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
                                                        ),
                                                    overflow: TextOverflow.ellipsis,
                                                  ),

@@ -402,8 +402,8 @@ class _EventHomePageState extends State<EventHomePage> {
     final String modelName = (_ctxModel ?? '—');
     final TextStyle? link = theme.textTheme.labelSmall?.copyWith(
       decoration: TextDecoration.underline,
-      decorationColor: theme.colorScheme.primary.withOpacity(0.6),
-      color: theme.colorScheme.primary,
+      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      color: theme.colorScheme.onSurface,
     );
 
     return Row(

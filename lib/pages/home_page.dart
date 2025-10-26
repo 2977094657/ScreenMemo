@@ -870,7 +870,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         automaticallyImplyLeading: false,
         leadingWidth: 0,
         titleSpacing: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.primary),
         actions: appBarActions,
         title: _selectionMode
           ? Padding(
@@ -1012,11 +1011,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                        iconSize: 22,
                        onPressed: _toggleScreenshotEnabled,
                        icon: _screenshotEnabled
-                           ? Icon(
+                           ? const Icon(
                                Icons.camera_alt_outlined,
                                size: 22,
                                weight: 300,
-                               color: Theme.of(context).colorScheme.primary,
                              )
                            : const Icon(
                                Icons.no_photography_outlined,
@@ -1134,7 +1132,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1143,7 +1141,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   child: Icon(
                     _sortOrderAsc ? Icons.arrow_upward : Icons.arrow_downward,
                     size: 14,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],

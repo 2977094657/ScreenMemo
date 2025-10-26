@@ -131,7 +131,8 @@ Widget _buildActionsSection<T>(BuildContext context, List<UIDialogAction<T>> act
       case UIDialogActionStyle.destructive:
         return AppTheme.destructive;
       case UIDialogActionStyle.primary:
-        return theme.colorScheme.primary;
+        // 不使用主题主色，改为固定强调色（使用 onSurface 更稳妥，避免主题色影响）
+        return theme.colorScheme.onSurface;
       case UIDialogActionStyle.normal:
       default:
         return onSurface;
