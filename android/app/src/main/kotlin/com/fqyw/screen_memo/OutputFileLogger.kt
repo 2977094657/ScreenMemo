@@ -2,8 +2,13 @@ package com.fqyw.screen_memo
 
 import android.content.Context
 import android.util.Log
+import com.elvishew.xlog.XLog
+import com.elvishew.xlog.LogLevel
+import com.elvishew.xlog.printer.file.FilePrinter
+import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy
+import com.elvishew.xlog.printer.file.naming.FileNameGenerator
+import com.elvishew.xlog.flattener.PatternFlattener
 import java.io.File
-import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -132,34 +137,51 @@ object OutputFileLogger {
      */
     private fun writeBatch(batch: List<LogItem>) {
         if (batch.isEmpty()) return
-
-        // 使用首条的应用上下文获取目录（同包名、同私有区）
-        val ctx = batch[0].appContext
-        val dir = getTodayDir(ctx) ?: return
-
-        val day = dayFmt.format(Date())
-        val infoFile = File(dir, "${day}_info.log")
-        val errorFile = File(dir, "${day}_error.log")
-
-        var infoWriter: FileWriter? = null
-        var errorWriter: FileWriter? = null
         try {
             for (item in batch) {
-                val line = "${tsFmt.format(Date(item.ts))} [${if (item.isError) "E" else "I"}] ${item.tag}: ${item.message}\n"
-                if (item.isError) {
-                    if (errorWriter == null) errorWriter = FileWriter(errorFile, true)
-                    errorWriter!!.write(line)
-                } else {
-                    if (infoWriter == null) infoWriter = FileWriter(infoFile, true)
-                    infoWriter!!.write(line)
-                }
+                val filePrinter = ensureFilePrinter(item.appContext, item.ts)
+                val level = if (item.isError) LogLevel.ERROR else LogLevel.INFO
+                try { filePrinter.println(level, item.tag, item.message) } catch (_: Exception) {}
             }
         } catch (e: Exception) {
             Log.w(TAG, "write batch failed", e)
-        } finally {
-            try { infoWriter?.flush(); infoWriter?.close() } catch (_: Exception) {}
-            try { errorWriter?.flush(); errorWriter?.close() } catch (_: Exception) {}
         }
+    }
+
+    @Volatile
+    private var currentDayKey: String? = null
+    @Volatile
+    private var currentPrinter: FilePrinter? = null
+
+    private fun ensureFilePrinter(context: Context, timestamp: Long): FilePrinter {
+        val dayKey = dateDirFmt.format(Date(timestamp)) // yyyy/MM/dd
+        val existing = currentPrinter
+        if (existing != null && currentDayKey == dayKey) return existing
+
+        // 构建按天目录：<externalFiles>/output/logs/yyyy/MM/dd
+        val base = context.getExternalFilesDir(null) ?: throw IllegalStateException("no external files dir")
+        val dir = File(base, "output/logs/$dayKey")
+        if (!dir.exists()) dir.mkdirs()
+
+        val printer = FilePrinter.Builder(dir.absolutePath)
+            .fileNameGenerator(object : FileNameGenerator {
+                override fun generateFileName(logLevel: Int, timestamp: Long): String {
+                    val day = dayFmt.format(Date(timestamp))
+                    val suffix = if (logLevel >= LogLevel.ERROR) "error" else "info"
+                    return "${day}_${suffix}.log"
+                }
+                override fun isFileNameChangeable(): Boolean {
+                    // 文件名依赖于时间戳（按天）与级别，属于可变
+                    return true
+                }
+            })
+            .backupStrategy(NeverBackupStrategy())
+            .flattener(PatternFlattener("{d yyyy-MM-dd HH:mm:ss.SSS} [{l}] {t}: {m}"))
+            .build()
+
+        currentDayKey = dayKey
+        currentPrinter = printer
+        return printer
     }
 }
 

@@ -1,7 +1,10 @@
 package com.fqyw.screen_memo
 
 import android.content.Context
-import android.util.Log
+import com.elvishew.xlog.XLog
+import com.elvishew.xlog.LogLevel
+import com.elvishew.xlog.LogConfiguration
+import com.elvishew.xlog.printer.AndroidPrinter
 import java.io.File
 import java.util.Locale
 
@@ -12,6 +15,7 @@ object FileLogger {
 
     private const val TAG = "FileLogger"
     private var isInitialized = false
+    private var isXLogInitialized = false
 
     // 日志级别：NONE(0) ERROR(1) WARN(2) INFO(3) DEBUG(4)
     private const val LEVEL_NONE = 0
@@ -53,6 +57,7 @@ object FileLogger {
     fun init(context: Context) {
         // 仅标记初始化；输出文件由 OutputFileLogger 动态创建
         isInitialized = true
+        ensureXLogInitialized()
         try {
             OutputFileLogger.info(context, TAG, "FileLogger initialized")
         } catch (_: Exception) {}
@@ -60,7 +65,8 @@ object FileLogger {
 
     fun d(tag: String, message: String) {
         if (!isAllowed(LEVEL_DEBUG, tag)) return
-        Log.d(tag, message)
+        ensureXLogInitialized()
+        try { XLog.tag(tag).d(message) } catch (_: Exception) {}
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
         }
@@ -68,7 +74,8 @@ object FileLogger {
 
     fun i(tag: String, message: String) {
         if (!isAllowed(LEVEL_INFO, tag)) return
-        Log.i(tag, message)
+        ensureXLogInitialized()
+        try { XLog.tag(tag).i(message) } catch (_: Exception) {}
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
         }
@@ -76,7 +83,8 @@ object FileLogger {
 
     fun w(tag: String, message: String) {
         if (!isAllowed(LEVEL_WARNING, tag)) return
-        Log.w(tag, message)
+        ensureXLogInitialized()
+        try { XLog.tag(tag).w(message) } catch (_: Exception) {}
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.info(it, tag, message) }
         }
@@ -84,15 +92,33 @@ object FileLogger {
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         if (!isAllowed(LEVEL_ERROR, tag)) return
-        Log.e(tag, message, throwable)
-        val full = if (throwable != null) "$message\n${Log.getStackTraceString(throwable)}" else message
+        ensureXLogInitialized()
+        val full = if (throwable != null) {
+            try { "$message\n${throwable.stackTraceToString()}" } catch (_: Exception) { "$message: ${throwable.message}" }
+        } else message
+        try { XLog.tag(tag).e(full) } catch (_: Exception) {}
         if (isInitialized && writeFileEnabled) {
             AppContextProvider.context()?.let { OutputFileLogger.error(it, tag, full) }
         }
     }
 
     fun isDebugEnabled(): Boolean = logLevel >= LEVEL_DEBUG
-    fun setLevel(level: Int) { logLevel = level }
+    fun setLevel(level: Int) {
+        logLevel = level
+        // 同步更新 XLog 全局级别
+        try {
+            val xlogLevel = when {
+                level >= LEVEL_DEBUG -> LogLevel.ALL
+                level >= LEVEL_INFO -> LogLevel.INFO
+                level >= LEVEL_WARNING -> LogLevel.WARN
+                level >= LEVEL_ERROR -> LogLevel.ERROR
+                else -> LogLevel.NONE
+            }
+            val cfg = LogConfiguration.Builder().logLevel(xlogLevel).build()
+            XLog.init(cfg, AndroidPrinter(true))
+            isXLogInitialized = true
+        } catch (_: Exception) {}
+    }
     fun enableFileLogging(enable: Boolean) { writeFileEnabled = enable }
 
     private fun inferCategory(tag: String): String {
@@ -169,7 +195,10 @@ object FileLogger {
             }
             OutputFileLogger.info(ctx, TAG, "logs cleared for today")
         } catch (e: Exception) {
-            Log.e(TAG, "clearLog failed", e)
+            try {
+                ensureXLogInitialized()
+                XLog.tag(TAG).e("clearLog failed: ${e.message}\n${e.stackTraceToString()}")
+            } catch (_: Exception) {}
         }
     }
 
@@ -188,6 +217,19 @@ object FileLogger {
         OutputFileLogger.info(context, TAG, "设备型号: ${android.os.Build.MODEL}")
         OutputFileLogger.info(context, TAG, "设备厂商: ${android.os.Build.MANUFACTURER}")
         writeSeparator()
+    }
+
+    private fun ensureXLogInitialized() {
+        if (isXLogInitialized) return
+        try {
+            val level = if (isDebugBuild) LogLevel.ALL else LogLevel.ERROR
+            val config = LogConfiguration.Builder()
+                .logLevel(level)
+                .build()
+            val androidPrinter = AndroidPrinter(true)
+            XLog.init(config, androidPrinter)
+            isXLogInitialized = true
+        } catch (_: Exception) {}
     }
 }
 
