@@ -51,6 +51,23 @@ class AppTheme {
   static const double spacing6 = 24.0;
   static const double spacing8 = 32.0;
   static const double spacing10 = 40.0;
+
+  // ===== 工具函数：在深色模式下为过暗或低饱和度的种子色选择更可见的强调色 =====
+  static Color _effectiveSeedForDark(Color seed) {
+    try {
+      final double lum = seed.computeLuminance();
+      final hsl = HSLColor.fromColor(seed);
+      final bool tooDark = lum < 0.08; // 近黑
+      final bool lowSaturation = hsl.saturation < 0.10; // 近灰
+      if (tooDark || lowSaturation) {
+        // 使用在深色背景上可读性良好的强调色
+        return darkSelectedAccent; // #60A5FA
+      }
+      return seed;
+    } catch (_) {
+      return darkSelectedAccent;
+    }
+  }
   static const double spacing12 = 48.0;
   static const double spacing16 = 64.0;
   static const double spacing20 = 80.0;
@@ -485,6 +502,7 @@ class AppTheme {
       seedColor: seed,
       brightness: Brightness.light,
     ).copyWith(
+      primary: seed,
       // 与现有设计保持一致的表面与分隔语义
       surface: background,
       onSurface: foreground,
@@ -494,6 +512,20 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.onPrimary;
+          return cs.onSurface; // 关闭态使用深色拇指，提升对比度
+        }),
+        trackColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);
+          return cs.surface;
+        }),
+        trackOutlineColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.6);
+          return cs.outline; // 关闭态显示外边界以增强可见性
+        }),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: background,
         foregroundColor: foreground,
@@ -670,10 +702,12 @@ class AppTheme {
 
   /// 基于 seed color 构建暗色主题（仅影响 ColorScheme 与关键控件的强调色）
   static ThemeData darkThemeFor(Color seed) {
+    final Color darkSeed = _effectiveSeedForDark(seed);
     final ColorScheme cs = ColorScheme.fromSeed(
-      seedColor: seed,
+      seedColor: darkSeed,
       brightness: Brightness.dark,
     ).copyWith(
+      primary: darkSeed,
       surface: darkCard,
       onSurface: darkForeground,
       outline: darkBorder,
@@ -682,6 +716,20 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
+      switchTheme: SwitchThemeData(
+        thumbColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.onPrimary;
+          return cs.onSurface; // 深色模式下关闭态也使用更暗拇指
+        }),
+        trackColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);
+          return cs.surface;
+        }),
+        trackOutlineColor: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.6);
+          return cs.outline;
+        }),
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: darkBackground,
         foregroundColor: darkForeground,
