@@ -367,6 +367,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
             },
           );
           return Container(
+            constraints: const BoxConstraints.tightFor(width: 96, height: 168),
             decoration: BoxDecoration(
               border: Border.all(
                 color: Theme.of(context).colorScheme.outline.withOpacity(0.12),
@@ -374,12 +375,8 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
               ),
               borderRadius: br,
             ),
-            child: Stack(
-              children: [
-                thumbImage,
-                TimelineJumpOverlay(filePath: path),
-              ],
-            ),
+            // 已在 ScreenshotImageWidget 内显示时间线按钮，这里不再叠加，避免错位与重复
+            child: thumbImage,
           );
         },
       ),
