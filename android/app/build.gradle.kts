@@ -91,4 +91,7 @@ dependencies {
 
     // WorkManager：后台每日总结生成
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // XLog：高性能日志（控制台/多 Printer，可替代原生 Log.* 控制台输出）
+    implementation("com.elvishew:xlog:1.11.1")
 }
