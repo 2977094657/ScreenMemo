@@ -212,9 +212,15 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 本应用：永不作为候选，避免切回应用时被当作前台并误触发后续截图
+        // 本应用：切回时清空稳定目标，避免继续将截图归属到上一个应用
         if (candidatePackage == packageName) {
-            FileLogger.d(TAG, "检测到本应用窗口 ${candidatePackage}，忽略该候选")
+            FileLogger.i(TAG, "检测到本应用窗口(${candidatePackage})，清空稳定目标并暂停截屏")
+            lastStableMonitoredApp = null
+            lastStableSeenAt = 0L
+            pendingCandidateApp = null
+            pendingCandidateSince = 0L
+            // 关键：同步清空当前前台缓存，避免 getCurrentForegroundApp() 兜底返回旧值
+            currentForegroundApp = null
             return
         }
 
@@ -231,13 +237,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             lastStableSeenAt = 0L
             pendingCandidateApp = null
             pendingCandidateSince = 0L
+            // 同步清空当前前台缓存
+            currentForegroundApp = null
             return
         }
 
-        // 系统遮罩：沿用上次稳定应用，不更新候选
+        // 系统遮罩：沿用上次稳定应用，不更新候选（宽限逻辑在 getScreenshotTargetApp 中执行）
         if (transientOverlayPackages.contains(candidatePackage) || isMiuiSystemApp(candidatePackage)) {
-            // 宽限期内保持 lastStableMonitoredApp 可用
-            FileLogger.d(TAG, "检测到系统遮罩/系统UI: $candidatePackage，沿用上次稳定应用: $lastStableMonitoredApp")
+            FileLogger.d(TAG, "检测到系统遮罩/系统UI: $candidatePackage，维持当前稳定应用: $lastStableMonitoredApp")
             return
         }
 
@@ -652,12 +659,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // 如果无法通过窗口获取，返回最后记录的前台应用
-            FileLogger.d(TAG, "无法通过窗口获取前台应用，使用最后记录的: $currentForegroundApp")
-            return currentForegroundApp
+            // 如果无法通过窗口获取，则返回 null（避免使用过期缓存）
+            FileLogger.d(TAG, "无法通过窗口获取前台应用，返回 null 以避免使用旧值")
+            return null
         } catch (e: Exception) {
             FileLogger.e(TAG, "获取当前前台应用失败", e)
-            return currentForegroundApp
+            return null
         }
     }
     
@@ -1189,10 +1196,10 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return null
         }
 
-        // 当前可见顶层应用（尽量用UsageStats，其次AccessibilityEvent）
+        // 当前可见顶层应用（尽量用UsageStats，其次窗口列表）
         // 偶尔刷新IME集合
         refreshImePackages(force = false)
-        val visibleTop = getForegroundAppUsingUsageStats() ?: currentForegroundApp
+        val visibleTop = getForegroundAppUsingUsageStats() ?: getCurrentForegroundApp()
 
         // 本应用置顶：暂停截屏，避免将截图归属到上一稳定前台
         if (visibleTop != null && visibleTop == packageName) {
@@ -1206,13 +1213,29 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return stable
         }
 
-        // 桌面/Launcher：暂停截屏并等待新会话
+        // 桌面/Launcher：清空稳定监控并暂停截屏
         if (visibleTop != null && launcherApps.contains(visibleTop)) {
-            FileLogger.d(TAG, "顶层为桌面/Launcher($visibleTop)，暂停截屏，等待新会话")
+            FileLogger.i(TAG, "顶层为桌面/Launcher($visibleTop)，清空稳定监控并暂停截屏")
+            lastStableMonitoredApp = null
+            lastStableSeenAt = 0L
+            pendingCandidateApp = null
+            pendingCandidateSince = 0L
             return null
         }
 
-        // 顶层为监控应用（可能与stable相同或不同），在未解锁前仍归属stable
+        // 非监控应用：仅在离开稳定前台后的宽限期内继续归属，否则暂停
+        if (visibleTop != null && !isAppInMonitorList(visibleTop)) {
+            val since = now - lastStableSeenAt
+            return if (since <= OVERLAY_GRACE_MS) {
+                FileLogger.d(TAG, "顶层非监控应用($visibleTop)，仍在宽限期${since}ms<=${OVERLAY_GRACE_MS}ms，继续归属: $stable")
+                stable
+            } else {
+                FileLogger.d(TAG, "顶层非监控应用($visibleTop)，超过宽限期${since}ms>${OVERLAY_GRACE_MS}ms，暂停截屏")
+                null
+            }
+        }
+
+        // 顶层为监控应用（可能与stable相同或不同），在未稳定化前仍归属stable
         FileLogger.d(TAG, "顶层为监控应用($visibleTop)，归属稳定前台: $stable")
         return stable
     }
