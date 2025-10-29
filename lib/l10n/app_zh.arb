@@ -813,6 +813,8 @@
   "conversationsSectionTitle": "对话"
   ,
   "displaySectionTitle": "显示",
+  "streamRenderImagesTitle": "流式期间实时渲染图片",
+  "streamRenderImagesDesc": "可能影响滚动流畅度",
   "themeColorTitle": "主题颜色",
   "themeColorDesc": "自定义应用主色调",
   "chooseThemeColorTitle": "选择主题颜色",

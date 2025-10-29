@@ -18,6 +18,7 @@ import 'nsfw_settings_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/locale_service.dart';
 import '../services/nsfw_preference_service.dart';
+import '../services/ai_settings_service.dart';
 import '../services/flutter_logger.dart';
 
 /// 设置页面
@@ -69,6 +70,8 @@ class _SettingsPageState extends State<SettingsPage>
   // 分类日志开关：AI 与 截图
   bool _aiLoggingEnabled = false;
   bool _screenshotLoggingEnabled = false;
+  // 流式期间实时渲染图片（影响 AI 对话性能的全局开关）
+  bool _renderImagesDuringStreaming = false;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -282,6 +285,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadDailyNotifySettings();
     _loadNsfwRules();
     _loadLoggingEnabled();
+    _loadRenderImagesDuringStreaming();
    }
 
   @override
@@ -290,6 +294,20 @@ class _SettingsPageState extends State<SettingsPage>
     WidgetsBinding.instance.removeObserver(this);
     _nsfwDomainController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRenderImagesDuringStreaming() async {
+    try {
+      final v = await AISettingsService.instance.getRenderImagesDuringStreaming();
+      if (mounted) setState(() => _renderImagesDuringStreaming = v);
+    } catch (_) {}
+  }
+
+  Future<void> _updateRenderImagesDuringStreaming(bool enabled) async {
+    try {
+      await AISettingsService.instance.setRenderImagesDuringStreaming(enabled);
+      if (mounted) setState(() => _renderImagesDuringStreaming = enabled);
+    } catch (_) {}
   }
 
   /// 导出数据到下载目录
@@ -752,6 +770,7 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [
                     _buildThemeColorItem(context),
                     _buildPrivacyModeItem(context),
+                  _buildStreamRenderImagesItem(context),
                     _buildNsfwEntryItem(context),
                     _buildLoggingToggleItem(context),
                   ],
@@ -1928,6 +1947,80 @@ class _SettingsPageState extends State<SettingsPage>
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStreamRenderImagesItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Stack(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  Icons.image_outlined,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 72),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppLocalizations.of(context).streamRenderImagesTitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        AppLocalizations.of(context).streamRenderImagesDesc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            top: -1,
+            right: 0,
+            child: Transform.scale(
+              scale: 0.9,
+              child: Switch(
+                value: _renderImagesDuringStreaming,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (v) => _updateRenderImagesDuringStreaming(v),
               ),
             ),
           ),

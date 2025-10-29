@@ -1726,6 +1726,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get displaySectionTitle => 'Display';
 
   @override
+  String get streamRenderImagesTitle => 'Render images during streaming';
+
+  @override
+  String get streamRenderImagesDesc => 'May affect scrolling';
+
+  @override
   String get themeColorTitle => 'Theme color';
 
   @override

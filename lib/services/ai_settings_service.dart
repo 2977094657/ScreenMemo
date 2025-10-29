@@ -92,6 +92,7 @@ class AISettingsService {
   static const String _keyApiKey = 'api_key';
   static const String _keyModel = 'model';
   static const String _keyStreamEnabled = 'stream_enabled';
+  static const String _keyRenderImagesDuringStreaming = 'render_images_during_streaming';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
   static const String _keyPromptSegment = 'prompt_segment';         // 旧版（不分语种）
@@ -123,6 +124,20 @@ class AISettingsService {
   Future<void> setStreamEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyStreamEnabled, enabled ? '1' : '0');
+  }
+
+  // 是否在流式期间实时渲染图片（默认 false：为提升性能，完成后再统一渲染）
+  Future<bool> getRenderImagesDuringStreaming() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyRenderImagesDuringStreaming);
+    if (v == null || v.isEmpty) return false;
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setRenderImagesDuringStreaming(bool value) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyRenderImagesDuringStreaming, value ? '1' : '0');
   }
 
   // ========== 分组管理（v6 起移除 legacy，统一使用提供商+上下文） ==========

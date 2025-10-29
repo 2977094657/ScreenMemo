@@ -819,6 +819,8 @@
   "conversationsSectionTitle": "Conversations"
   ,
   "displaySectionTitle": "Display",
+  "streamRenderImagesTitle": "Render images during streaming",
+  "streamRenderImagesDesc": "May affect scrolling",
   "themeColorTitle": "Theme color",
   "themeColorDesc": "Customize the app's primary color",
   "chooseThemeColorTitle": "Choose theme color",

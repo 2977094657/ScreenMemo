@@ -3110,6 +3110,18 @@ abstract class AppLocalizations {
   /// **'Display'**
   String get displaySectionTitle;
 
+  /// No description provided for @streamRenderImagesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Render images during streaming'**
+  String get streamRenderImagesTitle;
+
+  /// No description provided for @streamRenderImagesDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'May affect scrolling'**
+  String get streamRenderImagesDesc;
+
   /// No description provided for @themeColorTitle.
   ///
   /// In en, this message translates to:

@@ -1672,6 +1672,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get displaySectionTitle => '显示';
 
   @override
+  String get streamRenderImagesTitle => '流式期间实时渲染图片';
+
+  @override
+  String get streamRenderImagesDesc => '可能影响滚动流畅度';
+
+  @override
   String get themeColorTitle => '主题颜色';
 
   @override
