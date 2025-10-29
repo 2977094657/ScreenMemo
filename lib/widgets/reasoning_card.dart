@@ -25,7 +25,6 @@ class ReasoningCard extends StatefulWidget {
   final Color? textColor;
   final Color? accentColor;
   final bool autoCloseOnFinish;
-  final String dots; // 动态省略号状态（由父组件驱动）
 
   const ReasoningCard({
     super.key,
@@ -37,7 +36,6 @@ class ReasoningCard extends StatefulWidget {
     this.textColor,
     this.accentColor,
     this.autoCloseOnFinish = false,
-    this.dots = '',
   });
 
   @override
@@ -49,11 +47,15 @@ class _ReasoningCardState extends State<ReasoningCard> {
   final ScrollController _scrollController = ScrollController();
   Duration _duration = Duration.zero;
   Timer? _durationTimer;
+  // 本地省略号动画（避免父级 setState 带来的整页重建）
+  Timer? _dotsTimer;
+  String _dots = '';
 
   @override
   void initState() {
     super.initState();
     _updateDuration();
+    _updateDots();
   }
 
   @override
@@ -92,6 +94,9 @@ class _ReasoningCardState extends State<ReasoningCard> {
     }
     
     _updateDuration();
+    if (widget.isLoading != oldWidget.isLoading) {
+      _updateDots();
+    }
   }
 
   void _updateDuration() {
@@ -109,10 +114,26 @@ class _ReasoningCardState extends State<ReasoningCard> {
     }
   }
 
+  void _updateDots() {
+    _dotsTimer?.cancel();
+    if (widget.isLoading) {
+      const states = ['', '.', '..', '...'];
+      int i = 0;
+      _dotsTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+        if (!mounted) return;
+        i = (i + 1) % states.length;
+        setState(() { _dots = states[i]; });
+      });
+    } else {
+      _dots = '';
+    }
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
     _durationTimer?.cancel();
+    _dotsTimer?.cancel();
     super.dispose();
   }
 
@@ -163,7 +184,7 @@ class _ReasoningCardState extends State<ReasoningCard> {
                      children: [
                       // 本地化“深度思考”文本
                       Text(
-                        (AppLocalizations.of(context).deepThinkingLabel) + (widget.isLoading ? widget.dots : ''),
+                        (AppLocalizations.of(context).deepThinkingLabel) + (widget.isLoading ? _dots : ''),
                         style: Theme.of(context)
                             .textTheme
                             .titleSmall
