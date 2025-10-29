@@ -154,7 +154,12 @@ class QueryContextService {
     if (startMs <= 0 || endMs <= 0) return '[--:--:--–--:--:--]';
     final ds = DateTime.fromMillisecondsSinceEpoch(startMs);
     final de = DateTime.fromMillisecondsSinceEpoch(endMs);
-    return '[${two(ds.hour)}:${two(ds.minute)}:${two(ds.second)}–${two(de.hour)}:${two(de.minute)}:${two(de.second)}]';
+    String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+    final bool sameDay = (ds.year == de.year && ds.month == de.month && ds.day == de.day);
+    if (sameDay) {
+      return '[${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}:${two(ds.second)}–${two(de.hour)}:${two(de.minute)}:${two(de.second)}]';
+    }
+    return '[${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}:${two(ds.second)}–${ymd(de)} ${two(de.hour)}:${two(de.minute)}:${two(de.second)}]';
   }
 
   String _extractSummary(Map<String, dynamic> seg, {bool clip = false}) {

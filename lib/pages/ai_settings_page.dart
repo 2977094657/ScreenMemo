@@ -48,6 +48,16 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   // 折叠思考预览的滚动（底部面板）
   final ScrollController _reasoningPanelScrollController = ScrollController();
 
+  // —— 粘底自动滚动策略 ——
+  // 当距离底部在该阈值内，才会触发自动滚动（避免与用户滚动竞争）
+  static const double _autoScrollProximity = 120.0;
+  // 当前是否应粘在底部（由滚动通知动态维护）
+  bool _stickToBottom = true;
+  // 自动滚动节流：在短时间内合并多次请求，减少 jumpTo 频次
+  static const int _autoScrollThrottleMs = 120;
+  DateTime? _lastAutoScrollTime;
+  bool _autoScrollPending = false;
+
   // 动态省略号（思考中）状态
   Timer? _dotsTimer;
   String _thinkingDots = '';
@@ -98,6 +108,9 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   bool _savingPromptSegment = false;
   bool _savingPromptMerge = false;
   bool _savingPromptDaily = false;
+
+  // 渲染设置：是否在流式期间实时渲染图片（可能影响性能）
+  bool _renderImagesDuringStreaming = false;
 
   // —— 全屏横向滑动呼出 Drawer ——
   double _drawerGestureAccumDx = 0.0;
@@ -358,6 +371,17 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (!mounted) return;
       if (ctx == 'chat' || ctx == 'chat:deleted') {
+        // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的“空白延迟”
+        if (ctx == 'chat:deleted') {
+          setState(() {
+            _messages = <AIMessage>[];
+            _attachmentsByIndex.clear();
+            _reasoningByIndex.clear();
+            _reasoningDurationByIndex.clear();
+            _currentAssistantIndex = null;
+            _inStreaming = false;
+          });
+        }
         // 去抖 250ms 合并多次事件，避免重复重载
         _ctxDebounceTimer?.cancel();
         _ctxDebounceTimer = Timer(const Duration(milliseconds: 250), () {
@@ -426,6 +450,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
       // 收集其余预取结果
       final List<AIMessage> history = await fHistory;
       final bool streamEnabled = await fStreamEnabled;
+      final bool renderImgs = await _settings.getRenderImagesDuringStreaming();
       final String? segPrompt = await fSegPrompt;
       final String? mergePrompt = await fMergePrompt;
       final String? dailyPrompt = await fDailyPrompt;
@@ -471,6 +496,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
         _promptSegment = segPrompt;
         _promptMerge = mergePrompt;
         _promptDaily = dailyPrompt;
+        _renderImagesDuringStreaming = renderImgs;
         // 预填编辑器（若无自定义，按当前语言填充默认预览，方便直接修改）
         _promptSegmentController.text = (_promptSegment == null || _promptSegment!.trim().isEmpty)
             ? _defaultSegmentPromptPreview
@@ -838,8 +864,8 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     }
   }
 
- // 自动滚动到底部（在下一帧执行，避免布局未完成）
- void _scrollToBottom({bool animated = true}) {
+// 自动滚动到底部（在下一帧执行，避免布局未完成）
+void _scrollToBottom({bool animated = true}) {
    final c = _chatScrollController;
    if (!c.hasClients) return;
    final pos = c.position.maxScrollExtent;
@@ -854,12 +880,33 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
    }
  }
 
- void _scheduleAutoScroll() {
-   WidgetsBinding.instance.addPostFrameCallback((_) {
-     if (!mounted) return;
-     _scrollToBottom(animated: false);
-   });
- }
+void _scheduleAutoScroll() {
+  // 仅当粘在底部时，才允许自动滚动；用户上滑后暂停
+  if (!_stickToBottom) return;
+
+  final now = DateTime.now();
+  final last = _lastAutoScrollTime;
+  final elapsed = (last == null) ? const Duration(days: 1) : now.difference(last);
+  if (elapsed.inMilliseconds >= _autoScrollThrottleMs) {
+    _lastAutoScrollTime = now;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_stickToBottom) return;
+      _scrollToBottom(animated: false);
+    });
+  } else if (!_autoScrollPending) {
+    _autoScrollPending = true;
+    final delay = Duration(milliseconds: _autoScrollThrottleMs - elapsed.inMilliseconds);
+    Future.delayed(delay, () {
+      _autoScrollPending = false;
+      if (!mounted || !_stickToBottom) return;
+      _lastAutoScrollTime = DateTime.now();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_stickToBottom) return;
+        _scrollToBottom(animated: false);
+      });
+    });
+  }
+}
 
  void _scheduleReasoningPreviewScroll() {
    // 仅处理底部思考面板的自动滚动，气泡内的滚动由 ReasoningCard 自己处理
@@ -876,26 +923,15 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
  }
 
  void _startDots() {
-   _dotsTimer?.cancel();
-   const states = ['', '.', '..', '...'];
-   var i = 0;
-   _dotsTimer = Timer.periodic(const Duration(milliseconds: 400), (_) {
-     if (!mounted) return;
-     i = (i + 1) % states.length;
-     setState(() {
-       _thinkingDots = states[i];
-     });
-   });
+  // 迁移为 ReasoningCard 内部自管理省略号动画，避免整页 setState 重建
+  // 这里不再执行任何刷新逻辑，仅确保先前计时器被取消
+  _dotsTimer?.cancel();
+  _dotsTimer = null;
  }
 
  void _stopDots() {
-   _dotsTimer?.cancel();
-   _dotsTimer = null;
-   if (mounted) {
-     setState(() {
-       _thinkingDots = '';
-     });
-   }
+  _dotsTimer?.cancel();
+  _dotsTimer = null;
  }
 
  Future<void> _sendMessage() async {
@@ -1070,7 +1106,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
               );
             }
           });
-          final intent = await IntentAnalysisService.instance.analyze(
+          IntentResult intent = await IntentAnalysisService.instance.analyze(
             text,
             previous: _lastIntent == null
                 ? null
@@ -1082,6 +1118,43 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   ),
             previousUserQueries: _extractPreviousUserQueries(maxCount: 3),
           );
+          if (!intent.hasValidRange) {
+            int? fbStart;
+            int? fbEnd;
+            if (_lastIntent != null && _lastIntent!.hasValidRange) {
+              fbStart = _lastIntent!.startMs; fbEnd = _lastIntent!.endMs;
+            } else if (_lastCtxPack != null) {
+              fbStart = _lastCtxPack!.startMs; fbEnd = _lastCtxPack!.endMs;
+            } else if (QueryContextService.instance.lastPack != null) {
+              final p = QueryContextService.instance.lastPack!; fbStart = p.startMs; fbEnd = p.endMs;
+            }
+            if (fbStart != null && fbEnd != null && fbEnd >= fbStart) {
+              intent = IntentResult(
+                intent: intent.intent,
+                intentSummary: intent.intentSummary.isNotEmpty ? intent.intentSummary : '复用上一轮时间窗',
+                startMs: fbStart,
+                endMs: fbEnd,
+                timezone: intent.timezone,
+                apps: intent.apps,
+                sqlFill: intent.sqlFill,
+                skipContext: true,
+                errorCode: intent.errorCode,
+                errorMessage: intent.errorMessage,
+              );
+            } else {
+              final String err = intent.errorMessage ?? '意图解析失败：缺少 start_local / end_local 或格式无效';
+              setState(() {
+                final lastIdx = _messages.length - 1;
+                final last = _messages[lastIdx];
+                _messages[lastIdx] = AIMessage(
+                  role: 'assistant',
+                  content: '1/4 解析失败：' + err,
+                  createdAt: last.createdAt,
+                );
+              });
+              return;
+            }
+          }
           await FlutterLogger.nativeInfo('ChatFlow', 'phase1 intent ok range=[${intent.startMs}-${intent.endMs}] summary=${intent.intentSummary} apps=${intent.apps.length}');
 
           // 显示意图摘要与时间窗
@@ -1092,8 +1165,12 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
               final start = DateTime.fromMillisecondsSinceEpoch(intent.startMs);
               final end = DateTime.fromMillisecondsSinceEpoch(intent.endMs);
               String two(int v) => v.toString().padLeft(2, '0');
+              String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+              final String dateLine = (start.year == end.year && start.month == end.month && start.day == end.day)
+                  ? '日期: ' + ymd(start)
+                  : '日期: ' + ymd(start) + ' → ' + ymd(end);
               final String range = '${two(start.hour)}:${two(start.minute)}-${two(end.hour)}:${two(end.minute)}';
-              final updated = '1/4 意图: ${intent.intentSummary}\n时间: $range (${intent.timezone})\n\n2/4 查找上下文…';
+              final updated = '1/4 意图: ${intent.intentSummary}\n' + dateLine + '\n时间: ' + range + ' (' + intent.timezone + ')\n\n2/4 查找上下文…';
               _messages[lastIdx] = AIMessage(
                 role: 'assistant',
                 content: updated,
@@ -1145,7 +1222,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
           _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
 
           // 使用"显示内容与实际发送内容分离"的新流式接口：
-          final stream = _chat.sendMessageStreamedV2WithDisplayOverride(text, finalQuery);
+          final String sysDateGuard = _buildDateGuardSystemMessage(ctxPack);
+          final stream = _chat.sendMessageStreamedV2WithDisplayOverride(
+            text,
+            finalQuery,
+            includeHistory: intent.skipContext,
+            extraSystemMessages: <String>[sysDateGuard],
+          );
           await for (final evt in stream) {
           if (!mounted) return;
           // 优先消费"思考内容"
@@ -1267,7 +1350,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
 
         try {
           await FlutterLogger.nativeInfo('ChatFlow', 'phase1 intent(begin, non-stream)');
-          final intent = await IntentAnalysisService.instance.analyze(
+          IntentResult intent = await IntentAnalysisService.instance.analyze(
             text,
             previous: _lastIntent == null
                 ? null
@@ -1279,6 +1362,42 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   ),
             previousUserQueries: _extractPreviousUserQueries(maxCount: 3),
           );
+          if (!intent.hasValidRange) {
+            int? fbStart;
+            int? fbEnd;
+            if (_lastIntent != null && _lastIntent!.hasValidRange) {
+              fbStart = _lastIntent!.startMs; fbEnd = _lastIntent!.endMs;
+            } else if (_lastCtxPack != null) {
+              fbStart = _lastCtxPack!.startMs; fbEnd = _lastCtxPack!.endMs;
+            } else if (QueryContextService.instance.lastPack != null) {
+              final p = QueryContextService.instance.lastPack!; fbStart = p.startMs; fbEnd = p.endMs;
+            }
+            if (fbStart != null && fbEnd != null && fbEnd >= fbStart) {
+              intent = IntentResult(
+                intent: intent.intent,
+                intentSummary: intent.intentSummary.isNotEmpty ? intent.intentSummary : '复用上一轮时间窗',
+                startMs: fbStart,
+                endMs: fbEnd,
+                timezone: intent.timezone,
+                apps: intent.apps,
+                sqlFill: intent.sqlFill,
+                skipContext: true,
+                errorCode: intent.errorCode,
+                errorMessage: intent.errorMessage,
+              );
+            } else {
+              setState(() {
+                final lastIdx = _messages.length - 1;
+                final last = _messages[lastIdx];
+                _messages[lastIdx] = AIMessage(
+                  role: 'assistant',
+                  content: '1/4 解析失败：' + (intent.errorMessage ?? '缺少 start_local / end_local 或格式无效'),
+                  createdAt: last.createdAt,
+                );
+              });
+              return;
+            }
+          }
           await FlutterLogger.nativeInfo('ChatFlow', 'phase1 intent ok range=[${intent.startMs}-${intent.endMs}] summary=${intent.intentSummary}');
           final start = DateTime.fromMillisecondsSinceEpoch(intent.startMs);
           final end = DateTime.fromMillisecondsSinceEpoch(intent.endMs);
@@ -1324,7 +1443,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
           final finalQuery = _buildFinalQuestion(text, ctxPack);
           await FlutterLogger.nativeDebug('ChatFlow', 'phase3 finalQueryLen=${finalQuery.length} (non-stream)');
           // 非流式：拿到回复后将证据名替换为绝对路径
-          final assistant = await _chat.sendMessageWithDisplayOverride(text, finalQuery);
+          final String sysDateGuard = _buildDateGuardSystemMessage(ctxPack);
+          final assistant = await _chat.sendMessageWithDisplayOverride(
+            text,
+            finalQuery,
+            includeHistory: intent.skipContext,
+            extraSystemMessages: <String>[sysDateGuard],
+          );
           // 替换 evidence 名称为绝对路径（基于当前 attachments）
           String content = assistant.content;
           if (content.contains('[evidence:')) {
@@ -1471,7 +1596,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     String two(int v) => v.toString().padLeft(2, '0');
     final ds = DateTime.fromMillisecondsSinceEpoch(ctx.startMs);
     final de = DateTime.fromMillisecondsSinceEpoch(ctx.endMs);
+    String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+    final String dateLine = (ds.year == de.year && ds.month == de.month && ds.day == de.day)
+        ? ('日期: ' + ymd(ds))
+        : ('日期范围: ' + ymd(ds) + ' → ' + ymd(de));
+    sb.writeln(dateLine);
     sb.writeln('时间范围: ${two(ds.hour)}:${two(ds.minute)}–${two(de.hour)}:${two(de.minute)}');
+    sb.writeln('约束：仅围绕上述日期/时间范围作答，禁止将日期泛化为“今天/昨天”等相对称呼。若该日期缺少数据，请直接说明。');
     int imgNo = 0;
     for (final ev in ctx.events) {
       sb.writeln('- ${ev.window} ${ev.apps.isNotEmpty ? ev.apps.join('/') : ''}');
@@ -1510,6 +1641,17 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     sb.writeln('【用户问题】');
     sb.writeln(userText);
     return sb.toString();
+  }
+
+  String _buildDateGuardSystemMessage(QueryContextPack ctx) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final DateTime ds = DateTime.fromMillisecondsSinceEpoch(ctx.startMs);
+    final DateTime de = DateTime.fromMillisecondsSinceEpoch(ctx.endMs);
+    String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+    final String window = (ds.year == de.year && ds.month == de.month && ds.day == de.day)
+        ? ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${two(de.hour)}:${two(de.minute)}')
+        : ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${ymd(de)} ${two(de.hour)}:${two(de.minute)}');
+    return '系统约束（必须遵守）: 仅围绕本地时区的指定日期/时间窗口回答：' + window + '。禁止将日期泛化为“今天/昨天/本周”等，也禁止引用当前日期。若该时间窗口没有足够数据，请直接回答："No data for the specified date/time window." 严禁回答超出该时间窗口的内容。';
   }
 
   void _cancelRequest() {
@@ -1860,6 +2002,8 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
       ),
     );
   }
+
+  
 
   @override
   Widget build(BuildContext context) {
@@ -2333,10 +2477,15 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
         ),
       );
     }
-    return ListView.builder(
+    final Widget list = ListView.builder(
       controller: _chatScrollController,
       itemCount: _messages.length,
       reverse: false,
+      // 仅渲染视口上下各一屏，减少离屏图片的构建与解码
+      cacheExtent: MediaQuery.of(context).size.height,
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
+      addSemanticIndexes: false,
       padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
       itemBuilder: (context, index) {
         final m = _messages[index];
@@ -2377,7 +2526,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   textColor: fg,
                   accentColor: Theme.of(context).colorScheme.secondary,
                   autoCloseOnFinish: false,
-                  dots: _thinkingDots,
+                  
                 ),
               ),
             );
@@ -2395,69 +2544,91 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                   textColor: fg,
                   accentColor: Theme.of(context).colorScheme.secondary,
                   autoCloseOnFinish: false,
-                  dots: _thinkingDots,
+                  
                 ),
               ),
             );
           }
         }
 
-        // 正文 Markdown（接入 LaTeX 预处理 + 渲染）
-        String preprocessedMd = preprocessForChatMarkdown(m.content);
-        // 构建 evidence 文件名到绝对路径的映射，供 Markdown 渲染时内嵌图片
-        final Map<String, String> evidenceNameToPath = <String, String>{};
-        final atts = _attachmentsByIndex[index] ?? const <EvidenceImageAttachment>[];
-        for (final a in atts) {
-          final path = a.path;
-          final int idx1 = path.lastIndexOf('/');
-          final int idx2 = path.lastIndexOf('\\');
-          final int i = idx1 > idx2 ? idx1 : idx2;
-          final name = i >= 0 ? path.substring(i + 1) : path;
-          if (name.isNotEmpty) evidenceNameToPath[name] = a.path;
-        }
-        // 预构建 Markdown 配置（若需要异步兜底，会在 FutureBuilder 中重建）
-        final mathConfig = MarkdownMathConfig(
-          inlineTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
-          blockTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
-          evidenceNameToPath: evidenceNameToPath,
-          orderedEvidencePaths: atts.map((e) => e.path).toList(),
-        );
+        // 正文渲染：流式期间对当前消息使用轻量文本，完成后再进行 Markdown 解析
+        final bool isCurrentStreaming = _inStreaming && (_currentAssistantIndex == index);
         // 隐藏 system 消息（用于保存最终提示但不显示）
         final bool isSystem = m.role == 'system';
         if (isSystem) {
           return const SizedBox.shrink();
         }
-        // 解析正文中的证据文件名集合；若存在，则进行异步解析（无论是否已有部分附件映射）
-        final Set<String> evidenceNames = RegExp(r'\[evidence:\s*([^\]\s]+)\s*\]')
-            .allMatches(preprocessedMd)
-            .map((mm) => (mm.group(1) ?? '').trim())
-            .where((s) => s.isNotEmpty)
-            .toSet();
-        final bool needAsyncResolve = evidenceNames.isNotEmpty;
-        final Widget mdWidget = needAsyncResolve
-            ? FutureBuilder<Map<String, String>>(
-                future: (() async {
-                  try {
-                    if (evidenceNames.isEmpty) return const <String, String>{};
-                    return await ScreenshotDatabase.instance.findPathsByBasenames(evidenceNames);
-                  } catch (_) {
-                    return const <String, String>{};
-                  }
-                })(),
-                builder: (context, snap) {
-                  final Map<String, String> map = snap.data ?? const <String, String>{};
-                  // 合并：已有附件映射 + 数据库解析结果
-                  final merged = <String, String>{...evidenceNameToPath, ...map};
-                  final resolved = MarkdownMathConfig(
-                    inlineTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
-                    blockTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
-                    evidenceNameToPath: merged,
-                    orderedEvidencePaths: atts.map((e) => e.path).toList(),
+
+        final Widget mdWidget = (isCurrentStreaming && !_renderImagesDuringStreaming)
+            // 流式期间渲染轻量文本，避免高频 Markdown 重建
+            ? SelectableText(
+                m.content,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+              )
+            : (() {
+                // 非流式：构建 Markdown 与 evidence 解析
+                final String preprocessedMd = preprocessForChatMarkdown(m.content);
+                final Map<String, String> evidenceNameToPath = <String, String>{};
+                final atts = _attachmentsByIndex[index] ?? const <EvidenceImageAttachment>[];
+                for (final a in atts) {
+                  final path = a.path;
+                  final int idx1 = path.lastIndexOf('/');
+                  final int idx2 = path.lastIndexOf('\\');
+                  final int i = idx1 > idx2 ? idx1 : idx2;
+                  final name = i >= 0 ? path.substring(i + 1) : path;
+                  if (name.isNotEmpty) evidenceNameToPath[name] = a.path;
+                }
+                final mathConfig = MarkdownMathConfig(
+                  inlineTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                  blockTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                  evidenceNameToPath: evidenceNameToPath,
+                  orderedEvidencePaths: atts.map((e) => e.path).toList(),
+                );
+                final Set<String> evidenceNames = RegExp(r'\[evidence:\s*([^\]\s]+)\s*\]')
+                    .allMatches(preprocessedMd)
+                    .map((mm) => (mm.group(1) ?? '').trim())
+                    .where((s) => s.isNotEmpty)
+                    .toSet();
+                if (evidenceNames.isNotEmpty) {
+                  return FutureBuilder<Map<String, String>>(
+                    future: (() async {
+                      try {
+                        return await ScreenshotDatabase.instance.findPathsByBasenames(evidenceNames);
+                      } catch (_) {
+                        return const <String, String>{};
+                      }
+                    })(),
+                    builder: (context, snap) {
+                      final Map<String, String> map = snap.data ?? const <String, String>{};
+                      final merged = <String, String>{...evidenceNameToPath, ...map};
+                      final resolved = MarkdownMathConfig(
+                        inlineTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                        blockTextStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                        evidenceNameToPath: merged,
+                        orderedEvidencePaths: atts.map((e) => e.path).toList(),
+                      );
+                      return MarkdownBody(
+                        data: preprocessedMd,
+                        builders: resolved.builders,
+                        inlineSyntaxes: resolved.inlineSyntaxes,
+                        styleSheet: _mdStyle(context).copyWith(
+                          p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+                        ),
+                        onTapLink: (text, href, title) async {
+                          if (href == null) return;
+                          final uri = Uri.tryParse(href);
+                          if (uri != null) {
+                            try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                          }
+                        },
+                      );
+                    },
                   );
+                } else {
                   return MarkdownBody(
                     data: preprocessedMd,
-                    builders: resolved.builders,
-                    inlineSyntaxes: resolved.inlineSyntaxes,
+                    builders: mathConfig.builders,
+                    inlineSyntaxes: mathConfig.inlineSyntaxes,
                     styleSheet: _mdStyle(context).copyWith(
                       p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
                     ),
@@ -2469,23 +2640,8 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
                       }
                     },
                   );
-                },
-              )
-            : MarkdownBody(
-                data: preprocessedMd,
-                builders: mathConfig.builders,
-                inlineSyntaxes: mathConfig.inlineSyntaxes,
-                styleSheet: _mdStyle(context).copyWith(
-                  p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
-                ),
-                onTapLink: (text, href, title) async {
-                  if (href == null) return;
-                  final uri = Uri.tryParse(href);
-                  if (uri != null) {
-                    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
-                  }
-                },
-              );
+                }
+              })();
 
         bubbleChildren.add(mdWidget);
 
@@ -2572,6 +2728,47 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
           ],
         );
       },
+    );
+    return Stack(
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            final metrics = notification.metrics;
+            // 根据位置更新粘底标志：仅在接近底部时视为粘底
+            final double distanceToBottom = (metrics.maxScrollExtent - metrics.pixels).clamp(0.0, double.infinity);
+            _stickToBottom = distanceToBottom <= _autoScrollProximity;
+            return false;
+          },
+          child: list,
+        ),
+        if (!_stickToBottom)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: SafeArea(
+              child: Material(
+                color: Theme.of(context).colorScheme.surface.withOpacity(0.92),
+                elevation: 2,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    _stickToBottom = true;
+                    _scrollToBottom(animated: true);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.arrow_downward_rounded,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

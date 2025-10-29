@@ -488,11 +488,13 @@ class AIChatService {
   /// 流式（带显示与实际消息分离）：
   /// - displayUserMessage: UI 中展示与保存为用户消息的内容（原始输入）
   /// - actualUserMessage: 实际发送给模型的提示（例如拼接了上下文的最终提示）
-  /// - 历史保存为：[..., user(display), system(actual), assistant]
+  /// - 历史保存为：[..., user(display), assistant]（不再保存 system(actual) 以避免污染后续轮次）
   Stream<AIStreamEvent> sendMessageStreamedV2WithDisplayOverride(
     String displayUserMessage,
     String actualUserMessage, {
     Duration timeout = const Duration(seconds: 60),
+    bool includeHistory = false,
+    List<String> extraSystemMessages = const <String>[],
   }) async* {
     try { await FlutterLogger.nativeInfo('AI', 'sendMessageStreamedV2WithDisplayOverride begin displayLen=' + displayUserMessage.length.toString() + ' actualLen=' + actualUserMessage.length.toString()); } catch (_) {}
     final endpoints = await _settings.getEndpointCandidates(context: 'chat');
@@ -516,9 +518,13 @@ class AIChatService {
       final locale = isZh ? const Locale('zh') : const Locale('en');
       final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
+      final List<Map<String, dynamic>> filteredHistory = includeHistory
+          ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
+          : <Map<String, dynamic>>[];
       final List<Map<String, dynamic>> messages = [
         {'role': 'system', 'content': systemMsg},
-        ...history.map((m) => m.toJson()),
+        ...extraSystemMessages.map((s) => {'role': 'system', 'content': s}),
+        ...filteredHistory,
         AIMessage(role: 'user', content: actualUserMessage).toJson(),
       ];
 
@@ -532,6 +538,10 @@ class AIChatService {
         'temperature': 0.2,
         'stream': true,
       });
+      try {
+        final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
+        await FlutterLogger.nativeDebug('AI', 'REQ(stream) preview=' + reqPreview);
+      } catch (_) {}
 
       final client = http.Client();
       StringBuffer full = StringBuffer();
@@ -599,7 +609,7 @@ class AIChatService {
           }
         }
 
-        // 保存历史：user(原文可见) + system(最终提示隐藏UI) + assistant
+        // 保存历史：仅 user(原文可见) + assistant；不持久化最终提示以免污染会话
         final String trailing = thinkFilter.finalize();
         if (trailing.isNotEmpty) {
           reasoningBuf.write(trailing);
@@ -607,6 +617,10 @@ class AIChatService {
         final String reasoningText = reasoningBuf.toString();
         final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
         final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
+        try {
+          final String respPreview = cleanedContent.length <= 4000 ? cleanedContent : (cleanedContent.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug('AI', 'RESP(stream) assistant preview=' + respPreview);
+        } catch (_) {}
         final assistant = AIMessage(
           role: 'assistant',
           content: cleanedContent,
@@ -616,7 +630,6 @@ class AIChatService {
         final newHistory = <AIMessage>[
           ...history,
           AIMessage(role: 'user', content: displayUserMessage),
-          AIMessage(role: 'system', content: actualUserMessage),
           assistant,
         ];
         await _settings.saveChatHistoryActive(newHistory);
@@ -649,6 +662,8 @@ class AIChatService {
     String displayUserMessage,
     String actualUserMessage, {
     Duration timeout = const Duration(seconds: 60),
+    bool includeHistory = false,
+    List<String> extraSystemMessages = const <String>[],
   }) async {
     final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
@@ -671,9 +686,13 @@ class AIChatService {
         final locale = isZh ? const Locale('zh') : const Locale('en');
         final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
+        final List<Map<String, dynamic>> filteredHistory = includeHistory
+            ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
+            : <Map<String, dynamic>>[];
         final List<Map<String, dynamic>> messages = [
           {'role': 'system', 'content': systemMsg},
-          ...history.map((m) => m.toJson()),
+          ...extraSystemMessages.map((s) => {'role': 'system', 'content': s}),
+          ...filteredHistory,
           AIMessage(role: 'user', content: actualUserMessage).toJson(),
         ];
 
@@ -687,11 +706,19 @@ class AIChatService {
           'temperature': 0.2,
           'stream': false,
         });
+        try {
+          final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug('AI', 'REQ(non-stream) preview=' + reqPreview);
+        } catch (_) {}
         final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
           throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
         }
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        try {
+          final String respPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug('AI', 'RESP(non-stream) raw preview=' + respPreview);
+        } catch (_) {}
         final choices = data['choices'] as List<dynamic>?;
         if (choices == null || choices.isEmpty) {
           throw Exception('Empty choices');
@@ -704,11 +731,10 @@ class AIChatService {
         final content = (msg['content'] as String?) ?? '';
         final assistant = AIMessage(role: 'assistant', content: content);
 
-        // 保存历史：user(原文) + system(最终提示) + assistant
+        // 保存历史：仅 user(原文) + assistant；不保存最终提示以避免“今天”类误导
         final newHistory = <AIMessage>[
           ...history,
           AIMessage(role: 'user', content: displayUserMessage),
-          AIMessage(role: 'system', content: actualUserMessage),
           assistant,
         ];
         await _settings.saveChatHistoryActive(newHistory);
@@ -823,11 +849,19 @@ class AIChatService {
             'temperature': 0.2,
             'stream': false,
           });
+          try {
+            final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
+            await FlutterLogger.nativeDebug('AI', 'REQ(oneshot) preview=' + reqPreview);
+          } catch (_) {}
           final Future<http.Response> req = http.post(uri, headers: headers, body: body);
           final resp = (timeout == null) ? await req : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
             throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
           }
+          try {
+            final String respPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
+            await FlutterLogger.nativeDebug('AI', 'RESP(oneshot) raw preview=' + respPreview);
+          } catch (_) {}
           final Map<String, dynamic> data = jsonDecode(resp.body) as Map<String, dynamic>;
 
           // 兼容多种非流式结构：
