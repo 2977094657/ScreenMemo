@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/timeline_jump_service.dart';
+import '../theme/app_theme.dart';
 
 /// 时间线跳转覆盖按钮（插件式，可附加到任意图片上）
 ///
@@ -42,9 +43,9 @@ class TimelineJumpOverlay extends StatelessWidget {
         padding: margin,
         child: Material(
           color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             onTap: () async {
               try {
                 await TimelineJumpService.instance.jumpToFilePath(filePath);
