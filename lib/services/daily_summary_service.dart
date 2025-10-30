@@ -12,6 +12,14 @@ import 'screenshot_database.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
 
+enum DailySummaryNotificationSlot {
+  morning,
+  noon,
+  evening,
+  night,
+  finalReminder,
+}
+
 /// 每日总结服务：
 /// - 聚合当天已有“事件AI结果”，仅取 structured_json.overall_summary 作为上下文
 /// - 使用独立一次性 AI 请求（不写入会话历史）生成当日总结
@@ -292,6 +300,27 @@ class DailySummaryService {
     return '';
   }
 
+  String _notificationTitleForSlot(String dateKey, DailySummaryNotificationSlot slot) {
+    final String langCode = (LocaleService.instance.locale?.languageCode ??
+            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+        .toLowerCase();
+    final bool isZh = langCode.startsWith('zh');
+    final locale = isZh ? const Locale('zh') : const Locale('en');
+    final l10n = lookupAppLocalizations(locale);
+    switch (slot) {
+      case DailySummaryNotificationSlot.morning:
+        return l10n.dailySummarySlotMorningTitle(dateKey);
+      case DailySummaryNotificationSlot.noon:
+        return l10n.dailySummarySlotNoonTitle(dateKey);
+      case DailySummaryNotificationSlot.evening:
+        return l10n.dailySummarySlotEveningTitle(dateKey);
+      case DailySummaryNotificationSlot.night:
+        return l10n.dailySummarySlotNightTitle(dateKey);
+      case DailySummaryNotificationSlot.finalReminder:
+        return l10n.dailySummaryTitle(dateKey);
+    }
+  }
+
   List<int>? _dayRangeMillis(String dateKey) {
     try {
       final parts = dateKey.split('-');
@@ -490,10 +519,10 @@ class DailySummaryService {
           'brief': brief,
         });
       } catch (_) {}
-      final langCode = (LocaleService.instance.locale?.languageCode ??
-              WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-          .toLowerCase();
-      final title = langCode.startsWith('zh') ? '今日总结 $dateKey' : 'Daily Summary $dateKey';
+      final title = _notificationTitleForSlot(
+        dateKey,
+        DailySummaryNotificationSlot.finalReminder,
+      );
       // 首选大文本通知（heads-up 条件满足时可弹横幅）
       final ok2 = await _channel.invokeMethod('showNotification', {
         'title': title,

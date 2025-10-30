@@ -480,6 +480,30 @@
       "date": {}
     }
   },
+  "dailySummarySlotMorningTitle": "Morning Briefing {date}",
+  "@dailySummarySlotMorningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNoonTitle": "Midday Briefing {date}",
+  "@dailySummarySlotNoonTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotEveningTitle": "Evening Briefing {date}",
+  "@dailySummarySlotEveningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNightTitle": "Nightly Briefing {date}",
+  "@dailySummarySlotNightTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
   "actionGenerate": "Generate",
   "actionRegenerate": "Regenerate",
   "generateSuccess": "Generated",

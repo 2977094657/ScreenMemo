@@ -859,6 +859,26 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String dailySummarySlotMorningTitle(Object date) {
+    return '晨间速览 $date';
+  }
+
+  @override
+  String dailySummarySlotNoonTitle(Object date) {
+    return '午间速览 $date';
+  }
+
+  @override
+  String dailySummarySlotEveningTitle(Object date) {
+    return '傍晚速览 $date';
+  }
+
+  @override
+  String dailySummarySlotNightTitle(Object date) {
+    return '夜间速览 $date';
+  }
+
+  @override
   String get actionGenerate => '生成';
 
   @override

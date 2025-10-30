@@ -1652,6 +1652,30 @@ abstract class AppLocalizations {
   /// **'Daily Summary {date}'**
   String dailySummaryTitle(Object date);
 
+  /// No description provided for @dailySummarySlotMorningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning Briefing {date}'**
+  String dailySummarySlotMorningTitle(Object date);
+
+  /// No description provided for @dailySummarySlotNoonTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Midday Briefing {date}'**
+  String dailySummarySlotNoonTitle(Object date);
+
+  /// No description provided for @dailySummarySlotEveningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Evening Briefing {date}'**
+  String dailySummarySlotEveningTitle(Object date);
+
+  /// No description provided for @dailySummarySlotNightTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nightly Briefing {date}'**
+  String dailySummarySlotNightTitle(Object date);
+
   /// No description provided for @actionGenerate.
   ///
   /// In en, this message translates to:

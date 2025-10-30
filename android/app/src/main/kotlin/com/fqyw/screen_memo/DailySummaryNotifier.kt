@@ -14,6 +14,7 @@ import android.media.RingtoneManager
 import android.media.AudioAttributes
 import androidx.core.app.NotificationCompat
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * 每日总结提醒：通知显示 + 每日闹钟调度 + 广播接收
@@ -184,6 +185,10 @@ object DailySummaryScheduler {
     const val ACTION_ALARM = "com.fqyw.screen_memo.ACTION_DAILY_SUMMARY"
     private const val REQUEST_CODE_SINGLE = 3001
     private const val REQUEST_CODE_SLOT_BASE = 3100
+    const val EXTRA_SLOT_TYPE = "daily_slot_type"
+    const val EXTRA_SLOT_INDEX = "daily_slot_index"
+    const val SLOT_TYPE_USER = 0
+    const val SLOT_TYPE_FIXED = 1
     private val FIXED_SLOTS = arrayOf(
         intArrayOf(8, 0),
         intArrayOf(12, 0),
@@ -347,6 +352,13 @@ object DailySummaryScheduler {
     private fun buildBroadcastPendingIntent(context: Context, requestCode: Int): PendingIntent {
         val intent = Intent(context, DailySummaryAlarmReceiver::class.java).apply {
             action = ACTION_ALARM
+            putExtra(
+                EXTRA_SLOT_TYPE,
+                if (requestCode == REQUEST_CODE_SINGLE) SLOT_TYPE_USER else SLOT_TYPE_FIXED
+            )
+            if (requestCode >= REQUEST_CODE_SLOT_BASE) {
+                putExtra(EXTRA_SLOT_INDEX, requestCode - REQUEST_CODE_SLOT_BASE)
+            }
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
             PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -375,6 +387,52 @@ object DailySummaryScheduler {
 class DailySummaryAlarmReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "DailySummaryReceiver"
+
+        private fun resolveSlotTexts(
+            context: Context,
+            slotType: Int,
+            slotIndex: Int,
+            dateKey: String
+        ): Pair<String, String> {
+            val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                context.resources.configuration.locales.get(0)
+            } else {
+                @Suppress("DEPRECATION")
+                context.resources.configuration.locale
+            }
+            val lang = locale?.language?.lowercase(Locale.ROOT) ?: "en"
+            val isZh = lang.startsWith("zh")
+
+            val title = when {
+                slotType == DailySummaryScheduler.SLOT_TYPE_USER ->
+                    if (isZh) "每日总结 $dateKey" else "Daily Summary $dateKey"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 0 ->
+                    if (isZh) "晨间速览 $dateKey" else "Morning Briefing $dateKey"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 1 ->
+                    if (isZh) "午间速览 $dateKey" else "Midday Briefing $dateKey"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 2 ->
+                    if (isZh) "傍晚速览 $dateKey" else "Evening Briefing $dateKey"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 3 ->
+                    if (isZh) "夜间速览 $dateKey" else "Nightly Briefing $dateKey"
+                else -> if (isZh) "每日总结 $dateKey" else "Daily Summary $dateKey"
+            }
+
+            val fallback = when {
+                slotType == DailySummaryScheduler.SLOT_TYPE_USER ->
+                    if (isZh) "点击打开查看今日总结" else "Tap to open today's summary"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 0 ->
+                    if (isZh) "点击查看晨间速览" else "Open the morning briefing"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 1 ->
+                    if (isZh) "点击查看午间速览" else "Open the midday briefing"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 2 ->
+                    if (isZh) "点击查看傍晚速览" else "Open the evening briefing"
+                slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 3 ->
+                    if (isZh) "点击查看夜间速览" else "Open the nightly briefing"
+                else -> if (isZh) "点击打开查看今日总结" else "Tap to open today's summary"
+            }
+
+            return Pair(title, fallback)
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -390,10 +448,12 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
                 cal.get(Calendar.MONTH) + 1,
                 cal.get(Calendar.DAY_OF_MONTH)
             )
-            val title = "今日总结 $dateKey"
+            val slotType = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_TYPE, DailySummaryScheduler.SLOT_TYPE_FIXED)
+            val slotIndex = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_INDEX, -1)
+            val (title, fallbackMessage) = resolveSlotTexts(context, slotType, slotIndex, dateKey)
             val sp = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
             val brief = sp.getString("daily_brief_$dateKey", null)
-            val message = brief ?: "点击打开查看今日总结"
+            val message = brief ?: fallbackMessage
             val ok = DailySummaryNotifier.showBigText(context, title, message)
             try { FileLogger.i(TAG, "fired: show notification ok=$ok, briefLen=${message.length}") } catch (_: Exception) {}
 

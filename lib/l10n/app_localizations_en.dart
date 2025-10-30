@@ -895,6 +895,26 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String dailySummarySlotMorningTitle(Object date) {
+    return 'Morning Briefing $date';
+  }
+
+  @override
+  String dailySummarySlotNoonTitle(Object date) {
+    return 'Midday Briefing $date';
+  }
+
+  @override
+  String dailySummarySlotEveningTitle(Object date) {
+    return 'Evening Briefing $date';
+  }
+
+  @override
+  String dailySummarySlotNightTitle(Object date) {
+    return 'Nightly Briefing $date';
+  }
+
+  @override
   String get actionGenerate => 'Generate';
 
   @override

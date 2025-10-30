@@ -480,6 +480,30 @@
       "date": {}
     }
   },
+  "dailySummarySlotMorningTitle": "晨间速览 {date}",
+  "@dailySummarySlotMorningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNoonTitle": "午间速览 {date}",
+  "@dailySummarySlotNoonTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotEveningTitle": "傍晚速览 {date}",
+  "@dailySummarySlotEveningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNightTitle": "夜间速览 {date}",
+  "@dailySummarySlotNightTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
   "actionGenerate": "生成",
   "actionRegenerate": "重生成",
   "generateSuccess": "已生成",
