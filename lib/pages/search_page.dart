@@ -51,6 +51,8 @@ class _SearchPageState extends State<SearchPage> {
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   int _totalResultsCount = 0; // 总结果数(未筛选前)
+  bool _countingTotal = false;
+  int _searchToken = 0;
 
   // 可见范围索引（用于限制仅可见区域附近才进行OCR标注计算）
   int _visibleStartIndex = 0;
@@ -187,17 +189,26 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _search(String query) async {
     if (!mounted) return;
+    final int token = ++_searchToken;
     setState(() {
       _isLoading = true;
       _error = null;
       _results = <ScreenshotRecord>[];
+      _filteredResults = <ScreenshotRecord>[];
       _offset = 0;
       _hasMore = false;
       _lastQuery = query;
+      _countingTotal = false;
     });
 
     if (query.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && token == _searchToken) {
+        setState(() {
+          _isLoading = false;
+          _totalResultsCount = 0;
+          _filteredResults = <ScreenshotRecord>[];
+        });
+      }
       return;
     }
 
@@ -205,7 +216,6 @@ class _SearchPageState extends State<SearchPage> {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      // 并行请求：第一页数据 + 总数
       final list = await ScreenshotService.instance.searchScreenshotsByOcrWithFallback(
         query,
         limit: _pageSize,
@@ -215,29 +225,52 @@ class _SearchPageState extends State<SearchPage> {
         minSize: size?.$1,
         maxSize: size?.$2,
       );
-      final total = await ScreenshotService.instance.countScreenshotsByOcrWithFallback(
+
+      if (!mounted || token != _searchToken) return;
+
+      final bool hasMoreData = list.length >= _pageSize;
+      setState(() {
+        _results = list;
+        _totalResultsCount = list.length;
+        _applyFilters();
+        _offset = list.length;
+        _hasMore = hasMoreData;
+        _isLoading = false;
+        _countingTotal = hasMoreData;
+      });
+      sw.stop();
+      try {
+        print('[Search] query="' + query + '" list=' + list.length.toString() + ' hasMore=' + hasMoreData.toString() + ' ms=' + sw.elapsedMilliseconds.toString());
+      } catch (_) {}
+
+      if (!hasMoreData) {
+        return;
+      }
+
+      ScreenshotService.instance.countScreenshotsByOcrWithFallback(
         query,
         startMillis: range?.$1,
         endMillis: range?.$2,
         minSize: size?.$1,
         maxSize: size?.$2,
-      );
-      if (!mounted) return;
-      setState(() {
-        _results = list;
-        _totalResultsCount = total;
-        _applyFilters();
-        _offset = list.length;
-        _hasMore = list.length >= _pageSize;
-        _isLoading = false;
+      ).then((total) {
+        if (!mounted || token != _searchToken) return;
+        setState(() {
+          _totalResultsCount = total;
+          _countingTotal = false;
+        });
+      }).catchError((_) {
+        if (!mounted || token != _searchToken) return;
+        setState(() {
+          _countingTotal = false;
+        });
       });
-      sw.stop();
-      try { print('[Search] query="' + query + '" list=' + list.length.toString() + ' total=' + total.toString() + ' ms=' + sw.elapsedMilliseconds.toString()); } catch (_) {}
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || token != _searchToken) return;
       setState(() {
         _error = AppLocalizations.of(context).searchFailedError(e.toString());
         _isLoading = false;
+        _countingTotal = false;
       });
     }
   }
@@ -657,14 +690,32 @@ class _SearchPageState extends State<SearchPage> {
           child: Row(
             children: [
               Expanded(
-                child: Text(
-                  AppLocalizations.of(context).searchResultsCount(_totalResultsCount.toString()),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.mutedForeground,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        AppLocalizations.of(context).searchResultsCount(
+                          _countingTotal ? '...' : _totalResultsCount.toString(),
+                        ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_countingTotal) ...[
+                      const SizedBox(width: AppTheme.spacing1),
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+              const SizedBox(width: AppTheme.spacing2),
               InkWell(
                 onTap: _showFilterDialog,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
@@ -1099,7 +1150,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
       checkmarkColor: Theme.of(context).colorScheme.primary,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       shape: RoundedRectangleBorder(
