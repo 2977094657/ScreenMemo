@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
  
 import java.io.File
+import java.util.Locale
 
 /**
  * 轻量级的原生端数据库助手
@@ -307,9 +308,9 @@ object ScreenshotDatabaseHelper {
     }
 
     /**
-     * 读取指定应用的 last_dhash（可能为 null）
+     * 读取指定应用的裁剪画面签名（可能为 null）。
      */
-    fun getLastDHash(context: Context, packageName: String): Long? {
+    fun getLastSignature(context: Context, packageName: String): String? {
         var db: SQLiteDatabase? = null
         var cursor: Cursor? = null
         return try {
@@ -322,7 +323,19 @@ object ScreenshotDatabaseHelper {
             ensureSchema(db)
             cursor = db.rawQuery("SELECT last_dhash FROM app_stats WHERE app_package_name = ? LIMIT 1", arrayOf(packageName))
             if (cursor.moveToFirst()) {
-                if (cursor.isNull(0)) null else cursor.getLong(0)
+                if (cursor.isNull(0)) {
+                    null
+                } else {
+                    when (cursor.getType(0)) {
+                        Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(0).toString()
+                        Cursor.FIELD_TYPE_STRING -> cursor.getString(0)
+                        Cursor.FIELD_TYPE_BLOB -> {
+                            val bytes = cursor.getBlob(0)
+                            bytes?.joinToString(separator = "") { String.format(Locale.US, "%02x", it) }
+                        }
+                        else -> cursor.getString(0)
+                    }
+                }
             } else null
         } catch (_: Exception) {
             null
@@ -333,9 +346,9 @@ object ScreenshotDatabaseHelper {
     }
 
     /**
-     * 设置/更新指定应用的 last_dhash；若记录不存在将插入一条记录（保持其他聚合列为默认值）
+     * 设置/更新指定应用的裁剪画面签名；若记录不存在将插入一条记录（保持其他聚合列为默认值）
      */
-    fun setLastDHash(context: Context, packageName: String, appNameOrNull: String?, value: Long) {
+    fun setLastSignature(context: Context, packageName: String, appNameOrNull: String?, value: String) {
         var db: SQLiteDatabase? = null
         try {
             val dbPath = resolveMasterDbPath(context) ?: return

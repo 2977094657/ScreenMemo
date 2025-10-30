@@ -12,16 +12,17 @@ import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Matrix
-import android.graphics.Rect
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Rect
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
@@ -39,6 +40,8 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.concurrent.timer
@@ -61,9 +64,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         var isServiceRunning = false
     }
     
-    // 去重：记录每个应用的上一张截图的 dHash（64-bit）
-    private val lastDHashByApp: MutableMap<String, Long> = mutableMapOf()
-    private val DEDUP_HASH_THRESHOLD = 5 // Hamming 距离阈值（<=5 视为重复）
+    // 去重：保留裁剪后画面的精确签名（宽高 + SHA-256）
+    private val lastSignatureByApp: MutableMap<String, String> = mutableMapOf()
 
     // 添加WakeLock防止Doze模式
     private var wakeLock: PowerManager.WakeLock? = null
@@ -151,14 +153,73 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
         return false
     }
-    private val FOREGROUND_STABLE_MS = 800L   // 前台应用切换稳定时间阈值
     private val OVERLAY_GRACE_MS = 5000L      // 系统遮罩期间沿用上次稳定应用的宽限时长
+    private val FOREGROUND_EVENT_MAX_AGE_MS = 1_500L
+    private val LONG_WINDOW_EVENT_MAX_AGE_MS = 7_000L
+    private val ACCESSIBILITY_EVENT_MAX_AGE_MS = 1_500L
     private var lastStableMonitoredApp: String? = null
     private var lastStableSeenAt: Long = 0L
-    private var pendingCandidateApp: String? = null
-    private var pendingCandidateSince: Long = 0L
+    @Volatile private var isSelfForeground: Boolean = false
     // 事件优先：记录最近一次 AccessibilityEvent 到达时间
     @Volatile private var lastAccessibilityEventAt: Long = 0L
+
+    private fun isLauncherPackage(packageName: String?): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        if (staticLauncherPackages.contains(packageName)) return true
+        if (resolvedLauncherPackages.contains(packageName)) return true
+        return false
+    }
+
+    private fun refreshResolvedLauncherPackages() {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val resolved = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            val pkgs = resolved.mapNotNull { it.activityInfo?.packageName }
+                .filter { !it.isNullOrBlank() }
+                .toSet()
+            resolvedLauncherPackages = pkgs
+            if (FileLogger.isDebugEnabled()) {
+                FileLogger.d(TAG, "默认桌面解析: $resolvedLauncherPackages")
+            }
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "刷新默认桌面包失败: ${e.message}")
+        }
+    }
+
+    private fun isLauncherCurrentlyForeground(candidatePackage: String): Boolean {
+        return try {
+            val windowList = windows ?: return false
+            if (windowList.isEmpty()) return true
+            var launcherWindowFound = false
+            var conflictingWindowFound = false
+            for (w in windowList) {
+                if (w.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                val root = w.root
+                val pkg = try {
+                    root?.packageName?.toString()
+                } finally {
+                    try { root?.recycle() } catch (_: Exception) {}
+                }
+                if (pkg.isNullOrBlank()) continue
+                when {
+                    pkg == candidatePackage -> launcherWindowFound = true
+                    pkg == packageName -> Unit
+                    isLauncherPackage(pkg) -> Unit
+                    transientOverlayPackages.contains(pkg) -> Unit
+                    isMiuiSystemApp(pkg) -> Unit
+                    isImePackage(pkg) -> Unit
+                    else -> {
+                        conflictingWindowFound = true
+                        break
+                    }
+                }
+            }
+            !conflictingWindowFound && (launcherWindowFound || windowList.none { it.type == AccessibilityWindowInfo.TYPE_APPLICATION })
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "确认桌面窗口失败: ${e.message}")
+            false
+        }
+    }
 
     // 复用 OCR 识别器，避免频繁创建带来的CPU/内存抖动
     @Volatile private var sharedTextRecognizer: com.google.mlkit.vision.text.TextRecognizer? = null
@@ -203,7 +264,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 处理前台应用候选，只有在持续稳定一段时间后才认定为稳定前台应用；
+     * 处理前台应用候选：检测到监控应用立即认定为稳定前台；
      * 对于系统遮罩（通知栏、系统UI），不改变稳定应用，仅更新宽限期内沿用。
      */
     private fun onForegroundCandidateDetected(candidatePackage: String?) {
@@ -212,31 +273,46 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 本应用：切回时清空稳定目标，避免继续将截图归属到上一个应用
+        // 本应用：置顶时仅暂停截屏，保留稳定目标以便离开后快速恢复
         if (candidatePackage == packageName) {
-            FileLogger.i(TAG, "检测到本应用窗口(${candidatePackage})，清空稳定目标并暂停截屏")
-            lastStableMonitoredApp = null
-            lastStableSeenAt = 0L
-            pendingCandidateApp = null
-            pendingCandidateSince = 0L
+            if (!isSelfForeground) {
+                FileLogger.i(TAG, "检测到本应用窗口(${candidatePackage})，暂停截屏但保留稳定目标")
+            } else {
+                FileLogger.d(TAG, "本应用窗口仍在前台，保持暂停状态")
+            }
+            isSelfForeground = true
             // 关键：同步清空当前前台缓存，避免 getCurrentForegroundApp() 兜底返回旧值
             currentForegroundApp = null
             return
         }
 
+        if (isSelfForeground) {
+            FileLogger.d(TAG, "检测到非本应用窗口(${candidatePackage})，恢复前台候选检测")
+        }
+        isSelfForeground = false
+
         // 输入法：忽略，不参与稳定候选
         if (isImePackage(candidatePackage)) {
+            if (lastStableMonitoredApp != null) {
+                lastStableSeenAt = now
+            }
             FileLogger.d(TAG, "检测到输入法窗口 $candidatePackage，忽略该候选")
             return
         }
 
-        // 桌面/Launcher：认为用户已回到桌面/后台 -> 立即清空稳定会话并暂停截屏
-        if (launcherApps.contains(candidatePackage)) {
+        if (!staticLauncherPackages.contains(candidatePackage) && !resolvedLauncherPackages.contains(candidatePackage)) {
+            refreshResolvedLauncherPackages()
+        }
+
+        // 桌面/Launcher：增加窗口验证，避免误判
+        if (isLauncherPackage(candidatePackage)) {
+            if (!isLauncherCurrentlyForeground(candidatePackage)) {
+                FileLogger.d(TAG, "检测到桌面候选($candidatePackage)但窗口仍显示其他应用，忽略")
+                return
+            }
             FileLogger.i(TAG, "检测到桌面/Launcher: $candidatePackage，清除稳定会话并暂停截屏")
             lastStableMonitoredApp = null
             lastStableSeenAt = 0L
-            pendingCandidateApp = null
-            pendingCandidateSince = 0L
             // 同步清空当前前台缓存
             currentForegroundApp = null
             return
@@ -244,6 +320,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         // 系统遮罩：沿用上次稳定应用，不更新候选（宽限逻辑在 getScreenshotTargetApp 中执行）
         if (transientOverlayPackages.contains(candidatePackage) || isMiuiSystemApp(candidatePackage)) {
+            if (lastStableMonitoredApp != null) {
+                lastStableSeenAt = now
+            }
             FileLogger.d(TAG, "检测到系统遮罩/系统UI: $candidatePackage，维持当前稳定应用: $lastStableMonitoredApp")
             return
         }
@@ -257,24 +336,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 相同于当前稳定应用：刷新最近出现时间
         if (lastStableMonitoredApp == candidatePackage) {
             lastStableSeenAt = now
-            pendingCandidateApp = null
             FileLogger.d(TAG, "稳定前台应用保持: $lastStableMonitoredApp")
             return
         }
 
-        // 候选稳定化判定
-        if (pendingCandidateApp == candidatePackage) {
-            if (now - pendingCandidateSince >= FOREGROUND_STABLE_MS) {
-                lastStableMonitoredApp = candidatePackage
-                lastStableSeenAt = now
-                pendingCandidateApp = null
-                FileLogger.i(TAG, "前台应用稳定化: $lastStableMonitoredApp (阈值 ${FOREGROUND_STABLE_MS}ms)")
-            }
-        } else {
-            pendingCandidateApp = candidatePackage
-            pendingCandidateSince = now
-            FileLogger.d(TAG, "检测到新的前台候选: $candidatePackage，开始稳定计时")
-        }
+        // 去掉稳定晋升：检测到候选即刻认定为稳定前台
+        lastStableMonitoredApp = candidatePackage
+        lastStableSeenAt = now
+        FileLogger.i(TAG, "前台应用更新: $lastStableMonitoredApp")
     }
 
 
@@ -283,7 +352,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
 
     // 首页/桌面应用包名列表
-    private val launcherApps = setOf(
+    private val staticLauncherPackages = setOf(
         "com.android.launcher",
         "com.android.launcher3",
         "com.miui.home",
@@ -295,6 +364,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         "com.realme.launcher",
         "com.xiaomi.launcher"
     )
+
+    @Volatile private var resolvedLauncherPackages: Set<String> = emptySet()
     
     override fun onCreate() {
         super.onCreate()
@@ -358,6 +429,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
                     // 刷新启用的输入法集合，避免输入法被判为前台
                     refreshImePackages(force = true)
+                    refreshResolvedLauncherPackages()
 
                     // 前台应用检测改为在定时截屏运行时启动（降低后台轮询功耗）
 
@@ -548,11 +620,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         // 更新看门狗心跳
         AccessibilityServiceWatchdog.updateHeartbeat()
 
-        // 处理无障碍事件，检测当前前台应用（引入稳定化与遮罩容错）
+        // 处理无障碍事件，检测当前前台应用（含遮罩容错）
         event?.let {
             lastAccessibilityEventAt = System.currentTimeMillis()
             if (it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 val candidate = it.packageName?.toString()
+                val eventAge = try { SystemClock.uptimeMillis() - it.eventTime } catch (_: Exception) { 0L }
+                if (eventAge > ACCESSIBILITY_EVENT_MAX_AGE_MS) {
+                    FileLogger.d(TAG, "忽略过期的无障碍前台事件: $candidate, age=${eventAge}ms")
+                    return@let
+                }
                 val prevStable = lastStableMonitoredApp
                 onForegroundCandidateDetected(candidate)
                 val stable = lastStableMonitoredApp
@@ -576,7 +653,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
         when {
             // 检测到首页/桌面应用
-            launcherApps.contains(packageName) -> {
+            isLauncherPackage(packageName) -> {
                 if (currentSessionApp != null) {
                     FileLogger.d(TAG, "检测到首页: $packageName，记录会话结束: $currentSessionApp")
                     currentSessionApp = null
@@ -705,7 +782,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                     // 保存前进行“自动裁剪系统栏 + dHash 去重”判断（仍保存完整图）
                                     try {
                                         if (isDuplicateScreenshot(bitmap, targetApp)) {
-                                            FileLogger.i(TAG, "检测到重复截图（基于系统栏裁剪 + dHash），已跳过保存: $targetApp")
+                                            FileLogger.i(TAG, "检测到重复截图（裁剪系统栏后画面完全一致），已跳过保存: $targetApp")
                                             // 视为成功但无新文件
                                             callback(true, null)
                                             return
@@ -750,7 +827,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 基于“自动裁剪系统栏”的 dHash 去重：仅用于判定，不影响最终保存的完整截图
+     * 基于“自动裁剪系统栏”的精确像素对比：仅当裁剪后画面完全一致时才视为重复。
      */
     private fun isDuplicateScreenshot(originalBitmap: Bitmap, packageName: String): Boolean {
         // 1) 归一化方向，并确保为可读写（非硬件）位图
@@ -770,40 +847,42 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         var roiY = cropTop
         var roiH = h - cropTop - cropBottom
         if (roiH < 16) {
-            // 退化策略：避免 ROI 过小导致哈希不稳定
+            // 退化策略：避免 ROI 过小导致签名不稳定
             roiY = (h * 0.05f).toInt().coerceIn(0, h - 1)
             roiH = (h * 0.90f).toInt().coerceAtLeast(16).coerceAtMost(h - roiY)
         }
 
         val roi = try { Bitmap.createBitmap(normalized, 0, roiY, w, roiH) } catch (_: Exception) { normalized }
 
-        // 3) 计算 64-bit dHash
-        val curHash = computeDHash64FromBitmap(roi)
+        // 3) 计算精确签名（宽高 + SHA-256）
+        val currentSignature = computeExactSignature(roi)
 
-        // 4) 读取上一张哈希（内存优先，其次持久化）
-        val prevHash = lastDHashByApp[packageName]
-            ?: ScreenshotDatabaseHelper.getLastDHash(this, packageName)
-        if (prevHash != null) {
-            val dist = java.lang.Long.bitCount(curHash xor prevHash)
-            if (dist <= DEDUP_HASH_THRESHOLD) {
-                return true
+        // 4) 读取上一张签名（内存优先，其次持久化）
+        val previousSignature = lastSignatureByApp[packageName]
+            ?: ScreenshotDatabaseHelper.getLastSignature(this, packageName)
+        if (previousSignature != null && previousSignature == currentSignature) {
+            if (roi !== normalized && roi !== originalBitmap) {
+                try { roi.recycle() } catch (_: Exception) {}
             }
+            return true
         }
 
-        // 5) 更新哈希
-        lastDHashByApp[packageName] = curHash
-        // DB 持久化 last_dhash；appName 可为 null，Helper 内部会兜底为包名
-        ScreenshotDatabaseHelper.setLastDHash(this, packageName, null, curHash)
+        // 5) 更新签名
+        lastSignatureByApp[packageName] = currentSignature
+        ScreenshotDatabaseHelper.setLastSignature(this, packageName, null, currentSignature)
+        if (roi !== normalized && roi !== originalBitmap) {
+            try { roi.recycle() } catch (_: Exception) {}
+        }
         return false
     }
 
     /**
-     * 将位图标准化为便于计算哈希的方向与格式（复制为 ARGB_8888，依据设备旋转做最小必要旋转）。
+     * 将位图标准化为便于计算签名的方向与格式（复制为 ARGB_8888，依据设备旋转做最小必要旋转）。
      */
     private fun normalizeBitmapOrientationForHash(bitmap: Bitmap): Bitmap {
         val swBitmap = try {
             if (bitmap.config == Bitmap.Config.HARDWARE || bitmap.config == null) {
-                FileLogger.d(TAG, "位图为硬件配置，拷贝为ARGB_8888用于哈希计算")
+                FileLogger.d(TAG, "位图为硬件配置，拷贝为ARGB_8888用于签名计算")
                 bitmap.copy(Bitmap.Config.ARGB_8888, false)
             } else bitmap
         } catch (_: Exception) { bitmap }
@@ -843,32 +922,46 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 计算 64-bit dHash（9x8 灰度差分）。
+     * 计算裁剪后画面的精确签名（宽高 + 像素 SHA-256）。
      */
-    private fun computeDHash64FromBitmap(src: Bitmap): Long {
-        val resized = try { Bitmap.createScaledBitmap(src, 9, 8, true) } catch (_: Exception) { src }
-        var bitIndex = 0
-        var hash = 0L
-
-        fun luminance(x: Int, y: Int): Int {
-            val c = resized.getPixel(x, y)
-            val r = (c shr 16) and 0xFF
-            val g = (c shr 8) and 0xFF
-            val b = (c) and 0xFF
-            return (r + g + b) / 3
+    private fun computeExactSignature(src: Bitmap): String {
+        val width = src.width
+        val height = src.height
+        if (width <= 0 || height <= 0) {
+            return "${width}x${height}:invalid"
         }
 
-        for (y in 0 until 8) {
-            for (x in 0 until 8) {
-                val left = luminance(x, y)
-                val right = luminance(x + 1, y)
-                if (left > right) {
-                    hash = hash or (1L shl bitIndex)
-                }
-                bitIndex++
+        val argbBitmap = if (src.config == Bitmap.Config.ARGB_8888) {
+            src
+        } else {
+            try {
+                src.copy(Bitmap.Config.ARGB_8888, false)
+            } catch (_: Exception) {
+                src
             }
         }
-        return hash
+
+        val byteCount = try {
+            argbBitmap.byteCount
+        } catch (_: Exception) {
+            width * height * 4
+        }
+
+        val buffer = ByteBuffer.allocate(byteCount)
+        argbBitmap.copyPixelsToBuffer(buffer)
+        val bytes = buffer.array()
+        val length = buffer.position()
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(bytes, 0, length)
+        val hashBytes = digest.digest()
+        val hex = hashBytes.joinToString(separator = "") { String.format(Locale.US, "%02x", it) }
+
+        if (argbBitmap !== src) {
+            try { argbBitmap.recycle() } catch (_: Exception) {}
+        }
+
+        return "${width}x${height}:$hex"
     }
 
     private fun getStatusBarHeight(): Int {
@@ -1201,9 +1294,23 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         refreshImePackages(force = false)
         val visibleTop = getForegroundAppUsingUsageStats() ?: getCurrentForegroundApp()
 
-        // 本应用置顶：暂停截屏，避免将截图归属到上一稳定前台
-        if (visibleTop != null && visibleTop == packageName) {
-            FileLogger.d(TAG, "顶层为本应用(${visibleTop})，暂停截屏，等待新会话")
+        if (visibleTop == packageName) {
+            if (!isSelfForeground) {
+                FileLogger.d(TAG, "顶层为本应用(${visibleTop})，暂停截屏，等待新会话")
+            } else {
+                FileLogger.d(TAG, "顶层仍为本应用，保持暂停截屏")
+            }
+            isSelfForeground = true
+            return null
+        }
+
+        if (visibleTop != null && isSelfForeground) {
+            FileLogger.d(TAG, "检测到非本应用顶层(${visibleTop})，恢复截屏候选")
+            isSelfForeground = false
+        }
+
+        if (visibleTop == null && isSelfForeground) {
+            FileLogger.d(TAG, "顶层未知但记录本应用在前，暂停截屏")
             return null
         }
 
@@ -1213,13 +1320,15 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             return stable
         }
 
-        // 桌面/Launcher：清空稳定监控并暂停截屏
-        if (visibleTop != null && launcherApps.contains(visibleTop)) {
+        // 桌面/Launcher：增加窗口验证避免误判
+        if (visibleTop != null && isLauncherPackage(visibleTop)) {
+            if (!isLauncherCurrentlyForeground(visibleTop)) {
+                FileLogger.d(TAG, "顶层候选桌面($visibleTop)但窗口仍为监控应用，继续归属: $stable")
+                return stable
+            }
             FileLogger.i(TAG, "顶层为桌面/Launcher($visibleTop)，清空稳定监控并暂停截屏")
             lastStableMonitoredApp = null
             lastStableSeenAt = 0L
-            pendingCandidateApp = null
-            pendingCandidateSince = 0L
             return null
         }
 
@@ -1235,7 +1344,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 顶层为监控应用（可能与stable相同或不同），在未稳定化前仍归属stable
+        // 顶层为监控应用（可能与stable相同或不同），继续归属稳定前台
         FileLogger.d(TAG, "顶层为监控应用($visibleTop)，归属稳定前台: $stable")
         return stable
     }
@@ -2303,7 +2412,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 updateAppSession(stable)
             }
 
-            // 兜底：若本次 UsageStats 无结果且未稳定化，尝试长窗口事件与窗口列表
+            // 兜底：若本次 UsageStats 无结果且当前尚未确认稳定前台，尝试长窗口事件与窗口列表
             if (candidate == null && (lastStableMonitoredApp == null || lastStableMonitoredApp!!.isEmpty())) {
                 // 1) 长窗口 UsageEvents（例如 15 秒）
                 val longWindowPkg = getForegroundAppUsingUsageEventsLongWindow(15_000L)
@@ -2345,6 +2454,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             // 获取使用事件
             val usageEvents = usageStats.queryEvents(startTime, currentTime)
             var lastEvent: UsageEvents.Event? = null
+            var lastEventTimestamp = -1L
             var eventCount = 0
 
             // 遍历事件，找到最近的前台事件（前台/恢复皆可）
@@ -2359,12 +2469,18 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 if (isForegroundLike) {
                     if (lastEvent == null || event.timeStamp > lastEvent!!.timeStamp) {
                         lastEvent = event
+                        lastEventTimestamp = event.timeStamp
                     }
                 }
             }
 
-            var result = lastEvent?.packageName
+            val result = lastEvent?.packageName
             if (result != null) {
+                val age = if (lastEventTimestamp > 0) currentTime - lastEventTimestamp else 0L
+                if (lastEventTimestamp > 0 && age > FOREGROUND_EVENT_MAX_AGE_MS) {
+                    FileLogger.d(TAG, "UsageStats忽略过期事件: $result, age=${age}ms (共${eventCount}个事件)")
+                    return null
+                }
                 FileLogger.d(TAG, "UsageStats检测到前台应用: $result (共${eventCount}个事件)")
             } else {
                 FileLogger.d(TAG, "UsageStats未检测到前台应用 (共${eventCount}个事件)")
@@ -2388,6 +2504,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val from = (now - windowMs).coerceAtLeast(0)
             val events = usageStats.queryEvents(from, now)
             var lastPkg: String? = null
+            var lastPkgTimestamp = 0L
             var total = 0
             var fgHits = 0
             val tmp = UsageEvents.Event()
@@ -2403,10 +2520,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     val pkg = tmp.packageName
                     if (pkg != null && pkg != packageName) {
                         lastPkg = pkg
+                        lastPkgTimestamp = tmp.timeStamp
                     }
                 }
             }
             if (lastPkg != null) {
+                val age = now - lastPkgTimestamp
+                if (lastPkgTimestamp > 0 && age > LONG_WINDOW_EVENT_MAX_AGE_MS) {
+                    FileLogger.d(TAG, "UsageEvents 长窗口忽略过期事件: ${lastPkg}, age=${age}ms, total=${total}")
+                    return null
+                }
                 FileLogger.d(TAG, "UsageEvents 长窗口: total=${total}, fgHits=${fgHits}, last=${lastPkg}")
             } else {
                 FileLogger.d(TAG, "UsageEvents 长窗口: 无命中, total=${total}")
