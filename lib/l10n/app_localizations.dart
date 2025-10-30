@@ -2951,14 +2951,8 @@ abstract class AppLocalizations {
   /// No description provided for @aiSelfModeEnabledToast.
   ///
   /// In en, this message translates to:
-  /// **'Self mode: using your data as context'**
+  /// **'Personal assistant: conversations use your data context'**
   String get aiSelfModeEnabledToast;
-
-  /// No description provided for @aiDirectChatModeEnabledToast.
-  ///
-  /// In en, this message translates to:
-  /// **'Direct chat: no personal context'**
-  String get aiDirectChatModeEnabledToast;
 
   /// No description provided for @selectModelWithCounts.
   ///
@@ -3218,28 +3212,16 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get themeModeDark;
 
-  /// No description provided for @aiEmptyDirectTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Start a conversation'**
-  String get aiEmptyDirectTitle;
-
-  /// No description provided for @aiEmptyDirectSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Ask anything. Your messages will not use personal context.'**
-  String get aiEmptyDirectSubtitle;
-
   /// No description provided for @aiEmptySelfTitle.
   ///
   /// In en, this message translates to:
-  /// **'Self mode is on'**
+  /// **'Personal assistant ready'**
   String get aiEmptySelfTitle;
 
   /// No description provided for @aiEmptySelfSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Ask questions. I will use your data as context.'**
+  /// **'Ask anything. I will use your data as context.'**
   String get aiEmptySelfSubtitle;
 }
 

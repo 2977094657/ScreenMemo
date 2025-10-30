@@ -1588,10 +1588,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get answerLabel => 'Answer:';
 
   @override
-  String get aiSelfModeEnabledToast => '已切换到“自我模式”：对话将使用您的数据上下文';
-
-  @override
-  String get aiDirectChatModeEnabledToast => '已切换到“普通对话”：不使用个人数据上下文';
+  String get aiSelfModeEnabledToast => '个人助手：对话将结合您的数据上下文';
 
   @override
   String selectModelWithCounts(Object filtered, Object total) {
@@ -1734,14 +1731,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeModeDark => '深色';
 
   @override
-  String get aiEmptyDirectTitle => '开始对话';
+  String get aiEmptySelfTitle => '个人助手已就绪';
 
   @override
-  String get aiEmptyDirectSubtitle => '可以问我任何问题。当前为普通对话，不使用个人上下文。';
-
-  @override
-  String get aiEmptySelfTitle => '已开启自我模式';
-
-  @override
-  String get aiEmptySelfSubtitle => '直接提问。我会结合您的数据上下文来回答。';
+  String get aiEmptySelfSubtitle => '直接提问，我会结合您的数据上下文来回答。';
 }

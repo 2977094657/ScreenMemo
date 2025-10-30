@@ -73,8 +73,6 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   bool _promptExpanded = false;
 
   // ——— AI 交互样式与流式状态（仅影响本页 UI，不改动全局样式） ———
-  // 自我模式：开启后走意图分析+上下文检索流程；关闭则为普通对话
-  bool _selfMode = true;
   bool _deepThinking = false; // "深度思考"开关（先做样式，后续可接推理参数）
   bool _webSearch = false;    // "联网搜索"开关（先做样式，后续可接搜索参数）
   bool _inStreaming = false;  // 当前是否处于助手流式回复中（驱动"思考中"可视化）
@@ -91,7 +89,7 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
   bool _replaceAssistantContentOnNextToken = false;
   // 每条助手消息附带的证据图片（索引 -> 附件列表）
   final Map<int, List<EvidenceImageAttachment>> _attachmentsByIndex = <int, List<EvidenceImageAttachment>>{};
-  // 上一轮自我模式使用的上下文包（用于后续消息在 AI 判定时可复用）
+  // 上一轮个人助手使用的上下文包（用于后续消息在 AI 判定时可复用）
   QueryContextPack? _lastCtxPack;
   // 上一轮意图结果（用于为下一轮提供 prev hint）
   IntentResult? _lastIntent;
@@ -950,129 +948,6 @@ void _scheduleAutoScroll() {
       });
       _inputController.clear();
       _scheduleAutoScroll();
-
-      // 模式分支：普通对话 -> 直接发送，不做意图/上下文；自我模式 -> 原有阶段流程
-      if (!_selfMode) {
-        if (_streamEnabled) {
-          // 直接走流式对话（不含推理内容），仅展示助手内容
-          final int assistantIdx = _messages.length;
-          setState(() {
-            _inStreaming = true;
-            _thinkingText = '';
-            _showThinkingContent = false;
-            _messages = List<AIMessage>.from(_messages)
-              ..add(AIMessage(role: 'assistant', content: '', createdAt: DateTime.now()));
-            _currentAssistantIndex = assistantIdx;
-            _reasoningByIndex[assistantIdx] = '';
-            _reasoningDurationByIndex.remove(assistantIdx);
-          });
-          _startDots();
-          _scheduleAutoScroll();
-
-          try {
-            final stream = _chat.sendMessageStreamedV2(text);
-            await for (final evt in stream) {
-              if (!mounted) return;
-              if (evt.kind == 'reasoning') {
-                // 普通模式：也展示推理内容到当前助手消息的 Reasoning 卡片
-                setState(() {
-                  _thinkingText += evt.data;
-                  final idx = _currentAssistantIndex;
-                  if (idx != null) {
-                    _reasoningByIndex[idx] = (_reasoningByIndex[idx] ?? '') + evt.data;
-                  }
-                });
-                _scheduleAutoScroll();
-                continue;
-              }
-              setState(() {
-                final lastIdx = _messages.length - 1;
-                final last = _messages[lastIdx];
-                if (last.role == 'assistant') {
-                  final updated = AIMessage(
-                    role: 'assistant',
-                    content: last.content + evt.data,
-                    createdAt: last.createdAt,
-                  );
-                  final newList = List<AIMessage>.from(_messages);
-                  newList[lastIdx] = updated;
-                  _messages = newList;
-                }
-              });
-              _scheduleAutoScroll();
-            }
-          } catch (e) {
-            if (!mounted) return;
-            setState(() {
-              _inStreaming = false;
-              if (_messages.isNotEmpty && _messages.last.role == 'assistant') {
-                final newList = List<AIMessage>.from(_messages);
-                newList[_messages.length - 1] = AIMessage(role: 'error', content: e.toString());
-                _messages = newList;
-              } else {
-                _messages = List<AIMessage>.from(_messages)..add(AIMessage(role: 'error', content: e.toString()));
-              }
-            });
-            _stopDots();
-            _scheduleAutoScroll();
-            rethrow;
-          }
-
-          if (mounted) {
-            setState(() {
-              _inStreaming = false;
-              final idx = _currentAssistantIndex;
-              if (idx != null && idx >= 0 && idx < _messages.length) {
-                _reasoningDurationByIndex[idx] = DateTime.now().difference(_messages[idx].createdAt);
-              }
-              _currentAssistantIndex = null;
-            });
-            _stopDots();
-            _scheduleAutoScroll();
-          }
-        } else {
-          // 非流式：直接发送并一次性替换
-          final int assistantIdx = _messages.length;
-          setState(() {
-            _messages = List<AIMessage>.from(_messages)
-              ..add(AIMessage(role: 'assistant', content: '', createdAt: DateTime.now()));
-          });
-          try {
-            final assistant = await _chat.sendMessage(text);
-            if (!mounted) return;
-            setState(() {
-              final lastIdx = _messages.length - 1;
-              // 非流式普通模式：尝试从正文提取 <think> 思考内容并在 UI 中展示
-              final String original = assistant.content;
-              final RegExp thinkRe = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', dotAll: true);
-              String reasoning = '';
-              for (final m in thinkRe.allMatches(original)) {
-                final seg = (m.group(1) ?? '').trim();
-                if (seg.isNotEmpty) {
-                  if (reasoning.isNotEmpty) reasoning += '\n\n';
-                  reasoning += seg;
-                }
-              }
-              final cleaned = original.replaceAll(thinkRe, '');
-              _messages[lastIdx] = AIMessage(
-                role: 'assistant',
-                content: cleaned,
-                createdAt: _messages[lastIdx].createdAt,
-              );
-              if (reasoning.isNotEmpty) {
-                _reasoningByIndex[lastIdx] = reasoning;
-              }
-            });
-          } catch (e) {
-            if (!mounted) return;
-            setState(() {
-              final lastIdx = _messages.length - 1;
-              _messages[lastIdx] = AIMessage(role: 'error', content: e.toString());
-            });
-          }
-        }
-        return; // 普通模式流程结束
-      }
 
       if (_streamEnabled) {
         // 追加一个空的助手消息作为占位，并进入"思考中"可视化状态
@@ -2441,24 +2316,15 @@ void _scheduleAutoScroll() {
   Widget _buildChatList() {
     if (_messages.isEmpty) {
       final l10n = AppLocalizations.of(context);
-      final String title = _selfMode ? l10n.aiEmptySelfTitle : l10n.aiEmptyDirectTitle;
-      final String subtitle = _selfMode ? l10n.aiEmptySelfSubtitle : l10n.aiEmptyDirectSubtitle;
-      try { FlutterLogger.nativeInfo('UI', 'ChatEmpty: self='+(_selfMode ? '1' : '0')+' useGradientGlow=1'); } catch (_) {}
+      try { FlutterLogger.nativeInfo('UI', 'ChatEmpty: assistant=1 useGradientGlow=1'); } catch (_) {}
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 自我模式：魔法图标；普通模式：默认颜色的聊天图标（非渐变）
-            _selfMode
-                ? _buildMagicIcon(size: 40, withGlow: false)
-                : Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 40,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+            _buildMagicIcon(size: 40, withGlow: false),
             const SizedBox(height: AppTheme.spacing4),
             Text(
-              title,
+              l10n.aiEmptySelfTitle,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -2467,7 +2333,7 @@ void _scheduleAutoScroll() {
             ),
             const SizedBox(height: AppTheme.spacing2),
             Text(
-              subtitle,
+              l10n.aiEmptySelfSubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -3026,41 +2892,15 @@ void _scheduleAutoScroll() {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 左侧圆形模式切换按钮（普通 <-> 自我）
-            Container(
-              width: 32,
-              height: 32,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.transparent,
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () {
-                    setState(() {
-                      _selfMode = !_selfMode;
-                    });
-                    if (mounted) {
-                      final t = AppLocalizations.of(context);
-                      UINotifier.center(
-                        context,
-                        _selfMode
-                            ? t.aiSelfModeEnabledToast
-                            : t.aiDirectChatModeEnabledToast,
-                      );
-                    }
-                  },
-                  child: Center(
-                    child: _selfMode
-                        ? _buildMagicIcon(size: 18, withGlow: true)
-                        : Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 18,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                  ),
+            // 左侧个人助手状态提示
+            Tooltip(
+              message: AppLocalizations.of(context).aiSelfModeEnabledToast,
+              preferBelow: false,
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: _buildMagicIcon(size: 18, withGlow: true),
                 ),
               ),
             ),
@@ -3149,10 +2989,8 @@ void _scheduleAutoScroll() {
         ),
       );
 
-    // 自我模式：普通边框；在流式时叠加"流光"效果；普通模式：不叠加
-    return _selfMode
-        ? _ShimmerBorder(active: _inStreaming, child: barInner)
-        : barInner;
+    // 个人助手：在流式时叠加"流光"效果
+    return _ShimmerBorder(active: _inStreaming, child: barInner);
   }
    
   

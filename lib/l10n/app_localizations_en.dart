@@ -1637,10 +1637,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get answerLabel => 'Answer:';
 
   @override
-  String get aiSelfModeEnabledToast => 'Self mode: using your data as context';
-
-  @override
-  String get aiDirectChatModeEnabledToast => 'Direct chat: no personal context';
+  String get aiSelfModeEnabledToast =>
+      'Personal assistant: conversations use your data context';
 
   @override
   String selectModelWithCounts(Object filtered, Object total) {
@@ -1789,16 +1787,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeModeDark => 'Dark';
 
   @override
-  String get aiEmptyDirectTitle => 'Start a conversation';
-
-  @override
-  String get aiEmptyDirectSubtitle =>
-      'Ask anything. Your messages will not use personal context.';
-
-  @override
-  String get aiEmptySelfTitle => 'Self mode is on';
+  String get aiEmptySelfTitle => 'Personal assistant ready';
 
   @override
   String get aiEmptySelfSubtitle =>
-      'Ask questions. I will use your data as context.';
+      'Ask anything. I will use your data as context.';
 }

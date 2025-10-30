@@ -795,8 +795,7 @@
   "reasoningLabel": "Reasoning:",
   "answerLabel": "Answer:",
 
-  "aiSelfModeEnabledToast": "已切换到“自我模式”：对话将使用您的数据上下文",
-  "aiDirectChatModeEnabledToast": "已切换到“普通对话”：不使用个人数据上下文",
+  "aiSelfModeEnabledToast": "个人助手：对话将结合您的数据上下文",
 
   "selectModelWithCounts": "选择模型（{filtered}/{total}）",
   "@selectModelWithCounts": { "placeholders": { "filtered": {}, "total": {} } },
@@ -852,8 +851,6 @@
   "themeModeLight": "浅色",
   "themeModeDark": "深色"
   ,
-  "aiEmptyDirectTitle": "开始对话",
-  "aiEmptyDirectSubtitle": "可以问我任何问题。当前为普通对话，不使用个人上下文。",
-  "aiEmptySelfTitle": "已开启自我模式",
-  "aiEmptySelfSubtitle": "直接提问。我会结合您的数据上下文来回答。"
+  "aiEmptySelfTitle": "个人助手已就绪",
+  "aiEmptySelfSubtitle": "直接提问，我会结合您的数据上下文来回答。"
 }
