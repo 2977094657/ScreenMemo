@@ -13,15 +13,7 @@
 -dontwarn java.lang.invoke.*
 -dontwarn org.codehaus.mojo.animal_sniffer.*
 
-# Umeng SDK keep rules (APM/Analytics)
--keep class com.umeng.** { *; }
--dontwarn com.umeng.**
-
-# EFS SDK (Umeng APM internal net monitor)
--keep class com.efs.** { *; }
--dontwarn com.efs.**
-
-# OkHttp (ensure types are retained if referenced)
+# OkHttp（每日总结等 HTTP 请求）
 -dontwarn okhttp3.**
 
 # ML Kit Text Recognition keep rules

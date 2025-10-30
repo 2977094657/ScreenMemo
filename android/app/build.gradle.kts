@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -36,20 +34,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // Inject Umeng placeholders from local.properties/env for manifest
-        val props = Properties().apply {
-            val f = rootProject.file("local.properties")
-            if (f.exists()) f.inputStream().use { load(it) }
-        }
-        val umengAppKey = (props.getProperty("UMENG_APPKEY")
-            ?: System.getenv("UMENG_APPKEY")
-            ?: "")
-        val umengChannel = (props.getProperty("UMENG_CHANNEL")
-            ?: System.getenv("UMENG_CHANNEL")
-            ?: "official")
-        manifestPlaceholders["UMENG_APPKEY"] = umengAppKey
-        manifestPlaceholders["UMENG_CHANNEL"] = umengChannel
     }
 
     buildTypes {
@@ -78,12 +62,7 @@ dependencies {
     // 启用核心库 desugaring（满足 flutter_local_notifications 的 AAR 要求）
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
-    // Umeng Common SDK (Analytics base) + ASMS + APM (Crash/ANR/卡顿/性能)
-    implementation("com.umeng.umsdk:common:9.8.5")
-    implementation("com.umeng.umsdk:asms:1.8.7.2")
-    implementation("com.umeng.umsdk:apm:2.0.4")
-
-    // OkHttp (required by Umeng APM's EFS net monitor classes referenced at runtime)
+    // OkHttp：用于每日总结/分段上传等 HTTP 调用
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ML Kit: 中文文本识别（离线模型随 APK 打包）

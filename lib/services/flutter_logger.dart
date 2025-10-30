@@ -95,31 +95,17 @@ class FlutterLogger {
   static Future<void> nativeWarn(String tag, String message) => native('warn', tag, message);
   static Future<void> nativeError(String tag, String message) => native('error', tag, message);
 
-  // ===== 友盟（Umeng）日志/错误上报桥接 =====
+  // ===== 友盟（Umeng）日志/错误上报桥接（已移除 SDK，方法保持为空实现以兼容旧调用） =====
   static Future<void> umengSetUserId(String userId) async {
-    try {
-      await _channel.invokeMethod('umengSetUserId', {
-        'userId': userId,
-      });
-    } catch (_) {}
+    // no-op: Umeng SDK 已移除
   }
 
   static Future<void> umengBreadcrumb(String message, {String tag = 'Flutter'}) async {
-    try {
-      await _channel.invokeMethod('umengBreadcrumb', {
-        'message': message,
-        'tag': tag,
-      });
-    } catch (_) {}
+    // no-op: Umeng SDK 已移除
   }
 
   static Future<void> umengReportError(Object error, [StackTrace? stackTrace]) async {
-    try {
-      await _channel.invokeMethod('umengReportError', {
-        'message': error.toString(),
-        'stack': (stackTrace ?? StackTrace.current).toString(),
-      });
-    } catch (_) {}
+    // no-op: Umeng SDK 已移除
   }
 
   static bool _shouldLog(LogLevel level) => level.index >= minLevel.index;
