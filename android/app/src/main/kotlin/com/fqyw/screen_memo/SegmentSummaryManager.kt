@@ -454,10 +454,13 @@ object SegmentSummaryManager {
                 val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
                 val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
 
-                val customHeaderLang = try {
+                val extraHeader = try {
+                    AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_segment_extra_zh" else "prompt_segment_extra_en")
+                } catch (_: Exception) { null }
+                val legacyHeaderLang = try {
                     AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_segment_zh" else "prompt_segment_en")
                 } catch (_: Exception) { null }
-                val customHeaderLegacy = try {
+                val legacyHeader = try {
                     AISettingsNative.readSettingValue(ctx, "prompt_segment")
                 } catch (_: Exception) { null }
 
@@ -500,9 +503,17 @@ object SegmentSummaryManager {
                     "overall_summary: \"(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info\""
 
                 val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
-
-                val header =
-                    languagePolicy + "\n\n" + ((customHeaderLang ?: customHeaderLegacy) ?: getByLang(ctx, R.string.segment_prompt_default_zh, R.string.segment_prompt_default_en, isZhLang))
+                val baseHeader = getByLang(ctx, R.string.segment_prompt_default_zh, R.string.segment_prompt_default_en, isZhLang)
+                val addon = sequenceOf(extraHeader, legacyHeaderLang, legacyHeader)
+                    .firstOrNull { it != null && it.trim().isNotEmpty() }
+                    ?.trim()
+                val headerBuilder = StringBuilder()
+                headerBuilder.append(languagePolicy).append("\n\n").append(baseHeader)
+                if (!addon.isNullOrEmpty()) {
+                    val label = if (isZhLang) "附加说明：" else "Additional instructions:"
+                    headerBuilder.append("\n\n").append(label).append('\n').append(addon)
+                }
+                val header = headerBuilder.toString()
 
                 // 构造描述（仅时间点与应用，不包含OCR文本）
                 val sb = StringBuilder()
@@ -1320,8 +1331,9 @@ object SegmentSummaryManager {
         val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
         val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
 
-        val customHeaderLang = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_zh" else "prompt_merge_en") } catch (_: Exception) { null }
-        val customHeaderLegacy = try { AISettingsNative.readSettingValue(ctx, "prompt_merge") } catch (_: Exception) { null }
+        val extraHeader = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_extra_zh" else "prompt_merge_extra_en") } catch (_: Exception) { null }
+        val legacyHeaderLang = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_zh" else "prompt_merge_en") } catch (_: Exception) { null }
+        val legacyHeader = try { AISettingsNative.readSettingValue(ctx, "prompt_merge") } catch (_: Exception) { null }
 
         val defaultHeaderZh =
             "请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：\n" +
@@ -1359,8 +1371,17 @@ object SegmentSummaryManager {
             "Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown)."
 
         val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
-
-        val header = languagePolicy + "\n\n" + ((customHeaderLang ?: customHeaderLegacy) ?: getByLang(ctx, R.string.merge_prompt_default_zh, R.string.merge_prompt_default_en, isZhLang))
+        val baseHeader = getByLang(ctx, R.string.merge_prompt_default_zh, R.string.merge_prompt_default_en, isZhLang)
+        val addon = sequenceOf(extraHeader, legacyHeaderLang, legacyHeader)
+            .firstOrNull { it != null && it.trim().isNotEmpty() }
+            ?.trim()
+        val headerBuilder = StringBuilder()
+        headerBuilder.append(languagePolicy).append("\n\n").append(baseHeader)
+        if (!addon.isNullOrEmpty()) {
+            val label = if (isZhLang) "附加说明：" else "Additional instructions:"
+            headerBuilder.append("\n\n").append(label).append('\n').append(addon)
+        }
+        val header = headerBuilder.toString()
 
         val sb = StringBuilder()
         val titleLabel = getByLang(ctx, R.string.title_merged_event_summary_zh, R.string.title_merged_event_summary_en, isZhLang)

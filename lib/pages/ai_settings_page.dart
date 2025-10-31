@@ -154,7 +154,7 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
 
   // —— Gemini 风蓝色系颜色（供图标/弥散光使用；明暗自适应） ——
   List<Color> _geminiGradientColors(Brightness brightness) {
-    // 进一步提亮与增饱和：按“至少值”提升，避免乘法带来的变暗
+    // 进一步提亮与增饱和：按"至少值"提升，避免乘法带来的变暗
     Color tune(Color c, {double sMinLight = 0.98, double sMinDark = 0.96, double lMinLight = 0.80, double lMinDark = 0.72}) {
       final h = HSLColor.fromColor(c);
       final double sTarget = brightness == Brightness.dark ? sMinDark : sMinLight;
@@ -168,7 +168,7 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
     final Color c2 = tune(const Color(0xFF3B82F6)); // 标准蓝
     final Color c3 = tune(const Color(0xFF60A5FA)); // 浅蓝
     final Color c4 = tune(const Color(0xFF7C83FF)); // 蓝紫
-    // 黄色单独进一步提亮，确保更“亮”更显眼
+    // 黄色单独进一步提亮，确保更"亮"更显眼
     final Color cY = tune(const Color(0xFFF59E0B), lMinLight: 0.86, lMinDark: 0.76);
     return [
       c1,
@@ -213,148 +213,13 @@ class _AISettingsPageState extends State<AISettingsPage> with SingleTickerProvid
     return out;
   }
 
-  // 默认提示词预览（按当前语言返回）
-  String get _defaultSegmentPromptPreview {
-    final code = Localizations.localeOf(context).languageCode.toLowerCase();
-    final isZh = code.startsWith('zh');
-    if (isZh) {
-      return '''
-请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：
-- 禁止使用OCR文本；直接理解图片内容；
-- 不要逐图描述；按应用/主题整合用户在该时间段的'行为总结'（浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等）；
-- 对视频标题、作者、品牌等独特信息，按屏幕原样在输出中保留；
-- 对同一文章/视频/页面的连续图片，归为同一 content_group 做整体总结；
-- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现"## 概览"或"## 总结"等）；随后再使用 Markdown 小节呈现后续内容；
-- Markdown 要求：所有"用于展示的文本字段"须使用 Markdown（overall_summary 与 content_groups[].summary；timeline[].summary 可用简短 Markdown；key_actions[].detail 可用精简 Markdown）；禁止使用代码块围栏（例如 ```），仅输出纯 Markdown 文本；
-- 后续小节建议包含："## 关键操作"（按时间的要点清单）、"## 主要活动"（按应用/主题的要点清单）、"## 重点内容"（可保留的标题/作者/品牌等）；
-- 在"## 关键操作"中，将相邻/连续同类行为合并为区间，格式"HH:mm:ss-HH:mm:ss：行为描述"（例如"08:16:41-08:27:21：浏览视频评论"）；仅在行为中断或切换时新起一条；控制 3-8 条精要；
-- content_groups[].summary 使用 1-3 条 Markdown 要点呈现该组主题/代表性标题/阅读或观看意图；
-以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
-- 仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；
-字段约定（示例说明格式，非固定内容）：
-- key_actions[]: [{ "type": "...", "app": "应用名", "ref_image": "文件名", "ref_time": "HH:mm:ss", "detail": "(Markdown) 精简说明", "confidence": 0.0 }]
-- content_groups[]: [{ "group_type": "...", "title": "可为空", "app": "应用名", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["文件名1"], "summary": "(Markdown) 本组内容要点" }]
-- timeline[]: [{ "time": "HH:mm:ss", "app": "应用名", "action": "浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他", "summary": "(Markdown) 一句话行为（可简短强调）" }]
-- overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使用小节与要点，避免流水账并尽可能保留信息"
-''';
-    } else {
-      return '''
-Please summarize multiple screenshots in English and output structured results. STRICT rules:
-- Do NOT use OCR text; understand images directly.
-- Do not describe image-by-image; integrate a "behavior summary" over the time window by app/topic (browse/watch/chat/shop/work/settings/download/share/game, etc.).
-- Preserve unique on-screen info like video titles, authors, brands as-is.
-- Consecutive images from the same article/video/page should be merged into one content_group for a holistic summary.
-- Start with one plain paragraph (no heading) summarizing the time window; then present later content with Markdown subsections.
-- Markdown requirements: all display texts must use Markdown (overall_summary and content_groups[].summary; timeline[].summary may use brief Markdown; key_actions[].detail may use concise Markdown). NO code fences (```), only pure Markdown.
-- overall_summary MUST include exactly these three second-level sections in this fixed order:
-  "## Key Actions"
-  "## Main Activities"
-  "## Key Content"
-  Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
-- In "## Key Actions", merge adjacent/continuous same-type actions as a time range "HH:mm:ss-HH:mm:ss: description"; only start a new item when action breaks/changes; keep 3–8 concise items.
-- content_groups[].summary: 1–3 Markdown bullets describing group topic/representative titles/intent.
-JSON fields to output (do not omit field names): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
-- Output exactly ONE JSON object; no explanations or Markdown outside JSON. Put all display content (including sections) in overall_summary (Markdown).
-Field conventions (examples, not fixed):
-- key_actions[]: [{ "type": "...", "app": "App", "ref_image": "file", "ref_time": "HH:mm:ss", "detail": "(Markdown) brief", "confidence": 0.0 }]
-- content_groups[]: [{ "group_type": "...", "title": "optional", "app": "App", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["file1"], "summary": "(Markdown) group highlights" }]
-- timeline[]: [{ "time": "HH:mm:ss", "app": "App", "action": "browse|watch|chat|shop|search|edit|game|settings|download|share|other", "summary": "(Markdown) one-liner (may emphasize briefly)" }]
-- overall_summary: "(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration; retain key info"
-''';
-    }
-  }
+  // 默认提示词模板内容仅在系统内部维护，不在前端暴露。
+  String get _defaultSegmentPromptPreview => '';
 
-  String get _defaultMergePromptPreview {
-    final code = Localizations.localeOf(context).languageCode.toLowerCase();
-    final isZh = code.startsWith('zh');
-    if (isZh) {
-      return '''
-请基于以下图片产出合并后的总结；必须遵循以下规则（中文输出，结构化JSON，行为导向，禁止逐图/禁止OCR）：
-- 禁止使用OCR文本，直接理解图片内容；
-- 不要对每张图片逐条描述；请产出用户在该时间段的'行为总结'，如 浏览/观看/聊天/购物/办公/设置/下载/分享/游戏 等，按应用或主题整合；
-- 对包含视频标题、作者、品牌等独特信息，按屏幕原样保留；
-- 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；
-- 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现"## 概览"或"## 总结"等）；随后再使用 Markdown 小节呈现后续内容；
-- Markdown 要求：所有"用于展示的文本字段"须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；
-- 后续小节建议包含："## 关键操作"、"## 主要活动"、"## 重点内容"；
-- 在"## 关键操作"中，将相邻/连续同类行为合并为区间，格式"HH:mm:ss-HH:mm:ss：行为描述"（例如"08:16:41-08:27:21：浏览视频评论"）；仅在行为中断或切换时新起一条；控制 3-8 条精要；
-- content_groups[].summary 为 Markdown，使用 1-3 条要点列出该组主题/代表性标题/阅读或观看意图；
-- 为尽可能保留信息，可在 Markdown 中使用无序/有序列表、加粗/斜体与内联代码高亮（但不要使用代码块）；
-以 JSON 输出以下字段（与普通事件保持一致，不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；
-- 仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；
-字段约定（示例说明格式，非固定内容）：
-- key_actions[]: [{ "type": "...", "app": "应用名", "ref_image": "文件名", "ref_time": "HH:mm:ss", "detail": "简要说明（避免敏感信息）", "confidence": 0.0 }]
-- content_groups[]: [{ "group_type": "...", "title": "可为空", "app": "应用名", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["文件名1"], "summary": "本组内容的Markdown要点" }]
-- timeline[]: [{ "time": "HH:mm:ss", "app": "应用名", "action": "浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他", "summary": "一句话行为（可用简短Markdown强调）" }]
-- overall_summary: "开头为无标题的一段总结，随后使用Markdown小节与要点，保留多事件合并后的关键信息"
-''';
-    } else {
-      return '''
-Please produce a merged summary for the following images. MUST follow (English output, structured JSON, behavior-focused, no per-image narration / no OCR):
-- Do NOT use OCR; understand images directly.
-- Do not describe each image; output a "behavior summary" over the period (browse/watch/chat/shop/work/settings/download/share/game, etc.), grouped by app/topic.
-- Preserve unique on-screen info (video titles/authors/brands) as seen.
-- Merge consecutive images from the same article/video/page into one content_group and summarize holistically.
-- Start with one plain paragraph (no headings) summarizing the period; then present details using Markdown sections.
-- Markdown requirements: all display texts use Markdown (overall_summary and content_groups[].summary); headings and bullet points for clarity; NO code fences (```), only pure Markdown.
-- overall_summary MUST include exactly these three second-level sections in this fixed order:
-  "## Key Actions"
-  "## Main Activities"
-  "## Key Content"
-  Each section MUST contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet. Do not omit or rename sections.
-- In "## Key Actions", merge adjacent same-type actions into ranges "HH:mm:ss-HH:mm:ss: description" (e.g., "08:16:41-08:27:21: reading video comments"); only new item when action breaks; keep 3–8 concise lines.
-- content_groups[].summary uses 1–3 Markdown bullets for group topic/representative titles/intent.
-- To retain info, you may use lists/bold/italic/inline code in Markdown (but NOT code blocks).
-Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
-- Output exactly ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).
-Field conventions (examples, not fixed):
-- key_actions[]: [{ "type": "...", "app": "App", "ref_image": "file", "ref_time": "HH:mm:ss", "detail": "brief (avoid sensitive info)", "confidence": 0.0 }]
-- content_groups[]: [{ "group_type": "...", "title": "optional", "app": "App", "start_time": "HH:mm:ss", "end_time": "HH:mm:ss", "image_count": 1, "representative_images": ["file1"], "summary": "Markdown bullets" }]
-- timeline[]: [{ "time": "HH:mm:ss", "app": "App", "action": "browse|watch|chat|shop|search|edit|game|settings|download|share|other", "summary": "one-liner (may emphasize briefly)" }]
-- overall_summary: "Untitled opening paragraph, then Markdown sections with bullets; keep merged multi-event highlights"
-''';
-    }
-  }
+  String get _defaultMergePromptPreview => '';
 
-  String get _defaultDailyPromptPreview {
-    final code = Localizations.localeOf(context).languageCode.toLowerCase();
-    final isZh = code.startsWith('zh');
-    if (isZh) {
-      return '''
-请从今日采集的多段屏幕图片生成"每日总结"（中文输出）。必须严格遵循：
-- 忽略输入/上下文语言，严格使用当前应用语言输出；本次为中文。
-- 禁止使用 OCR 文本；直接从图片语义推断。
-- 先输出一段无标题的总览段落；随后用 Markdown 小节呈现细节。
-- Markdown 要求：展示类文本必须用 Markdown；禁止代码块围栏（如 ```）；仅输出纯 Markdown。
-- 概览后必须按固定顺序包含以下二级小节：
-  "## 关键操作"
-  "## 主要活动"
-  "## 重点内容"
-  每个小节至少 3 条以 "- " 开头的要点；信息不足也要保留小节并给出有意义的占位要点。
-- 将相邻/连续同类行为合并为时间区间 "HH:mm:ss-HH:mm:ss：描述"；仅在行为中断/切换时新起一条；控制 5–12 条精要。
-- content_groups[].summary 使用 1–3 条要点，概述主题/代表性标题/意图。
-仅输出一个 JSON 对象，包含字段：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary。
-- 不要添加解释或 JSON 之外的 Markdown；所有展示性内容（含小节）写入 overall_summary 的 Markdown。
-''';
-    } else {
-      return '''
-Please generate a "daily summary" in English from multiple screenshot segments captured today. STRICT rules:
-- Ignore the language used in inputs/context and always respond in the app's current language; for this run, use English.
-- Do NOT use OCR text; infer directly from image semantics.
-- Start with one plain paragraph (no heading) as an overview; then present details with Markdown subsections.
-- Markdown requirements: all display texts must be Markdown; NO code fences (```), only pure Markdown.
-- After the overview, include exactly these second-level sections in the fixed order:
-  "## Key Actions"
-  "## Main Activities"
-  "## Key Content"
-  Each section must contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet.
-- Merge adjacent/continuous same-type actions into ranges "HH:mm:ss-HH:mm:ss: description"; only start a new item when action breaks/changes; keep 5–12 concise items.
-- content_groups[].summary uses 1–3 Markdown bullets to describe group topic/representative titles/intent.
-Output exactly ONE JSON object with fields: apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
-- Do not add explanations or any Markdown outside JSON; put all display content (including sections) into overall_summary (Markdown).
-''';
-    }
-  }
+  String get _defaultDailyPromptPreview => '';
+
   // 分组相关状态
   List<AISiteGroup> _groups = <AISiteGroup>[];
   int? _activeGroupId;
@@ -369,7 +234,7 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (!mounted) return;
       if (ctx == 'chat' || ctx == 'chat:deleted') {
-        // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的“空白延迟”
+        // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的"空白延迟"
         if (ctx == 'chat:deleted') {
           setState(() {
             _messages = <AIMessage>[];
@@ -495,16 +360,10 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
         _promptMerge = mergePrompt;
         _promptDaily = dailyPrompt;
         _renderImagesDuringStreaming = renderImgs;
-        // 预填编辑器（若无自定义，按当前语言填充默认预览，方便直接修改）
-        _promptSegmentController.text = (_promptSegment == null || _promptSegment!.trim().isEmpty)
-            ? _defaultSegmentPromptPreview
-            : _promptSegment!;
-        _promptMergeController.text = (_promptMerge == null || _promptMerge!.trim().isEmpty)
-            ? _defaultMergePromptPreview
-            : _promptMerge!;
-        _promptDailyController.text = (_promptDaily == null || _promptDaily!.trim().isEmpty)
-            ? _defaultDailyPromptPreview
-            : _promptDaily!;
+        // 预填编辑器：仅填充用户补充说明，避免暴露系统默认模板
+        _promptSegmentController.text = _promptSegment?.trim() ?? '';
+        _promptMergeController.text = _promptMerge?.trim() ?? '';
+        _promptDailyController.text = _promptDaily?.trim() ?? '';
         _loading = false;
       });
       if (mounted) {
@@ -583,9 +442,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
     final titleStyle = Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600);
     final hintStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
 
+    const int maxAddonLength = 2000;
+
     Widget buildSection({
       required String label,
-      required String currentMarkdown,
+      required String currentAddon,
+      required String infoText,
+      required String suggestion,
       required bool editing,
       required TextEditingController controller,
       required VoidCallback onEditToggle,
@@ -593,6 +456,12 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
       required Future<void> Function() onReset,
       required bool saving,
     }) {
+      final theme = Theme.of(context);
+      final placeholderStyle = theme.textTheme.bodySmall?.copyWith(color: theme.hintColor);
+      final hasAddon = currentAddon.trim().isNotEmpty;
+      final displayText = hasAddon ? currentAddon.trim() : suggestion;
+      final displayStyle = hasAddon ? theme.textTheme.bodySmall : placeholderStyle;
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -600,60 +469,60 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             children: [
               Text(label, style: titleStyle),
               const Spacer(),
-              if (!editing)
-                TextButton(
-                  onPressed: onEditToggle,
-                  child: Text(AppLocalizations.of(context).actionEdit),
-                )
-              else ...[
-                TextButton(
-                  onPressed: saving ? null : onSave,
-                  child: Text(saving ? AppLocalizations.of(context).savingLabel : AppLocalizations.of(context).actionSave),
-                ),
-                const SizedBox(width: AppTheme.spacing1),
-                TextButton(
-                  onPressed: saving ? null : onReset,
-                  child: Text(AppLocalizations.of(context).resetToDefault),
-                ),
-                const SizedBox(width: AppTheme.spacing1),
-                TextButton(
-                  onPressed: saving ? null : onEditToggle,
-                  child: Text(AppLocalizations.of(context).dialogCancel),
-                ),
-              ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: editing
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: saving ? null : onSave,
+                            child: Text(saving ? AppLocalizations.of(context).savingLabel : AppLocalizations.of(context).actionSave),
+                          ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          TextButton(
+                            onPressed: saving ? null : onReset,
+                            child: Text(AppLocalizations.of(context).resetToDefault),
+                          ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          TextButton(
+                            onPressed: saving ? null : onEditToggle,
+                            child: Text(AppLocalizations.of(context).dialogCancel),
+                          ),
+                        ],
+                      )
+                    : TextButton(
+                        onPressed: onEditToggle,
+                        child: Text(AppLocalizations.of(context).actionEdit),
+                      ),
+              ),
             ],
           ),
           const SizedBox(height: AppTheme.spacing1),
+          Text(infoText, style: hintStyle),
+          const SizedBox(height: AppTheme.spacing1),
           if (!editing)
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                border: Border.all(color: Theme.of(context).dividerColor),
-              ),
-              padding: const EdgeInsets.all(AppTheme.spacing3),
-              child: MarkdownBody(
-                data: currentMarkdown,
-                styleSheet: _mdStyle(context),
+            SizedBox(
+              width: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.all(AppTheme.spacing3),
+                child: SelectableText(displayText, style: displayStyle),
               ),
             )
           else
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                border: Border.all(color: Theme.of(context).colorScheme.outline),
-              ),
-              child: TextField(
-                controller: controller,
-                minLines: 6,
-                maxLines: 24,
-                style: Theme.of(context).textTheme.bodySmall,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(AppTheme.spacing2),
-                ),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              minLines: 10,
+              maxLines: null,
+              style: Theme.of(context).textTheme.bodySmall,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: suggestion,
+                hintMaxLines: 16,
+                contentPadding: const EdgeInsets.all(AppTheme.spacing3),
               ),
             ),
           const SizedBox(height: AppTheme.spacing3),
@@ -661,15 +530,13 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
       );
     }
 
-   final segMarkdown = (_promptSegment == null || _promptSegment!.trim().isEmpty)
-       ? _defaultSegmentPromptPreview
-       : _promptSegment!;
-   final mergeMarkdown = (_promptMerge == null || _promptMerge!.trim().isEmpty)
-       ? _defaultMergePromptPreview
-       : _promptMerge!;
-   final dailyMarkdown = (_promptDaily == null || _promptDaily!.trim().isEmpty)
-       ? _defaultDailyPromptPreview
-       : _promptDaily!;
+    final segAddon = _promptSegment?.trim() ?? '';
+    final mergeAddon = _promptMerge?.trim() ?? '';
+    final dailyAddon = _promptDaily?.trim() ?? '';
+    final addonInfo = AppLocalizations.of(context).promptAddonGeneralInfo;
+    final suggestionSegment = AppLocalizations.of(context).promptAddonSuggestionSegment;
+    final suggestionMerge = AppLocalizations.of(context).promptAddonSuggestionMerge;
+    final suggestionDaily = AppLocalizations.of(context).promptAddonSuggestionDaily;
 
     return UICard(
       padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -708,7 +575,9 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             // 普通事件提示词
             buildSection(
               label: AppLocalizations.of(context).normalEventPromptLabel,
-              currentMarkdown: segMarkdown,
+              currentAddon: segAddon,
+              infoText: addonInfo,
+              suggestion: suggestionSegment,
               editing: _editingPromptSegment,
               controller: _promptSegmentController,
               onEditToggle: () => setState(() => _editingPromptSegment = !_editingPromptSegment),
@@ -720,7 +589,9 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
             // 合并事件提示词
             buildSection(
               label: AppLocalizations.of(context).mergeEventPromptLabel,
-              currentMarkdown: mergeMarkdown,
+              currentAddon: mergeAddon,
+              infoText: addonInfo,
+              suggestion: suggestionMerge,
               editing: _editingPromptMerge,
               controller: _promptMergeController,
               onEditToggle: () => setState(() => _editingPromptMerge = !_editingPromptMerge),
@@ -731,7 +602,9 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
          // 每日总结提示词
          buildSection(
            label: AppLocalizations.of(context).dailySummaryPromptLabel,
-           currentMarkdown: dailyMarkdown,
+           currentAddon: dailyAddon,
+           infoText: addonInfo,
+           suggestion: suggestionDaily,
            editing: _editingPromptDaily,
            controller: _promptDailyController,
            onEditToggle: () => setState(() => _editingPromptDaily = !_editingPromptDaily),
@@ -746,111 +619,132 @@ Output exactly ONE JSON object with fields: apps[], categories[], timeline[], ke
 }
 
  Future<void> _savePromptSegment() async {
-    if (_savingPromptSegment) return;
-    setState(() => _savingPromptSegment = true);
-    try {
-      final v = _promptSegmentController.text.trim();
-      await _settings.setPromptSegment(v.isEmpty ? null : v);
-      await _loadAll();
-      if (mounted) {
-        setState(() => _editingPromptSegment = false);
-        UINotifier.success(context, AppLocalizations.of(context).savedNormalPromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingPromptSegment = false);
-    }
-  }
-
-  Future<void> _resetPromptSegment() async {
-    if (_savingPromptSegment) return;
-    setState(() => _savingPromptSegment = true);
-    try {
-      await _settings.setPromptSegment(null);
-      await _loadAll();
-      if (mounted) {
-        setState(() => _editingPromptSegment = false);
-        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingPromptSegment = false);
-    }
-  }
-
-  Future<void> _savePromptMerge() async {
-    if (_savingPromptMerge) return;
-    setState(() => _savingPromptMerge = true);
-    try {
-      final v = _promptMergeController.text.trim();
-      await _settings.setPromptMerge(v.isEmpty ? null : v);
-      await _loadAll();
-      if (mounted) {
-        setState(() => _editingPromptMerge = false);
-        UINotifier.success(context, AppLocalizations.of(context).savedMergePromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingPromptMerge = false);
-    }
-  }
-
-  Future<void> _resetPromptMerge() async {
-    if (_savingPromptMerge) return;
-    setState(() => _savingPromptMerge = true);
-    try {
-      await _settings.setPromptMerge(null);
-      await _loadAll();
-      if (mounted) {
-        setState(() => _editingPromptMerge = false);
-        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingPromptMerge = false);
-    }
-  }
-
- Future<void> _savePromptDaily() async {
-   if (_savingPromptDaily) return;
-   setState(() => _savingPromptDaily = true);
-   try {
-     final v = _promptDailyController.text.trim();
-     await _settings.setPromptDaily(v.isEmpty ? null : v);
-     await _loadAll();
-     if (mounted) {
-       setState(() => _editingPromptDaily = false);
-       UINotifier.success(context, AppLocalizations.of(context).savedDailyPromptToast);
+     if (_savingPromptSegment) return;
+     setState(() => _savingPromptSegment = true);
+     try {
+       final text = _promptSegmentController.text.trim();
+       final normalized = text.isEmpty ? null : text;
+       await _settings.setPromptSegment(normalized);
+       if (mounted) {
+         setState(() {
+           _promptSegment = normalized;
+           _promptSegmentController.text = normalized ?? '';
+           _editingPromptSegment = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).savedNormalPromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptSegment = false);
      }
-   } catch (e) {
-     if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
-   } finally {
-     if (mounted) setState(() => _savingPromptDaily = false);
    }
- }
-
- Future<void> _resetPromptDaily() async {
-   if (_savingPromptDaily) return;
-   setState(() => _savingPromptDaily = true);
-   try {
-     await _settings.setPromptDaily(null);
-     await _loadAll();
-     if (mounted) {
-       setState(() => _editingPromptDaily = false);
-       UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
+ 
+   Future<void> _resetPromptSegment() async {
+     if (_savingPromptSegment) return;
+     setState(() => _savingPromptSegment = true);
+     try {
+       await _settings.setPromptSegment(null);
+       if (mounted) {
+         setState(() {
+           _promptSegment = null;
+           _promptSegmentController.text = '';
+           _editingPromptSegment = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptSegment = false);
      }
-   } catch (e) {
-     if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
-   } finally {
-     if (mounted) setState(() => _savingPromptDaily = false);
    }
- }
+ 
+   Future<void> _savePromptMerge() async {
+     if (_savingPromptMerge) return;
+     setState(() => _savingPromptMerge = true);
+     try {
+       final text = _promptMergeController.text.trim();
+       final normalized = text.isEmpty ? null : text;
+       await _settings.setPromptMerge(normalized);
+       if (mounted) {
+         setState(() {
+           _promptMerge = normalized;
+           _promptMergeController.text = normalized ?? '';
+           _editingPromptMerge = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).savedMergePromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptMerge = false);
+     }
+   }
+ 
+   Future<void> _resetPromptMerge() async {
+     if (_savingPromptMerge) return;
+     setState(() => _savingPromptMerge = true);
+     try {
+       await _settings.setPromptMerge(null);
+       if (mounted) {
+         setState(() {
+           _promptMerge = null;
+           _promptMergeController.text = '';
+           _editingPromptMerge = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptMerge = false);
+     }
+   }
+ 
+   Future<void> _savePromptDaily() async {
+     if (_savingPromptDaily) return;
+     setState(() => _savingPromptDaily = true);
+     try {
+       final text = _promptDailyController.text.trim();
+       final normalized = text.isEmpty ? null : text;
+       await _settings.setPromptDaily(normalized);
+       if (mounted) {
+         setState(() {
+           _promptDaily = normalized;
+           _promptDailyController.text = normalized ?? '';
+           _editingPromptDaily = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).savedDailyPromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptDaily = false);
+     }
+   }
+ 
+   Future<void> _resetPromptDaily() async {
+     if (_savingPromptDaily) return;
+     setState(() => _savingPromptDaily = true);
+     try {
+       await _settings.setPromptDaily(null);
+       if (mounted) {
+         setState(() {
+           _promptDaily = null;
+           _promptDailyController.text = '';
+           _editingPromptDaily = false;
+         });
+         UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
+       }
+     } catch (e) {
+       if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
+     } finally {
+       if (mounted) setState(() => _savingPromptDaily = false);
+     }
+   }
 
- Future<void> _clearHistory() async {
+  Future<void> _clearHistory() async {
     try {
       await _chat.clearConversation();
       if (!mounted) return;
@@ -1477,7 +1371,7 @@ void _scheduleAutoScroll() {
         : ('日期范围: ' + ymd(ds) + ' → ' + ymd(de));
     sb.writeln(dateLine);
     sb.writeln('时间范围: ${two(ds.hour)}:${two(ds.minute)}–${two(de.hour)}:${two(de.minute)}');
-    sb.writeln('约束：仅围绕上述日期/时间范围作答，禁止将日期泛化为“今天/昨天”等相对称呼。若该日期缺少数据，请直接说明。');
+    sb.writeln('约束：仅围绕上述日期/时间范围作答，禁止将日期泛化为"今天/昨天"等相对称呼。若该日期缺少数据，请直接说明。');
     int imgNo = 0;
     for (final ev in ctx.events) {
       sb.writeln('- ${ev.window} ${ev.apps.isNotEmpty ? ev.apps.join('/') : ''}');
@@ -1526,7 +1420,7 @@ void _scheduleAutoScroll() {
     final String window = (ds.year == de.year && ds.month == de.month && ds.day == de.day)
         ? ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${two(de.hour)}:${two(de.minute)}')
         : ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${ymd(de)} ${two(de.hour)}:${two(de.minute)}');
-    return '系统约束（必须遵守）: 仅围绕本地时区的指定日期/时间窗口回答：' + window + '。禁止将日期泛化为“今天/昨天/本周”等，也禁止引用当前日期。若该时间窗口没有足够数据，请直接回答："No data for the specified date/time window." 严禁回答超出该时间窗口的内容。';
+    return '系统约束（必须遵守）: 仅围绕本地时区的指定日期/时间窗口回答：' + window + '。禁止将日期泛化为"今天/昨天/本周"等，也禁止引用当前日期。若该时间窗口没有足够数据，请直接回答："No data for the specified date/time window." 严禁回答超出该时间窗口的内容。';
   }
 
   void _cancelRequest() {

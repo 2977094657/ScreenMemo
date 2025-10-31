@@ -2012,6 +2012,48 @@ abstract class AppLocalizations {
   /// **'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.'**
   String get promptManagerHint;
 
+  /// No description provided for @promptAddonGeneralInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'The built-in template already defines the structured schema. Only append extra guidance here (tone, style, emphasis). Leave blank to keep the template unchanged.'**
+  String get promptAddonGeneralInfo;
+
+  /// No description provided for @promptAddonInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add optional extra instructions (leave blank to skip)'**
+  String get promptAddonInputHint;
+
+  /// No description provided for @promptAddonHelperText.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe tone or preferences only; do not request schema changes or JSON modifications.'**
+  String get promptAddonHelperText;
+
+  /// No description provided for @promptAddonEmptyPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'No extra instructions'**
+  String get promptAddonEmptyPlaceholder;
+
+  /// No description provided for @promptAddonSuggestionSegment.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested ideas:\n- State the desired tone or target audience in one sentence\n- Highlight the key insights or safety constraints to prioritize\n- Avoid asking for JSON field additions or structural changes'**
+  String get promptAddonSuggestionSegment;
+
+  /// No description provided for @promptAddonSuggestionMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested ideas:\n- Emphasize comparisons or contrasts to surface after merging\n- Remind the model to avoid repetition and focus on aggregated insights\n- Do not request structural changes to the output fields'**
+  String get promptAddonSuggestionMerge;
+
+  /// No description provided for @promptAddonSuggestionDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields'**
+  String get promptAddonSuggestionDaily;
+
   /// No description provided for @normalEventPromptLabel.
   ///
   /// In en, this message translates to:

@@ -1057,6 +1057,31 @@ class AppLocalizationsZh extends AppLocalizations {
       '为“普通事件总结”“合并事件总结”“每日总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
 
   @override
+  String get promptAddonGeneralInfo =>
+      '默认模板包含结构化字段并由系统维护，仅允许在此追加不涉及数据结构的补充说明（如语气、风格、注意事项）。留空表示不添加附加说明。';
+
+  @override
+  String get promptAddonInputHint => '请输入附加说明（可留空）';
+
+  @override
+  String get promptAddonHelperText => '建议仅描述语气、输出风格或优先级，禁止修改字段结构或要求生成 JSON。';
+
+  @override
+  String get promptAddonEmptyPlaceholder => '未添加附加说明';
+
+  @override
+  String get promptAddonSuggestionSegment =>
+      '建议示例：\n- 用一句话限定整体语气或受众\n- 指出需要关注的关键信息或安全要点\n- 避免要求修改 JSON 字段或结构';
+
+  @override
+  String get promptAddonSuggestionMerge =>
+      '建议示例：\n- 强调合并后要关注的主题或对比点\n- 指明避免重复描述、聚焦差异总结\n- 勿要求改变结构化字段';
+
+  @override
+  String get promptAddonSuggestionDaily =>
+      '建议示例：\n- 指定每日总结语气（如“偏向行动复盘”）\n- 提醒突出关键成果或风险\n- 禁止修改输出字段名称';
+
+  @override
   String get normalEventPromptLabel => '普通事件提示词';
 
   @override

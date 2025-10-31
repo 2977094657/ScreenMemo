@@ -104,6 +104,12 @@ class AISettingsService {
   static const String _keyPromptMergeEn   = 'prompt_merge_en';
   static const String _keyPromptDailyZh   = 'prompt_daily_zh';
   static const String _keyPromptDailyEn   = 'prompt_daily_en';
+  static const String _keyPromptSegmentExtraZh = 'prompt_segment_extra_zh';
+  static const String _keyPromptSegmentExtraEn = 'prompt_segment_extra_en';
+  static const String _keyPromptMergeExtraZh   = 'prompt_merge_extra_zh';
+  static const String _keyPromptMergeExtraEn   = 'prompt_merge_extra_en';
+  static const String _keyPromptDailyExtraZh   = 'prompt_daily_extra_zh';
+  static const String _keyPromptDailyExtraEn   = 'prompt_daily_extra_en';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -301,57 +307,76 @@ class AISettingsService {
     return code.startsWith('zh') ? 'zh' : 'en';
   }
 
+  static const int _maxPromptAddonLength = 2000;
+
   Future<String?> getPromptSegment() async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    // 先取语种键；不存在则回退历史通用键
-    final key = lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn;
-    String? v = await db.getAiSetting(key);
-    v ??= await db.getAiSetting(_keyPromptSegment);
-    if (v == null || v.trim().isEmpty) return null;
-    return v;
+    return _getPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptSegmentExtraZh : _keyPromptSegmentExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn,
+        _keyPromptSegment,
+      ],
+    );
   }
 
   Future<void> setPromptSegment(String? value) async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    final key = lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn;
-    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
+    await _setPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptSegmentExtraZh : _keyPromptSegmentExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn,
+        _keyPromptSegment,
+      ],
+      value: value,
+    );
   }
 
   Future<String?> getPromptMerge() async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    final key = lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn;
-    String? v = await db.getAiSetting(key);
-    v ??= await db.getAiSetting(_keyPromptMerge);
-    if (v == null || v.trim().isEmpty) return null;
-    return v;
+    return _getPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptMergeExtraZh : _keyPromptMergeExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn,
+        _keyPromptMerge,
+      ],
+    );
   }
 
   Future<void> setPromptMerge(String? value) async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    final key = lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn;
-    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
+    await _setPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptMergeExtraZh : _keyPromptMergeExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn,
+        _keyPromptMerge,
+      ],
+      value: value,
+    );
   }
 
   // ========== 每日总结提示词 ==========
   Future<String?> getPromptDaily() async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    final key = lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn;
-    String? v = await db.getAiSetting(key);
-    v ??= await db.getAiSetting(_keyPromptDaily);
-    if (v == null || v.trim().isEmpty) return null;
-    return v;
+    return _getPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptDailyExtraZh : _keyPromptDailyExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn,
+        _keyPromptDaily,
+      ],
+    );
   }
 
   Future<void> setPromptDaily(String? value) async {
-    final db = ScreenshotDatabase.instance;
     final lang = _currentLang();
-    final key = lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn;
-    await db.setAiSetting(key, (value == null || value.trim().isEmpty) ? null : value.trim());
+    await _setPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptDailyExtraZh : _keyPromptDailyExtraEn,
+      legacyKeys: <String>[
+        lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn,
+        _keyPromptDaily,
+      ],
+      value: value,
+    );
   }
 
   // ========== 端点候选（用于失败自动切换） ==========
@@ -635,6 +660,54 @@ class AISettingsService {
    await db.clearAiConversation(conversationCid);
    try { await db.touchAiConversation(conversationCid); } catch (_) {}
  }
+
+  Future<String?> _getPromptAddon({
+    required String primaryKey,
+    required List<String> legacyKeys,
+  }) async {
+    final db = ScreenshotDatabase.instance;
+    String? raw = await db.getAiSetting(primaryKey);
+    String? sourceKey;
+    if (raw == null || raw.trim().isEmpty) {
+      for (final key in legacyKeys) {
+        final candidate = await db.getAiSetting(key);
+        if (candidate != null && candidate.trim().isNotEmpty) {
+          raw = candidate;
+          sourceKey = key;
+          break;
+        }
+      }
+    }
+    final sanitized = _sanitizePromptAddon(raw);
+    if (sanitized != null && sourceKey != null) {
+      await db.setAiSetting(primaryKey, sanitized);
+      await db.setAiSetting(sourceKey, null);
+    }
+    return sanitized;
+  }
+
+  Future<void> _setPromptAddon({
+    required String primaryKey,
+    required List<String> legacyKeys,
+    required String? value,
+  }) async {
+    final db = ScreenshotDatabase.instance;
+    final sanitized = _sanitizePromptAddon(value);
+    await db.setAiSetting(primaryKey, sanitized);
+    for (final key in legacyKeys) {
+      await db.setAiSetting(key, null);
+    }
+  }
+
+  String? _sanitizePromptAddon(String? value) {
+    if (value == null) return null;
+    final normalized = value.replaceAll('\r\n', '\n').trim();
+    if (normalized.isEmpty) return null;
+    if (normalized.length > _maxPromptAddonLength) {
+      return normalized.substring(0, _maxPromptAddonLength).trim();
+    }
+    return normalized;
+  }
 }
 
 /// 简单的对话消息模型

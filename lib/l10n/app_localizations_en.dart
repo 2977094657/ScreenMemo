@@ -1097,6 +1097,33 @@ class AppLocalizationsEn extends AppLocalizations {
       'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.';
 
   @override
+  String get promptAddonGeneralInfo =>
+      'The built-in template already defines the structured schema. Only append extra guidance here (tone, style, emphasis). Leave blank to keep the template unchanged.';
+
+  @override
+  String get promptAddonInputHint =>
+      'Add optional extra instructions (leave blank to skip)';
+
+  @override
+  String get promptAddonHelperText =>
+      'Describe tone or preferences only; do not request schema changes or JSON modifications.';
+
+  @override
+  String get promptAddonEmptyPlaceholder => 'No extra instructions';
+
+  @override
+  String get promptAddonSuggestionSegment =>
+      'Suggested ideas:\n- State the desired tone or target audience in one sentence\n- Highlight the key insights or safety constraints to prioritize\n- Avoid asking for JSON field additions or structural changes';
+
+  @override
+  String get promptAddonSuggestionMerge =>
+      'Suggested ideas:\n- Emphasize comparisons or contrasts to surface after merging\n- Remind the model to avoid repetition and focus on aggregated insights\n- Do not request structural changes to the output fields';
+
+  @override
+  String get promptAddonSuggestionDaily =>
+      'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields';
+
+  @override
   String get normalEventPromptLabel => 'Normal event prompt';
 
   @override

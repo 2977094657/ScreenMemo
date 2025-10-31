@@ -137,9 +137,25 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     (langOpt == "zh") || (langOpt != "en" && sys.startsWith("zh"))
                 } catch (_: Exception) { true }
                 val languagePolicy = if (isZh) ctx.getString(R.string.ai_language_policy_zh) else ctx.getString(R.string.ai_language_policy_en)
-                val custom = try { AISettingsNative.readSettingValue(ctx, if (isZh) "prompt_daily_zh" else "prompt_daily_en") } catch (_: Exception) { null }
-                val customLegacy = try { AISettingsNative.readSettingValue(ctx, "prompt_daily") } catch (_: Exception) { null }
-                val header = languagePolicy + "\n\n" + ((custom ?: customLegacy) ?: if (isZh) DEFAULT_PROMPT_ZH else DEFAULT_PROMPT_EN)
+                val extra = try { AISettingsNative.readSettingValue(ctx, if (isZh) "prompt_daily_extra_zh" else "prompt_daily_extra_en") } catch (_: Exception) { null }
+                val legacyLang = try { AISettingsNative.readSettingValue(ctx, if (isZh) "prompt_daily_zh" else "prompt_daily_en") } catch (_: Exception) { null }
+                val legacy = try { AISettingsNative.readSettingValue(ctx, "prompt_daily") } catch (_: Exception) { null }
+                val addon = sequenceOf(extra, legacyLang, legacy)
+                    .firstOrNull { it != null && it.trim().isNotEmpty() }
+                    ?.trim()
+                val headerBuilder = StringBuilder()
+                headerBuilder.append(languagePolicy).append("\n\n")
+                val defaultTemplate = if (isZh) DEFAULT_PROMPT_ZH else DEFAULT_PROMPT_EN
+                if (!addon.isNullOrEmpty()) {
+                    val beginMarker = if (isZh) "【重要附加说明（开始）】" else "***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***"
+                    val endMarker = if (isZh) "【重要附加说明（结束）】" else "***IMPORTANT EXTRA INSTRUCTIONS (END)***"
+                    headerBuilder.append(beginMarker).append('\n').append(addon).append("\n\n")
+                    headerBuilder.append(defaultTemplate).append("\n\n")
+                    headerBuilder.append(endMarker).append('\n').append(addon)
+                } else {
+                    headerBuilder.append(defaultTemplate)
+                }
+                val header = headerBuilder.toString()
                 sb.append(header).append('\n').append('\n')
                 sb.append("日期: ").append(dateKey).append('\n')
                 sb.append("上下文（仅用于总结的 overall_summary，禁止逐句复述原文）：\n")

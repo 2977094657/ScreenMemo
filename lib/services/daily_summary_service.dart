@@ -256,12 +256,17 @@ class DailySummaryService {
     final locale = isZh ? const Locale('zh') : const Locale('en');
     final String languagePolicy = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-    // 头部提示词：优先自定义；否则按语言选择默认模板
+    final String defaultTemplate = isZh ? _defaultDailyPromptZh : _defaultDailyPromptEn;
     String header;
-    if (custom != null && custom.trim().isNotEmpty) {
-      header = '$languagePolicy\n\n${custom.trim()}';
+    final String? trimmedAddon = custom?.trim();
+    if (trimmedAddon != null && trimmedAddon.isNotEmpty) {
+      final String beginMarker = isZh ? '【重要附加说明（开始）】' : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***';
+      final String endMarker = isZh ? '【重要附加说明（结束）】' : '***IMPORTANT EXTRA INSTRUCTIONS (END)***';
+      final String upperBlock = '$beginMarker\n$trimmedAddon';
+      final String lowerBlock = '$endMarker\n$trimmedAddon';
+      header = '$languagePolicy\n\n$upperBlock\n\n$defaultTemplate\n\n$lowerBlock';
     } else {
-      header = '$languagePolicy\n\n${isZh ? _defaultDailyPromptZh : _defaultDailyPromptEn}';
+      header = '$languagePolicy\n\n$defaultTemplate';
     }
 
     final sb = StringBuffer();
