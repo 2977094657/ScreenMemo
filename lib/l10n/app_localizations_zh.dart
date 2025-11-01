@@ -1337,6 +1337,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get images => '图片';
 
   @override
+  String get days => '天';
+
+  @override
   String get justNow => '刚刚';
 
   @override

@@ -156,14 +156,33 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   Future<void> _loadTotals() async {
     try {
       final totals = await ScreenshotService.instance.getTotals();
+      final prevDayCount = _totals['day_count'] as int? ?? 0;
       if (mounted) {
         setState(() {
-          _totals = totals;
+          _totals = Map<String, dynamic>.from(totals)
+            ..['day_count'] = prevDayCount;
         });
       }
+      _updateDayCount();
     } catch (e) {
       print('加载汇总统计失败: $e');
+      _updateDayCount();
     }
+  }
+
+  void _updateDayCount({bool forceRefresh = false}) {
+    // ignore: discarded_futures
+    ScreenshotService.instance
+        .getAvailableDayCountCachedFirst(forceRefresh: forceRefresh)
+        .then((count) {
+      if (!mounted) return;
+      setState(() {
+        _totals = Map<String, dynamic>.from(_totals)
+          ..['day_count'] = count;
+      });
+    }).catchError((_) {
+      // 忽略缓存更新失败，保持现有值
+    });
   }
 
   /// 计算当前统计数据的签名，用于快速判断是否需要刷新UI
@@ -1072,6 +1091,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final appCount = _totals['app_count'] as int? ?? 0;
     final screenshotCount = _totals['screenshot_count'] as int? ?? 0;
     final totalSizeBytes = _totals['total_size_bytes'] as int? ?? 0;
+    final dayCount = _totals['day_count'] as int? ?? 0;
 
     return Container(
       height: 40,
@@ -1091,6 +1111,15 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           Expanded(
             child: Row(
               children: [
+                // 监测天数
+                Text(
+                  '$dayCount${l10n.days}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 16),
                 // 应用数量
                 Text(
                   '${appCount}${l10n.apps}',

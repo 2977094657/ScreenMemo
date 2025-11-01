@@ -1381,6 +1381,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get images => 'images';
 
   @override
+  String get days => 'days';
+
+  @override
   String get justNow => 'Just now';
 
   @override

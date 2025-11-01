@@ -49,6 +49,12 @@ class ScreenshotService {
   static const String _statsCacheTsKey = 'stats_cache_ts';
   static const String _statsCacheTtlSecondsKey = 'stats_cache_ttl';
   static const int _statsCacheTtlSecondsDefault = 600; // 10分钟
+  static const String _dayCountCacheKey = 'day_count_cache';
+  static const String _dayCountCacheTsKey = 'day_count_cache_ts';
+  static const int _dayCountCacheTtlMillis = 10 * 60 * 1000; // 10分钟
+  int? _dayCountMemCache;
+  int _dayCountMemCacheTs = 0;
+  Future<int>? _dayCountRefreshingFuture;
   // 移除全量扫描相关：不再维护文件系统与DB的强制同步节流
   // static const String _lastSyncTsKey = 'stats_last_sync_ts';
   // static const int _syncThrottleSeconds = 120; // 2分钟
@@ -1344,6 +1350,78 @@ class ScreenshotService {
     } catch (_) {
       return <Map<String, dynamic>>[];
     }
+  }
+
+  /// 获取全局可用日期数量（缓存优先，避免频繁全库统计）
+  Future<int> getAvailableDayCountCachedFirst({bool forceRefresh = false}) async {
+    if (forceRefresh) {
+      return await _refreshDayCount();
+    }
+
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int ageInMemory = now - _dayCountMemCacheTs;
+    if (_dayCountMemCache != null) {
+      if (ageInMemory <= _dayCountCacheTtlMillis) {
+        return _dayCountMemCache!;
+      }
+      _refreshDayCountInBackground();
+      return _dayCountMemCache!;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getInt(_dayCountCacheKey);
+      final ts = prefs.getInt(_dayCountCacheTsKey) ?? 0;
+      if (cached != null) {
+        _dayCountMemCache = cached;
+        _dayCountMemCacheTs = ts;
+        if (now - ts > _dayCountCacheTtlMillis) {
+          _refreshDayCountInBackground();
+        }
+        return cached;
+      }
+    } catch (_) {}
+
+    return await _refreshDayCount();
+  }
+
+  /// 清除内存缓存（例如在数据发生较大调整后调用）
+  void invalidateAvailableDayCountCache() {
+    _dayCountMemCache = null;
+    _dayCountMemCacheTs = 0;
+  }
+
+  Future<int> _refreshDayCount() {
+    _dayCountRefreshingFuture ??= _doRefreshDayCount();
+    return _dayCountRefreshingFuture!;
+  }
+
+  Future<int> _doRefreshDayCount() async {
+    try {
+      final List<Map<String, dynamic>> days = await _database.listAvailableDaysGlobal();
+      final int count = days.length;
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      _dayCountMemCache = count;
+      _dayCountMemCacheTs = now;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_dayCountCacheKey, count);
+        await prefs.setInt(_dayCountCacheTsKey, now);
+      } catch (_) {}
+      return count;
+    } catch (_) {
+      return _dayCountMemCache ?? 0;
+    } finally {
+      _dayCountRefreshingFuture = null;
+    }
+  }
+
+  void _refreshDayCountInBackground() {
+    if (_dayCountRefreshingFuture != null) {
+      return;
+    }
+    // ignore: discarded_futures
+    _refreshDayCount();
   }
 
   /// 指定应用列出所有有数据的日期（本地时区），按日期倒序

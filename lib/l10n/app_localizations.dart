@@ -2490,6 +2490,12 @@ abstract class AppLocalizations {
   /// **'images'**
   String get images;
 
+  /// No description provided for @days.
+  ///
+  /// In en, this message translates to:
+  /// **'days'**
+  String get days;
+
   /// No description provided for @justNow.
   ///
   /// In en, this message translates to:
