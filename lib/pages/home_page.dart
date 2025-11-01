@@ -1584,6 +1584,34 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   }
                 },
               ),
+
+              _buildLanguageOption(
+                context: context,
+                title: '日本語',
+                value: 'ja',
+                currentValue: currentOption,
+                onTap: () async {
+                  await LocaleService.instance.setOption('ja');
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    UINotifier.success(context, t.languageChangedToast(t.languageJapanese));
+                  }
+                },
+              ),
+
+              _buildLanguageOption(
+                context: context,
+                title: '한국어',
+                value: 'ko',
+                currentValue: currentOption,
+                onTap: () async {
+                  await LocaleService.instance.setOption('ko');
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                    UINotifier.success(context, t.languageChangedToast(t.languageKorean));
+                  }
+                },
+              ),
               
               const SizedBox(height: AppTheme.spacing4),
             ],

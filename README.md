@@ -167,6 +167,8 @@ flutter build appbundle --release --tree-shake-icons --obfuscate --split-debug-i
 当前支持语言：
 - 简体中文（默认）
 - English
+- 日本語
+- 한국어
 
 ### 添加新语言
 

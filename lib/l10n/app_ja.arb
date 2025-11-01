@@ -1,0 +1,946 @@
+{
+  "@@locale": "ja",
+  "appTitle": "スクリーンメモ",
+  "settingsTitle": "設定",
+  "searchPlaceholder": "スクリーンショットを検索...",
+  "homeEmptyTitle": "監視対象のアプリはありません",
+  "homeEmptySubtitle": "設定で監視するアプリを選択してください",
+  "navSelectApps": "監視するアプリを選択",
+  "dialogOk": "OK",
+  "dialogCancel": "キャンセル",
+  "dialogDone": "完了",
+  "permissionStatusTitle": "権限ステータス",
+  "permissionMissing": "権限が不足しています",
+  "startScreenshot": "キャプチャを開始",
+  "stopScreenshot": "キャプチャを停止",
+  "screenshotEnabledToast": "キャプチャを有効にしました",
+  "screenshotDisabledToast": "キャプチャを無効にしました",
+  "intervalSettingTitle": "キャプチャ間隔を設定",
+  "intervalLabel": "間隔（秒）",
+  "intervalHint": "5～60 の整数を入力してください",
+  "intervalSavedToast": "キャプチャ間隔を {seconds} 秒に設定しました",
+  "@intervalSavedToast": {
+    "description": "Prompt after saving capture interval in seconds",
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "languageSettingTitle": "言語",
+  "languageSystem": "システム",
+  "languageChinese": "簡体字中国語",
+  "languageEnglish": "英語",
+  "languageChangedToast": "{name} に切り替えました",
+  "@languageChangedToast": {
+    "description": "Toast after changing language",
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "nsfwWarningTitle": "コンテンツ警告：成人向けコンテンツ",
+  "nsfwWarningSubtitle": "このコンテンツはアダルト コンテンツとしてマークされています",
+  "show": "表示",
+  "appSearchPlaceholder": "アプリを検索...",
+  "selectedCount": "選択済み {count} 件",
+  "@selectedCount": {
+    "description": "Number of selected apps",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "refreshAppsTooltip": "アプリを再読み込み",
+  "selectAll": "すべて選択",
+  "clearAll": "すべてクリア",
+  "noAppsFound": "アプリが見つかりません",
+  "noAppsMatched": "一致するアプリがありません",
+  "stepProgress": "ステップ {current}/{total}",
+  "@stepProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "onboardingWelcomeTitle": "スクリーンメモへようこそ",
+  "onboardingWelcomeDesc": "重要な情報を効率的に取得、整理、確認できるインテリジェントなメモおよび情報管理ツールです。",
+  "onboardingKeyFeaturesTitle": "主な特徴",
+  "featureSmartNotes": "スマートな情報収集",
+  "featureQuickSearch": "高速コンテンツ検索",
+  "featureLocalStorage": "ローカルデータストレージ",
+  "featureUsageAnalytics": "使用状況分析",
+  "onboardingPermissionsTitle": "必要な権限を付与する",
+  "refreshPermissionStatus": "権限ステータスの更新",
+  "onboardingPermissionsDesc": "完全なエクスペリエンスを提供するには、次の権限を付与してください。",
+  "storagePermissionTitle": "ストレージ許可",
+  "storagePermissionDesc": "スクリーンショット ファイルをデバイス ストレージに保存する",
+  "notificationPermissionTitle": "通知許可",
+  "notificationPermissionDesc": "サービスステータス通知を表示する",
+  "accessibilityPermissionTitle": "アクセシビリティサービス",
+  "accessibilityPermissionDesc": "アプリの切り替えを監視し、スクリーンショットを撮る",
+  "usageStatsPermissionTitle": "使用状況統計の権限",
+  "usageStatsPermissionDesc": "正確なフォアグラウンド アプリ検出を保証する",
+  "batteryOptimizationTitle": "バッテリー最適化のホワイトリスト",
+  "batteryOptimizationDesc": "スクリーンショットサービスを安定して実行し続ける",
+  "pleaseCompleteInSystemSettings": "システム設定で認証を完了してからアプリに戻ってください",
+  "autostartPermissionTitle": "自動起動許可",
+  "autostartPermissionDesc": "アプリがバックグラウンドで再起動できるようにする",
+  "permissionsFooterNote": "権限は付与後も保持され、システム設定でいつでも変更できます。",
+  "grantedLabel": "付与された",
+  "authorizeAction": "承認する",
+  "onboardingSelectAppsTitle": "監視するアプリを選択",
+  "onboardingSelectAppsDesc": "スクリーンショットを監視するアプリを選択してください。続行するには少なくとも 1 つを選択してください。",
+  "onboardingDoneTitle": "準備完了です！",
+  "onboardingDoneDesc": "すべての権限が付与されています。これで、ScreenMemo の使用を開始できます。",
+  "nextStepTitle": "次のステップ",
+  "onboardingNextStepDesc": "「使用を開始」をタップしてメイン画面に入り、強力なスクリーンショット機能を体験してください。",
+  "prevStep": "前へ",
+  "startUsing": "利用開始",
+  "finishSelection": "選択を完了",
+  "nextStep": "次へ",
+  "confirmPermissionSettingsTitle": "権限設定を確認する",
+  "confirmAutostartQuestion": "システム設定の「自動起動許可」の設定はお済みですか？",
+  "notYet": "まだ",
+  "done": "完了",
+  "startingScreenshotServiceInfo": "キャプチャ サービスを開始しています...",
+  "startServiceFailedCheckPermissions": "キャプチャサービスの開始に失敗しました。権限設定を確認してください",
+  "startFailedTitle": "開始に失敗しました",
+  "startFailedUnknown": "開始失敗: 不明なエラー",
+  "tipIfProblemPersists": "ヒント: 問題が解決しない場合は、アプリを再起動するか、権限を再構成してください。",
+  "autoDisabledDueToPermissions": "権限が不十分なため、キャプチャは無効になりました",
+  "refreshingPermissionsInfo": "許可ステータスを更新しています...",
+  "permissionsRefreshed": "権限ステータスが更新されました",
+  "refreshPermissionsFailed": "権限ステータスを更新できませんでした: {error}",
+  "@refreshPermissionsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "screenRecordingPermissionTitle": "画面録画許可",
+  "goToSettings": "設定へ移動",
+  "notGrantedLabel": "未許可",
+  "removeMonitoring": "監視を解除",
+  "selectedItemsCount": "{count} を選択しました",
+  "@selectedItemsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "whySomeAppsHidden": "一部のアプリが見つからないのはなぜですか?",
+  "excludedAppsTitle": "除外されたアプリ",
+  "excludedAppsIntro": "以下のアプリは除外され、選択できません。",
+  "excludedThisApp": "・このアプリ（自己干渉を避けるため）",
+  "excludedImeApps": "・入力方式（キーボード）アプリ：",
+  "excludedImeAppsFiltered": "・入力方法（キーボード）アプリ（自動フィルタリング）",
+  "currentDefaultIme": "現在のデフォルトの IME: {name} ({package})",
+  "@currentDefaultIme": {
+    "placeholders": {
+      "name": {},
+      "package": {}
+    }
+  },
+  "imeExplainText": "別のアプリでキーボードがポップアップすると、システムは IME ウィンドウに切り替わります。除外しない場合、IMEを使用していると誤認され、フローティングウィンドウの検出が誤る可能性があります。 IME アプリは自動的に除外されますが、IME が検出されたときに IME がポップアップする前にフローティング ウィンドウをアプリに移動します。",
+  "gotIt": "わかった",
+  "unknownIme": "不明な IME",
+  "intervalRangeNote": "範囲: 5 ～ 60 秒、デフォルト: 5 秒。",
+  "intervalInvalidInput": "5 ～ 60 の有効な整数を入力してください",
+  "removeMonitoringMessage": "監視のみ解除し、画像は削除しません。続行しますか？",
+  "remove": "解除",
+  "removedMonitoringToast": "{count} 件のアプリの監視を解除しました（画像は削除されません）",
+  "@removedMonitoringToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "checkPermissionStatusFailed": "権限ステータスの確認に失敗しました: {error}",
+  "@checkPermissionStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "accessibilityNotEnabledDetail": "ユーザー補助サービスが有効になっていません\\n設定でユーザー補助を有効にしてください",
+  "storagePermissionNotGrantedDetail": "ストレージ権限が付与されていません\\n設定でストレージ権限を付与してください",
+  "serviceNotRunningDetail": "サービスが正しく実行されていません\\nアプリを再起動してください",
+  "androidVersionNotSupportedDetail": "Android バージョンはサポートされていません\\nAndroid 11.0 以降が必要です",
+  "permissionsSectionTitle": "権限",
+  "displayAndSortSectionTitle": "表示と並べ替え",
+  "screenshotSectionTitle": "キャプチャ設定",
+  "segmentSummarySectionTitle": "セグメントの概要",
+  "dailyReminderSectionTitle": "毎日の概要リマインダー",
+  "aiAssistantSectionTitle": "AIアシスタント",
+  "dataBackupSectionTitle": "データとバックアップ",
+  "actionSet": "セット",
+  "actionEnter": "入力",
+  "actionExport": "輸出",
+  "actionImport": "輸入",
+  "actionCopyPath": "パスをコピーする",
+  "actionOpen": "開ける",
+  "actionTrigger": "トリガー",
+  "allPermissionsGranted": "すべての権限が許可されました",
+  "permissionsMissingCount": "未付与の権限が {count} 件あります",
+  "@permissionsMissingCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "exportSuccessTitle": "エクスポートが完了しました",
+  "exportFileExportedTo": "出力先：",
+  "pathCopiedToast": "パスをコピーしました",
+  "exportFailedTitle": "エクスポートに失敗しました",
+  "pleaseTryAgain": "後でもう一度お試しください",
+  "importCompleteTitle": "インポートが完了しました",
+  "dataExtractedTo": "展開先：",
+  "importFailedTitle": "インポートに失敗しました",
+  "importFailedCheckZip": "ZIP ファイルを確認して、もう一度試してください。",
+  "noMediaProjectionNeeded": "アクセシビリティのスクリーンショットを使用しているため、画面録画の許可は不要です",
+  "autostartPermissionMarked": "自動起動権限を許可済みとしてマークしました",
+  "requestPermissionFailed": "権限の要求に失敗しました：{error}",
+  "@requestPermissionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "expireCleanupSaved": "期限切れクリーンアップ設定が保存されました",
+  "dailyNotifyTriggered": "通知がトリガーされました",
+  "dailyNotifyTriggerFailed": "通知をトリガーできなかったか、コンテンツが空でした",
+  "refreshPermissionStatusTooltip": "権限ステータスの更新",
+  "grantedStatus": "許可済み",
+  "notGrantedStatus": "許可",
+  "privacyModeTitle": "プライバシーモード",
+  "privacyModeDesc": "機密コンテンツを自動でぼかします",
+  "homeSortingTitle": "ホームの並び替え",
+  "screenshotIntervalTitle": "スクリーンショット間隔",
+  "screenshotIntervalDesc": "現在の間隔：{seconds} 秒",
+  "@screenshotIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "screenshotQualityTitle": "スクリーンショット品質",
+  "currentSizeLabel": "現在のサイズ：",
+  "clickToModifyHint": "（数字をタップして変更）",
+  "screenshotExpireTitle": "スクリーンショットの保存期限",
+  "currentExpireDaysLabel": "現在の保存日数：",
+  "expireDaysUnit": "{days} 日",
+  "@expireDaysUnit": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "exportDataTitle": "データをエクスポート",
+  "exportDataDesc": "ZIP を Download/ScreenMemory にエクスポート",
+  "importDataTitle": "データをインポート",
+  "importDataDesc": "ZIP ファイルをアプリストレージに取り込み",
+  "aiAssistantTitle": "AI アシスタント",
+  "aiAssistantDesc": "AI インターフェースとモデルを設定し、多段の会話をテスト",
+  "segmentSampleIntervalTitle": "サンプル間隔 (秒)",
+  "segmentSampleIntervalDesc": "現在: {seconds}秒",
+  "@segmentSampleIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "segmentDurationTitle": "セグメントの長さ (分)",
+  "segmentDurationDesc": "現在: {minutes} 分",
+  "@segmentDurationDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "aiRequestIntervalTitle": "AI リクエストの最小間隔 (秒)",
+  "aiRequestIntervalDesc": "現在: {seconds}s (最小 1 秒)",
+  "@aiRequestIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailyReminderTimeTitle": "毎日のサマリー通知時刻",
+  "currentTimeLabel": "現在：",
+  "testNotificationTitle": "通知をテスト",
+  "testNotificationDesc": "「毎日のサマリー」通知を今すぐトリガー",
+  "enableBannerNotificationTitle": "バナー／フローティング通知を許可",
+  "enableBannerNotificationDesc": "画面上部に通知バナーを表示できるようにする",
+  "setIntervalDialogTitle": "スクリーンショットの間隔を設定",
+  "intervalSecondsLabel": "間隔（秒）",
+  "intervalInputHint": "5 ～ 60 の整数を入力してください",
+  "intervalRangeHint": "範囲：5～60 秒（既定値：5 秒）",
+  "intervalInvalidError": "5～60 の有効な整数を入力してください",
+  "intervalSavedSuccess": "スクリーンショット間隔を {seconds} 秒に設定しました",
+  "@intervalSavedSuccess": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "setTargetSizeDialogTitle": "目標サイズ（KB）を設定",
+  "targetSizeKbLabel": "目標サイズ（KB）",
+  "targetSizeInvalidError": "50 以上の有効な整数を入力してください",
+  "targetSizeSavedSuccess": "目標サイズを {kb} KB に設定しました",
+  "@targetSizeSavedSuccess": {
+    "placeholders": {
+      "kb": {}
+    }
+  },
+  "setExpireDaysDialogTitle": "スクリーンショットの保存日数を設定",
+  "expireDaysLabel": "保存日数",
+  "expireDaysInputHint": "1 以上の整数を入力してください",
+  "expireDaysInvalidError": "1 以上の有効な整数を入力してください",
+  "expireDaysSavedSuccess": "{days} 日に設定しました",
+  "@expireDaysSavedSuccess": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "sortTimeNewToOld": "時間（新→旧）",
+  "sortTimeOldToNew": "時間（旧→新）",
+  "sortSizeLargeToSmall": "サイズ（大→小）",
+  "sortSizeSmallToLarge": "サイズ（小→大）",
+  "sortCountManyToFew": "数（多い→少ない）",
+  "sortCountFewToMany": "数（少ない→多い）",
+  "sortFieldTime": "時間",
+  "sortFieldCount": "件数",
+  "sortFieldSize": "サイズ",
+  "selectHomeSortingTitle": "ホームの並び順を選択",
+  "currentSortingLabel": "現在：{sorting}",
+  "@currentSortingLabel": {
+    "placeholders": {
+      "sorting": {}
+    }
+  },
+  "privacyModeEnabledToast": "プライバシーモードを有効にしました",
+  "privacyModeDisabledToast": "プライバシーモードを無効にしました",
+  "screenshotQualitySettingsSaved": "スクリーンショットの品質設定を保存しました",
+  "saveFailedError": "保存に失敗しました：{error}",
+  "@saveFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "setReminderTimeTitle": "リマインダー時刻を設定（24 時間制）",
+  "hourLabel": "時（0～23）",
+  "minuteLabel": "分（0～59）",
+  "timeInputHint": "ヒント：数字を直接入力できます。範囲は 0～23 時、0～59 分です。",
+  "invalidHourError": "0～23 の有効な時刻を入力してください",
+  "invalidMinuteError": "0～59 の有効な分を入力してください",
+  "timeSetSuccess": "{hour}:{minute} に設定しました",
+  "@timeSetSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderScheduleSuccess": "毎日のリマインダーを {hour}:{minute} に設定しました",
+  "@reminderScheduleSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderDisabledSuccess": "毎日のリマインダーを無効にしました",
+  "reminderScheduleFailed": "毎日のリマインダーをスケジュールできませんでした（プラットフォームが非対応の可能性があります）",
+  "saveReminderSettingsFailed": "リマインダー設定の保存に失敗しました：{error}",
+  "@saveReminderSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchFailedError": "検索に失敗しました: {error}",
+  "@searchFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchInputHintOcr": "キーワードを入力して OCR でスクリーンショットを検索します",
+  "noMatchingScreenshots": "一致するスクリーンショットはありません",
+  "imageMissingOrCorrupted": "画像が見つからないか破損しています",
+  "actionClear": "クリア",
+  "actionRefresh": "更新",
+  "noScreenshotsTitle": "スクリーンショットはまだありません",
+  "noScreenshotsSubtitle": "監視を有効にするとここに画像が表示されます",
+  "confirmDeleteTitle": "削除の確認",
+  "confirmDeleteMessage": "このスクリーンショットを削除しますか？この操作は元に戻せません。",
+  "actionDelete": "削除",
+  "actionContinue": "続行",
+  "linkTitle": "リンク",
+  "actionCopy": "コピー",
+  "imageInfoTitle": "スクリーンショット情報",
+  "deleteImageTooltip": "画像の削除",
+  "imageLoadFailed": "画像の読み込みに失敗しました",
+  "labelAppName": "アプリ名",
+  "labelCaptureTime": "キャプチャ時間",
+  "labelFilePath": "ファイルパス",
+  "labelPageLink": "ページリンク",
+  "labelFileSize": "ファイルサイズ",
+  "tapToContinue": "タップして続行",
+  "appDirUninitialized": "アプリディレクトリが初期化されていません",
+  "actionRetry": "リトライ",
+  "deleteSelectedTooltip": "選択項目を削除",
+  "noMatchingResults": "一致する結果はありません",
+  "dayTabToday": "今日 {count}",
+  "@dayTabToday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabYesterday": "昨日 {count}",
+  "@dayTabYesterday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabMonthDayCount": "{month}/{day} {count}",
+  "@dayTabMonthDayCount": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "count": {}
+    }
+  },
+  "screenshotDeletedToast": "スクリーンショットが削除されました",
+  "deleteFailed": "削除に失敗しました",
+  "deleteFailedWithError": "削除に失敗しました: {error}",
+  "@deleteFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "imageInfoTooltip": "画像情報",
+  "copySuccess": "コピーしました",
+  "copyFailed": "コピーに失敗しました",
+  "deletedCountToast": "スクリーンショットを {count} 件削除しました",
+  "@deletedCountToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "invalidArguments": "無効な引数",
+  "initFailedWithError": "初期化に失敗しました: {error}",
+  "@initFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadMoreFailedWithError": "さらにロードできませんでした: {error}",
+  "@loadMoreFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "confirmDeleteAllTitle": "すべてのスクリーンショットの削除を確認する",
+  "deleteAllMessage": "現在のスコープ内のすべての {count} スクリーンショットを削除します。この操作は元に戻すことができません。",
+  "@deleteAllMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteSelectedMessage": "選択した {count} 個のスクリーンショットを削除します。これを元に戻すことはできません。続く？",
+  "@deleteSelectedMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteFailedRetry": "削除に失敗しました。再試行してください",
+  "keptAndDeletedSummary": "{keep} を保持、{deleted} を削除",
+  "@keptAndDeletedSummary": {
+    "placeholders": {
+      "keep": {},
+      "deleted": {}
+    }
+  },
+  "dailySummaryTitle": "毎日の概要 {date}",
+  "@dailySummaryTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotMorningTitle": "朝のブリーフィング {date}",
+  "@dailySummarySlotMorningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNoonTitle": "正午のブリーフィング {date}",
+  "@dailySummarySlotNoonTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotEveningTitle": "夜のブリーフィング {date}",
+  "@dailySummarySlotEveningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNightTitle": "夜のブリーフィング {date}",
+  "@dailySummarySlotNightTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "actionGenerate": "生成",
+  "actionRegenerate": "再生成",
+  "generateSuccess": "生成しました",
+  "generateFailed": "生成に失敗しました",
+  "noDailySummaryToday": "本日のサマリーはありません",
+  "generateDailySummary": "今日のサマリーを生成",
+  "statisticsTitle": "統計",
+  "overviewTitle": "概要",
+  "monitoredApps": "監視対象アプリ",
+  "totalScreenshots": "スクリーンショットの総数",
+  "todayScreenshots": "今日のスクリーンショット",
+  "storageUsage": "ストレージの使用量",
+  "appStatisticsTitle": "アプリの統計",
+  "screenshotCountWithLast": "スクリーンショット: {count} |最後: {last}",
+  "@screenshotCountWithLast": {
+    "placeholders": {
+      "count": {},
+      "last": {}
+    }
+  },
+  "none": "なし",
+  "usageTrendsTitle": "使用傾向",
+  "trendChartTitle": "トレンドチャート",
+  "comingSoon": "近日公開",
+  "timelineTitle": "タイムライン",
+  "pressBackAgainToExit": "もう一度戻るボタンを押して終了します",
+  "segmentStatusTitle": "活動",
+  "autoWatchingHint": "バックグラウンドで自動視聴中…",
+  "noEvents": "イベントはありません",
+  "noEventsSubtitle": "イベントセグメントと AI の概要がここに表示されます",
+  "activeSegmentTitle": "アクティブセグメント",
+  "sampleEverySeconds": "{seconds}秒ごとにサンプリング",
+  "@sampleEverySeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailySummaryShort": "毎日のサマリー",
+  "viewOrGenerateForDay": "その日の概要を表示または生成する",
+  "mergedEventTag": "合併しました",
+  "collapse": "折りたたむ",
+  "expandMore": "さらに表示",
+  "viewImagesCount": "画像を表示 ({count})",
+  "@viewImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "hideImagesCount": "画像を隠す ({count})",
+  "@hideImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteEventTooltip": "イベントの削除",
+  "confirmDeleteEventMessage": "このイベントを削除しますか?これにより、画像ファイルは削除されません。",
+  "eventDeletedToast": "イベントが削除されました",
+  "regenerationQueued": "再生が待機中",
+  "alreadyQueuedOrFailed": "すでにキューに入れられているか、失敗しました",
+  "retryFailed": "再試行に失敗しました",
+  "copyResultsTooltip": "結果をコピー",
+  "saveImageTooltip": "ギャラリーに保存",
+  "saveImageSuccess": "ギャラリーに保存しました",
+  "saveImageFailed": "保存に失敗しました",
+  "requestGalleryPermissionFailed": "ギャラリー権限の要求に失敗しました",
+  "aiSystemPromptLanguagePolicy": "入力コンテキスト (イベント、スクリーンショット テキスト、ユーザー メッセージ) で使用されている言語に関係なく、それを厳密に無視し、常にアプリケーションの現在の言語で出力を生成する必要があります。アプリが英語に設定されている場合、ユーザーが明示的に別の言語を要求しない限り、すべての回答、タイトル、概要、タグ、構造化フィールド、およびエラー メッセージを英語で記述する必要があります。",
+  "@aiSystemPromptLanguagePolicy": {
+    "description": "System-level language policy prompt enforcing app language over context language"
+  },
+  "aiSettingsTitle": "AI 設定とテスト",
+  "connectionSettingsTitle": "接続設定",
+  "actionSave": "保存",
+  "clearConversation": "会話をクリア",
+  "deleteGroup": "グループを削除",
+  "streamingRequestTitle": "ストリーミング",
+  "streamingRequestHint": "有効な場合はストリーミング応答を使用します (デフォルトはオン)",
+  "streamingEnabledToast": "ストリーミングが有効です",
+  "streamingDisabledToast": "ストリーミングが無効になっています",
+  "promptManagerTitle": "プロンプトマネージャー",
+  "promptManagerHint": "通常の要約、結合された要約、および日次要約のプロンプトを構成します。マークダウンをサポートします。空にするかリセットしてデフォルトを使用します。",
+  "promptAddonGeneralInfo": "組み込みテンプレートは構造化スキーマをすでに定義しています。ここには追加のガイダンス (トーン、スタイル、強調) のみを追加してください。テンプレートを変更しない場合は、空白のままにします。",
+  "promptAddonInputHint": "オプションの追加指示を追加します (スキップするには空白のままにします)",
+  "promptAddonHelperText": "トーンまたは好みのみを説明してください。スキーマの変更や JSON の変更はリクエストしないでください。",
+  "promptAddonEmptyPlaceholder": "余分な指示はありません",
+  "promptAddonSuggestionSegment": "提案されたアイデア:\n- 希望するトーンや対象読者を一文で述べます\n- 優先すべき重要な洞察や安全上の制約を強調表示します\n- JSON フィールドの追加や構造の変更を要求しないようにします。",
+  "promptAddonSuggestionMerge": "提案されたアイデア:\n- マージ後のサーフェスとの比較または対照を強調します。\n- モデルに繰り返しを避け、集約された洞察に焦点を当てるよう思い出させます。\n- 出力フィールドの構造変更を要求しないでください。",
+  "promptAddonSuggestionDaily": "提案されたアイデア:\n- 毎日の要約のトーンを指定します (例: アクション指向)\n- 主要な成果やリスクを強調するように依頼する\n- JSON フィールドの名前変更または追加を禁止します",
+  "normalEventPromptLabel": "通常のイベントプロンプト",
+  "mergeEventPromptLabel": "マージされたイベントプロンプト",
+  "dailySummaryPromptLabel": "毎日の概要プロンプト",
+  "actionEdit": "編集",
+  "savingLabel": "保存中",
+  "resetToDefault": "デフォルトにリセット",
+  "chatTestTitle": "チャットテスト",
+  "actionSend": "送信",
+  "sendingLabel": "送信中",
+  "baseUrlLabel": "ベース URL",
+  "baseUrlHint": "例えばhttps://api.openai.com",
+  "apiKeyLabel": "APIキー",
+  "apiKeyHint": "例えばsk-... またはベンダートークン",
+  "modelLabel": "モデル",
+  "modelHint": "例えばgpt-4o-mini / gpt-4o / 互換",
+  "siteGroupsTitle": "サイトグループ",
+  "siteGroupsHint": "複数のサイトをフォールバックとして設定し、失敗時に自動で切り替えます",
+  "rename": "名前の変更",
+  "addGroup": "グループを追加",
+  "showGroupSelector": "グループセレクターを表示",
+  "ungroupedSingleConfig": "グループ化されていない (単一構成)",
+  "inputMessageHint": "メッセージを入力",
+  "saveSuccess": "保存しました",
+  "savedCurrentGroupToast": "グループを保存しました",
+  "savedNormalPromptToast": "通常プロンプトを保存しました",
+  "savedMergePromptToast": "結合プロンプトを保存しました",
+  "savedDailyPromptToast": "日次プロンプトを保存しました",
+  "resetToDefaultPromptToast": "デフォルトのプロンプトにリセットしました",
+  "resetFailedWithError": "リセットに失敗しました: {error}",
+  "@resetFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "clearSuccess": "クリアしました",
+  "clearFailedWithError": "クリアに失敗しました：{error}",
+  "@clearFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "messageCannotBeEmpty": "メッセージを入力してください",
+  "sendFailedWithError": "送信に失敗しました：{error}",
+  "@sendFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupSwitchedToUngrouped": "未分類に切り替えました",
+  "groupSwitched": "グループを切り替えました",
+  "groupNotSelected": "グループが選択されていません",
+  "groupNotFound": "グループが見つかりません",
+  "renameGroupTitle": "グループ名を変更",
+  "groupNameLabel": "グループ名",
+  "groupNameHint": "新しいグループ名を入力してください",
+  "nameCannotBeEmpty": "名前を入力してください",
+  "renameSuccess": "名称を変更しました",
+  "renameFailedWithError": "名称変更に失敗しました：{error}",
+  "@renameFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupAddedToast": "グループを追加しました",
+  "addGroupFailedWithError": "グループの追加に失敗しました：{error}",
+  "@addGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupDeletedToast": "グループを削除しました",
+  "deleteGroupFailedWithError": "グループの削除に失敗しました：{error}",
+  "@deleteGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadGroupFailedWithError": "グループの読み込みに失敗しました：{error}",
+  "@loadGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "siteGroupDefaultName": "サイトグループ {index}",
+  "@siteGroupDefaultName": {
+    "placeholders": {
+      "index": {}
+    }
+  },
+  "defaultLabel": "デフォルト",
+  "customLabel": "カスタム",
+  "normalShortLabel": "通常：",
+  "mergeShortLabel": "結合：",
+  "dailyShortLabel": "日次：",
+  "timeRangeLabel": "時間帯：{range}",
+  "@timeRangeLabel": {
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "statusLabel": "ステータス：{status}",
+  "@statusLabel": {
+    "placeholders": {
+      "status": {}
+    }
+  },
+  "samplesTitle": "サンプル（{count}）",
+  "@samplesTitle": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiResultTitle": "AIの結果",
+  "modelValueLabel": "モデル：{model}",
+  "@modelValueLabel": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "tagMergedCopy": "タグ：結合済み",
+  "categoriesLabel": "カテゴリ：{categories}",
+  "@categoriesLabel": {
+    "placeholders": {
+      "categories": {}
+    }
+  },
+  "errorLabel": "エラー：{error}",
+  "@errorLabel": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "summaryLabel": "概要：{summary}",
+  "@summaryLabel": {
+    "placeholders": {
+      "summary": {}
+    }
+  },
+  "autostartPermissionNote": "自動起動権限はメーカーによって異なり自動検出できません。実際の設定に合わせて選択してください。",
+  "monthDayTime": "{month}/{day} {hour}:{minute}",
+  "@monthDayTime": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "yearMonthDayTime": "{year}/{month}/{day} {hour}:{minute}",
+  "@yearMonthDayTime": {
+    "placeholders": {
+      "year": {},
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "imagesCountLabel": "{count} 枚",
+  "@imagesCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "apps": "アプリ",
+  "images": "画像",
+  "days": "日",
+  "justNow": "ちょうど今",
+  "minutesAgo": "{minutes} 分前",
+  "@minutesAgo": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "hoursAgo": "{hours} 時間前",
+  "@hoursAgo": {
+    "placeholders": {
+      "hours": {}
+    }
+  },
+  "daysAgo": "{days} 日前",
+  "@daysAgo": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "searchResultsCount": "{count} 件の画像が見つかりました",
+  "@searchResultsCount": {
+    "description": "Search results count display",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "searchFiltersTitle": "フィルター",
+  "filterByTime": "時間",
+  "filterByApp": "アプリ",
+  "filterBySize": "サイズ",
+  "filterTimeAll": "すべて",
+  "filterTimeToday": "今日",
+  "filterTimeYesterday": "昨日",
+  "filterTimeLast7Days": "過去 7 日間",
+  "filterTimeLast30Days": "過去 30 日間",
+  "filterTimeCustomRange": "カスタム範囲",
+  "filterAppAll": "すべてのアプリ",
+  "filterSizeAll": "すべてのサイズ",
+  "filterSizeSmall": "100 KB 未満",
+  "filterSizeMedium": "100 KB ～ 1 MB",
+  "filterSizeLarge": "1 MB 超",
+  "applyFilters": "適用",
+  "resetFilters": "リセット",
+  "selectDateRange": "日付範囲を選択",
+  "startDate": "開始日",
+  "endDate": "終了日",
+  "noResultsForFilters": "現在のフィルターに一致する画像はありません",
+  "openLink": "開く",
+  "favoritePageTitle": "お気に入り",
+  "noFavoritesTitle": "お気に入りはありません",
+  "noFavoritesSubtitle": "ギャラリーで長押しして複数選択モードにするとお気に入りに追加できます",
+  "noteLabel": "メモ",
+  "updatedAt": "更新日：",
+  "clickToAddNote": "クリックしてメモを追加...",
+  "noteUnchanged": "メモに変更はありません",
+  "noteSaved": "メモを保存しました",
+  "favoritesRemoved": "お気に入りから削除しました",
+  "operationFailed": "操作に失敗しました",
+  "cannotGetAppDir": "アプリのディレクトリを取得できません",
+  "nsfwSettingsSectionTitle": "NSFW 設定",
+  "blockedDomainListTitle": "ブロック対象ドメイン",
+  "addDomainPlaceholder": "ドメインまたは *.example.com",
+  "addRuleAction": "追加",
+  "previewAction": "プレビュー",
+  "removeAction": "削除",
+  "clearAction": "クリア",
+  "clearAllRules": "すべてのルールをクリア",
+  "clearAllRulesConfirmTitle": "ルールの削除を確認",
+  "clearAllRulesMessage": "すべてのブロック対象ドメインを削除します。この操作は元に戻せません。",
+  "previewAffectsCount": "{count} 枚に影響します",
+  "@previewAffectsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "affectCountLabel": "影響：{count}",
+  "@affectCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "confirmAddRuleTitle": "ルール追加の確認",
+  "confirmAddRuleMessage": "ルールを追加：{rule}",
+  "@confirmAddRuleMessage": {
+    "placeholders": {
+      "rule": {}
+    }
+  },
+  "ruleAddedToast": "ルールを追加しました",
+  "ruleRemovedToast": "ルールを削除しました",
+  "invalidDomainInputError": "有効なドメインを入力してください（*.example.com に対応）",
+  "manualMarkNsfw": "NSFW としてマーク",
+  "manualUnmarkNsfw": "NSFW マークを解除",
+  "manualMarkSuccess": "NSFW としてマークしました",
+  "manualUnmarkSuccess": "NSFW マークを解除しました",
+  "manualMarkFailed": "操作に失敗しました",
+  "nsfwTagLabel": "NSFW",
+  "nsfwBlockedByRulesHint": "NSFW ルールによりブロックされています。設定 > NSFW ドメインで管理してください。",
+  "providersTitle": "プロバイダー",
+  "actionNew": "新規作成",
+  "actionAdd": "追加",
+  "noProvidersYetHint": "まだプロバイダーがありません。「新規作成」をタップして追加してください。",
+  "confirmDeleteProviderMessage": "プロバイダー「{name}」を削除しますか？この操作は元に戻せません。",
+  "@confirmDeleteProviderMessage": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "loadingConversations": "会話を読み込み中…",
+  "noConversations": "会話がありません",
+  "deleteConversationTitle": "会話を削除",
+  "confirmDeleteConversationMessage": "会話「{title}」を削除しますか？",
+  "@confirmDeleteConversationMessage": {
+    "placeholders": {
+      "title": {}
+    }
+  },
+  "untitledConversationLabel": "無題の会話",
+  "searchProviderPlaceholder": "プロバイダーを検索",
+  "searchModelPlaceholder": "モデルを検索",
+  "providerSelectedToast": "選択したプロバイダー：{name}",
+  "@providerSelectedToast": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "pleaseSelectProviderFirst": "まずプロバイダーを選択してください",
+  "noModelsForProviderHint": "利用可能なモデルがありません。「プロバイダー」ページで更新するか手動で追加してください。",
+  "noModelsDetectedHint": "利用可能なモデルが見つかりません。更新するか手動で追加してください。",
+  "modelSwitchedToast": "モデルを切り替えました：{model}",
+  "@modelSwitchedToast": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "providerLabel": "プロバイダー",
+  "sendMessageToModelPlaceholder": "{model} にメッセージを送信",
+  "@sendMessageToModelPlaceholder": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "deepThinkingLabel": "詳細推論",
+  "thinkingInProgress": "思考中…",
+  "requestStoppedInfo": "リクエストを停止しました",
+  "reasoningLabel": "推論:",
+  "answerLabel": "答え：",
+  "aiSelfModeEnabledToast": "パーソナルアシスタント：会話であなたのデータコンテキストを使用します",
+  "selectModelWithCounts": "モデルを選択（{filtered}/{total}）",
+  "@selectModelWithCounts": {
+    "placeholders": {
+      "filtered": {},
+      "total": {}
+    }
+  },
+  "modelsCountLabel": "モデル（{count}）",
+  "@modelsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "manualAddModelLabel": "モデルを手動で追加",
+  "inputAndAddModelHint": "入力して追加（例：gpt-4o-mini）",
+  "fetchModelsHint": "「更新」を押すと自動取得します。失敗した場合は手動でモデル名を追加してください。",
+  "interfaceTypeLabel": "インターフェース種別",
+  "currentTypeLabel": "現在：{type}",
+  "@currentTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "nameRequiredError": "名前は必須です",
+  "nameAlreadyExistsError": "同じ名前が既に存在します",
+  "apiKeyRequiredError": "API キーは必須です",
+  "baseUrlRequiredForAzureError": "Azure OpenAI には Base URL が必要です",
+  "atLeastOneModelRequiredError": "モデルを少なくとも 1 つ追加してください",
+  "modelsUpdatedToast": "モデルを更新しました（{count}）",
+  "@modelsUpdatedToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "fetchModelsFailedHint": "モデルの取得に失敗しました。手動で追加できます。",
+  "useResponseApiLabel": "Response API を使用（公式 OpenAI のみ対応。サードパーティは推奨されません）",
+  "chatPathOptionalLabel": "チャットパス（任意）",
+  "azureApiVersionLabel": "Azure API バージョン",
+  "azureApiVersionHint": "例：2024-02-15",
+  "baseUrlHintOpenAI": "例：https://api.openai.com（空欄で既定）",
+  "baseUrlHintClaude": "例：https://api.anthropic.com",
+  "baseUrlHintGemini": "例：https://generativelanguage.googleapis.com",
+  "baseUrlHintAzure": "必須： https://{resource}.openai.azure.com",
+  "baseUrlHintCustom": "OpenAI 互換の Base URL を入力してください",
+  "createProviderTitle": "新規プロバイダー",
+  "editProviderTitle": "プロバイダーを編集",
+  "deletedToast": "削除しました",
+  "providerNotFound": "プロバイダーが見つかりません",
+  "conversationsSectionTitle": "会話",
+  "displaySectionTitle": "表示",
+  "streamRenderImagesTitle": "ストリーミング中に画像を描画",
+  "streamRenderImagesDesc": "スクロールに影響する場合があります",
+  "themeColorTitle": "テーマカラー",
+  "themeColorDesc": "アプリのキーカラーをカスタマイズ",
+  "chooseThemeColorTitle": "テーマカラーを選択",
+  "loggingTitle": "ログ出力",
+  "loggingDesc": "集中ログを有効化（既定で有効）",
+  "loggingAiTitle": "AI ログ",
+  "loggingScreenshotTitle": "スクリーンショットログ",
+  "loggingAiDesc": "AI のリクエストとレスポンスを記録",
+  "loggingScreenshotDesc": "スクリーンショットの取得とクリーンアップを記録",
+  "themeModeAuto": "自動",
+  "themeModeLight": "ライト",
+  "themeModeDark": "ダーク",
+  "aiEmptySelfTitle": "パーソナルアシスタントの準備完了",
+  "aiEmptySelfSubtitle": "何でも質問してください。あなたのデータコンテキストを利用します。",
+  "languageJapanese": "日本語",
+  "languageKorean": "韓国語"
+}

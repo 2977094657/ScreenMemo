@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">屏忆</string>
+    <string name="app_name_en">Screen Memo</string>
+    <string name="app_name_ja">スクリーンメモ</string>
+    <string name="app_name_ko">스크린메모</string>
     <string name="accessibility_service_description">屏忆的核心功能依靠此服务。若不开启，将无法进行截屏。</string>
     <string name="foreground_service_title">屏幕截图服务运行中</string>
     <string name="foreground_service_content">点击返回应用</string>
@@ -10,6 +13,8 @@
     <!-- AI 语言策略（按应用语言强制输出），供原生端读取 -->
     <string name="ai_language_policy_zh"><![CDATA[无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。]]></string>
     <string name="ai_language_policy_en">You MUST ignore any input context language and always respond strictly in the current application language.</string>
+    <string name="ai_language_policy_ja"><![CDATA[入力コンテキスト（イベント・スクリーンショットのテキスト・ユーザーのメッセージ）で使用されている言語に関係なく、必ず現在のアプリ言語で出力してください。アプリが日本語に設定されている場合、ユーザーが明示的に他言語を要求しない限り、回答・タイトル・要約・タグ・構造化フィールド・エラーメッセージはすべて日本語で記述してください。]]></string>
+    <string name="ai_language_policy_ko"><![CDATA[입력 컨텍스트(이벤트, 스크린샷 텍스트, 사용자 메시지)의 언어와 관계없이 반드시 현재 앱 언어로만 응답해야 합니다. 앱이 한국어로 설정되어 있다면 사용자가 다른 언어를 명시적으로 요청하지 않는 한 모든 답변, 제목, 요약, 태그, 구조화 필드, 오류 메시지는 한국어로 작성해야 합니다.]]></string>
 
     <!-- 原生端：普通事件默认提示词（中文/英文各一份），从代码中迁移至资源 -->
     <string name="segment_prompt_default_zh"><![CDATA[请基于以下多张屏幕图片进行中文总结，并输出结构化结果；必须严格遵循：
@@ -89,6 +94,32 @@ overall_summary: "(Markdown) start with a single untitled paragraph; then sectio
 Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
 Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).]]></string>
 
+    <string name="merge_prompt_default_ja"><![CDATA[以下の画像を基に日本語で統合サマリーを作成してください。必ず次のルールに従います（構造化JSON、行動重視、逐一説明禁止／OCR禁止）:
+- OCRテキストは使用せず、画像の内容を直接理解してください。
+- 各画像を逐一説明せず、当該時間帯の「行動サマリー」をアプリ／トピック単位でまとめてください（閲覧／視聴／チャット／買い物／仕事／設定／ダウンロード／共有／ゲーム など）。
+- 動画タイトル・作者・ブランドなど固有情報は画面表示どおりに保持してください。
+- 同一の記事／動画／ページの連続画像は1つの content_group にまとめて包括的に要約してください。
+- 冒頭では当該時間帯を見出しなしの短い段落で要約し、その後の内容は Markdown の小見出しと箇条書きで提示してください。
+- Markdown 要件: 表示用テキスト（overall_summary と content_groups[].summary）は Markdown を用いて小見出しと箇条書きで明確にし、Markdown のコードブロック記法（```）は使用しないでください。純粋な Markdown テキストのみを出力してください。
+- 推奨セクション: 「## 主要アクション」「## 主な活動」「## 重要コンテンツ」。
+- 「## 主要アクション」では、連続する同種の行動を「HH:mm:ss-HH:mm:ss：行動説明」の形式でまとめ、行動が途切れる／切り替わるときのみ新しい項目を追加し、3〜8件に収めてください。
+- content_groups[].summary はトピック／代表的なタイトル／意図を 1〜3 個の Markdown 箇条書きで記述してください。
+- 出力する JSON フィールド: apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary。
+- JSON オブジェクトは1つのみ出力し、JSON 外に説明や Markdown を追加しないでください。表示用コンテンツ（追加セクションを含む）は overall_summary に記述してください。]]></string>
+
+    <string name="merge_prompt_default_ko"><![CDATA[다음 이미지를 기반으로 한국어로 병합 요약을 생성하세요. 다음 규칙을 반드시 지켜야 합니다(구조화된 JSON, 행동 중심, 이미지별 서술 금지/OCR 금지):
+- OCR 텍스트를 사용하지 말고 이미지 내용을 직접 이해하세요.
+- 각 이미지를 하나씩 설명하지 말고, 해당 시간대의 "행동 요약"을 앱/주제 단위로 묶으세요(탐색/시청/채팅/쇼핑/업무/설정/다운로드/공유/게임 등).
+- 화면에 표시된 동영상 제목, 작성자, 브랜드 등 고유 정보는 화면 그대로 유지하세요.
+- 동일한 기사/동영상/페이지의 연속 이미지는 하나의 content_group 으로 묶어 전체적으로 요약하세요.
+- 시작 부분에는 제목 없는 짧은 단락으로 시간대를 요약하고, 이후 내용은 Markdown 소제목과 불릿으로 정리하세요.
+- Markdown 요구 사항: 표시용 텍스트(overall_summary 및 content_groups[].summary)는 Markdown 으로 작성하고 명확한 소제목과 불릿을 사용하세요. Markdown 코드 블록 표기(``` )는 사용하지 말고 순수한 Markdown 텍스트만 출력하세요.
+- 권장 섹션: "## 주요 행동", "## 주요 활동", "## 핵심 콘텐츠".
+- "## 주요 행동"에서는 연속된 동일 유형의 행동을 "HH:mm:ss-HH:mm:ss: 행동 설명" 형식으로 묶고, 행동이 끊기거나 전환될 때만 새 항목을 추가하며 3~8개의 항목으로 유지하세요.
+- content_groups[].summary 는 주제/대표 제목/의도를 1~3개의 Markdown 불릿으로 작성하세요.
+- 출력 JSON 필드는 apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary 입니다.
+- JSON 객체는 하나만 출력하고 JSON 외부에 설명이나 Markdown 을 추가하지 마세요. 표시용 콘텐츠는 overall_summary 에 작성하세요.]]></string>
+
     <!-- 原生端构造提示所用标签（中/英） -->
     <string name="title_merged_event_summary_zh">合并事件总结：</string>
     <string name="title_merged_event_summary_en">Merged Event Summary:</string>
@@ -100,4 +131,49 @@ Only output ONE JSON object; no explanations or Markdown outside JSON; all displ
     <string name="label_screenshot_at_en">  - Screenshot at=</string>
     <string name="label_file_zh"> -> 文件=</string>
     <string name="label_file_en"> -> File=</string>
+    <!-- Additional locale resources for Japanese & Korean -->
+    <string name="segment_prompt_default_ja"><![CDATA[以下の複数のスクリーンショットをもとに日本語で要約し、構造化された結果を出力してください。遵守すべきルール:
+- OCRテキストは使用せず、画像の内容を直接理解すること。
+- 画像ごとの説明は禁止。アプリ／トピック単位で当該時間帯の「行動サマリー」（閲覧／視聴／チャット／買い物／仕事／設定／ダウンロード／共有／ゲーム等）を統合すること。
+- 画面上の動画タイトル・作者・ブランドなど固有の情報は、画面表示どおりに保持すること。
+- 同一の記事／動画／ページの連続画像は1つの content_group にまとめて総合的に要約すること。
+- 冒頭は見出しなしの短い段落で時間帯を要約し、その後に Markdown の小見出しと箇条書きで詳細を示すこと。
+- Markdown 要件: 表示用テキスト（overall_summary、content_groups[].summary）はすべて Markdown を使用する。timeline[].summary は簡潔な Markdown を許容。key_actions[].detail も簡潔な Markdown。コードブロック (``` ) は使用しない。
+- overall_summary には必ず次のセクションをこの順序で含める: 「## 主要アクション」「## 主な活動」「## 重要コンテンツ」。各セクションには最低3つの箇条書きを「- 」で記載すること。十分な情報がない場合でも、省略せず意味のある記述を少なくとも1つ含めること。
+- 「## 主要アクション」では、連続する同種の行動を時間範囲「HH:mm:ss-HH:mm:ss：説明」でまとめる。行動が途切れる場合のみ新しい項目を追加し、3〜8項目以内に収めること。
+- 画像の3分の1を超えて記述を付けない（端数は切り捨て、0件も可）。残りの画像を逐一説明してはならない。
+- すべての content_groups[].representative_images の合計は上記上限内に収める。key_actions[].ref_image は選択済みの代表画像を再利用し、新しい画像を追加しないこと。
+
+出力する JSON フィールド（省略不可）: apps[], categories[], timeline[], key_actions[], described_images[], overall_summary。
+JSON オブジェクトは1つのみを出力し、JSON 外に説明や Markdown を追加しないこと。表示用コンテンツ（追加セクションを含む）は overall_summary に記述すること。
+フィールド定義:
+key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"アプリ名","ref_image":"ファイル名","ref_time":"HH:mm:ss","detail":"(Markdown) 簡潔な説明（機密情報は避ける）","confidence":0.0}]
+described_images[]: [{"file":"ファイル名","ref_time":"HH:mm:ss","app":"アプリ名","summary":"(Markdown) 画像の要点と選定理由"}]
+timeline[]: [{"time":"HH:mm:ss","app":"アプリ名","action":"browse|watch|chat|shop|search|edit|game|settings|download|share|other","summary":"(Markdown) 一言で行動を説明（必要なら強調）"}]
+overall_summary: "(Markdown) 冒頭に見出しなしの1段落、その後に小見出しと箇条書きを配置。冗長さを避け、重要情報を残すこと"]]> </string>
+
+    <string name="segment_prompt_default_ko"><![CDATA[다음 스크린샷들을 기반으로 한국어로 요약하고, 구조화된 결과를 출력하세요. 반드시 지켜야 할 규칙:
+- OCR 텍스트를 사용하지 말고 이미지 콘텐츠를 직접 이해한다.
+- 이미지별 서술은 금지한다. 앱/주제 단위로 해당 시간대의 "행동 요약"(탐색/시청/채팅/쇼핑/업무/설정/다운로드/공유/게임 등)을 통합한다.
+- 화면에 표시된 동영상 제목·작성자·브랜드 등 고유 정보는 화면 그대로 유지한다.
+- 동일 기사/동영상/페이지의 연속 이미지는 하나의 content_group 으로 묶어 전체적으로 요약한다.
+- 서두는 제목 없는 짧은 단락으로 기간을 요약하고, 이후에는 Markdown 소제목과 불릿으로 정리한다.
+- Markdown 요구 사항: overall_summary 와 content_groups[].summary 는 Markdown 을 사용하여 보기 좋게 구성하고, 코드 블록(``` )은 사용하지 않는다.
+- overall_summary 에는 "## 주요 행동", "## 주요 활동", "## 핵심 콘텐츠"의 세 섹션을 이 순서로 반드시 포함하며, 각 섹션에는 최소 3개의 불릿을 "- "로 작성한다. 정보가 부족하더라도 의미 있는 항목을 최소 1개 포함한다.
+- content_groups[].summary 는 1~3개의 Markdown 불릿으로 주제/대표 제목/의도를 설명한다.
+- 대표 이미지에 대한 서술은 전체의 3분의 1(내림) 이하로 제한하며, 나머지 이미지를 하나씩 설명하지 않는다. key_actions[].ref_image 는 선택한 대표 이미지를 재사용하고 추가 이미지를 만들지 않는다.
+
+출력 JSON 필드(일반 이벤트와 동일): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
+JSON 객체는 하나만 출력하고, JSON 외부에 설명이나 Markdown 을 추가하지 않는다. 표시용 콘텐츠는 overall_summary 에 작성한다.]]></string>
+
+    <string name="title_merged_event_summary_ja">合成イベント概要：</string>
+    <string name="title_merged_event_summary_ko">병합된 이벤트 요약:</string>
+    <string name="label_time_range_ja">時間帯：</string>
+    <string name="label_time_range_ko">시간 범위: </string>
+    <string name="label_app_ja">アプリ：</string>
+    <string name="label_app_ko">앱: </string>
+    <string name="label_screenshot_at_ja">  - スクリーンショット時刻＝</string>
+    <string name="label_screenshot_at_ko">  - 스크린샷 시각=</string>
+    <string name="label_file_ja"> -> ファイル＝</string>
+    <string name="label_file_ko"> -> 파일=</string>
 </resources>

@@ -131,24 +131,61 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     arrayOf(range.first.toString(), range.second.toString())
                 )
                 val sb = StringBuilder()
-                val isZh = try {
-                    val langOpt = ctx.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE).getString("flutter.locale_option", "system")
+                val effectiveLang = try {
+                    val langOpt = ctx.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE).getString("flutter.locale_option", "system") ?: "system"
                     val sys = java.util.Locale.getDefault().language?.lowercase() ?: "en"
-                    (langOpt == "zh") || (langOpt != "en" && sys.startsWith("zh"))
-                } catch (_: Exception) { true }
-                val languagePolicy = if (isZh) ctx.getString(R.string.ai_language_policy_zh) else ctx.getString(R.string.ai_language_policy_en)
-                val extra = try { AISettingsNative.readSettingValue(ctx, if (isZh) "prompt_daily_extra_zh" else "prompt_daily_extra_en") } catch (_: Exception) { null }
-                val legacyLang = try { AISettingsNative.readSettingValue(ctx, if (isZh) "prompt_daily_zh" else "prompt_daily_en") } catch (_: Exception) { null }
+                    when (langOpt) {
+                        "zh", "en", "ja", "ko" -> langOpt
+                        "system" -> when {
+                            sys.startsWith("zh") -> "zh"
+                            sys.startsWith("ja") -> "ja"
+                            sys.startsWith("ko") -> "ko"
+                            else -> "en"
+                        }
+                        else -> "en"
+                    }
+                } catch (_: Exception) { "zh" }
+                val languagePolicy = when (effectiveLang) {
+                    "zh" -> ctx.getString(R.string.ai_language_policy_zh)
+                    "ja" -> ctx.getString(R.string.ai_language_policy_ja)
+                    "ko" -> ctx.getString(R.string.ai_language_policy_ko)
+                    else -> ctx.getString(R.string.ai_language_policy_en)
+                }
+                val extraKey = when (effectiveLang) {
+                    "zh" -> "prompt_daily_extra_zh"
+                    else -> "prompt_daily_extra_en"
+                }
+                val legacyKey = when (effectiveLang) {
+                    "zh" -> "prompt_daily_zh"
+                    else -> "prompt_daily_en"
+                }
+                val extra = try { AISettingsNative.readSettingValue(ctx, extraKey) } catch (_: Exception) { null }
+                val legacyLang = try { AISettingsNative.readSettingValue(ctx, legacyKey) } catch (_: Exception) { null }
                 val legacy = try { AISettingsNative.readSettingValue(ctx, "prompt_daily") } catch (_: Exception) { null }
                 val addon = sequenceOf(extra, legacyLang, legacy)
                     .firstOrNull { it != null && it.trim().isNotEmpty() }
                     ?.trim()
                 val headerBuilder = StringBuilder()
                 headerBuilder.append(languagePolicy).append("\n\n")
-                val defaultTemplate = if (isZh) DEFAULT_PROMPT_ZH else DEFAULT_PROMPT_EN
+                val defaultTemplate = when (effectiveLang) {
+                    "zh" -> DEFAULT_PROMPT_ZH
+                    "ja" -> DEFAULT_PROMPT_JA
+                    "ko" -> DEFAULT_PROMPT_KO
+                    else -> DEFAULT_PROMPT_EN
+                }
                 if (!addon.isNullOrEmpty()) {
-                    val beginMarker = if (isZh) "【重要附加说明（开始）】" else "***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***"
-                    val endMarker = if (isZh) "【重要附加说明（结束）】" else "***IMPORTANT EXTRA INSTRUCTIONS (END)***"
+                    val beginMarker = when (effectiveLang) {
+                        "zh" -> "【重要附加说明（开始）】"
+                        "ja" -> "【重要な追加指示（開始）】"
+                        "ko" -> "***중요 추가 지침 (시작)***"
+                        else -> "***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***"
+                    }
+                    val endMarker = when (effectiveLang) {
+                        "zh" -> "【重要附加说明（结束）】"
+                        "ja" -> "【重要な追加指示（終了）】"
+                        "ko" -> "***중요 추가 지침 (종료)***"
+                        else -> "***IMPORTANT EXTRA INSTRUCTIONS (END)***"
+                    }
                     headerBuilder.append(beginMarker).append('\n').append(addon).append("\n\n")
                     headerBuilder.append(defaultTemplate).append("\n\n")
                     headerBuilder.append(endMarker).append('\n').append(addon)
@@ -179,7 +216,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     }
                 }
                 val prompt = sb.toString()
-                val (model, content) = callTextModel(ctx, prompt, isZh)
+                val (model, content) = callTextModel(ctx, prompt, effectiveLang)
                 val stripped = stripFences(content.trim())
                 var structured: String? = null
                 var outputText: String = stripped
@@ -362,7 +399,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             } catch (_: Exception) { s }
         }
 
-        private fun callTextModel(ctx: Context, prompt: String, isZh: Boolean): Pair<String, String> {
+        private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
             val cfg = AISettingsNative.readConfig(ctx)
             val client = OkHttpClient.Builder()
                 .connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -371,7 +408,12 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 .retryOnConnectionFailure(true)
                 .build()
             val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
-            val systemMsg = if (isZh) ctx.getString(R.string.ai_language_policy_zh) else ctx.getString(R.string.ai_language_policy_en)
+            val systemMsg = when (lang) {
+                "zh" -> ctx.getString(R.string.ai_language_policy_zh)
+                "ja" -> ctx.getString(R.string.ai_language_policy_ja)
+                "ko" -> ctx.getString(R.string.ai_language_policy_ko)
+                else -> ctx.getString(R.string.ai_language_policy_en)
+            }
             val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
             return if (isGoogle) {
                 val url = "$base/v1beta/models/${cfg.model}:generateContent?key=${cfg.apiKey}"
@@ -492,6 +534,68 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
       { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
     ],
     "notification_brief": "1–3 sentences in plain English without Markdown"
+  }
+            """
+        ).trimIndent()
+
+        private val DEFAULT_PROMPT_JA = (
+            """
+  あなたは厳格な日本語の日次サマリーアシスタントです。提供される「当日の複数時間帯における overall_summary（コンテキストのみ）」をもとに、必ず完全な1日の JSON サマリーを生成してください。途中終了やフィールド／セクションの欠落は許されません。
+
+  出力要件（すべて満たすこと）:
+  - 標準 JSON で解析可能な1つの JSON オブジェクトだけを出力すること。説明文や前後の余分なテキスト、JSON 外の Markdown を絶対に含めないこと。
+  - フィールドは固定で必須: overall_summary、timeline、notification_brief。省略・空文字・null を禁止します。
+  - overall_summary は純粋な Markdown テキスト（コードブロック ``` は禁止）。構成は以下のとおり：
+    1) 最初の段落: 見出しなしの段落で、当日のテーマ・進行・収穫を要約する。
+    2) 次に必ず以下の二級見出しをこの順序で配置:
+       "## 主要アクション"
+       "## 主な活動"
+       "## 重要コンテンツ"
+       各セクションには少なくとも3つの箇条書き（"- "）を含めること。情報が不十分でもセクションを削除せず、意味のあるプレースホルダー（例: 「特筆すべき主要アクションなし」）を最低1つ含める。
+  - timeline は時間昇順で 5～12 件の主要イベントを列挙する配列。各要素:
+    { "time": "HH:mm:ss-HH:mm:ss", "summary": "1文の行動（Markdown で軽い強調可）" }
+    コンテキストが少ない場合でも最低1件は必要。空配列は禁止。
+  - notification_brief は日本語の短文 1～3 文で、Markdown・見出し・リスト・コードブロックを含めず、当日の要点を簡潔に表現すること。
+  - 画像やリンクの出力は禁止。上記以外のキーを追加しない。null 使用禁止。文字列の前後空白は除去すること。
+
+  出力は以下の JSON 形式を厳守（キー固定・全て必須）:
+  {
+    "overall_summary": "(Markdown) 最初は見出しなしの段落、その後に “## 主要アクション”“## 主な活動”“## 重要コンテンツ” を順番に配置し、各セクションは "- " 箇条書き",
+    "timeline": [
+      { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
+    ],
+    "notification_brief": "1～3文の日本語テキスト（Markdown なし）"
+  }
+            """
+        ).trimIndent()
+
+        private val DEFAULT_PROMPT_KO = (
+            """
+  당신은 엄격한 한국어 일일 요약 도우미입니다. 제공되는 "해당 날짜의 여러 시간대에 대한 overall_summary(컨텍스트용)"를 기반으로 반드시 완전한 일일 JSON 요약을 생성해야 합니다. 중간 종료나 필드/섹션 누락은 허용되지 않습니다.
+
+  출력 요구 사항(모두 충족해야 함):
+  - 표준 JSON으로 파싱 가능한 단일 JSON 객체만 출력합니다. 설명, 접두/접미 텍스트, JSON 외부의 Markdown을 절대 포함하지 마세요.
+  - 필드는 고정이며 모두 필수: overall_summary, timeline, notification_brief. 누락/빈값/null 금지.
+  - overall_summary 는 순수 Markdown 텍스트여야 하며(코드 블록 ``` 금지) 다음 구조를 따라야 합니다:
+    1) 첫 단락: 제목 없는 한 단락으로 하루의 핵심 주제·리듬·성과를 요약합니다.
+    2) 이어서 아래 세 개의 2단계 제목을 지정된 순서대로 포함합니다:
+       "## 주요 행동"
+       "## 주요 활동"
+       "## 핵심 콘텐츠"
+       각 섹션은 최소 3개의 "- " 불릿을 포함해야 합니다. 정보가 부족하더라도 섹션을 삭제하지 말고, 의미 있는 플레이스홀더(예: "눈에 띄는 주요 행동 없음")를 최소 1개 포함하세요.
+  - timeline 은 시간 오름차순의 배열로 5~12개의 핵심 항목을 포함합니다. 각 항목 형식:
+    { "time": "HH:mm:ss-HH:mm:ss", "summary": "한 문장 행동(간단한 Markdown 강조 가능)" }
+    컨텍스트가 적더라도 최소 1개 항목을 포함해야 하며, 비워둘 수 없습니다.
+  - notification_brief 는 Markdown/제목/목록/코드블록 없는 한국어 문장 1~3개로, 하루의 하이라이트를 간결하게 전달해야 합니다.
+  - 이미지나 링크 출력 금지. 지정된 세 키 외의 다른 키 금지. null 사용 금지. 모든 문자열은 앞뒤 공백을 제거합니다.
+
+  출력은 아래 JSON 형태를 엄격히 따릅니다(키 고정, 모두 필수):
+  {
+    "overall_summary": "(Markdown) 첫 단락은 제목 없는 요약, 이어서 “## 주요 행동”“## 주요 활동”“## 핵심 콘텐츠” 순서의 섹션과 "- " 불릿",
+    "timeline": [
+      { "time": "HH:mm:ss-HH:mm:ss", "summary": "..." }
+    ],
+    "notification_brief": "Markdown 없는 한국어 1~3문장"
   }
             """
         ).trimIndent()

@@ -1,0 +1,946 @@
+{
+  "@@locale": "ko",
+  "appTitle": "스크린메모",
+  "settingsTitle": "설정",
+  "searchPlaceholder": "스크린샷 검색...",
+  "homeEmptyTitle": "모니터링되는 앱 없음",
+  "homeEmptySubtitle": "설정에서 모니터링할 앱을 선택하세요",
+  "navSelectApps": "모니터링할 앱 선택",
+  "dialogOk": "확인",
+  "dialogCancel": "취소",
+  "dialogDone": "완료",
+  "permissionStatusTitle": "권한 상태",
+  "permissionMissing": "권한이 부족합니다",
+  "startScreenshot": "캡처 시작",
+  "stopScreenshot": "캡처 중지",
+  "screenshotEnabledToast": "캡처를 활성화했습니다",
+  "screenshotDisabledToast": "캡처를 비활성화했습니다",
+  "intervalSettingTitle": "캡처 간격 설정",
+  "intervalLabel": "간격(초)",
+  "intervalHint": "5~60 사이의 정수를 입력하세요",
+  "intervalSavedToast": "캡처 간격을 {seconds}초로 설정했습니다",
+  "@intervalSavedToast": {
+    "description": "Prompt after saving capture interval in seconds",
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "languageSettingTitle": "언어",
+  "languageSystem": "시스템",
+  "languageChinese": "중국어(간체)",
+  "languageEnglish": "영어",
+  "languageChangedToast": "{name}로 전환됨",
+  "@languageChangedToast": {
+    "description": "Toast after changing language",
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "nsfwWarningTitle": "콘텐츠 경고: 성인용 콘텐츠",
+  "nsfwWarningSubtitle": "이 콘텐츠는 성인용 콘텐츠로 표시되었습니다.",
+  "show": "표시",
+  "appSearchPlaceholder": "앱 검색...",
+  "selectedCount": "{count}개 선택됨",
+  "@selectedCount": {
+    "description": "Number of selected apps",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "refreshAppsTooltip": "앱 새로 고침",
+  "selectAll": "모두 선택",
+  "clearAll": "모두 지우기",
+  "noAppsFound": "앱을 찾을 수 없습니다",
+  "noAppsMatched": "일치하는 앱이 없습니다",
+  "stepProgress": "단계 {current}/{total}",
+  "@stepProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "onboardingWelcomeTitle": "스크린메모에 오신 것을 환영합니다",
+  "onboardingWelcomeDesc": "중요한 정보를 효율적으로 캡처, 구성 및 검토할 수 있도록 도와주는 지능형 메모 및 정보 관리 도구입니다.",
+  "onboardingKeyFeaturesTitle": "주요 기능",
+  "featureSmartNotes": "스마트 정보 캡처",
+  "featureQuickSearch": "빠른 콘텐츠 검색",
+  "featureLocalStorage": "로컬 데이터 저장",
+  "featureUsageAnalytics": "사용량 분석",
+  "onboardingPermissionsTitle": "필수 권한 부여",
+  "refreshPermissionStatus": "권한 상태 새로 고침",
+  "onboardingPermissionsDesc": "전체 경험을 제공하려면 다음 권한을 부여하십시오.",
+  "storagePermissionTitle": "저장 권한",
+  "storagePermissionDesc": "스크린샷 파일을 장치 저장소에 저장",
+  "notificationPermissionTitle": "알림 권한",
+  "notificationPermissionDesc": "서비스 상태 알림 표시",
+  "accessibilityPermissionTitle": "접근성 서비스",
+  "accessibilityPermissionDesc": "앱 전환을 모니터링하고 스크린샷을 찍습니다.",
+  "usageStatsPermissionTitle": "사용 통계 권한",
+  "usageStatsPermissionDesc": "정확한 포그라운드 앱 감지 보장",
+  "batteryOptimizationTitle": "배터리 최적화 화이트리스트",
+  "batteryOptimizationDesc": "스크린샷 서비스를 안정적으로 실행하세요",
+  "pleaseCompleteInSystemSettings": "시스템 설정에서 승인을 완료한 후 앱으로 돌아가세요.",
+  "autostartPermissionTitle": "자동 시작 권한",
+  "autostartPermissionDesc": "앱이 백그라운드에서 다시 시작되도록 허용",
+  "permissionsFooterNote": "권한은 부여 후에도 유지되며 시스템 설정에서 언제든지 변경할 수 있습니다.",
+  "grantedLabel": "부여된",
+  "authorizeAction": "승인하다",
+  "onboardingSelectAppsTitle": "모니터링할 앱 선택",
+  "onboardingSelectAppsDesc": "스크린샷을 모니터링할 앱을 선택하세요. 계속하려면 하나 이상을 선택하세요.",
+  "onboardingDoneTitle": "모두 설정되었습니다!",
+  "onboardingDoneDesc": "모든 권한이 부여되었습니다. 이제 ScreenMemo를 사용할 수 있습니다.",
+  "nextStepTitle": "다음 단계",
+  "onboardingNextStepDesc": "\"사용 시작\"을 눌러 메인 화면으로 들어가 강력한 스크린샷 기능을 경험해 보세요.",
+  "prevStep": "이전",
+  "startUsing": "사용 시작",
+  "finishSelection": "선택 완료",
+  "nextStep": "다음",
+  "confirmPermissionSettingsTitle": "권한 설정 확인",
+  "confirmAutostartQuestion": "시스템 설정에서 \"자동 시작 권한\" 구성을 완료하셨나요?",
+  "notYet": "아직 아님",
+  "done": "완료",
+  "startingScreenshotServiceInfo": "캡처 서비스 시작 중...",
+  "startServiceFailedCheckPermissions": "캡처 서비스를 시작하지 못했습니다. 권한 설정을 확인해주세요",
+  "startFailedTitle": "시작 실패",
+  "startFailedUnknown": "시작 실패: 알 수 없는 오류",
+  "tipIfProblemPersists": "팁: 문제가 지속되면 앱을 다시 시작하거나 권한을 다시 구성해 보세요.",
+  "autoDisabledDueToPermissions": "권한이 부족하여 캡처가 비활성화되었습니다.",
+  "refreshingPermissionsInfo": "권한 상태를 새로 고치는 중...",
+  "permissionsRefreshed": "권한 상태가 새로고침되었습니다.",
+  "refreshPermissionsFailed": "권한 상태를 새로 고치지 못했습니다: {error}",
+  "@refreshPermissionsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "screenRecordingPermissionTitle": "화면 녹화 권한",
+  "goToSettings": "설정으로 이동",
+  "notGrantedLabel": "미허용",
+  "removeMonitoring": "모니터링 해제",
+  "selectedItemsCount": "{count} 선택됨",
+  "@selectedItemsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "whySomeAppsHidden": "일부 앱이 누락된 이유는 무엇입니까?",
+  "excludedAppsTitle": "제외된 앱",
+  "excludedAppsIntro": "다음 앱은 제외되며 선택할 수 없습니다.",
+  "excludedThisApp": "· 이 앱(자기 간섭을 피하기 위해)",
+  "excludedImeApps": "· 입력 방법(키보드) 앱:",
+  "excludedImeAppsFiltered": "· 입력 방법(키보드) 앱(자동 필터링)",
+  "currentDefaultIme": "현재 기본 IME: {name}({package})",
+  "@currentDefaultIme": {
+    "placeholders": {
+      "name": {},
+      "package": {}
+    }
+  },
+  "imeExplainText": "다른 앱에서 키보드가 나타나면 시스템이 IME 창으로 전환됩니다. 제외하지 않으면 IME를 사용하는 것으로 착각하여 플로팅 창 감지가 잘못될 수 있습니다. IME 앱은 자동으로 제외되며 IME가 감지되면 IME가 팝업되기 전에 부동 창을 앱으로 이동합니다.",
+  "gotIt": "알았어요",
+  "unknownIme": "알 수 없는 IME",
+  "intervalRangeNote": "범위: 5~60초, 기본값: 5초.",
+  "intervalInvalidInput": "5~60 사이의 유효한 정수를 입력하세요.",
+  "removeMonitoringMessage": "모니터링만 해제하고 이미지는 삭제하지 않습니다. 계속할까요?",
+  "remove": "해제",
+  "removedMonitoringToast": "{count}개의 앱에서 모니터링을 해제했습니다(이미지는 삭제되지 않음)",
+  "@removedMonitoringToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "checkPermissionStatusFailed": "권한 상태 확인 실패: {error}",
+  "@checkPermissionStatusFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "accessibilityNotEnabledDetail": "접근성 서비스가 활성화되지 않았습니다.\\n설정에서 접근성을 활성화하십시오.",
+  "storagePermissionNotGrantedDetail": "저장 권한이 부여되지 않았습니다.\\n설정에서 저장 권한을 부여하세요.",
+  "serviceNotRunningDetail": "서비스가 제대로 실행되지 않습니다.\\n앱을 다시 시작해 보세요.",
+  "androidVersionNotSupportedDetail": "Android 버전은 지원되지 않습니다.\\nAndroid 11.0 이상이 필요합니다.",
+  "permissionsSectionTitle": "권한",
+  "displayAndSortSectionTitle": "디스플레이 및 정렬",
+  "screenshotSectionTitle": "캡처 설정",
+  "segmentSummarySectionTitle": "세그먼트 요약",
+  "dailyReminderSectionTitle": "일일 요약 알림",
+  "aiAssistantSectionTitle": "AI 어시스턴트",
+  "dataBackupSectionTitle": "데이터 및 백업",
+  "actionSet": "세트",
+  "actionEnter": "입력하다",
+  "actionExport": "내보내다",
+  "actionImport": "수입",
+  "actionCopyPath": "경로 복사",
+  "actionOpen": "열려 있는",
+  "actionTrigger": "방아쇠",
+  "allPermissionsGranted": "모든 권한이 허용되었습니다",
+  "permissionsMissingCount": "허용되지 않은 권한 {count}개",
+  "@permissionsMissingCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "exportSuccessTitle": "내보내기가 완료되었습니다",
+  "exportFileExportedTo": "내보낸 위치:",
+  "pathCopiedToast": "경로를 복사했습니다",
+  "exportFailedTitle": "내보내기에 실패했습니다",
+  "pleaseTryAgain": "나중에 다시 시도해 주세요",
+  "importCompleteTitle": "가져오기가 완료되었습니다",
+  "dataExtractedTo": "데이터 추출 위치:",
+  "importFailedTitle": "가져오기에 실패했습니다",
+  "importFailedCheckZip": "ZIP 파일을 확인하고 다시 시도해 주세요.",
+  "noMediaProjectionNeeded": "접근성 캡처를 사용 중이므로 화면 녹화 권한이 필요 없습니다",
+  "autostartPermissionMarked": "자동 시작 권한이 허용된 것으로 표시되었습니다",
+  "requestPermissionFailed": "권한 요청에 실패했습니다: {error}",
+  "@requestPermissionFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "expireCleanupSaved": "만료 정리 설정이 저장되었습니다.",
+  "dailyNotifyTriggered": "알림이 실행됨",
+  "dailyNotifyTriggerFailed": "알림을 트리거하지 못했거나 콘텐츠가 비어 있습니다.",
+  "refreshPermissionStatusTooltip": "권한 상태 새로 고침",
+  "grantedStatus": "허용됨",
+  "notGrantedStatus": "허용",
+  "privacyModeTitle": "개인 정보 보호 모드",
+  "privacyModeDesc": "민감한 콘텐츠를 자동으로 블러 처리합니다",
+  "homeSortingTitle": "홈 정렬",
+  "screenshotIntervalTitle": "스크린샷 간격",
+  "screenshotIntervalDesc": "현재 간격: {seconds}초",
+  "@screenshotIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "screenshotQualityTitle": "스크린샷 품질",
+  "currentSizeLabel": "현재 크기:",
+  "clickToModifyHint": "(숫자를 탭하면 수정 가능)",
+  "screenshotExpireTitle": "스크린샷 저장 기간",
+  "currentExpireDaysLabel": "현재 저장 일수:",
+  "expireDaysUnit": "{days}일",
+  "@expireDaysUnit": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "exportDataTitle": "데이터 내보내기",
+  "exportDataDesc": "ZIP을 Download/ScreenMemory에 내보내기",
+  "importDataTitle": "데이터 가져오기",
+  "importDataDesc": "ZIP 파일을 앱 저장소로 가져오기",
+  "aiAssistantTitle": "AI 어시스턴트",
+  "aiAssistantDesc": "AI 인터페이스와 모델을 구성하고 다중 회차 대화를 테스트합니다",
+  "segmentSampleIntervalTitle": "샘플 간격(초)",
+  "segmentSampleIntervalDesc": "현재: {seconds}초",
+  "@segmentSampleIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "segmentDurationTitle": "세그먼트 기간(분)",
+  "segmentDurationDesc": "현재: {minutes}분",
+  "@segmentDurationDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "aiRequestIntervalTitle": "AI 요청 최소 간격(초)",
+  "aiRequestIntervalDesc": "현재: {seconds}s(최소 1초)",
+  "@aiRequestIntervalDesc": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailyReminderTimeTitle": "일일 요약 알림 시간",
+  "currentTimeLabel": "현재:",
+  "testNotificationTitle": "알림 테스트",
+  "testNotificationDesc": "\"일일 요약\" 알림을 지금 트리거합니다",
+  "enableBannerNotificationTitle": "배너/플로팅 알림 허용",
+  "enableBannerNotificationDesc": "화면 상단에 배너 알림이 표시되도록 허용합니다",
+  "setIntervalDialogTitle": "스크린샷 간격 설정",
+  "intervalSecondsLabel": "간격(초)",
+  "intervalInputHint": "5~60 사이의 정수를 입력하세요.",
+  "intervalRangeHint": "범위: 5~60초 (기본값: 5초)",
+  "intervalInvalidError": "5~60 사이의 유효한 정수를 입력하세요",
+  "intervalSavedSuccess": "스크린샷 간격을 {seconds}초로 설정했습니다",
+  "@intervalSavedSuccess": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "setTargetSizeDialogTitle": "목표 크기(KB) 설정",
+  "targetSizeKbLabel": "목표 크기(KB)",
+  "targetSizeInvalidError": "50 이상의 유효한 정수를 입력하세요",
+  "targetSizeSavedSuccess": "목표 크기를 {kb}KB로 설정했습니다",
+  "@targetSizeSavedSuccess": {
+    "placeholders": {
+      "kb": {}
+    }
+  },
+  "setExpireDaysDialogTitle": "스크린샷 저장 일수 설정",
+  "expireDaysLabel": "저장 일수",
+  "expireDaysInputHint": "1 이상의 정수를 입력하세요",
+  "expireDaysInvalidError": "1 이상의 유효한 정수를 입력하세요",
+  "expireDaysSavedSuccess": "{days}일로 설정했습니다",
+  "@expireDaysSavedSuccess": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "sortTimeNewToOld": "시간(신규→기존)",
+  "sortTimeOldToNew": "시간(구→신)",
+  "sortSizeLargeToSmall": "사이즈(대→소)",
+  "sortSizeSmallToLarge": "사이즈(소→대)",
+  "sortCountManyToFew": "개수(많은 순)",
+  "sortCountFewToMany": "개수(적은 순)",
+  "sortFieldTime": "시간",
+  "sortFieldCount": "개수",
+  "sortFieldSize": "크기",
+  "selectHomeSortingTitle": "홈 정렬 선택",
+  "currentSortingLabel": "현재: {sorting}",
+  "@currentSortingLabel": {
+    "placeholders": {
+      "sorting": {}
+    }
+  },
+  "privacyModeEnabledToast": "프라이버시 모드를 켰습니다",
+  "privacyModeDisabledToast": "프라이버시 모드를 껐습니다",
+  "screenshotQualitySettingsSaved": "스크린샷 품질 설정을 저장했습니다",
+  "saveFailedError": "저장에 실패했습니다: {error}",
+  "@saveFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "setReminderTimeTitle": "알림 시간 설정(24시간제)",
+  "hourLabel": "시(0~23)",
+  "minuteLabel": "분(0~59)",
+  "timeInputHint": "팁: 숫자를 직접 입력할 수 있습니다. 범위는 0~23시, 0~59분입니다.",
+  "invalidHourError": "0~23 사이의 유효한 시를 입력하세요",
+  "invalidMinuteError": "0~59 사이의 유효한 분을 입력하세요",
+  "timeSetSuccess": "{hour}:{minute}로 설정했습니다",
+  "@timeSetSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderScheduleSuccess": "일일 알림 시간을 {hour}:{minute}로 설정했습니다",
+  "@reminderScheduleSuccess": {
+    "placeholders": {
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "reminderDisabledSuccess": "일일 알림을 비활성화했습니다",
+  "reminderScheduleFailed": "일일 알림을 예약하지 못했습니다(플랫폼에서 지원하지 않을 수 있음)",
+  "saveReminderSettingsFailed": "알림 설정 저장 실패: {error}",
+  "@saveReminderSettingsFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchFailedError": "검색 실패: {error}",
+  "@searchFailedError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "searchInputHintOcr": "OCR로 스크린샷을 검색하려면 키워드를 입력하세요.",
+  "noMatchingScreenshots": "일치하는 스크린샷이 없습니다.",
+  "imageMissingOrCorrupted": "이미지가 없거나 손상되었습니다.",
+  "actionClear": "지우기",
+  "actionRefresh": "새로 고침",
+  "noScreenshotsTitle": "스크린샷이 없습니다",
+  "noScreenshotsSubtitle": "모니터링을 활성화하면 여기에 이미지가 표시됩니다",
+  "confirmDeleteTitle": "삭제 확인",
+  "confirmDeleteMessage": "이 스크린샷을 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "actionDelete": "삭제",
+  "actionContinue": "계속",
+  "linkTitle": "링크",
+  "actionCopy": "복사",
+  "imageInfoTitle": "스크린샷 정보",
+  "deleteImageTooltip": "이미지 삭제",
+  "imageLoadFailed": "이미지를 로드하지 못했습니다.",
+  "labelAppName": "앱 이름",
+  "labelCaptureTime": "캡처 시간",
+  "labelFilePath": "파일 경로",
+  "labelPageLink": "페이지 링크",
+  "labelFileSize": "파일 크기",
+  "tapToContinue": "탭하여 계속",
+  "appDirUninitialized": "앱 디렉토리가 초기화되지 않았습니다.",
+  "actionRetry": "다시 해 보다",
+  "deleteSelectedTooltip": "선택 항목 삭제",
+  "noMatchingResults": "일치하는 결과가 없습니다",
+  "dayTabToday": "오늘 {count}",
+  "@dayTabToday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabYesterday": "어제 {count}",
+  "@dayTabYesterday": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "dayTabMonthDayCount": "{month}/{day} {count}",
+  "@dayTabMonthDayCount": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "count": {}
+    }
+  },
+  "screenshotDeletedToast": "스크린샷이 삭제되었습니다.",
+  "deleteFailed": "삭제 실패",
+  "deleteFailedWithError": "삭제 실패: {error}",
+  "@deleteFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "imageInfoTooltip": "이미지 정보",
+  "copySuccess": "복사했습니다",
+  "copyFailed": "복사에 실패했습니다",
+  "deletedCountToast": "스크린샷 {count}개를 삭제했습니다",
+  "@deletedCountToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "invalidArguments": "잘못된 인수",
+  "initFailedWithError": "초기화 실패: {error}",
+  "@initFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadMoreFailedWithError": "추가 로드 실패: {error}",
+  "@loadMoreFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "confirmDeleteAllTitle": "모든 스크린샷 삭제 확인",
+  "deleteAllMessage": "현재 범위의 모든 {count} 스크린샷을 삭제합니다. 이 작업은 취소할 수 없습니다.",
+  "@deleteAllMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteSelectedMessage": "{count} 선택한 스크린샷을 삭제합니다. 이 작업은 취소할 수 없습니다. 계속하다?",
+  "@deleteSelectedMessage": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteFailedRetry": "삭제하지 못했습니다. 다시 시도해 주세요.",
+  "keptAndDeletedSummary": "{keep} 보관, {deleted} 삭제",
+  "@keptAndDeletedSummary": {
+    "placeholders": {
+      "keep": {},
+      "deleted": {}
+    }
+  },
+  "dailySummaryTitle": "일일 요약 {date}",
+  "@dailySummaryTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotMorningTitle": "아침 브리핑 {date}",
+  "@dailySummarySlotMorningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNoonTitle": "정오 브리핑 {date}",
+  "@dailySummarySlotNoonTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotEveningTitle": "저녁 브리핑 {date}",
+  "@dailySummarySlotEveningTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "dailySummarySlotNightTitle": "야간 브리핑 {date}",
+  "@dailySummarySlotNightTitle": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "actionGenerate": "생성",
+  "actionRegenerate": "다시 생성",
+  "generateSuccess": "생성했습니다",
+  "generateFailed": "생성에 실패했습니다",
+  "noDailySummaryToday": "오늘 요약이 없습니다",
+  "generateDailySummary": "오늘 요약 생성",
+  "statisticsTitle": "통계",
+  "overviewTitle": "개요",
+  "monitoredApps": "모니터링되는 앱",
+  "totalScreenshots": "총 스크린샷",
+  "todayScreenshots": "오늘의 스크린샷",
+  "storageUsage": "스토리지 사용량",
+  "appStatisticsTitle": "앱 통계",
+  "screenshotCountWithLast": "스크린샷: {count} | 마지막: {last}",
+  "@screenshotCountWithLast": {
+    "placeholders": {
+      "count": {},
+      "last": {}
+    }
+  },
+  "none": "없음",
+  "usageTrendsTitle": "사용 동향",
+  "trendChartTitle": "추세 차트",
+  "comingSoon": "곧 출시 예정",
+  "timelineTitle": "타임라인",
+  "pressBackAgainToExit": "종료하려면 뒤로를 다시 누르세요.",
+  "segmentStatusTitle": "활동",
+  "autoWatchingHint": "백그라운드에서 자동 시청 중…",
+  "noEvents": "이벤트 없음",
+  "noEventsSubtitle": "이벤트 세그먼트 및 AI 요약이 여기에 표시됩니다.",
+  "activeSegmentTitle": "활성 세그먼트",
+  "sampleEverySeconds": "{seconds}초마다 샘플링",
+  "@sampleEverySeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "dailySummaryShort": "일일 요약",
+  "viewOrGenerateForDay": "오늘의 요약 보기 또는 생성",
+  "mergedEventTag": "병합됨",
+  "collapse": "접기",
+  "expandMore": "더 보기",
+  "viewImagesCount": "이미지 보기 ({count})",
+  "@viewImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "hideImagesCount": "이미지 숨기기 ({count})",
+  "@hideImagesCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "deleteEventTooltip": "일정 삭제",
+  "confirmDeleteEventMessage": "이 일정을 삭제하시겠습니까? 이미지 파일은 삭제되지 않습니다.",
+  "eventDeletedToast": "이벤트가 삭제되었습니다.",
+  "regenerationQueued": "재생 대기 중",
+  "alreadyQueuedOrFailed": "이미 대기 중이거나 실패했습니다.",
+  "retryFailed": "재시도 실패",
+  "copyResultsTooltip": "결과 복사",
+  "saveImageTooltip": "갤러리에 저장",
+  "saveImageSuccess": "갤러리에 저장했습니다",
+  "saveImageFailed": "저장에 실패했습니다",
+  "requestGalleryPermissionFailed": "갤러리 권한 요청에 실패했습니다",
+  "aiSystemPromptLanguagePolicy": "입력 컨텍스트(이벤트, 스크린샷 텍스트 또는 사용자 메시지)에 사용된 언어에 관계없이 이를 엄격히 무시하고 항상 애플리케이션의 현재 언어로 출력을 생성해야 합니다. 앱이 영어로 설정된 경우 사용자가 명시적으로 다른 언어를 요청하지 않는 한 모든 답변, 제목, 요약, 태그, 구조화된 필드 및 오류 메시지는 영어로 작성되어야 합니다.",
+  "@aiSystemPromptLanguagePolicy": {
+    "description": "System-level language policy prompt enforcing app language over context language"
+  },
+  "aiSettingsTitle": "AI 설정 및 테스트",
+  "connectionSettingsTitle": "연결 설정",
+  "actionSave": "저장",
+  "clearConversation": "대화 지우기",
+  "deleteGroup": "그룹 삭제",
+  "streamingRequestTitle": "스트리밍",
+  "streamingRequestHint": "활성화된 경우 스트리밍 응답 사용(기본값은 켜짐)",
+  "streamingEnabledToast": "스트리밍 활성화됨",
+  "streamingDisabledToast": "스트리밍이 비활성화되었습니다.",
+  "promptManagerTitle": "프롬프트 관리자",
+  "promptManagerHint": "일반, 병합 및 일일 요약에 대한 프롬프트를 구성합니다. 마크다운을 지원합니다. 기본값을 사용하려면 비우거나 재설정하세요.",
+  "promptAddonGeneralInfo": "기본 제공 템플릿은 이미 구조화된 스키마를 정의합니다. 여기에는 추가 지침(어조, 스타일, 강조)만 추가하세요. 템플릿을 변경하지 않으려면 비워 두세요.",
+  "promptAddonInputHint": "선택적 추가 지침 추가(건너뛰려면 비워 두세요)",
+  "promptAddonHelperText": "어조나 선호 사항만 설명하세요. 스키마 변경이나 JSON 수정을 요청하지 마세요.",
+  "promptAddonEmptyPlaceholder": "추가 지침 없음",
+  "promptAddonSuggestionSegment": "제안된 아이디어:\n- 원하는 어조나 타겟 청중을 한 문장으로 표현하세요.\n- 우선순위를 정할 핵심 통찰력이나 안전 제약 사항을 강조하세요.\n- JSON 필드 추가 또는 구조적 변경을 요청하지 마세요.",
+  "promptAddonSuggestionMerge": "제안된 아이디어:\n- 병합 후 표면과의 비교 또는 대조를 강조합니다.\n- 반복을 피하고 집계된 통찰력에 집중하도록 모델에 상기시킵니다.\n- 출력 필드에 구조적 변경을 요청하지 마십시오.",
+  "promptAddonSuggestionDaily": "제안된 아이디어:\n- 일일 요약 톤을 지정합니다(예: 행동 중심).\n- 주요 성과나 리스크를 강조하도록 요청\n- JSON 필드 이름 변경 또는 추가 금지",
+  "normalEventPromptLabel": "일반 이벤트 프롬프트",
+  "mergeEventPromptLabel": "병합된 이벤트 프롬프트",
+  "dailySummaryPromptLabel": "일일 요약 프롬프트",
+  "actionEdit": "편집하다",
+  "savingLabel": "저장 중",
+  "resetToDefault": "기본값으로 재설정",
+  "chatTestTitle": "채팅 테스트",
+  "actionSend": "전송",
+  "sendingLabel": "전송 중",
+  "baseUrlLabel": "기본 URL",
+  "baseUrlHint": "예를 들어 https://api.openai.com",
+  "apiKeyLabel": "API 키",
+  "apiKeyHint": "예를 들어 sk-... 또는 공급업체 토큰",
+  "modelLabel": "모델",
+  "modelHint": "예를 들어 gpt-4o-mini / gpt-4o / 호환 가능",
+  "siteGroupsTitle": "사이트 그룹",
+  "siteGroupsHint": "여러 사이트를 백업으로 구성하고 실패 시 자동으로 전환합니다",
+  "rename": "이름 바꾸기",
+  "addGroup": "그룹 추가",
+  "showGroupSelector": "그룹 선택기 표시",
+  "ungroupedSingleConfig": "그룹 해제됨(단일 구성)",
+  "inputMessageHint": "메시지를 입력하세요",
+  "saveSuccess": "저장했습니다",
+  "savedCurrentGroupToast": "그룹을 저장했습니다",
+  "savedNormalPromptToast": "일반 프롬프트를 저장했습니다",
+  "savedMergePromptToast": "병합 프롬프트를 저장했습니다",
+  "savedDailyPromptToast": "일일 프롬프트를 저장했습니다",
+  "resetToDefaultPromptToast": "기본 프롬프트로 재설정했습니다",
+  "resetFailedWithError": "재설정 실패: {error}",
+  "@resetFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "clearSuccess": "지웠습니다",
+  "clearFailedWithError": "지우기에 실패했습니다: {error}",
+  "@clearFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "messageCannotBeEmpty": "메시지를 입력하세요",
+  "sendFailedWithError": "전송에 실패했습니다: {error}",
+  "@sendFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupSwitchedToUngrouped": "미분류로 전환했습니다",
+  "groupSwitched": "그룹을 전환했습니다",
+  "groupNotSelected": "선택된 그룹이 없습니다",
+  "groupNotFound": "그룹을 찾을 수 없습니다",
+  "renameGroupTitle": "그룹 이름 변경",
+  "groupNameLabel": "그룹 이름",
+  "groupNameHint": "새 그룹 이름을 입력하세요",
+  "nameCannotBeEmpty": "이름을 입력하세요",
+  "renameSuccess": "이름을 변경했습니다",
+  "renameFailedWithError": "이름 변경 실패: {error}",
+  "@renameFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupAddedToast": "그룹을 추가했습니다",
+  "addGroupFailedWithError": "그룹 추가 실패: {error}",
+  "@addGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupDeletedToast": "그룹을 삭제했습니다",
+  "deleteGroupFailedWithError": "그룹 삭제 실패: {error}",
+  "@deleteGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadGroupFailedWithError": "그룹 로드 실패: {error}",
+  "@loadGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "siteGroupDefaultName": "사이트 그룹 {index}",
+  "@siteGroupDefaultName": {
+    "placeholders": {
+      "index": {}
+    }
+  },
+  "defaultLabel": "기본값",
+  "customLabel": "사용자 지정",
+  "normalShortLabel": "일반:",
+  "mergeShortLabel": "병합:",
+  "dailyShortLabel": "일일:",
+  "timeRangeLabel": "시간 범위: {range}",
+  "@timeRangeLabel": {
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "statusLabel": "상태: {status}",
+  "@statusLabel": {
+    "placeholders": {
+      "status": {}
+    }
+  },
+  "samplesTitle": "샘플({count})",
+  "@samplesTitle": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiResultTitle": "AI 결과",
+  "modelValueLabel": "모델: {model}",
+  "@modelValueLabel": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "tagMergedCopy": "태그: 병합됨",
+  "categoriesLabel": "카테고리: {categories}",
+  "@categoriesLabel": {
+    "placeholders": {
+      "categories": {}
+    }
+  },
+  "errorLabel": "오류: {error}",
+  "@errorLabel": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "summaryLabel": "요약: {summary}",
+  "@summaryLabel": {
+    "placeholders": {
+      "summary": {}
+    }
+  },
+  "autostartPermissionNote": "자동 시작 권한은 제조사에 따라 달라 자동 감지할 수 없습니다. 실제 설정에 맞게 선택하세요.",
+  "monthDayTime": "{month}/{day} {hour}:{minute}",
+  "@monthDayTime": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "yearMonthDayTime": "{year}/{month}/{day} {hour}:{minute}",
+  "@yearMonthDayTime": {
+    "placeholders": {
+      "year": {},
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "imagesCountLabel": "{count}장",
+  "@imagesCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "apps": "앱",
+  "images": "이미지",
+  "days": "날",
+  "justNow": "방금",
+  "minutesAgo": "{minutes}분 전",
+  "@minutesAgo": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "hoursAgo": "{hours}시간 전",
+  "@hoursAgo": {
+    "placeholders": {
+      "hours": {}
+    }
+  },
+  "daysAgo": "{days}일 전",
+  "@daysAgo": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "searchResultsCount": "{count}개의 이미지를 찾았습니다",
+  "@searchResultsCount": {
+    "description": "Search results count display",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "searchFiltersTitle": "필터",
+  "filterByTime": "시간",
+  "filterByApp": "앱",
+  "filterBySize": "크기",
+  "filterTimeAll": "전체",
+  "filterTimeToday": "오늘",
+  "filterTimeYesterday": "어제",
+  "filterTimeLast7Days": "지난 7일",
+  "filterTimeLast30Days": "지난 30일",
+  "filterTimeCustomRange": "맞춤 범위",
+  "filterAppAll": "모든 앱",
+  "filterSizeAll": "모든 크기",
+  "filterSizeSmall": "100KB 미만",
+  "filterSizeMedium": "100KB ~ 1MB",
+  "filterSizeLarge": "1MB 초과",
+  "applyFilters": "적용",
+  "resetFilters": "초기화",
+  "selectDateRange": "날짜 범위 선택",
+  "startDate": "시작 날짜",
+  "endDate": "종료 날짜",
+  "noResultsForFilters": "현재 필터와 일치하는 이미지가 없습니다",
+  "openLink": "열기",
+  "favoritePageTitle": "즐겨찾기",
+  "noFavoritesTitle": "즐겨찾기가 없습니다",
+  "noFavoritesSubtitle": "갤러리에서 길게 눌러 여러 항목을 선택한 뒤 즐겨찾기에 추가하세요",
+  "noteLabel": "메모",
+  "updatedAt": "업데이트: ",
+  "clickToAddNote": "메모 추가...",
+  "noteUnchanged": "메모가 변경되지 않았습니다",
+  "noteSaved": "메모를 저장했습니다",
+  "favoritesRemoved": "즐겨찾기에서 제거했습니다",
+  "operationFailed": "작업에 실패했습니다",
+  "cannotGetAppDir": "앱 디렉터리를 가져올 수 없습니다",
+  "nsfwSettingsSectionTitle": "NSFW 설정",
+  "blockedDomainListTitle": "차단 도메인 목록",
+  "addDomainPlaceholder": "도메인 또는 *.example.com 입력",
+  "addRuleAction": "추가",
+  "previewAction": "미리보기",
+  "removeAction": "삭제",
+  "clearAction": "지우기",
+  "clearAllRules": "모든 규칙 지우기",
+  "clearAllRulesConfirmTitle": "규칙 삭제 확인",
+  "clearAllRulesMessage": "모든 차단 도메인 규칙을 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+  "previewAffectsCount": "{count}개의 이미지에 영향을 줍니다",
+  "@previewAffectsCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "affectCountLabel": "영향: {count}",
+  "@affectCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "confirmAddRuleTitle": "규칙 추가 확인",
+  "confirmAddRuleMessage": "규칙 추가: {rule}",
+  "@confirmAddRuleMessage": {
+    "placeholders": {
+      "rule": {}
+    }
+  },
+  "ruleAddedToast": "규칙을 추가했습니다",
+  "ruleRemovedToast": "규칙을 삭제했습니다",
+  "invalidDomainInputError": "유효한 도메인을 입력하세요 (*.example.com 지원)",
+  "manualMarkNsfw": "NSFW로 표시",
+  "manualUnmarkNsfw": "NSFW 표시 해제",
+  "manualMarkSuccess": "NSFW로 표시했습니다",
+  "manualUnmarkSuccess": "NSFW 표시를 해제했습니다",
+  "manualMarkFailed": "작업에 실패했습니다",
+  "nsfwTagLabel": "NSFW",
+  "nsfwBlockedByRulesHint": "NSFW 규칙으로 인해 차단되었습니다. 설정 > NSFW 도메인에서 관리하세요.",
+  "providersTitle": "공급자",
+  "actionNew": "새로 만들기",
+  "actionAdd": "추가",
+  "noProvidersYetHint": "프로바이더가 없습니다. \"새로 만들기\"를 눌러 생성하세요.",
+  "confirmDeleteProviderMessage": "\"{name}\" 프로바이더를 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+  "@confirmDeleteProviderMessage": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "loadingConversations": "대화를 불러오는 중…",
+  "noConversations": "대화가 없습니다",
+  "deleteConversationTitle": "대화 삭제",
+  "confirmDeleteConversationMessage": "\"{title}\" 대화를 삭제할까요?",
+  "@confirmDeleteConversationMessage": {
+    "placeholders": {
+      "title": {}
+    }
+  },
+  "untitledConversationLabel": "제목 없음 대화",
+  "searchProviderPlaceholder": "프로바이더 검색",
+  "searchModelPlaceholder": "모델 검색",
+  "providerSelectedToast": "선택한 프로바이더: {name}",
+  "@providerSelectedToast": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "pleaseSelectProviderFirst": "먼저 프로바이더를 선택하세요",
+  "noModelsForProviderHint": "사용 가능한 모델이 없습니다. 프로바이더 페이지에서 새로 고치거나 직접 추가하세요.",
+  "noModelsDetectedHint": "모델을 찾을 수 없습니다. 새로 고침하거나 직접 추가하세요.",
+  "modelSwitchedToast": "모델을 변경했습니다: {model}",
+  "@modelSwitchedToast": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "providerLabel": "프로바이더",
+  "sendMessageToModelPlaceholder": "{model}에게 메시지 보내기",
+  "@sendMessageToModelPlaceholder": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "deepThinkingLabel": "심층 추론",
+  "thinkingInProgress": "생각 중…",
+  "requestStoppedInfo": "요청이 중지되었습니다",
+  "reasoningLabel": "추리:",
+  "answerLabel": "답변:",
+  "aiSelfModeEnabledToast": "개인 비서: 대화에 사용자 데이터 컨텍스트를 사용합니다",
+  "selectModelWithCounts": "모델 선택({filtered}/{total})",
+  "@selectModelWithCounts": {
+    "placeholders": {
+      "filtered": {},
+      "total": {}
+    }
+  },
+  "modelsCountLabel": "모델({count})",
+  "@modelsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "manualAddModelLabel": "모델 수동 추가",
+  "inputAndAddModelHint": "모델을 입력 후 추가 (예: gpt-4o-mini)",
+  "fetchModelsHint": "\"새로 고침\"을 눌러 자동으로 가져옵니다. 실패하면 모델 이름을 직접 추가하세요.",
+  "interfaceTypeLabel": "인터페이스 유형",
+  "currentTypeLabel": "현재: {type}",
+  "@currentTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "nameRequiredError": "이름은 필수입니다",
+  "nameAlreadyExistsError": "같은 이름이 이미 존재합니다",
+  "apiKeyRequiredError": "API 키가 필요합니다",
+  "baseUrlRequiredForAzureError": "Azure OpenAI에는 Base URL이 필요합니다",
+  "atLeastOneModelRequiredError": "모델을 최소 1개 추가하세요",
+  "modelsUpdatedToast": "모델을 업데이트했습니다({count})",
+  "@modelsUpdatedToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "fetchModelsFailedHint": "모델을 가져오지 못했습니다. 직접 추가하세요.",
+  "useResponseApiLabel": "Response API 사용(공식 OpenAI만 지원, 서드파티 권장 X)",
+  "chatPathOptionalLabel": "채팅 경로(선택 사항)",
+  "azureApiVersionLabel": "Azure API 버전",
+  "azureApiVersionHint": "예: 2024-02-15",
+  "baseUrlHintOpenAI": "예: https://api.openai.com (기본값)",
+  "baseUrlHintClaude": "예: https://api.anthropic.com",
+  "baseUrlHintGemini": "예: https://generativelanguage.googleapis.com",
+  "baseUrlHintAzure": "필수: https://{resource}.openai.azure.com",
+  "baseUrlHintCustom": "OpenAI 호환 Base URL을 입력하세요",
+  "createProviderTitle": "새 프로바이더",
+  "editProviderTitle": "프로바이더 편집",
+  "deletedToast": "삭제했습니다",
+  "providerNotFound": "프로바이더를 찾을 수 없습니다",
+  "conversationsSectionTitle": "대화",
+  "displaySectionTitle": "디스플레이",
+  "streamRenderImagesTitle": "스트리밍 중 이미지 렌더링",
+  "streamRenderImagesDesc": "스크롤에 영향을 줄 수 있습니다",
+  "themeColorTitle": "테마 색상",
+  "themeColorDesc": "앱의 기본 색상을 사용자 지정하세요",
+  "chooseThemeColorTitle": "테마 색상 선택",
+  "loggingTitle": "로그",
+  "loggingDesc": "중앙 집중식 로그 활성화(기본값)",
+  "loggingAiTitle": "AI 로그",
+  "loggingScreenshotTitle": "스크린샷 로그",
+  "loggingAiDesc": "AI 요청과 응답을 기록합니다",
+  "loggingScreenshotDesc": "스크린샷 캡처 및 정리를 기록합니다",
+  "themeModeAuto": "자동",
+  "themeModeLight": "라이트",
+  "themeModeDark": "다크",
+  "aiEmptySelfTitle": "개인 비서 준비 완료",
+  "aiEmptySelfSubtitle": "무엇이든 질문하세요. 데이터 컨텍스트를 활용해 답변합니다.",
+  "languageJapanese": "일본어",
+  "languageKorean": "한국어"
+}

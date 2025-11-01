@@ -29,6 +29,8 @@
   "languageSystem": "System",
   "languageChinese": "Chinese (Simplified)",
   "languageEnglish": "English",
+  "languageJapanese": "Japanese",
+  "languageKorean": "Korean",
   "languageChangedToast": "Switched to {name}",
   "@languageChangedToast": {
     "description": "Toast after changing language",

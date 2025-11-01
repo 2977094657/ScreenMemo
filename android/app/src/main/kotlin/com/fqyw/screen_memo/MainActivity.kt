@@ -1827,33 +1827,25 @@ class MainActivity : FlutterActivity() {
     private fun switchLauncherAliasInternal(lang: String): Boolean {
         return try {
             val pm = packageManager
-            val zh = ComponentName(this, "$packageName.LauncherAliasZh")
-            val en = ComponentName(this, "$packageName.LauncherAliasEn")
+            val aliases = mapOf(
+                "zh" to ComponentName(this, "$packageName.LauncherAliasZh"),
+                "en" to ComponentName(this, "$packageName.LauncherAliasEn"),
+                "ja" to ComponentName(this, "$packageName.LauncherAliasJa"),
+                "ko" to ComponentName(this, "$packageName.LauncherAliasKo")
+            )
             val langLower = lang.lowercase()
-            if (langLower == "en") {
+            val target = aliases[langLower] ?: aliases["en"]!!
+            for ((code, component) in aliases) {
+                val state = if (component == target)
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                else
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                 pm.setComponentEnabledSetting(
-                    en,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    component,
+                    state,
                     android.content.pm.PackageManager.DONT_KILL_APP
                 )
-                pm.setComponentEnabledSetting(
-                    zh,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-                try { FileLogger.i(TAG, "Launcher alias switched to EN") } catch (_: Exception) {}
-            } else {
-                pm.setComponentEnabledSetting(
-                    zh,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-                pm.setComponentEnabledSetting(
-                    en,
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-                try { FileLogger.i(TAG, "Launcher alias switched to ZH") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "Launcher alias state updated lang=$code enabled=${component == target}") } catch (_: Exception) {}
             }
             true
         } catch (e: Exception) {

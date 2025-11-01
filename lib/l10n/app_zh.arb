@@ -29,6 +29,8 @@
   "languageSystem": "跟随系统",
   "languageChinese": "简体中文",
   "languageEnglish": "English",
+  "languageJapanese": "日语",
+  "languageKorean": "韩语",
   "languageChangedToast": "已切换为 {name}",
   "@languageChangedToast": {
     "description": "切换语言后的提示",

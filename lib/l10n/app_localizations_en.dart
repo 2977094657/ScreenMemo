@@ -80,6 +80,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get languageEnglish => 'English';
 
   @override
+  String get languageJapanese => 'Japanese';
+
+  @override
+  String get languageKorean => 'Korean';
+
+  @override
   String languageChangedToast(Object name) {
     return 'Switched to $name';
   }

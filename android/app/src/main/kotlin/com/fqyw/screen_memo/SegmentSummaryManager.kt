@@ -452,13 +452,31 @@ object SegmentSummaryManager {
                 // 依据应用语言注入"语言强制策略"并选择对应提示词（支持 _zh/_en 与旧键回退）
                 val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
                 val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
-                val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
+                val effectiveLang = when (langOpt) {
+                    "zh", "en", "ja", "ko" -> langOpt
+                    "system" -> when {
+                        sysLang.startsWith("zh") -> "zh"
+                        sysLang.startsWith("ja") -> "ja"
+                        sysLang.startsWith("ko") -> "ko"
+                        else -> "en"
+                    }
+                    else -> "en"
+                }
+                val isZhLang = effectiveLang == "zh"
 
                 val extraHeader = try {
-                    AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_segment_extra_zh" else "prompt_segment_extra_en")
+                    val key = when (effectiveLang) {
+                        "zh" -> "prompt_segment_extra_zh"
+                        else -> "prompt_segment_extra_en"
+                    }
+                    AISettingsNative.readSettingValue(ctx, key)
                 } catch (_: Exception) { null }
                 val legacyHeaderLang = try {
-                    AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_segment_zh" else "prompt_segment_en")
+                    val key = when (effectiveLang) {
+                        "zh" -> "prompt_segment_zh"
+                        else -> "prompt_segment_en"
+                    }
+                    AISettingsNative.readSettingValue(ctx, key)
                 } catch (_: Exception) { null }
                 val legacyHeader = try {
                     AISettingsNative.readSettingValue(ctx, "prompt_segment")
@@ -502,25 +520,44 @@ object SegmentSummaryManager {
                     "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"App\",\"action\":\"browse|watch|chat|shop|search|edit|game|settings|download|share|other\",\"summary\":\"(Markdown) one-liner (may emphasize briefly)\"}],\n" +
                     "overall_summary: \"(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info\""
 
-                val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
-                val baseHeader = getByLang(ctx, R.string.segment_prompt_default_zh, R.string.segment_prompt_default_en, isZhLang)
+                val languagePolicy = getStringByLang(
+                    ctx,
+                    effectiveLang,
+                    R.string.ai_language_policy_zh,
+                    R.string.ai_language_policy_en,
+                    R.string.ai_language_policy_ja,
+                    R.string.ai_language_policy_ko
+                )
+                val baseHeader = getStringByLang(
+                    ctx,
+                    effectiveLang,
+                    R.string.segment_prompt_default_zh,
+                    R.string.segment_prompt_default_en,
+                    R.string.segment_prompt_default_ja,
+                    R.string.segment_prompt_default_ko
+                )
                 val addon = sequenceOf(extraHeader, legacyHeaderLang, legacyHeader)
                     .firstOrNull { it != null && it.trim().isNotEmpty() }
                     ?.trim()
                 val headerBuilder = StringBuilder()
                 headerBuilder.append(languagePolicy).append("\n\n").append(baseHeader)
                 if (!addon.isNullOrEmpty()) {
-                    val label = if (isZhLang) "附加说明：" else "Additional instructions:"
+                    val label = when (effectiveLang) {
+                        "zh" -> "附加说明："
+                        "ja" -> "追加指示："
+                        "ko" -> "추가 지침:"
+                        else -> "Additional instructions:"
+                    }
                     headerBuilder.append("\n\n").append(label).append('\n').append(addon)
                 }
                 val header = headerBuilder.toString()
 
                 // 构造描述（仅时间点与应用，不包含OCR文本）
                 val sb = StringBuilder()
-                val timeRangeLabel = getByLang(ctx, R.string.label_time_range_zh, R.string.label_time_range_en, isZhLang)
-                val appLabel = getByLang(ctx, R.string.label_app_zh, R.string.label_app_en, isZhLang)
-                val shotLabel = getByLang(ctx, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, isZhLang)
-                val fileLabel = getByLang(ctx, R.string.label_file_zh, R.string.label_file_en, isZhLang)
+                val timeRangeLabel = getStringByLang(ctx, effectiveLang, R.string.label_time_range_zh, R.string.label_time_range_en, R.string.label_time_range_ja, R.string.label_time_range_ko)
+                val appLabel = getStringByLang(ctx, effectiveLang, R.string.label_app_zh, R.string.label_app_en, R.string.label_app_ja, R.string.label_app_ko)
+                val shotLabel = getStringByLang(ctx, effectiveLang, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, R.string.label_screenshot_at_ja, R.string.label_screenshot_at_ko)
+                val fileLabel = getStringByLang(ctx, effectiveLang, R.string.label_file_zh, R.string.label_file_en, R.string.label_file_ja, R.string.label_file_ko)
 
                 sb.append(timeRangeLabel).append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
                 sb.append(header).append('\n')
@@ -1097,8 +1134,25 @@ object SegmentSummaryManager {
             val sb = StringBuilder()
             val langOpt2 = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
             val sysLang2 = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
-            val isZh2 = (langOpt2 == "zh") || (langOpt2 != "en" && sysLang2.startsWith("zh"))
-            val langPolicy2 = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZh2)
+            val effectiveLang2 = when (langOpt2) {
+                "zh", "en", "ja", "ko" -> langOpt2
+                "system" -> when {
+                    sysLang2.startsWith("zh") -> "zh"
+                    sysLang2.startsWith("ja") -> "ja"
+                    sysLang2.startsWith("ko") -> "ko"
+                    else -> "en"
+                }
+                else -> "en"
+            }
+            val isZh2 = effectiveLang2 == "zh"
+            val langPolicy2 = getStringByLang(
+                ctx,
+                effectiveLang2,
+                R.string.ai_language_policy_zh,
+                R.string.ai_language_policy_en,
+                R.string.ai_language_policy_ja,
+                R.string.ai_language_policy_ko
+            )
             sb.append(langPolicy2).append('\n').append('\n')
             if (isZh2) {
                 sb.append("请判断两段时间是否属于同一用户事件：\n")
@@ -1329,7 +1383,17 @@ object SegmentSummaryManager {
         // 依据应用语言注入"语言强制策略"并选择合并提示词（支持 _zh/_en 与旧键回退）
         val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
         val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
-        val isZhLang = (langOpt == "zh") || (langOpt != "en" && sysLang.startsWith("zh"))
+        val effectiveLang = when (langOpt) {
+            "zh", "en", "ja", "ko" -> langOpt
+            "system" -> when {
+                sysLang.startsWith("zh") -> "zh"
+                sysLang.startsWith("ja") -> "ja"
+                sysLang.startsWith("ko") -> "ko"
+                else -> "en"
+            }
+            else -> "en"
+        }
+        val isZhLang = effectiveLang == "zh"
 
         val extraHeader = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_extra_zh" else "prompt_merge_extra_en") } catch (_: Exception) { null }
         val legacyHeaderLang = try { AISettingsNative.readSettingValue(ctx, if (isZhLang) "prompt_merge_zh" else "prompt_merge_en") } catch (_: Exception) { null }
@@ -1370,25 +1434,44 @@ object SegmentSummaryManager {
             "Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.\n" +
             "Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown)."
 
-        val languagePolicy = getByLang(ctx, R.string.ai_language_policy_zh, R.string.ai_language_policy_en, isZhLang)
-        val baseHeader = getByLang(ctx, R.string.merge_prompt_default_zh, R.string.merge_prompt_default_en, isZhLang)
+        val languagePolicy = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.ai_language_policy_zh,
+            R.string.ai_language_policy_en,
+            R.string.ai_language_policy_ja,
+            R.string.ai_language_policy_ko
+        )
+        val baseHeader = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.merge_prompt_default_zh,
+            R.string.merge_prompt_default_en,
+            R.string.merge_prompt_default_ja,
+            R.string.merge_prompt_default_ko
+        )
         val addon = sequenceOf(extraHeader, legacyHeaderLang, legacyHeader)
             .firstOrNull { it != null && it.trim().isNotEmpty() }
             ?.trim()
         val headerBuilder = StringBuilder()
         headerBuilder.append(languagePolicy).append("\n\n").append(baseHeader)
         if (!addon.isNullOrEmpty()) {
-            val label = if (isZhLang) "附加说明：" else "Additional instructions:"
+            val label = when (effectiveLang) {
+                "zh" -> "附加说明："
+                "ja" -> "追加指示："
+                "ko" -> "추가 지침:"
+                else -> "Additional instructions:"
+            }
             headerBuilder.append("\n\n").append(label).append('\n').append(addon)
         }
         val header = headerBuilder.toString()
 
         val sb = StringBuilder()
-        val titleLabel = getByLang(ctx, R.string.title_merged_event_summary_zh, R.string.title_merged_event_summary_en, isZhLang)
-        val timeRangeLabel = getByLang(ctx, R.string.label_time_range_zh, R.string.label_time_range_en, isZhLang)
-        val appLabel = getByLang(ctx, R.string.label_app_zh, R.string.label_app_en, isZhLang)
-        val shotLabel = getByLang(ctx, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, isZhLang)
-        val fileLabel = getByLang(ctx, R.string.label_file_zh, R.string.label_file_en, isZhLang)
+        val titleLabel = getStringByLang(ctx, effectiveLang, R.string.title_merged_event_summary_zh, R.string.title_merged_event_summary_en, R.string.title_merged_event_summary_ja, R.string.title_merged_event_summary_ko)
+        val timeRangeLabel = getStringByLang(ctx, effectiveLang, R.string.label_time_range_zh, R.string.label_time_range_en, R.string.label_time_range_ja, R.string.label_time_range_ko)
+        val appLabel = getStringByLang(ctx, effectiveLang, R.string.label_app_zh, R.string.label_app_en, R.string.label_app_ja, R.string.label_app_ko)
+        val shotLabel = getStringByLang(ctx, effectiveLang, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, R.string.label_screenshot_at_ja, R.string.label_screenshot_at_ko)
+        val fileLabel = getStringByLang(ctx, effectiveLang, R.string.label_file_zh, R.string.label_file_en, R.string.label_file_ja, R.string.label_file_ko)
 
         sb.append(titleLabel).append('\n')
             .append(timeRangeLabel).append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
@@ -1489,8 +1572,20 @@ object SegmentSummaryManager {
         return retried
     }
 
-    private fun getByLang(ctx: Context, zhId: Int, enId: Int, isZh: Boolean): String {
-        return ctx.getString(if (isZh) zhId else enId)
+    private fun getStringByLang(
+        ctx: Context,
+        lang: String,
+        zhId: Int,
+        enId: Int,
+        jaId: Int,
+        koId: Int
+    ): String {
+        return when (lang) {
+            "zh" -> ctx.getString(zhId)
+            "ja" -> ctx.getString(jaId)
+            "ko" -> ctx.getString(koId)
+            else -> ctx.getString(enId)
+        }
     }
 
     private fun guessMime(path: String): String {

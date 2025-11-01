@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'dart:io' show Platform;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 语言服务 - 管理应用的语言设置（跟随系统 / zh / en）
+/// 语言服务 - 管理应用的语言设置（跟随系统 / zh / en / ja / ko）
 /// 单例 + ChangeNotifier，供 MaterialApp 和设置页订阅
 class LocaleService extends ChangeNotifier {
   static final LocaleService instance = LocaleService._internal();
@@ -14,12 +14,12 @@ class LocaleService extends ChangeNotifier {
     _load();
   }
 
-  static const String _key = 'locale_option'; // 'system' | 'zh' | 'en'
+  static const String _key = 'locale_option'; // 'system' | 'zh' | 'en' | 'ja' | 'ko'
 
   String _option = 'system'; // 当前选择
   Locale? _locale; // 为 null 表示跟随系统
 
-  /// 当前选项：'system' | 'zh' | 'en'
+  /// 当前选项：'system' | 'zh' | 'en' | 'ja' | 'ko'
   String get option => _option;
 
   /// 当前 Locale：为 null 表示跟随系统
@@ -47,7 +47,7 @@ class LocaleService extends ChangeNotifier {
   }
 
   Future<void> setOption(String option) async {
-    if (option != 'system' && option != 'zh' && option != 'en') return;
+    if (option != 'system' && option != 'zh' && option != 'en' && option != 'ja' && option != 'ko') return;
     if (_option == option) return;
     _applyOption(option, notify: true);
     // 不立即更新启动器别名，避免应用退出到桌面
@@ -69,6 +69,12 @@ class LocaleService extends ChangeNotifier {
       case 'en':
         _locale = const Locale('en');
         break;
+      case 'ja':
+        _locale = const Locale('ja');
+        break;
+      case 'ko':
+        _locale = const Locale('ko');
+        break;
     }
     if (notify) notifyListeners();
   }
@@ -85,11 +91,19 @@ class LocaleService extends ChangeNotifier {
     try {
       // 计算要切换的目标语言
       String target = 'zh';
-      if (_option == 'en') {
-        target = 'en';
+      if (_option == 'en' || _option == 'ja' || _option == 'ko') {
+        target = _option;
       } else if (_option == 'system') {
         final sysLang = WidgetsBinding.instance.platformDispatcher.locale.languageCode.toLowerCase();
-        target = sysLang.startsWith('zh') ? 'zh' : 'en';
+        if (sysLang.startsWith('zh')) {
+          target = 'zh';
+        } else if (sysLang.startsWith('ja')) {
+          target = 'ja';
+        } else if (sysLang.startsWith('ko')) {
+          target = 'ko';
+        } else {
+          target = 'en';
+        }
       }
       await _channel.invokeMethod('switchLauncherAlias', {'lang': target});
     } catch (_) {

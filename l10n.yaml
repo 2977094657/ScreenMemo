@@ -2,7 +2,6 @@ arb-dir: lib/l10n
 template-arb-file: app_en.arb
 output-localization-file: app_localizations.dart
 output-class: AppLocalizations
-synthetic-package: false
 nullable-getter: false
 use-deferred-loading: false
 untranslated-messages-file: l10n_untranslated.txt
@@ -10,3 +9,5 @@ format: true
 preferred-supported-locales:
   - zh
   - en
+  - ja
+  - ko

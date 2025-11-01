@@ -80,6 +80,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get languageEnglish => 'English';
 
   @override
+  String get languageJapanese => '日语';
+
+  @override
+  String get languageKorean => '韩语';
+
+  @override
   String languageChangedToast(Object name) {
     return '已切换为 $name';
   }
