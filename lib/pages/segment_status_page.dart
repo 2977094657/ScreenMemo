@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -1077,24 +1078,67 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   bool _retrying = false;
   // 结果轮询器：点击“重新生成”后，直到拿到结果为止持续旋转提示
   Timer? _resultWatchTimer;
+  Map<String, dynamic> _segmentData = <String, dynamic>{};
+  Map<String, dynamic> _latestExternalSegment = <String, dynamic>{};
+  int? _lastResultCreatedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _segmentData = Map<String, dynamic>.from(widget.segment);
+    _latestExternalSegment = Map<String, dynamic>.from(widget.segment);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SegmentEntryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incoming = Map<String, dynamic>.from(widget.segment);
+    if (!mapEquals(incoming, _latestExternalSegment)) {
+      _latestExternalSegment = Map<String, dynamic>.from(incoming);
+      _segmentData = Map<String, dynamic>.from(incoming);
+    }
+  }
+
+  @override
+  void dispose() {
+    _resultWatchTimer?.cancel();
+    super.dispose();
+  }
+
+  Map<String, dynamic> _segmentWithoutResult(Map<String, dynamic> source) {
+    final next = Map<String, dynamic>.from(source);
+    next['output_text'] = null;
+    next['structured_json'] = null;
+    next['categories'] = null;
+    next['has_summary'] = 0;
+    return next;
+  }
+
+  Map<String, dynamic> _mergeResultIntoSegment(Map<String, dynamic> base, Map<String, dynamic> result) {
+    final next = Map<String, dynamic>.from(base);
+    next['output_text'] = result['output_text'];
+    next['structured_json'] = result['structured_json'];
+    next['categories'] = result['categories'];
+    next['has_summary'] = 1;
+    return next;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final int id = (widget.segment['id'] as int?) ?? 0;
+    final int id = (_segmentData['id'] as int?) ?? 0;
     // 移除 per-item FutureBuilder，使用后端联表元数据；展开时懒加载样本
-    final int sampleCount = (widget.segment['sample_count'] as int?) ?? 0;
-    final int start = (widget.segment['start_time'] as int?) ?? 0;
-    final int end = (widget.segment['end_time'] as int?) ?? 0;
+    final int sampleCount = (_segmentData['sample_count'] as int?) ?? 0;
+    final int start = (_segmentData['start_time'] as int?) ?? 0;
+    final int end = (_segmentData['end_time'] as int?) ?? 0;
     final String timeLabel = '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
-    final bool merged = (widget.segment['merged_flag'] as int?) == 1;
-    final bool hasSummary = ((widget.segment['has_summary'] as int?) ?? 0) == 1;
-    final String status = (widget.segment['status'] as String?) ?? '';
+    final bool merged = (_segmentData['merged_flag'] as int?) == 1;
+    final String status = (_segmentData['status'] as String?) ?? '';
 
     final Map<String, dynamic> resultMeta = {
-      'categories': widget.segment['categories'],
-      'output_text': widget.segment['output_text'],
+      'categories': _segmentData['categories'],
+      'output_text': _segmentData['output_text'],
     };
-    final Map<String, dynamic>? structured = _tryParseJson(widget.segment['structured_json'] as String?);
+    final Map<String, dynamic>? structured = _tryParseJson(_segmentData['structured_json'] as String?);
     final String? keyAction = _extractKeyActionDetail(structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
     final String summary = _extractOverallSummary(resultMeta, structured);
@@ -1172,8 +1216,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
 
         // 包名：优先使用后端汇总的 app_packages_display，其次 app_packages（保证首屏就能显示 Logo）
         List<String> packages = <String>[];
-        final String? appPkgsDisplay = widget.segment['app_packages_display'] as String?;
-        final String? appPkgsRaw = widget.segment['app_packages'] as String?;
+        final String? appPkgsDisplay = _segmentData['app_packages_display'] as String?;
+        final String? appPkgsRaw = _segmentData['app_packages'] as String?;
         final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
             ? appPkgsDisplay
             : appPkgsRaw;
@@ -1491,9 +1535,24 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   }
 
   Future<void> _retry() async {
-    final int id = (widget.segment['id'] as int?) ?? 0;
+    final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0 || _retrying) return;
-    setState(() => _retrying = true);
+    final previous = Map<String, dynamic>.from(_segmentData);
+    int? previousCreatedAt = _lastResultCreatedAt;
+    try {
+      final prevRes = await widget.loadResult(id);
+      final loaded = (prevRes?['created_at'] as int?) ?? 0;
+      if (loaded > 0) {
+        previousCreatedAt = loaded;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final cleared = _segmentWithoutResult(previous);
+    setState(() {
+      _retrying = true;
+      _segmentData = cleared;
+      _lastResultCreatedAt = previousCreatedAt;
+    });
     try {
       // 手动重试不受时间/已有结果限制：强制重跑
       final n = await ScreenshotDatabase.instance.retrySegments([id], force: true);
@@ -1505,19 +1564,28 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       // 开启轮询直到拿到结果为止；若原本就有结果，可能立即返回
       if (ok) _startResultWatch(id);
       // 如果没成功入队，停止旋转
-      if (!ok) setState(() => _retrying = false);
-    } catch (_) {
-      if (mounted) {
-        setState(() => _retrying = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).retryFailed)),
-        );
+      if (!ok) {
+        setState(() {
+          _retrying = false;
+          _segmentData = Map<String, dynamic>.from(previous);
+          _lastResultCreatedAt = previousCreatedAt;
+        });
       }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _retrying = false;
+        _segmentData = Map<String, dynamic>.from(previous);
+        _lastResultCreatedAt = previousCreatedAt;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).retryFailed)),
+      );
     }
   }
 
   Future<void> _confirmAndDelete() async {
-    final int id = (widget.segment['id'] as int?) ?? 0;
+    final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0) return;
 
     final bool confirmed = await showUIDialog<bool>(
@@ -1567,11 +1635,24 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         final res = await widget.loadResult(id);
         if (!mounted) return;
         if (res != null) {
-          setState(() => _retrying = false);
+          final int newCreatedAt = (res['created_at'] as int?) ?? 0;
+          if (_lastResultCreatedAt != null && newCreatedAt > 0 && newCreatedAt <= _lastResultCreatedAt!) {
+            return;
+          }
+          t.cancel();
+          final merged = _mergeResultIntoSegment(_segmentData, res);
+          setState(() {
+            _retrying = false;
+            _segmentData = merged;
+            _lastResultCreatedAt = newCreatedAt > 0 ? newCreatedAt : _lastResultCreatedAt;
+          });
+          _latestExternalSegment = Map<String, dynamic>.from(merged);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
           );
-          t.cancel();
+          try {
+            await widget.onRefreshRequested();
+          } catch (_) {}
         }
       } catch (_) {
         // 读取失败不影响轮询，继续尝试
