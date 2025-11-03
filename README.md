@@ -8,13 +8,19 @@
 
 「屏幕无痕，记忆有痕」
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License](https://img.shields.io/badge/License-Private-red.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 一款基于 Flutter 开发的智能截屏管理应用，帮助你高效捕获、组织和回顾重要信息
 
-[项目简介与应用场景](#项目简介与应用场景) • [功能特性](#功能特性) • [技术架构](#技术架构) • [快速开始](#快速开始) • [构建发布](#构建发布)
-
 </div>
+
+<p align="center">
+  <b>语言</b>:
+  简体中文 |
+  <a href="README.en.md">English</a> |
+  <a href="README.ja.md">日本語</a> |
+  <a href="README.ko.md">한국어</a>
+</p>
 
 ---
 
@@ -35,38 +41,141 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 - 用于“记忆寻宝”：翻看以往被忽略的细节或灵感片段，启发创作与决策。
 
 ---
+## 从今天开始构建你的个人数字记忆
+### 为什么现在开始记录？
+- 其他人已经在训练他们的个人 AI
+- 别被落下，每一天不记录，都是你未来 AI 助手失去的一份知识
 
-## 功能特性
+### AI 领先差距
+- 今天开始收集个人数据的人，在 AI 更强大时将拥有多年的优势
 
-- 无感截屏
-- 单应用自定义设置
-- 自定义截屏间隔
-- 深度链接
-- 过期清理
-- 智能压缩
-- 图片搜索
-- 首页统计显示监测天数
-- AI事件和每日总结
-- 数据导入导出
-- 多语言国际化
+### 分散的数字自我
+- 重要的个人上下文分散在各类应用与设备中——没有 ScreenMemo 很难统一利用
+
+
 
 ---
 
-## 性能优化
+## 运行原理
 
-- AI 对话页面图片点击卡顿优化（2025-10）
-  - 将 Markdown 内联证据图片点击的前置数据库与应用列表查询改为“立即导航 + 页面内懒加载”，显著缩短点击到进入查看器的时间。
-  - 查看器支持仅传入 `paths`，在页面内部后台补全 `ScreenshotRecord/AppInfo`。
-  - 在查看器中对当前与相邻图片执行 `precacheImage`，降低首帧/翻页时解码卡顿。
-  - 缩略图组件 `ScreenshotImageWidget` 支持 `targetWidth`，默认用 `ResizeImage(FileImage)` 降低缩略图解码成本。
-  - 关键路径添加轻量日志，便于复现与跟踪（Release 下自动降级为 error 级别）。
+1. 屏幕采集：在用户授权后，基于 Android 11+ 无障碍截图能力（takeScreenshot），按设定间隔采集当前前台应用画面；可按应用或时间段开启/排除。
+2. 本地存储：将原图保存至应用私有目录，同时记录时间戳、前台应用包名等元数据到本地数据库（SQLite），支撑时间线与筛选。
+3. 文本提取（OCR）：对新截图执行 OCR，提取文字并与截图建立索引，支持多语言字符集，便于全文检索。
+4. 索引与检索：构建按“时间/应用/关键词”的倒排索引；搜索页支持关键词匹配、时间范围与应用过滤，快速定位历史画面。
+5. AI 处理：对同一时间段的多张截图进行聚合与摘要，形成“事件”和“每日总结”；可选择并配置不同模型供应商。
+6. 隐私与安全：所有原始数据与索引均存储在本地；可随时暂停采集、清空数据与导出备份；NSFW 偏好用于敏感内容屏蔽。
+7. 空间管理：按策略执行图片压缩与过期清理，自动控制磁盘占用，保持库体积可控。
+8. 深度链接：通过 Deep Link 从搜索/统计跳转到图片查看器或特定页面，快速回到当时上下文。
 
 ---
+
+## 应用截图
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/home.jpg" alt="首页" width="240" loading="lazy" />
+      <div align="center"><sub>首页</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/search.jpg" alt="搜索" width="240" loading="lazy" />
+      <div align="center"><sub>搜索</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/timeLine.jpg" alt="时间线" width="240" loading="lazy" />
+      <div align="center"><sub>时间线</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/daySummary.jpg" alt="每日总结" width="240" loading="lazy" />
+      <div align="center"><sub>每日总结</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/event.jpg" alt="事件" width="240" loading="lazy" />
+      <div align="center"><sub>事件</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/collect.jpg" alt="收藏" width="240" loading="lazy" />
+      <div align="center"><sub>收藏</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/prompt.jpg" alt="提示词管理" width="240" loading="lazy" />
+      <div align="center"><sub>提示词管理</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/addAi.jpg" alt="新增 AI" width="240" loading="lazy" />
+      <div align="center"><sub>新增 AI</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/aiChat.jpg" alt="AI 对话" width="240" loading="lazy" />
+      <div align="center"><sub>AI 对话</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/setting.jpg" alt="设置" width="240" loading="lazy" />
+      <div align="center"><sub>设置</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/nsfw.jpg" alt="NSFW过滤" width="240" loading="lazy" />
+      <div align="center"><sub>NSFW过滤</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/deepLink.jpg" alt="深度链接" width="240" loading="lazy" />
+      <div align="center"><sub>深度链接</sub></div>
+    </td>
+  </tr>
+</table>
+
+
+### 特色功能
+
+- 深度链接：支持自动记录浏览器链接
+- NSFW 遮罩：对常见成人域名进行自动遮罩，可自定义域名
+- 应用自定义设置：应用可以单独配置采集策略（是否采集、采集频率、分辨率/压缩等），针对 游戏/视频/阅读类 提供优化预设。
+
+---
+
+## 常见问题（FAQ）
+
+<details>
+<summary>每月大概占用多少存储空间？</summary>
+
+- 经验值示例：若开启图片压缩至约 50 KB/张，且按每分钟 1 张截图，30 天 ≈ 43,200 张，约 2.1 GB/月。
+- 估算公式：月占用（GB）≈ (60 ÷ 截屏间隔秒) × 60 × 24 × 30 × 单张大小（KB） ÷ 1024 ÷ 1024。
+- 降占用建议：增大截屏间隔（如 ≥60 秒/张）、启用图片压缩、打开过期清理（仅保留近 30/60 天）、排除不必要的应用与场景。
+</details>
+
+<details>
+<summary>数据会上传到云端吗？</summary>
+
+- 默认所有数据（截图、OCR 文本、索引、统计）均保存在本地，不会上传至云端。你可随时暂停采集、清空数据与导出备份。
+</details>
+
+<details>
+<summary>如何排除敏感应用？</summary>
+
+- 可在设置中对特定应用关闭采集，避免记录敏感内容。
+</details>
+
+<details>
+<summary>对电量与性能的影响如何？</summary>
+
+- 主要与截屏间隔、图片尺寸/压缩和前台识别频率相关。建议开启压缩与过期清理以降低资源占用。
+</details>
+
+<details>
+<summary>如何备份/迁移数据？</summary>
+
+- 在“数据导入导出”中可一键导出/导入素材与数据库，用于迁移或归档。
+</details>
 
 ## 快速开始
 
 ### 环境要求
-
 - **Flutter SDK**: 3.8.1 或更高版本
 - **Dart SDK**: 3.8.1+
 - **Android Studio** / **VS Code** + Flutter 插件
@@ -132,32 +241,21 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 ```
 
 **产物位置**：
-- `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` （约 8-9 MB）
+- `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
 - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
 - `build/app/outputs/flutter-apk/app-x86_64-release.apk`
-
-### Google Play 上架
-
-使用 App Bundle 格式上传：
-
-```powershell
-flutter build appbundle --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols
-```
-
-**产物位置**：`build/app/outputs/bundle/release/app-release.aab`
-
 ---
 
 ## 权限说明
 
 应用需要以下权限以提供完整功能：
 
-| 权限 | 用途 | 必需性 |
-|------|------|--------|
-| 存储权限 | 保存截屏和数据文件 | 必需 |
-| 通知权限 | 展示服务状态与提醒通知 | 必需 |
-| 无障碍服务 | 自动截屏与前台应用识别 | 必需 |
-| 使用统计权限 | 获取前台应用（Usage Stats） | 必需 |
+| 权限     | 用途                  | 必需性 |
+|--------|---------------------|-----|
+| 存储权限   | 保存截屏和数据文件           | 必需  |
+| 通知权限   | 展示服务状态与提醒通知         | 必需  |
+| 无障碍服务  | 自动截屏与前台应用识别         | 必需  |
+| 使用统计权限 | 获取前台应用（Usage Stats） | 必需  |
 
 > 所有权限均在首次运行时引导用户授予，并可随时在系统设置中撤销。
 
@@ -199,7 +297,7 @@ flutter build appbundle --release --tree-shake-icons --obfuscate --split-debug-i
 
 ## License
 
-本项目为私有项目，未经授权不得使用、复制或分发。
+本项目采用 MIT 许可证发布，详见 [LICENSE](LICENSE)。
 
 ---
 
