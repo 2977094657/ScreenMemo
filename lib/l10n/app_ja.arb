@@ -127,6 +127,7 @@
   "excludedAppsTitle": "除外されたアプリ",
   "excludedAppsIntro": "以下のアプリは除外され、選択できません。",
   "excludedThisApp": "・このアプリ（自己干渉を避けるため）",
+  "excludedAutomationApps": "・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）",
   "excludedImeApps": "・入力方式（キーボード）アプリ：",
   "excludedImeAppsFiltered": "・入力方法（キーボード）アプリ（自動フィルタリング）",
   "currentDefaultIme": "現在のデフォルトの IME: {name} ({package})",

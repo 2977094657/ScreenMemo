@@ -320,6 +320,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get excludedThisApp => '· This app (to avoid self interference)';
+  @override
+  String get excludedAutomationApps => '· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)';
+
 
   @override
       '· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)';

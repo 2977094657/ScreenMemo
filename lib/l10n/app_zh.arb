@@ -129,6 +129,7 @@
   "excludedAppsTitle": "已排除的应用",
   "excludedAppsIntro": "以下应用会被排除，不能选择：",
   "excludedThisApp": "· 本应用（避免自我干扰）",
+  "excludedAutomationApps": "· 自动跳过类应用（例如 GKD 等自动点击器，防止误判截屏归属）",
   "excludedImeApps": "· 输入法（键盘）应用：",
   "excludedImeAppsFiltered": "· 输入法（键盘）应用（已自动过滤）",
   "currentDefaultIme": "当前默认输入法：{name} ({package})",

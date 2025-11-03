@@ -208,6 +208,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     transientOverlayPackages.contains(pkg) -> Unit
                     isMiuiSystemApp(pkg) -> Unit
                     isImePackage(pkg) -> Unit
+                    isAutomationSkipPackage(pkg) -> Unit
                     else -> {
                         conflictingWindowFound = true
                         break
@@ -241,10 +242,26 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         Regex("google\\.android\\.inputmethod", RegexOption.IGNORE_CASE)
     )
 
+    private val automationSkipPackagePrefixes: List<String> = listOf(
+        "li.gkd",
+        "li.songe.gkd"
+    )
+
     private fun isImePackage(pkg: String?): Boolean {
         if (pkg.isNullOrBlank()) return false
         if (imePackages.contains(pkg)) return true
         return imeRegexes.any { it.containsMatchIn(pkg) }
+    }
+
+    private fun isAutomationSkipPackage(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        val normalized = pkg.lowercase(Locale.ROOT)
+        for (prefix in automationSkipPackagePrefixes) {
+            if (normalized == prefix || normalized.startsWith("$prefix.")) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun refreshImePackages(force: Boolean = false) {
@@ -297,6 +314,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 lastStableSeenAt = now
             }
             FileLogger.d(TAG, "检测到输入法窗口 $candidatePackage，忽略该候选")
+            return
+        }
+
+        if (isAutomationSkipPackage(candidatePackage)) {
+            if (lastStableMonitoredApp != null) {
+                lastStableSeenAt = now
+            }
+            FileLogger.d(TAG, "检测到自动化辅助应用 $candidatePackage，忽略该候选")
             return
         }
 
@@ -1315,7 +1340,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         }
 
         // 系统遮罩/系统UI：继续把截图归属到稳定前台
-        if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop) || isImePackage(visibleTop))) {
+        if (visibleTop != null && (transientOverlayPackages.contains(visibleTop) || isMiuiSystemApp(visibleTop) || isImePackage(visibleTop) || isAutomationSkipPackage(visibleTop))) {
             FileLogger.d(TAG, "顶层为系统遮罩/系统UI($visibleTop)，继续使用稳定前台: $stable")
             return stable
         }

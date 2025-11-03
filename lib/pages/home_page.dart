@@ -942,6 +942,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                                   lines.add(const SizedBox(height: 8));
                                   // 本应用
                                   lines.add(Text(AppLocalizations.of(context).excludedThisApp));
+                                  lines.add(Text(AppLocalizations.of(context).excludedAutomationApps));
                                   // 输入法应用
                                   if (imeList.isNotEmpty) {
                                     lines.add(const SizedBox(height: 8));

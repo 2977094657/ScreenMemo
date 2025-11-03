@@ -127,6 +127,7 @@
   "excludedAppsTitle": "제외된 앱",
   "excludedAppsIntro": "다음 앱은 제외되며 선택할 수 없습니다.",
   "excludedThisApp": "· 이 앱(자기 간섭을 피하기 위해)",
+  "excludedAutomationApps": "· 자동 스킵 앱(예: GKD 등 자동 탭 도구, 오탐 방지를 위해)",
   "excludedImeApps": "· 입력 방법(키보드) 앱:",
   "excludedImeAppsFiltered": "· 입력 방법(키보드) 앱(자동 필터링)",
   "currentDefaultIme": "현재 기본 IME: {name}({package})",

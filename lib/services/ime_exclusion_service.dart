@@ -20,7 +20,25 @@ class ImeExclusionService {
     RegExp(r'google\.android\.inputmethod', caseSensitive: false),
   ];
 
+  // 自动跳过广告/浮层类辅助应用前缀（需要排除，防止截屏归属错误）
+  static final Set<String> _automationAssistPrefixes = <String>{
+    'li.gkd',
+    'li.songe.gkd',
+  };
+
   static bool _isImeByRegex(String pkg) => _imeRegexes.any((re) => re.hasMatch(pkg));
+
+  static bool _isAutomationAssist(String pkg) {
+    final lower = pkg.toLowerCase();
+    for (final prefix in _automationAssistPrefixes) {
+      if (lower == prefix || lower.startsWith('$prefix.')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _shouldExclude(String pkg) => _isImeByRegex(pkg) || _isAutomationAssist(pkg);
 
   /// 获取系统当前已启用的输入法包名集合
   static Future<Set<String>> getEnabledImePackages() async {
@@ -74,7 +92,7 @@ class ImeExclusionService {
     return input.where((a) {
       final pkg = a.packageName;
       if (enabledImes.contains(pkg)) return false;
-      if (_isImeByRegex(pkg)) return false;
+      if (_shouldExclude(pkg)) return false;
       return true;
     }).toList();
   }
@@ -85,7 +103,7 @@ class ImeExclusionService {
     final excluded = <AppInfo>[];
     for (final a in input) {
       final pkg = a.packageName;
-      if (enabledImes.contains(pkg) || _isImeByRegex(pkg)) {
+      if (enabledImes.contains(pkg) || _shouldExclude(pkg)) {
         excluded.add(a);
       }
     }

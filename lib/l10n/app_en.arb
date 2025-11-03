@@ -129,6 +129,7 @@
   "excludedAppsTitle": "Excluded apps",
   "excludedAppsIntro": "The following apps are excluded and cannot be selected:",
   "excludedThisApp": "· This app (to avoid self interference)",
+  "excludedAutomationApps": "· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)",
   "excludedImeApps": "· Input method (keyboard) apps:",
   "excludedImeAppsFiltered": "· Input method (keyboard) apps (auto filtered)",
   "currentDefaultIme": "Current default IME: {name} ({package})",

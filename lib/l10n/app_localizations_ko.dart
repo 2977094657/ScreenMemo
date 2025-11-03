@@ -309,6 +309,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get excludedThisApp => '· 이 앱(자기 간섭을 피하기 위해)';
+  @override
+  String get excludedAutomationApps => '· 자동 스킵 앱(예: GKD 등 자동 탭 도구, 오탐 방지를 위해)';
+
 
   @override
 

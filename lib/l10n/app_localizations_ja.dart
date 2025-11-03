@@ -309,6 +309,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get excludedThisApp => '・このアプリ（自己干渉を避けるため）';
+  @override
+  String get excludedAutomationApps => '・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）';
+
 
   @override
       '・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）';

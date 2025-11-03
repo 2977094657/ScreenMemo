@@ -671,6 +671,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'· This app (to avoid self interference)'**
   String get excludedThisApp;
+  /// No description provided for @excludedAutomationApps.
+  ///
+  /// In en, this message translates to:
+  /// **'· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)'**
+  String get excludedAutomationApps;
+
 
   ///
   /// In en, this message translates to:

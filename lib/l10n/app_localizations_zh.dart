@@ -304,6 +304,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get excludedThisApp => '· 本应用（避免自我干扰）';
+  @override
+  String get excludedAutomationApps => '· 自动跳过类应用（例如 GKD 等自动点击器，防止误判截屏归属）';
+
 
   @override
 
