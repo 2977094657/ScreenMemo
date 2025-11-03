@@ -45,14 +45,14 @@ Typical scenarios:
 
 ## Start building your personal digital memory today
 
-### Why start recording now?
+Why start recording now?
 - Others are already training their personal AI
 - Don’t be left behind — every day without recording is lost knowledge for your future AI assistant
 
-### AI advantage gap
+AI advantage gap
 - Those who start collecting personal data today will have years of advantage when AI becomes more capable
 
-### Scattered digital self
+Scattered digital self
 - Valuable personal context is trapped across apps and devices — making it hard to leverage without ScreenMemo
 
 ---
@@ -229,9 +229,7 @@ flutter analyze
 
 ---
 
-## Release Build
-
-### One-click optimized build (recommended)
+## Build
 
 Generate ABI-split optimized APKs (minimized size):
 
@@ -270,7 +268,7 @@ Supported languages:
 - Japanese
 - Korean
 
-### Add a new language
+Add a new language
 
 1. Create a new `.arb` file in `lib/l10n/` (e.g., `app_ja.arb`)
 2. Copy the content of `app_en.arb` and translate
@@ -293,12 +291,6 @@ Please ensure:
 - Code passes `flutter analyze`
 - Add necessary tests
 - Update relevant documentation
-
----
-
-## License
-
-This project is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 

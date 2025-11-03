@@ -42,14 +42,14 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 
 ---
 ## 从今天开始构建你的个人数字记忆
-### 为什么现在开始记录？
+为什么现在开始记录？
 - 其他人已经在训练他们的个人 AI
 - 别被落下，每一天不记录，都是你未来 AI 助手失去的一份知识
 
-### AI 领先差距
+AI 领先差距
 - 今天开始收集个人数据的人，在 AI 更强大时将拥有多年的优势
 
-### 分散的数字自我
+分散的数字自我
 - 重要的个人上下文分散在各类应用与设备中——没有 ScreenMemo 很难统一利用
 
 
@@ -228,9 +228,7 @@ flutter analyze
 
 ---
 
-## 构建发布
-
-### 一键优化构建（推荐）
+## 构建
 
 生成按 ABI 拆分的优化 APK（体积最小化）：
 
@@ -269,7 +267,7 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 - 日本語
 - 한국어
 
-### 添加新语言
+添加新语言
 
 1. 在 `lib/l10n/` 目录创建新的 `.arb` 文件（如 `app_ja.arb`）
 2. 复制 `app_en.arb` 的内容并翻译
@@ -292,12 +290,6 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 - 代码通过 `flutter analyze` 检查
 - 添加必要的测试用例
 - 更新相关文档
-
----
-
-## License
-
-本项目采用 MIT 许可证发布，详见 [LICENSE](LICENSE)。
 
 ---
 
