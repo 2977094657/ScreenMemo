@@ -306,6 +306,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get excludedThisApp => '· 本应用（避免自我干扰）';
 
   @override
+
+  @override
   String get excludedImeApps => '· 输入法（键盘）应用：';
 
   @override
@@ -1060,7 +1062,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '为“普通事件总结”“合并事件总结”“每日总结”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
+      '为“普通事件总结”“合并事件总结”“每日总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1088,6 +1090,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '建议示例：\n- 指定每日总结语气（如“偏向行动复盘”）\n- 提醒突出关键成果或风险\n- 禁止修改输出字段名称';
 
   @override
+  String get promptAddonSuggestionMorning =>
+      '建议示例：\n- 强调人文关怀、节奏调节或小确幸\n- 提醒模型避免模板化与任务驱动语气\n- 禁止要求改变 JSON 字段或频繁使用问句';
+
+  @override
   String get normalEventPromptLabel => '普通事件提示词';
 
   @override
@@ -1095,6 +1101,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => '每日总结提示词';
+
+  @override
+  String get morningInsightsPromptLabel => '晨间行动提示词';
 
   @override
   String get actionEdit => '编辑';

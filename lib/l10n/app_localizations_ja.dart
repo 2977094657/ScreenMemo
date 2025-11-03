@@ -311,6 +311,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get excludedThisApp => '・このアプリ（自己干渉を避けるため）';
 
   @override
+      '・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）';
+
+  @override
   String get excludedImeApps => '・入力方式（キーボード）アプリ：';
 
   @override
@@ -1070,7 +1073,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '通常の要約、結合された要約、および日次要約のプロンプトを構成します。マークダウンをサポートします。空にするかリセットしてデフォルトを使用します。';
+      '通常の要約、結合された要約、日次要約、朝のアクション提案のプロンプトを構成します。マークダウンをサポートします。空にするかリセットしてデフォルトを使用します。';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1099,6 +1102,10 @@ class AppLocalizationsJa extends AppLocalizations {
       '提案されたアイデア:\n- 毎日の要約のトーンを指定します (例: アクション指向)\n- 主要な成果やリスクを強調するように依頼する\n- JSON フィールドの名前変更または追加を禁止します';
 
   @override
+  String get promptAddonSuggestionMorning =>
+      'ヒント例:\n- ヒューマンタッチや穏やかなリズム、ささやかな癒やしを強調\n- テンプレ調やタスク駆動の口調を避けるよう指示\n- JSON フィールド変更や過度の疑問文を求めない';
+
+  @override
   String get normalEventPromptLabel => '通常のイベントプロンプト';
 
   @override
@@ -1106,6 +1113,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => '毎日の概要プロンプト';
+
+  @override
+  String get morningInsightsPromptLabel => '朝のアクション提案プロンプト';
 
   @override
   String get actionEdit => '編集';

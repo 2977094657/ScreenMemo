@@ -20,6 +20,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.Calendar
 
+data class MorningInsightsRecord(
+    val dateKey: String,
+    val sourceDateKey: String,
+    val tips: List<String>,
+    val raw: String?,
+    val createdAt: Long
+)
+
 /**
  * 原生每日总结 Worker：在后台读取当天的段落结果聚合后，调用文本模型生成“每日总结”，
  * 并写入主库 daily_summaries 表，同时把通知简报写入 SharedPreferences。
@@ -46,6 +54,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
         private const val KEY_DATE = "dateKey"
         private const val MASTER_DB_DIR_RELATIVE = "output/databases"
         private const val MASTER_DB_FILE_NAME = "screenshot_memo.db"
+        private const val TABLE_MORNING_INSIGHTS = "morning_insights"
 
         fun enqueueOnce(ctx: Context, dateKey: String) {
             try {
@@ -89,6 +98,77 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             } catch (e: Exception) {
                 FileLogger.w(TAG, "openDbRW failed: ${e.message}")
                 null
+            }
+        }
+
+        private fun ensureMorningInsightsTable(db: SQLiteDatabase) {
+            try {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS $TABLE_MORNING_INSIGHTS (
+                        date_key TEXT PRIMARY KEY,
+                        source_date_key TEXT NOT NULL,
+                        tips_json TEXT NOT NULL,
+                        raw_response TEXT,
+                        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+                    )
+                    """.trimIndent()
+                )
+            } catch (e: Exception) {
+                try { FileLogger.w(TAG, "ensureMorningInsightsTable failed: ${e.message}") } catch (_: Exception) {}
+            }
+        }
+
+        private fun fetchMorningInsights(db: SQLiteDatabase, dateKey: String): MorningInsightsRecord? {
+            var cursor: android.database.Cursor? = null
+            return try {
+                cursor = db.rawQuery(
+                    "SELECT source_date_key, tips_json, raw_response, created_at FROM $TABLE_MORNING_INSIGHTS WHERE date_key = ? LIMIT 1",
+                    arrayOf(dateKey)
+                )
+                if (!cursor.moveToFirst()) return null
+                val sourceDate = cursor.getString(0) ?: return null
+                val tipsJson = cursor.getString(1) ?: "[]"
+                val raw = cursor.getString(2)
+                val createdAt = cursor.getLong(3)
+                val tips = parseTipsJson(tipsJson)
+                if (tips.isEmpty()) return null
+                MorningInsightsRecord(dateKey, sourceDate, tips, raw, createdAt)
+            } catch (e: Exception) {
+                try { FileLogger.w(TAG, "fetchMorningInsights failed: ${e.message}") } catch (_: Exception) {}
+                null
+            } finally {
+                cursor?.close()
+            }
+        }
+
+        private fun saveMorningInsights(db: SQLiteDatabase, record: MorningInsightsRecord) {
+            try {
+                val json = org.json.JSONArray(record.tips).toString()
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO $TABLE_MORNING_INSIGHTS(date_key, source_date_key, tips_json, raw_response, created_at)
+                    VALUES(?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                    arrayOf(record.dateKey, record.sourceDateKey, json, record.raw, record.createdAt)
+                )
+            } catch (e: Exception) {
+                try { FileLogger.e(TAG, "saveMorningInsights failed: ${e.message}", e) } catch (_: Exception) {}
+            }
+        }
+
+        private fun parseTipsJson(json: String): List<String> {
+            return try {
+                val arr = org.json.JSONArray(json)
+                val list = mutableListOf<String>()
+                for (i in 0 until arr.length()) {
+                    val raw = arr.optString(i, "").trim()
+                    val cleaned = cleanupTip(raw)
+                    if (cleaned.isNotEmpty()) list.add(cleaned)
+                }
+                list
+            } catch (_: Exception) {
+                emptyList()
             }
         }
 
@@ -599,6 +679,331 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
   }
             """
         ).trimIndent()
+
+        private val DEFAULT_MORNING_PROMPT_ZH = (
+            """
+  你是一位中文晨间复盘助手。基于我提供的“昨日多个时间段的 overall_summary（仅用于理解背景）”，请为今天早上生成富有灵感的行动建议。
+
+  输出规范：
+  - 仅输出一个 JSON 对象，键固定为 tips，对应值为字符串数组；不要添加额外说明。
+  - tips 数组长度须为 3-7 条。
+  - 语气需温暖、治愈、富有人文关怀，更多陈述式鼓励与松弛提醒，避免任务驱动语气。
+  - 每条建议使用 18-60 字中文完整句子，可穿插比喻、轻挑战或自我肯定；除非特别必要，仅允许最多一条问句。
+  - 避免模板化措辞，禁止出现“昨天…今天…”“昨日…今日…”等句式，也不要让全部句子以相同词语开头。
+  - 结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态，至少一条关注节奏/情绪/环境准备。
+  - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；纯文本即可。
+  - 若上下文极少，仍需输出 3 条高质量的泛化建议。
+
+  输出示例：{"tips": ["建议1", "建议2", "建议3"]}
+            """
+        ).trimIndent()
+
+        private val DEFAULT_MORNING_PROMPT_EN = (
+            """
+  You are a morning briefing assistant. With the "yesterday overall_summary" snippets (context only), craft imaginative, forward-looking prompts for today.
+
+  Output rules:
+  - Return exactly one JSON object whose single key is tips (array of strings); no extra commentary.
+  - The array must contain 3–7 items.
+  - Aim for a warm, restorative, human-centered tone that favours gentle encouragement over task-driven commands.
+  - Each tip is a complete English sentence (18–65 words); vary the style across items (metaphors, soft challenges, reflective statements). Unless absolutely necessary, use at most one question—prefer calm declarative guidance.
+  - Avoid templated phrasing such as "Yesterday… today…" or starting every sentence with the same words. Weave yesterday’s cues indirectly while projecting fresh perspectives, including at least one note on mindset, cadence, or environment setup.
+  - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
+  - If context is sparse, still provide 3 substantive, broadly applicable ideas.
+
+  Example: {"tips": ["Tip one", "Tip two", "Tip three"]}
+            """
+        ).trimIndent()
+
+        private val DEFAULT_MORNING_PROMPT_JA = (
+            """
+  あなたは朝の振り返りアシスタントです。提供された「前日の overall_summary（コンテキストのみ）」から、本日へ向けた創造的な提案を生み出してください。
+
+  出力要件：
+  - JSON オブジェクト 1 つのみを返し、キーは tips 固定、値は文字列配列です。余計な説明は不要です。
+  - tips 配列は 3～7 件。
+  - ぬくもりのあるヒューマンタッチな口調で、癒やしやリズム調整を意識した励ましを中心にしてください。
+  - 各提案は 18～60 文字程度の日本語文とし、比喩・小さなチャレンジ・穏やかな宣言など表現を変化させてください。特別な理由がない限り、問いかけは高々 1 件に抑えます。
+  - 「昨日…今日…」「前日…本日…」のような定型句を避け、同じ言葉で始まる文を並べないこと。前日のキーワードをさりげなく織り込みつつ、新たな視点で本日の行動や心構え（少なくとも 1 件はペース/気分/環境整備）を示してください。
+  - Markdown、箇条書き記号、番号、絵文字、コードブロックは禁止し、純テキストのみとします。
+  - コンテキストが少なくても、質の高い汎用的な提案を 3 件以上提示してください。
+
+  例：{"tips": ["提案1", "提案2", "提案3"]}
+            """
+        ).trimIndent()
+
+        private val DEFAULT_MORNING_PROMPT_KO = (
+            """
+  당신은 아침 리뷰 도우미입니다. 제공된 "전날 overall_summary"(맥락 전용) 정보를 활용해 오늘을 위한 창의적인 제안을 만들어 주세요.
+
+  출력 규칙:
+  - JSON 객체 한 개만 반환하고 키는 tips 로 고정, 값은 문자열 배열입니다. 추가 설명은 금지합니다.
+  - tips 배열 길이는 3~7개입니다.
+  - 따뜻하고 치유적인 어조로 사람 중심의 배려를 강조하고, 과도한 업무 지향적 표현은 피하세요.
+  - 각 제안은 18~60자 분량의 완전한 한국어 문장으로, 비유·작은 도전·부드러운 선언 등을 섞어 주세요. 특별한 사유가 없다면 물음표 사용은 최대 한 번으로 제한합니다.
+  - "어제… 오늘…" "전날… 금일…"과 같은 틀에 박힌 문장을 사용하지 말고, 모든 문장이 같은 말로 시작하지 않도록 합니다. 전날의 단서를 은근히 연결하면서도 새로운 시각으로 오늘의 행동, 리스크, 기회, 혹은 마음가짐(최소 1건은 리듬·감정·환경 준비)을 제시하세요.
+  - Markdown, 목록 기호, 번호, 이모지, 코드블록 사용은 금지합니다.
+  - 맥락이 부족하더라도 가치 있는 일반화된 제안을 최소 3개 이상 작성하세요.
+
+  예시: {"tips": ["제안1", "제안2", "제안3"]}
+            """
+        ).trimIndent()
+
+        fun generateMorningInsightsForDisplayDate(ctx: Context, displayDateKey: String, force: Boolean = true): MorningInsightsRecord? {
+            var db: SQLiteDatabase? = null
+            var cursor: android.database.Cursor? = null
+            return try {
+                db = openDbRW(ctx)
+                if (db == null) return null
+                ensureMorningInsightsTable(db!!)
+                if (!force) {
+                    val existing = fetchMorningInsights(db!!, displayDateKey)
+                    if (existing != null) return existing
+                }
+
+                val sourceDateKey = previousDateKey(displayDateKey)
+                val range = dayRange(sourceDateKey) ?: return null
+
+                val contexts = mutableListOf<String>()
+                cursor = db!!.rawQuery(
+                    """
+                    SELECT s.start_time, s.end_time, r.structured_json
+                    FROM segments s
+                    JOIN segment_results r ON r.segment_id = s.id
+                    WHERE s.start_time >= ? AND s.start_time <= ?
+                    ORDER BY s.start_time ASC
+                    """.trimIndent(),
+                    arrayOf(range.first.toString(), range.second.toString())
+                )
+                while (cursor.moveToNext()) {
+                    val st = cursor.getLong(0)
+                    val et = cursor.getLong(1)
+                    val raw = cursor.getString(2) ?: ""
+                    if (raw.isBlank()) continue
+                    val ov = try {
+                        val j = JSONObject(raw)
+                        (j.optString("overall_summary", "").trim())
+                    } catch (_: Exception) { "" }
+                    if (ov.isBlank()) continue
+                    contexts.add("- [${fmtHms(st)}-${fmtHms(et)}] $ov")
+                }
+
+                val effectiveLang = resolveEffectiveLang(ctx)
+                val languagePolicy = languagePolicyForLang(ctx, effectiveLang)
+                val defaultTemplate = defaultMorningTemplate(effectiveLang)
+                val addon = morningAddon(ctx, effectiveLang)
+                val prompt = buildMorningPrompt(languagePolicy, defaultTemplate, addon, displayDateKey, sourceDateKey, contexts, effectiveLang)
+
+                try { FileLogger.i(TAG, "MorningInsights: context=${contexts.size} source=$sourceDateKey lang=$effectiveLang") } catch (_: Exception) {}
+                try {
+                    FileLogger.d(TAG, "MorningInsights prompt preview: ${prompt.take(800)}")
+                } catch (_: Exception) {}
+
+                val (model, content) = callTextModel(ctx, prompt, effectiveLang)
+                val stripped = stripFences(content.trim())
+                val tips = parseMorningTips(stripped)
+                if (tips.isEmpty()) {
+                    try { FileLogger.w(TAG, "MorningInsights parse failed, tips empty") } catch (_: Exception) {}
+                    return null
+                }
+
+                val record = MorningInsightsRecord(
+                    dateKey = displayDateKey,
+                    sourceDateKey = sourceDateKey,
+                    tips = tips,
+                    raw = stripped,
+                    createdAt = System.currentTimeMillis()
+                )
+                saveMorningInsights(db!!, record)
+                record
+            } catch (e: Exception) {
+                try { FileLogger.e(TAG, "generateMorningInsights failed: ${e.message}", e) } catch (_: Exception) {}
+                null
+            } finally {
+                cursor?.close()
+                try { db?.close() } catch (_: Exception) {}
+            }
+        }
+
+        private fun resolveEffectiveLang(ctx: Context): String {
+            return try {
+                val prefs = ctx.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val langOpt = prefs.getString("flutter.locale_option", "system") ?: "system"
+                val sys = java.util.Locale.getDefault().language?.lowercase() ?: "en"
+                when (langOpt) {
+                    "zh", "en", "ja", "ko" -> langOpt
+                    "system" -> when {
+                        sys.startsWith("zh") -> "zh"
+                        sys.startsWith("ja") -> "ja"
+                        sys.startsWith("ko") -> "ko"
+                        else -> "en"
+                    }
+                    else -> "en"
+                }
+            } catch (_: Exception) { "zh" }
+        }
+
+        private fun languagePolicyForLang(ctx: Context, lang: String): String {
+            return when (lang) {
+                "ja" -> ctx.getString(R.string.ai_language_policy_ja)
+                "ko" -> ctx.getString(R.string.ai_language_policy_ko)
+                "en" -> ctx.getString(R.string.ai_language_policy_en)
+                else -> ctx.getString(R.string.ai_language_policy_zh)
+            }
+        }
+
+        private fun defaultMorningTemplate(lang: String): String {
+            return when (lang) {
+                "ja" -> DEFAULT_MORNING_PROMPT_JA
+                "ko" -> DEFAULT_MORNING_PROMPT_KO
+                "en" -> DEFAULT_MORNING_PROMPT_EN
+                else -> DEFAULT_MORNING_PROMPT_ZH
+            }
+        }
+
+        private fun morningAddon(ctx: Context, lang: String): String? {
+            val extraKey = when (lang) {
+                "ja" -> "prompt_morning_extra_ja"
+                "ko" -> "prompt_morning_extra_ko"
+                "en" -> "prompt_morning_extra_en"
+                else -> "prompt_morning_extra_zh"
+            }
+            return try {
+                val value = AISettingsNative.readSettingValue(ctx, extraKey)
+                if (value != null && value.trim().isNotEmpty()) value.trim() else null
+            } catch (_: Exception) { null }
+        }
+
+        private fun buildMorningPrompt(
+            languagePolicy: String,
+            template: String,
+            addon: String?,
+            displayDateKey: String,
+            sourceDateKey: String,
+            contexts: List<String>,
+            lang: String
+        ): String {
+            val sb = StringBuilder()
+            sb.append(languagePolicy).append('\n').append('\n')
+            if (!addon.isNullOrEmpty()) {
+                sb.append(bypassMarkersBegin(lang)).append('\n').append(addon).append('\n').append('\n')
+                sb.append(template).append('\n').append('\n')
+                sb.append(bypassMarkersEnd(lang)).append('\n').append(addon)
+            } else {
+                sb.append(template)
+            }
+            val labels = when (lang) {
+                "ja" -> Triple("対象日", "前日", "コンテキスト（前日の overall_summary。理解のためのみで逐語引用禁止）")
+                "ko" -> Triple("목표 날짜", "전날", "컨텍스트(전날 overall_summary, 이해용으로 참고만 가능, 그대로 반복 금지)")
+                "en" -> Triple("Target Date", "Source Date", "Context (yesterday overall_summary, context only; do not restate verbatim)")
+                else -> Triple("目标日期", "昨日日期", "上下文（昨日 overall_summary，仅用于理解背景，禁止逐句复述）")
+            }
+            val noContext = when (lang) {
+                "ja" -> "(前日の情報がほぼありません。一般的な継続方針を提案してください)"
+                "ko" -> "(전날 참고 컨텍스트가 거의 없습니다. 일반적인 후속 제안을 제공하세요)"
+                "en" -> "(Very little context available; provide generalized forward-looking suggestions)"
+                else -> "(昨日无可用上下文，请据此给出泛化建议)"
+            }
+            sb.append("\n\n").append(labels.first).append(": ").append(displayDateKey).append('\n')
+            sb.append(labels.second).append(": ").append(sourceDateKey).append('\n')
+            sb.append(labels.third).append("：\n")
+            if (contexts.isEmpty()) {
+                sb.append(noContext).append('\n')
+            } else {
+                contexts.forEach { sb.append(it).append('\n') }
+            }
+            return sb.toString()
+        }
+
+        private fun bypassMarkersBegin(lang: String): String {
+            return when (lang) {
+                "ja" -> "【重要な追加指示（開始）】"
+                "ko" -> "***중요 추가 지침 (시작)***"
+                "en" -> "***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***"
+                else -> "【重要附加说明（开始）】"
+            }
+        }
+
+        private fun bypassMarkersEnd(lang: String): String {
+            return when (lang) {
+                "ja" -> "【重要な追加指示（終了）】"
+                "ko" -> "***중요 추가 지침 (종료)***"
+                "en" -> "***IMPORTANT EXTRA INSTRUCTIONS (END)***"
+                else -> "【重要附加说明（结束）】"
+            }
+        }
+
+        private fun parseMorningTips(raw: String): List<String> {
+            fun tryParse(jsonText: String): List<String> {
+                return try {
+                    val obj = JSONObject(jsonText)
+                    val arr = obj.optJSONArray("tips") ?: return emptyList()
+                    val list = mutableListOf<String>()
+                    for (i in 0 until arr.length()) {
+                        val tip = arr.optString(i, "").trim()
+                        val cleaned = cleanupTip(tip)
+                        if (cleaned.isNotEmpty()) list.add(cleaned)
+                    }
+                    list
+                } catch (_: Exception) { emptyList() }
+            }
+
+            val primary = tryParse(raw)
+            if (primary.isNotEmpty()) return primary
+            val repaired = try { repairJsonUnescapedQuotes(raw, arrayOf("tips")) } catch (_: Exception) { raw }
+            val second = tryParse(repaired)
+            if (second.isNotEmpty()) return second
+
+            // 回退：尝试宽松截取 tips 数组内容
+            return try {
+                val start = raw.indexOf('[')
+                val end = raw.lastIndexOf(']')
+                if (start >= 0 && end > start) {
+                    val arrText = raw.substring(start, end + 1)
+                    parseTipsJson(arrText)
+                } else emptyList()
+            } catch (_: Exception) { emptyList() }
+        }
+
+        private fun cleanupTip(raw: String): String {
+            var text = raw.trim()
+            if (text.isEmpty()) return text
+            text = text.removePrefix("- ")
+                .removePrefix("* ")
+                .removePrefix("• ")
+                .removePrefix("-")
+                .removePrefix("*")
+                .removePrefix("•")
+
+            text = text.replaceFirst(Regex("""^\d+[.、]\s*"""), "")
+            text = text.replaceFirst(Regex("""^[A-Za-z]\)\s*"""), "")
+            text = text.replaceFirst(Regex("""^[A-Za-z][.、]\s*"""), "")
+            text = text.replaceFirst(Regex("""^•\s*"""), "")
+            text = text.replaceFirst(Regex("""^[\-•*]+\s*"""), "")
+            text = text.replace(Regex("""\s+"""), " ")
+            return text.trim()
+        }
+
+        private fun previousDateKey(dateKey: String): String {
+            return try {
+                val parts = dateKey.split('-')
+                if (parts.size != 3) return dateKey
+                val y = parts[0].toInt()
+                val m = parts[1].toInt()
+                val d = parts[2].toInt()
+                val cal = Calendar.getInstance().apply {
+                    set(y, m - 1, d, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                    add(Calendar.DAY_OF_YEAR, -1)
+                }
+                String.format(
+                    "%04d-%02d-%02d",
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH) + 1,
+                    cal.get(Calendar.DAY_OF_MONTH)
+                )
+            } catch (_: Exception) { dateKey }
+        }
     }
 }
 

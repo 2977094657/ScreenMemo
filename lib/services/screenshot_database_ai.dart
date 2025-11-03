@@ -130,6 +130,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
+
+    await _createMorningInsightsTable(db);
   }
 
   // v6: 清理旧的 AI 分组表与老配置键（首次打开/升级时执行）
@@ -829,6 +831,56 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
+  Future<Map<String, dynamic>?> getMorningInsights(String dateKey) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'morning_insights',
+        where: 'date_key = ?',
+        whereArgs: [dateKey],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> upsertMorningInsights({
+    required String dateKey,
+    required String sourceDateKey,
+    required String tipsJson,
+    String? rawResponse,
+  }) async {
+    final db = await database;
+    try {
+      await db.insert(
+        'morning_insights',
+        {
+          'date_key': dateKey,
+          'source_date_key': sourceDateKey,
+          'tips_json': tipsJson,
+          if (rawResponse != null) 'raw_response': rawResponse,
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<int> deleteMorningInsights(String dateKey) async {
+    final db = await database;
+    try {
+      return await db.delete('morning_insights', where: 'date_key = ?', whereArgs: [dateKey]);
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// 按时间范围获取“已有AI结果”的段落（含结果元数据），用于拼装每日总结上下文
   Future<List<Map<String, dynamic>>> listSegmentsWithResultsBetween({
     required int startMillis,
@@ -888,6 +940,18 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       return <Map<String, dynamic>>[];
     }
   }
+}
+
+Future<void> _createMorningInsightsTable(DatabaseExecutor db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS morning_insights (
+      date_key TEXT PRIMARY KEY,
+      source_date_key TEXT NOT NULL,
+      tips_json TEXT NOT NULL,
+      raw_response TEXT,
+      created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+    )
+  ''');
 }
 
 

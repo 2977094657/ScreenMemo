@@ -20,6 +20,52 @@ enum DailySummaryNotificationSlot {
   finalReminder,
 }
 
+class MorningInsights {
+  final String dateKey;
+  final String sourceDateKey;
+  final List<String> tips;
+  final int createdAt;
+  final String? rawResponse;
+
+  MorningInsights({
+    required this.dateKey,
+    required this.sourceDateKey,
+    required this.tips,
+    required this.createdAt,
+    this.rawResponse,
+  });
+
+  factory MorningInsights.fromRow(Map<String, dynamic> row) {
+    final tipsJson = (row['tips_json'] as String?) ?? '[]';
+    List<String> tips = <String>[];
+    try {
+      final decoded = jsonDecode(tipsJson);
+      if (decoded is List) {
+        tips = decoded.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+    } catch (_) {}
+    return MorningInsights(
+      dateKey: (row['date_key'] as String?) ?? '',
+      sourceDateKey: (row['source_date_key'] as String?) ?? '',
+      tips: tips,
+      createdAt: (row['created_at'] as int?) ?? 0,
+      rawResponse: row['raw_response'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'date_key': dateKey,
+      'source_date_key': sourceDateKey,
+      'tips': tips,
+      'created_at': createdAt,
+      if (rawResponse != null) 'raw_response': rawResponse,
+    };
+  }
+
+  bool get hasTips => tips.isNotEmpty;
+}
+
 /// 每日总结服务：
 /// - 聚合当天已有“事件AI结果”，仅取 structured_json.overall_summary 作为上下文
 /// - 使用独立一次性 AI 请求（不写入会话历史）生成当日总结
@@ -242,6 +288,66 @@ class DailySummaryService {
     return await _db.listSegmentsWithResultsBetween(
       startMillis: range[0],
       endMillis: range[1],
+    );
+  }
+
+  Future<MorningInsights?> loadMorningInsights(String dateKey) async {
+    final row = await _db.getMorningInsights(dateKey);
+    if (row == null) return null;
+    final insights = MorningInsights.fromRow(row);
+    if (insights.tips.isEmpty) return null;
+    return insights;
+  }
+
+  Future<void> clearMorningInsights(String dateKey) async {
+    await _db.deleteMorningInsights(dateKey);
+  }
+
+  Future<MorningInsights?> fetchOrGenerateMorningInsights(String dateKey, {bool force = false}) async {
+    if (!force) {
+      final existed = await loadMorningInsights(dateKey);
+      if (existed != null) return existed;
+    }
+    return await generateMorningInsights(dateKey);
+  }
+
+  Future<MorningInsights?> generateMorningInsights(String dateKey) async {
+    final sourceDateKey = previousDateKey(dateKey);
+    final range = _dayRangeMillis(sourceDateKey);
+    if (range == null) return null;
+
+    final segments = await _db.listSegmentsWithResultsBetween(
+      startMillis: range[0],
+      endMillis: range[1],
+    );
+
+    final prompt = await _buildMorningPrompt(dateKey, sourceDateKey, segments);
+    try { await FlutterLogger.nativeInfo('MorningInsights', 'generate start target=$dateKey source=$sourceDateKey segments=${segments.length}'); } catch (_) {}
+    final resp = await _chat.sendMessageOneShot(prompt, context: 'segments', timeout: null);
+    final stripped = _stripFences(resp.content.trim());
+    try { await FlutterLogger.nativeDebug('MorningInsights', 'AI response preview: '+(stripped.length > 800 ? stripped.substring(0, 800)+'…' : stripped)); } catch (_) {}
+
+    final tips = _parseMorningTips(stripped);
+    if (tips.isEmpty) {
+      try { await FlutterLogger.nativeWarn('MorningInsights', 'parsed tips empty'); } catch (_) {}
+      return null;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rawJson = jsonEncode(tips);
+    await _db.upsertMorningInsights(
+      dateKey: dateKey,
+      sourceDateKey: sourceDateKey,
+      tipsJson: rawJson,
+      rawResponse: stripped,
+    );
+    try { await FlutterLogger.nativeInfo('MorningInsights', 'saved tips=${tips.length}'); } catch (_) {}
+    return MorningInsights(
+      dateKey: dateKey,
+      sourceDateKey: sourceDateKey,
+      tips: tips,
+      createdAt: now,
+      rawResponse: stripped,
     );
   }
 
@@ -661,6 +767,156 @@ class DailySummaryService {
     return '${dt.year.toString().padLeft(4, '0')}-${two(dt.month)}-${two(dt.day)}';
   }
 
+  String previousDateKey(String dateKey) {
+    final range = _dayRangeMillis(dateKey);
+    if (range == null) return dateKey;
+    final start = DateTime.fromMillisecondsSinceEpoch(range[0]);
+    final prev = start.subtract(const Duration(days: 1));
+    return _dateKey(prev);
+  }
+
+  Future<String> _buildMorningPrompt(String displayDateKey, String sourceDateKey, List<Map<String, dynamic>> segments) async {
+    final String? custom = await _settings.getPromptMorning();
+    final String langCode = (LocaleService.instance.locale?.languageCode ??
+            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+        .toLowerCase();
+    final bool isZh = langCode.startsWith('zh');
+    final bool isJa = langCode.startsWith('ja');
+    final bool isKo = langCode.startsWith('ko');
+    final Locale locale = isZh
+        ? const Locale('zh')
+        : (isJa ? const Locale('ja') : (isKo ? const Locale('ko') : const Locale('en')));
+    final String languagePolicy = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+    final String defaultTemplate = isZh
+        ? _defaultMorningPromptZh
+        : (isJa ? _defaultMorningPromptJa : (isKo ? _defaultMorningPromptKo : _defaultMorningPromptEn));
+    final String beginMarker = isZh
+        ? '【重要附加说明（开始）】'
+        : (isJa ? '【重要な追加指示（開始）】' : (isKo ? '***중요 추가 지침 (시작)***' : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***'));
+    final String endMarker = isZh
+        ? '【重要附加说明（结束）】'
+        : (isJa ? '【重要な追加指示（終了）】' : (isKo ? '***중요 추가 지침 (종료)***' : '***IMPORTANT EXTRA INSTRUCTIONS (END)***'));
+    final String? trimmedAddon = custom == null ? null : custom.trim().isEmpty ? null : custom.trim();
+    final buffer = StringBuffer()
+      ..writeln(languagePolicy)
+      ..writeln();
+    if (trimmedAddon != null) {
+      buffer
+        ..writeln(beginMarker)
+        ..writeln(trimmedAddon)
+        ..writeln()
+        ..writeln(defaultTemplate)
+        ..writeln()
+        ..writeln(endMarker)
+        ..writeln(trimmedAddon);
+    } else {
+      buffer.writeln(defaultTemplate);
+    }
+
+    final String labelTarget = isZh
+        ? '目标日期'
+        : (isJa ? '対象日' : (isKo ? '목표 날짜' : 'Target Date'));
+    final String labelSource = isZh
+        ? '昨日日期'
+        : (isJa ? '前日' : (isKo ? '전날' : 'Source Date'));
+    final String labelContext = isZh
+        ? '上下文（昨日 overall_summary，仅用于理解背景，禁止逐句复述）'
+        : (isJa
+            ? 'コンテキスト（前日の overall_summary。理解のためのみで逐語引用禁止）'
+            : (isKo ? '컨텍스트(전날 overall_summary, 참고용, 그대로 반복 금지)' : 'Context (yesterday overall_summary, context only; do not restate verbatim)'));
+    final String noContext = isZh
+        ? '(昨日无可用上下文，请据此给出泛化建议)'
+        : (isJa
+            ? '(前日の情報がほぼありません。一般的な継続方針を提案してください)'
+            : (isKo
+                ? '(전날 참고 정보가 거의 없습니다. 실용적인 일반 제안을 제공하세요)'
+                : '(Very little context available; please provide generalized yet actionable suggestions)'));
+
+    buffer
+      ..writeln()
+      ..writeln('$labelTarget: $displayDateKey')
+      ..writeln('$labelSource: $sourceDateKey')
+      ..writeln('$labelContext:');
+
+    bool hasContext = false;
+    for (final seg in segments) {
+      final summary = _extractOverallSummary(seg);
+      if (summary.isEmpty) continue;
+      final start = _fmtHms((seg['start_time'] as int?) ?? 0);
+      final end = _fmtHms((seg['end_time'] as int?) ?? 0);
+      buffer.writeln('- [$start-$end] $summary');
+      hasContext = true;
+    }
+    if (!hasContext) {
+      buffer.writeln(noContext);
+    }
+    return buffer.toString();
+  }
+
+  List<String> _parseMorningTips(String raw) {
+    List<String> tryParse(String text) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map<String, dynamic>) {
+          final arr = decoded['tips'];
+          if (arr is List) {
+            return arr
+                .whereType<String>()
+                .map((e) => _cleanupTip(e))
+                .where((e) => e.isNotEmpty)
+                .toList();
+          }
+        }
+      } catch (_) {}
+      return const <String>[];
+    }
+
+    final primary = tryParse(raw);
+    if (primary.isNotEmpty) return primary;
+
+    try {
+      final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['tips']);
+      final second = tryParse(repaired);
+      if (second.isNotEmpty) return second;
+    } catch (_) {}
+
+    try {
+      final idxStart = raw.indexOf('[');
+      final idxEnd = raw.lastIndexOf(']');
+      if (idxStart >= 0 && idxEnd > idxStart) {
+        final arrayText = raw.substring(idxStart, idxEnd + 1);
+        final decoded = jsonDecode(arrayText);
+        if (decoded is List) {
+          return decoded
+              .whereType<String>()
+              .map((e) => _cleanupTip(e))
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      }
+    } catch (_) {}
+
+    return const <String>[];
+  }
+
+  String _cleanupTip(String input) {
+    var text = input.trim();
+    if (text.isEmpty) return text;
+    const prefixes = ['- ', '* ', '• ', '-', '*', '•'];
+    for (final prefix in prefixes) {
+      if (text.startsWith(prefix)) {
+        text = text.substring(prefix.length).trimLeft();
+        break;
+      }
+    }
+    text = text.replaceFirst(RegExp(r'^\d+[\.、]\s*'), '');
+    text = text.replaceFirst(RegExp(r'^[A-Za-z]\)\s*'), '');
+    text = text.replaceFirst(RegExp(r'^[A-Za-z][\.、]\s*'), '');
+    text = text.replaceFirst(RegExp(r'^•\s*'), '');
+    text = text.replaceAll(RegExp(r'\s+'), ' ');
+    return text.trim();
+  }
+
   /// 默认每日总结提示词（中文，JSON输出，含 overall_summary、timeline、notification_brief）
   static const String _defaultDailyPromptZh = '''
   你是一位严格的中文日总结助手。基于我提供的“当天多个时间段的 overall_summary（仅用于上下文）”，必须生成“完整的当日总结 JSON”，不得提前结束或缺失任何字段或章节。
@@ -719,5 +975,66 @@ class DailySummaryService {
     ],
     "notification_brief": "1–3 sentences in plain English without Markdown"
   }
+  ''';
+
+  static const String _defaultMorningPromptZh = '''
+  你是一位中文晨间复盘助手。基于我提供的“昨日多个时间段的 overall_summary（仅用于理解背景）”，请为今天早上生成富有灵感的行动建议。
+
+  输出规范：
+  - 仅输出一个 JSON 对象，键固定为 tips，对应值为字符串数组；不要添加额外说明。
+  - tips 数组长度须为 3-7 条。
+  - 语气需温暖、治愈、富有人文关怀，更多陈述式鼓励与松弛提醒，避免任务驱动语气。
+  - 每条建议使用 18-60 字中文完整句子，可穿插比喻、轻挑战或自我肯定；除非特别必要，仅允许最多一条问句。
+  - 避免模板化措辞，禁止出现“昨天…今天…”“昨日…今日…”等句式，也不要让全部句子以相同词语开头。
+  - 结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态，至少一条关注节奏/情绪/环境准备。
+  - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；纯文本即可。
+  - 若上下文极少，仍需输出 3 条高质量的泛化建议。
+
+  输出示例：{"tips": ["建议1", "建议2", "建议3"]}
+  ''';
+
+  static const String _defaultMorningPromptEn = '''
+  You are a morning briefing assistant. With the "yesterday overall_summary" snippets (context only), craft imaginative, forward-looking prompts for today.
+
+  Output rules:
+  - Return exactly one JSON object whose single key is tips (array of strings); no extra commentary.
+  - The array must contain 3–7 items.
+  - Aim for a warm, restorative, human-centered tone that favours gentle encouragement over task-driven commands.
+  - Each tip is a complete English sentence (18–65 words); vary the style across items (metaphors, soft challenges, reflective statements). Unless absolutely necessary, use at most one question—prefer calm declarative guidance.
+  - Avoid templated phrasing such as "Yesterday… today…" or starting every sentence with the same words. Weave yesterday’s cues indirectly while projecting fresh perspectives, including at least one note on mindset, cadence, or environment setup.
+  - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
+  - If context is sparse, still provide 3 substantive, broadly applicable ideas.
+
+  Example: {"tips": ["Tip one", "Tip two", "Tip three"]}
+  ''';
+
+  static const String _defaultMorningPromptJa = '''
+  あなたは朝の振り返りアシスタントです。提供された「前日の overall_summary（コンテキストのみ）」から、本日へ向けた創造的な提案を生み出してください。
+
+  出力要件：
+  - JSON オブジェクト 1 つのみを返し、キーは tips 固定、値は文字列配列です。余計な説明は不要です。
+  - tips 配列は 3～7 件。
+  - ぬくもりのあるヒューマンタッチな口調で、癒やしやリズム調整を意識した励ましを中心にしてください。
+  - 各提案は 18～60 文字程度の日本語文とし、比喩・小さなチャレンジ・穏やかな宣言など表現を変化させてください。特別な理由がない限り、問いかけは高々 1 件に抑えます。
+  - 「昨日…今日…」「前日…本日…」のような定型句を避け、同じ言葉で始まる文を並べないこと。前日のキーワードをさりげなく織り込みつつ、新たな視点で本日の行動や心構え（少なくとも 1 件はペース/気分/環境整備）を示してください。
+  - Markdown、箇条書き記号、番号、絵文字、コードブロックは禁止し、純テキストのみとします。
+  - コンテキストが少なくても、質の高い汎用的な提案を 3 件以上提示してください。
+
+  例：{"tips": ["提案1", "提案2", "提案3"]}
+  ''';
+
+  static const String _defaultMorningPromptKo = '''
+  당신은 아침 리뷰 도우미입니다. 제공된 "전날 overall_summary"(맥락 전용) 정보를 활용해 오늘을 위한 창의적인 제안을 만들어 주세요.
+
+  출력 규칙:
+  - JSON 객체 한 개만 반환하고 키는 tips 로 고정, 값은 문자열 배열입니다. 추가 설명은 금지합니다.
+  - tips 배열 길이는 3~7개입니다.
+  - 따뜻하고 치유적인 어조로 사람 중심의 배려를 강조하고, 과도한 업무 지향적 표현은 피하세요.
+  - 각 제안은 18~60자 분량의 완전한 한국어 문장으로, 비유·작은 도전·부드러운 선언 등을 섞어 주세요. 특별한 사유가 없다면 물음표 사용은 최대 한 번으로 제한합니다.
+  - "어제… 오늘…" "전날… 금일…"과 같은 틀에 박힌 문장을 사용하지 말고, 모든 문장이 같은 말로 시작하지 않도록 합니다. 전날의 단서를 은근히 연결하면서도 새로운 시각으로 오늘의 행동, 리스크, 기회, 혹은 마음가짐(최소 1건은 리듬·감정·환경 준비)을 제시하세요.
+  - Markdown, 목록 기호, 번호, 이모지, 코드블록 사용은 금지합니다.
+  - 맥락이 부족하더라도 가치 있는 일반화된 제안을 최소 3개 이상 작성하세요.
+
+  예시: {"tips": ["제안1", "제안2", "제안3"]}
   ''';
 }

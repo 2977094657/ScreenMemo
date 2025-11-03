@@ -672,6 +672,10 @@ abstract class AppLocalizations {
   /// **'· This app (to avoid self interference)'**
   String get excludedThisApp;
 
+  ///
+  /// In en, this message translates to:
+  /// **'· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)'**
+
   /// No description provided for @excludedImeApps.
   ///
   /// In en, this message translates to:
@@ -2025,7 +2029,7 @@ abstract class AppLocalizations {
   /// No description provided for @promptManagerHint.
   ///
   /// In en, this message translates to:
-  /// **'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.'**
+  /// **'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.'**
   String get promptManagerHint;
 
   /// No description provided for @promptAddonGeneralInfo.
@@ -2070,6 +2074,12 @@ abstract class AppLocalizations {
   /// **'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields'**
   String get promptAddonSuggestionDaily;
 
+  /// No description provided for @promptAddonSuggestionMorning.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested ideas:\n- Emphasize warmth, gentle pacing, or small comforts\n- Remind the model to avoid templated or task-driven tone\n- Do not request JSON field changes or rely heavily on questions'**
+  String get promptAddonSuggestionMorning;
+
   /// No description provided for @normalEventPromptLabel.
   ///
   /// In en, this message translates to:
@@ -2087,6 +2097,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Daily summary prompt'**
   String get dailySummaryPromptLabel;
+
+  /// No description provided for @morningInsightsPromptLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning insights prompt'**
+  String get morningInsightsPromptLabel;
 
   /// No description provided for @actionEdit.
   ///

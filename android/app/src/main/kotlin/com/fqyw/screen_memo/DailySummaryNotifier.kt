@@ -440,38 +440,64 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
         val action = intent.action ?: ""
         try { FileLogger.i(TAG, "onReceive action=$action") } catch (_: Exception) {}
         if (action == DailySummaryScheduler.ACTION_ALARM) {
-            // 到点展示兜底通知
-            val cal = Calendar.getInstance()
-            val dateKey = String.format(
-                "%04d-%02d-%02d",
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH) + 1,
-                cal.get(Calendar.DAY_OF_MONTH)
-            )
-            val slotType = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_TYPE, DailySummaryScheduler.SLOT_TYPE_FIXED)
-            val slotIndex = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_INDEX, -1)
-            val (title, fallbackMessage) = resolveSlotTexts(context, slotType, slotIndex, dateKey)
-            val sp = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-            val brief = sp.getString("daily_brief_$dateKey", null)
-            val message = brief ?: fallbackMessage
-            val ok = DailySummaryNotifier.showBigText(context, title, message)
-            try { FileLogger.i(TAG, "fired: show notification ok=$ok, briefLen=${message.length}") } catch (_: Exception) {}
+            val pending = goAsync()
+            Thread {
+                var message = ""
+                try {
+                    val cal = Calendar.getInstance()
+                    val dateKey = String.format(
+                        "%04d-%02d-%02d",
+                        cal.get(Calendar.YEAR),
+                        cal.get(Calendar.MONTH) + 1,
+                        cal.get(Calendar.DAY_OF_MONTH)
+                    )
+                    val slotType = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_TYPE, DailySummaryScheduler.SLOT_TYPE_FIXED)
+                    val slotIndex = intent.getIntExtra(DailySummaryScheduler.EXTRA_SLOT_INDEX, -1)
+                    val (title, fallbackMessage) = resolveSlotTexts(context, slotType, slotIndex, dateKey)
 
-            // 异步触发真实后台生成（WorkManager），以便在应用未运行时也生成当日总结
-            try {
-                DailySummaryWorker.enqueueOnce(context.applicationContext, dateKey)
-            } catch (_: Exception) {}
+                    val sp = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
 
-            // 立即安排下一天
-            try {
-                val sp = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                val enabled = sp.getBoolean("daily_summary_enabled", false)
-                val hour = sp.getInt("daily_summary_hour", 20)
-                val minute = sp.getInt("daily_summary_minute", 0)
-                if (enabled) {
-                    DailySummaryScheduler.schedule(context, hour, minute)
+                    if (slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 0) {
+                        // 晨间提示：尝试生成昨日洞察
+                        val record = DailySummaryWorker.generateMorningInsightsForDisplayDate(context.applicationContext, dateKey, force = true)
+                            ?: DailySummaryWorker.generateMorningInsightsForDisplayDate(context.applicationContext, dateKey, force = false)
+                        message = if (record != null && record.tips.isNotEmpty()) {
+                            val selected = record.tips.first().trim()
+                            sp.edit()
+                                .putString("morning_insights_$dateKey", selected)
+                                .apply()
+                            selected
+                        } else {
+                            sp.getString("morning_insights_$dateKey", null) ?: fallbackMessage
+                        }
+                    } else {
+                        val brief = sp.getString("daily_brief_$dateKey", null)
+                        message = if (!brief.isNullOrBlank()) brief else fallbackMessage
+                    }
+
+                    val ok = DailySummaryNotifier.showBigText(context, title, message)
+                    try { FileLogger.i(TAG, "fired: show notification ok=$ok, len=${message.length}") } catch (_: Exception) {}
+
+                    // 异步触发每日总结生成（保持原行为）
+                    try {
+                        DailySummaryWorker.enqueueOnce(context.applicationContext, dateKey)
+                    } catch (_: Exception) {}
+
+                    // 立即安排下一天
+                    try {
+                        val enabled = sp.getBoolean("daily_summary_enabled", false)
+                        val hour = sp.getInt("daily_summary_hour", 20)
+                        val minute = sp.getInt("daily_summary_minute", 0)
+                        if (enabled) {
+                            DailySummaryScheduler.schedule(context, hour, minute)
+                        }
+                    } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    try { FileLogger.e(TAG, "Morning alarm handling failed: ${e.message}", e) } catch (_: Exception) {}
+                } finally {
+                    pending.finish()
                 }
-            } catch (_: Exception) {}
+            }.start()
         }
     }
 }

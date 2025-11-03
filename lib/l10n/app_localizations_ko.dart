@@ -311,6 +311,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get excludedThisApp => '· 이 앱(자기 간섭을 피하기 위해)';
 
   @override
+
+  @override
   String get excludedImeApps => '· 입력 방법(키보드) 앱:';
 
   @override
@@ -1068,7 +1070,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '일반, 병합 및 일일 요약에 대한 프롬프트를 구성합니다. 마크다운을 지원합니다. 기본값을 사용하려면 비우거나 재설정하세요.';
+      '일반, 병합, 일일 요약 및 아침 행동 제안 프롬프트를 구성합니다. 마크다운을 지원합니다. 기본값을 사용하려면 비우거나 재설정하세요.';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1097,6 +1099,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '제안된 아이디어:\n- 일일 요약 톤을 지정합니다(예: 행동 중심).\n- 주요 성과나 리스크를 강조하도록 요청\n- JSON 필드 이름 변경 또는 추가 금지';
 
   @override
+  String get promptAddonSuggestionMorning =>
+      '권장 사항:\n- 인간적인 온기, 여유로운 리듬, 소소한 위로를 강조\n- 템플릿/업무 지향 어조를 피하도록 안내\n- JSON 필드 변경이나 잦은 질문 사용을 요구하지 않기';
+
+  @override
   String get normalEventPromptLabel => '일반 이벤트 프롬프트';
 
   @override
@@ -1104,6 +1110,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => '일일 요약 프롬프트';
+
+  @override
+  String get morningInsightsPromptLabel => '아침 행동 제안 프롬프트';
 
   @override
   String get actionEdit => '편집하다';

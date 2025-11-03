@@ -23,11 +23,16 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   bool _loading = false;
   Map<String, dynamic>? _daily; // daily_summaries row
   Map<String, dynamic>? _sj; // parsed structured_json of daily
+  MorningInsights? _morningInsights;
+  bool _morningLoading = false;
 
   @override
   void initState() {
     super.initState();
     _load(initial: true);
+    if (_isToday) {
+      _refreshMorningInsights();
+    }
   }
 
   Future<void> _load({bool initial = false}) async {
@@ -92,6 +97,123 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  bool get _isToday {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final todayKey = '${now.year.toString().padLeft(4, '0')}-${two(now.month)}-${two(now.day)}';
+    return todayKey == widget.dateKey;
+  }
+
+  Future<void> _refreshMorningInsights({bool regenerate = false}) async {
+    if (!_isToday) return;
+    setState(() => _morningLoading = true);
+    try {
+      final MorningInsights? insights = regenerate
+          ? await _svc.generateMorningInsights(widget.dateKey)
+          : await _svc.loadMorningInsights(widget.dateKey);
+      if (!mounted) return;
+      final bool success = insights != null && insights.tips.isNotEmpty;
+      if (success) {
+        setState(() => _morningInsights = insights);
+      } else if (!regenerate) {
+        setState(() => _morningInsights = null);
+      }
+      if (regenerate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(success ? '晨间提示已更新' : '晨间提示生成失败')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      if (regenerate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('晨间提示生成失败')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _morningLoading = false);
+    }
+  }
+
+  Widget _buildMorningInsightsSection() {
+    if (!_isToday) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final tips = _morningInsights?.tips ?? const <String>[];
+    final bool hasTips = tips.isNotEmpty;
+    final Color bgColor = const Color(0xFFFFF7E0);
+    final Color borderColor = const Color(0xFFFFE4A6);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  '晨间行动建议',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (_morningLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: IconButton(
+                    tooltip: hasTips ? '重新生成' : '生成提示',
+                    padding: EdgeInsets.zero,
+                    iconSize: 18,
+                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                    icon: const Icon(Icons.refresh_outlined),
+                    onPressed: () => _refreshMorningInsights(regenerate: true),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          if (_morningLoading)
+            Text(
+              '正在生成最新建议…',
+              style: theme.textTheme.bodyMedium,
+            )
+          else if (hasTips)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(tips.length, (index) {
+                return Padding(
+                  padding: EdgeInsets.only(bottom: index == tips.length - 1 ? 0 : AppTheme.spacing1),
+                  child: Text(
+                    '${index + 1}. ${tips[index]}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                );
+              }),
+            )
+          else
+            Text(
+              '昨日内容尚未生成提示，点击右侧图标获取最新建议',
+              style: theme.textTheme.bodyMedium,
+            ),
+        ],
+      ),
+    );
   }
 
   String _extractDailySummaryText() {
@@ -210,57 +332,82 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-          : md.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing3),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.event_note_outlined,
-                          size: 56,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.6),
-                        ),
-                        const SizedBox(height: AppTheme.spacing2),
-                        Text(AppLocalizations.of(context).noDailySummaryToday),
-                        const SizedBox(height: AppTheme.spacing3),
-                        SizedBox(
-                          height: 36,
-                          child: FilledButton.icon(
-                            onPressed: () => _generate(force: true),
-                            style: FilledButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final double minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
+                return SingleChildScrollView(
+                  padding: EdgeInsets.zero,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: minHeight),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                        vertical: AppTheme.spacing3,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_isToday) _buildMorningInsightsSection(),
+                          if (md.isEmpty)
+                            _buildEmptySummaryPlaceholder()
+                          else
+                            MarkdownBody(
+                              data: md,
+                              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                                p: Theme.of(context).textTheme.bodyMedium,
                               ),
+                              onTapLink: (text, href, title) async {
+                                if (href == null) return;
+                                final uri = Uri.tryParse(href);
+                                if (uri != null) {
+                                  try {
+                                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  } catch (_) {}
+                                }
+                              },
                             ),
-                            icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-                            label: Text(AppLocalizations.of(context).generateDailySummary),
-                          ),
-                        ),
-                      ],
+                          const SizedBox(height: AppTheme.spacing4),
+                        ],
+                      ),
                     ),
                   ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing3),
-                  child: MarkdownBody(
-                    data: md,
-                    styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                      p: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    onTapLink: (text, href, title) async {
-                      if (href == null) return;
-                      final uri = Uri.tryParse(href);
-                      if (uri != null) {
-                        try {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        } catch (_) {}
-                      }
-                    },
-                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildEmptySummaryPlaceholder() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppTheme.spacing6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.event_note_outlined,
+            size: 56,
+            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(AppLocalizations.of(context).noDailySummaryToday),
+          const SizedBox(height: AppTheme.spacing3),
+          SizedBox(
+            height: 36,
+            child: FilledButton.icon(
+              onPressed: () => _generate(force: true),
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 ),
+              ),
+              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+              label: Text(AppLocalizations.of(context).generateDailySummary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

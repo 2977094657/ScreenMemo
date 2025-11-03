@@ -95,21 +95,14 @@ class AISettingsService {
   static const String _keyRenderImagesDuringStreaming = 'render_images_during_streaming';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
-  static const String _keyPromptSegment = 'prompt_segment';         // 旧版（不分语种）
-  static const String _keyPromptMerge   = 'prompt_merge';           // 旧版（不分语种）
-  static const String _keyPromptDaily   = 'prompt_daily';           // 旧版（不分语种）
-  static const String _keyPromptSegmentZh = 'prompt_segment_zh';
-  static const String _keyPromptSegmentEn = 'prompt_segment_en';
-  static const String _keyPromptMergeZh   = 'prompt_merge_zh';
-  static const String _keyPromptMergeEn   = 'prompt_merge_en';
-  static const String _keyPromptDailyZh   = 'prompt_daily_zh';
-  static const String _keyPromptDailyEn   = 'prompt_daily_en';
   static const String _keyPromptSegmentExtraZh = 'prompt_segment_extra_zh';
   static const String _keyPromptSegmentExtraEn = 'prompt_segment_extra_en';
   static const String _keyPromptMergeExtraZh   = 'prompt_merge_extra_zh';
   static const String _keyPromptMergeExtraEn   = 'prompt_merge_extra_en';
   static const String _keyPromptDailyExtraZh   = 'prompt_daily_extra_zh';
   static const String _keyPromptDailyExtraEn   = 'prompt_daily_extra_en';
+  static const String _keyPromptMorningExtraZh = 'prompt_morning_extra_zh';
+  static const String _keyPromptMorningExtraEn = 'prompt_morning_extra_en';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -313,10 +306,6 @@ class AISettingsService {
     final lang = _currentLang();
     return _getPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptSegmentExtraZh : _keyPromptSegmentExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn,
-        _keyPromptSegment,
-      ],
     );
   }
 
@@ -324,10 +313,6 @@ class AISettingsService {
     final lang = _currentLang();
     await _setPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptSegmentExtraZh : _keyPromptSegmentExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptSegmentZh : _keyPromptSegmentEn,
-        _keyPromptSegment,
-      ],
       value: value,
     );
   }
@@ -336,10 +321,6 @@ class AISettingsService {
     final lang = _currentLang();
     return _getPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptMergeExtraZh : _keyPromptMergeExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn,
-        _keyPromptMerge,
-      ],
     );
   }
 
@@ -347,10 +328,6 @@ class AISettingsService {
     final lang = _currentLang();
     await _setPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptMergeExtraZh : _keyPromptMergeExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptMergeZh : _keyPromptMergeEn,
-        _keyPromptMerge,
-      ],
       value: value,
     );
   }
@@ -360,10 +337,6 @@ class AISettingsService {
     final lang = _currentLang();
     return _getPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptDailyExtraZh : _keyPromptDailyExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn,
-        _keyPromptDaily,
-      ],
     );
   }
 
@@ -371,10 +344,22 @@ class AISettingsService {
     final lang = _currentLang();
     await _setPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptDailyExtraZh : _keyPromptDailyExtraEn,
-      legacyKeys: <String>[
-        lang == 'zh' ? _keyPromptDailyZh : _keyPromptDailyEn,
-        _keyPromptDaily,
-      ],
+      value: value,
+    );
+  }
+
+  // ========== 晨间行动提示词 ==========
+  Future<String?> getPromptMorning() async {
+    final lang = _currentLang();
+    return _getPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptMorningExtraZh : _keyPromptMorningExtraEn,
+    );
+  }
+
+  Future<void> setPromptMorning(String? value) async {
+    final lang = _currentLang();
+    await _setPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptMorningExtraZh : _keyPromptMorningExtraEn,
       value: value,
     );
   }
@@ -661,42 +646,22 @@ class AISettingsService {
    try { await db.touchAiConversation(conversationCid); } catch (_) {}
  }
 
-  Future<String?> _getPromptAddon({
+Future<String?> _getPromptAddon({
     required String primaryKey,
-    required List<String> legacyKeys,
   }) async {
     final db = ScreenshotDatabase.instance;
     String? raw = await db.getAiSetting(primaryKey);
-    String? sourceKey;
-    if (raw == null || raw.trim().isEmpty) {
-      for (final key in legacyKeys) {
-        final candidate = await db.getAiSetting(key);
-        if (candidate != null && candidate.trim().isNotEmpty) {
-          raw = candidate;
-          sourceKey = key;
-          break;
-        }
-      }
-    }
     final sanitized = _sanitizePromptAddon(raw);
-    if (sanitized != null && sourceKey != null) {
-      await db.setAiSetting(primaryKey, sanitized);
-      await db.setAiSetting(sourceKey, null);
-    }
     return sanitized;
   }
 
   Future<void> _setPromptAddon({
     required String primaryKey,
-    required List<String> legacyKeys,
     required String? value,
   }) async {
     final db = ScreenshotDatabase.instance;
     final sanitized = _sanitizePromptAddon(value);
     await db.setAiSetting(primaryKey, sanitized);
-    for (final key in legacyKeys) {
-      await db.setAiSetting(key, null);
-    }
   }
 
   String? _sanitizePromptAddon(String? value) {

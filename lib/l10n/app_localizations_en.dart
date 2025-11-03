@@ -322,6 +322,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get excludedThisApp => '· This app (to avoid self interference)';
 
   @override
+      '· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)';
+
+  @override
   String get excludedImeApps => '· Input method (keyboard) apps:';
 
   @override
@@ -1100,7 +1103,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      'Configure prompts for normal, merged, and daily summaries; supports Markdown. Empty or reset to use defaults.';
+      'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1130,6 +1133,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields';
 
   @override
+  String get promptAddonSuggestionMorning =>
+      'Suggested ideas:\n- Emphasize warmth, gentle pacing, or small comforts\n- Remind the model to avoid templated or task-driven tone\n- Do not request JSON field changes or rely heavily on questions';
+
+  @override
   String get normalEventPromptLabel => 'Normal event prompt';
 
   @override
@@ -1137,6 +1144,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => 'Daily summary prompt';
+
+  @override
+  String get morningInsightsPromptLabel => 'Morning insights prompt';
 
   @override
   String get actionEdit => 'Edit';

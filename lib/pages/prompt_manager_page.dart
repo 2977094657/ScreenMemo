@@ -17,17 +17,21 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
   String? _promptSegment;
   String? _promptMerge;
   String? _promptDaily;
+  String? _promptMorning;
 
   // 编辑状态与控制器
   final TextEditingController _segCtrl = TextEditingController();
   final TextEditingController _mergeCtrl = TextEditingController();
   final TextEditingController _dailyCtrl = TextEditingController();
+  final TextEditingController _morningCtrl = TextEditingController();
   bool _editingSeg = false;
   bool _editingMerge = false;
   bool _editingDaily = false;
+  bool _editingMorning = false;
   bool _savingSeg = false;
   bool _savingMerge = false;
   bool _savingDaily = false;
+  bool _savingMorning = false;
 
   bool _loading = true;
 
@@ -40,8 +44,9 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
   @override
   void dispose() {
     _segCtrl.dispose();
-   _mergeCtrl.dispose();
-   _dailyCtrl.dispose();
+    _mergeCtrl.dispose();
+    _dailyCtrl.dispose();
+    _morningCtrl.dispose();
    super.dispose();
   }
 
@@ -50,15 +55,18 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       final seg = await _settings.getPromptSegment();
       final mer = await _settings.getPromptMerge();
       final day = await _settings.getPromptDaily();
+      final morning = await _settings.getPromptMorning();
       if (!mounted) return;
       setState(() {
         _promptSegment = seg;
         _promptMerge = mer;
         _promptDaily = day;
+        _promptMorning = morning;
 
         _segCtrl.text = seg?.trim() ?? '';
         _mergeCtrl.text = mer?.trim() ?? '';
         _dailyCtrl.text = day?.trim() ?? '';
+        _morningCtrl.text = morning?.trim() ?? '';
 
         _loading = false;
       });
@@ -79,9 +87,10 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       Tab(text: t.normalEventPromptLabel),
       Tab(text: t.mergeEventPromptLabel),
       Tab(text: t.dailySummaryPromptLabel),
+      Tab(text: t.morningInsightsPromptLabel),
     ];
     return DefaultTabController(
-      length: 3,
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: Text(t.promptManagerTitle),
@@ -127,6 +136,18 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
               onSave: _saveDaily,
               onReset: _resetDaily,
               saving: _savingDaily,
+            ),
+            _buildPromptTab(
+              label: t.morningInsightsPromptLabel,
+              infoText: t.promptAddonGeneralInfo,
+              suggestion: t.promptAddonSuggestionMorning,
+              currentAddon: _promptMorning ?? '',
+              editing: _editingMorning,
+              controller: _morningCtrl,
+              onEditToggle: () => setState(() => _editingMorning = !_editingMorning),
+              onSave: _saveMorning,
+              onReset: _resetMorning,
+              saving: _savingMorning,
             ),
           ],
         ),
@@ -193,7 +214,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
               border: Border(bottom: BorderSide(color: theme.dividerColor, width: 1)),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
@@ -394,6 +414,48 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingDaily = false);
+    }
+  }
+
+  Future<void> _saveMorning() async {
+    if (_savingMorning) return;
+    setState(() => _savingMorning = true);
+    try {
+      final text = _morningCtrl.text.trim();
+      final normalized = text.isEmpty ? null : text;
+      await _settings.setPromptMorning(normalized);
+      if (mounted) {
+        setState(() {
+          _promptMorning = normalized;
+          _morningCtrl.text = normalized ?? '';
+          _editingMorning = false;
+        });
+        UINotifier.success(context, AppLocalizations.of(context).savedDailyPromptToast);
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _savingMorning = false);
+    }
+  }
+
+  Future<void> _resetMorning() async {
+    if (_savingMorning) return;
+    setState(() => _savingMorning = true);
+    try {
+      await _settings.setPromptMorning(null);
+      if (mounted) {
+        setState(() {
+          _promptMorning = null;
+          _morningCtrl.text = '';
+          _editingMorning = false;
+        });
+        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
+      }
+    } catch (e) {
+      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _savingMorning = false);
     }
   }
 }
