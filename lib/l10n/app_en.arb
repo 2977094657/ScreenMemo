@@ -54,6 +54,10 @@
   "clearAll": "Clear",
   "noAppsFound": "No apps found",
   "noAppsMatched": "No matching apps",
+  "pinduoduoWarningTitle": "Risk Reminder",
+  "pinduoduoWarningMessage": "Taking screenshots in Pinduoduo may lead to order cancellations. We do not recommend enabling monitoring.",
+  "pinduoduoWarningCancel": "Cancel",
+  "pinduoduoWarningKeep": "Keep Anyway",
   "stepProgress": "Step {current} / {total}",
   "@stepProgress": {
     "placeholders": {

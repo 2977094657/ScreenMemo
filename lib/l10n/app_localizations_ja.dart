@@ -123,6 +123,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String get noAppsMatched => '一致するアプリがありません';
 
   @override
+  String get pinduoduoWarningTitle => 'リスク警告';
+
+  @override
+  String get pinduoduoWarningMessage =>
+      '拼多多でスクリーンショットを撮影すると、注文がキャンセルされる可能性があります。監視を有効にすることは推奨されません。';
+
+  @override
+  String get pinduoduoWarningCancel => '選択を取り消す';
+
+  @override
+  String get pinduoduoWarningKeep => '続行する';
+
+  @override
   String stepProgress(Object current, Object total) {
     return 'ステップ $current/$total';
   }

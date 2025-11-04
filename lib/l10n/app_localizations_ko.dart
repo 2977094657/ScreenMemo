@@ -123,6 +123,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noAppsMatched => '일치하는 앱이 없습니다';
 
   @override
+  String get pinduoduoWarningTitle => '위험 알림';
+
+  @override
+  String get pinduoduoWarningMessage =>
+      '핑둬둬에서 스크린샷을 촬영하면 주문이 취소될 수 있습니다. 모니터링을 활성화하지 않는 것을 권장합니다.';
+
+  @override
+  String get pinduoduoWarningCancel => '선택 취소';
+
+  @override
+  String get pinduoduoWarningKeep => '계속 선택';
+
+  @override
   String stepProgress(Object current, Object total) {
     return '단계 $current/$total';
   }

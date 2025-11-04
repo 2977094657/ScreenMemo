@@ -52,6 +52,10 @@
   "clearAll": "すべてクリア",
   "noAppsFound": "アプリが見つかりません",
   "noAppsMatched": "一致するアプリがありません",
+  "pinduoduoWarningTitle": "リスク警告",
+  "pinduoduoWarningMessage": "拼多多でスクリーンショットを撮影すると、注文がキャンセルされる可能性があります。監視を有効にすることは推奨されません。",
+  "pinduoduoWarningCancel": "選択を取り消す",
+  "pinduoduoWarningKeep": "続行する",
   "stepProgress": "ステップ {current}/{total}",
   "@stepProgress": {
     "placeholders": {

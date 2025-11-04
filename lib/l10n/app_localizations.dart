@@ -318,6 +318,30 @@ abstract class AppLocalizations {
   /// **'No matching apps'**
   String get noAppsMatched;
 
+  /// No description provided for @pinduoduoWarningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Risk Reminder'**
+  String get pinduoduoWarningTitle;
+
+  /// No description provided for @pinduoduoWarningMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Taking screenshots in Pinduoduo may lead to order cancellations. We do not recommend enabling monitoring.'**
+  String get pinduoduoWarningMessage;
+
+  /// No description provided for @pinduoduoWarningCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get pinduoduoWarningCancel;
+
+  /// No description provided for @pinduoduoWarningKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Anyway'**
+  String get pinduoduoWarningKeep;
+
   /// No description provided for @stepProgress.
   ///
   /// In en, this message translates to:

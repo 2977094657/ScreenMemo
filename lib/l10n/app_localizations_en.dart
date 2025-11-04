@@ -124,6 +124,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noAppsMatched => 'No matching apps';
 
   @override
+  String get pinduoduoWarningTitle => 'Risk Reminder';
+
+  @override
+  String get pinduoduoWarningMessage =>
+      'Taking screenshots in Pinduoduo may lead to order cancellations. We do not recommend enabling monitoring.';
+
+  @override
+  String get pinduoduoWarningCancel => 'Cancel';
+
+  @override
+  String get pinduoduoWarningKeep => 'Keep Anyway';
+
+  @override
   String stepProgress(Object current, Object total) {
     return 'Step $current / $total';
   }

@@ -3,6 +3,7 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
+import 'ui_dialog.dart';
 
 /// 应用选择组件
 class AppSelectionWidget extends StatefulWidget {
@@ -22,6 +23,10 @@ class AppSelectionWidget extends StatefulWidget {
 class _AppSelectionWidgetState extends State<AppSelectionWidget> {
   final AppSelectionService _appService = AppSelectionService.instance;
   final TextEditingController _searchController = TextEditingController();
+  static const Set<String> _pinduoduoPackages = {
+    'com.xunmeng.pinduoduo',
+    'com.xunmeng.pinduoduo.lite',
+  };
   
   List<AppInfo> _allApps = [];
   List<AppInfo> _filteredApps = [];
@@ -81,21 +86,78 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     }
   }
 
-  void _toggleAppSelection(AppInfo app) {
+  bool _isPinduoduoApp(AppInfo app) {
+    final package = app.packageName.toLowerCase();
+    if (_pinduoduoPackages.contains(package)) {
+      return true;
+    }
+
+    final name = app.appName.toLowerCase();
+    return name.contains('拼多多') || name.contains('pinduoduo');
+  }
+
+  Future<bool> _confirmPinduoduoSelection(AppInfo app) async {
+    if (app.isSelected || !_isPinduoduoApp(app)) {
+      return true;
+    }
+
+    final l10n = AppLocalizations.of(context);
+    final result = await showUIDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      title: l10n.pinduoduoWarningTitle,
+      message: l10n.pinduoduoWarningMessage,
+      actions: [
+        UIDialogAction<bool>(
+          text: l10n.pinduoduoWarningCancel,
+          result: false,
+        ),
+        UIDialogAction<bool>(
+          text: l10n.pinduoduoWarningKeep,
+          style: UIDialogActionStyle.primary,
+          result: true,
+        ),
+      ],
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _toggleAppSelection(AppInfo app) async {
+    if (!await _confirmPinduoduoSelection(app)) {
+      return;
+    }
+
+    if (!mounted) return;
+
     setState(() {
       app.isSelected = !app.isSelected;
-      
+
       if (app.isSelected) {
         _selectedApps.add(app);
       } else {
         _selectedApps.removeWhere((selected) => selected.packageName == app.packageName);
       }
     });
-    
+
     widget.onSelectionChanged?.call(_selectedApps);
   }
 
-  void _selectAll() {
+  Future<void> _selectAll() async {
+    AppInfo? needConfirm;
+    for (final app in _filteredApps) {
+      if (!app.isSelected && _isPinduoduoApp(app)) {
+        needConfirm = app;
+        break;
+      }
+    }
+
+    if (needConfirm != null && !await _confirmPinduoduoSelection(needConfirm)) {
+      return;
+    }
+
+    if (!mounted) return;
+
     setState(() {
       for (final app in _filteredApps) {
         if (!app.isSelected) {
@@ -217,7 +279,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                     },
                   ),
                   TextButton(
-                    onPressed: _selectAll,
+                    onPressed: () { _selectAll(); },
                     child: Text(AppLocalizations.of(context).selectAll, style: const TextStyle(fontSize: 14)),
                   ),
                   TextButton(
@@ -293,7 +355,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
 
   Widget _buildAppGridItem(AppInfo app) {
     return GestureDetector(
-      onTap: () => _toggleAppSelection(app),
+      onTap: () { _toggleAppSelection(app); },
       child: Container(
         decoration: BoxDecoration(
           color: app.isSelected ? AppTheme.primary.withValues(alpha: 0.1) : Colors.transparent,
@@ -376,7 +438,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _toggleAppSelection(app),
+        onTap: () { _toggleAppSelection(app); },
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing4,
@@ -410,7 +472,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
               ),
               Checkbox(
                 value: app.isSelected,
-                onChanged: (_) => _toggleAppSelection(app),
+                onChanged: (_) { _toggleAppSelection(app); },
               ),
             ],
           ),

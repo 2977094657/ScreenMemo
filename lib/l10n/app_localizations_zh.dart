@@ -123,6 +123,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noAppsMatched => '没有匹配的应用';
 
   @override
+  String get pinduoduoWarningTitle => '风险提醒';
+
+  @override
+  String get pinduoduoWarningMessage => '对拼多多进行截图可能触发砍单，建议取消选择。';
+
+  @override
+  String get pinduoduoWarningCancel => '取消选择';
+
+  @override
+  String get pinduoduoWarningKeep => '仍然选择';
+
+  @override
   String stepProgress(Object current, Object total) {
     return '步骤 $current / $total';
   }

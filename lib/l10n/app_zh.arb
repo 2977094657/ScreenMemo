@@ -54,6 +54,10 @@
   "clearAll": "清空",
   "noAppsFound": "没有找到应用",
   "noAppsMatched": "没有匹配的应用",
+  "pinduoduoWarningTitle": "风险提醒",
+  "pinduoduoWarningMessage": "对拼多多进行截图可能触发砍单，建议取消选择。",
+  "pinduoduoWarningCancel": "取消选择",
+  "pinduoduoWarningKeep": "仍然选择",
   "stepProgress": "步骤 {current} / {total}",
   "@stepProgress": {
     "placeholders": {
