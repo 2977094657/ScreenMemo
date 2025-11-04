@@ -496,16 +496,26 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             }
             val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
             return if (isGoogle) {
-                val url = "$base/v1beta/models/${cfg.model}:generateContent?key=${cfg.apiKey}"
+                val url = "$base/v1beta/models/${cfg.model}:generateContent"
                 val body = JSONObject().put("contents", org.json.JSONArray().put(org.json.JSONObject().put("parts", org.json.JSONArray()
                     .put(org.json.JSONObject().put("text", systemMsg))
                     .put(org.json.JSONObject().put("text", prompt))
                 )))
                 val reqBody: RequestBody = body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-                val req = Request.Builder().url(url).post(reqBody).build()
+                val req = Request.Builder()
+                    .url(url)
+                    .addHeader("x-goog-api-key", cfg.apiKey ?: "")
+                    .post(reqBody)
+                    .build()
                 val resp = client.newCall(req).execute()
-                if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} ${resp.body?.string()}")
                 val respText = resp.body?.string() ?: ""
+                if (!resp.isSuccessful) {
+                    val lower = respText.lowercase()
+                    if (lower.contains("user location is not supported")) {
+                        try { FileLogger.e(TAG, "Gemini request blocked by region policy: ${respText.take(800)}") } catch (_: Exception) {}
+                    }
+                    throw IllegalStateException("Request failed: ${resp.code} ${respText}")
+                }
                 var content = ""
                 try {
                     val obj = JSONObject(respText)
@@ -539,8 +549,8 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     .addHeader("Content-Type", "application/json")
                     .build()
                 val resp = client.newCall(req).execute()
-                if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} ${resp.body?.string()}")
                 val respText = resp.body?.string() ?: ""
+                if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} ${respText}")
                 var content = ""
                 try {
                     val obj = JSONObject(respText)

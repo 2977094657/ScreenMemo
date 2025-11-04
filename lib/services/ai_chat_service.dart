@@ -108,8 +108,6 @@ class AIChatService {
         continue;
       }
       try {
-        final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
-  
         // 历史按会话CID隔离 + 注入系统语言指示（本地化读取，忽略上下文语言）
         final history = await _settings.getChatHistory();
         final String langCode = (LocaleService.instance.locale?.languageCode ??
@@ -119,25 +117,83 @@ class AIChatService {
         final locale = isZh ? const Locale('zh') : const Locale('en');
         final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-        final List<Map<String, dynamic>> messages = [
-          {'role': 'system', 'content': systemMsg},
-          ...history.map((m) => m.toJson()),
-          AIMessage(role: 'user', content: userMessage).toJson(),
-        ];
-  
-        final headers = <String, String>{
+        final String base = ep.baseUrl.trim();
+        final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+        final Map<String, String> headers = <String, String>{
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + apiKey,
         };
-        final body = jsonEncode({
-          'model': ep.model,
-          'messages': messages,
-          'temperature': 0.2,
-          'stream': false,
-        });
+
+        Uri uri;
+        String body;
+
+        if (isGoogle) {
+          headers['x-goog-api-key'] = apiKey;
+          final String normalizedBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+          uri = Uri.parse('$normalizedBase/v1beta/models/${ep.model}:generateContent');
+
+          final List<Map<String, dynamic>> contents = <Map<String, dynamic>>[];
+          for (final m in history) {
+            if (m.content.trim().isEmpty) continue;
+            contents.add({
+              'role': m.role == 'assistant' ? 'model' : 'user',
+              'parts': [
+                {'text': m.content},
+              ],
+            });
+          }
+          if (userMessage.trim().isNotEmpty) {
+            contents.add({
+              'role': 'user',
+              'parts': [
+                {'text': userMessage},
+              ],
+            });
+          }
+
+          final Map<String, dynamic> payload = <String, dynamic>{
+            'contents': contents,
+            'generationConfig': <String, dynamic>{
+              'temperature': 0.2,
+            },
+          };
+          if (systemMsg.trim().isNotEmpty) {
+            payload['system_instruction'] = <String, dynamic>{
+              'parts': [
+                {'text': systemMsg},
+              ],
+            };
+          }
+          body = jsonEncode(payload);
+        } else {
+          headers['Authorization'] = 'Bearer ' + apiKey;
+          uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+
+          final List<Map<String, dynamic>> messages = [
+            {'role': 'system', 'content': systemMsg},
+            ...history.map((m) => m.toJson()),
+            AIMessage(role: 'user', content: userMessage).toJson(),
+          ];
+
+          body = jsonEncode({
+            'model': ep.model,
+            'messages': messages,
+            'temperature': 0.2,
+            'stream': false,
+          });
+        }
+
         try { await FlutterLogger.nativeDebug('AI', 'HTTP POST ' + uri.toString() + ' bodyLen=' + body.length.toString()); } catch (_) {}
         final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
+          if (isGoogle) {
+            try {
+              final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
+              await FlutterLogger.nativeError('AI', 'Gemini request failed(${resp.statusCode}): ' + bodyPreview);
+              if (bodyPreview.toLowerCase().contains('user location is not supported')) {
+                await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+              }
+            } catch (_) {}
+          }
           throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
         }
   
@@ -306,7 +362,6 @@ class AIChatService {
         continue;
       }
 
-      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
       final history = await _settings.getChatHistory();
       final String langCode = (LocaleService.instance.locale?.languageCode ??
               WidgetsBinding.instance.platformDispatcher.locale.languageCode)
@@ -314,6 +369,27 @@ class AIChatService {
       final bool isZh = langCode.startsWith('zh');
       final locale = isZh ? const Locale('zh') : const Locale('en');
       final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
+      final String base = ep.baseUrl.trim();
+      final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+      if (isGoogle) {
+        try {
+          final AIMessage assistant = await sendMessage(userMessage, timeout: timeout);
+          final String reasoningText = assistant.reasoningContent ?? '';
+          if (reasoningText.isNotEmpty) {
+            yield AIStreamEvent('reasoning', reasoningText);
+          }
+          if (assistant.content.isNotEmpty) {
+            yield AIStreamEvent('content', assistant.content);
+          }
+          return;
+        } catch (e) {
+          lastError = e is Exception ? e : Exception(e.toString());
+          continue;
+        }
+      }
+
+      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
 
       final List<Map<String, dynamic>> messages = [
         {'role': 'system', 'content': systemMsg},
@@ -509,7 +585,6 @@ class AIChatService {
         continue;
       }
 
-      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
       final history = await _settings.getChatHistory();
       final String langCode = (LocaleService.instance.locale?.languageCode ??
               WidgetsBinding.instance.platformDispatcher.locale.languageCode)
@@ -517,6 +592,133 @@ class AIChatService {
       final bool isZh = langCode.startsWith('zh');
       final locale = isZh ? const Locale('zh') : const Locale('en');
       final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+
+      final String base = ep.baseUrl.trim();
+      final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+
+      if (isGoogle) {
+        try {
+          final String normalizedBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+          final Uri uriGoogle = Uri.parse('$normalizedBase/v1beta/models/${ep.model}:generateContent');
+          final Map<String, String> headersGoogle = <String, String>{
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          };
+
+          final Iterable<AIMessage> historyToSend = includeHistory
+              ? history.where((m) => m.role != 'system')
+              : const <AIMessage>[];
+          final List<Map<String, dynamic>> contents = <Map<String, dynamic>>[];
+          for (final AIMessage m in historyToSend) {
+            final String text = m.content.trim();
+            if (text.isEmpty) continue;
+            contents.add(<String, dynamic>{
+              'role': m.role == 'assistant' ? 'model' : 'user',
+              'parts': <Map<String, String>>[
+                <String, String>{'text': text},
+              ],
+            });
+          }
+          if (actualUserMessage.trim().isNotEmpty) {
+            contents.add(<String, dynamic>{
+              'role': 'user',
+              'parts': <Map<String, String>>[
+                <String, String>{'text': actualUserMessage},
+              ],
+            });
+          }
+
+          final List<String> systemParts = <String>[systemMsg, ...extraSystemMessages]
+              .where((s) => s.trim().isNotEmpty)
+              .toList();
+          final Map<String, dynamic> payload = <String, dynamic>{
+            'contents': contents,
+            'generationConfig': <String, dynamic>{
+              'temperature': 0.2,
+            },
+          };
+          if (systemParts.isNotEmpty) {
+            payload['system_instruction'] = <String, dynamic>{
+              'parts': systemParts
+                  .map((s) => <String, String>{'text': s})
+                  .toList(),
+            };
+          }
+
+          final http.Response respGoogle = await http
+              .post(uriGoogle, headers: headersGoogle, body: jsonEncode(payload))
+              .timeout(timeout);
+          if (respGoogle.statusCode < 200 || respGoogle.statusCode >= 300) {
+            throw Exception('Request failed: ${respGoogle.statusCode} ${respGoogle.body}');
+          }
+
+          String assistantContent = '';
+          try {
+            final Map<String, dynamic> obj = jsonDecode(respGoogle.body) as Map<String, dynamic>;
+            final dynamic candidates = obj['candidates'];
+            if (candidates is List && candidates.isNotEmpty) {
+              final dynamic first = candidates.first;
+              if (first is Map<String, dynamic>) {
+                final dynamic contentObj = first['content'];
+                if (contentObj is Map<String, dynamic>) {
+                  final dynamic parts = contentObj['parts'];
+                  if (parts is List && parts.isNotEmpty) {
+                    final dynamic p0 = parts.first;
+                    if (p0 is Map<String, dynamic>) {
+                      assistantContent = (p0['text'] as String?) ?? '';
+                    }
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+
+          if (assistantContent.trim().isEmpty) {
+            throw Exception('Empty content: ${respGoogle.body}');
+          }
+
+          final AIMessage assistant = AIMessage(role: 'assistant', content: assistantContent);
+          final List<AIMessage> newHistory = <AIMessage>[
+            ...history,
+            AIMessage(role: 'user', content: displayUserMessage),
+            assistant,
+          ];
+          await _settings.saveChatHistoryActive(newHistory);
+
+          try {
+            final String? cid = await _settings.getActiveConversationCid();
+            if (cid != null) {
+              final ScreenshotDatabase db = ScreenshotDatabase.instance;
+              await db.database.then((d) => d.execute(
+                    'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+                    <Object?>[usedModel, cid],
+                  ));
+            }
+          } catch (_) {}
+
+          if (history.isEmpty) {
+            try {
+              final String? cid = await _settings.getActiveConversationCid();
+              if (cid != null) {
+                final String title = displayUserMessage.length > 30
+                    ? displayUserMessage.substring(0, 30) + '...'
+                    : displayUserMessage;
+                await _settings.renameConversation(cid, title);
+              }
+            } catch (_) {}
+          }
+
+          if (assistant.content.isNotEmpty) {
+            yield AIStreamEvent('content', assistant.content);
+          }
+          return;
+        } catch (e) {
+          lastError = e is Exception ? e : Exception(e.toString());
+          continue;
+        }
+      }
+
+      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
 
       final List<Map<String, dynamic>> filteredHistory = includeHistory
           ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
@@ -781,7 +983,9 @@ class AIChatService {
         final String base = ep.baseUrl;
         final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
         final headers = <String, String>{ 'Content-Type': 'application/json' };
-        if (!isGoogle) {
+        if (isGoogle) {
+          headers['x-goog-api-key'] = apiKey;
+        } else {
           headers['Authorization'] = 'Bearer ' + apiKey;
         }
         final String langCode = (LocaleService.instance.locale?.languageCode ??
@@ -792,11 +996,11 @@ class AIChatService {
         final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
         if (isGoogle) {
-          // Google Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
+          // Google Gemini REST: POST {base}/v1beta/models/{model}:generateContent
           final String url = (base.endsWith('/'))
               ? base.substring(0, base.length - 1)
               : base;
-          final uri = Uri.parse('$url/v1beta/models/${ep.model}:generateContent?key=$apiKey');
+          final uri = Uri.parse('$url/v1beta/models/${ep.model}:generateContent');
           final body = jsonEncode({
             'contents': [
               {
@@ -810,6 +1014,15 @@ class AIChatService {
           final Future<http.Response> req = http.post(uri, headers: headers, body: body);
           final resp = (timeout == null) ? await req : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            if (resp.statusCode >= 400) {
+              try {
+                final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
+                await FlutterLogger.nativeError('AI', 'Gemini request failed(${resp.statusCode}): ' + bodyPreview);
+                if (bodyPreview.toLowerCase().contains('user location is not supported')) {
+                  await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+                }
+              } catch (_) {}
+            }
             throw Exception('Request failed: ${resp.statusCode} ${resp.body}');
           }
           String content = '';

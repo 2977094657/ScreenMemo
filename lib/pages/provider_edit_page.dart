@@ -6,6 +6,8 @@ import '../services/ai_providers_service.dart';
 import '../theme/app_theme.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../utils/model_icon_utils.dart';
+import '../widgets/ui_dialog.dart';
+import '../services/flutter_logger.dart';
 
 /// 提供商编辑页（新建/编辑）
 class ProviderEditPage extends StatefulWidget {
@@ -36,6 +38,31 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
 
   List<String> _models = <String>[];
   AIProvider? _loaded;
+  bool _geminiNoticeShown = false;
+
+  Future<void> _showGeminiRegionDialog() async {
+    if (!mounted) return;
+    await showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).geminiRegionDialogTitle,
+      message: AppLocalizations.of(context).geminiRegionDialogMessage,
+      actions: [UIDialogAction(text: AppLocalizations.of(context).gotIt)],
+    );
+  }
+
+  void _showGeminiRegionNotice() {
+    if (_geminiNoticeShown || !mounted) return;
+    _geminiNoticeShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      UINotifier.warning(
+        context,
+        l10n.geminiRegionToast,
+        duration: const Duration(seconds: 4),
+      );
+    });
+  }
 
   @override
   void initState() {
@@ -66,6 +93,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         if (p.type == AIProviderTypes.azureOpenAI) {
           final v = (p.extra['azure_api_version'] as String?) ?? '2024-02-15';
           _azureApiVerCtrl.text = v;
+        }
+        if (p.type == AIProviderTypes.gemini) {
+          _showGeminiRegionNotice();
         }
       } else {
         _applyTypeDefaults(AIProviderTypes.openai, initial: true);
@@ -102,6 +132,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         break;
       case AIProviderTypes.gemini:
         baseDefault = 'https://generativelanguage.googleapis.com';
+        _showGeminiRegionNotice();
         break;
       case AIProviderTypes.azureOpenAI:
         baseDefault = '';
@@ -301,6 +332,12 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       UINotifier.success(context, AppLocalizations.of(context).saveSuccess);
       Navigator.of(context).pop(true);
     } catch (e) {
+      try {
+        await FlutterLogger.nativeError(
+          'AI',
+          'Provider save failed id=${_loaded?.id ?? 'new'} type=$_type error=$e',
+        );
+      } catch (_) {}
       if (mounted) {
         UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
       }
@@ -642,11 +679,28 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          AppLocalizations.of(context).interfaceTypeLabel,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              AppLocalizations.of(context).interfaceTypeLabel,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            if (_type == AIProviderTypes.gemini)
+              Padding(
+                padding: const EdgeInsets.only(left: AppTheme.spacing1),
+                child: IconButton(
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  color: Theme.of(context).colorScheme.outline,
+                  tooltip: AppLocalizations.of(context).geminiRegionDialogTitle,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                  onPressed: _showGeminiRegionDialog,
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: AppTheme.spacing1),
         DropdownButtonFormField<String>(

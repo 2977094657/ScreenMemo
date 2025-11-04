@@ -671,16 +671,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'· This app (to avoid self interference)'**
   String get excludedThisApp;
+
   /// No description provided for @excludedAutomationApps.
   ///
   /// In en, this message translates to:
   /// **'· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)'**
   String get excludedAutomationApps;
-
-
-  ///
-  /// In en, this message translates to:
-  /// **'· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)'**
 
   /// No description provided for @excludedImeApps.
   ///
@@ -3165,6 +3161,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'e.g. https://generativelanguage.googleapis.com'**
   String get baseUrlHintGemini;
+
+  /// No description provided for @geminiRegionDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini Usage Restriction'**
+  String get geminiRegionDialogTitle;
+
+  /// No description provided for @geminiRegionDialogMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini Developer API requests are only available from Google-supported countries or regions. Ensure your Google account profile, billing information, and network egress are located in supported regions; otherwise the server returns FAILED_PRECONDITION. For enterprise scenarios, route traffic through a compliant proxy within a supported region.'**
+  String get geminiRegionDialogMessage;
+
+  /// No description provided for @geminiRegionToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini works only in supported regions. Tap the question mark for details.'**
+  String get geminiRegionToast;
 
   /// No description provided for @baseUrlHintAzure.
   ///

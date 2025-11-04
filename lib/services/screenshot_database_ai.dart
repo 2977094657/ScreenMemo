@@ -522,11 +522,33 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       if (orderIndex != null) data['order_index'] = orderIndex;
       if (apiKey != null) data['api_key'] = apiKey.trim();
 
+      if (data.isEmpty) {
+        final exists = await getAIProviderById(id);
+        if (exists == null) {
+          return false;
+        }
+        if (isDefault == true) {
+          await setDefaultAIProvider(id);
+        }
+        return true;
+      }
+
       final count = await db.update('ai_providers', data, where: 'id = ?', whereArgs: [id]);
-      if (count > 0 && isDefault == true) {
+      if (count > 0) {
+        if (isDefault == true) {
+          await setDefaultAIProvider(id);
+        }
+        return true;
+      }
+
+      final exists = await getAIProviderById(id);
+      if (exists == null) {
+        return false;
+      }
+      if (isDefault == true) {
         await setDefaultAIProvider(id);
       }
-      return count > 0;
+      return true;
     } catch (_) {
       return false;
     }

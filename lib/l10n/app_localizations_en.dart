@@ -320,11 +320,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get excludedThisApp => '· This app (to avoid self interference)';
-  @override
-  String get excludedAutomationApps => '· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)';
-
 
   @override
+  String get excludedAutomationApps =>
       '· Automation skipping apps (e.g., GKD auto tapper, to avoid misattribution)';
 
   @override
@@ -1765,6 +1763,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get baseUrlHintGemini =>
       'e.g. https://generativelanguage.googleapis.com';
+
+  @override
+  String get geminiRegionDialogTitle => 'Gemini Usage Restriction';
+
+  @override
+  String get geminiRegionDialogMessage =>
+      'Gemini Developer API requests are only available from Google-supported countries or regions. Ensure your Google account profile, billing information, and network egress are located in supported regions; otherwise the server returns FAILED_PRECONDITION. For enterprise scenarios, route traffic through a compliant proxy within a supported region.';
+
+  @override
+  String get geminiRegionToast =>
+      'Gemini works only in supported regions. Tap the question mark for details.';
 
   @override
   String baseUrlHintAzure(Object resource) {

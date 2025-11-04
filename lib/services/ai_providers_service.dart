@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import 'screenshot_database.dart';
+import 'flutter_logger.dart';
 
 /// 提供商类型定义（与 UI 下拉一致）
 class AIProviderTypes {
@@ -229,32 +230,115 @@ class AIProvidersService {
     int? orderIndex,
     String? apiKey, // 可选更新安全存储
   }) async {
-    final ok = await _db.updateAIProvider(
+    final normalizedBase = baseUrl != null ? _normalizeBaseUrlOrNull(baseUrl) : null;
+    final serializedModels = models != null ? jsonEncode(models) : null;
+    final serializedExtra = extra != null ? jsonEncode(extra) : null;
+    final trimmedApiKey = apiKey?.trim();
+
+    bool updated = await _db.updateAIProvider(
       id: id,
       name: name,
       type: type,
-      baseUrl: baseUrl != null ? _normalizeBaseUrlOrNull(baseUrl) : null,
+      baseUrl: normalizedBase,
       chatPath: chatPath,
       useResponseApi: useResponseApi,
       enabled: enabled,
       isDefault: isDefault,
-      modelsJson: models != null ? jsonEncode(models) : null,
-      extraJson: extra != null ? jsonEncode(extra) : null,
+      modelsJson: serializedModels,
+      extraJson: serializedExtra,
       orderIndex: orderIndex,
-      apiKey: apiKey,
+      apiKey: trimmedApiKey,
     );
-    if (!ok) return false;
-    if (apiKey != null) {
-      if (apiKey.trim().isEmpty) {
+
+    if (!updated) {
+      final exists = await _db.getAIProviderById(id);
+      if (exists == null) {
+        try {
+          await FlutterLogger.nativeError(
+            'AI',
+            'updateProvider missing record id=$id type=${type ?? 'unknown'}',
+          );
+        } catch (_) {}
+        return false;
+      }
+      bool alreadyUpToDate = true;
+      if (name != null && ((exists['name'] as String?) ?? '').trim() != name.trim()) {
+        alreadyUpToDate = false;
+      }
+      if (type != null && ((exists['type'] as String?) ?? '').trim() != type.trim()) {
+        alreadyUpToDate = false;
+      }
+      if (normalizedBase != null && ((exists['base_url'] as String?) ?? '').trim() != normalizedBase.trim()) {
+        alreadyUpToDate = false;
+      }
+      if (normalizedBase == null && (exists['base_url'] as String?) != null) {
+        alreadyUpToDate = false;
+      }
+      if (chatPath != null && ((exists['chat_path'] as String?) ?? '').trim() != chatPath.trim()) {
+        alreadyUpToDate = false;
+      }
+      if (chatPath == null && (exists['chat_path'] as String?) != null) {
+        alreadyUpToDate = false;
+      }
+      if (useResponseApi != null) {
+        final stored = ((exists['use_response_api'] as int?) ?? 0) == 1;
+        if (stored != useResponseApi) alreadyUpToDate = false;
+      }
+      if (enabled != null) {
+        final stored = ((exists['enabled'] as int?) ?? 0) == 1;
+        if (stored != enabled) alreadyUpToDate = false;
+      }
+      if (isDefault != null) {
+        final stored = ((exists['is_default'] as int?) ?? 0) == 1;
+        if (stored != isDefault) alreadyUpToDate = false;
+      }
+      if (serializedModels != null) {
+        final stored = (exists['models_json'] as String?) ?? '[]';
+        if (stored != serializedModels) alreadyUpToDate = false;
+      }
+      if (serializedExtra != null) {
+        final stored = (exists['extra_json'] as String?) ?? '{}';
+        if (stored != serializedExtra) alreadyUpToDate = false;
+      }
+      if (orderIndex != null) {
+        final stored = (exists['order_index'] as int?) ?? 0;
+        if (stored != orderIndex) alreadyUpToDate = false;
+      }
+      if (trimmedApiKey != null) {
+        final stored = (exists['api_key'] as String?)?.trim();
+        if ((stored ?? '') != trimmedApiKey) {
+          alreadyUpToDate = false;
+        }
+      }
+      if (!alreadyUpToDate) {
+        try {
+          await FlutterLogger.nativeError(
+            'AI',
+            'updateProvider unexpected no-change id=$id name=${name ?? exists['name']}',
+          );
+        } catch (_) {}
+        return false;
+      }
+      updated = true;
+      try {
+        await FlutterLogger.nativeInfo(
+          'AI',
+          'updateProvider db unchanged but values already up to date id=$id',
+        );
+      } catch (_) {}
+    }
+
+    if (trimmedApiKey != null) {
+      if (trimmedApiKey.isEmpty) {
         await deleteApiKey(id);
       } else {
-        await saveApiKey(id, apiKey.trim());
+        await saveApiKey(id, trimmedApiKey);
       }
     }
     if (isDefault == true) {
       await setDefault(id);
     }
-    return true;
+    return updated;
   }
 
   // ---------------- API Key 存储（数据库） + 兼容迁移 ----------------
@@ -322,7 +406,8 @@ class AIProvidersService {
   /// - Claude(Anthropic): GET {baseUrl}/v1/models
   ///   Header: x-api-key: {apiKey}, anthropic-version: 2023-06-01
   ///
-  /// - Gemini(Google Generative Language): GET {baseUrl}/v1/models?key={apiKey}
+  /// - Gemini(Google Generative Language): GET {baseUrl}/v1beta/models
+  ///   Header: x-goog-api-key: {apiKey}
   ///   解析 models[].name（去掉 "models/" 前缀），可按 supportedGenerationMethods 过滤 generateContent。
   ///
   /// - Azure OpenAI: GET {baseUrl}/openai/deployments?api-version={apiVersion}
@@ -408,9 +493,21 @@ class AIProvidersService {
     required String baseUrl,
     required String apiKey,
   }) async {
-    final uri = Uri.parse('$baseUrl/v1/models?key=$apiKey');
-    final resp = await http.get(uri);
+    final uri = Uri.parse('$baseUrl/v1beta/models');
+    final resp = await http.get(
+      uri,
+      headers: <String, String>{
+        'x-goog-api-key': apiKey,
+      },
+    );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      try {
+        final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
+        await FlutterLogger.nativeError('AI', 'Gemini model fetch failed(${resp.statusCode}): ' + bodyPreview);
+        if (bodyPreview.toLowerCase().contains('user location is not supported')) {
+          await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+        }
+      } catch (_) {}
       throw Exception('Gemini models request failed: ${resp.statusCode} ${resp.body}');
     }
     try {

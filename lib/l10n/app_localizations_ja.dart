@@ -309,11 +309,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get excludedThisApp => '・このアプリ（自己干渉を避けるため）';
-  @override
-  String get excludedAutomationApps => '・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）';
-
 
   @override
+  String get excludedAutomationApps =>
       '・自動スキップ系アプリ（例：GKD などの自動タップツール、誤分類を防ぐため）';
 
   @override
@@ -1722,6 +1720,17 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get baseUrlHintGemini => '例：https://generativelanguage.googleapis.com';
+
+  @override
+  String get geminiRegionDialogTitle => 'Gemini の利用制限';
+
+  @override
+  String get geminiRegionDialogMessage =>
+      'Gemini 開発者 API は Google がサポートする国・地域からのみ利用できます。Google アカウント情報、請求情報、ネットワーク出口がサポート対象地域にあることを確認してください。条件を満たさない場合、サーバーは FAILED_PRECONDITION を返します。企業利用が必要な場合は、対象地域内の準拠したプロキシ経由でリクエストしてください。';
+
+  @override
+  String get geminiRegionToast =>
+      'Gemini は対応地域でのみ利用できます。詳細はクエスチョンマークをタップしてください。';
 
   @override
   String baseUrlHintAzure(Object resource) {

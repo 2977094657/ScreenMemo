@@ -837,6 +837,9 @@
   "baseUrlHintOpenAI": "例如：https://api.openai.com（留空则默认）",
   "baseUrlHintClaude": "例如：https://api.anthropic.com",
   "baseUrlHintGemini": "例如：https://generativelanguage.googleapis.com",
+  "geminiRegionDialogTitle": "Gemini 使用限制",
+  "geminiRegionDialogMessage": "Gemini 开发者 API 仅向谷歌支持的国家/地区开放。请确保 Google 账号资料、付款信息以及网络出口都位于受支持地区，否则服务器会返回 FAILED_PRECONDITION。若需在企业环境使用，请通过受支持地区的合规网络代理再发起请求。",
+  "geminiRegionToast": "Gemini 仅支持特定地区，请点击问号查看详情",
   "baseUrlHintAzure": "必填，例如：https://{resource}.openai.azure.com",
   "baseUrlHintCustom": "请输入兼容 OpenAI 的 Base URL",
 

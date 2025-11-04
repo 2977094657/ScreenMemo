@@ -843,6 +843,9 @@
   "baseUrlHintOpenAI": "e.g. https://api.openai.com (empty for default)",
   "baseUrlHintClaude": "e.g. https://api.anthropic.com",
   "baseUrlHintGemini": "e.g. https://generativelanguage.googleapis.com",
+  "geminiRegionDialogTitle": "Gemini Usage Restriction",
+  "geminiRegionDialogMessage": "Gemini Developer API requests are only available from Google-supported countries or regions. Ensure your Google account profile, billing information, and network egress are located in supported regions; otherwise the server returns FAILED_PRECONDITION. For enterprise scenarios, route traffic through a compliant proxy within a supported region.",
+  "geminiRegionToast": "Gemini works only in supported regions. Tap the question mark for details.",
   "baseUrlHintAzure": "Required, e.g. https://{resource}.openai.azure.com",
   "baseUrlHintCustom": "Enter an OpenAI-compatible Base URL",
 

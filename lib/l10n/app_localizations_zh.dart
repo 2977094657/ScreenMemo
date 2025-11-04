@@ -304,11 +304,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get excludedThisApp => '· 本应用（避免自我干扰）';
+
   @override
   String get excludedAutomationApps => '· 自动跳过类应用（例如 GKD 等自动点击器，防止误判截屏归属）';
-
-
-  @override
 
   @override
   String get excludedImeApps => '· 输入法（键盘）应用：';
@@ -1707,6 +1705,16 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get baseUrlHintGemini =>
       '例如：https://generativelanguage.googleapis.com';
+
+  @override
+  String get geminiRegionDialogTitle => 'Gemini 使用限制';
+
+  @override
+  String get geminiRegionDialogMessage =>
+      'Gemini 开发者 API 仅向谷歌支持的国家/地区开放。请确保 Google 账号资料、付款信息以及网络出口都位于受支持地区，否则服务器会返回 FAILED_PRECONDITION。若需在企业环境使用，请通过受支持地区的合规网络代理再发起请求。';
+
+  @override
+  String get geminiRegionToast => 'Gemini 仅支持特定地区，请点击问号查看详情';
 
   @override
   String baseUrlHintAzure(Object resource) {

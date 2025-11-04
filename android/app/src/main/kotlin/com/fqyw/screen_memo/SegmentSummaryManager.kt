@@ -755,8 +755,8 @@ object SegmentSummaryManager {
         } catch (_: Exception) {}
 
         if (isGoogle) {
-            // Gemini REST: POST {base}/v1beta/models/{model}:generateContent?key=API_KEY
-            val url = "$base/v1beta/models/$model:generateContent?key=$apiKey"
+            // Gemini REST: POST {base}/v1beta/models/{model}:generateContent
+            val url = "$base/v1beta/models/$model:generateContent"
             try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
             try { FileLogger.i(TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI request: url=$url, model=$model, images=${effSamples.size}") } catch (_: Exception) {}
@@ -775,7 +775,11 @@ object SegmentSummaryManager {
             val contents = JSONArray().put(JSONObject().put("parts", parts))
             val body = JSONObject().put("contents", contents).toString()
             val reqBody: RequestBody = body.toRequestBody("application/json; charset=utf-8".toMediaType())
-            val req = Request.Builder().url(url).post(reqBody).build()
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("x-goog-api-key", apiKey ?: "")
+                .post(reqBody)
+                .build()
             val t0 = System.currentTimeMillis()
             var respText = ""
             run {
@@ -797,6 +801,12 @@ object SegmentSummaryManager {
                             break
                         } else {
                             lastBody = resp.body?.string()
+                            if (!lastBody.isNullOrEmpty()) {
+                                val lower = lastBody.lowercase()
+                                if (lower.contains("user location is not supported")) {
+                                    try { FileLogger.e(TAG, "Gemini request blocked by region policy: ${truncateForLog(lastBody, 800)}") } catch (_: Exception) {}
+                                }
+                            }
                             val shouldRetry = resp.code >= 500
                             try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                             try { FileLogger.w(TAG, "AI failed(code=${resp.code}) attempt=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
