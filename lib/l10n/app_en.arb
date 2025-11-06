@@ -552,6 +552,22 @@
     }
   },
   "dailySummaryShort": "Daily Summary",
+  "weeklySummaryShort": "Weekly Summary",
+  "weeklySummaryTitle": "Weekly Summary {range}",
+  "@weeklySummaryTitle": {
+    "description": "Weekly summary page title with date range",
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "weeklySummaryEmpty": "No weekly summaries yet",
+  "weeklySummarySelectWeek": "Select Week",
+  "weeklySummaryOverviewTitle": "Weekly Overview",
+  "weeklySummaryDailyTitle": "Daily Breakdown",
+  "weeklySummaryActionsTitle": "Next Week Actions",
+  "weeklySummaryNotificationTitle": "Notification Brief",
+  "weeklySummaryNoContent": "No content",
+  "weeklySummaryViewDetail": "View details",
   "viewOrGenerateForDay": "View or generate the day's summary",
   "mergedEventTag": "Merged",
   "collapse": "Collapse",

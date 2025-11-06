@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../theme/app_theme.dart';
 import 'ai_settings_page.dart';
-import 'segment_status_page.dart';
 import '../services/ai_settings_service.dart';
 import '../widgets/ui_components.dart';
 import '../services/ai_chat_service.dart';
@@ -14,6 +14,7 @@ import '../utils/model_icon_utils.dart';
 import '../services/ai_providers_service.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
+import '../services/navigation_service.dart';
 
 class EventHomePage extends StatefulWidget {
   const EventHomePage({super.key});
@@ -44,6 +45,7 @@ class _EventHomePageState extends State<EventHomePage> {
   String? _activeConversationCid;
   bool _convLoading = true;
 
+
  @override
  void initState() {
    super.initState();
@@ -53,7 +55,7 @@ class _EventHomePageState extends State<EventHomePage> {
      if (ctx == 'chat' && mounted) {
        _loadChatContextSelection();
        _loadConversations();
-     }
+      }
       if (ctx == 'chat:deleted' && mounted) {
         // UI 完全清空计时：从收到事件开始到列表空并首次帧绘制
         final sw = Stopwatch()..start();
@@ -502,7 +504,7 @@ class _EventHomePageState extends State<EventHomePage> {
               builder: (context, constraints) {
                 final showSidebar = constraints.maxWidth >= 960;
                 if (!showSidebar) {
-                  return AISettingsPage(embedded: true, key: _chatViewKey);
+                return AISettingsPage(embedded: true, key: _chatViewKey);
                 }
                 final theme = Theme.of(context);
                 return Row(
@@ -641,7 +643,7 @@ class _EventHomePageState extends State<EventHomePage> {
                               textWeight: FontWeight.w400,
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => const ProviderListPage()),
+                                  MaterialPageRoute(builder: (_) => ProviderListPage()),
                                 );
                               },
                             ),
@@ -660,9 +662,7 @@ class _EventHomePageState extends State<EventHomePage> {
                               icon: Icons.dynamic_feed_outlined,
                               title: l10n.segmentStatusTitle,
                               onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => const SegmentStatusPage()),
-                                );
+                                NavigationService.instance.openSegmentStatus();
                               },
                             ),
                           ],

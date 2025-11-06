@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
-import '../pages/segment_status_page.dart';
 import '../services/theme_service.dart';
 import '../pages/provider_list_page.dart';
 import '../pages/prompt_manager_page.dart';
@@ -11,6 +10,8 @@ import '../utils/model_icon_utils.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
+import '../services/navigation_service.dart';
+import '../pages/weekly_summary_page.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
 class AppSideDrawer extends StatelessWidget {
@@ -39,8 +40,18 @@ class AppSideDrawer extends StatelessWidget {
               isFirst: true,
               onTap: () {
                 Navigator.of(context).pop();
+                NavigationService.instance.openSegmentStatus();
+              },
+            ),
+            _buildMenuItem(
+              context: context,
+              icon: Icons.auto_awesome_outlined,
+              title: t.weeklySummaryShort,
+              isFirst: false,
+              onTap: () {
+                Navigator.of(context).pop();
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SegmentStatusPage()),
+                  MaterialPageRoute(builder: (_) => const WeeklySummaryPage()),
                 );
               },
             ),
@@ -53,7 +64,7 @@ class AppSideDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ProviderListPage()),
+                  MaterialPageRoute(builder: (_) => ProviderListPage()),
                 );
               },
             ),
@@ -66,7 +77,7 @@ class AppSideDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PromptManagerPage()),
+                  MaterialPageRoute(builder: (_) => PromptManagerPage()),
                 );
               },
             ),

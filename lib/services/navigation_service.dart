@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../pages/daily_summary_page.dart';
+import '../pages/weekly_summary_page.dart';
+import '../pages/segment_status_page.dart';
 import 'flutter_logger.dart';
 
 /// 全局导航服务：用于无 context 的页面跳转（如通知点击）
@@ -23,6 +25,30 @@ class NavigationService {
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dk)));
+  }
+
+  Future<void> openWeeklySummary(String? weekStartDate) async {
+    final String? wk = weekStartDate?.trim().isEmpty == true ? null : weekStartDate?.trim();
+    try {
+      await FlutterLogger.nativeInfo('Navigation', 'openWeeklySummary weekStart=${wk ?? 'latest'}');
+    } catch (_) {}
+    final nav = navigatorKey.currentState;
+    if (nav == null) {
+      try {
+        await FlutterLogger.nativeWarn('Navigation', 'navigator not ready, drop openWeeklySummary weekStart=${wk ?? 'latest'}');
+      } catch (_) {}
+      return;
+    }
+    nav.push(MaterialPageRoute(builder: (_) => WeeklySummaryPage(weekStart: wk)));
+  }
+
+  Future<void> openSegmentStatus() async {
+    final nav = navigatorKey.currentState;
+    if (nav == null) {
+      try { await FlutterLogger.nativeWarn('Navigation', 'navigator not ready, drop openSegmentStatus'); } catch (_) {}
+      return;
+    }
+    nav.push(MaterialPageRoute(builder: (_) => SegmentStatusPage()));
   }
 
   String _todayKey() {

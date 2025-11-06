@@ -1024,6 +1024,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dailySummaryShort => 'Daily Summary';
 
   @override
+  String get weeklySummaryShort => 'Weekly Summary';
+
+  @override
+  String weeklySummaryTitle(Object range) {
+    return 'Weekly Summary $range';
+  }
+
+  @override
+  String get weeklySummaryEmpty => 'No weekly summaries yet';
+
+  @override
+  String get weeklySummarySelectWeek => 'Select Week';
+
+  @override
+  String get weeklySummaryOverviewTitle => 'Weekly Overview';
+
+  @override
+  String get weeklySummaryDailyTitle => 'Daily Breakdown';
+
+  @override
+  String get weeklySummaryActionsTitle => 'Next Week Actions';
+
+  @override
+  String get weeklySummaryNotificationTitle => 'Notification Brief';
+
+  @override
+  String get weeklySummaryNoContent => 'No content';
+
+  @override
+  String get weeklySummaryViewDetail => 'View details';
+
+  @override
   String get viewOrGenerateForDay => 'View or generate the day\'s summary';
 
   @override

@@ -1884,6 +1884,66 @@ abstract class AppLocalizations {
   /// **'Daily Summary'**
   String get dailySummaryShort;
 
+  /// No description provided for @weeklySummaryShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly Summary'**
+  String get weeklySummaryShort;
+
+  /// Weekly summary page title with date range
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly Summary {range}'**
+  String weeklySummaryTitle(Object range);
+
+  /// No description provided for @weeklySummaryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No weekly summaries yet'**
+  String get weeklySummaryEmpty;
+
+  /// No description provided for @weeklySummarySelectWeek.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Week'**
+  String get weeklySummarySelectWeek;
+
+  /// No description provided for @weeklySummaryOverviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly Overview'**
+  String get weeklySummaryOverviewTitle;
+
+  /// No description provided for @weeklySummaryDailyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily Breakdown'**
+  String get weeklySummaryDailyTitle;
+
+  /// No description provided for @weeklySummaryActionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Next Week Actions'**
+  String get weeklySummaryActionsTitle;
+
+  /// No description provided for @weeklySummaryNotificationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification Brief'**
+  String get weeklySummaryNotificationTitle;
+
+  /// No description provided for @weeklySummaryNoContent.
+  ///
+  /// In en, this message translates to:
+  /// **'No content'**
+  String get weeklySummaryNoContent;
+
+  /// No description provided for @weeklySummaryViewDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'View details'**
+  String get weeklySummaryViewDetail;
+
   /// No description provided for @viewOrGenerateForDay.
   ///
   /// In en, this message translates to:

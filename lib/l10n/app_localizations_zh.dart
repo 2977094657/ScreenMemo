@@ -985,6 +985,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dailySummaryShort => '每日总结';
 
   @override
+  String get weeklySummaryShort => '周总结';
+
+  @override
+  String weeklySummaryTitle(Object range) {
+    return '周总结 $range';
+  }
+
+  @override
+  String get weeklySummaryEmpty => '暂无周总结记录';
+
+  @override
+  String get weeklySummarySelectWeek => '选择周次';
+
+  @override
+  String get weeklySummaryOverviewTitle => '本周概览';
+
+  @override
+  String get weeklySummaryDailyTitle => '每日拆解';
+
+  @override
+  String get weeklySummaryActionsTitle => '下周建议';
+
+  @override
+  String get weeklySummaryNotificationTitle => '通知摘要';
+
+  @override
+  String get weeklySummaryNoContent => '暂无内容';
+
+  @override
+  String get weeklySummaryViewDetail => '查看详情';
+
+  @override
   String get viewOrGenerateForDay => '查看或生成该日总结';
 
   @override

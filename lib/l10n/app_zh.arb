@@ -552,6 +552,22 @@
     }
   },
   "dailySummaryShort": "每日总结",
+  "weeklySummaryShort": "周总结",
+  "weeklySummaryTitle": "周总结 {range}",
+  "@weeklySummaryTitle": {
+    "description": "周总结页面标题，包含日期范围",
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "weeklySummaryEmpty": "暂无周总结记录",
+  "weeklySummarySelectWeek": "选择周次",
+  "weeklySummaryOverviewTitle": "本周概览",
+  "weeklySummaryDailyTitle": "每日拆解",
+  "weeklySummaryActionsTitle": "下周建议",
+  "weeklySummaryNotificationTitle": "通知摘要",
+  "weeklySummaryNoContent": "暂无内容",
+  "weeklySummaryViewDetail": "查看详情",
   "viewOrGenerateForDay": "查看或生成该日总结",
   "mergedEventTag": "合并事件",
   "collapse": "收起内容",

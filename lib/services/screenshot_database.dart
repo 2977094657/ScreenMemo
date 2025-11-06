@@ -53,7 +53,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 10,
+          version: 11,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
@@ -73,7 +73,7 @@ class ScreenshotDatabase {
         
         final db = await openDatabase(
           path,
-          version: 10,
+          version: 11,
           onConfigure: (db) async {
             try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
             try { await db.execute('PRAGMA auto_vacuum=2'); } catch (_) {}
@@ -92,7 +92,7 @@ class ScreenshotDatabase {
       
       final db = await openDatabase(
         path,
-        version: 10,
+        version: 11,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -414,6 +414,9 @@ class ScreenshotDatabase {
     }
     if (oldVersion < 10) {
       await _createMorningInsightsTable(db);
+    }
+    if (oldVersion < 11) {
+      await _createWeeklySummariesTable(db);
     }
     // v6: 清理旧表与旧键
     await _cleanupLegacyAiArtifacts(db);

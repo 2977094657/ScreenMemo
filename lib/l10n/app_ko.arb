@@ -516,6 +516,22 @@
     }
   },
   "dailySummaryShort": "일일 요약",
+  "weeklySummaryShort": "주간 요약",
+  "weeklySummaryTitle": "주간 요약 {range}",
+  "@weeklySummaryTitle": {
+    "description": "주간 요약 화면 제목 (기간 포함)",
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "weeklySummaryEmpty": "주간 요약이 아직 없습니다",
+  "weeklySummarySelectWeek": "주 선택",
+  "weeklySummaryOverviewTitle": "이번 주 개요",
+  "weeklySummaryDailyTitle": "요일별 정리",
+  "weeklySummaryActionsTitle": "다음 주 실행 제안",
+  "weeklySummaryNotificationTitle": "알림 요약",
+  "weeklySummaryNoContent": "내용이 없습니다",
+  "weeklySummaryViewDetail": "자세히 보기",
   "viewOrGenerateForDay": "오늘의 요약 보기 또는 생성",
   "mergedEventTag": "병합됨",
   "collapse": "접기",

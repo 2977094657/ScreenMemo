@@ -131,6 +131,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       )
     ''');
 
+    await _createWeeklySummariesTable(db);
+
     await _createMorningInsightsTable(db);
   }
 
@@ -853,6 +855,66 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
+  Future<Map<String, dynamic>?> getWeeklySummary(String weekStartDate) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'weekly_summaries',
+        where: 'week_start_date = ?',
+        whereArgs: [weekStartDate],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> upsertWeeklySummary({
+    required String weekStartDate,
+    required String weekEndDate,
+    String? aiProvider,
+    String? aiModel,
+    required String outputText,
+    String? structuredJson,
+  }) async {
+    final db = await database;
+    try {
+      await db.insert(
+        'weekly_summaries',
+        {
+          'week_start_date': weekStartDate,
+          'week_end_date': weekEndDate,
+          'ai_provider': aiProvider,
+          'ai_model': aiModel,
+          'output_text': outputText,
+          'structured_json': structuredJson,
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listWeeklySummaries({int? limit, int? offset}) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'weekly_summaries',
+        orderBy: 'week_start_date DESC',
+        limit: limit,
+        offset: offset,
+      );
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   Future<Map<String, dynamic>?> getMorningInsights(String dateKey) async {
     final db = await database;
     try {
@@ -962,6 +1024,21 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       return <Map<String, dynamic>>[];
     }
   }
+}
+
+Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS weekly_summaries (
+      week_start_date TEXT PRIMARY KEY,
+      week_end_date TEXT NOT NULL,
+      ai_provider TEXT,
+      ai_model TEXT,
+      output_text TEXT,
+      structured_json TEXT,
+      created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+    )
+  ''');
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_weekly_summaries_created ON weekly_summaries(created_at DESC)');
 }
 
 Future<void> _createMorningInsightsTable(DatabaseExecutor db) async {

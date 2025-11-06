@@ -516,6 +516,22 @@
     }
   },
   "dailySummaryShort": "毎日のサマリー",
+  "weeklySummaryShort": "週間サマリー",
+  "weeklySummaryTitle": "週間サマリー {range}",
+  "@weeklySummaryTitle": {
+    "description": "週間サマリー画面のタイトル（期間付き）",
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "weeklySummaryEmpty": "週間サマリーはまだありません",
+  "weeklySummarySelectWeek": "週を選択",
+  "weeklySummaryOverviewTitle": "今週の概要",
+  "weeklySummaryDailyTitle": "日別ハイライト",
+  "weeklySummaryActionsTitle": "来週への提案",
+  "weeklySummaryNotificationTitle": "通知ブリーフ",
+  "weeklySummaryNoContent": "内容がありません",
+  "weeklySummaryViewDetail": "詳細を見る",
   "viewOrGenerateForDay": "その日の概要を表示または生成する",
   "mergedEventTag": "合併しました",
   "collapse": "折りたたむ",

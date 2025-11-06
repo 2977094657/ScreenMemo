@@ -997,6 +997,38 @@ class AppLocalizationsJa extends AppLocalizations {
   String get dailySummaryShort => '毎日のサマリー';
 
   @override
+  String get weeklySummaryShort => '週間サマリー';
+
+  @override
+  String weeklySummaryTitle(Object range) {
+    return '週間サマリー $range';
+  }
+
+  @override
+  String get weeklySummaryEmpty => '週間サマリーはまだありません';
+
+  @override
+  String get weeklySummarySelectWeek => '週を選択';
+
+  @override
+  String get weeklySummaryOverviewTitle => '今週の概要';
+
+  @override
+  String get weeklySummaryDailyTitle => '日別ハイライト';
+
+  @override
+  String get weeklySummaryActionsTitle => '来週への提案';
+
+  @override
+  String get weeklySummaryNotificationTitle => '通知ブリーフ';
+
+  @override
+  String get weeklySummaryNoContent => '内容がありません';
+
+  @override
+  String get weeklySummaryViewDetail => '詳細を見る';
+
+  @override
   String get viewOrGenerateForDay => 'その日の概要を表示または生成する';
 
   @override

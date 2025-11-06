@@ -994,6 +994,38 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dailySummaryShort => '일일 요약';
 
   @override
+  String get weeklySummaryShort => '주간 요약';
+
+  @override
+  String weeklySummaryTitle(Object range) {
+    return '주간 요약 $range';
+  }
+
+  @override
+  String get weeklySummaryEmpty => '주간 요약이 아직 없습니다';
+
+  @override
+  String get weeklySummarySelectWeek => '주 선택';
+
+  @override
+  String get weeklySummaryOverviewTitle => '이번 주 개요';
+
+  @override
+  String get weeklySummaryDailyTitle => '요일별 정리';
+
+  @override
+  String get weeklySummaryActionsTitle => '다음 주 실행 제안';
+
+  @override
+  String get weeklySummaryNotificationTitle => '알림 요약';
+
+  @override
+  String get weeklySummaryNoContent => '내용이 없습니다';
+
+  @override
+  String get weeklySummaryViewDetail => '자세히 보기';
+
+  @override
   String get viewOrGenerateForDay => '오늘의 요약 보기 또는 생성';
 
   @override
