@@ -2115,7 +2115,7 @@ abstract class AppLocalizations {
   /// No description provided for @promptManagerHint.
   ///
   /// In en, this message translates to:
-  /// **'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.'**
+  /// **'Configure prompts for normal, merged, daily, weekly summaries, and morning insights; supports Markdown. Empty or reset to use defaults.'**
   String get promptManagerHint;
 
   /// No description provided for @promptAddonGeneralInfo.
@@ -2160,6 +2160,12 @@ abstract class AppLocalizations {
   /// **'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields'**
   String get promptAddonSuggestionDaily;
 
+  /// No description provided for @promptAddonSuggestionWeekly.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested ideas:\n- Emphasize week-over-week trends or pivots to highlight\n- Ask for actionable follow-ups or attention points\n- Avoid requesting structural changes to the JSON output'**
+  String get promptAddonSuggestionWeekly;
+
   /// No description provided for @promptAddonSuggestionMorning.
   ///
   /// In en, this message translates to:
@@ -2183,6 +2189,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Daily summary prompt'**
   String get dailySummaryPromptLabel;
+
+  /// No description provided for @weeklySummaryPromptLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly summary prompt'**
+  String get weeklySummaryPromptLabel;
 
   /// No description provided for @morningInsightsPromptLabel.
   ///
@@ -2333,6 +2345,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Daily prompt saved'**
   String get savedDailyPromptToast;
+
+  /// No description provided for @savedWeeklyPromptToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Weekly prompt saved'**
+  String get savedWeeklyPromptToast;
 
   /// No description provided for @resetToDefaultPromptToast.
   ///

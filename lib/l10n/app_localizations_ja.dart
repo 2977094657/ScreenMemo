@@ -1148,6 +1148,10 @@ class AppLocalizationsJa extends AppLocalizations {
       '提案されたアイデア:\n- 毎日の要約のトーンを指定します (例: アクション指向)\n- 主要な成果やリスクを強調するように依頼する\n- JSON フィールドの名前変更または追加を禁止します';
 
   @override
+  String get promptAddonSuggestionWeekly =>
+      'Suggested ideas:\n- Emphasize week-over-week trends or pivots to highlight\n- Ask for actionable follow-ups or attention points\n- Avoid requesting structural changes to the JSON output';
+
+  @override
   String get promptAddonSuggestionMorning =>
       'ヒント例:\n- ヒューマンタッチや穏やかなリズム、ささやかな癒やしを強調\n- テンプレ調やタスク駆動の口調を避けるよう指示\n- JSON フィールド変更や過度の疑問文を求めない';
 
@@ -1159,6 +1163,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => '毎日の概要プロンプト';
+
+  @override
+  String get weeklySummaryPromptLabel => 'Weekly summary prompt';
 
   @override
   String get morningInsightsPromptLabel => '朝のアクション提案プロンプト';
@@ -1234,6 +1241,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get savedDailyPromptToast => '日次プロンプトを保存しました';
+
+  @override
+  String get savedWeeklyPromptToast => 'Weekly prompt saved';
 
   @override
   String get resetToDefaultPromptToast => 'デフォルトのプロンプトにリセットしました';

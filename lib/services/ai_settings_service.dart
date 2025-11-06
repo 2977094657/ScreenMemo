@@ -103,6 +103,8 @@ class AISettingsService {
   static const String _keyPromptDailyExtraEn   = 'prompt_daily_extra_en';
   static const String _keyPromptMorningExtraZh = 'prompt_morning_extra_zh';
   static const String _keyPromptMorningExtraEn = 'prompt_morning_extra_en';
+  static const String _keyPromptWeeklyExtraZh  = 'prompt_weekly_extra_zh';
+  static const String _keyPromptWeeklyExtraEn  = 'prompt_weekly_extra_en';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -344,6 +346,21 @@ class AISettingsService {
     final lang = _currentLang();
     await _setPromptAddon(
       primaryKey: lang == 'zh' ? _keyPromptDailyExtraZh : _keyPromptDailyExtraEn,
+      value: value,
+    );
+  }
+
+  Future<String?> getPromptWeekly() async {
+    final lang = _currentLang();
+    return _getPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptWeeklyExtraZh : _keyPromptWeeklyExtraEn,
+    );
+  }
+
+  Future<void> setPromptWeekly(String? value) async {
+    final lang = _currentLang();
+    await _setPromptAddon(
+      primaryKey: lang == 'zh' ? _keyPromptWeeklyExtraZh : _keyPromptWeeklyExtraEn,
       value: value,
     );
   }

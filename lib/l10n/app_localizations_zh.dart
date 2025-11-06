@@ -1107,7 +1107,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '为“普通事件总结”“合并事件总结”“每日总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
+      '为“普通事件总结”“合并事件总结”“每日总结”“周总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1135,6 +1135,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '建议示例：\n- 指定每日总结语气（如“偏向行动复盘”）\n- 提醒突出关键成果或风险\n- 禁止修改输出字段名称';
 
   @override
+  String get promptAddonSuggestionWeekly =>
+      '建议示例：\n- 强调阶段性复盘重点与跨日趋势\n- 提醒聚焦行动项与待改进事项\n- 禁止修改结构化字段或数量';
+
+  @override
   String get promptAddonSuggestionMorning =>
       '建议示例：\n- 强调人文关怀、节奏调节或小确幸\n- 提醒模型避免模板化与任务驱动语气\n- 禁止要求改变 JSON 字段或频繁使用问句';
 
@@ -1146,6 +1150,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => '每日总结提示词';
+
+  @override
+  String get weeklySummaryPromptLabel => '周总结提示词';
 
   @override
   String get morningInsightsPromptLabel => '晨间行动提示词';
@@ -1221,6 +1228,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get savedDailyPromptToast => '已保存每日总结提示词';
+
+  @override
+  String get savedWeeklyPromptToast => '已保存周总结提示词';
 
   @override
   String get resetToDefaultPromptToast => '已重置为默认提示词';

@@ -1149,7 +1149,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.';
+      'Configure prompts for normal, merged, daily, weekly summaries, and morning insights; supports Markdown. Empty or reset to use defaults.';
 
   @override
   String get promptAddonGeneralInfo =>
@@ -1179,6 +1179,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Suggested ideas:\n- Specify the daily recap tone (e.g., action-oriented)\n- Ask to highlight major achievements or risks\n- Forbid renaming or adding JSON fields';
 
   @override
+  String get promptAddonSuggestionWeekly =>
+      'Suggested ideas:\n- Emphasize week-over-week trends or pivots to highlight\n- Ask for actionable follow-ups or attention points\n- Avoid requesting structural changes to the JSON output';
+
+  @override
   String get promptAddonSuggestionMorning =>
       'Suggested ideas:\n- Emphasize warmth, gentle pacing, or small comforts\n- Remind the model to avoid templated or task-driven tone\n- Do not request JSON field changes or rely heavily on questions';
 
@@ -1190,6 +1194,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dailySummaryPromptLabel => 'Daily summary prompt';
+
+  @override
+  String get weeklySummaryPromptLabel => 'Weekly summary prompt';
 
   @override
   String get morningInsightsPromptLabel => 'Morning insights prompt';
@@ -1266,6 +1273,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get savedDailyPromptToast => 'Daily prompt saved';
+
+  @override
+  String get savedWeeklyPromptToast => 'Weekly prompt saved';
 
   @override
   String get resetToDefaultPromptToast => 'Reset to default prompt';
