@@ -37,7 +37,6 @@ class _SearchPageState extends State<SearchPage> {
   Timer? _debounce;
   Directory? _baseDir;
   bool _privacyMode = true;
-  bool? _ocrIndexAvailable; // null=未知, true=可用, false=不可用
 
   static const int _pageSize = 24; // 单次获取数量，降低内存与首屏压力
   int _offset = 0;
@@ -115,7 +114,6 @@ class _SearchPageState extends State<SearchPage> {
     _scrollController.addListener(_onScroll);
     _loadAppInfos();
     _loadPrivacyMode();
-    _probeIndexAvailability();
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
       setState(() => _privacyMode = enabled);
@@ -146,17 +144,6 @@ class _SearchPageState extends State<SearchPage> {
       final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
       if (mounted) setState(() => _privacyMode = enabled);
     } catch (_) {}
-  }
-
-  Future<void> _probeIndexAvailability() async {
-    try {
-      final ok = await ScreenshotService.instance.isOcrIndexAvailable();
-      if (!mounted) return;
-      setState(() { _ocrIndexAvailable = ok; });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() { _ocrIndexAvailable = false; });
-    }
   }
 
   @override
@@ -588,47 +575,8 @@ class _SearchPageState extends State<SearchPage> {
             ),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: _buildIndexStatusIcon(),
-          ),
-        ],
       ),
       body: _buildBody(),
-    );
-  }
-
-  Widget _buildIndexStatusIcon() {
-    // 固定占位，不改变搜索框长度；仅对闪电图标做向左平移
-    if (_ocrIndexAvailable == null) {
-      return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-    if (_ocrIndexAvailable == true) {
-      return Tooltip(
-        message: 'Index OK: using FTS',
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: Transform.translate(
-            offset: const Offset(-6, 0),
-            child: const Icon(Icons.bolt, color: Colors.green, size: 20),
-          ),
-        ),
-      );
-    }
-    // 回退到 LIKE：显示黄色提示图标
-    return Tooltip(
-      message: 'Fallback: LIKE search',
-      child: const SizedBox(
-        width: 24,
-        height: 24,
-        child: Center(child: Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20)),
-      ),
     );
   }
 
