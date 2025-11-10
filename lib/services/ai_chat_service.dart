@@ -91,6 +91,9 @@ class AIChatService {
   static final AIChatService instance = AIChatService._internal();
 
   final AISettingsService _settings = AISettingsService.instance;
+  static const String responseStartMarker = '<<<AI_RESPONSE_START>>>';
+  static const String _responseStartInstruction =
+      'Assistant protocol: Always begin your reply with the exact marker <<<AI_RESPONSE_START>>> on the first line, then output the actual answer starting on the next line. Never omit, rename, or move this marker.';
 
   /// 发送一条用户消息，返回助手回复。
   /// - 会保留历史上下文，实现多轮会话
@@ -117,8 +120,9 @@ class AIChatService {
         final locale = isZh ? const Locale('zh') : const Locale('en');
         final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-        final String base = ep.baseUrl.trim();
-        final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+        final Uri baseUri = _resolveBaseUri(ep.baseUrl);
+        final String baseHost = baseUri.host.toLowerCase();
+        final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
         final Map<String, String> headers = <String, String>{
           'Content-Type': 'application/json',
         };
@@ -128,8 +132,7 @@ class AIChatService {
 
         if (isGoogle) {
           headers['x-goog-api-key'] = apiKey;
-          final String normalizedBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-          uri = Uri.parse('$normalizedBase/v1beta/models/${ep.model}:generateContent');
+          uri = baseUri.resolve('/v1beta/models/${ep.model}:generateContent');
 
           final List<Map<String, dynamic>> contents = <Map<String, dynamic>>[];
           for (final m in history) {
@@ -156,20 +159,22 @@ class AIChatService {
               'temperature': 0.2,
             },
           };
-          if (systemMsg.trim().isNotEmpty) {
+          final List<String> systemParts = <String>[systemMsg, _responseStartInstruction]
+              .where((s) => s.trim().isNotEmpty)
+              .toList();
+          if (systemParts.isNotEmpty) {
             payload['system_instruction'] = <String, dynamic>{
-              'parts': [
-                {'text': systemMsg},
-              ],
+              'parts': systemParts.map((s) => <String, String>{'text': s}).toList(),
             };
           }
           body = jsonEncode(payload);
         } else {
           headers['Authorization'] = 'Bearer ' + apiKey;
-          uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+          uri = _buildEndpointUriFromBase(baseUri, ep.chatPath);
 
           final List<Map<String, dynamic>> messages = [
             {'role': 'system', 'content': systemMsg},
+            {'role': 'system', 'content': _responseStartInstruction},
             ...history.map((m) => m.toJson()),
             AIMessage(role: 'user', content: userMessage).toJson(),
           ];
@@ -370,8 +375,9 @@ class AIChatService {
       final locale = isZh ? const Locale('zh') : const Locale('en');
       final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-      final String base = ep.baseUrl.trim();
-      final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+      final Uri baseUri = _resolveBaseUri(ep.baseUrl);
+      final String baseHost = baseUri.host.toLowerCase();
+      final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
       if (isGoogle) {
         try {
           final AIMessage assistant = await sendMessage(userMessage, timeout: timeout);
@@ -389,10 +395,11 @@ class AIChatService {
         }
       }
 
-      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+      final uri = _buildEndpointUriFromBase(baseUri, ep.chatPath);
 
       final List<Map<String, dynamic>> messages = [
         {'role': 'system', 'content': systemMsg},
+        {'role': 'system', 'content': _responseStartInstruction},
         ...history.map((m) => m.toJson()),
         AIMessage(role: 'user', content: userMessage).toJson(),
       ];
@@ -412,6 +419,7 @@ class AIChatService {
       StringBuffer full = StringBuffer();
       final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
       final StringBuffer reasoningBuf = StringBuffer();
+      final _ResponseStartFilter responseFilter = _createResponseStartFilter();
       final DateTime reasoningStart = DateTime.now();
       try {
         final req = http.Request('POST', uri);
@@ -459,8 +467,11 @@ class AIChatService {
                   if (d is String && d.isNotEmpty) {
                     final _ThinkStreamFilterResult r = thinkFilter.process(d);
                     if (r.visibleDelta.isNotEmpty) {
-                      full.write(r.visibleDelta);
-                      yield AIStreamEvent('content', r.visibleDelta);
+                      final String? sanitized = responseFilter.process(r.visibleDelta);
+                      if (sanitized != null && sanitized.isNotEmpty) {
+                        full.write(sanitized);
+                        yield AIStreamEvent('content', sanitized);
+                      }
                     }
                     if (r.reasoningDelta.isNotEmpty) {
                       reasoningBuf.write(r.reasoningDelta);
@@ -494,8 +505,11 @@ class AIChatService {
                     if (part is String && part.isNotEmpty) {
                       final _ThinkStreamFilterResult r = thinkFilter.process(part);
                       if (r.visibleDelta.isNotEmpty) {
-                        full.write(r.visibleDelta);
-                        yield AIStreamEvent('content', r.visibleDelta);
+                        final String? sanitized = responseFilter.process(r.visibleDelta);
+                        if (sanitized != null && sanitized.isNotEmpty) {
+                          full.write(sanitized);
+                          yield AIStreamEvent('content', sanitized);
+                        }
                       }
                       if (r.reasoningDelta.isNotEmpty) {
                         reasoningBuf.write(r.reasoningDelta);
@@ -517,6 +531,7 @@ class AIChatService {
         if (trailing.isNotEmpty) {
           reasoningBuf.write(trailing);
         }
+        responseFilter.ensureCompleted();
         final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
         final String reasoningText = reasoningBuf.toString();
         final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
@@ -593,13 +608,13 @@ class AIChatService {
       final locale = isZh ? const Locale('zh') : const Locale('en');
       final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
 
-      final String base = ep.baseUrl.trim();
-      final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
+      final Uri baseUri = _resolveBaseUri(ep.baseUrl);
+      final String baseHost = baseUri.host.toLowerCase();
+      final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
 
       if (isGoogle) {
         try {
-          final String normalizedBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-          final Uri uriGoogle = Uri.parse('$normalizedBase/v1beta/models/${ep.model}:generateContent');
+          final Uri uriGoogle = baseUri.resolve('/v1beta/models/${ep.model}:generateContent');
           final Map<String, String> headersGoogle = <String, String>{
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey,
@@ -628,7 +643,7 @@ class AIChatService {
             });
           }
 
-          final List<String> systemParts = <String>[systemMsg, ...extraSystemMessages]
+          final List<String> systemParts = <String>[systemMsg, _responseStartInstruction, ...extraSystemMessages]
               .where((s) => s.trim().isNotEmpty)
               .toList();
           final Map<String, dynamic> payload = <String, dynamic>{
@@ -677,7 +692,8 @@ class AIChatService {
             throw Exception('Empty content: ${respGoogle.body}');
           }
 
-          final AIMessage assistant = AIMessage(role: 'assistant', content: assistantContent);
+          final String sanitizedContent = _stripResponseStart(assistantContent);
+          final AIMessage assistant = AIMessage(role: 'assistant', content: sanitizedContent);
           final List<AIMessage> newHistory = <AIMessage>[
             ...history,
             AIMessage(role: 'user', content: displayUserMessage),
@@ -718,13 +734,14 @@ class AIChatService {
         }
       }
 
-      final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+      final uri = _buildEndpointUriFromBase(baseUri, ep.chatPath);
 
       final List<Map<String, dynamic>> filteredHistory = includeHistory
           ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
           : <Map<String, dynamic>>[];
       final List<Map<String, dynamic>> messages = [
         {'role': 'system', 'content': systemMsg},
+        {'role': 'system', 'content': _responseStartInstruction},
         ...extraSystemMessages.map((s) => {'role': 'system', 'content': s}),
         ...filteredHistory,
         AIMessage(role: 'user', content: actualUserMessage).toJson(),
@@ -749,6 +766,7 @@ class AIChatService {
       StringBuffer full = StringBuffer();
       final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
       final StringBuffer reasoningBuf = StringBuffer();
+      final _ResponseStartFilter responseFilter = _createResponseStartFilter();
       final DateTime reasoningStart = DateTime.now();
       try {
         final req = http.Request('POST', uri);
@@ -796,8 +814,11 @@ class AIChatService {
                     if (part is String && part.isNotEmpty) {
                       final _ThinkStreamFilterResult r = thinkFilter.process(part);
                       if (r.visibleDelta.isNotEmpty) {
-                        full.write(r.visibleDelta);
-                        yield AIStreamEvent('content', r.visibleDelta);
+                        final String? sanitized = responseFilter.process(r.visibleDelta);
+                        if (sanitized != null && sanitized.isNotEmpty) {
+                          full.write(sanitized);
+                          yield AIStreamEvent('content', sanitized);
+                        }
                       }
                       if (r.reasoningDelta.isNotEmpty) {
                         reasoningBuf.write(r.reasoningDelta);
@@ -816,6 +837,7 @@ class AIChatService {
         if (trailing.isNotEmpty) {
           reasoningBuf.write(trailing);
         }
+        responseFilter.ensureCompleted();
         final String reasoningText = reasoningBuf.toString();
         final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
         final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
@@ -879,7 +901,7 @@ class AIChatService {
         continue;
       }
       try {
-        final uri = Uri.parse(_joinUrl(ep.baseUrl, ep.chatPath));
+        final Uri uri = _buildEndpointUri(ep.baseUrl, ep.chatPath);
         final history = await _settings.getChatHistory();
         final String langCode = (LocaleService.instance.locale?.languageCode ??
                 WidgetsBinding.instance.platformDispatcher.locale.languageCode)
@@ -893,6 +915,7 @@ class AIChatService {
             : <Map<String, dynamic>>[];
         final List<Map<String, dynamic>> messages = [
           {'role': 'system', 'content': systemMsg},
+          {'role': 'system', 'content': _responseStartInstruction},
           ...extraSystemMessages.map((s) => {'role': 'system', 'content': s}),
           ...filteredHistory,
           AIMessage(role: 'user', content: actualUserMessage).toJson(),
@@ -931,7 +954,8 @@ class AIChatService {
           throw Exception('Invalid response');
         }
         final content = (msg['content'] as String?) ?? '';
-        final assistant = AIMessage(role: 'assistant', content: content);
+        final String sanitizedContent = _stripResponseStart(content);
+        final assistant = AIMessage(role: 'assistant', content: sanitizedContent);
 
         // 保存历史：仅 user(原文) + assistant；不保存最终提示以避免“今天”类误导
         final newHistory = <AIMessage>[
@@ -980,9 +1004,10 @@ class AIChatService {
         continue;
       }
       try {
-        final String base = ep.baseUrl;
-        final bool isGoogle = base.contains('googleapis.com') || base.contains('generativelanguage');
-        final headers = <String, String>{ 'Content-Type': 'application/json' };
+        final Uri baseUri = _resolveBaseUri(ep.baseUrl);
+        final String baseHost = baseUri.host.toLowerCase();
+        final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
+        final headers = <String, String>{'Content-Type': 'application/json'};
         if (isGoogle) {
           headers['x-goog-api-key'] = apiKey;
         } else {
@@ -997,15 +1022,16 @@ class AIChatService {
 
         if (isGoogle) {
           // Google Gemini REST: POST {base}/v1beta/models/{model}:generateContent
-          final String url = (base.endsWith('/'))
-              ? base.substring(0, base.length - 1)
-              : base;
-          final uri = Uri.parse('$url/v1beta/models/${ep.model}:generateContent');
+          final Uri uri = baseUri.resolve('/v1beta/models/${ep.model}:generateContent');
+          final List<Map<String, String>> systemParts = <String>[systemMsg, _responseStartInstruction]
+              .where((s) => s.trim().isNotEmpty)
+              .map((s) => <String, String>{'text': s})
+              .toList();
           final body = jsonEncode({
             'contents': [
               {
                 'parts': [
-                  {'text': systemMsg},
+                  ...systemParts,
                   {'text': userMessage},
                 ]
               }
@@ -1049,14 +1075,16 @@ class AIChatService {
           if (content.trim().isEmpty) {
             throw Exception('Empty content: ' + resp.body);
           }
-          return AIMessage(role: 'assistant', content: content);
+          final String sanitized = _stripResponseStart(content);
+          return AIMessage(role: 'assistant', content: sanitized);
         } else {
           // OpenAI 兼容 REST: /v1/chat/completions 或 /v1/responses（由 chatPath 决定）
-          final uri = Uri.parse(_joinUrl(base, ep.chatPath));
+          final Uri uri = _buildEndpointUriFromBase(baseUri, ep.chatPath);
           final body = jsonEncode({
             'model': ep.model,
             'messages': [
               {'role': 'system', 'content': systemMsg},
+              {'role': 'system', 'content': _responseStartInstruction},
               {'role': 'user', 'content': userMessage},
             ],
             'temperature': 0.2,
@@ -1114,7 +1142,8 @@ class AIChatService {
           if (content.trim().isEmpty) {
             throw Exception('Empty content: ' + resp.body);
           }
-          return AIMessage(role: 'assistant', content: content);
+          final String sanitized = _stripResponseStart(content);
+          return AIMessage(role: 'assistant', content: sanitized);
         }
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
@@ -1131,11 +1160,115 @@ class AIChatService {
   /// 获取当前会话历史
   Future<List<AIMessage>> getConversation() => _settings.getChatHistory();
 
-  String _joinUrl(String base, String path) {
-    if (base.endsWith('/')) base = base.substring(0, base.length - 1);
-    if (!path.startsWith('/')) path = '/' + path;
-    return base + path;
+  _ResponseStartFilter _createResponseStartFilter() => _ResponseStartFilter(responseStartMarker);
+
+  String _stripResponseStart(String text) {
+    if (!text.startsWith(responseStartMarker)) {
+      throw InvalidResponseStartException(responseStartMarker, text);
+    }
+    String remainder = text.substring(responseStartMarker.length);
+    if (remainder.startsWith('\r\n')) {
+      remainder = remainder.substring(2);
+    } else if (remainder.startsWith('\n')) {
+      remainder = remainder.substring(1);
+    }
+    return remainder;
+  }
+
+  Uri _buildEndpointUri(String base, String path) {
+    final Uri baseUri = _resolveBaseUri(base);
+    return _buildEndpointUriFromBase(baseUri, path);
+  }
+
+  Uri _buildEndpointUriFromBase(Uri baseUri, String path) {
+    final String trimmedPath = path.trim();
+    final String effectivePath =
+        trimmedPath.isEmpty ? '/v1/chat/completions' : (trimmedPath.startsWith('/') ? trimmedPath : '/$trimmedPath');
+    return baseUri.resolve(effectivePath);
+  }
+
+  Uri _resolveBaseUri(String base) {
+    final String trimmed = base.trim();
+    if (trimmed.isEmpty) {
+      throw InvalidEndpointConfigurationException('Base URL is empty');
+    }
+    Uri? parsed = Uri.tryParse(trimmed);
+    if (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty) {
+      return parsed;
+    }
+    parsed = Uri.tryParse('https://$trimmed');
+    if (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty) {
+      return parsed;
+    }
+    throw InvalidEndpointConfigurationException('Invalid base URL: $trimmed');
   }
 }
 
+class InvalidResponseStartException implements Exception {
+  InvalidResponseStartException(this.marker, this.receivedPreview);
+
+  final String marker;
+  final String receivedPreview;
+
+  @override
+  String toString() {
+    final String preview =
+        receivedPreview.length > 160 ? '${receivedPreview.substring(0, 160)}…' : receivedPreview;
+    return 'Invalid response start: expected marker "$marker" but received "$preview"';
+  }
+}
+
+class InvalidEndpointConfigurationException implements Exception {
+  InvalidEndpointConfigurationException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'InvalidEndpointConfigurationException: $message';
+}
+
+class _ResponseStartFilter {
+  _ResponseStartFilter(this.marker);
+
+  final String marker;
+  String _buffer = '';
+  bool _awaiting = true;
+
+  String? process(String chunk) {
+    if (!_awaiting) {
+      return chunk;
+    }
+    if (chunk.isEmpty) {
+      return '';
+    }
+    int index = 0;
+    while (index < chunk.length) {
+      _buffer += chunk[index];
+      if (!marker.startsWith(_buffer)) {
+        _awaiting = false;
+        final String invalid = _buffer + chunk.substring(index + 1);
+        throw InvalidResponseStartException(marker, invalid);
+      }
+      index++;
+      if (_buffer.length == marker.length) {
+        _awaiting = false;
+        _buffer = '';
+        String remainder = chunk.substring(index);
+        if (remainder.startsWith('\r\n')) {
+          remainder = remainder.substring(2);
+        } else if (remainder.startsWith('\n')) {
+          remainder = remainder.substring(1);
+        }
+        return remainder;
+      }
+    }
+    return null;
+  }
+
+  void ensureCompleted() {
+    if (_awaiting) {
+      throw InvalidResponseStartException(marker, _buffer);
+  }
+}
+}
 

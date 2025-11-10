@@ -1066,14 +1066,24 @@ void _scheduleAutoScroll() {
         } catch (e) {
           try { await FlutterLogger.nativeError('ChatFlow', 'error ' + e.toString()); } catch (_) {}
           if (!mounted) return;
+          final String errorMessage;
+          if (e is InvalidResponseStartException) {
+            final String preview = e.receivedPreview.isEmpty ? '<empty>' : e.receivedPreview;
+            final String truncated = preview.length > 800 ? '${preview.substring(0, 800)}…' : preview;
+            errorMessage = 'Invalid response start marker. Raw preview:\n$truncated';
+          } else if (e is InvalidEndpointConfigurationException) {
+            errorMessage = 'Invalid endpoint configuration: ${e.message}';
+          } else {
+            errorMessage = e.toString();
+          }
           setState(() {
             _inStreaming = false;
             if (_messages.isNotEmpty && _messages.last.role == 'assistant') {
               final newList = List<AIMessage>.from(_messages);
-              newList[_messages.length - 1] = AIMessage(role: 'error', content: e.toString());
+              newList[_messages.length - 1] = AIMessage(role: 'error', content: errorMessage);
               _messages = newList;
             } else {
-              _messages = List<AIMessage>.from(_messages)..add(AIMessage(role: 'error', content: e.toString()));
+              _messages = List<AIMessage>.from(_messages)..add(AIMessage(role: 'error', content: errorMessage));
             }
           });
           _stopDots();
@@ -1360,6 +1370,7 @@ void _scheduleAutoScroll() {
     sb.writeln('重要：不得将 [evidence: ...] 放入代码块或行内代码中，否则将无法识别与渲染。');
     sb.writeln('不得引用未在本提示词出现的任何文件名，不得臆测图片内容。');
     sb.writeln('若上下文不足以回答，请明确说明不确定之处。');
+    sb.writeln('回答格式要求：第一行必须仅输出 ${AIChatService.responseStartMarker}，随后换行开始正文，禁止省略或改动该标记。');
     sb.writeln('');
     sb.writeln('【上下文】');
     String two(int v) => v.toString().padLeft(2, '0');
