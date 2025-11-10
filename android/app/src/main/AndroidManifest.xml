@@ -145,6 +145,12 @@
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse" />
+
+        <!-- 记忆系统后端服务（事件解析、标签管理、证据存储） -->
+        <service
+            android:name=".memory.service.MemoryBackendService"
+            android:exported="false"
+            android:stopWithTask="false" />
             
         <!-- 守护服务（已禁用，避免重复前台通知） -->
         <!--

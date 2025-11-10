@@ -26,7 +26,18 @@ object SegmentDatabaseHelper {
         val endTime: Long,
         val durationSec: Int,
         val sampleIntervalSec: Int,
-        val status: String
+        val status: String,
+        val appPackages: String? = null,
+        val createdAt: Long? = null,
+        val updatedAt: Long? = null
+    )
+    data class SegmentResult(
+        val segmentId: Long,
+        val aiProvider: String?,
+        val aiModel: String?,
+        val outputText: String?,
+        val structuredJson: String?,
+        val categories: String?
     )
 
     data class Sample(
@@ -45,6 +56,9 @@ object SegmentDatabaseHelper {
         val appPackageName: String,
         val appName: String
     )
+
+    private fun Cursor.getStringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
+    private fun Cursor.getLongOrNull(index: Int): Long? = if (isNull(index)) null else getLong(index)
 
     // =============== 基础 ===============
 
@@ -67,7 +81,7 @@ object SegmentDatabaseHelper {
             db = openMasterDb(context, writable = false) ?: return null
             cursor = db.query(
                 "segments",
-                arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status"),
+                arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status","app_packages","created_at","updated_at"),
                 "id = ?",
                 arrayOf(id.toString()),
                 null,null,
@@ -80,7 +94,10 @@ object SegmentDatabaseHelper {
                 endTime = cursor.getLong(2),
                 durationSec = cursor.getInt(3),
                 sampleIntervalSec = cursor.getInt(4),
-                status = cursor.getString(5)
+                status = cursor.getString(5),
+                appPackages = cursor.getStringOrNull(6),
+                createdAt = cursor.getLongOrNull(7),
+                updatedAt = cursor.getLongOrNull(8)
             ) else null
         } catch (_: Exception) { null } finally {
             try { cursor?.close() } catch (_: Exception) {}
@@ -214,7 +231,7 @@ object SegmentDatabaseHelper {
             db = openMasterDb(context, writable = false) ?: return null
             cursor = db.query(
                 "segments",
-                arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status"),
+                arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status","app_packages","created_at","updated_at"),
                 "status = ?",
                 arrayOf("collecting"),
                 null, null,
@@ -228,11 +245,148 @@ object SegmentDatabaseHelper {
                     endTime = cursor.getLong(2),
                     durationSec = cursor.getInt(3),
                     sampleIntervalSec = cursor.getInt(4),
-                    status = cursor.getString(5)
+                    status = cursor.getString(5),
+                    appPackages = cursor.getStringOrNull(6),
+                    createdAt = cursor.getLongOrNull(7),
+                    updatedAt = cursor.getLongOrNull(8)
                 )
             } else null
         } catch (_: Exception) {
             null
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    fun listSegmentsAscending(context: Context, limit: Int, offset: Int): List<Segment> {
+        val segments = ArrayList<Segment>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            val limitClause = if (offset > 0) "$offset,$limit" else limit.toString()
+            cursor = db.query(
+                "segments",
+                arrayOf(
+                    "id",
+                    "start_time",
+                    "end_time",
+                    "duration_sec",
+                    "sample_interval_sec",
+                    "status",
+                    "app_packages",
+                    "created_at",
+                    "updated_at"
+                ),
+                null,
+                null,
+                null,
+                null,
+                "start_time ASC",
+                limitClause
+            )
+            while (cursor.moveToNext()) {
+                segments.add(
+                    Segment(
+                        id = cursor.getLong(0),
+                        startTime = cursor.getLong(1),
+                        endTime = cursor.getLong(2),
+                        durationSec = cursor.getInt(3),
+                        sampleIntervalSec = cursor.getInt(4),
+                        status = cursor.getString(5),
+                        appPackages = cursor.getStringOrNull(6),
+                        createdAt = cursor.getLongOrNull(7),
+                        updatedAt = cursor.getLongOrNull(8)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return segments
+    }
+
+    fun getSegmentSamples(context: Context, segmentId: Long): List<Sample> {
+        val samples = ArrayList<Sample>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            cursor = db.query(
+                "segment_samples",
+                arrayOf("id","segment_id","capture_time","file_path","app_package_name","app_name","position_index"),
+                "segment_id = ?",
+                arrayOf(segmentId.toString()),
+                null,
+                null,
+                "capture_time ASC"
+            )
+            while (cursor.moveToNext()) {
+                samples.add(
+                    Sample(
+                        id = cursor.getLong(0),
+                        segmentId = cursor.getLong(1),
+                        captureTime = cursor.getLong(2),
+                        filePath = cursor.getString(3),
+                        appPackageName = cursor.getString(4),
+                        appName = cursor.getString(5),
+                        positionIndex = cursor.getInt(6)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return samples
+    }
+
+    fun getSegmentResult(context: Context, segmentId: Long): SegmentResult? {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return null
+            cursor = db.query(
+                "segment_results",
+                arrayOf("segment_id","ai_provider","ai_model","output_text","structured_json","categories"),
+                "segment_id = ?",
+                arrayOf(segmentId.toString()),
+                null,
+                null,
+                null,
+                "1"
+            )
+            if (cursor.moveToFirst()) {
+                SegmentResult(
+                    segmentId = cursor.getLong(0),
+                    aiProvider = cursor.getStringOrNull(1),
+                    aiModel = cursor.getStringOrNull(2),
+                    outputText = cursor.getStringOrNull(3),
+                    structuredJson = cursor.getStringOrNull(4),
+                    categories = cursor.getStringOrNull(5)
+                )
+            } else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    fun countSegments(context: Context): Int {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return 0
+            cursor = db.rawQuery("SELECT COUNT(*) FROM segments", null)
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        } catch (_: Exception) {
+            0
         } finally {
             try { cursor?.close() } catch (_: Exception) {}
             try { db?.close() } catch (_: Exception) {}

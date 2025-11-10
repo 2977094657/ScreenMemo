@@ -69,6 +69,24 @@ AI 领先差距
 
 ---
 
+## Kotlin 原生记忆后端（MemOS Mobile）
+
+> 源码目录：`android/app/src/main/kotlin/com/fqyw/screen_memo/memory`
+
+- **服务化架构**：`MemoryBackendService` 常驻后台，串联事件解析、标签状态机、证据存储与进度追踪；对话界面仅负责订阅 EventChannel 进行渲染。
+- **Room 数据库存储**：内置 `memory_backend.db`（事件/标签/证据三张表），支持标签证据去重、待确认 → 已确认的状态流转、用户手动校正。
+- **事件解析模块**：`LlmUserSignalExtractor` 按照前端 AppBar 选择的 LLM（支持 OpenAI / Azure / Gemini 等）调用模型输出结构化标签；启发式兜底已移除。
+- **提示词本地化**：系统 / 用户提示词定义在 `android/app/src/main/res/values(-*lang*)/memory_prompts.xml`，可按语言自定义。
+- **实时同步机制**：`MemoryBridge` 暴露 MethodChannel（`com.fqyw.screen_memo/memory`）与 EventChannel（快照/进度/标签增量），Flutter 层可以：
+  - 调用 `memory#ingestEvent` 上报任意“用户事件”；
+  - 调用 `memory#initialize`/`memory#cancelInitialization` 控制历史重放；
+  - 调用 `memory#confirmTag`、`memory#updateEvidence` 对待确认标签与证据进行人工修正；
+  - 订阅 `memory/snapshot`、`memory/progress`、`memory/tag_updates` 获取实时画像、初始化进度与新标签提醒。
+- **用户画像描述**：每次 LLM 响应都会在 JSON 后追加“当前用户描述：xxx”，原生层会保存该全局唯一描述并在后续事件请求中携带；若尚无描述，则由已收集的标签生成默认说明。
+- **开机初始化**：应用首帧后自动调用 `MemoryBackendService.start()` 仅保持服务常驻；历史事件重放需显式调用 `MemoryBackendService.startHistoricalProcessing(...)`，避免在用户暂停或导入样本后再次进入时自动恢复，新的标签与状态更新仍会实时推送至侧边栏“记忆入口”。
+
+---
+
 ## 应用截图
 
 <table>

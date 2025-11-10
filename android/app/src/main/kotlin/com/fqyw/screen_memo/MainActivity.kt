@@ -56,6 +56,8 @@ import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.Deflater
 import com.fqyw.screen_memo.OutputFileLogger
+import com.fqyw.screen_memo.memory.bridge.MemoryBridge
+import com.fqyw.screen_memo.memory.service.MemoryBackendService
 
 class MainActivity : FlutterActivity() {
 
@@ -77,6 +79,7 @@ class MainActivity : FlutterActivity() {
     private var didRunPostFirstFrameInit: Boolean = false
     private var activityCreateTs: Long = 0L
     private var splashDialog: Dialog? = null
+    private var memoryBridge: MemoryBridge? = null
     
     private val accessibilityServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -741,6 +744,10 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // 启用原生记忆系统桥接，提供 MethodChannel/EventChannel
+        memoryBridge?.dispose()
+        memoryBridge = MemoryBridge(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+
         // 其余重任务延迟到首帧后执行
         FileLogger.d(TAG, "configureFlutterEngine: minimal init done, waiting first frame")
 
@@ -783,6 +790,13 @@ class MainActivity : FlutterActivity() {
         val startMs = System.currentTimeMillis()
         try {
             FileLogger.e(TAG, "=== PostFirstFrame 初始化开始 ===")
+
+            // 启动本地记忆后端服务，确保事件解析在原生层运行
+            try {
+                MemoryBackendService.start(applicationContext)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "启动 MemoryBackendService 失败: ${e.message}")
+            }
 
             val t1 = System.currentTimeMillis()
             FileLogger.init(this)
@@ -1530,6 +1544,9 @@ class MainActivity : FlutterActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+
+        memoryBridge?.dispose()
+        memoryBridge = null
         
         // 尝试解绑AccessibilityService
         try {

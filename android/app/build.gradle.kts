@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("kotlin-kapt")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -73,4 +74,20 @@ dependencies {
 
     // XLog：高性能日志（控制台/多 Printer，可替代原生 Log.* 控制台输出）
     implementation("com.elvishew:xlog:1.11.1")
+
+    // Room 数据库：用于本地事件、标签、证据存储（保持与 Kotlin 2.x 元数据兼容）
+    implementation("androidx.room:room-runtime:2.7.0-beta01")
+    implementation("androidx.room:room-ktx:2.7.0-beta01")
+    kapt("androidx.room:room-compiler:2.7.0-beta01")
+
+    // 协程：后台事件处理与流式更新
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Lifecycle：为服务和 Application 提供协程生命周期支持
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.4")
+}
+
+kapt {
+    correctErrorTypes = true
 }
