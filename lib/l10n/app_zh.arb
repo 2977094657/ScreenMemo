@@ -347,6 +347,251 @@
     }
   },
 
+  "memoryMenuEntry": "记忆中心",
+  "memoryCenterTitle": "记忆中心",
+  "memoryClearAllTooltip": "清空记忆库",
+  "memoryClearAllConfirmTitle": "清空记忆库",
+  "memoryClearAllConfirmMessage": "确定要删除记忆库中的所有标签、事件与证据吗？此操作不可恢复。",
+  "memoryImportSampleTooltip": "导入 30 条用于测试",
+  "memoryImportSampleSuccess": "已导入 {count} 条动态用于测试",
+  "@memoryImportSampleSuccess": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryImportSampleEmpty": "没有可导入的记忆事件",
+  "memoryImportSampleFailed": "导入失败: {error}",
+  "@memoryImportSampleFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryPauseTooltip": "暂停处理",
+  "memoryPauseSuccess": "已暂停记忆解析",
+  "memoryPauseFailed": "暂停失败: {error}",
+  "@memoryPauseFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryPendingSectionTitle": "待确认标签",
+  "memoryConfirmedSectionTitle": "已确认标签",
+  "memoryRecentEventsSectionTitle": "最近事件",
+  "memoryNoPending": "暂无待确认标签",
+  "memoryNoConfirmed": "暂无已确认标签",
+  "memoryNoEvents": "暂无相关事件",
+  "memoryConfirmAction": "标记为已确认",
+  "memoryStatusPending": "待确认",
+  "memoryStatusConfirmed": "已确认",
+  "memoryCategoryIdentity": "身份",
+  "memoryCategoryRelationship": "关系",
+  "memoryCategoryInterest": "兴趣",
+  "memoryCategoryBehavior": "行为",
+  "memoryCategoryPreference": "偏好",
+  "memoryCategoryOther": "其他",
+  "memoryConfidenceLabel": "置信度：{value}%",
+  "@memoryConfidenceLabel": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "memoryOccurrencesLabel": "出现次数：{count}",
+  "@memoryOccurrencesLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryFirstSeenLabel": "首次出现：{date}",
+  "@memoryFirstSeenLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryLastSeenLabel": "最近出现：{date}",
+  "@memoryLastSeenLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryEvidenceCountLabel": "证据：{count} 条",
+  "@memoryEvidenceCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryEventContainsContext": "包含用户相关信息",
+  "memoryEventNoContext": "未识别到用户相关信息",
+  "memoryEventTimeLabel": "时间：{date}",
+  "@memoryEventTimeLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryEventSourceLabel": "来源：{source}",
+  "@memoryEventSourceLabel": {
+    "placeholders": {
+      "source": {}
+    }
+  },
+  "memoryEventTypeLabel": "类型：{type}",
+  "@memoryEventTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "memoryProgressIdle": "等待处理历史事件",
+  "memoryProgressRunning": "正在解析历史事件",
+  "memoryProgressRunningDetail": "已处理 {processed}/{total} 条（{percent}%）",
+  "@memoryProgressRunningDetail": {
+    "placeholders": {
+      "processed": {},
+      "total": {},
+      "percent": {}
+    }
+  },
+  "memoryProgressNewTagsDetail": "新增标签：{count}",
+  "@memoryProgressNewTagsDetail": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryProgressCompleted": "历史事件解析完成，共 {total} 条，耗时 {seconds} 秒",
+  "@memoryProgressCompleted": {
+    "placeholders": {
+      "total": {},
+      "seconds": {}
+    }
+  },
+  "memoryProgressFailed": "解析失败：{message}",
+  "@memoryProgressFailed": {
+    "placeholders": {
+      "message": {}
+    }
+  },
+  "memoryProgressFailedEvent": "失败事件：{event}",
+  "@memoryProgressFailedEvent": {
+    "placeholders": {
+      "event": {}
+    }
+  },
+  "memoryProgressPreparing": "正在准备：{stage}",
+  "@memoryProgressPreparing": {
+    "placeholders": {
+      "stage": {}
+    }
+  },
+  "memoryProgressStageSyncSegments": "同步截图事件",
+  "memoryProgressStageSyncChats": "同步聊天记录",
+  "memoryProgressStageDispatch": "启动历史解析",
+  "memoryRefreshTooltip": "刷新记忆",
+  "memoryConfirmSuccessToast": "已确认标签：{label}",
+  "@memoryConfirmSuccessToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "memoryConfirmFailedToast": "操作失败：{message}",
+  "@memoryConfirmFailedToast": {
+    "placeholders": {
+      "message": {}
+    }
+  },
+  "memorySnapshotUpdated": "记忆已更新",
+  "memoryStartProcessingAction": "开始解析历史事件",
+  "memoryStartProcessingActionShort": "开始解析",
+  "memoryMalformedResponseTitle": "检测到异常响应，解析已暂停",
+  "memoryMalformedResponseSubtitle": "事件 {eventId} 的响应缺少“当前用户描述：”标记，请检查后再继续。",
+  "@memoryMalformedResponseSubtitle": {
+    "placeholders": {
+      "eventId": {}
+    }
+  },
+  "memoryMalformedResponseSubtitleNoId": "最新响应缺少“当前用户描述：”标记，请检查后再继续。",
+  "memoryMalformedResponseRawLabel": "原始响应：",
+  "memoryDeleteTagAction": "删除标签",
+  "memoryDeleteTagConfirmTitle": "删除标签",
+  "memoryDeleteTagConfirmMessage": "确定要删除标签「{tagLabel}」吗？相关证据也会被移除。",
+  "@memoryDeleteTagConfirmMessage": {
+    "placeholders": {
+      "tagLabel": {}
+    }
+  },
+  "memoryDeleteTagSuccess": "标签已删除",
+  "memoryDeleteTagFailed": "删除失败：{error}",
+  "@memoryDeleteTagFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryStatusPendingIndicator": "待确认标签",
+  "memoryStatusConfirmedIndicator": "已确认标签",
+  "memoryReprocessAction": "重新解析全部历史事件",
+  "memoryStartProcessingToast": "已开始历史事件解析",
+  "memoryLoadMore": "加载更多",
+  "memoryCenterHeroTitle": "记忆角色卡",
+  "memoryCenterHeroSubtitle": "以 RPG 角色卡方式呈现你的用户画像与行为偏好",
+  "memoryCenterPendingCountLabel": "待确认：{count}",
+  "@memoryCenterPendingCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryCenterConfirmedCountLabel": "已确认：{count}",
+  "@memoryCenterConfirmedCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryCenterEventCountLabel": "用户相关事件：{count}",
+  "@memoryCenterEventCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailTitle": "标签详情",
+  "memoryTagDetailRefresh": "刷新",
+  "memoryTagDetailInfoTitle": "标签档案",
+  "memoryTagDetailStatisticsTitle": "标签属性",
+  "memoryTagDetailOccurrences": "出现次数：{count}",
+  "@memoryTagDetailOccurrences": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailConfidence": "置信度：{confidence}",
+  "@memoryTagDetailConfidence": {
+    "placeholders": {
+      "confidence": {}
+    }
+  },
+  "memoryTagDetailFirstSeen": "首次出现：{date}",
+  "@memoryTagDetailFirstSeen": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryTagDetailLastSeen": "最近出现：{date}",
+  "@memoryTagDetailLastSeen": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryTagDetailEvidenceTitle": "全部证据",
+  "memoryTagDetailEvidenceCount": "证据总数：{count}",
+  "@memoryTagDetailEvidenceCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailNoEvidence": "暂无证据记录",
+  "memoryTagDetailLoadFailed": "标签数据加载失败",
+  "memoryEvidenceInferenceLabel": "推断说明",
+  "memoryEvidenceNotesLabel": "备注",
+  "memoryEvidenceNoNotes": "无备注记录",
+  "memoryEvidenceEventHeading": "来源事件",
+  "memoryEvidenceUserEditedBadge": "用户已编辑",
+
+
   "setReminderTimeTitle": "设置提醒时间（24小时制）",
   "hourLabel": "小时(0-23)",
   "minuteLabel": "分钟(0-59)",
@@ -587,6 +832,8 @@
   "alreadyQueuedOrFailed": "已在队列或失败",
   "retryFailed": "重试失败",
   "copyResultsTooltip": "复制结果",
+  "copyPersonaTooltip": "复制用户画像",
+  "memoryPersonaEmptyPlaceholder": "当前暂无画像，请继续记录事件。",
 
   "saveImageTooltip": "保存到相册",
   "saveImageSuccess": "已保存到相册",

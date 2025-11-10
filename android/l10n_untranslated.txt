@@ -1,0 +1,13 @@
+{
+  "ja": [
+    "promptAddonSuggestionWeekly",
+    "weeklySummaryPromptLabel",
+    "savedWeeklyPromptToast"
+  ],
+
+  "ko": [
+    "promptAddonSuggestionWeekly",
+    "weeklySummaryPromptLabel",
+    "savedWeeklyPromptToast"
+  ]
+}

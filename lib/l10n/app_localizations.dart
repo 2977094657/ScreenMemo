@@ -2022,6 +2022,18 @@ abstract class AppLocalizations {
   /// **'Copy results'**
   String get copyResultsTooltip;
 
+  /// No description provided for @copyPersonaTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy persona summary'**
+  String get copyPersonaTooltip;
+
+  /// No description provided for @memoryPersonaEmptyPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'No persona summary yet. Keep recording events to enrich it.'**
+  String get memoryPersonaEmptyPlaceholder;
+
   /// No description provided for @saveImageTooltip.
   ///
   /// In en, this message translates to:
@@ -3317,6 +3329,550 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Provider not found'**
   String get providerNotFound;
+
+  /// No description provided for @memoryMenuEntry.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Center'**
+  String get memoryMenuEntry;
+
+  /// No description provided for @memoryCenterTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Center'**
+  String get memoryCenterTitle;
+
+  /// No description provided for @memoryClearAllTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear memory vault'**
+  String get memoryClearAllTooltip;
+
+  /// No description provided for @memoryClearAllConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Memory Vault'**
+  String get memoryClearAllConfirmTitle;
+
+  /// No description provided for @memoryClearAllConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete all memory tags, events, and evidence. This action cannot be undone. Continue?'**
+  String get memoryClearAllConfirmMessage;
+
+  /// No description provided for @memoryImportSampleTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Import 30 items for testing'**
+  String get memoryImportSampleTooltip;
+
+  /// No description provided for @memoryImportSampleSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {count} events for testing'**
+  String memoryImportSampleSuccess(Object count);
+
+  /// No description provided for @memoryImportSampleEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No memory events available to import'**
+  String get memoryImportSampleEmpty;
+
+  /// No description provided for @memoryImportSampleFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Import failed: {error}'**
+  String memoryImportSampleFailed(Object error);
+
+  /// No description provided for @memoryPauseTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause processing'**
+  String get memoryPauseTooltip;
+
+  /// No description provided for @memoryPauseSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing paused'**
+  String get memoryPauseSuccess;
+
+  /// No description provided for @memoryPauseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause failed: {error}'**
+  String memoryPauseFailed(Object error);
+
+  /// No description provided for @memoryPendingSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending Tags'**
+  String get memoryPendingSectionTitle;
+
+  /// No description provided for @memoryConfirmedSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed Tags'**
+  String get memoryConfirmedSectionTitle;
+
+  /// No description provided for @memoryRecentEventsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Events'**
+  String get memoryRecentEventsSectionTitle;
+
+  /// No description provided for @memoryNoPending.
+  ///
+  /// In en, this message translates to:
+  /// **'No pending tags yet'**
+  String get memoryNoPending;
+
+  /// No description provided for @memoryNoConfirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'No confirmed tags yet'**
+  String get memoryNoConfirmed;
+
+  /// No description provided for @memoryNoEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'No related events yet'**
+  String get memoryNoEvents;
+
+  /// No description provided for @memoryConfirmAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as confirmed'**
+  String get memoryConfirmAction;
+
+  /// No description provided for @memoryStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get memoryStatusPending;
+
+  /// No description provided for @memoryStatusConfirmed.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed'**
+  String get memoryStatusConfirmed;
+
+  /// No description provided for @memoryCategoryIdentity.
+  ///
+  /// In en, this message translates to:
+  /// **'Identity'**
+  String get memoryCategoryIdentity;
+
+  /// No description provided for @memoryCategoryRelationship.
+  ///
+  /// In en, this message translates to:
+  /// **'Relationship'**
+  String get memoryCategoryRelationship;
+
+  /// No description provided for @memoryCategoryInterest.
+  ///
+  /// In en, this message translates to:
+  /// **'Interest'**
+  String get memoryCategoryInterest;
+
+  /// No description provided for @memoryCategoryBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Behavior'**
+  String get memoryCategoryBehavior;
+
+  /// No description provided for @memoryCategoryPreference.
+  ///
+  /// In en, this message translates to:
+  /// **'Preference'**
+  String get memoryCategoryPreference;
+
+  /// No description provided for @memoryCategoryOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get memoryCategoryOther;
+
+  /// No description provided for @memoryConfidenceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidence: {value}%'**
+  String memoryConfidenceLabel(Object value);
+
+  /// No description provided for @memoryOccurrencesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Occurrences: {count}'**
+  String memoryOccurrencesLabel(Object count);
+
+  /// No description provided for @memoryFirstSeenLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'First seen: {date}'**
+  String memoryFirstSeenLabel(Object date);
+
+  /// No description provided for @memoryLastSeenLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Last seen: {date}'**
+  String memoryLastSeenLabel(Object date);
+
+  /// No description provided for @memoryEvidenceCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence: {count}'**
+  String memoryEvidenceCountLabel(Object count);
+
+  /// No description provided for @memoryEventContainsContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Contains user-related info'**
+  String get memoryEventContainsContext;
+
+  /// No description provided for @memoryEventNoContext.
+  ///
+  /// In en, this message translates to:
+  /// **'No user-related info detected'**
+  String get memoryEventNoContext;
+
+  /// No description provided for @memoryEventTimeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Time: {date}'**
+  String memoryEventTimeLabel(Object date);
+
+  /// No description provided for @memoryEventSourceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Source: {source}'**
+  String memoryEventSourceLabel(Object source);
+
+  /// No description provided for @memoryEventTypeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Type: {type}'**
+  String memoryEventTypeLabel(Object type);
+
+  /// No description provided for @memoryProgressIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for historical events'**
+  String get memoryProgressIdle;
+
+  /// No description provided for @memoryProgressRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing historical events'**
+  String get memoryProgressRunning;
+
+  /// No description provided for @memoryProgressRunningDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{processed}/{total} processed ({percent}%)'**
+  String memoryProgressRunningDetail(
+    Object processed,
+    Object total,
+    Object percent,
+  );
+
+  /// No description provided for @memoryProgressNewTagsDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'New tags discovered: {count}'**
+  String memoryProgressNewTagsDetail(Object count);
+
+  /// No description provided for @memoryProgressCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Historical events processed: {total} items in {seconds} seconds'**
+  String memoryProgressCompleted(Object total, Object seconds);
+
+  /// No description provided for @memoryProgressFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing failed: {message}'**
+  String memoryProgressFailed(Object message);
+
+  /// No description provided for @memoryProgressFailedEvent.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed event: {event}'**
+  String memoryProgressFailedEvent(Object event);
+
+  /// No description provided for @memoryProgressPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing: {stage}'**
+  String memoryProgressPreparing(Object stage);
+
+  /// No description provided for @memoryProgressStageSyncSegments.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing screenshot events'**
+  String get memoryProgressStageSyncSegments;
+
+  /// No description provided for @memoryProgressStageSyncChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing conversations'**
+  String get memoryProgressStageSyncChats;
+
+  /// No description provided for @memoryProgressStageDispatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting historical processing'**
+  String get memoryProgressStageDispatch;
+
+  /// No description provided for @memoryRefreshTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get memoryRefreshTooltip;
+
+  /// No description provided for @memoryConfirmSuccessToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed tag \"{label}\"'**
+  String memoryConfirmSuccessToast(Object label);
+
+  /// No description provided for @memoryConfirmFailedToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {message}'**
+  String memoryConfirmFailedToast(Object message);
+
+  /// No description provided for @memorySnapshotUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory snapshot updated'**
+  String get memorySnapshotUpdated;
+
+  /// No description provided for @memoryStartProcessingAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Start processing history'**
+  String get memoryStartProcessingAction;
+
+  /// No description provided for @memoryStartProcessingActionShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Start processing'**
+  String get memoryStartProcessingActionShort;
+
+  /// No description provided for @memoryMalformedResponseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Malformed response detected, processing paused'**
+  String get memoryMalformedResponseTitle;
+
+  /// No description provided for @memoryMalformedResponseSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Response for event {eventId} is missing the \"Current User Summary:\" marker. Review it before resuming.'**
+  String memoryMalformedResponseSubtitle(Object eventId);
+
+  /// No description provided for @memoryMalformedResponseSubtitleNoId.
+  ///
+  /// In en, this message translates to:
+  /// **'The latest response is missing the \"Current User Summary:\" marker. Review it before resuming.'**
+  String get memoryMalformedResponseSubtitleNoId;
+
+  /// No description provided for @memoryMalformedResponseRawLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw response:'**
+  String get memoryMalformedResponseRawLabel;
+
+  /// No description provided for @memoryDeleteTagAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete tag'**
+  String get memoryDeleteTagAction;
+
+  /// No description provided for @memoryDeleteTagConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete tag'**
+  String get memoryDeleteTagConfirmTitle;
+
+  /// No description provided for @memoryDeleteTagConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete tag \"{tagLabel}\"? Associated evidence will be removed.'**
+  String memoryDeleteTagConfirmMessage(Object tagLabel);
+
+  /// No description provided for @memoryDeleteTagSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag deleted'**
+  String get memoryDeleteTagSuccess;
+
+  /// No description provided for @memoryDeleteTagFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete failed: {error}'**
+  String memoryDeleteTagFailed(Object error);
+
+  /// No description provided for @memoryStatusPendingIndicator.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get memoryStatusPendingIndicator;
+
+  /// No description provided for @memoryStatusConfirmedIndicator.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed'**
+  String get memoryStatusConfirmedIndicator;
+
+  /// No description provided for @memoryReprocessAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reprocess entire history'**
+  String get memoryReprocessAction;
+
+  /// No description provided for @memoryStartProcessingToast.
+  ///
+  /// In en, this message translates to:
+  /// **'Historical processing started'**
+  String get memoryStartProcessingToast;
+
+  /// No description provided for @memoryLoadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get memoryLoadMore;
+
+  /// No description provided for @memoryCenterHeroTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Character dossier'**
+  String get memoryCenterHeroTitle;
+
+  /// No description provided for @memoryCenterHeroSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'An RPG-style card distilled from your personal events'**
+  String get memoryCenterHeroSubtitle;
+
+  /// No description provided for @memoryCenterPendingCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending: {count}'**
+  String memoryCenterPendingCountLabel(Object count);
+
+  /// No description provided for @memoryCenterConfirmedCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmed: {count}'**
+  String memoryCenterConfirmedCountLabel(Object count);
+
+  /// No description provided for @memoryCenterEventCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'User-related events: {count}'**
+  String memoryCenterEventCountLabel(Object count);
+
+  /// No description provided for @memoryTagDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag Detail'**
+  String get memoryTagDetailTitle;
+
+  /// No description provided for @memoryTagDetailRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get memoryTagDetailRefresh;
+
+  /// No description provided for @memoryTagDetailInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get memoryTagDetailInfoTitle;
+
+  /// No description provided for @memoryTagDetailStatisticsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Attributes'**
+  String get memoryTagDetailStatisticsTitle;
+
+  /// No description provided for @memoryTagDetailOccurrences.
+  ///
+  /// In en, this message translates to:
+  /// **'Occurrences: {count}'**
+  String memoryTagDetailOccurrences(Object count);
+
+  /// No description provided for @memoryTagDetailConfidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Confidence: {confidence}'**
+  String memoryTagDetailConfidence(Object confidence);
+
+  /// No description provided for @memoryTagDetailFirstSeen.
+  ///
+  /// In en, this message translates to:
+  /// **'First seen: {date}'**
+  String memoryTagDetailFirstSeen(Object date);
+
+  /// No description provided for @memoryTagDetailLastSeen.
+  ///
+  /// In en, this message translates to:
+  /// **'Last seen: {date}'**
+  String memoryTagDetailLastSeen(Object date);
+
+  /// No description provided for @memoryTagDetailEvidenceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Supporting evidence'**
+  String get memoryTagDetailEvidenceTitle;
+
+  /// No description provided for @memoryTagDetailEvidenceCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Total evidence: {count}'**
+  String memoryTagDetailEvidenceCount(Object count);
+
+  /// No description provided for @memoryTagDetailNoEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'No evidence recorded yet'**
+  String get memoryTagDetailNoEvidence;
+
+  /// No description provided for @memoryTagDetailLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load tag data'**
+  String get memoryTagDetailLoadFailed;
+
+  /// No description provided for @memoryEvidenceInferenceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Inference'**
+  String get memoryEvidenceInferenceLabel;
+
+  /// No description provided for @memoryEvidenceNotesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get memoryEvidenceNotesLabel;
+
+  /// No description provided for @memoryEvidenceNoNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'No notes'**
+  String get memoryEvidenceNoNotes;
+
+  /// No description provided for @memoryEvidenceEventHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Source event'**
+  String get memoryEvidenceEventHeading;
+
+  /// No description provided for @memoryEvidenceUserEditedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited by user'**
+  String get memoryEvidenceUserEditedBadge;
 
   /// No description provided for @conversationsSectionTitle.
   ///

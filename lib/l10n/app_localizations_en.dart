@@ -1100,6 +1100,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get copyResultsTooltip => 'Copy results';
 
   @override
+  String get copyPersonaTooltip => 'Copy persona summary';
+
+  @override
+  String get memoryPersonaEmptyPlaceholder =>
+      'No persona summary yet. Keep recording events to enrich it.';
+
+  @override
   String get saveImageTooltip => 'Save to gallery';
 
   @override
@@ -1849,6 +1856,344 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get providerNotFound => 'Provider not found';
+
+  @override
+  String get memoryMenuEntry => 'Memory Center';
+
+  @override
+  String get memoryCenterTitle => 'Memory Center';
+
+  @override
+  String get memoryClearAllTooltip => 'Clear memory vault';
+
+  @override
+  String get memoryClearAllConfirmTitle => 'Clear Memory Vault';
+
+  @override
+  String get memoryClearAllConfirmMessage =>
+      'This will delete all memory tags, events, and evidence. This action cannot be undone. Continue?';
+
+  @override
+  String get memoryImportSampleTooltip => 'Import 30 items for testing';
+
+  @override
+  String memoryImportSampleSuccess(Object count) {
+    return 'Imported $count events for testing';
+  }
+
+  @override
+  String get memoryImportSampleEmpty => 'No memory events available to import';
+
+  @override
+  String memoryImportSampleFailed(Object error) {
+    return 'Import failed: $error';
+  }
+
+  @override
+  String get memoryPauseTooltip => 'Pause processing';
+
+  @override
+  String get memoryPauseSuccess => 'Processing paused';
+
+  @override
+  String memoryPauseFailed(Object error) {
+    return 'Pause failed: $error';
+  }
+
+  @override
+  String get memoryPendingSectionTitle => 'Pending Tags';
+
+  @override
+  String get memoryConfirmedSectionTitle => 'Confirmed Tags';
+
+  @override
+  String get memoryRecentEventsSectionTitle => 'Recent Events';
+
+  @override
+  String get memoryNoPending => 'No pending tags yet';
+
+  @override
+  String get memoryNoConfirmed => 'No confirmed tags yet';
+
+  @override
+  String get memoryNoEvents => 'No related events yet';
+
+  @override
+  String get memoryConfirmAction => 'Mark as confirmed';
+
+  @override
+  String get memoryStatusPending => 'Pending';
+
+  @override
+  String get memoryStatusConfirmed => 'Confirmed';
+
+  @override
+  String get memoryCategoryIdentity => 'Identity';
+
+  @override
+  String get memoryCategoryRelationship => 'Relationship';
+
+  @override
+  String get memoryCategoryInterest => 'Interest';
+
+  @override
+  String get memoryCategoryBehavior => 'Behavior';
+
+  @override
+  String get memoryCategoryPreference => 'Preference';
+
+  @override
+  String get memoryCategoryOther => 'Other';
+
+  @override
+  String memoryConfidenceLabel(Object value) {
+    return 'Confidence: $value%';
+  }
+
+  @override
+  String memoryOccurrencesLabel(Object count) {
+    return 'Occurrences: $count';
+  }
+
+  @override
+  String memoryFirstSeenLabel(Object date) {
+    return 'First seen: $date';
+  }
+
+  @override
+  String memoryLastSeenLabel(Object date) {
+    return 'Last seen: $date';
+  }
+
+  @override
+  String memoryEvidenceCountLabel(Object count) {
+    return 'Evidence: $count';
+  }
+
+  @override
+  String get memoryEventContainsContext => 'Contains user-related info';
+
+  @override
+  String get memoryEventNoContext => 'No user-related info detected';
+
+  @override
+  String memoryEventTimeLabel(Object date) {
+    return 'Time: $date';
+  }
+
+  @override
+  String memoryEventSourceLabel(Object source) {
+    return 'Source: $source';
+  }
+
+  @override
+  String memoryEventTypeLabel(Object type) {
+    return 'Type: $type';
+  }
+
+  @override
+  String get memoryProgressIdle => 'Waiting for historical events';
+
+  @override
+  String get memoryProgressRunning => 'Processing historical events';
+
+  @override
+  String memoryProgressRunningDetail(
+    Object processed,
+    Object total,
+    Object percent,
+  ) {
+    return '$processed/$total processed ($percent%)';
+  }
+
+  @override
+  String memoryProgressNewTagsDetail(Object count) {
+    return 'New tags discovered: $count';
+  }
+
+  @override
+  String memoryProgressCompleted(Object total, Object seconds) {
+    return 'Historical events processed: $total items in $seconds seconds';
+  }
+
+  @override
+  String memoryProgressFailed(Object message) {
+    return 'Processing failed: $message';
+  }
+
+  @override
+  String memoryProgressFailedEvent(Object event) {
+    return 'Failed event: $event';
+  }
+
+  @override
+  String memoryProgressPreparing(Object stage) {
+    return 'Preparing: $stage';
+  }
+
+  @override
+  String get memoryProgressStageSyncSegments => 'Syncing screenshot events';
+
+  @override
+  String get memoryProgressStageSyncChats => 'Syncing conversations';
+
+  @override
+  String get memoryProgressStageDispatch => 'Starting historical processing';
+
+  @override
+  String get memoryRefreshTooltip => 'Refresh';
+
+  @override
+  String memoryConfirmSuccessToast(Object label) {
+    return 'Confirmed tag \"$label\"';
+  }
+
+  @override
+  String memoryConfirmFailedToast(Object message) {
+    return 'Failed: $message';
+  }
+
+  @override
+  String get memorySnapshotUpdated => 'Memory snapshot updated';
+
+  @override
+  String get memoryStartProcessingAction => 'Start processing history';
+
+  @override
+  String get memoryStartProcessingActionShort => 'Start processing';
+
+  @override
+  String get memoryMalformedResponseTitle =>
+      'Malformed response detected, processing paused';
+
+  @override
+  String memoryMalformedResponseSubtitle(Object eventId) {
+    return 'Response for event $eventId is missing the \"Current User Summary:\" marker. Review it before resuming.';
+  }
+
+  @override
+  String get memoryMalformedResponseSubtitleNoId =>
+      'The latest response is missing the \"Current User Summary:\" marker. Review it before resuming.';
+
+  @override
+  String get memoryMalformedResponseRawLabel => 'Raw response:';
+
+  @override
+  String get memoryDeleteTagAction => 'Delete tag';
+
+  @override
+  String get memoryDeleteTagConfirmTitle => 'Delete tag';
+
+  @override
+  String memoryDeleteTagConfirmMessage(Object tagLabel) {
+    return 'Delete tag \"$tagLabel\"? Associated evidence will be removed.';
+  }
+
+  @override
+  String get memoryDeleteTagSuccess => 'Tag deleted';
+
+  @override
+  String memoryDeleteTagFailed(Object error) {
+    return 'Delete failed: $error';
+  }
+
+  @override
+  String get memoryStatusPendingIndicator => 'Pending';
+
+  @override
+  String get memoryStatusConfirmedIndicator => 'Confirmed';
+
+  @override
+  String get memoryReprocessAction => 'Reprocess entire history';
+
+  @override
+  String get memoryStartProcessingToast => 'Historical processing started';
+
+  @override
+  String get memoryLoadMore => 'Load more';
+
+  @override
+  String get memoryCenterHeroTitle => 'Character dossier';
+
+  @override
+  String get memoryCenterHeroSubtitle =>
+      'An RPG-style card distilled from your personal events';
+
+  @override
+  String memoryCenterPendingCountLabel(Object count) {
+    return 'Pending: $count';
+  }
+
+  @override
+  String memoryCenterConfirmedCountLabel(Object count) {
+    return 'Confirmed: $count';
+  }
+
+  @override
+  String memoryCenterEventCountLabel(Object count) {
+    return 'User-related events: $count';
+  }
+
+  @override
+  String get memoryTagDetailTitle => 'Tag Detail';
+
+  @override
+  String get memoryTagDetailRefresh => 'Refresh';
+
+  @override
+  String get memoryTagDetailInfoTitle => 'Profile';
+
+  @override
+  String get memoryTagDetailStatisticsTitle => 'Attributes';
+
+  @override
+  String memoryTagDetailOccurrences(Object count) {
+    return 'Occurrences: $count';
+  }
+
+  @override
+  String memoryTagDetailConfidence(Object confidence) {
+    return 'Confidence: $confidence';
+  }
+
+  @override
+  String memoryTagDetailFirstSeen(Object date) {
+    return 'First seen: $date';
+  }
+
+  @override
+  String memoryTagDetailLastSeen(Object date) {
+    return 'Last seen: $date';
+  }
+
+  @override
+  String get memoryTagDetailEvidenceTitle => 'Supporting evidence';
+
+  @override
+  String memoryTagDetailEvidenceCount(Object count) {
+    return 'Total evidence: $count';
+  }
+
+  @override
+  String get memoryTagDetailNoEvidence => 'No evidence recorded yet';
+
+  @override
+  String get memoryTagDetailLoadFailed => 'Failed to load tag data';
+
+  @override
+  String get memoryEvidenceInferenceLabel => 'Inference';
+
+  @override
+  String get memoryEvidenceNotesLabel => 'Notes';
+
+  @override
+  String get memoryEvidenceNoNotes => 'No notes';
+
+  @override
+  String get memoryEvidenceEventHeading => 'Source event';
+
+  @override
+  String get memoryEvidenceUserEditedBadge => 'Edited by user';
 
   @override
   String get conversationsSectionTitle => 'Conversations';

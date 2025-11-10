@@ -1060,6 +1060,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get copyResultsTooltip => '复制结果';
 
   @override
+  String get copyPersonaTooltip => '复制用户画像';
+
+  @override
+  String get memoryPersonaEmptyPlaceholder => '当前暂无画像，请继续记录事件。';
+
+  @override
   String get saveImageTooltip => '保存到相册';
 
   @override
@@ -1789,6 +1795,341 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get providerNotFound => '提供商不存在';
+
+  @override
+  String get memoryMenuEntry => '记忆中心';
+
+  @override
+  String get memoryCenterTitle => '记忆中心';
+
+  @override
+  String get memoryClearAllTooltip => '清空记忆库';
+
+  @override
+  String get memoryClearAllConfirmTitle => '清空记忆库';
+
+  @override
+  String get memoryClearAllConfirmMessage => '确定要删除记忆库中的所有标签、事件与证据吗？此操作不可恢复。';
+
+  @override
+  String get memoryImportSampleTooltip => '导入 30 条用于测试';
+
+  @override
+  String memoryImportSampleSuccess(Object count) {
+    return '已导入 $count 条动态用于测试';
+  }
+
+  @override
+  String get memoryImportSampleEmpty => '没有可导入的记忆事件';
+
+  @override
+  String memoryImportSampleFailed(Object error) {
+    return '导入失败: $error';
+  }
+
+  @override
+  String get memoryPauseTooltip => '暂停处理';
+
+  @override
+  String get memoryPauseSuccess => '已暂停记忆解析';
+
+  @override
+  String memoryPauseFailed(Object error) {
+    return '暂停失败: $error';
+  }
+
+  @override
+  String get memoryPendingSectionTitle => '待确认标签';
+
+  @override
+  String get memoryConfirmedSectionTitle => '已确认标签';
+
+  @override
+  String get memoryRecentEventsSectionTitle => '最近事件';
+
+  @override
+  String get memoryNoPending => '暂无待确认标签';
+
+  @override
+  String get memoryNoConfirmed => '暂无已确认标签';
+
+  @override
+  String get memoryNoEvents => '暂无相关事件';
+
+  @override
+  String get memoryConfirmAction => '标记为已确认';
+
+  @override
+  String get memoryStatusPending => '待确认';
+
+  @override
+  String get memoryStatusConfirmed => '已确认';
+
+  @override
+  String get memoryCategoryIdentity => '身份';
+
+  @override
+  String get memoryCategoryRelationship => '关系';
+
+  @override
+  String get memoryCategoryInterest => '兴趣';
+
+  @override
+  String get memoryCategoryBehavior => '行为';
+
+  @override
+  String get memoryCategoryPreference => '偏好';
+
+  @override
+  String get memoryCategoryOther => '其他';
+
+  @override
+  String memoryConfidenceLabel(Object value) {
+    return '置信度：$value%';
+  }
+
+  @override
+  String memoryOccurrencesLabel(Object count) {
+    return '出现次数：$count';
+  }
+
+  @override
+  String memoryFirstSeenLabel(Object date) {
+    return '首次出现：$date';
+  }
+
+  @override
+  String memoryLastSeenLabel(Object date) {
+    return '最近出现：$date';
+  }
+
+  @override
+  String memoryEvidenceCountLabel(Object count) {
+    return '证据：$count 条';
+  }
+
+  @override
+  String get memoryEventContainsContext => '包含用户相关信息';
+
+  @override
+  String get memoryEventNoContext => '未识别到用户相关信息';
+
+  @override
+  String memoryEventTimeLabel(Object date) {
+    return '时间：$date';
+  }
+
+  @override
+  String memoryEventSourceLabel(Object source) {
+    return '来源：$source';
+  }
+
+  @override
+  String memoryEventTypeLabel(Object type) {
+    return '类型：$type';
+  }
+
+  @override
+  String get memoryProgressIdle => '等待处理历史事件';
+
+  @override
+  String get memoryProgressRunning => '正在解析历史事件';
+
+  @override
+  String memoryProgressRunningDetail(
+    Object processed,
+    Object total,
+    Object percent,
+  ) {
+    return '已处理 $processed/$total 条（$percent%）';
+  }
+
+  @override
+  String memoryProgressNewTagsDetail(Object count) {
+    return '新增标签：$count';
+  }
+
+  @override
+  String memoryProgressCompleted(Object total, Object seconds) {
+    return '历史事件解析完成，共 $total 条，耗时 $seconds 秒';
+  }
+
+  @override
+  String memoryProgressFailed(Object message) {
+    return '解析失败：$message';
+  }
+
+  @override
+  String memoryProgressFailedEvent(Object event) {
+    return '失败事件：$event';
+  }
+
+  @override
+  String memoryProgressPreparing(Object stage) {
+    return '正在准备：$stage';
+  }
+
+  @override
+  String get memoryProgressStageSyncSegments => '同步截图事件';
+
+  @override
+  String get memoryProgressStageSyncChats => '同步聊天记录';
+
+  @override
+  String get memoryProgressStageDispatch => '启动历史解析';
+
+  @override
+  String get memoryRefreshTooltip => '刷新记忆';
+
+  @override
+  String memoryConfirmSuccessToast(Object label) {
+    return '已确认标签：$label';
+  }
+
+  @override
+  String memoryConfirmFailedToast(Object message) {
+    return '操作失败：$message';
+  }
+
+  @override
+  String get memorySnapshotUpdated => '记忆已更新';
+
+  @override
+  String get memoryStartProcessingAction => '开始解析历史事件';
+
+  @override
+  String get memoryStartProcessingActionShort => '开始解析';
+
+  @override
+  String get memoryMalformedResponseTitle => '检测到异常响应，解析已暂停';
+
+  @override
+  String memoryMalformedResponseSubtitle(Object eventId) {
+    return '事件 $eventId 的响应缺少“当前用户描述：”标记，请检查后再继续。';
+  }
+
+  @override
+  String get memoryMalformedResponseSubtitleNoId =>
+      '最新响应缺少“当前用户描述：”标记，请检查后再继续。';
+
+  @override
+  String get memoryMalformedResponseRawLabel => '原始响应：';
+
+  @override
+  String get memoryDeleteTagAction => '删除标签';
+
+  @override
+  String get memoryDeleteTagConfirmTitle => '删除标签';
+
+  @override
+  String memoryDeleteTagConfirmMessage(Object tagLabel) {
+    return '确定要删除标签「$tagLabel」吗？相关证据也会被移除。';
+  }
+
+  @override
+  String get memoryDeleteTagSuccess => '标签已删除';
+
+  @override
+  String memoryDeleteTagFailed(Object error) {
+    return '删除失败：$error';
+  }
+
+  @override
+  String get memoryStatusPendingIndicator => '待确认标签';
+
+  @override
+  String get memoryStatusConfirmedIndicator => '已确认标签';
+
+  @override
+  String get memoryReprocessAction => '重新解析全部历史事件';
+
+  @override
+  String get memoryStartProcessingToast => '已开始历史事件解析';
+
+  @override
+  String get memoryLoadMore => '加载更多';
+
+  @override
+  String get memoryCenterHeroTitle => '记忆角色卡';
+
+  @override
+  String get memoryCenterHeroSubtitle => '以 RPG 角色卡方式呈现你的用户画像与行为偏好';
+
+  @override
+  String memoryCenterPendingCountLabel(Object count) {
+    return '待确认：$count';
+  }
+
+  @override
+  String memoryCenterConfirmedCountLabel(Object count) {
+    return '已确认：$count';
+  }
+
+  @override
+  String memoryCenterEventCountLabel(Object count) {
+    return '用户相关事件：$count';
+  }
+
+  @override
+  String get memoryTagDetailTitle => '标签详情';
+
+  @override
+  String get memoryTagDetailRefresh => '刷新';
+
+  @override
+  String get memoryTagDetailInfoTitle => '标签档案';
+
+  @override
+  String get memoryTagDetailStatisticsTitle => '标签属性';
+
+  @override
+  String memoryTagDetailOccurrences(Object count) {
+    return '出现次数：$count';
+  }
+
+  @override
+  String memoryTagDetailConfidence(Object confidence) {
+    return '置信度：$confidence';
+  }
+
+  @override
+  String memoryTagDetailFirstSeen(Object date) {
+    return '首次出现：$date';
+  }
+
+  @override
+  String memoryTagDetailLastSeen(Object date) {
+    return '最近出现：$date';
+  }
+
+  @override
+  String get memoryTagDetailEvidenceTitle => '全部证据';
+
+  @override
+  String memoryTagDetailEvidenceCount(Object count) {
+    return '证据总数：$count';
+  }
+
+  @override
+  String get memoryTagDetailNoEvidence => '暂无证据记录';
+
+  @override
+  String get memoryTagDetailLoadFailed => '标签数据加载失败';
+
+  @override
+  String get memoryEvidenceInferenceLabel => '推断说明';
+
+  @override
+  String get memoryEvidenceNotesLabel => '备注';
+
+  @override
+  String get memoryEvidenceNoNotes => '无备注记录';
+
+  @override
+  String get memoryEvidenceEventHeading => '来源事件';
+
+  @override
+  String get memoryEvidenceUserEditedBadge => '用户已编辑';
 
   @override
   String get conversationsSectionTitle => '对话';

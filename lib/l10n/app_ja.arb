@@ -555,6 +555,8 @@
   "alreadyQueuedOrFailed": "すでにキューに入れられているか、失敗しました",
   "retryFailed": "再試行に失敗しました",
   "copyResultsTooltip": "結果をコピー",
+  "copyPersonaTooltip": "ユーザー画像をコピー",
+  "memoryPersonaEmptyPlaceholder": "まだユーザー画像がありません。イベントを記録して内容を充実させてください。",
   "saveImageTooltip": "ギャラリーに保存",
   "saveImageSuccess": "ギャラリーに保存しました",
   "saveImageFailed": "保存に失敗しました",
@@ -949,6 +951,249 @@
   "editProviderTitle": "プロバイダーを編集",
   "deletedToast": "削除しました",
   "providerNotFound": "プロバイダーが見つかりません",
+  "memoryMenuEntry": "メモリーセンター",
+  "memoryCenterTitle": "メモリーセンター",
+  "memoryClearAllTooltip": "記憶庫を空にする",
+  "memoryClearAllConfirmTitle": "記憶庫を空にする",
+  "memoryClearAllConfirmMessage": "記憶庫のタグ・イベント・証拠をすべて削除します。この操作は元に戻せません。続行しますか？",
+  "memoryImportSampleTooltip": "テスト用に30件取り込み",
+  "memoryImportSampleSuccess": "テスト用に {count} 件のイベントを取り込みました",
+  "@memoryImportSampleSuccess": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryImportSampleEmpty": "取り込める記憶イベントがありません",
+  "memoryImportSampleFailed": "取り込みに失敗しました: {error}",
+  "@memoryImportSampleFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryPauseTooltip": "処理を一時停止",
+  "memoryPauseSuccess": "解析を一時停止しました",
+  "memoryPauseFailed": "一時停止に失敗しました: {error}",
+  "@memoryPauseFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryPendingSectionTitle": "確認待ちのタグ",
+  "memoryConfirmedSectionTitle": "確認済みタグ",
+  "memoryRecentEventsSectionTitle": "最近のイベント",
+  "memoryNoPending": "確認待ちのタグはありません",
+  "memoryNoConfirmed": "確認済みのタグはまだありません",
+  "memoryNoEvents": "関連するイベントはまだありません",
+  "memoryConfirmAction": "確認済みにする",
+  "memoryStatusPending": "確認待ち",
+  "memoryStatusConfirmed": "確認済み",
+  "memoryCategoryIdentity": "本人情報",
+  "memoryCategoryRelationship": "関係",
+  "memoryCategoryInterest": "興味",
+  "memoryCategoryBehavior": "行動",
+  "memoryCategoryPreference": "嗜好",
+  "memoryCategoryOther": "その他",
+  "memoryConfidenceLabel": "確信度：{value}%",
+  "@memoryConfidenceLabel": {
+    "placeholders": {
+      "value": {}
+    }
+  },
+  "memoryOccurrencesLabel": "出現回数：{count}",
+  "@memoryOccurrencesLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryFirstSeenLabel": "初検出：{date}",
+  "@memoryFirstSeenLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryLastSeenLabel": "最新検出：{date}",
+  "@memoryLastSeenLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryEvidenceCountLabel": "証拠：{count} 件",
+  "@memoryEvidenceCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryEventContainsContext": "ユーザー関連の情報を含みます",
+  "memoryEventNoContext": "ユーザー関連の情報は検出されませんでした",
+  "memoryEventTimeLabel": "時刻：{date}",
+  "@memoryEventTimeLabel": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryEventSourceLabel": "ソース：{source}",
+  "@memoryEventSourceLabel": {
+    "placeholders": {
+      "source": {}
+    }
+  },
+  "memoryEventTypeLabel": "タイプ：{type}",
+  "@memoryEventTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
+  "memoryProgressIdle": "歴史イベントの処理待ち",
+  "memoryProgressRunning": "歴史イベントを解析中",
+  "memoryProgressRunningDetail": "{processed}/{total} 件を処理済み（{percent}%）",
+  "@memoryProgressRunningDetail": {
+    "placeholders": {
+      "processed": {},
+      "total": {},
+      "percent": {}
+    }
+  },
+  "memoryProgressNewTagsDetail": "新しいタグ：{count}",
+  "@memoryProgressNewTagsDetail": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryProgressCompleted": "歴史イベントの解析完了：合計 {total} 件、{seconds} 秒",
+  "@memoryProgressCompleted": {
+    "placeholders": {
+      "total": {},
+      "seconds": {}
+    }
+  },
+  "memoryProgressFailed": "解析に失敗しました：{message}",
+  "@memoryProgressFailed": {
+    "placeholders": {
+      "message": {}
+    }
+  },
+  "memoryProgressFailedEvent": "失敗イベント：{event}",
+  "@memoryProgressFailedEvent": {
+    "placeholders": {
+      "event": {}
+    }
+  },
+  "memoryProgressPreparing": "準備中：{stage}",
+  "@memoryProgressPreparing": {
+    "placeholders": {
+      "stage": {}
+    }
+  },
+  "memoryProgressStageSyncSegments": "スクリーンショットイベントを同期中",
+  "memoryProgressStageSyncChats": "会話ログを同期中",
+  "memoryProgressStageDispatch": "履歴解析を起動中",
+  "memoryRefreshTooltip": "更新",
+  "memoryConfirmSuccessToast": "「{label}」を確認済みにしました",
+  "@memoryConfirmSuccessToast": {
+    "placeholders": {
+      "label": {}
+    }
+  },
+  "memoryConfirmFailedToast": "操作に失敗しました：{message}",
+  "@memoryConfirmFailedToast": {
+    "placeholders": {
+      "message": {}
+    }
+  },
+  "memorySnapshotUpdated": "記憶スナップショットを更新しました",
+  "memoryStartProcessingAction": "履歴イベント解析を開始",
+  "memoryStartProcessingActionShort": "解析を開始",
+  "memoryMalformedResponseTitle": "異常な応答を検出したため解析を一時停止しました",
+  "memoryMalformedResponseSubtitle": "イベント {eventId} の応答に「当前用户描述：」マーカーが含まれていません。確認後に再開してください。",
+  "@memoryMalformedResponseSubtitle": {
+    "placeholders": {
+      "eventId": {}
+    }
+  },
+  "memoryMalformedResponseSubtitleNoId": "最新の応答に「当前用户描述：」マーカーが含まれていません。確認後に再開してください。",
+  "memoryMalformedResponseRawLabel": "生データ:",
+  "memoryDeleteTagAction": "タグを削除",
+  "memoryDeleteTagConfirmTitle": "タグを削除",
+  "memoryDeleteTagConfirmMessage": "タグ「{tagLabel}」を削除しますか？関連する証拠も削除されます。",
+  "@memoryDeleteTagConfirmMessage": {
+    "placeholders": {
+      "tagLabel": {}
+    }
+  },
+  "memoryDeleteTagSuccess": "タグを削除しました",
+  "memoryDeleteTagFailed": "削除に失敗しました: {error}",
+  "@memoryDeleteTagFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "memoryStatusPendingIndicator": "確認待ち",
+  "memoryStatusConfirmedIndicator": "確認済み",
+  "memoryReprocessAction": "履歴イベントを再解析",
+  "memoryStartProcessingToast": "履歴イベント解析を開始しました",
+  "memoryLoadMore": "さらに読み込む",
+  "memoryCenterHeroTitle": "キャラクタープロフィール",
+  "memoryCenterHeroSubtitle": "イベントから抽出したRPG風の個人情報カード",
+  "memoryCenterPendingCountLabel": "保留: {count}",
+  "@memoryCenterPendingCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryCenterConfirmedCountLabel": "確定: {count}",
+  "@memoryCenterConfirmedCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryCenterEventCountLabel": "関連イベント: {count}",
+  "@memoryCenterEventCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailTitle": "タグ詳細",
+  "memoryTagDetailRefresh": "再読み込み",
+  "memoryTagDetailInfoTitle": "プロフィール",
+  "memoryTagDetailStatisticsTitle": "属性",
+  "memoryTagDetailOccurrences": "出現回数: {count}",
+  "@memoryTagDetailOccurrences": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailConfidence": "確信度: {confidence}",
+  "@memoryTagDetailConfidence": {
+    "placeholders": {
+      "confidence": {}
+    }
+  },
+  "memoryTagDetailFirstSeen": "初登場: {date}",
+  "@memoryTagDetailFirstSeen": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryTagDetailLastSeen": "最終登場: {date}",
+  "@memoryTagDetailLastSeen": {
+    "placeholders": {
+      "date": {}
+    }
+  },
+  "memoryTagDetailEvidenceTitle": "証拠一覧",
+  "memoryTagDetailEvidenceCount": "証拠総数: {count}",
+  "@memoryTagDetailEvidenceCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "memoryTagDetailNoEvidence": "証拠がまだありません",
+  "memoryTagDetailLoadFailed": "タグデータの読み込みに失敗しました",
+  "memoryEvidenceInferenceLabel": "推論メモ",
+  "memoryEvidenceNotesLabel": "メモ",
+  "memoryEvidenceNoNotes": "メモなし",
+  "memoryEvidenceEventHeading": "関連イベント",
+  "memoryEvidenceUserEditedBadge": "ユーザー編集済み",
   "conversationsSectionTitle": "会話",
   "displaySectionTitle": "表示",
   "streamRenderImagesTitle": "ストリーミング中に画像を描画",
