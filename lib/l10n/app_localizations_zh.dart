@@ -1941,7 +1941,7 @@ class AppLocalizationsZh extends AppLocalizations {
     Object total,
     Object percent,
   ) {
-    return '已处理 $processed/$total 条（$percent%）';
+    return '已处理 $processed/$total 天（$percent%）';
   }
 
   @override
@@ -1951,7 +1951,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String memoryProgressCompleted(Object total, Object seconds) {
-    return '历史事件解析完成，共 $total 条，耗时 $seconds 秒';
+    return '历史解析完成，共 $total 天，耗时 $seconds 秒';
   }
 
   @override

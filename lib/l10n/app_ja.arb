@@ -1045,7 +1045,7 @@
   },
   "memoryProgressIdle": "歴史イベントの処理待ち",
   "memoryProgressRunning": "歴史イベントを解析中",
-  "memoryProgressRunningDetail": "{processed}/{total} 件を処理済み（{percent}%）",
+  "memoryProgressRunningDetail": "{processed}/{total} 日を処理済み（{percent}%）",
   "@memoryProgressRunningDetail": {
     "placeholders": {
       "processed": {},
@@ -1059,7 +1059,7 @@
       "count": {}
     }
   },
-  "memoryProgressCompleted": "歴史イベントの解析完了：合計 {total} 件、{seconds} 秒",
+  "memoryProgressCompleted": "歴史イベントの解析完了：合計 {total} 日、{seconds} 秒",
   "@memoryProgressCompleted": {
     "placeholders": {
       "total": {},

@@ -1958,7 +1958,7 @@ class AppLocalizationsKo extends AppLocalizations {
     Object total,
     Object percent,
   ) {
-    return '$processed/$total건 처리됨 ($percent%)';
+    return '$processed/$total일 처리됨 ($percent%)';
   }
 
   @override
@@ -1968,7 +1968,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String memoryProgressCompleted(Object total, Object seconds) {
-    return '과거 이벤트 분석 완료: 총 $total건, 소요 $seconds초';
+    return '과거 이벤트 분석 완료: 총 $total일, 소요 $seconds초';
   }
 
   @override

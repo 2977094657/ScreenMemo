@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -94,9 +96,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       _progress = _service.latestProgress;
     });
     _snapshotSub = _service.snapshotStream.listen((MemorySnapshot snapshot) {
-      _logInfo(
-        'snapshotStream update pending=${snapshot.pendingTags.length} confirmed=${snapshot.confirmedTags.length} events=${snapshot.recentEvents.length}',
-      );
       if (!mounted) return;
       if (_progress is MemoryProgressRunning) {
         _bufferedSnapshot = snapshot;
@@ -591,6 +590,88 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     return trimmed;
   }
 
+  Widget _buildGradientTagPill(BuildContext context, String tag, double maxWidth) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness brightness = theme.brightness;
+    final List<Color> colors = _geminiGradientColors(brightness);
+    return Container(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: AppTheme.spacing1,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShaderMask(
+            shaderCallback: (Rect bounds) => LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[colors[2], colors[6], colors[8]],
+              stops: const <double>[0.0, 0.55, 1.0],
+            ).createShader(bounds),
+            blendMode: BlendMode.srcIn,
+            child: const Icon(
+              Icons.auto_awesome,
+              size: 16,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing1),
+          Flexible(
+            child: Text(
+              tag,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Color> _geminiGradientColors(Brightness brightness) {
+    Color tune(
+      Color c, {
+      double sMinLight = 0.98,
+      double sMinDark = 0.96,
+      double lMinLight = 0.80,
+      double lMinDark = 0.72,
+    }) {
+      final HSLColor h = HSLColor.fromColor(c);
+      final double sTarget = brightness == Brightness.dark ? sMinDark : sMinLight;
+      final double lTarget = brightness == Brightness.dark ? lMinDark : lMinLight;
+      final double s = h.saturation < sTarget ? sTarget : h.saturation;
+      final double l = h.lightness < lTarget ? lTarget : h.lightness;
+      return h.withSaturation(s).withLightness(l).toColor();
+    }
+
+    final Color c1 = tune(const Color(0xFF1F6FEB));
+    final Color c2 = tune(const Color(0xFF3B82F6));
+    final Color c3 = tune(const Color(0xFF60A5FA));
+    final Color c4 = tune(const Color(0xFF7C83FF));
+    final Color cY = tune(const Color(0xFFF59E0B), lMinLight: 0.86, lMinDark: 0.76);
+    return <Color>[
+      c1,
+      Color.lerp(c1, c2, 0.5)!,
+      c2,
+      Color.lerp(c2, c3, 0.5)!,
+      c3,
+      Color.lerp(c3, c4, 0.5)!,
+      c4,
+      Color.lerp(c4, cY, 0.45)!,
+      cY,
+    ];
+  }
+
   Future<void> _copyPersonaSummary(AppLocalizations t) async {
     final String displaySummary = _composePersonaSummaryText(_snapshot?.personaSummary ?? '', t);
     try {
@@ -684,19 +765,17 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: AppTheme.spacing2),
-                Wrap(
-                  spacing: AppTheme.spacing2,
-                  runSpacing: AppTheme.spacing2,
-                  children: progress.newlyDiscoveredTags
-                      .map(
-                        (String tag) => Chip(
-                          avatar: const Icon(Icons.auto_awesome, size: 16),
-                          label: Text(tag),
-                          backgroundColor: theme.colorScheme.secondaryContainer,
-                          labelStyle: theme.textTheme.bodySmall,
-                        ),
-                      )
-                      .toList(),
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double maxWidth = math.min(constraints.maxWidth, 520);
+                    return Wrap(
+                      spacing: AppTheme.spacing2,
+                      runSpacing: AppTheme.spacing2,
+                      children: progress.newlyDiscoveredTags
+                          .map((String tag) => _buildGradientTagPill(context, tag, maxWidth))
+                          .toList(),
+                    );
+                  },
                 ),
                 ],
               ],
@@ -711,16 +790,9 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(AppTheme.spacing4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  t.memoryProgressCompleted(progress.totalCount, seconds),
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing3),
               Wrap(
                 spacing: AppTheme.spacing2,
                 runSpacing: AppTheme.spacing2,
@@ -756,6 +828,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                     label: Text(t.memoryReprocessAction),
                   ),
                 ],
+              ),
+              const SizedBox(height: AppTheme.spacing3),
+              Text(
+                t.memoryProgressCompleted(progress.totalCount, seconds),
+                style: theme.textTheme.bodyMedium,
               ),
             ],
           ),
@@ -950,6 +1027,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                 child: Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                totalCount.toString(),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],

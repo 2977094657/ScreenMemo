@@ -27,7 +27,8 @@ class _SearchPageState extends State<SearchPage> {
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
-  final Map<String, Future<Map<String, dynamic>?>> _boxesFutureCache = <String, Future<Map<String, dynamic>?>>{};
+  final Map<String, Future<Map<String, dynamic>?>> _boxesFutureCache =
+      <String, Future<Map<String, dynamic>?>>{};
   final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
 
   List<ScreenshotRecord> _results = <ScreenshotRecord>[];
@@ -45,7 +46,8 @@ class _SearchPageState extends State<SearchPage> {
   String _lastQuery = '';
 
   // 筛选相关状态
-  String _timeFilter = 'all'; // all, today, yesterday, last7days, last30days, custom
+  String _timeFilter =
+      'all'; // all, today, yesterday, last7days, last30days, custom
   String _sizeFilter = 'all'; // all, small, medium, large
   DateTime? _customStartDate;
   DateTime? _customEndDate;
@@ -102,7 +104,9 @@ class _SearchPageState extends State<SearchPage> {
     if (_lastQuery.isEmpty) return false;
     // 初次构建不可见范围未就绪时，允许首屏附近少量请求
     if (_visibleEndIndex < 0) return index < 12;
-    final int start = (_visibleStartIndex - 10) < 0 ? 0 : (_visibleStartIndex - 10);
+    final int start = (_visibleStartIndex - 10) < 0
+        ? 0
+        : (_visibleStartIndex - 10);
     final int end = _visibleEndIndex + 10;
     return index >= start && index <= end;
   }
@@ -122,7 +126,7 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _initBaseDir() async {
     try {
-      final dir = await PathService.getExternalFilesDir(null);
+      final dir = await PathService.getInternalAppDir(null);
       if (mounted) setState(() => _baseDir = dir);
     } catch (_) {}
   }
@@ -141,7 +145,8 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _loadPrivacyMode() async {
     try {
-      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      final enabled = await AppSelectionService.instance
+          .getPrivacyModeEnabled();
       if (mounted) setState(() => _privacyMode = enabled);
     } catch (_) {}
   }
@@ -161,7 +166,14 @@ class _SearchPageState extends State<SearchPage> {
     final max = _scrollController.position.maxScrollExtent;
     final pos = _scrollController.position.pixels;
     if (pos >= max * 0.85) {
-      try { print('[Search] onScroll loadMore pos=' + pos.toString() + ' max=' + max.toString()); } catch (_) {}
+      try {
+        print(
+          '[Search] onScroll loadMore pos=' +
+              pos.toString() +
+              ' max=' +
+              max.toString(),
+        );
+      } catch (_) {}
       _loadMore();
     }
   }
@@ -203,15 +215,16 @@ class _SearchPageState extends State<SearchPage> {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      final list = await ScreenshotService.instance.searchScreenshotsByOcrWithFallback(
-        query,
-        limit: _pageSize,
-        offset: 0,
-        startMillis: range?.$1,
-        endMillis: range?.$2,
-        minSize: size?.$1,
-        maxSize: size?.$2,
-      );
+      final list = await ScreenshotService.instance
+          .searchScreenshotsByOcrWithFallback(
+            query,
+            limit: _pageSize,
+            offset: 0,
+            startMillis: range?.$1,
+            endMillis: range?.$2,
+            minSize: size?.$1,
+            maxSize: size?.$2,
+          );
 
       if (!mounted || token != _searchToken) return;
 
@@ -227,31 +240,43 @@ class _SearchPageState extends State<SearchPage> {
       });
       sw.stop();
       try {
-        print('[Search] query="' + query + '" list=' + list.length.toString() + ' hasMore=' + hasMoreData.toString() + ' ms=' + sw.elapsedMilliseconds.toString());
+        print(
+          '[Search] query="' +
+              query +
+              '" list=' +
+              list.length.toString() +
+              ' hasMore=' +
+              hasMoreData.toString() +
+              ' ms=' +
+              sw.elapsedMilliseconds.toString(),
+        );
       } catch (_) {}
 
       if (!hasMoreData) {
         return;
       }
 
-      ScreenshotService.instance.countScreenshotsByOcrWithFallback(
-        query,
-        startMillis: range?.$1,
-        endMillis: range?.$2,
-        minSize: size?.$1,
-        maxSize: size?.$2,
-      ).then((total) {
-        if (!mounted || token != _searchToken) return;
-        setState(() {
-          _totalResultsCount = total;
-          _countingTotal = false;
-        });
-      }).catchError((_) {
-        if (!mounted || token != _searchToken) return;
-        setState(() {
-          _countingTotal = false;
-        });
-      });
+      ScreenshotService.instance
+          .countScreenshotsByOcrWithFallback(
+            query,
+            startMillis: range?.$1,
+            endMillis: range?.$2,
+            minSize: size?.$1,
+            maxSize: size?.$2,
+          )
+          .then((total) {
+            if (!mounted || token != _searchToken) return;
+            setState(() {
+              _totalResultsCount = total;
+              _countingTotal = false;
+            });
+          })
+          .catchError((_) {
+            if (!mounted || token != _searchToken) return;
+            setState(() {
+              _countingTotal = false;
+            });
+          });
     } catch (e) {
       if (!mounted || token != _searchToken) return;
       setState(() {
@@ -269,15 +294,16 @@ class _SearchPageState extends State<SearchPage> {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      final more = await ScreenshotService.instance.searchScreenshotsByOcrWithFallback(
-        _lastQuery,
-        limit: _pageSize,
-        offset: _offset,
-        startMillis: range?.$1,
-        endMillis: range?.$2,
-        minSize: size?.$1,
-        maxSize: size?.$2,
-      );
+      final more = await ScreenshotService.instance
+          .searchScreenshotsByOcrWithFallback(
+            _lastQuery,
+            limit: _pageSize,
+            offset: _offset,
+            startMillis: range?.$1,
+            endMillis: range?.$2,
+            minSize: size?.$1,
+            maxSize: size?.$2,
+          );
       if (!mounted) return;
       setState(() {
         if (more.isEmpty) {
@@ -292,7 +318,18 @@ class _SearchPageState extends State<SearchPage> {
         _loadingMore = false;
       });
       sw.stop();
-      try { print('[Search] loadMore fetched=' + more.length.toString() + ' offset=' + _offset.toString() + ' hasMore=' + _hasMore.toString() + ' ms=' + sw.elapsedMilliseconds.toString()); } catch (_) {}
+      try {
+        print(
+          '[Search] loadMore fetched=' +
+              more.length.toString() +
+              ' offset=' +
+              _offset.toString() +
+              ' hasMore=' +
+              _hasMore.toString() +
+              ' ms=' +
+              sw.elapsedMilliseconds.toString(),
+        );
+      } catch (_) {}
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -310,37 +347,46 @@ class _SearchPageState extends State<SearchPage> {
     if (_timeFilter != 'all') {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      
+
       switch (_timeFilter) {
         case 'today':
-          filtered = filtered.where((r) =>
-            r.captureTime.isAfter(today)
-          ).toList();
+          filtered = filtered
+              .where((r) => r.captureTime.isAfter(today))
+              .toList();
           break;
         case 'yesterday':
           final yesterday = today.subtract(const Duration(days: 1));
-          filtered = filtered.where((r) =>
-            r.captureTime.isAfter(yesterday) && r.captureTime.isBefore(today)
-          ).toList();
+          filtered = filtered
+              .where(
+                (r) =>
+                    r.captureTime.isAfter(yesterday) &&
+                    r.captureTime.isBefore(today),
+              )
+              .toList();
           break;
         case 'last7days':
           final last7 = today.subtract(const Duration(days: 7));
-          filtered = filtered.where((r) =>
-            r.captureTime.isAfter(last7)
-          ).toList();
+          filtered = filtered
+              .where((r) => r.captureTime.isAfter(last7))
+              .toList();
           break;
         case 'last30days':
           final last30 = today.subtract(const Duration(days: 30));
-          filtered = filtered.where((r) =>
-            r.captureTime.isAfter(last30)
-          ).toList();
+          filtered = filtered
+              .where((r) => r.captureTime.isAfter(last30))
+              .toList();
           break;
         case 'custom':
           if (_customStartDate != null && _customEndDate != null) {
-            filtered = filtered.where((r) =>
-              r.captureTime.isAfter(_customStartDate!) &&
-              r.captureTime.isBefore(_customEndDate!.add(const Duration(days: 1)))
-            ).toList();
+            filtered = filtered
+                .where(
+                  (r) =>
+                      r.captureTime.isAfter(_customStartDate!) &&
+                      r.captureTime.isBefore(
+                        _customEndDate!.add(const Duration(days: 1)),
+                      ),
+                )
+                .toList();
           }
           break;
       }
@@ -353,9 +399,11 @@ class _SearchPageState extends State<SearchPage> {
           filtered = filtered.where((r) => r.fileSize < 100 * 1024).toList();
           break;
         case 'medium':
-          filtered = filtered.where((r) =>
-            r.fileSize >= 100 * 1024 && r.fileSize <= 1024 * 1024
-          ).toList();
+          filtered = filtered
+              .where(
+                (r) => r.fileSize >= 100 * 1024 && r.fileSize <= 1024 * 1024,
+              )
+              .toList();
           break;
         case 'large':
           filtered = filtered.where((r) => r.fileSize > 1024 * 1024).toList();
@@ -381,7 +429,14 @@ class _SearchPageState extends State<SearchPage> {
     switch (_timeFilter) {
       case 'today':
         s = today.millisecondsSinceEpoch;
-        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        e = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+        ).millisecondsSinceEpoch;
         break;
       case 'yesterday':
         final y = today.subtract(const Duration(days: 1));
@@ -391,19 +446,42 @@ class _SearchPageState extends State<SearchPage> {
       case 'last7days':
         final last7 = today.subtract(const Duration(days: 7));
         s = last7.millisecondsSinceEpoch;
-        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        e = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+        ).millisecondsSinceEpoch;
         break;
       case 'last30days':
         final last30 = today.subtract(const Duration(days: 30));
         s = last30.millisecondsSinceEpoch;
-        e = DateTime(now.year, now.month, now.day, 23, 59, 59).millisecondsSinceEpoch;
+        e = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+        ).millisecondsSinceEpoch;
         break;
       case 'custom':
         if (_customStartDate != null && _customEndDate != null) {
-          s = DateTime(_customStartDate!.year, _customStartDate!.month, _customStartDate!.day)
-              .millisecondsSinceEpoch;
-          e = DateTime(_customEndDate!.year, _customEndDate!.month, _customEndDate!.day, 23, 59, 59)
-              .millisecondsSinceEpoch;
+          s = DateTime(
+            _customStartDate!.year,
+            _customStartDate!.month,
+            _customStartDate!.day,
+          ).millisecondsSinceEpoch;
+          e = DateTime(
+            _customEndDate!.year,
+            _customEndDate!.month,
+            _customEndDate!.day,
+            23,
+            59,
+            59,
+          ).millisecondsSinceEpoch;
         }
         break;
     }
@@ -463,24 +541,29 @@ class _SearchPageState extends State<SearchPage> {
     if (_lastQuery.isEmpty) return null;
     final key = '$filePath|$_lastQuery';
     final fut = _boxesFutureCache.putIfAbsent(key, () {
-      return ScreenshotService.instance
-          .getOcrMatchBoxes(filePath: filePath, query: _lastQuery);
+      return ScreenshotService.instance.getOcrMatchBoxes(
+        filePath: filePath,
+        query: _lastQuery,
+      );
     });
     return fut;
   }
 
   void _openViewer(ScreenshotRecord record, int index) {
-    final List<ScreenshotRecord> sameApp =
-        _results.where((r) => r.appPackageName == record.appPackageName).toList();
+    final List<ScreenshotRecord> sameApp = _results
+        .where((r) => r.appPackageName == record.appPackageName)
+        .toList();
     final int initialIndex = sameApp.indexWhere((r) => r.id == record.id);
     // 从缓存中获取完整的应用信息（包含 icon）
-    final appInfo = _appInfoByPackage[record.appPackageName] ?? AppInfo(
-      packageName: record.appPackageName,
-      appName: record.appName,
-      icon: null,
-      version: '',
-      isSystemApp: false,
-    );
+    final appInfo =
+        _appInfoByPackage[record.appPackageName] ??
+        AppInfo(
+          packageName: record.appPackageName,
+          appName: record.appName,
+          icon: null,
+          version: '',
+          isSystemApp: false,
+        );
     Navigator.pushNamed(
       context,
       '/screenshot_viewer',
@@ -533,10 +616,9 @@ class _SearchPageState extends State<SearchPage> {
                       const SizedBox(width: 10),
                       Icon(
                         Icons.search,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.5),
                         size: 18,
                       ),
                       const SizedBox(width: 6),
@@ -547,12 +629,13 @@ class _SearchPageState extends State<SearchPage> {
                           autofocus: true,
                           decoration: InputDecoration(
                             isCollapsed: true,
-                            hintText: AppLocalizations.of(context).searchPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchPlaceholder,
                             hintStyle: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withOpacity(0.5),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.5),
                               fontSize: 14,
                             ),
                             border: InputBorder.none,
@@ -598,10 +681,9 @@ class _SearchPageState extends State<SearchPage> {
       return Center(
         child: Text(
           AppLocalizations.of(context).searchInputHintOcr,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: AppTheme.mutedForeground),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     }
@@ -610,10 +692,9 @@ class _SearchPageState extends State<SearchPage> {
       return Center(
         child: Text(
           AppLocalizations.of(context).noMatchingScreenshots,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: AppTheme.mutedForeground),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     }
@@ -629,10 +710,7 @@ class _SearchPageState extends State<SearchPage> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.withOpacity(0.2),
-                width: 1,
-              ),
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
             ),
           ),
           child: Row(
@@ -643,7 +721,9 @@ class _SearchPageState extends State<SearchPage> {
                     Expanded(
                       child: Text(
                         AppLocalizations.of(context).searchResultsCount(
-                          _countingTotal ? '...' : _totalResultsCount.toString(),
+                          _countingTotal
+                              ? '...'
+                              : _totalResultsCount.toString(),
                         ),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AppTheme.mutedForeground,
@@ -715,10 +795,9 @@ class _SearchPageState extends State<SearchPage> {
               ? Center(
                   child: Text(
                     AppLocalizations.of(context).noResultsForFilters,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: AppTheme.mutedForeground),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.mutedForeground,
+                    ),
                   ),
                 )
               : NotificationListener<ScrollNotification>(
@@ -727,18 +806,27 @@ class _SearchPageState extends State<SearchPage> {
                     _updateVisibleRange();
                     // 滚动活跃态：暂停OCR叠加，滚动空闲后再恢复
                     bool shouldSetActive = false;
-                    if (n is ScrollUpdateNotification || n is UserScrollNotification || n is OverscrollNotification) {
+                    if (n is ScrollUpdateNotification ||
+                        n is UserScrollNotification ||
+                        n is OverscrollNotification) {
                       if (!_scrollActive) shouldSetActive = true;
                       _scrollIdleTimer?.cancel();
-                      _scrollIdleTimer = Timer(const Duration(milliseconds: 120), () {
-                        if (!mounted) return;
-                        if (_scrollActive) {
-                          setState(() { _scrollActive = false; });
-                        }
-                      });
+                      _scrollIdleTimer = Timer(
+                        const Duration(milliseconds: 120),
+                        () {
+                          if (!mounted) return;
+                          if (_scrollActive) {
+                            setState(() {
+                              _scrollActive = false;
+                            });
+                          }
+                        },
+                      );
                     }
                     if (shouldSetActive) {
-                      setState(() { _scrollActive = true; });
+                      setState(() {
+                        _scrollActive = true;
+                      });
                     }
                     // 接近底部时预取下一页
                     if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
@@ -755,15 +843,18 @@ class _SearchPageState extends State<SearchPage> {
                     padding: EdgeInsets.only(
                       left: AppTheme.spacing1,
                       right: AppTheme.spacing1,
-                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                      bottom:
+                          MediaQuery.of(context).padding.bottom +
+                          AppTheme.spacing6,
                       top: AppTheme.spacing1,
                     ),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: AppTheme.spacing1,
-                      mainAxisSpacing: AppTheme.spacing1,
-                      childAspectRatio: 0.45,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: AppTheme.spacing1,
+                          mainAxisSpacing: AppTheme.spacing1,
+                          childAspectRatio: 0.45,
+                        ),
                     itemCount: _filteredResults.length + (_loadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (_loadingMore && index == _filteredResults.length) {
@@ -781,7 +872,9 @@ class _SearchPageState extends State<SearchPage> {
                       Widget? ocrOverlay;
                       if (!_scrollActive && _shouldLoadBoxesForIndex(index)) {
                         if (_boxesFutureCache.length > 40) {
-                          _boxesFutureCache.remove(_boxesFutureCache.keys.first);
+                          _boxesFutureCache.remove(
+                            _boxesFutureCache.keys.first,
+                          );
                         }
                         ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
                           future: _ensureBoxes(s.filePath),
@@ -790,7 +883,8 @@ class _SearchPageState extends State<SearchPage> {
                             if (data == null) return const SizedBox.shrink();
                             final int srcW = (data['width'] as int?) ?? 0;
                             final int srcH = (data['height'] as int?) ?? 0;
-                            final List<dynamic> raw = (data['boxes'] as List?) ?? const [];
+                            final List<dynamic> raw =
+                                (data['boxes'] as List?) ?? const [];
                             if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
                               return const SizedBox.shrink();
                             }
@@ -801,7 +895,8 @@ class _SearchPageState extends State<SearchPage> {
                                 final l = (m['left'] as num?)?.toDouble() ?? 0;
                                 final t = (m['top'] as num?)?.toDouble() ?? 0;
                                 final r = (m['right'] as num?)?.toDouble() ?? 0;
-                                final b = (m['bottom'] as num?)?.toDouble() ?? 0;
+                                final b =
+                                    (m['bottom'] as num?)?.toDouble() ?? 0;
                                 rects.add(Rect.fromLTRB(l, t, r, b));
                               }
                             }
@@ -822,26 +917,33 @@ class _SearchPageState extends State<SearchPage> {
                         );
                       }
 
-                      final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(s);
-                      final bool isManualNsfw = s.id != null &&
-                          NsfwPreferenceService.instance.isManuallyFlaggedCached(
-                            screenshotId: s.id!,
-                            appPackageName: s.appPackageName,
-                          );
+                      final bool nsfwMasked =
+                          _privacyMode &&
+                          NsfwPreferenceService.instance.shouldMaskCached(s);
+                      final bool isManualNsfw =
+                          s.id != null &&
+                          NsfwPreferenceService.instance
+                              .isManuallyFlaggedCached(
+                                screenshotId: s.id!,
+                                appPackageName: s.appPackageName,
+                              );
                       final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
 
-                      final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
+                      final GlobalKey itemKey = _itemKeys.putIfAbsent(
+                        index,
+                        () => GlobalKey(),
+                      );
                       return KeyedSubtree(
                         key: itemKey,
                         child: RepaintBoundary(
                           child: ScreenshotItemWidget(
-                          screenshot: s,
-                          baseDir: _baseDir,
-                          appInfoMap: _appInfoByPackage,
-                          privacyMode: _privacyMode,
-                          showNsfwButton: false,
-                          isNsfwFlagged: isNsfwDisplay,
-                          onTap: () => _openViewer(s, index),
+                            screenshot: s,
+                            baseDir: _baseDir,
+                            appInfoMap: _appInfoByPackage,
+                            privacyMode: _privacyMode,
+                            showNsfwButton: false,
+                            isNsfwFlagged: isNsfwDisplay,
+                            onTap: () => _openViewer(s, index),
                             showTimelineJumpButton: true,
                             customOverlay: ocrOverlay,
                           ),
@@ -850,11 +952,10 @@ class _SearchPageState extends State<SearchPage> {
                     },
                   ),
                 ),
-            ),
-          ],
-        );
+        ),
+      ],
+    );
   }
-
 }
 
 class _OcrBoxesPainter extends CustomPainter {
@@ -871,7 +972,8 @@ class _OcrBoxesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (originalWidth <= 0 || originalHeight <= 0) return;
-    final double scale = (size.width / originalWidth) > (size.height / originalHeight)
+    final double scale =
+        (size.width / originalWidth) > (size.height / originalHeight)
         ? (size.width / originalWidth)
         : (size.height / originalHeight);
     final double drawW = originalWidth * scale;
@@ -908,15 +1010,19 @@ class _OcrBoxesPainter extends CustomPainter {
   }
 }
 
-
-
 // 筛选面板Widget - 优化UI版本
 class _FilterSheet extends StatefulWidget {
   final String timeFilter;
   final String sizeFilter;
   final DateTime? customStartDate;
   final DateTime? customEndDate;
-  final Function(String time, String size, DateTime? startDate, DateTime? endDate) onApply;
+  final Function(
+    String time,
+    String size,
+    DateTime? startDate,
+    DateTime? endDate,
+  )
+  onApply;
   final VoidCallback onReset;
 
   const _FilterSheet({
@@ -950,7 +1056,7 @@ class _FilterSheetState extends State<_FilterSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     return Container(
       padding: EdgeInsets.only(
         left: AppTheme.spacing3,
@@ -986,7 +1092,7 @@ class _FilterSheetState extends State<_FilterSheet> {
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // 时间筛选
           Text(
             l10n.filterByTime,
@@ -1000,15 +1106,40 @@ class _FilterSheetState extends State<_FilterSheet> {
             spacing: 4,
             runSpacing: 4,
             children: [
-              _buildFilterChip(l10n.filterTimeAll, 'all', _timeFilter, (v) => setState(() => _timeFilter = v)),
-              _buildFilterChip(l10n.filterTimeToday, 'today', _timeFilter, (v) => setState(() => _timeFilter = v)),
-              _buildFilterChip(l10n.filterTimeYesterday, 'yesterday', _timeFilter, (v) => setState(() => _timeFilter = v)),
-              _buildFilterChip(l10n.filterTimeLast7Days, 'last7days', _timeFilter, (v) => setState(() => _timeFilter = v)),
-              _buildFilterChip(l10n.filterTimeLast30Days, 'last30days', _timeFilter, (v) => setState(() => _timeFilter = v)),
+              _buildFilterChip(
+                l10n.filterTimeAll,
+                'all',
+                _timeFilter,
+                (v) => setState(() => _timeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterTimeToday,
+                'today',
+                _timeFilter,
+                (v) => setState(() => _timeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterTimeYesterday,
+                'yesterday',
+                _timeFilter,
+                (v) => setState(() => _timeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterTimeLast7Days,
+                'last7days',
+                _timeFilter,
+                (v) => setState(() => _timeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterTimeLast30Days,
+                'last30days',
+                _timeFilter,
+                (v) => setState(() => _timeFilter = v),
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // 大小筛选
           Text(
             l10n.filterBySize,
@@ -1022,14 +1153,34 @@ class _FilterSheetState extends State<_FilterSheet> {
             spacing: 4,
             runSpacing: 4,
             children: [
-              _buildFilterChip(l10n.filterSizeAll, 'all', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
-              _buildFilterChip(l10n.filterSizeSmall, 'small', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
-              _buildFilterChip(l10n.filterSizeMedium, 'medium', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
-              _buildFilterChip(l10n.filterSizeLarge, 'large', _sizeFilter, (v) => setState(() => _sizeFilter = v)),
+              _buildFilterChip(
+                l10n.filterSizeAll,
+                'all',
+                _sizeFilter,
+                (v) => setState(() => _sizeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterSizeSmall,
+                'small',
+                _sizeFilter,
+                (v) => setState(() => _sizeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterSizeMedium,
+                'medium',
+                _sizeFilter,
+                (v) => setState(() => _sizeFilter = v),
+              ),
+              _buildFilterChip(
+                l10n.filterSizeLarge,
+                'large',
+                _sizeFilter,
+                (v) => setState(() => _sizeFilter = v),
+              ),
             ],
           ),
           const SizedBox(height: 20),
-          
+
           // 按钮栏
           Row(
             children: [
@@ -1042,7 +1193,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     side: BorderSide(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withOpacity(0.5),
                       width: 1,
                     ),
                   ),
@@ -1080,7 +1233,12 @@ class _FilterSheetState extends State<_FilterSheet> {
     );
   }
 
-  Widget _buildFilterChip(String label, String value, String currentValue, Function(String) onSelected) {
+  Widget _buildFilterChip(
+    String label,
+    String value,
+    String currentValue,
+    Function(String) onSelected,
+  ) {
     final isSelected = currentValue == value;
     return FilterChip(
       label: Text(
@@ -1106,10 +1264,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       ),
       side: isSelected
           ? BorderSide.none
-          : BorderSide(
-              color: Colors.grey.withOpacity(0.2),
-              width: 1,
-            ),
+          : BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
     );
   }
 }

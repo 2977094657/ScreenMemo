@@ -20,7 +20,6 @@ import 'services/weekly_summary_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'pages/app_screenshot_settings_page.dart';
 
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 初始化日志（默认开启；读取用户偏好）
@@ -29,43 +28,47 @@ Future<void> main() async {
   StartupProfiler.mark('main.ensureInitialized.done');
 
   // 统一使用 Zone 拦截所有 print，并通过 FlutterLogger 输出
-  runZonedGuarded(() {
-    // 拦截 debugPrint 与 FlutterError
-    debugPrint = (String? message, {int? wrapWidth}) {
-      if (message == null) return;
-      // ignore: discarded_futures
-      FlutterLogger.debug(message);
-    };
-    FlutterError.onError = (FlutterErrorDetails details) {
-      // ignore: discarded_futures
-      FlutterLogger.error(details.exceptionAsString());
-    };
-    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-      // ignore: discarded_futures
-      FlutterLogger.error('Uncaught: '+error.toString());
-      // ignore: discarded_futures
-      FlutterLogger.debug(stack.toString());
-      return false; // 继续默认处理
-    };
+  runZonedGuarded(
+    () {
+      // 拦截 debugPrint 与 FlutterError
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message == null) return;
+        // ignore: discarded_futures
+        FlutterLogger.debug(message);
+      };
+      FlutterError.onError = (FlutterErrorDetails details) {
+        // ignore: discarded_futures
+        FlutterLogger.error(details.exceptionAsString());
+      };
+      PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+        // ignore: discarded_futures
+        FlutterLogger.error('Uncaught: ' + error.toString());
+        // ignore: discarded_futures
+        FlutterLogger.debug(stack.toString());
+        return false; // 继续默认处理
+      };
 
-    // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
-    // ignore: unnecessary_statements
-    ScreenshotService.instance;
+      // 预先初始化 ScreenshotService，尽早注册 MethodChannel 回调处理器
+      // ignore: unnecessary_statements
+      ScreenshotService.instance;
 
-    StartupProfiler.begin('runApp');
-    runApp(const ScreenMemoApp());
-    StartupProfiler.end('runApp');
-  }, (e, s) {
-    // ignore: discarded_futures
-    FlutterLogger.error('ZoneError: '+e.toString());
-    // ignore: discarded_futures
-    FlutterLogger.debug(s.toString());
-  }, zoneSpecification: ZoneSpecification(
-    print: (self, parent, zone, line) {
-      // ignore: discarded_futures
-      FlutterLogger.handlePrint(line);
+      StartupProfiler.begin('runApp');
+      runApp(const ScreenMemoApp());
+      StartupProfiler.end('runApp');
     },
-  ));
+    (e, s) {
+      // ignore: discarded_futures
+      FlutterLogger.error('ZoneError: ' + e.toString());
+      // ignore: discarded_futures
+      FlutterLogger.debug(s.toString());
+    },
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        // ignore: discarded_futures
+        FlutterLogger.handlePrint(line);
+      },
+    ),
+  );
 }
 
 class ScreenMemoApp extends StatefulWidget {
@@ -75,7 +78,8 @@ class ScreenMemoApp extends StatefulWidget {
   State<ScreenMemoApp> createState() => _ScreenMemoAppState();
 }
 
-class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserver {
+class _ScreenMemoAppState extends State<ScreenMemoApp>
+    with WidgetsBindingObserver {
   final ThemeService _themeService = ThemeService();
   final LocaleService _localeService = LocaleService.instance;
   // 全局导航Key：由 NavigationService 提供
@@ -149,7 +153,8 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
         '/screenshot_gallery': (context) => const ScreenshotGalleryPage(),
         '/screenshot_viewer': (context) => const ScreenshotViewerPage(),
         '/search': (context) => const SearchPage(),
-        '/app_screenshot_settings': (context) => const AppScreenshotSettingsPage(),
+        '/app_screenshot_settings': (context) =>
+            const AppScreenshotSettingsPage(),
       },
     );
   }
@@ -158,7 +163,7 @@ class _ScreenMemoAppState extends State<ScreenMemoApp> with WidgetsBindingObserv
 /// 应用初始化器，决定显示引导页面还是主页面
 class AppInitializer extends StatefulWidget {
   final ThemeService themeService;
-  
+
   const AppInitializer({super.key, required this.themeService});
 
   @override
@@ -195,7 +200,8 @@ class _AppInitializerState extends State<AppInitializer> {
 
       // 首先检查引导是否已完成
       StartupProfiler.begin('AppInitializer.check.onboardingCompleted');
-      final onboardingCompleted = await permissionService.isOnboardingCompleted();
+      final onboardingCompleted = await permissionService
+          .isOnboardingCompleted();
       StartupProfiler.end('AppInitializer.check.onboardingCompleted');
 
       if (onboardingCompleted) {
@@ -240,4 +246,3 @@ class _AppInitializerState extends State<AppInitializer> {
         : MainNavigationPage(themeService: widget.themeService);
   }
 }
-

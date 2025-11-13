@@ -3567,7 +3567,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryProgressRunningDetail.
   ///
   /// In en, this message translates to:
-  /// **'{processed}/{total} processed ({percent}%)'**
+  /// **'{processed}/{total} days processed ({percent}%)'**
   String memoryProgressRunningDetail(
     Object processed,
     Object total,
@@ -3583,7 +3583,7 @@ abstract class AppLocalizations {
   /// No description provided for @memoryProgressCompleted.
   ///
   /// In en, this message translates to:
-  /// **'Historical events processed: {total} items in {seconds} seconds'**
+  /// **'Historical days processed: {total} days in {seconds} seconds'**
   String memoryProgressCompleted(Object total, Object seconds);
 
   /// No description provided for @memoryProgressFailed.

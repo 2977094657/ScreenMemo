@@ -2003,7 +2003,7 @@ class AppLocalizationsEn extends AppLocalizations {
     Object total,
     Object percent,
   ) {
-    return '$processed/$total processed ($percent%)';
+    return '$processed/$total days processed ($percent%)';
   }
 
   @override
@@ -2013,7 +2013,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String memoryProgressCompleted(Object total, Object seconds) {
-    return 'Historical events processed: $total items in $seconds seconds';
+    return 'Historical days processed: $total days in $seconds seconds';
   }
 
   @override

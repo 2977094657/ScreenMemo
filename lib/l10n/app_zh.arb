@@ -441,7 +441,7 @@
   },
   "memoryProgressIdle": "等待处理历史事件",
   "memoryProgressRunning": "正在解析历史事件",
-  "memoryProgressRunningDetail": "已处理 {processed}/{total} 条（{percent}%）",
+  "memoryProgressRunningDetail": "已处理 {processed}/{total} 天（{percent}%）",
   "@memoryProgressRunningDetail": {
     "placeholders": {
       "processed": {},
@@ -455,7 +455,7 @@
       "count": {}
     }
   },
-  "memoryProgressCompleted": "历史事件解析完成，共 {total} 条，耗时 {seconds} 秒",
+  "memoryProgressCompleted": "历史解析完成，共 {total} 天，耗时 {seconds} 秒",
   "@memoryProgressCompleted": {
     "placeholders": {
       "total": {},

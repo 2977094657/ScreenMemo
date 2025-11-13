@@ -1960,7 +1960,7 @@ class AppLocalizationsJa extends AppLocalizations {
     Object total,
     Object percent,
   ) {
-    return '$processed/$total 件を処理済み（$percent%）';
+    return '$processed/$total 日を処理済み（$percent%）';
   }
 
   @override
@@ -1970,7 +1970,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String memoryProgressCompleted(Object total, Object seconds) {
-    return '歴史イベントの解析完了：合計 $total 件、$seconds 秒';
+    return '歴史イベントの解析完了：合計 $total 日、$seconds 秒';
   }
 
   @override

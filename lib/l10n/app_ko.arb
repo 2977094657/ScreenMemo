@@ -1045,7 +1045,7 @@
   },
   "memoryProgressIdle": "과거 이벤트 처리를 대기 중",
   "memoryProgressRunning": "과거 이벤트 분석 중",
-  "memoryProgressRunningDetail": "{processed}/{total}건 처리됨 ({percent}%)",
+  "memoryProgressRunningDetail": "{processed}/{total}일 처리됨 ({percent}%)",
   "@memoryProgressRunningDetail": {
     "placeholders": {
       "processed": {},
@@ -1059,7 +1059,7 @@
       "count": {}
     }
   },
-  "memoryProgressCompleted": "과거 이벤트 분석 완료: 총 {total}건, 소요 {seconds}초",
+  "memoryProgressCompleted": "과거 이벤트 분석 완료: 총 {total}일, 소요 {seconds}초",
   "@memoryProgressCompleted": {
     "placeholders": {
       "total": {},
