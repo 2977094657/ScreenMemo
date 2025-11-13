@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
@@ -34,7 +34,9 @@ class ScreenshotService {
   final PermissionService _permissionService = PermissionService.instance;
   final ScreenshotDatabase _database = ScreenshotDatabase.instance;
 
-  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+  static const MethodChannel _channel = MethodChannel(
+    'com.fqyw.screen_memo/accessibility',
+  );
 
   final _screenshotStreamController = StreamController<void>.broadcast();
   Stream<void> get onScreenshotSaved => _screenshotStreamController.stream;
@@ -72,7 +74,9 @@ class ScreenshotService {
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString(_statsCacheKey);
       final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
-      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      final ttl =
+          prefs.getInt(_statsCacheTtlSecondsKey) ??
+          _statsCacheTtlSecondsDefault;
       final now = DateTime.now().millisecondsSinceEpoch;
       if (cached != null && ts > 0 && (now - ts) <= ttl * 1000) {
         // 访问即续期：读缓存的同时刷新时间戳，避免频繁过期导致首页闪烁
@@ -93,7 +97,9 @@ class ScreenshotService {
       if (cached != null && ts > 0 && (now - ts) > ttl * 1000) {
         final stale = _deserializeStats(cached);
         // ignore: unawaited_futures
-        FlutterLogger.log('stats cache stale -> serve stale and refresh, ageMs=${now - ts}, ttl=$ttl');
+        FlutterLogger.log(
+          'stats cache stale -> serve stale and refresh, ageMs=${now - ts}, ttl=$ttl',
+        );
         // ignore: unawaited_futures
         _refreshStatsCache(force: true);
         StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
@@ -104,9 +110,13 @@ class ScreenshotService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
-      final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      final ttl =
+          prefs.getInt(_statsCacheTtlSecondsKey) ??
+          _statsCacheTtlSecondsDefault;
       // ignore: unawaited_futures
-      FlutterLogger.log('stats cache miss -> compute fresh, now-ts=${DateTime.now().millisecondsSinceEpoch - ts}ms, ttl=$ttl');
+      FlutterLogger.log(
+        'stats cache miss -> compute fresh, now-ts=${DateTime.now().millisecondsSinceEpoch - ts}ms, ttl=$ttl',
+      );
     } catch (_) {}
     final stats = await getScreenshotStats();
     StartupProfiler.end('ScreenshotService.getScreenshotStatsCachedFirst');
@@ -118,7 +128,9 @@ class ScreenshotService {
     try {
       print('=== 开始启动截屏服务 ===');
       // 统一约束：5-60 秒
-      final int clampedInterval = intervalSeconds < 5 ? 5 : (intervalSeconds > 60 ? 60 : intervalSeconds);
+      final int clampedInterval = intervalSeconds < 5
+          ? 5
+          : (intervalSeconds > 60 ? 60 : intervalSeconds);
       if (clampedInterval != intervalSeconds) {
         print('截屏间隔超出范围，自动调整为: $clampedInterval秒 (原输入: $intervalSeconds)');
       }
@@ -155,7 +167,7 @@ class ScreenshotService {
         for (int i = 0; i < 6; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
           serviceRunning = await _permissionService.isServiceRunning();
-          print('第${i+1}次检查服务状态: $serviceRunning');
+          print('第${i + 1}次检查服务状态: $serviceRunning');
           if (serviceRunning) {
             print('服务已启动！');
             break;
@@ -176,7 +188,9 @@ class ScreenshotService {
         // 同步 UI 侧读取的键
         await prefs.setInt('screenshot_interval', clampedInterval);
       } catch (_) {}
-      final success = await _permissionService.startTimedScreenshot(clampedInterval);
+      final success = await _permissionService.startTimedScreenshot(
+        clampedInterval,
+      );
 
       if (success) {
         _isRunning = true;
@@ -185,7 +199,9 @@ class ScreenshotService {
         print('=== 截屏服务启动成功，间隔: $clampedInterval秒 ===');
         return true;
       } else {
-        throw ScreenshotServiceException('截屏服务启动失败，请检查：\n1. Android版本是否为11.0(API 30)或以上\n2. 无障碍服务是否正常运行\n3. 尝试重新启动应用');
+        throw ScreenshotServiceException(
+          '截屏服务启动失败，请检查：\n1. Android版本是否为11.0(API 30)或以上\n2. 无障碍服务是否正常运行\n3. 尝试重新启动应用',
+        );
       }
     } on ScreenshotServiceException {
       rethrow;
@@ -210,7 +226,9 @@ class ScreenshotService {
   Future<bool> updateInterval(int intervalSeconds) async {
     try {
       // 统一约束：5-60 秒
-      final int clampedInterval = intervalSeconds < 5 ? 5 : (intervalSeconds > 60 ? 60 : intervalSeconds);
+      final int clampedInterval = intervalSeconds < 5
+          ? 5
+          : (intervalSeconds > 60 ? 60 : intervalSeconds);
       if (_isRunning) {
         // 重新启动服务以应用新间隔
         await _permissionService.stopTimedScreenshot();
@@ -221,7 +239,9 @@ class ScreenshotService {
           // 同步写入UI侧读取的键，避免不同键值不同步
           await prefs.setInt('screenshot_interval', clampedInterval);
         } catch (_) {}
-        final success = await _permissionService.startTimedScreenshot(clampedInterval);
+        final success = await _permissionService.startTimedScreenshot(
+          clampedInterval,
+        );
         if (success) {
           _currentInterval = clampedInterval;
           await _saveServiceState();
@@ -331,7 +351,10 @@ class ScreenshotService {
               }
               // 记录日志并跳转
               // ignore: discarded_futures
-              FlutterLogger.nativeInfo('Navigation', 'onTap notification dateKey=${dk ?? 'null'}');
+              FlutterLogger.nativeInfo(
+                'Navigation',
+                'onTap notification dateKey=${dk ?? 'null'}',
+              );
               // 不阻塞当前 handler
               // ignore: unawaited_futures
               NavigationService.instance.openDailySummary(dk);
@@ -351,7 +374,9 @@ class ScreenshotService {
   }
 
   /// 允许其他服务（如 PermissionService）转发平台事件至此处统一处理
-  Future<void> handleScreenshotSavedFromPlatform(Map<String, dynamic> data) async {
+  Future<void> handleScreenshotSavedFromPlatform(
+    Map<String, dynamic> data,
+  ) async {
     await _handleScreenshotSaved(data);
   }
 
@@ -365,13 +390,16 @@ class ScreenshotService {
       final appName = data['appName'] as String? ?? '';
       final relativePath = data['filePath'] as String? ?? '';
       final pageUrl = data['pageUrl'] as String?;
-      final captureTime = data['captureTime'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+      final captureTime =
+          data['captureTime'] as int? ?? DateTime.now().millisecondsSinceEpoch;
 
       print('收到截图保存通知: $appName - $relativePath');
 
-      if (packageName.isNotEmpty && appName.isNotEmpty && relativePath.isNotEmpty) {
+      if (packageName.isNotEmpty &&
+          appName.isNotEmpty &&
+          relativePath.isNotEmpty) {
         // 将相对路径转换为绝对路径
-        final baseDir = await PathService.getExternalFilesDir(null);
+        final baseDir = await PathService.getInternalAppDir(null);
         if (baseDir == null) {
           print('无法获取基础目录，跳过数据库插入');
           return;
@@ -438,7 +466,9 @@ class ScreenshotService {
       if (statistics.isNotEmpty) {
         for (final stat in statistics.values) {
           final time = stat['lastCaptureTime'] as DateTime?;
-          if (time != null && (lastScreenshotTime == null || time.isAfter(lastScreenshotTime))) {
+          if (time != null &&
+              (lastScreenshotTime == null ||
+                  time.isAfter(lastScreenshotTime))) {
             lastScreenshotTime = time;
           }
         }
@@ -462,8 +492,7 @@ class ScreenshotService {
         'lastScreenshotTime': null,
         'appStatistics': <String, Map<String, dynamic>>{},
       };
-    }
-    finally {
+    } finally {
       StartupProfiler.end('ScreenshotService.getScreenshotStats');
     }
   }
@@ -479,7 +508,9 @@ class ScreenshotService {
   }
 
   /// 获取最新统计（不使用统计缓存，可选择强制全量文件同步）
-  Future<Map<String, dynamic>> getScreenshotStatsFresh({bool forceFullSync = true}) async {
+  Future<Map<String, dynamic>> getScreenshotStatsFresh({
+    bool forceFullSync = true,
+  }) async {
     StartupProfiler.begin('ScreenshotService.getScreenshotStatsFresh');
     try {
       // 仅DB统计，不进行文件系统同步
@@ -492,7 +523,9 @@ class ScreenshotService {
       if (statistics.isNotEmpty) {
         for (final stat in statistics.values) {
           final time = stat['lastCaptureTime'] as DateTime?;
-          if (time != null && (lastScreenshotTime == null || time.isAfter(lastScreenshotTime))) {
+          if (time != null &&
+              (lastScreenshotTime == null ||
+                  time.isAfter(lastScreenshotTime))) {
             lastScreenshotTime = time;
           }
         }
@@ -528,7 +561,9 @@ class ScreenshotService {
       if (statistics.isNotEmpty) {
         for (final stat in statistics.values) {
           final time = stat['lastCaptureTime'] as DateTime?;
-          if (time != null && (lastScreenshotTime == null || time.isAfter(lastScreenshotTime))) {
+          if (time != null &&
+              (lastScreenshotTime == null ||
+                  time.isAfter(lastScreenshotTime))) {
             lastScreenshotTime = time;
           }
         }
@@ -561,10 +596,18 @@ class ScreenshotService {
   }
 
   /// 根据应用包名获取截屏记录（支持分页）
-  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit, int? offset}) async {
+  Future<List<ScreenshotRecord>> getScreenshotsByApp(
+    String appPackageName, {
+    int? limit,
+    int? offset,
+  }) async {
     try {
       // 直接从数据库查询，不再进行任何文件系统同步
-      return await _database.getScreenshotsByApp(appPackageName, limit: limit, offset: offset);
+      return await _database.getScreenshotsByApp(
+        appPackageName,
+        limit: limit,
+        offset: offset,
+      );
     } catch (e) {
       print('获取应用截屏记录失败: $e');
       return [];
@@ -572,7 +615,10 @@ class ScreenshotService {
   }
 
   /// 通过全局ID(gid)与包名获取单条截图记录
-  Future<ScreenshotRecord?> getScreenshotById(int gid, String appPackageName) async {
+  Future<ScreenshotRecord?> getScreenshotById(
+    int gid,
+    String appPackageName,
+  ) async {
     try {
       return await _database.getScreenshotById(gid, appPackageName);
     } catch (e) {
@@ -870,10 +916,15 @@ class ScreenshotService {
   Future<bool> deleteAllScreenshotsForApp(String appPackageName) async {
     try {
       // ignore: unawaited_futures
-      FlutterLogger.info('SERVICE.deleteAllScreenshotsForApp start package=$appPackageName');
+      FlutterLogger.info(
+        'SERVICE.deleteAllScreenshotsForApp start package=$appPackageName',
+      );
       // ignore: unawaited_futures
-      FlutterLogger.nativeInfo('SERVICE', 'deleteAllScreenshotsForApp start package='+appPackageName);
-      final baseDir = await PathService.getExternalFilesDir(null);
+      FlutterLogger.nativeInfo(
+        'SERVICE',
+        'deleteAllScreenshotsForApp start package=' + appPackageName,
+      );
+      final baseDir = await PathService.getInternalAppDir(null);
       if (baseDir == null) {
         // ignore: unawaited_futures
         FlutterLogger.warn('SERVICE.deleteAllScreenshotsForApp no baseDir');
@@ -881,16 +932,20 @@ class ScreenshotService {
       }
 
       // 删除应用文件夹
-      final appDir = Directory(p.join(baseDir.path, 'output', 'screen', appPackageName));
+      final appDir = Directory(
+        p.join(baseDir.path, 'output', 'screen', appPackageName),
+      );
       if (await appDir.exists()) {
         await appDir.delete(recursive: true);
         print('已删除应用文件夹: ${appDir.path}');
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo('FS', 'deleted app dir: '+appDir.path);
+        FlutterLogger.nativeInfo('FS', 'deleted app dir: ' + appDir.path);
       }
 
       // 清理数据库中的记录
-      final deletedCount = await _database.deleteAllScreenshotsForApp(appPackageName);
+      final deletedCount = await _database.deleteAllScreenshotsForApp(
+        appPackageName,
+      );
       print('已从数据库删除 $deletedCount 条记录');
 
       if (deletedCount > 0) {
@@ -902,14 +957,19 @@ class ScreenshotService {
       }
 
       // ignore: unawaited_futures
-      FlutterLogger.info('SERVICE.deleteAllScreenshotsForApp success package=$appPackageName deletedCount=$deletedCount');
+      FlutterLogger.info(
+        'SERVICE.deleteAllScreenshotsForApp success package=$appPackageName deletedCount=$deletedCount',
+      );
       return true;
     } catch (e) {
       print('删除应用所有截图失败: $e');
       // ignore: unawaited_futures
       FlutterLogger.error('SERVICE.deleteAllScreenshotsForApp exception: $e');
       // ignore: unawaited_futures
-      FlutterLogger.nativeError('SERVICE', 'deleteAllScreenshotsForApp exception: $e');
+      FlutterLogger.nativeError(
+        'SERVICE',
+        'deleteAllScreenshotsForApp exception: $e',
+      );
       return false;
     }
   }
@@ -918,9 +978,14 @@ class ScreenshotService {
   Future<bool> deleteScreenshot(int id, String packageName) async {
     try {
       // ignore: unawaited_futures
-      FlutterLogger.info('SERVICE.deleteScreenshot start id=$id package=$packageName');
+      FlutterLogger.info(
+        'SERVICE.deleteScreenshot start id=$id package=$packageName',
+      );
       // ignore: unawaited_futures
-      FlutterLogger.nativeInfo('SERVICE', 'deleteScreenshot start id='+id.toString());
+      FlutterLogger.nativeInfo(
+        'SERVICE',
+        'deleteScreenshot start id=' + id.toString(),
+      );
       final ok = await _database.deleteScreenshot(id, packageName);
       if (ok) {
         // 先快速刷新统计缓存（DB-only），再通知监听者
@@ -930,9 +995,14 @@ class ScreenshotService {
         // ignore: unawaited_futures
         _refreshStatsCache(force: true);
         // ignore: unawaited_futures
-        FlutterLogger.info('SERVICE.deleteScreenshot success id=$id package=$packageName');
+        FlutterLogger.info(
+          'SERVICE.deleteScreenshot success id=$id package=$packageName',
+        );
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo('SERVICE', 'deleteScreenshot success id='+id.toString());
+        FlutterLogger.nativeInfo(
+          'SERVICE',
+          'deleteScreenshot success id=' + id.toString(),
+        );
       }
       return ok;
     } catch (e) {
@@ -953,7 +1023,9 @@ class ScreenshotService {
       final deleted = await _database.deleteScreenshotsByIds(packageName, ids);
       sw.stop();
       // ignore: unawaited_futures
-      FlutterLogger.info('SERVICE.批量删除完成 包名=$packageName 个数=${ids.length} 耗时=${sw.elapsedMilliseconds}ms 实际删除=$deleted');
+      FlutterLogger.info(
+        'SERVICE.批量删除完成 包名=$packageName 个数=${ids.length} 耗时=${sw.elapsedMilliseconds}ms 实际删除=$deleted',
+      );
       if (deleted > 0) {
         // 批量删除后优先进行快速统计缓存刷新并通知，再后台全量刷新
         await _refreshStatsCacheQuick();
@@ -989,9 +1061,11 @@ class ScreenshotService {
         return false;
       }
 
-      final baseDir = await PathService.getExternalFilesDir(null);
+      final baseDir = await PathService.getInternalAppDir(null);
       if (baseDir == null) return false;
-      final appDir = Directory(p.join(baseDir.path, 'output', 'screen', packageName));
+      final appDir = Directory(
+        p.join(baseDir.path, 'output', 'screen', packageName),
+      );
       if (!await appDir.exists()) {
         // 若文件夹不存在，仅做DB侧删除非保留记录即可
         await _database.deleteAllExcept(packageName, keepIds);
@@ -1008,7 +1082,12 @@ class ScreenshotService {
       }
 
       // 1) 将保留文件复制到临时目录（仅复制少量保留文件）
-      final tempDir = Directory(p.join(appDir.parent.path, '${packageName}_keep_tmp_${DateTime.now().millisecondsSinceEpoch}'));
+      final tempDir = Directory(
+        p.join(
+          appDir.parent.path,
+          '${packageName}_keep_tmp_${DateTime.now().millisecondsSinceEpoch}',
+        ),
+      );
       if (!await tempDir.exists()) {
         await tempDir.create(recursive: true);
       }
@@ -1095,14 +1174,21 @@ class ScreenshotService {
       for (final entity in entities) {
         if (entity is Directory) {
           // 这是年月目录（如 2024-01）
-          final yearMonthEntities = await entity.list(followLinks: false).toList();
+          final yearMonthEntities = await entity
+              .list(followLinks: false)
+              .toList();
 
           for (final dayEntity in yearMonthEntities) {
             if (dayEntity is Directory) {
               // 这是日期目录（如 15）
               final files = await dayEntity
                   .list(followLinks: false)
-                  .where((e) => e is File && (e.path.toLowerCase().endsWith('.jpg') || e.path.toLowerCase().endsWith('.png')))
+                  .where(
+                    (e) =>
+                        e is File &&
+                        (e.path.toLowerCase().endsWith('.jpg') ||
+                            e.path.toLowerCase().endsWith('.png')),
+                  )
                   .toList();
 
               for (final fileEntity in files) {
@@ -1129,7 +1215,8 @@ class ScreenshotService {
           }
         } else if (entity is File) {
           // 兼容旧的扁平结构文件
-          if (entity.path.toLowerCase().endsWith('.jpg') || entity.path.toLowerCase().endsWith('.png')) {
+          if (entity.path.toLowerCase().endsWith('.jpg') ||
+              entity.path.toLowerCase().endsWith('.png')) {
             final absolutePath = entity.path;
             final exists = await _database.isFilePathExists(absolutePath);
             if (!exists) {
@@ -1182,7 +1269,8 @@ class ScreenshotService {
       appStats.forEach((pkg, val) {
         final m = Map<String, dynamic>.from(val as Map);
         final ts = m['lastCaptureTime'];
-        if (ts is int) m['lastCaptureTime'] = DateTime.fromMillisecondsSinceEpoch(ts);
+        if (ts is int)
+          m['lastCaptureTime'] = DateTime.fromMillisecondsSinceEpoch(ts);
         out[pkg] = m;
       });
       map['appStatistics'] = out;
@@ -1195,7 +1283,9 @@ class ScreenshotService {
       if (!force) {
         final prefs = await SharedPreferences.getInstance();
         final ts = prefs.getInt(_statsCacheTsKey) ?? 0;
-        final ttl = prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+        final ttl =
+            prefs.getInt(_statsCacheTtlSecondsKey) ??
+            _statsCacheTtlSecondsDefault;
         final now = DateTime.now().millisecondsSinceEpoch;
         if (ts > 0 && (now - ts) <= ttl * 1000) {
           // ignore: unawaited_futures
@@ -1219,7 +1309,10 @@ class ScreenshotService {
       await prefs.setString(_statsCacheKey, ser);
       await prefs.setInt(_statsCacheTsKey, batchTs);
       if (!prefs.containsKey(_statsCacheTtlSecondsKey)) {
-        await prefs.setInt(_statsCacheTtlSecondsKey, _statsCacheTtlSecondsDefault);
+        await prefs.setInt(
+          _statsCacheTtlSecondsKey,
+          _statsCacheTtlSecondsDefault,
+        );
       }
       // ignore: unawaited_futures
       FlutterLogger.log('统计缓存已保存 (ttl=${await _readTtl(prefs)})');
@@ -1228,7 +1321,8 @@ class ScreenshotService {
 
   Future<int> _readTtl(SharedPreferences prefs) async {
     try {
-      return prefs.getInt(_statsCacheTtlSecondsKey) ?? _statsCacheTtlSecondsDefault;
+      return prefs.getInt(_statsCacheTtlSecondsKey) ??
+          _statsCacheTtlSecondsDefault;
     } catch (_) {
       return _statsCacheTtlSecondsDefault;
     }
@@ -1275,8 +1369,10 @@ class ScreenshotService {
       for (final pkg in packages) {
         try {
           // 读取每应用自定义设置
-          final perApp = await PerAppScreenshotSettingsService.instance.getExpireSettings(pkg);
-          final useCustom = await PerAppScreenshotSettingsService.instance.getUseCustom(pkg);
+          final perApp = await PerAppScreenshotSettingsService.instance
+              .getExpireSettings(pkg);
+          final useCustom = await PerAppScreenshotSettingsService.instance
+              .getUseCustom(pkg);
           final bool effectiveEnabled = useCustom
               ? (perApp['enabled'] as bool? ?? false)
               : globalEnabled;
@@ -1297,8 +1393,7 @@ class ScreenshotService {
           if (ids.isEmpty) continue;
           final deleted = await deleteScreenshotsBatch(pkg, ids);
           totalDeleted += deleted;
-        } catch (e) {
-        }
+        } catch (e) {}
       }
 
       await _refreshStatsCache(force: true);
@@ -1309,7 +1404,12 @@ class ScreenshotService {
       if (totalDeleted > 0) {
         _screenshotStreamController.add(null);
       }
-      FlutterLogger.info('SERVICE.cleanupExpired done: days=' + globalDays.toString() + ' deleted=' + totalDeleted.toString());
+      FlutterLogger.info(
+        'SERVICE.cleanupExpired done: days=' +
+            globalDays.toString() +
+            ' deleted=' +
+            totalDeleted.toString(),
+      );
     } catch (e) {
     } finally {
       _cleanupRunning = false;
@@ -1353,7 +1453,9 @@ class ScreenshotService {
   }
 
   /// 获取全局可用日期数量（缓存优先，避免频繁全库统计）
-  Future<int> getAvailableDayCountCachedFirst({bool forceRefresh = false}) async {
+  Future<int> getAvailableDayCountCachedFirst({
+    bool forceRefresh = false,
+  }) async {
     if (forceRefresh) {
       return await _refreshDayCount();
     }
@@ -1398,7 +1500,8 @@ class ScreenshotService {
 
   Future<int> _doRefreshDayCount() async {
     try {
-      final List<Map<String, dynamic>> days = await _database.listAvailableDaysGlobal();
+      final List<Map<String, dynamic>> days = await _database
+          .listAvailableDaysGlobal();
       final int count = days.length;
       final int now = DateTime.now().millisecondsSinceEpoch;
       _dayCountMemCache = count;
@@ -1425,7 +1528,9 @@ class ScreenshotService {
   }
 
   /// 指定应用列出所有有数据的日期（本地时区），按日期倒序
-  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(String appPackageName) async {
+  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(
+    String appPackageName,
+  ) async {
     try {
       return await _database.listAvailableDaysForApp(appPackageName);
     } catch (_) {

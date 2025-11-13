@@ -130,7 +130,7 @@ object ScreenshotDatabaseHelper {
 
     private fun resolveMasterDbPath(context: Context): String? {
         return try {
-            val base = context.getExternalFilesDir(null)?.absolutePath ?: return null
+            val base = context.filesDir.absolutePath
             val dbDir = File(base, MASTER_DB_DIR_RELATIVE)
             if (!dbDir.exists()) {
                 dbDir.mkdirs()
@@ -196,7 +196,7 @@ object ScreenshotDatabaseHelper {
 
     private fun openShardDb(context: Context, packageName: String, year: Int): SQLiteDatabase? {
         return try {
-            val base = context.getExternalFilesDir(null)?.absolutePath ?: return null
+            val base = context.filesDir.absolutePath
             val shardsRoot = File(base, SHARDS_DIR_RELATIVE)
             val pkgDir = File(File(shardsRoot, sanitizePackageName(packageName)), "$year")
             if (!pkgDir.exists()) pkgDir.mkdirs()

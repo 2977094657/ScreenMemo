@@ -1423,12 +1423,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             // 最终文件名后缀依据实际编码格式决定
             val baseName = timestamp
             
-            // 使用应用专属的外部存储目录
-            val baseDir = this.getExternalFilesDir(null)
-            if (baseDir == null) {
-                FileLogger.e(TAG, "无法获取应用专属存储目录")
-                return null
-            }
+            // 使用应用内部私有存储目录
+            val baseDir = this.filesDir
 
             // 创建完整的输出目录
             val outputDir = File(baseDir, relativeDir)

@@ -19,7 +19,8 @@ import 'path_service.dart';
 /// - screenshot_expire_days: '>=1'
 class PerAppScreenshotSettingsService {
   PerAppScreenshotSettingsService._internal();
-  static final PerAppScreenshotSettingsService instance = PerAppScreenshotSettingsService._internal();
+  static final PerAppScreenshotSettingsService instance =
+      PerAppScreenshotSettingsService._internal();
 
   final Map<String, Database> _dbCache = <String, Database>{};
 
@@ -29,9 +30,17 @@ class PerAppScreenshotSettingsService {
 
   Future<String?> _resolveSettingsDbPath(String packageName) async {
     try {
-      final base = await PathService.getExternalFilesDir(null);
+      final base = await PathService.getInternalAppDir(null);
       if (base == null) return null;
-      final root = Directory(p.join(base.path, 'output', 'databases', 'shards', _sanitizePackageName(packageName)));
+      final root = Directory(
+        p.join(
+          base.path,
+          'output',
+          'databases',
+          'shards',
+          _sanitizePackageName(packageName),
+        ),
+      );
       if (!await root.exists()) {
         await root.create(recursive: true);
       }
@@ -51,7 +60,9 @@ class PerAppScreenshotSettingsService {
       path,
       version: 1,
       onCreate: (db, v) async {
-        await db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+        await db.execute(
+          'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)',
+        );
       },
     );
     _dbCache[key] = db;
@@ -62,7 +73,13 @@ class PerAppScreenshotSettingsService {
     try {
       final db = await _openDb(packageName);
       if (db == null) return null;
-      final rows = await db.query('settings', columns: ['value'], where: 'key = ?', whereArgs: [key], limit: 1);
+      final rows = await db.query(
+        'settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: [key],
+        limit: 1,
+      );
       if (rows.isEmpty) return null;
       return rows.first['value'] as String?;
     } catch (_) {
@@ -74,13 +91,25 @@ class PerAppScreenshotSettingsService {
     final db = await _openDb(packageName);
     if (db == null) return;
     if (value == null) {
-      try { await db.delete('settings', where: 'key = ?', whereArgs: [key]); } catch (_) {}
+      try {
+        await db.delete('settings', where: 'key = ?', whereArgs: [key]);
+      } catch (_) {}
       return;
     }
     try {
-      await db.insert('settings', {'key': key, 'value': value}, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert('settings', {
+        'key': key,
+        'value': value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     } catch (_) {
-      try { await db.update('settings', {'value': value}, where: 'key = ?', whereArgs: [key]); } catch (_) {}
+      try {
+        await db.update(
+          'settings',
+          {'value': value},
+          where: 'key = ?',
+          whereArgs: [key],
+        );
+      } catch (_) {}
     }
   }
 
@@ -102,7 +131,8 @@ class PerAppScreenshotSettingsService {
     final qualityStr = await _getRaw(packageName, 'image_quality');
     final uts = await _getRaw(packageName, 'use_target_size');
     final tkbStr = await _getRaw(packageName, 'target_size_kb');
-    final useTarget = (uts?.toLowerCase() == '1' || uts?.toLowerCase() == 'true');
+    final useTarget =
+        (uts?.toLowerCase() == '1' || uts?.toLowerCase() == 'true');
     final quality = int.tryParse(qualityStr ?? '');
     final tkb = int.tryParse(tkbStr ?? '');
     return <String, dynamic>{
@@ -137,12 +167,11 @@ class PerAppScreenshotSettingsService {
   Future<Map<String, dynamic>> getExpireSettings(String packageName) async {
     final enabledStr = await _getRaw(packageName, 'screenshot_expire_enabled');
     final daysStr = await _getRaw(packageName, 'screenshot_expire_days');
-    final enabled = (enabledStr?.toLowerCase() == '1' || enabledStr?.toLowerCase() == 'true');
+    final enabled =
+        (enabledStr?.toLowerCase() == '1' ||
+        enabledStr?.toLowerCase() == 'true');
     final days = int.tryParse(daysStr ?? '');
-    return <String, dynamic>{
-      'enabled': enabled,
-      'days': days,
-    };
+    return <String, dynamic>{'enabled': enabled, 'days': days};
   }
 
   Future<void> saveExpireSettings({
@@ -151,7 +180,11 @@ class PerAppScreenshotSettingsService {
     int? days,
   }) async {
     if (enabled != null) {
-      await _setRaw(packageName, 'screenshot_expire_enabled', enabled ? '1' : '0');
+      await _setRaw(
+        packageName,
+        'screenshot_expire_enabled',
+        enabled ? '1' : '0',
+      );
     }
     if (days != null) {
       await _setRaw(packageName, 'screenshot_expire_days', days.toString());
@@ -164,10 +197,11 @@ class PerAppScreenshotSettingsService {
     return int.tryParse(v ?? '');
   }
 
-  Future<void> saveScreenshotIntervalSeconds(String packageName, int seconds) async {
+  Future<void> saveScreenshotIntervalSeconds(
+    String packageName,
+    int seconds,
+  ) async {
     final clamped = seconds < 5 ? 5 : (seconds > 60 ? 60 : seconds);
     await _setRaw(packageName, 'screenshot_interval_sec', clamped.toString());
   }
 }
-
-

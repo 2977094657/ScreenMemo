@@ -18,9 +18,12 @@ part 'screenshot_database_meta.dart';
 class ScreenshotDatabase {
   static ScreenshotDatabase? _instance;
   static Database? _database;
-  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+  static const MethodChannel _channel = MethodChannel(
+    'com.fqyw.screen_memo/accessibility',
+  );
 
-  static ScreenshotDatabase get instance => _instance ??= ScreenshotDatabase._();
+  static ScreenshotDatabase get instance =>
+      _instance ??= ScreenshotDatabase._();
 
   ScreenshotDatabase._();
 
@@ -40,25 +43,37 @@ class ScreenshotDatabase {
     try {
       StartupProfiler.begin('ScreenshotDatabase._initDatabase');
       // 获取应用的外部存储目录
-      final externalDir = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir(); 
-      if (externalDir != null) {
+      final internalDir =
+          await PathService.getInternalAppDir(null) ??
+          await _getInternalFilesDirFallback();
+      if (internalDir != null) {
         // 创建 output/databases 目录
-        final databasesDir = Directory(join(externalDir.path, 'output', 'databases'));
+        final databasesDir = Directory(
+          join(internalDir.path, 'output', 'databases'),
+        );
         if (!await databasesDir.exists()) {
           await databasesDir.create(recursive: true);
         }
-        
+
         // 主库（聚合、注册表等）
         final path = join(databasesDir.path, 'screenshot_memo.db');
-        
+
         final db = await openDatabase(
           path,
           version: 11,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
-            try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
+            try {
+              await db.execute('PRAGMA journal_mode=WAL');
+            } catch (_) {
+              try {
+                await db.rawQuery('PRAGMA journal_mode=WAL');
+              } catch (_) {}
+            }
             // 对于新库，尽早设置增量回收（必须在建表前设置）
-            try { await db.execute('PRAGMA auto_vacuum=2'); } catch (_) {}
+            try {
+              await db.execute('PRAGMA auto_vacuum=2');
+            } catch (_) {}
           },
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
@@ -68,15 +83,28 @@ class ScreenshotDatabase {
       } else {
         // 备选方案：使用默认数据库路径
         final databasesPath = await getDatabasesPath();
-        final path = join(databasesPath, 'screenshot_memo.db'); 
-        try { await FlutterLogger.nativeWarn('DB', 'fallback internal db at ' + path); } catch (_) {}
-        
+        final path = join(databasesPath, 'screenshot_memo.db');
+        try {
+          await FlutterLogger.nativeWarn(
+            'DB',
+            'fallback internal db at ' + path,
+          );
+        } catch (_) {}
+
         final db = await openDatabase(
           path,
           version: 11,
           onConfigure: (db) async {
-            try { await db.execute('PRAGMA journal_mode=WAL'); } catch (_) { try { await db.rawQuery('PRAGMA journal_mode=WAL'); } catch (_) {} }
-            try { await db.execute('PRAGMA auto_vacuum=2'); } catch (_) {}
+            try {
+              await db.execute('PRAGMA journal_mode=WAL');
+            } catch (_) {
+              try {
+                await db.rawQuery('PRAGMA journal_mode=WAL');
+              } catch (_) {}
+            }
+            try {
+              await db.execute('PRAGMA auto_vacuum=2');
+            } catch (_) {}
           },
           onCreate: _onCreate,
           onUpgrade: _onUpgrade,
@@ -89,7 +117,7 @@ class ScreenshotDatabase {
       // 出错时使用默认路径
       final databasesPath = await getDatabasesPath();
       final path = join(databasesPath, 'screenshot_memo.db');
-      
+
       final db = await openDatabase(
         path,
         version: 11,
@@ -101,22 +129,19 @@ class ScreenshotDatabase {
     }
   }
 
-  /// 获取外部存储目录的辅助方法
-  Future<Directory?> _getExternalFilesDir() async {
+  /// 获取内部存储目录的辅助方法
+  Future<Directory?> _getInternalFilesDirFallback() async {
     try {
       if (Platform.isAndroid) {
-        // 优先尝试外部存储目录
-        final dir = await getExternalStorageDirectory();
-        if (dir != null) {
-          return dir;
-        }
+        final dir = await getApplicationSupportDirectory();
+        return dir;
       }
-      
-      // 备选方案：使用应用文档目录
+
+      // 其他平台或兜底：使用应用文档目录
       final dir = await getApplicationDocumentsDirectory();
       return dir;
     } catch (e) {
-      print('获取外部存储目录失败: $e');
+      print('获取内部存储目录失败: $e');
       return null;
     }
   }
@@ -128,7 +153,9 @@ class ScreenshotDatabase {
   }
 
   Future<Directory?> _getShardsRootDir() async {
-    final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir();
+    final base =
+        await PathService.getInternalAppDir(null) ??
+        await _getInternalFilesDirFallback();
     if (base == null) return null;
     final dir = Directory(join(base.path, _shardsDirRelative));
     if (!await dir.exists()) {
@@ -142,7 +169,9 @@ class ScreenshotDatabase {
   Future<String?> _resolveShardDbPath(String package, int year) async {
     final root = await _getShardsRootDir();
     if (root == null) return null;
-    final pkgDir = Directory(join(root.path, _sanitizePackageName(package), '$year'));
+    final pkgDir = Directory(
+      join(root.path, _sanitizePackageName(package), '$year'),
+    );
     if (!await pkgDir.exists()) {
       await pkgDir.create(recursive: true);
     }
@@ -173,7 +202,11 @@ class ScreenshotDatabase {
     return 'shots_${year}${mm}';
   }
 
-  Future<void> _ensureMonthTable(DatabaseExecutor shardDb, int year, int month) async {
+  Future<void> _ensureMonthTable(
+    DatabaseExecutor shardDb,
+    int year,
+    int month,
+  ) async {
     final table = _monthTableName(year, month);
     await shardDb.execute('''
       CREATE TABLE IF NOT EXISTS $table (
@@ -188,23 +221,39 @@ class ScreenshotDatabase {
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
-    await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_capture_time ON $table(capture_time)');
-    await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)');
+    await shardDb.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${table}_capture_time ON $table(capture_time)',
+    );
+    await shardDb.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)',
+    );
     // 可选：为 ocr_text 建立索引（对前缀匹配有帮助；LIKE '%term%' 仍会扫描）
-    try { await shardDb.execute('CREATE INDEX IF NOT EXISTS idx_${table}_ocr_text ON $table(ocr_text)'); } catch (_) {}
+    try {
+      await shardDb.execute(
+        'CREATE INDEX IF NOT EXISTS idx_${table}_ocr_text ON $table(ocr_text)',
+      );
+    } catch (_) {}
     // 兜底：老表添加缺失列
-    try { await shardDb.execute("ALTER TABLE $table ADD COLUMN ocr_text TEXT"); } catch (_) {}
+    try {
+      await shardDb.execute("ALTER TABLE $table ADD COLUMN ocr_text TEXT");
+    } catch (_) {}
     // 确保 FTS 虚拟表与触发器存在，并完成历史数据回填
     await _ensureMonthFts(shardDb, year, month);
   }
 
   /// 确保每月表具备 FTS（优先 FTS5，回退 FTS4），带触发器与一次性回填
-  Future<void> _ensureMonthFts(DatabaseExecutor shardDb, int year, int month) async {
+  Future<void> _ensureMonthFts(
+    DatabaseExecutor shardDb,
+    int year,
+    int month,
+  ) async {
     final String table = _monthTableName(year, month);
     final String fts = '${table}_fts';
     try {
       if (!await _tableExists(shardDb, table)) return;
-    } catch (_) { return; }
+    } catch (_) {
+      return;
+    }
 
     // 记录构建状态
     try {
@@ -220,12 +269,16 @@ class ScreenshotDatabase {
     bool ok = false;
     // 尝试 FTS5
     try {
-      await shardDb.execute("CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts5(ocr_text, content=$table, content_rowid=id, tokenize='unicode61', prefix='2 3 4')");
+      await shardDb.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts5(ocr_text, content=$table, content_rowid=id, tokenize='unicode61', prefix='2 3 4')",
+      );
       ok = true;
     } catch (_) {
       // 回退 FTS4
       try {
-        await shardDb.execute("CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts4(ocr_text, content=$table)");
+        await shardDb.execute(
+          "CREATE VIRTUAL TABLE IF NOT EXISTS $fts USING fts4(ocr_text, content=$table)",
+        );
         ok = true;
       } catch (_) {}
     }
@@ -256,14 +309,23 @@ class ScreenshotDatabase {
 
     // 回填：若未构建则重建索引
     try {
-      final rows = await (shardDb as Database).query('fts_registry', columns: ['built'], where: 'table_name = ?', whereArgs: [table], limit: 1);
-      final built = rows.isNotEmpty && ((rows.first['built'] as int?) ?? 0) == 1;
+      final rows = await (shardDb as Database).query(
+        'fts_registry',
+        columns: ['built'],
+        where: 'table_name = ?',
+        whereArgs: [table],
+        limit: 1,
+      );
+      final built =
+          rows.isNotEmpty && ((rows.first['built'] as int?) ?? 0) == 1;
       if (!built) {
         try {
           await shardDb.execute("INSERT INTO $fts($fts) VALUES('rebuild')");
         } catch (_) {
           try {
-            await shardDb.execute("INSERT OR IGNORE INTO $fts(rowid, ocr_text) SELECT id, ocr_text FROM $table WHERE ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0");
+            await shardDb.execute(
+              "INSERT OR IGNORE INTO $fts(rowid, ocr_text) SELECT id, ocr_text FROM $table WHERE ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0",
+            );
           } catch (_) {}
         }
         try {
@@ -291,11 +353,17 @@ class ScreenshotDatabase {
     return [year, month, localId];
   }
 
-  int _yearFromMillis(int millis) => DateTime.fromMillisecondsSinceEpoch(millis).year;
-  int _monthFromMillis(int millis) => DateTime.fromMillisecondsSinceEpoch(millis).month;
+  int _yearFromMillis(int millis) =>
+      DateTime.fromMillisecondsSinceEpoch(millis).year;
+  int _monthFromMillis(int millis) =>
+      DateTime.fromMillisecondsSinceEpoch(millis).month;
 
   /// 仅在主库中注册应用（不再在主库创建分表）
-  Future<void> _registerAppIfNeeded(DatabaseExecutor db, String packageName, String appName) async {
+  Future<void> _registerAppIfNeeded(
+    DatabaseExecutor db,
+    String packageName,
+    String appName,
+  ) async {
     try {
       await db.execute(
         'INSERT OR REPLACE INTO app_registry(app_package_name, app_name, table_name) VALUES(?, ?, ?)',
@@ -324,7 +392,10 @@ class ScreenshotDatabase {
 
   Future<bool> _tableExists(DatabaseExecutor db, String tableName) async {
     try {
-      final res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [tableName]);
+      final res = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        [tableName],
+      );
       return res.isNotEmpty;
     } catch (_) {
       return false;
@@ -354,7 +425,9 @@ class ScreenshotDatabase {
         last_dhash INTEGER
       )
     ''');
-    await db.execute('CREATE INDEX idx_app_stats_last ON app_stats(last_capture_time)');
+    await db.execute(
+      'CREATE INDEX idx_app_stats_last ON app_stats(last_capture_time)',
+    );
 
     // 分库注册表（记录已存在的分库文件）
     await db.execute('''
@@ -382,7 +455,7 @@ class ScreenshotDatabase {
     await _createAiTables(db);
     // v6: 清理旧表与旧键
     await _cleanupLegacyAiArtifacts(db);
-    
+
     // 收藏表
     await _createFavoritesTable(db);
 
@@ -405,12 +478,22 @@ class ScreenshotDatabase {
     }
     // v8: 为 ai_messages 增加推理字段（兼容升级）
     if (oldVersion < 8) {
-      try { await db.execute('ALTER TABLE ai_messages ADD COLUMN reasoning_content TEXT'); } catch (_) {}
-      try { await db.execute('ALTER TABLE ai_messages ADD COLUMN reasoning_duration_ms INTEGER'); } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_messages ADD COLUMN reasoning_content TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_messages ADD COLUMN reasoning_duration_ms INTEGER',
+        );
+      } catch (_) {}
     }
     // v9: 为 ai_providers 增加 api_key 列（将 API Key 改存数据库）
     if (oldVersion < 9) {
-      try { await db.execute('ALTER TABLE ai_providers ADD COLUMN api_key TEXT'); } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE ai_providers ADD COLUMN api_key TEXT');
+      } catch (_) {}
     }
     if (oldVersion < 10) {
       await _createMorningInsightsTable(db);
@@ -422,7 +505,7 @@ class ScreenshotDatabase {
     await _cleanupLegacyAiArtifacts(db);
     // 幂等确保收藏表
     await _createFavoritesTable(db);
- 
+
     // 幂等确保 NSFW 相关表
     await _createNsfwTables(db);
   }
@@ -440,13 +523,14 @@ class ScreenshotDatabase {
     ''');
   }
 
-  
-
   // 无升级逻辑：新安装直接按 _onCreate 创建所有表
   // 注：从 v2 起使用 _onUpgrade 进行增量迁移
 
   /// 检查文件路径是否已存在于数据库中（可选指定执行器，以便在事务中调用）
-  Future<bool> isFilePathExists(String filePath, {DatabaseExecutor? exec}) async {
+  Future<bool> isFilePathExists(
+    String filePath, {
+    DatabaseExecutor? exec,
+  }) async {
     final DatabaseExecutor db = exec ?? await database;
     try {
       // 从文件路径推断应用包名
@@ -455,14 +539,14 @@ class ScreenshotDatabase {
         print('无法从路径推断包名: $filePath');
         return false;
       }
-      
+
       final tableName = _getAppTableName(packageName);
-      
+
       // 检查表是否存在
       if (!await _checkTableExists(db, tableName)) {
         return false;
       }
-      
+
       final result = await db.query(
         tableName,
         where: 'file_path = ?',
@@ -496,7 +580,13 @@ class ScreenshotDatabase {
 
         // 去重：按 file_path 在该月表查重
         try {
-          final rows = await shardDb.query(tableName, columns: ['id'], where: 'file_path = ?', whereArgs: [record.filePath], limit: 1);
+          final rows = await shardDb.query(
+            tableName,
+            columns: ['id'],
+            where: 'file_path = ?',
+            whereArgs: [record.filePath],
+            limit: 1,
+          );
           if (rows.isNotEmpty) return null;
         } catch (_) {}
 
@@ -521,7 +611,11 @@ class ScreenshotDatabase {
         );
 
         // 更新汇总统计
-        await this.updateTotalsOnInsert([recordWithSize.appPackageName], 1, actualFileSize);
+        await this.updateTotalsOnInsert(
+          [recordWithSize.appPackageName],
+          1,
+          actualFileSize,
+        );
 
         final gid = _encodeGid(year, month, localId);
         print('分库插入成功 gid=$gid table=$tableName');
@@ -544,7 +638,9 @@ class ScreenshotDatabase {
   }
 
   /// 批量插入（去重）：输入为记录列表，返回成功插入的数量
-  Future<int> insertScreenshotsIfNotExistsBatch(List<ScreenshotRecord> records) async {
+  Future<int> insertScreenshotsIfNotExistsBatch(
+    List<ScreenshotRecord> records,
+  ) async {
     if (records.isEmpty) return 0;
     final db = await database; // 主库
     int inserted = 0;
@@ -554,7 +650,11 @@ class ScreenshotDatabase {
     try {
       await db.transaction((txn) async {
         for (final record in records) {
-          await _registerAppIfNeeded(txn, record.appPackageName, record.appName);
+          await _registerAppIfNeeded(
+            txn,
+            record.appPackageName,
+            record.appName,
+          );
           final ts = record.captureTime.millisecondsSinceEpoch;
           final year = _yearFromMillis(ts);
           final month = _monthFromMillis(ts);
@@ -563,7 +663,13 @@ class ScreenshotDatabase {
           await _ensureMonthTable(shardDb, year, month);
           final tableName = _monthTableName(year, month);
           try {
-            final rows = await shardDb.query(tableName, columns: ['id'], where: 'file_path = ?', whereArgs: [record.filePath], limit: 1);
+            final rows = await shardDb.query(
+              tableName,
+              columns: ['id'],
+              where: 'file_path = ?',
+              whereArgs: [record.filePath],
+              limit: 1,
+            );
             if (rows.isNotEmpty) continue; // 去重
           } catch (_) {}
           final file = File(record.filePath);
@@ -581,16 +687,29 @@ class ScreenshotDatabase {
             ts,
           );
           inserted++;
-          packageCounts[recordWithSize.appPackageName] = (packageCounts[recordWithSize.appPackageName] ?? 0) + 1;
-          packageSizes[recordWithSize.appPackageName] = (packageSizes[recordWithSize.appPackageName] ?? 0) + actualFileSize;
+          packageCounts[recordWithSize.appPackageName] =
+              (packageCounts[recordWithSize.appPackageName] ?? 0) + 1;
+          packageSizes[recordWithSize.appPackageName] =
+              (packageSizes[recordWithSize.appPackageName] ?? 0) +
+              actualFileSize;
         }
 
         // 批量更新汇总统计
         if (inserted > 0) {
           final packageNames = packageCounts.keys.toList();
-          final totalScreenshots = packageCounts.values.fold(0, (sum, count) => sum + count);
-          final totalSize = packageSizes.values.fold(0, (sum, size) => sum + size);
-          await this.updateTotalsOnInsert(packageNames, totalScreenshots, totalSize);
+          final totalScreenshots = packageCounts.values.fold(
+            0,
+            (sum, count) => sum + count,
+          );
+          final totalSize = packageSizes.values.fold(
+            0,
+            (sum, size) => sum + size,
+          );
+          await this.updateTotalsOnInsert(
+            packageNames,
+            totalScreenshots,
+            totalSize,
+          );
         }
       });
     } catch (e) {
@@ -612,7 +731,8 @@ class ScreenshotDatabase {
 
     try {
       // 按包分组（减少表切换开销）
-      final Map<String, List<ScreenshotRecord>> byPkg = <String, List<ScreenshotRecord>>{};
+      final Map<String, List<ScreenshotRecord>> byPkg =
+          <String, List<ScreenshotRecord>>{};
       for (final r in records) {
         byPkg.putIfAbsent(r.appPackageName, () => <ScreenshotRecord>[]).add(r);
       }
@@ -628,7 +748,8 @@ class ScreenshotDatabase {
           await _registerAppIfNeeded(txn, packageName, appName);
 
           // 再按月份分组，分别写入对应分库月表
-          final Map<int, List<ScreenshotRecord>> byYearMonthKey = <int, List<ScreenshotRecord>>{};
+          final Map<int, List<ScreenshotRecord>> byYearMonthKey =
+              <int, List<ScreenshotRecord>>{};
           for (final r in list) {
             final ts = r.captureTime.millisecondsSinceEpoch;
             final key = _yearFromMillis(ts) * 100 + _monthFromMillis(ts);
@@ -646,35 +767,51 @@ class ScreenshotDatabase {
 
             final batch = shardDb.batch();
             for (final r in ym.value) {
-            final map = {...r.toMap()};
-            map.remove('app_package_name');
-            map.remove('app_name');
-            batch.insert(
-              tableName,
-              map,
+              final map = {...r.toMap()};
+              map.remove('app_package_name');
+              map.remove('app_name');
+              batch.insert(
+                tableName,
+                map,
                 conflictAlgorithm: ConflictAlgorithm.ignore,
+              );
+            }
+            final batchResult = await batch.commit(
+              noResult: true,
+              continueOnError: true,
             );
-          }
-          final batchResult = await batch.commit(noResult: true, continueOnError: true);
-          if (batchResult != null) {
-            totalInserted += batchResult.length;
-          }
+            if (batchResult != null) {
+              totalInserted += batchResult.length;
+            }
 
             // 重算该应用聚合一次（按包维度即可）
-          await _recomputeAppStatForPackage(txn, packageName);
+            await _recomputeAppStatForPackage(txn, packageName);
 
-          // 累计统计数据
-          packageCounts[packageName] = (packageCounts[packageName] ?? 0) + list.length;
-          packageSizes[packageName] = (packageSizes[packageName] ?? 0) + list.fold(0, (sum, r) => sum + r.fileSize);
+            // 累计统计数据
+            packageCounts[packageName] =
+                (packageCounts[packageName] ?? 0) + list.length;
+            packageSizes[packageName] =
+                (packageSizes[packageName] ?? 0) +
+                list.fold(0, (sum, r) => sum + r.fileSize);
           }
         }
 
         // 批量更新汇总统计
         if (totalInserted > 0) {
           final packageNames = packageCounts.keys.toList();
-          final totalScreenshots = packageCounts.values.fold(0, (sum, count) => sum + count);
-          final totalSize = packageSizes.values.fold(0, (sum, size) => sum + size);
-          await this.updateTotalsOnInsert(packageNames, totalScreenshots, totalSize);
+          final totalScreenshots = packageCounts.values.fold(
+            0,
+            (sum, count) => sum + count,
+          );
+          final totalSize = packageSizes.values.fold(
+            0,
+            (sum, size) => sum + size,
+          );
+          await this.updateTotalsOnInsert(
+            packageNames,
+            totalScreenshots,
+            totalSize,
+          );
         }
       });
     } catch (e) {
@@ -682,7 +819,6 @@ class ScreenshotDatabase {
     }
     return totalInserted;
   }
-
 
   /// 关闭数据库
   Future<void> close() async {
@@ -694,9 +830,16 @@ class ScreenshotDatabase {
   }
 
   // ======= 聚合表维护辅助 =======
-  Future<void> _upsertAppStatOnInsert(DatabaseExecutor db, String package, String appName, int fileSize, int captureTime) async {
+  Future<void> _upsertAppStatOnInsert(
+    DatabaseExecutor db,
+    String package,
+    String appName,
+    int fileSize,
+    int captureTime,
+  ) async {
     try {
-      await db.execute('''
+      await db.execute(
+        '''
         INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time)
         VALUES (?, ?, 1, ?, ?)
         ON CONFLICT(app_package_name) DO UPDATE SET
@@ -704,14 +847,19 @@ class ScreenshotDatabase {
           total_count=app_stats.total_count + 1,
           total_size=app_stats.total_size + excluded.total_size,
           last_capture_time=CASE WHEN app_stats.last_capture_time IS NULL OR excluded.last_capture_time > app_stats.last_capture_time THEN excluded.last_capture_time ELSE app_stats.last_capture_time END
-      ''', [package, appName, fileSize, captureTime]);
+      ''',
+        [package, appName, fileSize, captureTime],
+      );
     } catch (e) {
       // 如设备SQLite不支持UPSERT，退化为全量重算
       await _recomputeAppStatForPackage(db, package);
     }
   }
 
-  Future<void> _recomputeAppStatForPackage(DatabaseExecutor db, String package) async {
+  Future<void> _recomputeAppStatForPackage(
+    DatabaseExecutor db,
+    String package,
+  ) async {
     try {
       // 聚合所有分库月表
       final master = await database;
@@ -727,7 +875,9 @@ class ScreenshotDatabase {
           final t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final rows = await shardDb.rawQuery('SELECT COUNT(*) as c, COALESCE(SUM(file_size),0) as s, COALESCE(MAX(capture_time),0) as t FROM $t');
+            final rows = await shardDb.rawQuery(
+              'SELECT COUNT(*) as c, COALESCE(SUM(file_size),0) as s, COALESCE(MAX(capture_time),0) as t FROM $t',
+            );
             if (rows.isNotEmpty) {
               final c = (rows.first['c'] as int?) ?? 0;
               final s = (rows.first['s'] as int?) ?? 0;
@@ -741,25 +891,29 @@ class ScreenshotDatabase {
       }
 
       if (totalCount <= 0) {
-        await master.delete('app_stats', where: 'app_package_name = ?', whereArgs: [package]);
+        await master.delete(
+          'app_stats',
+          where: 'app_package_name = ?',
+          whereArgs: [package],
+        );
         return;
       }
-      
+
       // 读取 app_name
       String appName = package;
       try {
         final appInfo = await master.query(
-        'app_registry',
-        columns: ['app_name'],
-        where: 'app_package_name = ?',
-        whereArgs: [package],
-        limit: 1,
-      );
-      if (appInfo.isNotEmpty) {
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [package],
+          limit: 1,
+        );
+        if (appInfo.isNotEmpty) {
           appName = (appInfo.first['app_name'] as String?) ?? package;
-      }
+        }
       } catch (_) {}
-      
+
       await master.execute(
         '''INSERT INTO app_stats(app_package_name, app_name, total_count, total_size, last_capture_time) VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(app_package_name) DO UPDATE SET app_name=excluded.app_name, total_count=excluded.total_count, total_size=excluded.total_size, last_capture_time=excluded.last_capture_time''',
@@ -770,17 +924,15 @@ class ScreenshotDatabase {
     }
   }
 
-  
-
   // ======= 分表架构相关方法 =======
-  
+
   // 已移除重复的 _sanitizePackageName 定义，使用文件顶部版本
-  
+
   /// 获取应用表名
   String _getAppTableName(String packageName) {
     return 'screenshots_${_sanitizePackageName(packageName)}';
   }
-  
+
   /// 从文件路径推断应用包名
   String? _extractPackageNameFromPath(String filePath) {
     // 适配新旧目录结构：
@@ -790,7 +942,9 @@ class ScreenshotDatabase {
     if (parts.length >= 3) {
       for (int i = 0; i < parts.length - 1; i++) {
         final seg = parts[i];
-        if (seg == 'output' && i + 2 < parts.length && parts[i + 1] == 'screen') {
+        if (seg == 'output' &&
+            i + 2 < parts.length &&
+            parts[i + 1] == 'screen') {
           // output/screen/<package>
           return parts[i + 2];
         }
@@ -802,43 +956,53 @@ class ScreenshotDatabase {
     }
     return null;
   }
-  
+
   /// 检查表是否存在
   Future<bool> _checkTableExists(DatabaseExecutor db, String tableName) async {
     final result = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-      [tableName]
+      [tableName],
     );
     return result.isNotEmpty;
   }
-  
+
   /// 确保应用表存在
-  Future<void> _ensureAppTableExists(DatabaseExecutor db, String packageName, String appName) async {
+  Future<void> _ensureAppTableExists(
+    DatabaseExecutor db,
+    String packageName,
+    String appName,
+  ) async {
     final tableName = _getAppTableName(packageName);
-    
+
     // 检查表是否存在
     if (await _checkTableExists(db, tableName)) {
       // 确保新增列存在（幂等地尝试添加）
       await _ensurePageUrlColumnExists(db, tableName);
       return;
     }
-    
+
     // 创建应用表
     await _createAppTable(db, tableName);
     // 幂等确保新增列
     await _ensurePageUrlColumnExists(db, tableName);
-    
+
     // 注册到app_registry
-    await db.execute('''
+    await db.execute(
+      '''
       INSERT OR REPLACE INTO app_registry (app_package_name, app_name, table_name)
       VALUES (?, ?, ?)
-    ''', [packageName, appName, tableName]);
-    
+    ''',
+      [packageName, appName, tableName],
+    );
+
     print('已创建应用表: $tableName');
   }
 
   /// 幂等地为已有表添加 page_url 列（若已存在则忽略错误）
-  Future<void> _ensurePageUrlColumnExists(DatabaseExecutor db, String tableName) async {
+  Future<void> _ensurePageUrlColumnExists(
+    DatabaseExecutor db,
+    String tableName,
+  ) async {
     try {
       await db.execute("ALTER TABLE $tableName ADD COLUMN page_url TEXT");
     } catch (e) {
@@ -860,10 +1024,14 @@ class ScreenshotDatabase {
           updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
         )
       ''');
-      // 创建索引
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_${tableName}_capture_time ON $tableName(capture_time)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_${tableName}_file_path ON $tableName(file_path)');
- }
+    // 创建索引
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tableName}_capture_time ON $tableName(capture_time)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_${tableName}_file_path ON $tableName(file_path)',
+    );
+  }
 
   /// 获取所有应用表信息
   Future<List<Map<String, dynamic>>> _getAllAppTables(Database db) async {
@@ -874,7 +1042,7 @@ class ScreenshotDatabase {
       return [];
     }
   }
-  
+
   // ======= 日期范围查询辅助 =======
   List<List<int>> _listYearMonthBetween(DateTime start, DateTime end) {
     final DateTime s = DateTime(start.year, start.month, 1);
@@ -928,7 +1096,11 @@ class ScreenshotDatabase {
 
   /// 增量更新汇总统计（在截图入库后调用）
   /// 对于新应用，先检查是否已存在于app_stats中判断是否首次出现
-  Future<void> updateTotalsOnInsert(List<String> packageNames, int screenshotCount, int totalSizeBytes) async {
+  Future<void> updateTotalsOnInsert(
+    List<String> packageNames,
+    int screenshotCount,
+    int totalSizeBytes,
+  ) async {
     final db = await database;
     try {
       await db.transaction((txn) async {
@@ -949,7 +1121,8 @@ class ScreenshotDatabase {
         }
 
         // 更新汇总表
-        await txn.execute('''
+        await txn.execute(
+          '''
           INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
           VALUES (1,
             COALESCE((SELECT app_count FROM totals WHERE id = 1), 0) + ?,
@@ -957,7 +1130,14 @@ class ScreenshotDatabase {
             COALESCE((SELECT total_size_bytes FROM totals WHERE id = 1), 0) + ?,
             ?
           )
-        ''', [newAppCount, screenshotCount, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+        ''',
+          [
+            newAppCount,
+            screenshotCount,
+            totalSizeBytes,
+            DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
       });
     } catch (e) {
       print('更新汇总统计失败: $e');
@@ -982,12 +1162,22 @@ class ScreenshotDatabase {
         }
 
         // 更新或插入汇总表
-        await txn.execute('''
+        await txn.execute(
+          '''
           INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
           VALUES (1, ?, ?, ?, ?)
-        ''', [appCount, totalScreenshots, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+        ''',
+          [
+            appCount,
+            totalScreenshots,
+            totalSizeBytes,
+            DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
 
-        print('重新计算汇总统计完成: 应用=$appCount, 截图=$totalScreenshots, 大小=$totalSizeBytes');
+        print(
+          '重新计算汇总统计完成: 应用=$appCount, 截图=$totalScreenshots, 大小=$totalSizeBytes',
+        );
       });
     } catch (e) {
       print('重新计算汇总统计失败: $e');

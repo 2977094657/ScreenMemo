@@ -64,7 +64,7 @@ object SegmentDatabaseHelper {
 
     private fun resolveMasterDbPath(context: Context): String? {
         return try {
-            val base = context.getExternalFilesDir(null)?.absolutePath ?: return null
+            val base = context.filesDir.absolutePath
             val dbDir = File(base, MASTER_DB_DIR_RELATIVE)
             if (!dbDir.exists()) dbDir.mkdirs()
             File(dbDir, MASTER_DB_FILE_NAME).absolutePath

@@ -9,16 +9,22 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     bool ok = false;
     // 使用主库上临时虚拟表进行探测，避免遍历分库
     try {
-      await db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts5(x)");
+      await db.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts5(x)",
+      );
       ok = true;
     } catch (_) {
       try {
-        await db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts4(x)");
+        await db.execute(
+          "CREATE VIRTUAL TABLE IF NOT EXISTS _fts_probe USING fts4(x)",
+        );
         ok = true;
       } catch (_) {}
     }
     if (ok) {
-      try { await db.execute("DROP TABLE IF EXISTS _fts_probe"); } catch (_) {}
+      try {
+        await db.execute("DROP TABLE IF EXISTS _fts_probe");
+      } catch (_) {}
     }
     return ok;
   }
@@ -41,7 +47,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       // 预取应用名缓存
       final Map<String, String> appNameCache = <String, String>{};
       try {
-        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        final reg = await db.query(
+          'app_registry',
+          columns: ['app_package_name', 'app_name'],
+        );
         for (final r in reg) {
           final pkg = r['app_package_name'] as String;
           final name = (r['app_name'] as String?) ?? pkg;
@@ -86,12 +95,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         final String appName = appNameCache[pkg] ?? pkg;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
@@ -100,8 +110,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           if (!await _tableExists(shardDb, t)) continue;
           try {
             // 构建 LIKE 条件（多词 AND）
-            final parts = q.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
-            final List<String> filters = <String>['m.is_deleted = 0', 'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0'];
+            final parts = q
+                .split(RegExp(r"\s+"))
+                .where((e) => e.isNotEmpty)
+                .toList();
+            final List<String> filters = <String>[
+              'm.is_deleted = 0',
+              'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0',
+            ];
             final List<Object?> args = <Object?>[];
             for (final w in parts) {
               filters.add('LOWER(m.ocr_text) LIKE ?');
@@ -111,11 +127,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final int s = startMillis ?? 0;
               final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
               filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-              args..add(s)..add(e);
+              args
+                ..add(s)
+                ..add(e);
             }
             if (minSize != null && maxSize != null) {
               filters.add('m.file_size >= ? AND m.file_size <= ?');
-              args..add(minSize)..add(maxSize);
+              args
+                ..add(minSize)
+                ..add(maxSize);
             } else if (minSize != null) {
               filters.add('m.file_size >= ?');
               args.add(minSize);
@@ -124,9 +144,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               args.add(maxSize);
             }
 
-            final String sql = 'SELECT m.* FROM ' + t + ' m WHERE ' + filters.join(' AND ') + ' ORDER BY m.capture_time DESC LIMIT ?';
+            final String sql =
+                'SELECT m.* FROM ' +
+                t +
+                ' m WHERE ' +
+                filters.join(' AND ') +
+                ' ORDER BY m.capture_time DESC LIMIT ?';
             args.add(perTableLimit);
-            final List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
+            final List<Map<String, Object?>> maps = await (shardDb as Database)
+                .rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = pkg;
@@ -145,7 +171,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         final int tb = (b['capture_time'] as int?) ?? 0;
         return tb.compareTo(ta);
       });
-      int start = offset ?? 0; if (start < 0) start = 0;
+      int start = offset ?? 0;
+      if (start < 0) start = 0;
       int end = limit != null ? (start + limit) : rows.length;
       if (start > rows.length) return <ScreenshotRecord>[];
       if (end > rows.length) end = rows.length;
@@ -192,12 +219,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (shardDb == null) continue;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
@@ -205,8 +233,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final parts = q.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
-            final List<String> filters = <String>['m.is_deleted = 0', 'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0'];
+            final parts = q
+                .split(RegExp(r"\s+"))
+                .where((e) => e.isNotEmpty)
+                .toList();
+            final List<String> filters = <String>[
+              'm.is_deleted = 0',
+              'm.ocr_text IS NOT NULL AND LENGTH(m.ocr_text) > 0',
+            ];
             final List<Object?> args = <Object?>[];
             for (final w in parts) {
               filters.add('LOWER(m.ocr_text) LIKE ?');
@@ -216,11 +250,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final int s = startMillis ?? 0;
               final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
               filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-              args..add(s)..add(e);
+              args
+                ..add(s)
+                ..add(e);
             }
             if (minSize != null && maxSize != null) {
               filters.add('m.file_size >= ? AND m.file_size <= ?');
-              args..add(minSize)..add(maxSize);
+              args
+                ..add(minSize)
+                ..add(maxSize);
             } else if (minSize != null) {
               filters.add('m.file_size >= ?');
               args.add(minSize);
@@ -228,8 +266,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               filters.add('m.file_size <= ?');
               args.add(maxSize);
             }
-            final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m WHERE ' + filters.join(' AND ');
-            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+            final String sql =
+                'SELECT COUNT(*) AS c FROM ' +
+                t +
+                ' m WHERE ' +
+                filters.join(' AND ');
+            final List<Map<String, Object?>> rows = await (shardDb as Database)
+                .rawQuery(sql, args);
             total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
           } catch (_) {}
         }
@@ -239,6 +282,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return 0;
     }
   }
+
   /// 创建收藏表
   Future<void> _createFavoritesTable(DatabaseExecutor db) async {
     await db.execute('''
@@ -253,12 +297,20 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         UNIQUE(screenshot_id, app_package_name)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_favorites_screenshot ON favorites(screenshot_id)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_favorites_time ON favorites(favorite_time DESC)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_favorites_screenshot ON favorites(screenshot_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_favorites_time ON favorites(favorite_time DESC)',
+    );
   }
 
   // ===================== 截图查询与全局统计 =====================
-  Future<List<ScreenshotRecord>> getScreenshotsByApp(String appPackageName, {int? limit, int? offset}) async {
+  Future<List<ScreenshotRecord>> getScreenshotsByApp(
+    String appPackageName, {
+    int? limit,
+    int? offset,
+  }) async {
     final db = await database; // 主库
     try {
       // 读取 app_name
@@ -350,10 +402,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final rows = await shardDb.query(
-              t,
-              columns: ['id'],
-            );
+            final rows = await shardDb.query(t, columns: ['id']);
             for (final r in rows) {
               final localId = (r['id'] as int?) ?? 0;
               if (localId > 0) ids.add(_encodeGid(y, m, localId));
@@ -369,7 +418,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }
 
   /// 通过全局ID(gid)与包名获取单条截图记录
-  Future<ScreenshotRecord?> getScreenshotById(int gid, String appPackageName) async {
+  Future<ScreenshotRecord?> getScreenshotById(
+    int gid,
+    String appPackageName,
+  ) async {
     final db = await database; // 主库
     try {
       final decoded = _decodeGid(gid);
@@ -496,7 +548,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           'appName': map['app_name'] as String,
           'totalCount': map['total_count'] as int,
           'lastCaptureTime': map['last_capture_time'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(map['last_capture_time'] as int)
+              ? DateTime.fromMillisecondsSinceEpoch(
+                  map['last_capture_time'] as int,
+                )
               : null,
           'totalSize': map['total_size'] as int,
         };
@@ -506,8 +560,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     } catch (e) {
       print('获取截屏统计失败: $e');
       return {};
-    }
-    finally {
+    } finally {
       StartupProfiler.end('ScreenshotDatabase.getScreenshotStatistics');
     }
   }
@@ -517,12 +570,27 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     final db = await database; // 主库
     try {
       final today = DateTime.now();
-      final startOfDay = DateTime(today.year, today.month, today.day).millisecondsSinceEpoch;
-      final endOfDay = DateTime(today.year, today.month, today.day, 23, 59, 59).millisecondsSinceEpoch;
+      final startOfDay = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      ).millisecondsSinceEpoch;
+      final endOfDay = DateTime(
+        today.year,
+        today.month,
+        today.day,
+        23,
+        59,
+        59,
+      ).millisecondsSinceEpoch;
 
       int totalCount = 0;
       final nowYear = today.year;
-      final shardYears = await db.query('shard_registry', columns: ['app_package_name','year'], orderBy: 'year DESC');
+      final shardYears = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
       for (final row in shardYears) {
         final String pkg = row['app_package_name'] as String;
         final int y = row['year'] as int;
@@ -533,9 +601,12 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         final t = _monthTableName(y, m);
         if (!await _tableExists(shardDb, t)) continue;
         try {
-          final result = await shardDb.rawQuery('''
+          final result = await shardDb.rawQuery(
+            '''
             SELECT COUNT(*) as count FROM $t WHERE capture_time >= ? AND capture_time <= ?
-          ''', [startOfDay, endOfDay]);
+          ''',
+            [startOfDay, endOfDay],
+          );
           totalCount += (result.first['count'] as int?) ?? 0;
         } catch (e) {
           print('查询 $pkg/$t 今日数量失败: $e');
@@ -546,8 +617,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     } catch (e) {
       print('获取今日截屏数量失败: $e');
       return 0;
-    }
-    finally {
+    } finally {
       StartupProfiler.end('ScreenshotDatabase.getTodayScreenshotCount');
     }
   }
@@ -583,10 +653,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final table = _monthTableName(year, month);
           if (!await _tableExists(shardDb, table)) continue;
           try {
-          final res = await shardDb.rawQuery(
-            'SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
-            [startMillis, endMillis],
-          );
+            final res = await shardDb.rawQuery(
+              'SELECT COUNT(*) as c FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
+              [startMillis, endMillis],
+            );
             total += (res.first['c'] as int?) ?? 0;
           } catch (_) {}
         }
@@ -619,7 +689,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       );
       final Map<String, String> appNameCache = <String, String>{};
       try {
-        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        final reg = await db.query(
+          'app_registry',
+          columns: ['app_package_name', 'app_name'],
+        );
         for (final r in reg) {
           final pkg = r['app_package_name'] as String;
           final name = (r['app_name'] as String?) ?? pkg;
@@ -654,7 +727,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             // 限流：每个分表仅取部分数据，后续统一排序并切片
             final maps = await shardDb.query(
               t,
-              where: 'capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
+              where:
+                  'capture_time >= ? AND capture_time <= ? AND is_deleted = 0',
               whereArgs: [startMillis, endMillis],
               orderBy: 'capture_time DESC',
               limit: perTableLimit,
@@ -695,13 +769,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     StartupProfiler.begin('ScreenshotDatabase.getTotalScreenshotCount');
     final db = await database; // 主库
     try {
-      final result = await db.rawQuery('SELECT SUM(total_count) as count FROM app_stats');
+      final result = await db.rawQuery(
+        'SELECT SUM(total_count) as count FROM app_stats',
+      );
       return (result.first['count'] as int?) ?? 0;
     } catch (e) {
       print('获取总截屏数量失败: $e');
       return 0;
-    }
-    finally {
+    } finally {
       StartupProfiler.end('ScreenshotDatabase.getTotalScreenshotCount');
     }
   }
@@ -710,11 +785,17 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   Future<bool> deleteScreenshot(int id, String packageName) async {
     final db = await database; // 主库
     try {
-      FlutterLogger.nativeInfo('DB', 'deleteScreenshot start id='+id.toString()+', package='+packageName);
+      FlutterLogger.nativeInfo(
+        'DB',
+        'deleteScreenshot start id=' +
+            id.toString() +
+            ', package=' +
+            packageName,
+      );
 
       final decoded = _decodeGid(id);
       if (decoded == null) {
-        FlutterLogger.nativeWarn('DB', '删除截图时无效的gid='+id.toString());
+        FlutterLogger.nativeWarn('DB', '删除截图时无效的gid=' + id.toString());
         return false;
       }
       final int year = decoded[0];
@@ -733,23 +814,27 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       );
       if (maps.isEmpty) return false;
       final filePath = maps.first['file_path'] as String;
-      final result = await shardDb.delete(tableName, where: 'id = ?', whereArgs: [localId]);
+      final result = await shardDb.delete(
+        tableName,
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
       if (result <= 0) return false;
       try {
         final file = File(filePath);
         if (await file.exists()) {
           await file.delete();
-          FlutterLogger.nativeInfo('FS', 'deleted file: '+filePath);
+          FlutterLogger.nativeInfo('FS', 'deleted file: ' + filePath);
         }
       } catch (e) {
-        FlutterLogger.nativeWarn('FS', 'delete file failed: '+e.toString());
+        FlutterLogger.nativeWarn('FS', 'delete file failed: ' + e.toString());
       }
       await _recomputeAppStatForPackage(db, packageName);
-      FlutterLogger.nativeInfo('DB', '删除后重算统计 gid='+id.toString());
+      FlutterLogger.nativeInfo('DB', '删除后重算统计 gid=' + id.toString());
       return true;
     } catch (e) {
       print('删除截屏记录失败: $e');
-      FlutterLogger.nativeError('DB', '删除截图时发生异常: '+e.toString());
+      FlutterLogger.nativeError('DB', '删除截图时发生异常: ' + e.toString());
       return false;
     }
   }
@@ -798,9 +883,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
           const int chunk = 900;
           for (int i = 0; i < localIds.length; i += chunk) {
-            final sub = localIds.sublist(i, i + chunk > localIds.length ? localIds.length : i + chunk);
+            final sub = localIds.sublist(
+              i,
+              i + chunk > localIds.length ? localIds.length : i + chunk,
+            );
             final ph2 = List.filled(sub.length, '?').join(',');
-            final count = await shardDb.rawDelete('DELETE FROM $tableName WHERE id IN ($ph2)', sub);
+            final count = await shardDb.rawDelete(
+              'DELETE FROM $tableName WHERE id IN ($ph2)',
+              sub,
+            );
             deletedTotal += count;
           }
         } catch (_) {}
@@ -818,23 +909,34 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
-  Future<void> _deleteFilesConcurrently(List<String> paths, {int maxConcurrent = 6}) async {
+  Future<void> _deleteFilesConcurrently(
+    List<String> paths, {
+    int maxConcurrent = 6,
+  }) async {
     if (paths.isEmpty) return;
     const int batch = 24;
     for (int i = 0; i < paths.length; i += batch) {
-      final sub = paths.sublist(i, i + batch > paths.length ? paths.length : i + batch);
+      final sub = paths.sublist(
+        i,
+        i + batch > paths.length ? paths.length : i + batch,
+      );
       for (int j = 0; j < sub.length; j += maxConcurrent) {
-        final chunk = sub.sublist(j, j + maxConcurrent > sub.length ? sub.length : j + maxConcurrent);
-        await Future.wait(chunk.map((p) async {
-          try {
-            final f = File(p);
-            if (await f.exists()) {
-              await f.delete();
+        final chunk = sub.sublist(
+          j,
+          j + maxConcurrent > sub.length ? sub.length : j + maxConcurrent,
+        );
+        await Future.wait(
+          chunk.map((p) async {
+            try {
+              final f = File(p);
+              if (await f.exists()) {
+                await f.delete();
+              }
+            } catch (e) {
+              print('批量删除文件失败: $e, $p');
             }
-          } catch (e) {
-            print('批量删除文件失败: $e, $p');
-          }
-        }));
+          }),
+        );
       }
     }
   }
@@ -859,9 +961,21 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         }
       }
 
-      await db.delete('shard_registry', where: 'app_package_name = ?', whereArgs: [appPackageName]);
-      await db.delete('app_registry', where: 'app_package_name = ?', whereArgs: [appPackageName]);
-      await db.delete('app_stats', where: 'app_package_name = ?', whereArgs: [appPackageName]);
+      await db.delete(
+        'shard_registry',
+        where: 'app_package_name = ?',
+        whereArgs: [appPackageName],
+      );
+      await db.delete(
+        'app_registry',
+        where: 'app_package_name = ?',
+        whereArgs: [appPackageName],
+      );
+      await db.delete(
+        'app_stats',
+        where: 'app_package_name = ?',
+        whereArgs: [appPackageName],
+      );
 
       print('已删除应用 $appPackageName 的 $total 条记录');
       return total;
@@ -871,7 +985,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getRecordsByIds(String packageName, List<int> ids) async {
+  Future<List<Map<String, dynamic>>> getRecordsByIds(
+    String packageName,
+    List<int> ids,
+  ) async {
     final db = await database;
     try {
       if (ids.isEmpty) return [];
@@ -922,13 +1039,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final keepSet = keepByYm[key] ?? <int>{};
           try {
             if (keepSet.isEmpty) {
-              final rows = await shardDb.rawQuery('SELECT COUNT(*) as c FROM $t');
+              final rows = await shardDb.rawQuery(
+                'SELECT COUNT(*) as c FROM $t',
+              );
               final c = (rows.first['c'] as int?) ?? 0;
               await shardDb.execute('DROP TABLE IF EXISTS $t');
               deletedTotal += c;
             } else {
               final placeholders = List.filled(keepSet.length, '?').join(',');
-              final count = await shardDb.rawDelete('DELETE FROM $t WHERE id NOT IN ($placeholders)', keepSet.toList());
+              final count = await shardDb.rawDelete(
+                'DELETE FROM $t WHERE id NOT IN ($placeholders)',
+                keepSet.toList(),
+              );
               deletedTotal += count;
             }
           } catch (_) {}
@@ -953,8 +1075,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
       String appName = packageName;
       try {
-        final info = await db.query('app_registry', columns: ['app_name'], where: 'app_package_name = ?', whereArgs: [packageName], limit: 1);
-        if (info.isNotEmpty) appName = (info.first['app_name'] as String?) ?? packageName;
+        final info = await db.query(
+          'app_registry',
+          columns: ['app_name'],
+          where: 'app_package_name = ?',
+          whereArgs: [packageName],
+          limit: 1,
+        );
+        if (info.isNotEmpty)
+          appName = (info.first['app_name'] as String?) ?? packageName;
       } catch (_) {}
 
       final years = await _listShardYearsForApp(packageName);
@@ -967,7 +1096,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           try {
             final maps = await shardDb.query(
               t,
-              columns: ['id','file_path','capture_time','file_size','page_url','ocr_text','is_deleted'],
+              columns: [
+                'id',
+                'file_path',
+                'capture_time',
+                'file_size',
+                'page_url',
+                'ocr_text',
+                'is_deleted',
+              ],
               where: 'file_path = ?',
               whereArgs: [filePath],
               limit: 1,
@@ -1004,7 +1141,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
       final Set<String> extCandidates = <String>{};
       if (ext != null && ext.isNotEmpty) extCandidates.add(ext);
-      extCandidates.addAll(<String>{'jpg','jpeg','png','webp'});
+      extCandidates.addAll(<String>{'jpg', 'jpeg', 'png', 'webp'});
       final master = await database;
       // 先在 segment_samples（主库）中搜索，按可能扩展名匹配
       for (final e in extCandidates) {
@@ -1026,12 +1163,25 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       // 列出所有应用包（从 shard_registry 或 app_registry 猜测）
       List<String> packages = <String>[];
       try {
-        final rows = await master.query('shard_registry', columns: ['app_package_name'], distinct: true);
-        packages = rows.map((e) => (e['app_package_name'] as String?) ?? '').where((e) => e.isNotEmpty).toList();
+        final rows = await master.query(
+          'shard_registry',
+          columns: ['app_package_name'],
+          distinct: true,
+        );
+        packages = rows
+            .map((e) => (e['app_package_name'] as String?) ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList();
       } catch (_) {
         try {
-          final rows = await master.query('app_registry', columns: ['app_package_name']);
-          packages = rows.map((e) => (e['app_package_name'] as String?) ?? '').where((e) => e.isNotEmpty).toList();
+          final rows = await master.query(
+            'app_registry',
+            columns: ['app_package_name'],
+          );
+          packages = rows
+              .map((e) => (e['app_package_name'] as String?) ?? '')
+              .where((e) => e.isNotEmpty)
+              .toList();
         } catch (_) {}
       }
       if (packages.isEmpty) return null;
@@ -1072,7 +1222,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             if (e is File) {
               final String pth = e.path;
               for (final ex in extCandidates) {
-                if (pth.endsWith('/' + base + '.' + ex) || pth.endsWith('\\' + base + '.' + ex) || pth.endsWith(base + '.' + ex)) {
+                if (pth.endsWith('/' + base + '.' + ex) ||
+                    pth.endsWith('\\' + base + '.' + ex) ||
+                    pth.endsWith(base + '.' + ex)) {
                   return pth;
                 }
               }
@@ -1087,7 +1239,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }
 
   /// 批量：通过文件名集合查找路径映射
-  Future<Map<String, String>> findPathsByBasenames(Set<String> filenames) async {
+  Future<Map<String, String>> findPathsByBasenames(
+    Set<String> filenames,
+  ) async {
     final Map<String, String> result = <String, String>{};
     for (final name in filenames) {
       final p = await findScreenshotPathByBasename(name);
@@ -1110,10 +1264,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       if (shardDb == null) return false;
       final tableName = _monthTableName(year, month);
       if (!await _tableExists(shardDb, tableName)) return false;
-      final updateMap = {...record.toMap(), 'updated_at': DateTime.now().millisecondsSinceEpoch};
+      final updateMap = {
+        ...record.toMap(),
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      };
       updateMap.remove('app_package_name');
       updateMap.remove('app_name');
-      final result = await shardDb.update(tableName, updateMap, where: 'id = ?', whereArgs: [localId]);
+      final result = await shardDb.update(
+        tableName,
+        updateMap,
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
       return result > 0;
     } catch (e) {
       print('更新截屏记录失败: $e');
@@ -1138,7 +1300,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
       final Map<String, String> appNameCache = <String, String>{};
       try {
-        final reg = await db.query('app_registry', columns: ['app_package_name', 'app_name']);
+        final reg = await db.query(
+          'app_registry',
+          columns: ['app_package_name', 'app_name'],
+        );
         for (final r in reg) {
           final pkg = r['app_package_name'] as String;
           final name = (r['app_name'] as String?) ?? pkg;
@@ -1185,12 +1350,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         // 选择需要扫描的月份
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
@@ -1199,16 +1365,24 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           if (!await _tableExists(shardDb, t)) continue;
           try {
             // 尝试优先 FTS：确保当月FTS存在（首次会自动回填）
-            try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+            try {
+              await _ensureMonthFts(shardDb, y, m);
+            } catch (_) {}
 
             // 构建 FTS MATCH 字符串（简单 AND + 前缀）
             String buildMatch(String text) {
-              final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+              final parts = text
+                  .split(RegExp(r"\s+"))
+                  .where((e) => e.isNotEmpty)
+                  .toList();
               if (parts.isEmpty) return text;
               // 限制最多5个词，避免过长查询
               final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-              return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+              return limited
+                  .map((w) => (w.replaceAll('"', '')) + '*')
+                  .join(' AND ');
             }
+
             final String match = buildMatch(q);
 
             // 组合 SQL：fts JOIN 主表并应用过滤
@@ -1216,7 +1390,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             // 禁止回退：如未成功创建/存在 FTS 表，直接抛错
             final bool ftsExists = await _tableExists(shardDb, fts);
             if (!ftsExists) {
-              throw StateError('FTS not available for table '+t);
+              throw StateError('FTS not available for table ' + t);
             }
             final List<Object?> args = <Object?>[match];
             final List<String> filters = <String>['m.is_deleted = 0'];
@@ -1224,11 +1398,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final int s = startMillis ?? 0;
               final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
               filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-              args..add(s)..add(e);
+              args
+                ..add(s)
+                ..add(e);
             }
             if (minSize != null && maxSize != null) {
               filters.add('m.file_size >= ? AND m.file_size <= ?');
-              args..add(minSize)..add(maxSize);
+              args
+                ..add(minSize)
+                ..add(maxSize);
             } else if (minSize != null) {
               filters.add('m.file_size >= ?');
               args.add(minSize);
@@ -1237,12 +1415,22 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               args.add(maxSize);
             }
 
-            final sql = 'SELECT m.* FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
-                'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ') + ' ' +
+            final sql =
+                'SELECT m.* FROM ' +
+                t +
+                ' m JOIN ' +
+                fts +
+                ' f ON f.rowid = m.id ' +
+                'WHERE ' +
+                fts +
+                ' MATCH ? AND ' +
+                filters.join(' AND ') +
+                ' ' +
                 'ORDER BY m.capture_time DESC LIMIT ?';
             args.add(perTableLimit);
 
-            List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
+            List<Map<String, Object?>> maps = await (shardDb as Database)
+                .rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = pkg;
@@ -1301,11 +1489,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
       // 构建 MATCH 字符串
       String buildMatch(String text) {
-        final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+        final parts = text
+            .split(RegExp(r"\s+"))
+            .where((e) => e.isNotEmpty)
+            .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
         return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
       }
+
       final String match = buildMatch(q);
 
       int total = 0;
@@ -1322,12 +1514,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (shardDb == null) continue;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
@@ -1335,7 +1528,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           // 确保 FTS 存在
-          try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+          try {
+            await _ensureMonthFts(shardDb, y, m);
+          } catch (_) {}
           final String fts = '${t}_fts';
           final bool ftsExists = await _tableExists(shardDb, fts);
           if (!ftsExists) {
@@ -1348,11 +1543,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             final int s = startMillis ?? 0;
             final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
             filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-            args..add(s)..add(e);
+            args
+              ..add(s)
+              ..add(e);
           }
           if (minSize != null && maxSize != null) {
             filters.add('m.file_size >= ? AND m.file_size <= ?');
-            args..add(minSize)..add(maxSize);
+            args
+              ..add(minSize)
+              ..add(maxSize);
           } else if (minSize != null) {
             filters.add('m.file_size >= ?');
             args.add(minSize);
@@ -1361,9 +1560,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             args.add(maxSize);
           }
 
-          final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
-              'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ');
-          final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+          final String sql =
+              'SELECT COUNT(*) AS c FROM ' +
+              t +
+              ' m JOIN ' +
+              fts +
+              ' f ON f.rowid = m.id ' +
+              'WHERE ' +
+              fts +
+              ' MATCH ? AND ' +
+              filters.join(' AND ');
+          final List<Map<String, Object?>> rows = await (shardDb as Database)
+              .rawQuery(sql, args);
           total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
         }
       }
@@ -1398,7 +1606,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           whereArgs: [appPackageName],
           limit: 1,
         );
-        if (r.isNotEmpty) appName = (r.first['app_name'] as String?) ?? appPackageName;
+        if (r.isNotEmpty)
+          appName = (r.first['app_name'] as String?) ?? appPackageName;
       } catch (_) {}
 
       final int requested = ((offset ?? 0) + (limit ?? 100));
@@ -1432,12 +1641,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (shardDb == null) continue;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
@@ -1446,20 +1656,28 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           if (!await _tableExists(shardDb, t)) continue;
           try {
             // 确保 FTS
-            try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+            try {
+              await _ensureMonthFts(shardDb, y, m);
+            } catch (_) {}
 
             String buildMatch(String text) {
-              final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+              final parts = text
+                  .split(RegExp(r"\s+"))
+                  .where((e) => e.isNotEmpty)
+                  .toList();
               if (parts.isEmpty) return text;
               final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-              return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+              return limited
+                  .map((w) => (w.replaceAll('"', '')) + '*')
+                  .join(' AND ');
             }
+
             final String match = buildMatch(q);
 
             final String fts = '${t}_fts';
             final bool ftsExists = await _tableExists(shardDb, fts);
             if (!ftsExists) {
-              throw StateError('FTS not available for table '+t);
+              throw StateError('FTS not available for table ' + t);
             }
             final List<Object?> args = <Object?>[match];
             final List<String> filters = <String>['m.is_deleted = 0'];
@@ -1467,11 +1685,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final int s = startMillis ?? 0;
               final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
               filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-              args..add(s)..add(e);
+              args
+                ..add(s)
+                ..add(e);
             }
             if (minSize != null && maxSize != null) {
               filters.add('m.file_size >= ? AND m.file_size <= ?');
-              args..add(minSize)..add(maxSize);
+              args
+                ..add(minSize)
+                ..add(maxSize);
             } else if (minSize != null) {
               filters.add('m.file_size >= ?');
               args.add(minSize);
@@ -1479,12 +1701,22 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               filters.add('m.file_size <= ?');
               args.add(maxSize);
             }
-            final sql = 'SELECT m.* FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
-                'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ') + ' ' +
+            final sql =
+                'SELECT m.* FROM ' +
+                t +
+                ' m JOIN ' +
+                fts +
+                ' f ON f.rowid = m.id ' +
+                'WHERE ' +
+                fts +
+                ' MATCH ? AND ' +
+                filters.join(' AND ') +
+                ' ' +
                 'ORDER BY m.capture_time DESC LIMIT ?';
             args.add(perTableLimit);
 
-            List<Map<String, Object?>> maps = await (shardDb as Database).rawQuery(sql, args);
+            List<Map<String, Object?>> maps = await (shardDb as Database)
+                .rawQuery(sql, args);
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = appPackageName;
@@ -1542,11 +1774,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       String buildMatch(String text) {
-        final parts = text.split(RegExp(r"\s+")).where((e) => e.isNotEmpty).toList();
+        final parts = text
+            .split(RegExp(r"\s+"))
+            .where((e) => e.isNotEmpty)
+            .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
         return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
       }
+
       final String match = buildMatch(q);
 
       int total = 0;
@@ -1558,19 +1794,22 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (shardDb == null) continue;
         final Iterable<int> months = () {
           if (ymFilter == null) return List<int>.generate(12, (i) => 12 - i);
-          final ms = ymFilter!
-              .where((ym) => ym[0] == y)
-              .map((ym) => ym[1])
-              .toSet()
-              .toList()
-            ..sort((a, b) => b.compareTo(a));
+          final ms =
+              ymFilter!
+                  .where((ym) => ym[0] == y)
+                  .map((ym) => ym[1])
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => b.compareTo(a));
           if (ms.isEmpty) return const <int>[];
           return ms;
         }();
         for (final m in months) {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
-          try { await _ensureMonthFts(shardDb, y, m); } catch (_) {}
+          try {
+            await _ensureMonthFts(shardDb, y, m);
+          } catch (_) {}
           final String fts = '${t}_fts';
           if (!await _tableExists(shardDb, fts)) {
             throw StateError('FTS not available for table ' + t);
@@ -1582,11 +1821,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             final int s = startMillis ?? 0;
             final int e = endMillis ?? DateTime.now().millisecondsSinceEpoch;
             filters.add('m.capture_time >= ? AND m.capture_time <= ?');
-            args..add(s)..add(e);
+            args
+              ..add(s)
+              ..add(e);
           }
           if (minSize != null && maxSize != null) {
             filters.add('m.file_size >= ? AND m.file_size <= ?');
-            args..add(minSize)..add(maxSize);
+            args
+              ..add(minSize)
+              ..add(maxSize);
           } else if (minSize != null) {
             filters.add('m.file_size >= ?');
             args.add(minSize);
@@ -1595,9 +1838,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             args.add(maxSize);
           }
 
-          final String sql = 'SELECT COUNT(*) AS c FROM ' + t + ' m JOIN ' + fts + ' f ON f.rowid = m.id ' +
-              'WHERE ' + fts + ' MATCH ? AND ' + filters.join(' AND ');
-          final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(sql, args);
+          final String sql =
+              'SELECT COUNT(*) AS c FROM ' +
+              t +
+              ' m JOIN ' +
+              fts +
+              ' f ON f.rowid = m.id ' +
+              'WHERE ' +
+              fts +
+              ' MATCH ? AND ' +
+              filters.join(' AND ');
+          final List<Map<String, Object?>> rows = await (shardDb as Database)
+              .rawQuery(sql, args);
           total += (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
         }
       }
@@ -1608,7 +1860,11 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
-  Future<int> getScreenshotCountByAppBetween(String appPackageName, {required int startMillis, required int endMillis}) async {
+  Future<int> getScreenshotCountByAppBetween(
+    String appPackageName, {
+    required int startMillis,
+    required int endMillis,
+  }) async {
     final db = await database; // 主库
     try {
       if (endMillis < startMillis) return 0;
@@ -1720,7 +1976,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
   /// 列出指定应用所有有数据的日期（本地时区），按日期倒序返回
   /// 返回元素：{ 'date': 'YYYY-MM-DD', 'count': <int> }
-  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(String appPackageName) async {
+  Future<List<Map<String, dynamic>>> listAvailableDaysForApp(
+    String appPackageName,
+  ) async {
     final Map<String, int> dayToCount = <String, int>{};
     try {
       final years = await _listShardYearsForApp(appPackageName);
@@ -1732,8 +1990,11 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(
-              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' + t + ' WHERE is_deleted = 0 GROUP BY d',
+            final List<Map<String, Object?>>
+            rows = await (shardDb as Database).rawQuery(
+              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' +
+                  t +
+                  ' WHERE is_deleted = 0 GROUP BY d',
             );
             for (final r in rows) {
               final String d = (r['d'] as String?) ?? '';
@@ -1774,8 +2035,11 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final String t = _monthTableName(y, m);
           if (!await _tableExists(shardDb, t)) continue;
           try {
-            final List<Map<String, Object?>> rows = await (shardDb as Database).rawQuery(
-              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' + t + ' WHERE is_deleted = 0 GROUP BY d',
+            final List<Map<String, Object?>>
+            rows = await (shardDb as Database).rawQuery(
+              'SELECT date(capture_time/1000, "unixepoch", "localtime") AS d, COUNT(*) AS c FROM ' +
+                  t +
+                  ' WHERE is_deleted = 0 GROUP BY d',
             );
             for (final r in rows) {
               final String d = (r['d'] as String?) ?? '';
@@ -1795,6 +2059,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return <Map<String, dynamic>>[];
     }
   }
+
   // ===================== 收藏相关方法 =====================
   Future<bool> addOrUpdateFavorite({
     required int screenshotId,
@@ -1803,17 +2068,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.insert(
-        'favorites',
-        {
-          'screenshot_id': screenshotId,
-          'app_package_name': appPackageName,
-          'favorite_time': DateTime.now().millisecondsSinceEpoch,
-          'note': note,
-          'updated_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('favorites', {
+        'screenshot_id': screenshotId,
+        'app_package_name': appPackageName,
+        'favorite_time': DateTime.now().millisecondsSinceEpoch,
+        'note': note,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       return true;
     } catch (e) {
       print('添加收藏失败: $e');
@@ -1908,7 +2169,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   Future<int> getFavoritesCount() async {
     final db = await database;
     try {
-      final result = await db.rawQuery('SELECT COUNT(*) as count FROM favorites');
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM favorites',
+      );
       return (result.first['count'] as int?) ?? 0;
     } catch (e) {
       print('获取收藏数量失败: $e');
@@ -1925,10 +2188,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     try {
       final result = await db.update(
         'favorites',
-        {
-          'note': note,
-          'updated_at': DateTime.now().millisecondsSinceEpoch,
-        },
+        {'note': note, 'updated_at': DateTime.now().millisecondsSinceEpoch},
         where: 'screenshot_id = ? AND app_package_name = ?',
         whereArgs: [screenshotId, appPackageName],
       );
@@ -1984,7 +2244,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         PRIMARY KEY (screenshot_id, app_package_name)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_nsfw_manual_app ON nsfw_manual_flags(app_package_name, screenshot_id)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_nsfw_manual_app ON nsfw_manual_flags(app_package_name, screenshot_id)',
+    );
   }
 
   // ----- 域名规则 CRUD -----
@@ -2008,17 +2270,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.insert(
-        'nsfw_domain_rules',
-        {
-          'pattern': pattern,
-          'is_wildcard': isWildcard ? 1 : 0,
-          'comment': comment,
-          'created_at': DateTime.now().millisecondsSinceEpoch,
-          'updated_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      await db.insert('nsfw_domain_rules', {
+        'pattern': pattern,
+        'is_wildcard': isWildcard ? 1 : 0,
+        'comment': comment,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
       return true;
     } catch (_) {
       return false;
@@ -2109,16 +2367,12 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     final db = await database;
     try {
       if (flag) {
-        await db.insert(
-          'nsfw_manual_flags',
-          {
-            'screenshot_id': screenshotId,
-            'app_package_name': appPackageName,
-            'flag': 1,
-            'updated_at': DateTime.now().millisecondsSinceEpoch,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await db.insert('nsfw_manual_flags', {
+          'screenshot_id': screenshotId,
+          'app_package_name': appPackageName,
+          'flag': 1,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       } else {
         await db.delete(
           'nsfw_manual_flags',
@@ -2178,7 +2432,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       final rows = await db.query(
         'nsfw_manual_flags',
         columns: ['screenshot_id'],
-        where: 'screenshot_id IN ($placeholders) AND app_package_name = ? AND flag = 1',
+        where:
+            'screenshot_id IN ($placeholders) AND app_package_name = ? AND flag = 1',
         whereArgs: [...screenshotIds, appPackageName],
       );
       final flagged = rows.map((r) => r['screenshot_id'] as int).toSet();
@@ -2225,7 +2480,11 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
-  Future<void> updateTotalsOnInsert(List<String> packageNames, int screenshotCount, int totalSizeBytes) async {
+  Future<void> updateTotalsOnInsert(
+    List<String> packageNames,
+    int screenshotCount,
+    int totalSizeBytes,
+  ) async {
     final db = await database;
     try {
       await db.transaction((txn) async {
@@ -2242,7 +2501,8 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             newAppCount++;
           }
         }
-        await txn.execute('''
+        await txn.execute(
+          '''
           INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
           VALUES (1,
             COALESCE((SELECT app_count FROM totals WHERE id = 1), 0) + ?,
@@ -2250,7 +2510,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             COALESCE((SELECT total_size_bytes FROM totals WHERE id = 1), 0) + ?,
             ?
           )
-        ''', [newAppCount, screenshotCount, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+        ''',
+          [
+            newAppCount,
+            screenshotCount,
+            totalSizeBytes,
+            DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
       });
     } catch (e) {
       print('更新汇总统计失败: $e');
@@ -2269,10 +2536,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           totalScreenshots += (stat['total_count'] as int?) ?? 0;
           totalSizeBytes += (stat['total_size'] as int?) ?? 0;
         }
-        await txn.execute('''
+        await txn.execute(
+          '''
           INSERT OR REPLACE INTO totals (id, app_count, screenshot_count, total_size_bytes, updated_at)
           VALUES (1, ?, ?, ?, ?)
-        ''', [appCount, totalScreenshots, totalSizeBytes, DateTime.now().millisecondsSinceEpoch]);
+        ''',
+          [
+            appCount,
+            totalScreenshots,
+            totalSizeBytes,
+            DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
       });
     } catch (e) {
       print('重新计算汇总统计失败: $e');
@@ -2282,32 +2557,50 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   // ======= 导出/导入 =======
   Future<Map<String, dynamic>?> exportDatabaseToDownloads() async {
     try {
-      final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir();
-      await FlutterLogger.nativeInfo('EXPORT', 'baseDir=' + (base?.path ?? 'null'));
+      final base =
+          await PathService.getInternalAppDir(null) ??
+          await _getInternalFilesDir();
+      await FlutterLogger.nativeInfo(
+        'EXPORT',
+        'baseDir=' + (base?.path ?? 'null'),
+      );
       if (base == null) return null;
       final outputDir = Directory(join(base.path, 'output'));
       if (!await outputDir.exists()) {
-        await FlutterLogger.nativeWarn('EXPORT', 'output not found: ' + outputDir.path);
+        await FlutterLogger.nativeWarn(
+          'EXPORT',
+          'output not found: ' + outputDir.path,
+        );
         return null;
       }
 
       try {
-        final fast = await ScreenshotDatabase._channel.invokeMethod('exportOutputToDownloadsNative', {
-          'displayName': 'output_export.zip',
-          'subDir': 'ScreenMemory',
-        });
+        final fast = await ScreenshotDatabase._channel.invokeMethod(
+          'exportOutputToDownloadsNative',
+          {'displayName': 'output_export.zip', 'subDir': 'ScreenMemory'},
+        );
         if (fast is Map) {
           final map = Map<String, dynamic>.from(fast);
-          map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
-          await FlutterLogger.nativeInfo('EXPORT', 'native fast saved to ' + (map['humanPath']?.toString() ?? ''));
+          map['humanPath'] =
+              (map['absolutePath'] as String?) ??
+              (map['displayPath'] as String?);
+          await FlutterLogger.nativeInfo(
+            'EXPORT',
+            'native fast saved to ' + (map['humanPath']?.toString() ?? ''),
+          );
           return map;
         }
       } catch (e) {
-        await FlutterLogger.nativeWarn('EXPORT', 'native fast path unavailable, fallback: ' + e.toString());
+        await FlutterLogger.nativeWarn(
+          'EXPORT',
+          'native fast path unavailable, fallback: ' + e.toString(),
+        );
       }
 
       final tmpZip = File(join(base.path, 'output_export.zip'));
-      try { if (await tmpZip.exists()) await tmpZip.delete(); } catch (_) {}
+      try {
+        if (await tmpZip.exists()) await tmpZip.delete();
+      } catch (_) {}
 
       final String outputPath = outputDir.path;
       final String tmpZipPath = tmpZip.path;
@@ -2316,32 +2609,41 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final parts = relLower.split('/');
           if (parts.isNotEmpty) {
             final head = parts.first;
-            if (head == 'cache' || head == 'tmp' || head == 'temp' || head == '.thumbnails') return true;
+            if (head == 'cache' ||
+                head == 'tmp' ||
+                head == 'temp' ||
+                head == '.thumbnails')
+              return true;
           }
           return relLower.endsWith('.db-wal') ||
-                 relLower.endsWith('.db-shm') ||
-                 relLower.endsWith('.db-journal');
+              relLower.endsWith('.db-shm') ||
+              relLower.endsWith('.db-journal');
         }
 
         bool _compressible(String relLower, int size) {
           if (size > 5 * 1024 * 1024) return false;
           return relLower.endsWith('.json') ||
-                 relLower.endsWith('.txt')  ||
-                 relLower.endsWith('.csv')  ||
-                 relLower.endsWith('.md')   ||
-                 relLower.endsWith('.log')  ||
-                 relLower.endsWith('.yaml') ||
-                 relLower.endsWith('.yml')  ||
-                 relLower.endsWith('.xml');
+              relLower.endsWith('.txt') ||
+              relLower.endsWith('.csv') ||
+              relLower.endsWith('.md') ||
+              relLower.endsWith('.log') ||
+              relLower.endsWith('.yaml') ||
+              relLower.endsWith('.yml') ||
+              relLower.endsWith('.xml');
         }
 
         final dir = Directory(outputPath);
         if (!await dir.exists()) return null;
 
         final archive = Archive();
-        await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        await for (final entity in dir.list(
+          recursive: true,
+          followLinks: false,
+        )) {
           if (entity is! File) continue;
-          final relPath = entity.path.substring(dir.path.length + 1).replaceAll('\\', '/');
+          final relPath = entity.path
+              .substring(dir.path.length + 1)
+              .replaceAll('\\', '/');
           final relLower = relPath.toLowerCase();
           if (_ignored(relLower)) continue;
 
@@ -2360,20 +2662,30 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       });
 
       if (zippedPath == null) return null;
-      await FlutterLogger.nativeInfo('EXPORT', 'fallback zip ready path=' + zippedPath);
+      await FlutterLogger.nativeInfo(
+        'EXPORT',
+        'fallback zip ready path=' + zippedPath,
+      );
 
-      final result = await ScreenshotDatabase._channel.invokeMethod('exportFileToDownloads', {
-        'sourcePath': zippedPath,
-        'displayName': 'output_export.zip',
-        'subDir': 'ScreenMemory',
-      });
+      final result = await ScreenshotDatabase._channel
+          .invokeMethod('exportFileToDownloads', {
+            'sourcePath': zippedPath,
+            'displayName': 'output_export.zip',
+            'subDir': 'ScreenMemory',
+          });
 
-      try { await tmpZip.delete(); } catch (_) {}
+      try {
+        await tmpZip.delete();
+      } catch (_) {}
 
       if (result is Map) {
         final map = Map<String, dynamic>.from(result);
-        map['humanPath'] = (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
-        await FlutterLogger.nativeInfo('EXPORT', 'saved to ' + (map['humanPath']?.toString() ?? ''));
+        map['humanPath'] =
+            (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
+        await FlutterLogger.nativeInfo(
+          'EXPORT',
+          'saved to ' + (map['humanPath']?.toString() ?? ''),
+        );
         return map;
       }
       return null;
@@ -2402,22 +2714,36 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }) async {
     try {
       await FlutterLogger.nativeInfo('IMPORT', '开始(流式+Isolate)');
-      await FlutterLogger.nativeDebug('IMPORT', 'args path=' + (zipPath ?? '') + ' bytes=' + ((zipBytes?.length ?? 0).toString()));
-      if ((zipPath == null || zipPath.isEmpty) && (zipBytes == null || zipBytes.isEmpty)) {
+      await FlutterLogger.nativeDebug(
+        'IMPORT',
+        'args path=' +
+            (zipPath ?? '') +
+            ' bytes=' +
+            ((zipBytes?.length ?? 0).toString()),
+      );
+      if ((zipPath == null || zipPath.isEmpty) &&
+          (zipBytes == null || zipBytes.isEmpty)) {
         await FlutterLogger.nativeWarn('IMPORT', 'no input');
         return null;
       }
 
-      final base = await PathService.getExternalFilesDir(null) ?? await _getExternalFilesDir();
+      final base =
+          await PathService.getInternalAppDir(null) ??
+          await _getInternalFilesDir();
       if (base == null) return null;
       final outputDir = Directory(join(base.path, 'output'));
       await FlutterLogger.nativeInfo('IMPORT', 'baseDir=' + base.path);
       if (!await outputDir.exists()) {
         await outputDir.create(recursive: true);
-        await FlutterLogger.nativeInfo('IMPORT', 'created outputDir=' + outputDir.path);
+        await FlutterLogger.nativeInfo(
+          'IMPORT',
+          'created outputDir=' + outputDir.path,
+        );
       }
 
-      try { await _resetDatabasesAfterImport(); } catch (_) {}
+      try {
+        await _resetDatabasesAfterImport();
+      } catch (_) {}
 
       String localZipPath;
       File? tmpZipFile;
@@ -2426,7 +2752,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       } else {
         final tmpDir = await getTemporaryDirectory();
         tmpZipFile = File(join(tmpDir.path, 'screenmemo_import_tmp.zip'));
-        try { if (await tmpZipFile.exists()) await tmpZipFile.delete(); } catch (_) {}
+        try {
+          if (await tmpZipFile.exists()) await tmpZipFile.delete();
+        } catch (_) {}
         await tmpZipFile.writeAsBytes(zipBytes!, flush: true);
         localZipPath = tmpZipFile.path;
       }
@@ -2437,7 +2765,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         int count = 0;
         for (final f in archive.files) {
           final relative = normalize(f.name).replaceAll('\\', '/');
-          final String rel = relative.startsWith('output/') ? relative.substring('output/'.length) : relative;
+          final String rel = relative.startsWith('output/')
+              ? relative.substring('output/'.length)
+              : relative;
           if (rel.startsWith('../') || rel.startsWith('/')) {
             continue;
           }
@@ -2467,14 +2797,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         return count;
       });
 
-      try { if (tmpZipFile != null) await tmpZipFile.delete(); } catch (_) {}
-      try { await _resetDatabasesAfterImport(); } catch (_) {}
+      try {
+        if (tmpZipFile != null) await tmpZipFile.delete();
+      } catch (_) {}
+      try {
+        await _resetDatabasesAfterImport();
+      } catch (_) {}
 
-      final res = {
-        'extracted': extracted,
-        'targetDir': outputDir.path,
-      };
-      await FlutterLogger.nativeInfo('IMPORT', '完成(流式+Isolate) 解压=' + extracted.toString() + ' 目标=' + outputDir.path);
+      final res = {'extracted': extracted, 'targetDir': outputDir.path};
+      await FlutterLogger.nativeInfo(
+        'IMPORT',
+        '完成(流式+Isolate) 解压=' + extracted.toString() + ' 目标=' + outputDir.path,
+      );
       return res;
     } catch (e) {
       await FlutterLogger.nativeError('IMPORT', '异常(流式): ' + e.toString());
@@ -2482,20 +2816,36 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  Future<Directory?> _getInternalFilesDir() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      return dir;
+    } catch (e) {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        return dir;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   Future<void> _resetDatabasesAfterImport() async {
     try {
       if (ScreenshotDatabase._shardDbCache.isNotEmpty) {
         for (final db in ScreenshotDatabase._shardDbCache.values) {
-          try { await db.close(); } catch (_) {}
+          try {
+            await db.close();
+          } catch (_) {}
         }
         ScreenshotDatabase._shardDbCache.clear();
       }
       if (ScreenshotDatabase._database != null) {
-        try { await ScreenshotDatabase._database!.close(); } catch (_) {}
+        try {
+          await ScreenshotDatabase._database!.close();
+        } catch (_) {}
         ScreenshotDatabase._database = null;
       }
     } catch (_) {}
   }
 }
-
-
