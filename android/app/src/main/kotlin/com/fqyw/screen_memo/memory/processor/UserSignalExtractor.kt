@@ -1,5 +1,6 @@
 package com.fqyw.screen_memo.memory.processor
 
+import com.fqyw.screen_memo.memory.model.PersonaProfile
 import com.fqyw.screen_memo.memory.model.UserEvent
 import com.fqyw.screen_memo.memory.service.ExtractionContext
 
@@ -11,7 +12,8 @@ interface UserSignalExtractor {
         event: UserEvent,
         context: ExtractionContext?,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult
 }
 

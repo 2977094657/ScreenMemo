@@ -41,6 +41,12 @@ interface MemoryDao {
     @Query("SELECT COUNT(*) FROM memory_events WHERE processed_at IS NULL")
     suspend fun countUnprocessedEvents(): Int
 
+    @Query("SELECT COUNT(*) FROM memory_events WHERE processed_at IS NULL AND type != :excludedType")
+    suspend fun countUnprocessedEventsExcludingType(excludedType: String): Int
+
+    @Query("SELECT COUNT(*) FROM memory_events WHERE type != :excludedType")
+    suspend fun countAllEventsExcludingType(excludedType: String): Int
+
     @Query(
         """
             SELECT * FROM memory_events
@@ -59,6 +65,54 @@ interface MemoryDao {
         """
     )
     suspend fun loadUnprocessedEvents(limit: Int): List<MemoryEventEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_events
+            WHERE processed_at IS NULL
+            ORDER BY occurred_at ASC
+            LIMIT 1
+        """
+    )
+    suspend fun loadEarliestUnprocessedEvent(): MemoryEventEntity?
+
+    @Query(
+        """
+            SELECT occurred_at FROM memory_events
+            WHERE processed_at IS NULL
+              AND type != :excludedType
+        """
+    )
+    suspend fun loadUnprocessedTimestampsExcludingType(excludedType: String): List<Long>
+
+    @Query(
+        """
+            SELECT occurred_at FROM memory_events
+            WHERE type != :excludedType
+        """
+    )
+    suspend fun loadAllTimestampsExcludingType(excludedType: String): List<Long>
+
+    @Query(
+        """
+            SELECT * FROM memory_events
+            WHERE processed_at IS NULL
+              AND occurred_at >= :startMillis
+              AND occurred_at < :endMillis
+            ORDER BY occurred_at ASC
+        """
+    )
+    suspend fun loadUnprocessedEventsBetween(startMillis: Long, endMillis: Long): List<MemoryEventEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_events
+            WHERE occurred_at >= :startMillis
+              AND occurred_at < :endMillis
+            ORDER BY occurred_at ASC
+        """
+    )
+    suspend fun loadEventsBetween(startMillis: Long, endMillis: Long): List<MemoryEventEntity>
 
     @Transaction
     @Query(

@@ -16,7 +16,8 @@ data class MemorySnapshot(
     val confirmedTotalCount: Int = confirmedTags.size,
     val recentEventTotalCount: Int = recentEvents.size,
     val lastUpdatedAt: Long = System.currentTimeMillis(),
-    val personaSummary: String = ""
+    val personaSummary: String = "",
+    val personaProfile: PersonaProfile = PersonaProfile.default()
 )
 
 /**

@@ -357,7 +357,8 @@ class MemoryBridge(
             "recentEvents" to limitedEvents,
             "recentEventTotalCount" to recentEventTotalCount,
             "lastUpdatedAt" to lastUpdatedAt,
-            "personaSummary" to personaSummary
+            "personaSummary" to personaSummary,
+            "personaProfile" to personaProfile.toMap()
         )
     }
 

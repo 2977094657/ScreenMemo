@@ -3,6 +3,7 @@ package com.fqyw.screen_memo
 import android.app.Application
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import com.fqyw.screen_memo.memory.service.MemoryProcessingScheduler
 
 class ScreenMemoApplication : Application() {
     companion object {
@@ -33,6 +34,13 @@ class ScreenMemoApplication : Application() {
             OutputFileLogger.info(this, TAG, "Daily summary schedule restored at app start")
         } catch (e: Exception) {
             FileLogger.w(TAG, "Daily schedule restore failed: ${e.message}")
+        }
+
+        try {
+            MemoryProcessingScheduler.scheduleNext(this)
+            FileLogger.i(TAG, "Memory processing schedule prepared on app start")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "Memory processing schedule failed: ${e.message}")
         }
     }
 }

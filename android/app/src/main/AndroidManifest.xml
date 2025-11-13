@@ -40,7 +40,8 @@
         android:label="@string/app_name"
         android:name=".ScreenMemoApplication"
         android:icon="@mipmap/ic_launcher"
-        android:localeConfig="@xml/locales_config">
+        android:localeConfig="@xml/locales_config"
+        android:usesCleartextTraffic="true">
         <!-- 禁用 Impeller，回退到 Skia 以避免部分设备冷启动首帧缓慢/驱动异常 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
@@ -179,6 +180,12 @@
             android:name=".DailySummaryAlarmReceiver"
             android:exported="false" />
  
+        <!-- 记忆解析调度接收器 -->
+        <receiver
+            android:name=".memory.service.MemoryProcessingReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- 开机自启接收器 -->
         <receiver
             android:name=".BootReceiver"

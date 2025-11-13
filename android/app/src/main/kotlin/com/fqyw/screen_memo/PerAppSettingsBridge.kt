@@ -6,7 +6,7 @@ import java.io.File
 
 /**
  * 原生侧读取“每应用截图设置”（独立 SQLite settings.db）。
- * 路径：<externalFiles>/output/databases/shards/<sanitizedPackage>/settings.db
+ * 路径：<files>/output/databases/shards/<sanitizedPackage>/settings.db
  * 表：settings(key TEXT PRIMARY KEY, value TEXT)
  */
 object PerAppSettingsBridge {
@@ -24,7 +24,7 @@ object PerAppSettingsBridge {
 
     private fun resolveDbPath(context: Context, packageName: String): String? {
         return try {
-            val base = context.getExternalFilesDir(null)?.absolutePath ?: return null
+            val base = context.filesDir.absolutePath
             val dir = File(base, "output/databases/shards/${sanitize(packageName)}")
             File(dir, "settings.db").absolutePath
         } catch (_: Exception) { null }

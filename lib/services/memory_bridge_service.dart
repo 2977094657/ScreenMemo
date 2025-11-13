@@ -45,8 +45,16 @@ class MemoryBridgeService {
     if (snapshotSummary.isNotEmpty) {
       return snapshotSummary;
     }
+    final PersonaProfile? profile = _latestSnapshot?.personaProfile;
+    final String derived = profile?.toMarkdown().trim() ?? '';
+    if (derived.isNotEmpty) {
+      return derived;
+    }
     return _cachedPersonaSummary;
   }
+
+  PersonaProfile get latestPersonaProfile =>
+      _latestSnapshot?.personaProfile ?? PersonaProfile.empty();
   
   Future<bool> deleteTag(int tagId) async {
     await ensureInitialized();
@@ -398,12 +406,8 @@ class MemoryBridgeService {
   }
 
   void _onSnapshotEvent(dynamic event) {
-    _logInfo('snapshot event received type=${event.runtimeType}');
     final MemorySnapshot? snapshot = _parseSnapshot(event);
     if (snapshot != null) {
-      _logInfo(
-        'snapshot parsed pending=${snapshot.pendingTags.length} confirmed=${snapshot.confirmedTags.length}',
-      );
       _emitSnapshot(snapshot);
     }
   }
@@ -429,24 +433,24 @@ class MemoryBridgeService {
 
   void _emitSnapshot(MemorySnapshot snapshot) {
     final String incomingPersona = snapshot.personaSummary.trim();
-    final bool hasIncomingPersona = incomingPersona.isNotEmpty;
+    final String derivedPersona = incomingPersona.isNotEmpty
+        ? incomingPersona
+        : snapshot.personaProfile.toMarkdown().trim();
+    final bool hasDerivedPersona = derivedPersona.isNotEmpty;
 
-    if (hasIncomingPersona) {
-      _cachedPersonaSummary = incomingPersona;
+    if (hasDerivedPersona) {
+      _cachedPersonaSummary = derivedPersona;
     }
 
     final bool shouldPreservePersona =
-        !hasIncomingPersona && _cachedPersonaSummary.isNotEmpty;
+        !hasDerivedPersona && _cachedPersonaSummary.isNotEmpty;
 
     final MemorySnapshot effectiveSnapshot = shouldPreservePersona
         ? snapshot.copyWith(personaSummary: _cachedPersonaSummary)
-        : snapshot;
+        : snapshot.copyWith(personaSummary: hasDerivedPersona ? derivedPersona : snapshot.personaSummary);
 
     _latestSnapshot = effectiveSnapshot;
     _snapshotController.add(effectiveSnapshot);
-    _logInfo(
-      'emit snapshot pending=${effectiveSnapshot.pendingTags.length} confirmed=${effectiveSnapshot.confirmedTags.length} personaPreserved=$shouldPreservePersona cacheLength=${_cachedPersonaSummary.length}',
-    );
   }
 
   void _handleTagUpdate(MemoryTagUpdate update) {

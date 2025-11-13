@@ -1,6 +1,8 @@
 package com.fqyw.screen_memo.memory.processor
 
 import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.memory.model.PersonaProfile
+import com.fqyw.screen_memo.memory.model.PersonaProfilePatch
 import com.fqyw.screen_memo.memory.model.TagCategory
 import com.fqyw.screen_memo.memory.model.UserEvent
 import com.fqyw.screen_memo.memory.service.ExtractionContext
@@ -32,14 +34,16 @@ class LlmUserSignalExtractor(
         event: UserEvent,
         context: ExtractionContext?,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult {
-        if (context == null || !context.isValid) return UserSignalExtractionResult(emptyList(), null)
-        if (!supportsContext(context)) return UserSignalExtractionResult(emptyList(), null)
+        if (context == null || !context.isValid) return UserSignalExtractionResult(emptyList(), null, null)
+        if (!supportsContext(context)) return UserSignalExtractionResult(emptyList(), null, null)
         return try {
-            when (context.providerType?.lowercase()) {
-                "gemini" -> callGeminiEndpoint(event, context, existingTagPaths, currentPersonaSummary)
-                else -> callOpenAiStyleEndpoint(event, context, existingTagPaths, currentPersonaSummary)
+            if (isGoogleContext(context)) {
+                callGeminiEndpoint(event, context, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
+            } else {
+                callOpenAiStyleEndpoint(event, context, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
             }
         } catch (t: Throwable) {
             FileLogger.w(TAG, "LLM extraction failed: ${t.message}")
@@ -49,18 +53,70 @@ class LlmUserSignalExtractor(
 
     private fun supportsContext(context: ExtractionContext): Boolean {
         val type = context.providerType?.lowercase()
-        return type == "openai" || type == "custom" || type == "azure_openai" || type == "gemini"
+        if (type == "openai" || type == "custom" || type == "azure_openai" || type == "gemini") {
+            return true
+        }
+        return isGoogleContext(context)
+    }
+
+    private fun isGoogleContext(context: ExtractionContext): Boolean {
+        val type = context.providerType?.lowercase()
+        if (type == "gemini") return true
+        val base = context.baseUrl?.trim()?.lowercase().orEmpty()
+        if (base.contains("googleapis.com") || base.contains("generativelanguage")) {
+            return true
+        }
+        return false
     }
 
     private suspend fun callOpenAiStyleEndpoint(
         event: UserEvent,
         context: ExtractionContext,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
+    ): UserSignalExtractionResult {
+        if (shouldAttemptStreaming(context)) {
+            try {
+                return callOpenAiStyleEndpointStreaming(
+                    event = event,
+                    context = context,
+                    existingTagPaths = existingTagPaths,
+                    currentPersonaSummary = currentPersonaSummary,
+                    currentPersonaProfile = currentPersonaProfile
+                )
+            } catch (e: StreamingNotSupportedException) {
+                FileLogger.w(TAG, "Streaming not supported: ${e.message}")
+            } catch (e: Throwable) {
+                FileLogger.w(TAG, "Streaming failed, fallback to non-streaming: ${e.message}")
+            }
+        }
+        return callOpenAiStyleEndpointBlocking(
+            event = event,
+            context = context,
+            existingTagPaths = existingTagPaths,
+            currentPersonaSummary = currentPersonaSummary,
+            currentPersonaProfile = currentPersonaProfile
+        )
+    }
+
+    private suspend fun callOpenAiStyleEndpointBlocking(
+        event: UserEvent,
+        context: ExtractionContext,
+        existingTagPaths: List<String>,
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
         val url = buildOpenAiUrl(event, context)
         val headers = buildOpenAiHeaders(context)
-        val payload = buildOpenAiRequestBody(event, context, existingTagPaths, currentPersonaSummary)
+        val payload = buildOpenAiRequestBody(
+            event,
+            context,
+            existingTagPaths,
+            currentPersonaSummary,
+            currentPersonaProfile,
+            stream = false
+        )
 
         val request = Request.Builder()
             .url(url)
@@ -68,8 +124,12 @@ class LlmUserSignalExtractor(
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
+        FileLogger.i(TAG, "LLM(OpenAI-style) request url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(OpenAI-style) payload=$payload")
+
         okHttpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
+            FileLogger.d(TAG, "LLM(OpenAI-style) response code=${resp.code} body=$body")
             if (!resp.isSuccessful) {
                 val snippet = body.take(MAX_ERROR_BODY_CHARS)
                 FileLogger.w(TAG, "LLM request failed: code=${resp.code} body=${snippet}")
@@ -77,6 +137,106 @@ class LlmUserSignalExtractor(
             }
             val text = extractContent(body, context)
             parseCandidates(text, event, context)
+        }
+    }
+
+    private suspend fun callOpenAiStyleEndpointStreaming(
+        event: UserEvent,
+        context: ExtractionContext,
+        existingTagPaths: List<String>,
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
+    ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
+        val url = buildOpenAiUrl(event, context)
+        val headers = buildOpenAiHeaders(context).toMutableMap()
+        headers["Accept"] = "text/event-stream"
+        val payload = buildOpenAiRequestBody(
+            event,
+            context,
+            existingTagPaths,
+            currentPersonaSummary,
+            currentPersonaProfile,
+            stream = true
+        )
+
+        val request = Request.Builder()
+            .url(url)
+            .apply { headers.forEach { (k, v) -> addHeader(k, v) } }
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        FileLogger.i(TAG, "LLM(OpenAI-stream) request url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(OpenAI-stream) payload=$payload")
+
+        okHttpClient.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val body = resp.body?.string().orEmpty()
+                val snippet = body.take(MAX_ERROR_BODY_CHARS)
+                FileLogger.w(TAG, "Streaming request failed: code=${resp.code} body=$snippet")
+                throw StreamingNotSupportedException("HTTP ${resp.code}")
+            }
+            val responseBody = resp.body ?: throw StreamingNotSupportedException("Empty response body")
+            val reader = responseBody.charStream().buffered()
+            val aggregated = StringBuilder()
+            val rawEvents = StringBuilder()
+            var sawData = false
+            reader.use { buffered ->
+                while (true) {
+                    val line = buffered.readLine() ?: break
+                    if (line.isEmpty()) continue
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substring(5).trim()
+                    if (data.isEmpty()) continue
+                    if (data == "[DONE]") {
+                        break
+                    }
+                    sawData = true
+                    rawEvents.append(data).append('\n')
+                    try {
+                        val json = JSONObject(data)
+                        val type = json.optString("type")
+                        if (type.isNotBlank()) {
+                            when (type) {
+                                "response.output_text.delta" -> {
+                                    appendResponseDelta(json, aggregated)
+                                }
+                                "response.output_text.done",
+                                "response.completed",
+                                "response.created",
+                                "response.output_text.delta.stop" -> {
+                                    // no-op
+                                }
+                                "response.error" -> {
+                                    val message = json.optJSONObject("error")?.optString("message")
+                                        ?: json.optString("error")
+                                    throw LlmHttpException(
+                                        resp.code,
+                                        message.take(MAX_ERROR_BODY_CHARS),
+                                        event.externalId
+                                    )
+                                }
+                                else -> {
+                                    // ignore other event types (reasoning etc.)
+                                }
+                            }
+                            continue
+                        }
+                        appendChoicesDelta(json, aggregated)
+                    } catch (ex: Exception) {
+                        // 回退到直接拼接原始文本，确保不会因解析失败丢内容
+                        aggregated.append(data)
+                    }
+                }
+            }
+            if (!sawData) {
+                FileLogger.w(TAG, "Streaming yielded no data; raw=${rawEvents.take(MAX_ERROR_BODY_CHARS)}")
+                throw StreamingNotSupportedException("No data received")
+            }
+            val finalText = aggregated.toString().ifBlank {
+                rawEvents.toString()
+            }
+            FileLogger.d(TAG, "LLM(OpenAI-stream) aggregated length=${finalText.length}")
+            parseCandidates(finalText, event, context)
         }
     }
 
@@ -111,7 +271,9 @@ class LlmUserSignalExtractor(
         event: UserEvent,
         context: ExtractionContext,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile,
+        stream: Boolean = false
     ): String {
         val metadataJson = JSONObject(event.metadata)
         val model = context.model?.trim().orEmpty()
@@ -121,7 +283,8 @@ class LlmUserSignalExtractor(
             content = event.content,
             metadata = metadataJson,
             existingTags = existingTagPaths,
-            personaSummary = currentPersonaSummary
+            personaSummary = currentPersonaSummary,
+            personaProfile = currentPersonaProfile
         )
         val systemPrompt = MemoryPromptProvider.systemPrompt()
         return if (context.useResponseApi) {
@@ -129,6 +292,11 @@ class LlmUserSignalExtractor(
                 .put("model", model)
                 .put("input", JSONArray().put(JSONObject().put("role", "user").put("content", userPrompt)))
                 .put("temperature", 0.1)
+                .apply {
+                    if (stream) {
+                        put("stream", true)
+                    }
+                }
                 .toString()
         } else {
             val messages = JSONArray()
@@ -139,6 +307,11 @@ class LlmUserSignalExtractor(
                 .put("messages", messages)
                 .put("temperature", 0.1)
                 .put("response_format", JSONObject().put("type", "json_object"))
+                .apply {
+                    if (stream) {
+                        put("stream", true)
+                    }
+                }
                 .toString()
         }
     }
@@ -186,6 +359,74 @@ class LlmUserSignalExtractor(
         return message.optString("content", raw)
     }
 
+    private fun shouldAttemptStreaming(context: ExtractionContext): Boolean {
+        val disableFlag = context.extra["disable_streaming"]
+            ?: context.extra["disable_stream"]
+            ?: context.extra["memory_stream_disabled"]
+        if (disableFlag != null && disableFlag.toString().equals("true", ignoreCase = true)) {
+            return false
+        }
+        return true
+    }
+
+    private fun appendResponseDelta(event: JSONObject, target: StringBuilder) {
+        val delta = event.opt("delta")
+        appendContentSegment(delta, target)
+        val output = event.optJSONArray("output_text")
+        if (output != null) {
+            for (i in 0 until output.length()) {
+                appendContentSegment(output.opt(i), target)
+            }
+        }
+    }
+
+    private fun appendChoicesDelta(event: JSONObject, target: StringBuilder) {
+        val choices = event.optJSONArray("choices") ?: return
+        for (i in 0 until choices.length()) {
+            val choice = choices.optJSONObject(i) ?: continue
+            val delta = choice.optJSONObject("delta")
+            if (delta != null) {
+                appendContentSegment(delta.opt("content"), target)
+            }
+        }
+    }
+
+    private fun appendContentSegment(segment: Any?, target: StringBuilder) {
+        when (segment) {
+            null -> return
+            is String -> target.append(segment)
+            is JSONObject -> {
+                val directText = if (segment.has("text") && segment.opt("text") is String) {
+                    segment.optString("text")
+                } else null
+
+                val nestedText = segment.optJSONObject("text")?.optString("value")
+                val valueField = segment.optString("value", null)
+                val contentField = if (segment.opt("content") is String) {
+                    segment.optString("content")
+                } else null
+
+                val chosen = listOfNotNull(directText, nestedText, valueField, contentField).firstOrNull()
+                if (!chosen.isNullOrBlank()) {
+                    target.append(chosen)
+                }
+
+                val nestedContent = segment.opt("content")
+                if (nestedContent != null && nestedContent !is String) {
+                    appendContentSegment(nestedContent, target)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until segment.length()) {
+                    appendContentSegment(segment.opt(i), target)
+                }
+            }
+            else -> target.append(segment.toString())
+        }
+    }
+
+    private class StreamingNotSupportedException(message: String) : Exception(message)
+
     private fun parseCandidates(text: String, event: UserEvent, context: ExtractionContext): UserSignalExtractionResult {
         val payload = extractJsonPayload(text)
         val personaSegment = analyzePersonaSegment(payload.trailingText)
@@ -194,7 +435,8 @@ class LlmUserSignalExtractor(
             if (root.optString("error").isNotBlank()) {
                 FileLogger.w(TAG, "LLM reported error: ${root.optString("error")}")
                 val persona = personaSegment.sanitized
-                UserSignalExtractionResult(emptyList(), persona, payload.rawResponse, false)
+                val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
+                UserSignalExtractionResult(emptyList(), patch, persona, payload.rawResponse, false)
             } else {
                 val confirmedTags = collectConfirmedTags(root.optJSONArray("update_tags"))
                 val clues = root.optJSONArray("extracted_user_related_clues") ?: JSONArray()
@@ -245,12 +487,13 @@ class LlmUserSignalExtractor(
                     )
                 }
                 val persona = personaSegment.sanitized
-                UserSignalExtractionResult(list, persona, payload.rawResponse, false)
+                val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
+                UserSignalExtractionResult(list, patch, persona, payload.rawResponse, false)
             }
         } catch (t: Throwable) {
             FileLogger.w(TAG, "Failed to parse LLM JSON: ${t.message}")
             val persona = personaSegment.sanitized
-            UserSignalExtractionResult(emptyList(), persona, payload.rawResponse, false)
+            UserSignalExtractionResult(emptyList(), null, persona, payload.rawResponse, false)
         }
     }
 
@@ -281,10 +524,11 @@ class LlmUserSignalExtractor(
         event: UserEvent,
         context: ExtractionContext,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
         val url = buildGeminiUrl(event, context)
-        val payload = buildGeminiRequestBody(event, existingTagPaths, currentPersonaSummary)
+        val payload = buildGeminiRequestBody(event, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
 
         val request = Request.Builder()
             .url(url)
@@ -293,8 +537,12 @@ class LlmUserSignalExtractor(
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
+        FileLogger.i(TAG, "LLM(Gemini) request url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(Gemini) payload=$payload")
+
         okHttpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
+            FileLogger.d(TAG, "LLM(Gemini) response code=${resp.code} body=$body")
             if (!resp.isSuccessful) {
                 val snippet = body.take(MAX_ERROR_BODY_CHARS)
                 FileLogger.w(TAG, "Gemini request failed: code=${resp.code} body=${snippet}")
@@ -308,14 +556,21 @@ class LlmUserSignalExtractor(
     private fun buildGeminiUrl(event: UserEvent, context: ExtractionContext): HttpUrl {
         val base = resolveBaseUrl(context.baseUrl, DEFAULT_GEMINI_BASE, event)
         val model = context.model?.takeIf { it.isNotBlank() } ?: DEFAULT_GEMINI_MODEL
-        val path = context.chatPath?.takeIf { it.isNotBlank() } ?: "/v1beta/models/$model:generateContent"
-        return resolveEndpointUrl(base, path, event)
+        val rawPath = context.chatPath?.trim().orEmpty()
+        val effectivePath = when {
+            rawPath.isEmpty() -> "/v1beta/models/$model:generateContent"
+            rawPath.contains("chat/completions", ignoreCase = true) -> "/v1beta/models/$model:generateContent"
+            !rawPath.contains("models", ignoreCase = true) -> "/v1beta/models/$model:generateContent"
+            else -> rawPath
+        }
+        return resolveEndpointUrl(base, effectivePath, event)
     }
 
     private fun buildGeminiRequestBody(
         event: UserEvent,
         existingTagPaths: List<String>,
-        currentPersonaSummary: String
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
     ): String {
         val metadataJson = JSONObject(event.metadata)
         val userPrompt = MemoryPromptProvider.userPrompt(
@@ -324,7 +579,8 @@ class LlmUserSignalExtractor(
             content = event.content,
             metadata = metadataJson,
             existingTags = existingTagPaths,
-            personaSummary = currentPersonaSummary
+            personaSummary = currentPersonaSummary,
+            personaProfile = currentPersonaProfile
         )
         val systemPrompt = MemoryPromptProvider.systemPrompt()
 
@@ -411,22 +667,22 @@ class LlmUserSignalExtractor(
     }
 
     private fun buildEvidenceText(clue: String, brief: String, refs: List<String>): String {
-        val builder = StringBuilder()
-        if (clue.isNotBlank()) {
-            builder.append(clue.trim())
+        val normalizedClue = clue.trim()
+        val normalizedBrief = brief.trim()
+        val base = when {
+            normalizedBrief.isNotEmpty() -> normalizedBrief
+            normalizedClue.isNotEmpty() -> normalizedClue
+            else -> "用户相关线索"
         }
-        if (brief.isNotBlank() && !brief.equals(clue, ignoreCase = true)) {
-            if (builder.isNotEmpty()) builder.append(" / ")
-            builder.append(brief.trim())
+        if (refs.isEmpty()) {
+            return base
         }
-        if (refs.isNotEmpty()) {
-            if (builder.isNotEmpty()) builder.append(" ")
-            builder.append("[ref=").append(refs.joinToString(",")).append("]")
+        return buildString {
+            append(base)
+            append(" [ref=")
+            append(refs.joinToString(","))
+            append("]")
         }
-        if (builder.isEmpty()) {
-            builder.append(clue.ifBlank { brief.ifBlank { "用户相关线索" } })
-        }
-        return builder.toString()
     }
 
     private fun parseHierarchy(raw: String?): TagHierarchy? {
@@ -497,7 +753,13 @@ class LlmUserSignalExtractor(
             .removePrefix("Persona summary:")
             .removePrefix("User summary:")
             .trim()
-        return if (withoutPrefix.isNotEmpty()) withoutPrefix else trimmed
+        val candidate = (if (withoutPrefix.isNotEmpty()) withoutPrefix else trimmed).trim()
+        if (candidate.isEmpty()) return null
+        val hasAlphanumeric = candidate.any { it.isLetterOrDigit() }
+        if (!hasAlphanumeric) return null
+        val meaningfulCharCount = candidate.count { it.isLetterOrDigit() }
+        if (candidate.length <= 6 && meaningfulCharCount <= 1) return null
+        return candidate
     }
 
     private fun formatTimestamp(epochMillis: Long): String {

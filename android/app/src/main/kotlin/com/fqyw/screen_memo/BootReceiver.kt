@@ -4,8 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.provider.Settings
- 
+import com.fqyw.screen_memo.memory.service.MemoryProcessingScheduler
 
 class BootReceiver : BroadcastReceiver() {
     
@@ -60,6 +59,14 @@ class BootReceiver : BroadcastReceiver() {
                     FileLogger.d(TAG, "固定时段调度结果: $ok")
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "恢复每日提醒调度失败", e)
+                }
+
+                // 安排每日记忆解析调度
+                try {
+                    MemoryProcessingScheduler.scheduleNext(context.applicationContext)
+                    FileLogger.d(TAG, "每日记忆解析调度已设置")
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "设置每日记忆解析调度失败", e)
                 }
             }
         }

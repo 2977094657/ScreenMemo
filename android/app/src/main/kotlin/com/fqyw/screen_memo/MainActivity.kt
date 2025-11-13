@@ -494,6 +494,46 @@ class MainActivity : FlutterActivity() {
                     val path = getExternalFilesDirPath(subDir)
                     result.success(path)
                 }
+                "getInternalFilesDir" -> {
+                    val subDir = call.argument<String>("subDir")
+                    val path = getInternalFilesDirPath(subDir)
+                    result.success(path)
+                }
+                "getStorageMigrationStatus" -> {
+                    try {
+                        val status = StorageMigrationManager.getStatus(applicationContext)
+                        result.success(status.toMap())
+                    } catch (e: Exception) {
+                        result.error("migration_status_error", e.message, null)
+                    }
+                }
+                "startStorageMigration" -> {
+                    val pendingResult = result
+                    Thread {
+                        try {
+                            val migrationResult = StorageMigrationManager.migrate(
+                                applicationContext
+                            ) { progress ->
+                                runOnUiThread {
+                                    try {
+                                        methodChannel.invokeMethod(
+                                            "onStorageMigrationProgress",
+                                            progress.toMap()
+                                        )
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            }
+                            runOnUiThread {
+                                pendingResult.success(migrationResult.toMap())
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                pendingResult.error("migration_failed", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
                 "checkServiceHealth" -> {
                     // 手动触发看门狗健康检查
                     val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
@@ -1403,6 +1443,28 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * 获取应用内部 files 目录路径
+     */
+    private fun getInternalFilesDirPath(subDir: String?): String? {
+        return try {
+            val baseDir = filesDir
+            val target = if (subDir.isNullOrBlank()) {
+                baseDir
+            } else {
+                val dir = File(baseDir, subDir)
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+                dir
+            }
+            target.absolutePath
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "获取内部文件目录失败", e)
+            null
+        }
+    }
+
+    /**
      * 检查使用统计权限是否已授予
      */
     private fun isUsageStatsPermissionGranted(): Boolean {
@@ -1717,9 +1779,8 @@ class MainActivity : FlutterActivity() {
      * - 直接写入 MediaStore OutputStream，省去“临时文件 -> 再复制到Downloads”的一步磁盘 I/O
      */
     private fun exportOutputToDownloadsNativeInternal(displayName: String, subDir: String?): Map<String, Any?> {
-        val externalBase = getExternalFilesDir(null)
-            ?: throw IllegalStateException("External files dir not available")
-        val outputDir = File(externalBase, "output")
+        val internalBase = filesDir
+        val outputDir = File(internalBase, "output")
         if (!outputDir.exists() || !outputDir.isDirectory) {
             throw IllegalStateException("output directory not found: ${outputDir.absolutePath}")
         }

@@ -9,6 +9,7 @@ import com.fqyw.screen_memo.memory.data.db.MemoryTagEvidenceEntity
 import com.fqyw.screen_memo.memory.data.db.MemoryTagEntity
 import com.fqyw.screen_memo.memory.data.db.TagWithEvidence
 import com.fqyw.screen_memo.memory.model.MemoryEventSummary
+import com.fqyw.screen_memo.memory.model.PersonaProfile
 import com.fqyw.screen_memo.memory.model.TagEvidence
 import com.fqyw.screen_memo.memory.model.TagStatus
 import com.fqyw.screen_memo.memory.model.UserEvent
@@ -72,6 +73,34 @@ class MemoryRepository(
         memoryDao.markEventProcessed(eventId, processedAt, containsUserContext)
     }
 
+    suspend fun getEarliestUnprocessedEvent(): MemoryEventEntity? = withContext(ioDispatcher) {
+        memoryDao.loadEarliestUnprocessedEvent()
+    }
+
+    suspend fun loadUnprocessedEventsBetween(
+        startMillis: Long,
+        endMillis: Long
+    ): List<MemoryEventEntity> = withContext(ioDispatcher) {
+        memoryDao.loadUnprocessedEventsBetween(startMillis, endMillis)
+    }
+
+    suspend fun loadEventsBetween(
+        startMillis: Long,
+        endMillis: Long
+    ): List<MemoryEventEntity> = withContext(ioDispatcher) {
+        memoryDao.loadEventsBetween(startMillis, endMillis)
+    }
+
+    suspend fun loadUnprocessedTimestampsExcludingType(excludedType: String): List<Long> =
+        withContext(ioDispatcher) {
+            memoryDao.loadUnprocessedTimestampsExcludingType(excludedType)
+        }
+
+    suspend fun loadAllTimestampsExcludingType(excludedType: String): List<Long> =
+        withContext(ioDispatcher) {
+            memoryDao.loadAllTimestampsExcludingType(excludedType)
+        }
+
     fun observeTagsByStatus(status: TagStatus, limit: Int): Flow<List<UserTag>> {
         return memoryDao.observeTagsByStatus(status.storageValue, limit)
             .map { list -> list.map { it.toDomain(SNAPSHOT_EVIDENCE_LIMIT) } }
@@ -99,6 +128,18 @@ class MemoryRepository(
     }
 
     suspend fun countAllEvents(): Int = withContext(ioDispatcher) { memoryDao.countAllEvents() }
+
+    suspend fun countAllEventsExcludingType(excludedType: String): Int = withContext(ioDispatcher) {
+        memoryDao.countAllEventsExcludingType(excludedType)
+    }
+
+    suspend fun countUnprocessedEventsExcludingType(excludedType: String): Int = withContext(ioDispatcher) {
+        memoryDao.countUnprocessedEventsExcludingType(excludedType)
+    }
+
+    suspend fun findEventByExternalId(externalId: String): MemoryEventEntity? = withContext(ioDispatcher) {
+        memoryDao.findEventByExternalId(externalId)
+    }
 
     suspend fun loadTagsByStatus(
         status: TagStatus,
@@ -250,6 +291,24 @@ class MemoryRepository(
         memoryDao.deleteMetadata(PERSONA_SUMMARY_KEY)
     }
 
+    suspend fun savePersonaProfile(profile: PersonaProfile) = withContext(ioDispatcher) {
+        memoryDao.upsertMetadata(
+            MemoryMetadataEntity(
+                PERSONA_PROFILE_KEY,
+                profile.toJsonString()
+            )
+        )
+    }
+
+    suspend fun loadPersonaProfile(): PersonaProfile? = withContext(ioDispatcher) {
+        val raw = memoryDao.getMetadataValue(PERSONA_PROFILE_KEY)
+        PersonaProfile.fromJsonString(raw)
+    }
+
+    suspend fun clearPersonaProfile() = withContext(ioDispatcher) {
+        memoryDao.deleteMetadata(PERSONA_PROFILE_KEY)
+    }
+
     suspend fun deleteTag(tagId: Long): Boolean = withContext(ioDispatcher) {
         memoryDao.deleteEvidenceByTag(tagId)
         memoryDao.deleteTagById(tagId) > 0
@@ -366,6 +425,7 @@ class MemoryRepository(
         private const val SNAPSHOT_EVIDENCE_LIMIT = 2
         private const val UNBOUNDED_EVIDENCE_LIMIT = Int.MAX_VALUE
         private const val PERSONA_SUMMARY_KEY = "persona_summary"
+        private const val PERSONA_PROFILE_KEY = "persona_profile_v1"
     }
 
     private data class ResolvedHierarchy(

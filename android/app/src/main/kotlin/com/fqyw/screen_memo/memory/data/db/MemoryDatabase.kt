@@ -36,6 +36,8 @@ abstract class MemoryDatabase : RoomDatabase() {
         private fun buildDatabase(appContext: Context): MemoryDatabase {
             return Room.databaseBuilder(appContext, MemoryDatabase::class.java, DATABASE_NAME)
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                // 允许版本降级时清空旧数据，避免迁移路径缺失导致崩溃
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
         }
 
