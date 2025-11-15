@@ -2022,6 +2022,78 @@ abstract class AppLocalizations {
   /// **'Copy results'**
   String get copyResultsTooltip;
 
+  /// No description provided for @generatePersonaArticle.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate persona article'**
+  String get generatePersonaArticle;
+
+  /// No description provided for @articleGenerating.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating article...'**
+  String get articleGenerating;
+
+  /// No description provided for @articleGenerateSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Article generated successfully'**
+  String get articleGenerateSuccess;
+
+  /// No description provided for @articleGenerateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to generate article'**
+  String get articleGenerateFailed;
+
+  /// No description provided for @articlePreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Persona Article Preview'**
+  String get articlePreviewTitle;
+
+  /// No description provided for @articleCopySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Article copied to clipboard'**
+  String get articleCopySuccess;
+
+  /// No description provided for @articleLogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Generation Log'**
+  String get articleLogTitle;
+
+  /// No description provided for @memoryPersonaHubTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Archive'**
+  String get memoryPersonaHubTitle;
+
+  /// No description provided for @memoryTagsEntranceTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Open tag library'**
+  String get memoryTagsEntranceTooltip;
+
+  /// No description provided for @memoryTagLibraryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag Library'**
+  String get memoryTagLibraryTitle;
+
+  /// No description provided for @memoryArticleEmptyPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'No persona article yet. Generate one to see full insights.'**
+  String get memoryArticleEmptyPlaceholder;
+
+  /// No description provided for @memoryPauseActionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause processing'**
+  String get memoryPauseActionLabel;
+
   /// No description provided for @copyPersonaTooltip.
   ///
   /// In en, this message translates to:
@@ -3333,13 +3405,13 @@ abstract class AppLocalizations {
   /// No description provided for @memoryMenuEntry.
   ///
   /// In en, this message translates to:
-  /// **'Memory Center'**
+  /// **'Memory Archive'**
   String get memoryMenuEntry;
 
   /// No description provided for @memoryCenterTitle.
   ///
   /// In en, this message translates to:
-  /// **'Memory Center'**
+  /// **'Memory Archive'**
   String get memoryCenterTitle;
 
   /// No description provided for @memoryClearAllTooltip.

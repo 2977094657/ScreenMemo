@@ -6,11 +6,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:intl/intl.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../models/memory_models.dart';
 import '../services/flutter_logger.dart';
 import '../services/memory_bridge_service.dart';
+import '../services/persona_article_service.dart';
+import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/tag_hierarchy_tree.dart';
@@ -56,6 +59,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   StreamSubscription<MemorySnapshot>? _snapshotSub;
   StreamSubscription<MemoryProgressState>? _progressSub;
   StreamSubscription<MemoryTagUpdate>? _tagUpdateSub;
+  StreamSubscription<AIStreamEvent>? _articleSubscription;
+  String _article = '';
+  bool _articleGenerating = false;
+  String? _articleError;
+  String _lastPersonaSummary = '';
+  final List<String> _articleLogs = <String>[];
 
   @override
   void initState() {
@@ -68,7 +77,8 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     await _service.ensureInitialized();
     if (!mounted) return;
     setState(() {
-      _snapshot = _service.latestSnapshot ??
+      _snapshot =
+          _service.latestSnapshot ??
           MemorySnapshot(
             pendingTags: <MemoryTag>[],
             confirmedTags: <MemoryTag>[],
@@ -87,24 +97,34 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       if (_snapshot!.recentEvents.isNotEmpty) {
         _replaceLeadingEvents(_recentEvents, _snapshot!.recentEvents);
       }
-      _pendingVisible =
-          _normalizeVisible(_pendingVisible, math.min(_pendingTags.length, _pendingTotal));
-      _confirmedVisible =
-          _normalizeVisible(_confirmedVisible, math.min(_confirmedTags.length, _confirmedTotal));
-      _eventVisible =
-          _normalizeVisible(_eventVisible, math.min(_recentEvents.length, _eventTotal));
+      _pendingVisible = _normalizeVisible(
+        _pendingVisible,
+        math.min(_pendingTags.length, _pendingTotal),
+      );
+      _confirmedVisible = _normalizeVisible(
+        _confirmedVisible,
+        math.min(_confirmedTags.length, _confirmedTotal),
+      );
+      _eventVisible = _normalizeVisible(
+        _eventVisible,
+        math.min(_recentEvents.length, _eventTotal),
+      );
       _progress = _service.latestProgress;
     });
+    _lastPersonaSummary = _snapshot?.personaSummary.trim() ?? '';
     _snapshotSub = _service.snapshotStream.listen((MemorySnapshot snapshot) {
       if (!mounted) return;
       if (_progress is MemoryProgressRunning) {
         _bufferedSnapshot = snapshot;
+        _handlePersonaSummaryChange(snapshot.personaSummary);
         return;
       }
       _applySnapshot(snapshot);
     });
-    _progressSub = _service.progressStream.listen((MemoryProgressState progress) {
-      _logInfo('progressStream update ${_describeProgress(progress)}');
+    _progressSub = _service.progressStream.listen((
+      MemoryProgressState progress,
+    ) {
+      _logInfo('progressStream 状态更新 ${_describeProgress(progress)}');
       if (!mounted) return;
       setState(() {
         _progress = progress;
@@ -122,6 +142,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _bufferedSnapshot = null;
         _applySnapshot(snapshot);
       }
+      if (progress is MemoryProgressCompleted) {
+        _appendArticleLog('解析完成，触发画像文章再生成');
+        _scheduleArticleRegeneration(force: true);
+      }
     });
     _tagUpdateSub = _service.tagUpdateStream.listen((MemoryTagUpdate update) {
       _logInfo(
@@ -129,7 +153,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       );
       if (!mounted) return;
       if (update.isNewTag) {
-        UINotifier.info(context, AppLocalizations.of(context).memorySnapshotUpdated);
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).memorySnapshotUpdated,
+        );
       }
     });
     unawaited(_runInitialSync());
@@ -141,6 +168,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     _snapshotSub?.cancel();
     _progressSub?.cancel();
     _tagUpdateSub?.cancel();
+    _articleSubscription?.cancel();
     super.dispose();
   }
 
@@ -152,14 +180,25 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       final MemorySnapshot? snap = await _service.fetchSnapshot();
       if (!mounted) return;
       if (!initial && snap != null) {
-        UINotifier.info(context, AppLocalizations.of(context).memorySnapshotUpdated);
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).memorySnapshotUpdated,
+        );
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, AppLocalizations.of(context).memoryConfirmFailedToast(e.message ?? 'error'));
+      UINotifier.error(
+        context,
+        AppLocalizations.of(
+          context,
+        ).memoryConfirmFailedToast(e.message ?? 'error'),
+      );
     } catch (e) {
       if (!mounted) return;
-      UINotifier.error(context, AppLocalizations.of(context).memoryConfirmFailedToast(e.toString()));
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).memoryConfirmFailedToast(e.toString()),
+      );
     } finally {
       if (mounted) {
         setState(() => _refreshing = false);
@@ -180,6 +219,64 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
+  Future<void> _regenerateArticle({bool force = false}) async {
+    _appendArticleLog('收到画像文章生成请求 force=$force generating=$_articleGenerating');
+    if (_articleGenerating && !force) {
+      _appendArticleLog('已有生成任务在执行，跳过此次触发');
+      return;
+    }
+    await _articleSubscription?.cancel();
+    setState(() {
+      _article = '';
+      _articleError = null;
+      _articleGenerating = true;
+      _articleLogs.clear();
+    });
+    _appendArticleLog('开始生成画像文章');
+    try {
+      final Stream<AIStreamEvent> stream = PersonaArticleService.instance
+          .streamArticle();
+      _appendArticleLog('已连接 AI 服务，开始接收内容');
+      _articleSubscription = stream.listen(
+        (AIStreamEvent event) {
+          if (!mounted) return;
+          if (event.kind == 'content' && event.data.isNotEmpty) {
+            setState(() {
+              _article += event.data;
+            });
+          }
+        },
+        onError: (Object error) {
+          if (!mounted) return;
+          _appendArticleLog('画像文章生成失败：$error');
+          setState(() {
+            _articleGenerating = false;
+            _articleError = error.toString();
+          });
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            _articleGenerating = false;
+          });
+          _appendArticleLog('画像文章生成完成');
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _articleGenerating = false;
+        _articleError = e.toString();
+      });
+      _appendArticleLog('画像文章生成发生异常：$e');
+    }
+  }
+
+  void _scheduleArticleRegeneration({bool force = false}) {
+    _appendArticleLog('调度画像文章生成，force=$force');
+    unawaited(_regenerateArticle(force: force));
+  }
+
   Future<void> _confirmTag(MemoryTag tag) async {
     if (_confirmingTagIds.contains(tag.id)) {
       _logInfo('confirmTag ignored (already running) tagId=${tag.id}');
@@ -190,16 +287,22 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     try {
       final MemoryTag? updated = await _service.confirmTag(tag.id);
       if (!mounted) return;
-      _logInfo('confirmTag success tagId=${tag.id} status=${(updated ?? tag).status}');
+      _logInfo(
+        'confirmTag success tagId=${tag.id} status=${(updated ?? tag).status}',
+      );
       UINotifier.success(
         context,
-        AppLocalizations.of(context).memoryConfirmSuccessToast((updated ?? tag).label),
+        AppLocalizations.of(
+          context,
+        ).memoryConfirmSuccessToast((updated ?? tag).label),
       );
     } on PlatformException catch (e) {
       if (!mounted) return;
       UINotifier.error(
         context,
-        AppLocalizations.of(context).memoryConfirmFailedToast(e.message ?? 'error'),
+        AppLocalizations.of(
+          context,
+        ).memoryConfirmFailedToast(e.message ?? 'error'),
       );
     } catch (e) {
       if (!mounted) return;
@@ -260,9 +363,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
-  Future<void> _startHistoricalProcessing({required bool forceReprocess}) async {
+  Future<void> _startHistoricalProcessing({
+    required bool forceReprocess,
+  }) async {
     if (_initializingHistory) {
-      _logInfo('startHistoricalProcessing skipped (busy) force=$forceReprocess');
+      _logInfo(
+        'startHistoricalProcessing skipped (busy) force=$forceReprocess',
+      );
       return;
     }
     _logInfo('startHistoricalProcessing request force=$forceReprocess');
@@ -283,7 +390,9 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     });
     try {
       final int segmentSynced = await _service.syncSegmentsToMemory();
-      _logInfo('startHistoricalProcessing segment sync ingested=$segmentSynced');
+      _logInfo(
+        'startHistoricalProcessing segment sync ingested=$segmentSynced',
+      );
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageSyncChats);
       }
@@ -295,10 +404,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       await _service.startHistoricalProcessing(forceReprocess: forceReprocess);
       if (!mounted) return;
       _logInfo('startHistoricalProcessing dispatched force=$forceReprocess');
-      UINotifier.success(
-        context,
-        t.memoryStartProcessingToast,
-      );
+      UINotifier.success(context, t.memoryStartProcessingToast);
     } on PlatformException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -317,10 +423,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _preparingStageLabel = null;
         _progress = const MemoryProgressIdle();
       });
-      UINotifier.error(
-        context,
-        t.memoryConfirmFailedToast(e.toString()),
-      );
+      UINotifier.error(context, t.memoryConfirmFailedToast(e.toString()));
     } finally {
       if (mounted) {
         setState(() {
@@ -343,34 +446,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           recentEvents: <MemoryEventSummary>[],
           personaSummary: '',
         );
-    final Map<int, MemoryTag> tagLookup = Map<int, MemoryTag>.from(_tagIndex);
-    final bool pendingHasMore = _pendingVisible < _pendingTotal;
-    final bool confirmedHasMore = _confirmedVisible < _confirmedTotal;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(t.memoryCenterTitle),
         actions: [
           IconButton(
-            tooltip: t.copyPersonaTooltip,
-            onPressed: () => _copyPersonaSummary(t),
-            icon: const Icon(Icons.copy_outlined),
-          ),
-          IconButton(
-            tooltip: t.memoryPauseTooltip,
-            onPressed: (!_initializingHistory && _progress is! MemoryProgressRunning) || _pausing
-                ? null
-                : _pauseProcessing,
-            icon: _pausing
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
-                    ),
-                  )
-                : const Icon(Icons.pause_circle_outline),
+            tooltip: t.memoryTagsEntranceTooltip,
+            onPressed: _openTagBottomSheet,
+            icon: const Icon(Icons.sell_outlined),
           ),
           IconButton(
             tooltip: t.memoryClearAllTooltip,
@@ -381,10 +465,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        theme.colorScheme.primary,
+                      ),
                     ),
                   )
-                : const Icon(Icons.delete_sweep_outlined),
+                : const Icon(Icons.delete_outline),
           ),
         ],
       ),
@@ -396,43 +482,22 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           children: [
             const SizedBox(height: AppTheme.spacing4),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-              child: _buildHeroSection(context, snapshot),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+              ),
+              child: _buildArticleSection(context),
             ),
-            const SizedBox(height: AppTheme.spacing4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-              child: _buildProgressCard(context),
-            ),
-            const SizedBox(height: AppTheme.spacing4),
-            _buildTagSection(
-              context: context,
-              title: t.memoryPendingSectionTitle,
-              emptyText: t.memoryNoPending,
-              tags: _pendingTags,
-              showConfirmAction: true,
-              totalCount: _pendingTotal,
-              visibleCount: _pendingVisible,
-              onTap: _openTagDetail,
-              onLoadMore: pendingHasMore ? _loadMorePending : null,
-              isLoadingMore: _loadingPendingMore,
-            ),
-            const SizedBox(height: AppTheme.spacing4),
-            _buildTagSection(
-              context: context,
-              title: t.memoryConfirmedSectionTitle,
-              emptyText: t.memoryNoConfirmed,
-              tags: _confirmedTags,
-              showConfirmAction: false,
-              totalCount: _confirmedTotal,
-              visibleCount: _confirmedVisible,
-              onTap: _openTagDetail,
-              onLoadMore: confirmedHasMore ? _loadMoreConfirmed : null,
-              isLoadingMore: _loadingConfirmedMore,
-            ),
-            const SizedBox(height: AppTheme.spacing4),
-            const SizedBox(height: AppTheme.spacing8),
+            const SizedBox(height: AppTheme.spacing12),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          color: theme.colorScheme.surface,
+          child: _buildProgressCard(context),
         ),
       ),
     );
@@ -470,7 +535,8 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
 
   Future<void> _confirmClearMemory() async {
     final AppLocalizations t = AppLocalizations.of(context);
-    final bool confirmed = await showUIDialog<bool>(
+    final bool confirmed =
+        await showUIDialog<bool>(
           context: context,
           title: t.memoryClearAllConfirmTitle,
           message: t.memoryClearAllConfirmMessage,
@@ -534,63 +600,119 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
-  Widget _buildHeroSection(BuildContext context, MemorySnapshot snapshot) {
+  Widget _buildArticleSection(BuildContext context) {
     final AppLocalizations t = AppLocalizations.of(context);
     final ThemeData theme = Theme.of(context);
-    final String rawSummary = snapshot.personaSummary;
-    final bool hasSummary = rawSummary.trim().isNotEmpty;
-    final String displaySummary = _composePersonaSummaryText(rawSummary, t);
+    final String article = _article.trim();
+    final bool hasArticle = article.isNotEmpty;
 
+    Widget content;
+    if (_articleGenerating && !hasArticle) {
+      content = const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    } else if (hasArticle) {
+      content = _buildArticleMarkdown(theme, article);
+    } else if (_articleError != null) {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t.memoryArticleEmptyPlaceholder,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            _articleError!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+      );
+    } else {
+      content = Text(
+        t.memoryArticleEmptyPlaceholder,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [content],
+    );
+  }
+
+  Widget _buildArticleMarkdown(ThemeData theme, String markdown) {
+    final double baseSize = theme.textTheme.bodyMedium?.fontSize ?? 15;
+    final TextStyle paragraph =
+        (theme.textTheme.bodyLarge ??
+                theme.textTheme.bodyMedium ??
+                const TextStyle())
+            .copyWith(fontSize: baseSize + 1, height: 1.65);
+    final TextStyle heading =
+        (theme.textTheme.titleMedium ?? theme.textTheme.bodyLarge ?? paragraph)
+            .copyWith(
+              fontSize: baseSize + 4,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+            );
+
+    final MarkdownStyleSheet sheet = MarkdownStyleSheet.fromTheme(theme)
+        .copyWith(
+          p: paragraph,
+          h2: heading,
+          h3: heading.copyWith(fontSize: heading.fontSize! - 1),
+          h4: heading.copyWith(fontSize: heading.fontSize! - 2),
+          blockSpacing: AppTheme.spacing2.toDouble(),
+          listIndent: AppTheme.spacing3.toDouble(),
+        );
+
+    return MarkdownBody(data: markdown, styleSheet: sheet, shrinkWrap: true);
+  }
+
+  Widget _buildArticleLogPanel(ThemeData theme, AppLocalizations t) {
+    final TextStyle entryStyle =
+        theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.2,
+        ) ??
+        const TextStyle(fontSize: 12);
+    final List<String> logs = _articleLogs.reversed.toList();
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
       ),
-      padding: const EdgeInsets.all(AppTheme.spacing4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasSummary)
-            MarkdownBody(
-              data: displaySummary,
-              shrinkWrap: true,
-              selectable: false,
-              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                p: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  height: 1.4,
-                ),
-                h3: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: theme.colorScheme.onSurface,
-                ),
-                listBullet: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-            )
-          else
-            Text(
-              displaySummary.replaceAll('**', ''),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          Text(
+            t.articleLogTitle,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          for (final String log in logs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+              child: Text(log, style: entryStyle),
             ),
         ],
       ),
     );
   }
 
-  String _composePersonaSummaryText(String rawSummary, AppLocalizations t) {
-    final String trimmed = rawSummary.trim();
-    if (trimmed.isEmpty) {
-      return '**画像概览**\n\n${t.memoryPersonaEmptyPlaceholder}';
-    }
-    return trimmed;
-  }
-
-  Widget _buildGradientTagPill(BuildContext context, String tag, double maxWidth) {
+  Widget _buildGradientTagPill(
+    BuildContext context,
+    String tag,
+    double maxWidth,
+  ) {
     final ThemeData theme = Theme.of(context);
     final Brightness brightness = theme.brightness;
     final List<Color> colors = _geminiGradientColors(brightness);
@@ -638,6 +760,96 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     );
   }
 
+  Widget _buildDiscoveredTagList(BuildContext context, List<String> tags) {
+    if (tags.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    const double viewportHeight = 128;
+    const double rowExtent = 34;
+    const double rowSpacing = AppTheme.spacing1;
+
+    final bool showScrollbar =
+        (tags.length * (rowExtent + rowSpacing)) > viewportHeight;
+
+    return SizedBox(
+      height: viewportHeight,
+      child: Scrollbar(
+        thumbVisibility: showScrollbar,
+        child: ListView.separated(
+          padding: EdgeInsets.zero,
+          primary: false,
+          physics: const ClampingScrollPhysics(),
+          itemCount: tags.length,
+          itemBuilder: (BuildContext context, int index) {
+            return SizedBox(
+              height: rowExtent,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildGradientTagPill(
+                  context,
+                  tags[index],
+                  double.infinity,
+                ),
+              ),
+            );
+          },
+          separatorBuilder: (_, __) => const SizedBox(height: rowSpacing),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressDetailRow({
+    required BuildContext context,
+    required TextStyle bodyStyle,
+    required MemoryProgressRunning progress,
+    required String percentText,
+    required AppLocalizations t,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final Widget processed = Text(
+      t.memoryProgressRunningDetail(
+        progress.processedCount,
+        progress.totalCount,
+        percentText,
+      ),
+      style: bodyStyle,
+    );
+
+    if (progress.newlyDiscoveredTags.isEmpty) {
+      return processed;
+    }
+
+    final Widget headerRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: processed),
+        const SizedBox(width: AppTheme.spacing2),
+        Text(
+          t.memoryProgressNewTagsDetail(
+            progress.newlyDiscoveredTags.length,
+          ),
+          style: bodyStyle.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        headerRow,
+        const SizedBox(height: AppTheme.spacing1),
+        _buildDiscoveredTagList(
+          context,
+          progress.newlyDiscoveredTags,
+        ),
+      ],
+    );
+  }
+
   List<Color> _geminiGradientColors(Brightness brightness) {
     Color tune(
       Color c, {
@@ -647,8 +859,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       double lMinDark = 0.72,
     }) {
       final HSLColor h = HSLColor.fromColor(c);
-      final double sTarget = brightness == Brightness.dark ? sMinDark : sMinLight;
-      final double lTarget = brightness == Brightness.dark ? lMinDark : lMinLight;
+      final double sTarget = brightness == Brightness.dark
+          ? sMinDark
+          : sMinLight;
+      final double lTarget = brightness == Brightness.dark
+          ? lMinDark
+          : lMinLight;
       final double s = h.saturation < sTarget ? sTarget : h.saturation;
       final double l = h.lightness < lTarget ? lTarget : h.lightness;
       return h.withSaturation(s).withLightness(l).toColor();
@@ -658,7 +874,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     final Color c2 = tune(const Color(0xFF3B82F6));
     final Color c3 = tune(const Color(0xFF60A5FA));
     final Color c4 = tune(const Color(0xFF7C83FF));
-    final Color cY = tune(const Color(0xFFF59E0B), lMinLight: 0.86, lMinDark: 0.76);
+    final Color cY = tune(
+      const Color(0xFFF59E0B),
+      lMinLight: 0.86,
+      lMinDark: 0.76,
+    );
     return <Color>[
       c1,
       Color.lerp(c1, c2, 0.5)!,
@@ -670,18 +890,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       Color.lerp(c4, cY, 0.45)!,
       cY,
     ];
-  }
-
-  Future<void> _copyPersonaSummary(AppLocalizations t) async {
-    final String displaySummary = _composePersonaSummaryText(_snapshot?.personaSummary ?? '', t);
-    try {
-      await Clipboard.setData(ClipboardData(text: displaySummary));
-      if (!mounted) return;
-      UINotifier.success(context, t.copySuccess);
-    } catch (_) {
-      if (!mounted) return;
-      UINotifier.error(context, t.copyFailed);
-    }
   }
 
   Widget _buildStatCard({
@@ -720,64 +928,105 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     final AppLocalizations t = AppLocalizations.of(context);
     final ThemeData theme = Theme.of(context);
     final MemoryProgressState progress = _progress;
+    final BorderRadius cardRadius = BorderRadius.zero;
+    final BorderRadius buttonRadius = BorderRadius.circular(AppTheme.radiusLg);
+    final EdgeInsets cardPadding = const EdgeInsets.symmetric(
+      horizontal: AppTheme.spacing3,
+      vertical: AppTheme.spacing2,
+    );
+    final TextStyle headerStyle =
+        theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600) ??
+        theme.textTheme.bodyMedium!;
+    final TextStyle bodyStyle =
+        theme.textTheme.bodySmall ?? theme.textTheme.bodyMedium!;
+    final ButtonStyle filledPill = FilledButton.styleFrom(
+      shape: RoundedRectangleBorder(borderRadius: buttonRadius),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing3,
+        vertical: AppTheme.spacing1,
+      ),
+    );
+    final ButtonStyle outlinedPill = OutlinedButton.styleFrom(
+      shape: RoundedRectangleBorder(borderRadius: buttonRadius),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing3,
+        vertical: AppTheme.spacing1,
+      ),
+    );
+    final BorderSide outline = BorderSide(
+      color: theme.colorScheme.outlineVariant.withOpacity(0.45),
+      width: 1,
+    );
+    final List<BoxShadow> cardShadows = const <BoxShadow>[];
 
     if (progress is MemoryProgressRunning) {
       final bool waiting = _waitingForInitialProgress;
       final String? stageLabel = _preparingStageLabel;
       final double percent = (progress.safeProgress * 100).clamp(0, 100);
-      final String percentText = percent >= 10 ? percent.toStringAsFixed(0) : percent.toStringAsFixed(1);
+      final String percentText = percent >= 10
+          ? percent.toStringAsFixed(0)
+          : percent.toStringAsFixed(1);
       return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+        margin: EdgeInsets.zero,
+        color: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+        child: Container(
+          padding: cardPadding,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: cardRadius,
+            border: Border.fromBorderSide(outline),
+            boxShadow: cardShadows,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                t.memoryProgressRunning,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: AppTheme.spacing3),
+              Text(t.memoryProgressRunning, style: headerStyle),
+              const SizedBox(height: AppTheme.spacing1),
               LinearProgressIndicator(
                 value: waiting ? null : progress.safeProgress,
-                minHeight: 6,
+                minHeight: 4,
               ),
-              const SizedBox(height: AppTheme.spacing3),
+              const SizedBox(height: AppTheme.spacing1),
               if (waiting && stageLabel != null)
-                Text(
-                  t.memoryProgressPreparing(stageLabel),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                  child: Text(
+                    t.memoryProgressPreparing(stageLabel),
+                    style: bodyStyle.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 )
               else ...[
-              Text(
-                t.memoryProgressRunningDetail(
-                  progress.processedCount,
-                  progress.totalCount,
-                  percentText,
+                _buildProgressDetailRow(
+                  context: context,
+                  bodyStyle: bodyStyle,
+                  progress: progress,
+                  percentText: percentText,
+                  t: t,
                 ),
-                style: theme.textTheme.bodyMedium,
-              ),
-              if (progress.newlyDiscoveredTags.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.spacing2),
-                Text(
-                  t.memoryProgressNewTagsDetail(progress.newlyDiscoveredTags.length),
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(height: AppTheme.spacing1),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _pausing ? null : _pauseProcessing,
+                    style: filledPill,
+                    icon: _pausing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.pause_circle_outline, size: 18),
+                    label: Text(
+                      _pausing ? t.articleGenerating : t.memoryPauseActionLabel,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: AppTheme.spacing2),
-                LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final double maxWidth = math.min(constraints.maxWidth, 520);
-                    return Wrap(
-                      spacing: AppTheme.spacing2,
-                      runSpacing: AppTheme.spacing2,
-                      children: progress.newlyDiscoveredTags
-                          .map((String tag) => _buildGradientTagPill(context, tag, maxWidth))
-                          .toList(),
-                    );
-                  },
-                ),
-                ],
               ],
             ],
           ),
@@ -788,51 +1037,56 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     if (progress is MemoryProgressCompleted) {
       final int seconds = progress.duration.inSeconds;
       return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+        margin: EdgeInsets.zero,
+        color: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+        child: Container(
+          padding: cardPadding,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: cardRadius,
+            border: Border.fromBorderSide(outline),
+            boxShadow: cardShadows,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Wrap(
-                spacing: AppTheme.spacing2,
-                runSpacing: AppTheme.spacing2,
-                children: [
-                  FilledButton.icon(
-                    onPressed: _initializingHistory
-                        ? null
-                        : () => _startHistoricalProcessing(forceReprocess: false),
-                    icon: _initializingHistory
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                theme.colorScheme.onPrimary,
-                              ),
-                            ),
-                          )
-                        : const Icon(Icons.play_arrow_rounded, size: 18),
-                    style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      ),
-                    ),
-                    label: Text(t.memoryStartProcessingActionShort),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _initializingHistory
-                        ? null
-                        : () => _startHistoricalProcessing(forceReprocess: true),
-                    icon: const Icon(Icons.restart_alt_outlined, size: 18),
-                    label: Text(t.memoryReprocessAction),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.spacing3),
               Text(
                 t.memoryProgressCompleted(progress.totalCount, seconds),
-                style: theme.textTheme.bodyMedium,
+                style: bodyStyle,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _initializingHistory
+                      ? null
+                      : () => _startHistoricalProcessing(forceReprocess: false),
+                  style: filledPill,
+                  icon: _initializingHistory
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: Text(t.memoryStartProcessingActionShort),
+                ),
+              ),
+              const SizedBox(height: AppTheme.spacing1),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _initializingHistory
+                      ? null
+                      : () => _startHistoricalProcessing(forceReprocess: true),
+                  style: outlinedPill,
+                  icon: const Icon(Icons.restart_alt_outlined, size: 18),
+                  label: Text(t.memoryReprocessAction),
+                ),
               ),
             ],
           ),
@@ -842,103 +1096,102 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
 
     if (progress is MemoryProgressFailed) {
       final String headerText = t.memoryProgressFailed(progress.errorMessage);
-      final String? subtitle = progress.failedEventExternalId?.isNotEmpty == true
+      final String? subtitle =
+          progress.failedEventExternalId?.isNotEmpty == true
           ? t.memoryProgressFailedEvent(progress.failedEventExternalId!)
           : null;
       final String? raw = progress.rawResponse?.trim();
 
       return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+        margin: EdgeInsets.zero,
+        color: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+        child: Container(
+          padding: cardPadding,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: cardRadius,
+            border: Border.fromBorderSide(outline),
+            boxShadow: cardShadows,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Wrap(
-                    spacing: AppTheme.spacing2,
-                    runSpacing: AppTheme.spacing2,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: _initializingHistory
-                            ? null
-                            : () => _startHistoricalProcessing(forceReprocess: false),
-                        icon: _initializingHistory
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    theme.colorScheme.onPrimary,
-                                  ),
-                                ),
-                              )
-                            : const Icon(Icons.play_arrow_rounded, size: 18),
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                          ),
-                        ),
-                        label: Text(t.memoryStartProcessingActionShort),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _initializingHistory
-                            ? null
-                            : () => _startHistoricalProcessing(forceReprocess: true),
-                        icon: const Icon(Icons.restart_alt_outlined, size: 18),
-                        label: Text(t.memoryReprocessAction),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.spacing3),
               Text(
                 headerText,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.error,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: headerStyle.copyWith(color: theme.colorScheme.error),
               ),
               if (subtitle != null) ...[
-                const SizedBox(height: AppTheme.spacing2),
+                const SizedBox(height: AppTheme.spacing1),
                 Text(
                   subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: bodyStyle.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
               if (raw != null && raw.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.spacing3),
+                const SizedBox(height: AppTheme.spacing2),
                 Text(
                   t.memoryMalformedResponseRawLabel,
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  style: bodyStyle.copyWith(
+                    fontWeight: FontWeight.w600,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: AppTheme.spacing1),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(AppTheme.spacing3),
+                  padding: const EdgeInsets.all(AppTheme.spacing2),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    borderRadius: cardRadius,
                     border: Border.all(
                       color: theme.colorScheme.outlineVariant.withOpacity(0.4),
                     ),
                   ),
                   child: SelectableText(
                     raw,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: bodyStyle.copyWith(
                       fontFamily: 'monospace',
-                      height: 1.3,
+                      height: 1.25,
                     ),
                   ),
                 ),
               ],
+              const SizedBox(height: AppTheme.spacing2),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _initializingHistory
+                      ? null
+                      : () => _startHistoricalProcessing(forceReprocess: false),
+                  style: filledPill,
+                  icon: _initializingHistory
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: Text(t.memoryStartProcessingActionShort),
+                ),
+              ),
+              const SizedBox(height: AppTheme.spacing1),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _initializingHistory
+                      ? null
+                      : () => _startHistoricalProcessing(forceReprocess: true),
+                  style: outlinedPill,
+                  icon: const Icon(Icons.restart_alt_outlined, size: 18),
+                  label: Text(t.memoryReprocessAction),
+                ),
+              ),
             ],
           ),
         ),
@@ -946,45 +1199,65 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppTheme.spacing4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+      margin: EdgeInsets.zero,
+      color: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: cardRadius),
+      child: Container(
+        padding: cardPadding,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: cardRadius,
+          border: Border.fromBorderSide(outline),
+          boxShadow: cardShadows,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Text(
-                t.memoryProgressIdle,
-                style: theme.textTheme.bodyMedium,
+            Text(
+              _memoryProgressIdleHint(t),
+              style: bodyStyle.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(width: AppTheme.spacing3),
-            FilledButton.icon(
-              onPressed: _initializingHistory
-                  ? null
-                  : () => _startHistoricalProcessing(forceReprocess: false),
-              icon: _initializingHistory
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          theme.colorScheme.onPrimary,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.play_arrow_rounded, size: 18),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                ),
+            const SizedBox(height: AppTheme.spacing2),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _initializingHistory
+                    ? null
+                    : () => _startHistoricalProcessing(forceReprocess: false),
+                style: filledPill,
+                icon: _initializingHistory
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.play_arrow_rounded, size: 18),
+                label: Text(t.memoryStartProcessingActionShort),
               ),
-              label: Text(t.memoryStartProcessingActionShort),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _memoryProgressIdleHint(AppLocalizations t) {
+    final String code = t.localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '点击下方按钮即可解析历史动态事件，完善你的个人档案';
+    }
+    if (code.startsWith('ja')) {
+      return '下のボタンで過去の行動イベントを再解析し、あなた自身のプロフィールを整えましょう';
+    }
+    if (code.startsWith('ko')) {
+      return '아래 버튼을 눌러 과거 활동 이벤트를 다시 분석해 개인 프로필을 보완해 보세요';
+    }
+    return 'Tap below to reprocess past activity events and complete your personal archive';
   }
 
   Widget _buildTagSection({
@@ -1000,11 +1273,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     bool isLoadingMore = false,
   }) {
     final ThemeData theme = Theme.of(context);
-    final int safeVisible = math.min(visibleCount, math.min(tags.length, totalCount));
+    final int safeVisible = math.min(
+      visibleCount,
+      math.min(tags.length, totalCount),
+    );
     final List<MemoryTag> displayTags = tags.take(safeVisible).toList();
     final bool canLoadMore = onLoadMore != null && safeVisible < totalCount;
-    final Color statusColor =
-        showConfirmAction ? theme.colorScheme.errorContainer : theme.colorScheme.secondaryContainer;
+    final Color statusColor = showConfirmAction
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.secondaryContainer;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
@@ -1025,8 +1302,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
               const SizedBox(width: AppTheme.spacing2),
               Expanded(
                 child: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
@@ -1048,18 +1327,20 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
               ),
               child: Text(
                 emptyText,
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           else if (displayTags.isNotEmpty)
-                TagHierarchyTree(
-                  tags: displayTags,
-                  showConfirmAction: showConfirmAction,
-                  onTapTag: onTap,
-                  onConfirmTag: _confirmTag,
-                  onDeleteTag: _confirmDeleteTag,
-                  deletingTagIds: _deletingTagIds,
-                  confirmingTagIds: _confirmingTagIds,
+            TagHierarchyTree(
+              tags: displayTags,
+              showConfirmAction: showConfirmAction,
+              onTapTag: onTap,
+              onConfirmTag: _confirmTag,
+              onDeleteTag: _confirmDeleteTag,
+              deletingTagIds: _deletingTagIds,
+              confirmingTagIds: _confirmingTagIds,
             ),
           if (displayTags.isEmpty && totalCount > 0)
             Padding(
@@ -1070,7 +1351,9 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      theme.colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
@@ -1108,6 +1391,157 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     );
   }
 
+  void _openTagBottomSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) {
+        final AppLocalizations t = AppLocalizations.of(sheetContext);
+        final ThemeData sheetTheme = Theme.of(sheetContext);
+        final Color selectedColor = sheetTheme.brightness == Brightness.dark
+            ? AppTheme.darkForeground
+            : AppTheme.foreground;
+        final Color unselectedColor =
+            sheetTheme.textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
+        return Container(
+          decoration: BoxDecoration(
+            color: sheetTheme.colorScheme.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(AppTheme.radiusLg),
+              topRight: Radius.circular(AppTheme.radiusLg),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: FractionallySizedBox(
+              heightFactor: 0.9,
+              child: DefaultTabController(
+                length: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(
+                        top: AppTheme.spacing3,
+                        bottom: AppTheme.spacing2,
+                      ),
+                      alignment: Alignment.center,
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: sheetTheme.colorScheme.onSurfaceVariant
+                              .withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 40,
+                      child: TabBar(
+                        isScrollable: false,
+                        tabAlignment: TabAlignment.fill,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        labelPadding: EdgeInsets.zero,
+                        labelColor: selectedColor,
+                        unselectedLabelColor: unselectedColor,
+                        labelStyle: sheetTheme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        unselectedLabelStyle: sheetTheme.textTheme.bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w500),
+                        dividerColor: Colors.transparent,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicatorPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing2,
+                        ),
+                        indicator: UnderlineTabIndicator(
+                          borderSide: BorderSide(
+                            width: 2,
+                            color: selectedColor,
+                          ),
+                        ),
+                        tabs: [
+                          Tab(text: t.memoryPendingSectionTitle),
+                          Tab(text: t.memoryConfirmedSectionTitle),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        physics: const ClampingScrollPhysics(),
+                        children: [
+                          _buildTagSheetTab(
+                            sheetContext,
+                            title: t.memoryPendingSectionTitle,
+                            emptyText: t.memoryNoPending,
+                            tags: _pendingTags,
+                            showConfirmAction: true,
+                            totalCount: _pendingTotal,
+                            visibleCount: _pendingVisible,
+                            onLoadMore: _pendingVisible < _pendingTotal
+                                ? _loadMorePending
+                                : null,
+                          ),
+                          _buildTagSheetTab(
+                            sheetContext,
+                            title: t.memoryConfirmedSectionTitle,
+                            emptyText: t.memoryNoConfirmed,
+                            tags: _confirmedTags,
+                            showConfirmAction: false,
+                            totalCount: _confirmedTotal,
+                            visibleCount: _confirmedVisible,
+                            onLoadMore: _confirmedVisible < _confirmedTotal
+                                ? _loadMoreConfirmed
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTagSheetTab(
+    BuildContext context, {
+    required String title,
+    required String emptyText,
+    required List<MemoryTag> tags,
+    required bool showConfirmAction,
+    required int visibleCount,
+    required int totalCount,
+    VoidCallback? onLoadMore,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3,
+      ),
+      children: [
+        _buildTagSection(
+          context: context,
+          title: title,
+          emptyText: emptyText,
+          tags: tags,
+          showConfirmAction: showConfirmAction,
+          totalCount: totalCount,
+          visibleCount: visibleCount,
+          onTap: _openTagDetail,
+          onLoadMore: onLoadMore,
+        ),
+      ],
+    );
+  }
+
   Widget _buildInfoChip({
     required BuildContext context,
     required IconData icon,
@@ -1116,7 +1550,9 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     return Chip(
       avatar: Icon(icon, size: 16),
       label: Text(label),
-      backgroundColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.surfaceVariant.withOpacity(0.4),
       labelStyle: Theme.of(context).textTheme.bodySmall,
     );
   }
@@ -1159,7 +1595,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     setState(() => _loadingPendingMore = true);
     try {
       final int offset = _pendingTags.length;
-      final int limit = math.max(_pageStep, target - _pendingTags.length + _prefetchStep);
+      final int limit = math.max(
+        _pageStep,
+        target - _pendingTags.length + _prefetchStep,
+      );
       final List<MemoryTag> fetched = await _service.loadTags(
         status: MemoryTagStatus.pending,
         offset: offset,
@@ -1192,7 +1631,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     setState(() => _loadingConfirmedMore = true);
     try {
       final int offset = _confirmedTags.length;
-      final int limit = math.max(_pageStep, target - _confirmedTags.length + _prefetchStep);
+      final int limit = math.max(
+        _pageStep,
+        target - _confirmedTags.length + _prefetchStep,
+      );
       final List<MemoryTag> fetched = await _service.loadTags(
         status: MemoryTagStatus.confirmed,
         offset: offset,
@@ -1245,6 +1687,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         math.min(_recentEvents.length, _eventTotal),
       );
     });
+    _handlePersonaSummaryChange(snapshot.personaSummary);
   }
 
   void _replaceLeadingTags(List<MemoryTag> target, List<MemoryTag> incoming) {
@@ -1270,14 +1713,20 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
-  void _replaceLeadingEvents(List<MemoryEventSummary> target, List<MemoryEventSummary> incoming) {
+  void _replaceLeadingEvents(
+    List<MemoryEventSummary> target,
+    List<MemoryEventSummary> incoming,
+  ) {
     if (incoming.isEmpty) return;
     final Set<int> incomingIds = incoming.map((e) => e.id).toSet();
     target.removeWhere((event) => incomingIds.contains(event.id));
     target.insertAll(0, incoming);
   }
 
-  void _appendEvents(List<MemoryEventSummary> target, List<MemoryEventSummary> incoming) {
+  void _appendEvents(
+    List<MemoryEventSummary> target,
+    List<MemoryEventSummary> incoming,
+  ) {
     if (incoming.isEmpty) return;
     final Set<int> existingIds = target.map((e) => e.id).toSet();
     for (final MemoryEventSummary event in incoming) {
@@ -1290,7 +1739,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   void _handleTagRemoved(int tagId) {
     _tagIndex.remove(tagId);
     final bool removedPending = _removeTagFromCollection(_pendingTags, tagId);
-    final bool removedConfirmed = _removeTagFromCollection(_confirmedTags, tagId);
+    final bool removedConfirmed = _removeTagFromCollection(
+      _confirmedTags,
+      tagId,
+    );
     if (!removedPending && !removedConfirmed) {
       return;
     }
@@ -1319,13 +1771,31 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     return true;
   }
 
+  void _handlePersonaSummaryChange(String summary) {
+    final String trimmed = summary.trim();
+    if (trimmed.isEmpty) return;
+    if (trimmed == _lastPersonaSummary) return;
+    _appendArticleLog('画像摘要更新，准备重新生成文章');
+    _lastPersonaSummary = trimmed;
+    _scheduleArticleRegeneration(force: true);
+  }
+
+  void _appendArticleLog(String message) {
+    FlutterLogger.nativeInfo('MemoryCenter', message);
+    if (!mounted) return;
+    setState(() {
+      if (_articleLogs.length >= 30) {
+        _articleLogs.removeAt(0);
+      }
+      final String timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
+      _articleLogs.add('[$timestamp] $message');
+    });
+  }
+
   void _openTagDetail(MemoryTag tag) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => TagDetailPage(
-          tagId: tag.id,
-          initialTag: tag,
-        ),
+        builder: (_) => TagDetailPage(tagId: tag.id, initialTag: tag),
       ),
     );
   }
@@ -1336,4 +1806,3 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     } catch (_) {}
   }
 }
-

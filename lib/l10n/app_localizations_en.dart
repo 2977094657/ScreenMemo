@@ -1100,6 +1100,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get copyResultsTooltip => 'Copy results';
 
   @override
+  String get generatePersonaArticle => 'Generate persona article';
+
+  @override
+  String get articleGenerating => 'Generating article...';
+
+  @override
+  String get articleGenerateSuccess => 'Article generated successfully';
+
+  @override
+  String get articleGenerateFailed => 'Failed to generate article';
+
+  @override
+  String get articlePreviewTitle => 'Persona Article Preview';
+
+  @override
+  String get articleCopySuccess => 'Article copied to clipboard';
+
+  @override
+  String get articleLogTitle => 'Generation Log';
+
+  @override
+  String get memoryPersonaHubTitle => 'Memory Archive';
+
+  @override
+  String get memoryTagsEntranceTooltip => 'Open tag library';
+
+  @override
+  String get memoryTagLibraryTitle => 'Tag Library';
+
+  @override
+  String get memoryArticleEmptyPlaceholder =>
+      'No persona article yet. Generate one to see full insights.';
+
+  @override
+  String get memoryPauseActionLabel => 'Pause processing';
+
+  @override
   String get copyPersonaTooltip => 'Copy persona summary';
 
   @override
@@ -1858,10 +1895,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get providerNotFound => 'Provider not found';
 
   @override
-  String get memoryMenuEntry => 'Memory Center';
+  String get memoryMenuEntry => 'Memory Archive';
 
   @override
-  String get memoryCenterTitle => 'Memory Center';
+  String get memoryCenterTitle => 'Memory Archive';
 
   @override
   String get memoryClearAllTooltip => 'Clear memory vault';

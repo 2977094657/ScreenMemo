@@ -50,14 +50,22 @@ data class PersonaProfile(
 
     fun toMarkdown(): String {
         val builder = StringBuilder()
-        builder.append(title.trim()).append("\n\n")
+        val normalizedTitle = normalizeHeading(title, fallbackPrefix = "### ")
+        if (normalizedTitle.isNotEmpty()) {
+            builder.append(normalizedTitle).append("\n\n")
+        }
         sections.values.forEach { section ->
-            if (section.items.isEmpty()) return@forEach
-            builder.append(section.title.trim()).append("\n\n")
-            section.items.forEach { item ->
+            val visibleItems = section.items.filter { it.heading.isNotBlank() || it.detail.isNotBlank() }
+            if (visibleItems.isEmpty()) return@forEach
+            val sectionHeading = normalizeHeading(section.title, fallbackPrefix = "### ")
+            if (sectionHeading.isNotEmpty()) {
+                builder.append(sectionHeading).append("\n\n")
+            }
+            visibleItems.forEach { item ->
                 val heading = item.heading.trim()
                 val detail = item.detail.trim()
-                builder.append("*   **${item.slot}. $heading**")
+                val slot = item.slot.trim().ifBlank { "A" }
+                builder.append("- **$slot. ${heading.ifEmpty { "未命名主题" }}**")
                 if (detail.isNotEmpty()) {
                     builder.append(": ").append(detail)
                 }
@@ -66,12 +74,25 @@ data class PersonaProfile(
             builder.append("\n")
         }
         if (traits.isNotEmpty()) {
-            builder.append("#### **用户核心特质总结**\n\n")
+            builder.append("### 关键特质速览\n\n")
             traits.forEach { trait ->
-                builder.append("* ").append(trait.trim()).append("\n")
+                val sanitized = trait.trim()
+                if (sanitized.isNotEmpty()) {
+                    builder.append("- ").append(sanitized).append("\n")
+                }
             }
         }
         return builder.toString().trim()
+    }
+
+    private fun normalizeHeading(raw: String, fallbackPrefix: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("###")) {
+            return trimmed
+        }
+        val content = trimmed.trimStart('#', ' ', '\t')
+        return fallbackPrefix + content
     }
 
     fun applyPatch(patch: PersonaProfilePatch): PersonaProfile {

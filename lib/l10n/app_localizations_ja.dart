@@ -1072,6 +1072,42 @@ class AppLocalizationsJa extends AppLocalizations {
   String get copyResultsTooltip => '結果をコピー';
 
   @override
+  String get generatePersonaArticle => 'プロフィール記事を生成';
+
+  @override
+  String get articleGenerating => '記事を生成中...';
+
+  @override
+  String get articleGenerateSuccess => '記事の生成に成功しました';
+
+  @override
+  String get articleGenerateFailed => '記事の生成に失敗しました';
+
+  @override
+  String get articlePreviewTitle => 'プロフィール記事プレビュー';
+
+  @override
+  String get articleCopySuccess => '記事をクリップボードにコピーしました';
+
+  @override
+  String get articleLogTitle => '生成ログ';
+
+  @override
+  String get memoryPersonaHubTitle => 'メモリーアーカイブ';
+
+  @override
+  String get memoryTagsEntranceTooltip => 'タグライブラリを開く';
+
+  @override
+  String get memoryTagLibraryTitle => 'タグライブラリ';
+
+  @override
+  String get memoryArticleEmptyPlaceholder => 'まだプロフィール記事がありません。生成後にご確認ください。';
+
+  @override
+  String get memoryPauseActionLabel => '解析を一時停止';
+
+  @override
   String get copyPersonaTooltip => 'ユーザー画像をコピー';
 
   @override
@@ -1815,10 +1851,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get providerNotFound => 'プロバイダーが見つかりません';
 
   @override
-  String get memoryMenuEntry => 'メモリーセンター';
+  String get memoryMenuEntry => 'メモリーアーカイブ';
 
   @override
-  String get memoryCenterTitle => 'メモリーセンター';
+  String get memoryCenterTitle => 'メモリーアーカイブ';
 
   @override
   String get memoryClearAllTooltip => '記憶庫を空にする';

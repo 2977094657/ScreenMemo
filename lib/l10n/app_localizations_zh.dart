@@ -1060,6 +1060,42 @@ class AppLocalizationsZh extends AppLocalizations {
   String get copyResultsTooltip => '复制结果';
 
   @override
+  String get generatePersonaArticle => '生成画像文章';
+
+  @override
+  String get articleGenerating => '正在生成文章...';
+
+  @override
+  String get articleGenerateSuccess => '文章生成成功';
+
+  @override
+  String get articleGenerateFailed => '文章生成失败';
+
+  @override
+  String get articlePreviewTitle => '画像文章预览';
+
+  @override
+  String get articleCopySuccess => '文章已复制到剪贴板';
+
+  @override
+  String get articleLogTitle => '生成日志';
+
+  @override
+  String get memoryPersonaHubTitle => '记忆档案';
+
+  @override
+  String get memoryTagsEntranceTooltip => '查看标签库';
+
+  @override
+  String get memoryTagLibraryTitle => '标签库';
+
+  @override
+  String get memoryArticleEmptyPlaceholder => '当前暂无画像文章，请先生成或等待解析完成。';
+
+  @override
+  String get memoryPauseActionLabel => '暂停解析';
+
+  @override
   String get copyPersonaTooltip => '复制用户画像';
 
   @override
@@ -1797,10 +1833,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get providerNotFound => '提供商不存在';
 
   @override
-  String get memoryMenuEntry => '记忆中心';
+  String get memoryMenuEntry => '记忆档案';
 
   @override
-  String get memoryCenterTitle => '记忆中心';
+  String get memoryCenterTitle => '记忆档案';
 
   @override
   String get memoryClearAllTooltip => '清空记忆库';

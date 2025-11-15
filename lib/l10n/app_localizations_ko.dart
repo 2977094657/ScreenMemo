@@ -1069,6 +1069,42 @@ class AppLocalizationsKo extends AppLocalizations {
   String get copyResultsTooltip => '결과 복사';
 
   @override
+  String get generatePersonaArticle => '프로필 기사 생성';
+
+  @override
+  String get articleGenerating => '기사 생성 중...';
+
+  @override
+  String get articleGenerateSuccess => '기사가 성공적으로 생성되었습니다';
+
+  @override
+  String get articleGenerateFailed => '기사 생성에 실패했습니다';
+
+  @override
+  String get articlePreviewTitle => '프로필 기사 미리보기';
+
+  @override
+  String get articleCopySuccess => '기사가 클립보드에 복사되었습니다';
+
+  @override
+  String get articleLogTitle => '생성 로그';
+
+  @override
+  String get memoryPersonaHubTitle => '메모리 아카이브';
+
+  @override
+  String get memoryTagsEntranceTooltip => '태그 라이브러리 열기';
+
+  @override
+  String get memoryTagLibraryTitle => '태그 라이브러리';
+
+  @override
+  String get memoryArticleEmptyPlaceholder => '아직 프로필 기사가 없습니다. 생성 후 다시 확인하세요.';
+
+  @override
+  String get memoryPauseActionLabel => '분석 일시중지';
+
+  @override
   String get copyPersonaTooltip => '사용자 프로필 복사';
 
   @override
@@ -1813,10 +1849,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get providerNotFound => '프로바이더를 찾을 수 없습니다';
 
   @override
-  String get memoryMenuEntry => '메모리 센터';
+  String get memoryMenuEntry => '메모리 아카이브';
 
   @override
-  String get memoryCenterTitle => '메모리 센터';
+  String get memoryCenterTitle => '메모리 아카이브';
 
   @override
   String get memoryClearAllTooltip => '기억 저장소 비우기';

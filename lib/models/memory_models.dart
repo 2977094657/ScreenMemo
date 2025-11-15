@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 
 class MemorySnapshot {
   MemorySnapshot({
@@ -11,13 +12,13 @@ class MemorySnapshot {
     this.lastUpdatedAt,
     this.personaSummary = '',
     PersonaProfile? personaProfile,
-  })  : pendingTags = _unmodifiableTags(pendingTags),
-        confirmedTags = _unmodifiableTags(confirmedTags),
-        recentEvents = _unmodifiableEvents(recentEvents),
-        pendingTotalCount = pendingTotalCount ?? pendingTags.length,
-        confirmedTotalCount = confirmedTotalCount ?? confirmedTags.length,
-        recentEventTotalCount = recentEventTotalCount ?? recentEvents.length,
-        personaProfile = personaProfile ?? PersonaProfile.empty();
+  }) : pendingTags = _unmodifiableTags(pendingTags),
+       confirmedTags = _unmodifiableTags(confirmedTags),
+       recentEvents = _unmodifiableEvents(recentEvents),
+       pendingTotalCount = pendingTotalCount ?? pendingTags.length,
+       confirmedTotalCount = confirmedTotalCount ?? confirmedTags.length,
+       recentEventTotalCount = recentEventTotalCount ?? recentEvents.length,
+       personaProfile = personaProfile ?? PersonaProfile.empty();
 
   final List<MemoryTag> pendingTags;
   final List<MemoryTag> confirmedTags;
@@ -40,19 +41,23 @@ class MemorySnapshot {
     String? personaSummary,
     PersonaProfile? personaProfile,
   }) {
-    final List<MemoryTag> nextPending =
-        _unmodifiableTags(pendingTags ?? this.pendingTags);
-    final List<MemoryTag> nextConfirmed =
-        _unmodifiableTags(confirmedTags ?? this.confirmedTags);
-    final List<MemoryEventSummary> nextEvents =
-        _unmodifiableEvents(recentEvents ?? this.recentEvents);
+    final List<MemoryTag> nextPending = _unmodifiableTags(
+      pendingTags ?? this.pendingTags,
+    );
+    final List<MemoryTag> nextConfirmed = _unmodifiableTags(
+      confirmedTags ?? this.confirmedTags,
+    );
+    final List<MemoryEventSummary> nextEvents = _unmodifiableEvents(
+      recentEvents ?? this.recentEvents,
+    );
     return MemorySnapshot(
       pendingTags: nextPending,
       confirmedTags: nextConfirmed,
       recentEvents: nextEvents,
       pendingTotalCount: pendingTotalCount ?? this.pendingTotalCount,
       confirmedTotalCount: confirmedTotalCount ?? this.confirmedTotalCount,
-      recentEventTotalCount: recentEventTotalCount ?? this.recentEventTotalCount,
+      recentEventTotalCount:
+          recentEventTotalCount ?? this.recentEventTotalCount,
       lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
       personaSummary: personaSummary ?? this.personaSummary,
       personaProfile: personaProfile ?? this.personaProfile,
@@ -80,7 +85,8 @@ class MemorySnapshot {
 
   static MemorySnapshot fromMap(Map<String, dynamic> map) {
     final List<dynamic> pendingRaw = (map['pendingTags'] as List?) ?? const [];
-    final List<dynamic> confirmedRaw = (map['confirmedTags'] as List?) ?? const [];
+    final List<dynamic> confirmedRaw =
+        (map['confirmedTags'] as List?) ?? const [];
     final List<dynamic> eventsRaw = (map['recentEvents'] as List?) ?? const [];
     final List<MemoryTag> pending = pendingRaw
         .whereType<Map>()
@@ -125,8 +131,9 @@ class MemorySnapshot {
   static List<MemoryTag> _unmodifiableTags(List<MemoryTag> input) =>
       List<MemoryTag>.unmodifiable(input);
 
-  static List<MemoryEventSummary> _unmodifiableEvents(List<MemoryEventSummary> input) =>
-      List<MemoryEventSummary>.unmodifiable(input);
+  static List<MemoryEventSummary> _unmodifiableEvents(
+    List<MemoryEventSummary> input,
+  ) => List<MemoryEventSummary>.unmodifiable(input);
 }
 
 class MemoryTag {
@@ -220,7 +227,10 @@ class MemoryTag {
         .toList(growable: false);
     final int totalCount =
         (map['evidenceTotalCount'] as num?)?.toInt() ?? evidence.length;
-    final String fullPathRaw = (map['fullPath'] as String?)?.trim() ?? (map['label'] as String?)?.trim() ?? '';
+    final String fullPathRaw =
+        (map['fullPath'] as String?)?.trim() ??
+        (map['label'] as String?)?.trim() ??
+        '';
     final String level1Raw = (map['level1'] as String?)?.trim() ?? '';
     final String level2Raw = (map['level2'] as String?)?.trim() ?? '';
     final String level3Raw = (map['level3'] as String?)?.trim() ?? '';
@@ -277,9 +287,12 @@ class _HierarchySegments {
     required String level4,
     required String fallback,
   }) {
-    final List<String> normalized = <String>[level1, level2, level3, level4]
-        .map((e) => e.trim())
-        .toList(growable: false);
+    final List<String> normalized = <String>[
+      level1,
+      level2,
+      level3,
+      level4,
+    ].map((e) => e.trim()).toList(growable: false);
     final bool hasAll = normalized.every((element) => element.isNotEmpty);
     if (hasAll) {
       return _HierarchySegments(
@@ -294,16 +307,26 @@ class _HierarchySegments {
     final String effectiveFallback = fallback.trim();
     final List<String> fallbackParts = effectiveFallback.isEmpty
         ? const <String>[]
-        : effectiveFallback.split(RegExp(r'[\/／\|｜]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        : effectiveFallback
+              .split(RegExp(r'[\/／\|｜]'))
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
     final List<String> merged = <String>[
-      normalized[0].isNotEmpty ? normalized[0] : (fallbackParts.isNotEmpty ? fallbackParts[0] : '待分类'),
-      normalized[1].isNotEmpty ? normalized[1] : (fallbackParts.length > 1 ? fallbackParts[1] : '未分组'),
-      normalized[2].isNotEmpty ? normalized[2] : (fallbackParts.length > 2 ? fallbackParts[2] : '未知专题'),
+      normalized[0].isNotEmpty
+          ? normalized[0]
+          : (fallbackParts.isNotEmpty ? fallbackParts[0] : '待分类'),
+      normalized[1].isNotEmpty
+          ? normalized[1]
+          : (fallbackParts.length > 1 ? fallbackParts[1] : '未分组'),
+      normalized[2].isNotEmpty
+          ? normalized[2]
+          : (fallbackParts.length > 2 ? fallbackParts[2] : '未知专题'),
       normalized[3].isNotEmpty
           ? normalized[3]
           : (fallbackParts.length > 3
-              ? fallbackParts[3]
-              : (effectiveFallback.isEmpty ? '未命名标签' : effectiveFallback)),
+                ? fallbackParts[3]
+                : (effectiveFallback.isEmpty ? '未命名标签' : effectiveFallback)),
     ];
 
     final String resolvedFullPath = merged.join(' / ').trim();
@@ -385,7 +408,9 @@ class MemoryEventSummary {
     return MemoryEventSummary(
       id: _toInt(map['id']) ?? 0,
       externalId: map['externalId'] as String?,
-      occurredAt: _toDateTime(map['occurredAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      occurredAt:
+          _toDateTime(map['occurredAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
       type: (map['type'] as String?) ?? '',
       source: (map['source'] as String?) ?? '',
       content: (map['content'] as String?) ?? '',
@@ -586,14 +611,16 @@ class PersonaProfile {
         LinkedHashMap<String, PersonaSection>();
     final List<dynamic> sectionRaw = (raw['sections'] as List?) ?? const [];
     for (final Map<dynamic, dynamic> entry in sectionRaw.whereType<Map>()) {
-      final PersonaSection? parsed =
-          PersonaSection.tryFromMap(Map<String, dynamic>.from(entry));
+      final PersonaSection? parsed = PersonaSection.tryFromMap(
+        Map<String, dynamic>.from(entry),
+      );
       if (parsed != null) {
         sectionMap[parsed.id] = parsed;
       }
     }
-    final List<PersonaSection> sections =
-        List<PersonaSection>.unmodifiable(sectionMap.values);
+    final List<PersonaSection> sections = List<PersonaSection>.unmodifiable(
+      sectionMap.values,
+    );
 
     final List<String> traits = ((raw['traits'] as List?) ?? const [])
         .whereType<String>()
@@ -620,6 +647,17 @@ class PersonaProfile {
     };
   }
 
+  String toJsonString({bool pretty = false, int indent = 2}) {
+    if (pretty) {
+      final JsonEncoder encoder = JsonEncoder.withIndent(' ' * indent);
+      return encoder.convert(toMap());
+    }
+    return jsonEncode(toMap());
+  }
+
+  String toPrettyJsonString([int indent = 2]) =>
+      toJsonString(pretty: true, indent: indent);
+
   String toMarkdown() {
     final StringBuffer buffer = StringBuffer();
     if (title.trim().isNotEmpty) {
@@ -636,7 +674,9 @@ class PersonaProfile {
         final String heading = item.heading.trim();
         final String detail = item.detail.trim();
         if (heading.isEmpty && detail.isEmpty) continue;
-        buffer.write('*   **${item.slot}. ${heading.isEmpty ? item.slot : heading}**');
+        buffer.write(
+          '*   **${item.slot}. ${heading.isEmpty ? item.slot : heading}**',
+        );
         if (detail.isNotEmpty) {
           buffer.write(': $detail');
         }
@@ -672,10 +712,7 @@ class PersonaSection {
     return const <PersonaSection>[];
   }
 
-  PersonaSection copyWith({
-    String? title,
-    List<PersonaItem>? items,
-  }) {
+  PersonaSection copyWith({String? title, List<PersonaItem>? items}) {
     return PersonaSection(
       id: id,
       title: title?.trim().isNotEmpty == true ? title!.trim() : this.title,
@@ -711,7 +748,6 @@ class PersonaSection {
       'items': items.map((e) => e.toMap()).toList(growable: false),
     };
   }
-
 }
 
 class PersonaItem {
@@ -725,13 +761,12 @@ class PersonaItem {
   final String heading;
   final String detail;
 
-  PersonaItem copyWith({
-    String? heading,
-    String? detail,
-  }) {
+  PersonaItem copyWith({String? heading, String? detail}) {
     return PersonaItem(
       slot: slot,
-      heading: heading?.trim().isNotEmpty == true ? heading!.trim() : this.heading,
+      heading: heading?.trim().isNotEmpty == true
+          ? heading!.trim()
+          : this.heading,
       detail: detail?.trim() ?? this.detail,
     );
   }
@@ -746,11 +781,7 @@ class PersonaItem {
       return null;
     }
     final String detail = (raw['detail'] as String?)?.trim() ?? '';
-    return PersonaItem(
-      slot: slot,
-      heading: heading,
-      detail: detail,
-    );
+    return PersonaItem(slot: slot, heading: heading, detail: detail);
   }
 
   Map<String, dynamic> toMap() {
@@ -761,4 +792,3 @@ class PersonaItem {
     };
   }
 }
-

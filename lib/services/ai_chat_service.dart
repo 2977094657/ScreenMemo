@@ -97,12 +97,20 @@ class AIChatService {
 
   /// 发送一条用户消息，返回助手回复。
   /// - 会保留历史上下文，实现多轮会话
-  Future<AIMessage> sendMessage(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async {
-    try { await FlutterLogger.nativeInfo('AI', 'sendMessage begin len=' + userMessage.length.toString()); } catch (_) {}
+  Future<AIMessage> sendMessage(
+    String userMessage, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    try {
+      await FlutterLogger.nativeInfo(
+        'AI',
+        'sendMessage begin len=' + userMessage.length.toString(),
+      );
+    } catch (_) {}
     final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
     String? usedModel;
-  
+
     for (final ep in endpoints) {
       usedModel = ep.model;
       final apiKey = ep.apiKey;
@@ -113,16 +121,25 @@ class AIChatService {
       try {
         // 历史按会话CID隔离 + 注入系统语言指示（本地化读取，忽略上下文语言）
         final history = await _settings.getChatHistory();
-        final String langCode = (LocaleService.instance.locale?.languageCode ??
-                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-            .toLowerCase();
+        final String langCode =
+            (LocaleService.instance.locale?.languageCode ??
+                    WidgetsBinding
+                        .instance
+                        .platformDispatcher
+                        .locale
+                        .languageCode)
+                .toLowerCase();
         final bool isZh = langCode.startsWith('zh');
         final locale = isZh ? const Locale('zh') : const Locale('en');
-        final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+        final String systemMsg = lookupAppLocalizations(
+          locale,
+        ).aiSystemPromptLanguagePolicy;
 
         final Uri baseUri = _resolveBaseUri(ep.baseUrl);
         final String baseHost = baseUri.host.toLowerCase();
-        final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
+        final bool isGoogle =
+            baseHost.contains('googleapis.com') ||
+            baseHost.contains('generativelanguage');
         final Map<String, String> headers = <String, String>{
           'Content-Type': 'application/json',
         };
@@ -155,16 +172,17 @@ class AIChatService {
 
           final Map<String, dynamic> payload = <String, dynamic>{
             'contents': contents,
-            'generationConfig': <String, dynamic>{
-              'temperature': 0.2,
-            },
+            'generationConfig': <String, dynamic>{'temperature': 0.2},
           };
-          final List<String> systemParts = <String>[systemMsg, _responseStartInstruction]
-              .where((s) => s.trim().isNotEmpty)
-              .toList();
+          final List<String> systemParts = <String>[
+            systemMsg,
+            _responseStartInstruction,
+          ].where((s) => s.trim().isNotEmpty).toList();
           if (systemParts.isNotEmpty) {
             payload['system_instruction'] = <String, dynamic>{
-              'parts': systemParts.map((s) => <String, String>{'text': s}).toList(),
+              'parts': systemParts
+                  .map((s) => <String, String>{'text': s})
+                  .toList(),
             };
           }
           body = jsonEncode(payload);
@@ -187,23 +205,53 @@ class AIChatService {
           });
         }
 
-        try { await FlutterLogger.nativeDebug('AI', 'HTTP POST ' + uri.toString() + ' bodyLen=' + body.length.toString()); } catch (_) {}
-        final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+        try {
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'HTTP POST ' +
+                uri.toString() +
+                ' bodyLen=' +
+                body.length.toString(),
+          );
+        } catch (_) {}
+        final resp = await http
+            .post(uri, headers: headers, body: body)
+            .timeout(timeout);
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
           if (isGoogle) {
             try {
-              final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-              await FlutterLogger.nativeError('AI', 'Gemini request failed(${resp.statusCode}): ' + bodyPreview);
-              if (bodyPreview.toLowerCase().contains('user location is not supported')) {
-                await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+              final String bodyPreview = resp.body.length <= 4000
+                  ? resp.body
+                  : (resp.body.substring(0, 4000) + '…');
+              await FlutterLogger.nativeError(
+                'AI',
+                'Gemini request failed(${resp.statusCode}): ' + bodyPreview,
+              );
+              if (bodyPreview.toLowerCase().contains(
+                'user location is not supported',
+              )) {
+                await FlutterLogger.nativeError(
+                  'AI',
+                  'Gemini request blocked by region policy',
+                );
               }
             } catch (_) {}
           }
-          throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+          throw Exception(
+            'Request failed: ' + resp.statusCode.toString() + ' ' + resp.body,
+          );
         }
-  
+
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        try { await FlutterLogger.nativeDebug('AI', 'resp status=' + resp.statusCode.toString() + ' bodyLen=' + resp.body.length.toString()); } catch (_) {}
+        try {
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'resp status=' +
+                resp.statusCode.toString() +
+                ' bodyLen=' +
+                resp.body.length.toString(),
+          );
+        } catch (_) {}
 
         // 兼容多种非流式结构：
         // 1) OpenAI Chat Completions { choices[0].message.content, message.reasoning_content | reasoning | thinking }
@@ -224,7 +272,8 @@ class AIChatService {
               final summary = it['summary'];
               if (summary is List) {
                 for (final p in summary) {
-                  if (p is Map<String, dynamic> && p['type'] == 'summary_text') {
+                  if (p is Map<String, dynamic> &&
+                      p['type'] == 'summary_text') {
                     final txt = (p['text'] as String?) ?? '';
                     if (txt.isNotEmpty) {
                       if (rbuf.isNotEmpty) rbuf.write('\n');
@@ -250,7 +299,8 @@ class AIChatService {
         } else if (data['candidates'] is List) {
           // Google 非流式（generateContent）
           final candidates = (data['candidates'] as List);
-          if (candidates.isNotEmpty && candidates.first is Map<String, dynamic>) {
+          if (candidates.isNotEmpty &&
+              candidates.first is Map<String, dynamic>) {
             final c0 = candidates.first as Map<String, dynamic>;
             final contentObj = c0['content'];
             if (contentObj is Map<String, dynamic>) {
@@ -288,13 +338,19 @@ class AIChatService {
             throw Exception('Invalid response');
           }
           content = (msg['content'] as String?) ?? '';
-          final rc = (msg['reasoning_content'] as String?) ?? (msg['reasoning'] as String?) ?? (msg['thinking'] as String?);
+          final rc =
+              (msg['reasoning_content'] as String?) ??
+              (msg['reasoning'] as String?) ??
+              (msg['thinking'] as String?);
           reasoningText = (rc ?? '').trim();
         }
 
         // 兼容 <think> 标签：提取到 reasoning 并从正文移除
         if (content.isNotEmpty) {
-          final RegExp thinkRe = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', dotAll: true);
+          final RegExp thinkRe = RegExp(
+            r'<think>([\s\S]*?)(?:</think>|$)',
+            dotAll: true,
+          );
           final Iterable<RegExpMatch> ms = thinkRe.allMatches(content);
           String extracted = '';
           for (final m in ms) {
@@ -305,7 +361,9 @@ class AIChatService {
             }
           }
           if (extracted.isNotEmpty) {
-            reasoningText = reasoningText.isEmpty ? extracted : (reasoningText + '\n' + extracted);
+            reasoningText = reasoningText.isEmpty
+                ? extracted
+                : (reasoningText + '\n' + extracted);
             content = content.replaceAll(thinkRe, '');
           }
         }
@@ -316,21 +374,27 @@ class AIChatService {
           reasoningContent: reasoningText.isEmpty ? null : reasoningText,
           reasoningDuration: null,
         );
-  
+
         // 更新并保存历史（写入当前激活会话）
-        final newHistory = <AIMessage>[...history, AIMessage(role: 'user', content: userMessage), assistant];
+        final newHistory = <AIMessage>[
+          ...history,
+          AIMessage(role: 'user', content: userMessage),
+          assistant,
+        ];
         await _settings.saveChatHistoryActive(newHistory);
-        
+
         // 保存当前使用的模型到会话
         try {
           final cid = await _settings.getActiveConversationCid();
           final db = ScreenshotDatabase.instance;
-          await db.database.then((d) => d.execute(
-            'UPDATE ai_conversations SET model = ? WHERE cid = ?',
-            [usedModel, cid],
-          ));
+          await db.database.then(
+            (d) => d.execute(
+              'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+              [usedModel, cid],
+            ),
+          );
         } catch (_) {}
-        
+
         // 若为会话的第一条用户消息，自动设置会话标题为该消息（截取前30字符）
         if (history.isEmpty) {
           try {
@@ -341,20 +405,28 @@ class AIChatService {
             await _settings.renameConversation(cid, title);
           } catch (_) {}
         }
-        
+
         return assistant;
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
         continue; // 尝试下一个可用端点
       }
     }
-  
+
     throw lastError ?? Exception('No valid AI endpoint available');
   }
 
   /// 新版流式：返回 AIStreamEvent（content 与 reasoning），用于显示"思考内容"
-  Stream<AIStreamEvent> sendMessageStreamedV2(String userMessage, {Duration timeout = const Duration(seconds: 60)}) async* {
-    try { await FlutterLogger.nativeInfo('AI', 'sendMessageStreamedV2 begin len=' + userMessage.length.toString()); } catch (_) {}
+  Stream<AIStreamEvent> sendMessageStreamedV2(
+    String userMessage, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async* {
+    try {
+      await FlutterLogger.nativeInfo(
+        'AI',
+        'sendMessageStreamedV2 begin len=' + userMessage.length.toString(),
+      );
+    } catch (_) {}
     final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
     String? usedModel;
@@ -368,19 +440,31 @@ class AIChatService {
       }
 
       final history = await _settings.getChatHistory();
-      final String langCode = (LocaleService.instance.locale?.languageCode ??
-              WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-          .toLowerCase();
+      final String langCode =
+          (LocaleService.instance.locale?.languageCode ??
+                  WidgetsBinding
+                      .instance
+                      .platformDispatcher
+                      .locale
+                      .languageCode)
+              .toLowerCase();
       final bool isZh = langCode.startsWith('zh');
       final locale = isZh ? const Locale('zh') : const Locale('en');
-      final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+      final String systemMsg = lookupAppLocalizations(
+        locale,
+      ).aiSystemPromptLanguagePolicy;
 
       final Uri baseUri = _resolveBaseUri(ep.baseUrl);
       final String baseHost = baseUri.host.toLowerCase();
-      final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
+      final bool isGoogle =
+          baseHost.contains('googleapis.com') ||
+          baseHost.contains('generativelanguage');
       if (isGoogle) {
         try {
-          final AIMessage assistant = await sendMessage(userMessage, timeout: timeout);
+          final AIMessage assistant = await sendMessage(
+            userMessage,
+            timeout: timeout,
+          );
           final String reasoningText = assistant.reasoningContent ?? '';
           if (reasoningText.isNotEmpty) {
             yield AIStreamEvent('reasoning', reasoningText);
@@ -423,13 +507,23 @@ class AIChatService {
       final DateTime reasoningStart = DateTime.now();
       try {
         final req = http.Request('POST', uri);
-        try { await FlutterLogger.nativeDebug('AI', 'HTTP STREAM POST ' + uri.toString() + ' bodyLen=' + body.length.toString()); } catch (_) {}
+        try {
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'HTTP STREAM POST ' +
+                uri.toString() +
+                ' bodyLen=' +
+                body.length.toString(),
+          );
+        } catch (_) {}
         req.headers.addAll(headers);
         req.body = body;
         final streamed = await client.send(req).timeout(timeout);
         if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
           final r = await http.Response.fromStream(streamed);
-          throw Exception('Request failed: ' + streamed.statusCode.toString() + ' ' + r.body);
+          throw Exception(
+            'Request failed: ' + streamed.statusCode.toString() + ' ' + r.body,
+          );
         }
 
         // 解析 SSE 行
@@ -449,7 +543,8 @@ class AIChatService {
               break;
             }
             try {
-              final Map<String, dynamic> j = jsonDecode(data) as Map<String, dynamic>;
+              final Map<String, dynamic> j =
+                  jsonDecode(data) as Map<String, dynamic>;
 
               // OpenAI Responses API (SSE) 事件兼容：解析 reasoning 与内容增量
               final dynamic t = j['type'];
@@ -467,7 +562,9 @@ class AIChatService {
                   if (d is String && d.isNotEmpty) {
                     final _ThinkStreamFilterResult r = thinkFilter.process(d);
                     if (r.visibleDelta.isNotEmpty) {
-                      final String? sanitized = responseFilter.process(r.visibleDelta);
+                      final String? sanitized = responseFilter.process(
+                        r.visibleDelta,
+                      );
                       if (sanitized != null && sanitized.isNotEmpty) {
                         full.write(sanitized);
                         yield AIStreamEvent('content', sanitized);
@@ -480,7 +577,9 @@ class AIChatService {
                   }
                   continue;
                 }
-                if (t == 'response.output_item.added' || t == 'response.completed' || t == 'response.function_call_arguments.done') {
+                if (t == 'response.output_item.added' ||
+                    t == 'response.completed' ||
+                    t == 'response.function_call_arguments.done') {
                   // 暂不需要特殊处理；连接会在 completed 后关闭
                   continue;
                 }
@@ -494,7 +593,9 @@ class AIChatService {
                   if (delta is Map<String, dynamic>) {
                     // 兼容多供应商“思考内容”字段
                     final rc1 = delta['reasoning_content'];
-                    final rc2 = (delta['reasoning'] is Map) ? (delta['reasoning']['content']) : null;
+                    final rc2 = (delta['reasoning'] is Map)
+                        ? (delta['reasoning']['content'])
+                        : null;
                     final rc3 = delta['thinking'];
                     final reasoningPart = rc1 ?? rc2 ?? rc3;
                     if (reasoningPart is String && reasoningPart.isNotEmpty) {
@@ -503,9 +604,13 @@ class AIChatService {
                     }
                     final part = delta['content'];
                     if (part is String && part.isNotEmpty) {
-                      final _ThinkStreamFilterResult r = thinkFilter.process(part);
+                      final _ThinkStreamFilterResult r = thinkFilter.process(
+                        part,
+                      );
                       if (r.visibleDelta.isNotEmpty) {
-                        final String? sanitized = responseFilter.process(r.visibleDelta);
+                        final String? sanitized = responseFilter.process(
+                          r.visibleDelta,
+                        );
                         if (sanitized != null && sanitized.isNotEmpty) {
                           full.write(sanitized);
                           yield AIStreamEvent('content', sanitized);
@@ -532,28 +637,39 @@ class AIChatService {
           reasoningBuf.write(trailing);
         }
         responseFilter.ensureCompleted();
-        final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
+        final String cleanedContent = full.toString().replaceAll(
+          RegExp(r'</?think>'),
+          '',
+        );
         final String reasoningText = reasoningBuf.toString();
-        final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
+        final Duration reasoningDuration = DateTime.now().difference(
+          reasoningStart,
+        );
         final assistant = AIMessage(
           role: 'assistant',
           content: cleanedContent,
           reasoningContent: reasoningText.isEmpty ? null : reasoningText,
           reasoningDuration: reasoningText.isEmpty ? null : reasoningDuration,
         );
-        final newHistory = <AIMessage>[...history, AIMessage(role: 'user', content: userMessage), assistant];
+        final newHistory = <AIMessage>[
+          ...history,
+          AIMessage(role: 'user', content: userMessage),
+          assistant,
+        ];
         await _settings.saveChatHistoryActive(newHistory);
-        
+
         // 保存当前使用的模型到会话
         try {
           final cid = await _settings.getActiveConversationCid();
           final db = ScreenshotDatabase.instance;
-          await db.database.then((d) => d.execute(
-            'UPDATE ai_conversations SET model = ? WHERE cid = ?',
-            [usedModel, cid],
-          ));
+          await db.database.then(
+            (d) => d.execute(
+              'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+              [usedModel, cid],
+            ),
+          );
         } catch (_) {}
-        
+
         // 若为会话的第一条用户消息，自动设置会话标题为该消息（截取前30字符）
         if (history.isEmpty) {
           try {
@@ -564,13 +680,15 @@ class AIChatService {
             await _settings.renameConversation(cid, title);
           } catch (_) {}
         }
-        
+
         return;
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
         // 尝试下一个端点
       } finally {
-        try { client.close(); } catch (_) {}
+        try {
+          client.close();
+        } catch (_) {}
       }
     }
     throw lastError ?? Exception('No valid AI endpoint available');
@@ -586,8 +704,17 @@ class AIChatService {
     Duration timeout = const Duration(seconds: 60),
     bool includeHistory = false,
     List<String> extraSystemMessages = const <String>[],
+    bool persistHistory = true,
   }) async* {
-    try { await FlutterLogger.nativeInfo('AI', 'sendMessageStreamedV2WithDisplayOverride begin displayLen=' + displayUserMessage.length.toString() + ' actualLen=' + actualUserMessage.length.toString()); } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo(
+        'AI',
+        'sendMessageStreamedV2WithDisplayOverride begin displayLen=' +
+            displayUserMessage.length.toString() +
+            ' actualLen=' +
+            actualUserMessage.length.toString(),
+      );
+    } catch (_) {}
     final endpoints = await _settings.getEndpointCandidates(context: 'chat');
     Exception? lastError;
     String? usedModel;
@@ -601,20 +728,31 @@ class AIChatService {
       }
 
       final history = await _settings.getChatHistory();
-      final String langCode = (LocaleService.instance.locale?.languageCode ??
-              WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-          .toLowerCase();
+      final String langCode =
+          (LocaleService.instance.locale?.languageCode ??
+                  WidgetsBinding
+                      .instance
+                      .platformDispatcher
+                      .locale
+                      .languageCode)
+              .toLowerCase();
       final bool isZh = langCode.startsWith('zh');
       final locale = isZh ? const Locale('zh') : const Locale('en');
-      final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+      final String systemMsg = lookupAppLocalizations(
+        locale,
+      ).aiSystemPromptLanguagePolicy;
 
       final Uri baseUri = _resolveBaseUri(ep.baseUrl);
       final String baseHost = baseUri.host.toLowerCase();
-      final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
+      final bool isGoogle =
+          baseHost.contains('googleapis.com') ||
+          baseHost.contains('generativelanguage');
 
       if (isGoogle) {
         try {
-          final Uri uriGoogle = baseUri.resolve('/v1beta/models/${ep.model}:generateContent');
+          final Uri uriGoogle = baseUri.resolve(
+            '/v1beta/models/${ep.model}:generateContent',
+          );
           final Map<String, String> headersGoogle = <String, String>{
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey,
@@ -643,14 +781,14 @@ class AIChatService {
             });
           }
 
-          final List<String> systemParts = <String>[systemMsg, _responseStartInstruction, ...extraSystemMessages]
-              .where((s) => s.trim().isNotEmpty)
-              .toList();
+          final List<String> systemParts = <String>[
+            systemMsg,
+            _responseStartInstruction,
+            ...extraSystemMessages,
+          ].where((s) => s.trim().isNotEmpty).toList();
           final Map<String, dynamic> payload = <String, dynamic>{
             'contents': contents,
-            'generationConfig': <String, dynamic>{
-              'temperature': 0.2,
-            },
+            'generationConfig': <String, dynamic>{'temperature': 0.2},
           };
           if (systemParts.isNotEmpty) {
             payload['system_instruction'] = <String, dynamic>{
@@ -661,15 +799,22 @@ class AIChatService {
           }
 
           final http.Response respGoogle = await http
-              .post(uriGoogle, headers: headersGoogle, body: jsonEncode(payload))
+              .post(
+                uriGoogle,
+                headers: headersGoogle,
+                body: jsonEncode(payload),
+              )
               .timeout(timeout);
           if (respGoogle.statusCode < 200 || respGoogle.statusCode >= 300) {
-            throw Exception('Request failed: ${respGoogle.statusCode} ${respGoogle.body}');
+            throw Exception(
+              'Request failed: ${respGoogle.statusCode} ${respGoogle.body}',
+            );
           }
 
           String assistantContent = '';
           try {
-            final Map<String, dynamic> obj = jsonDecode(respGoogle.body) as Map<String, dynamic>;
+            final Map<String, dynamic> obj =
+                jsonDecode(respGoogle.body) as Map<String, dynamic>;
             final dynamic candidates = obj['candidates'];
             if (candidates is List && candidates.isNotEmpty) {
               final dynamic first = candidates.first;
@@ -693,35 +838,42 @@ class AIChatService {
           }
 
           final String sanitizedContent = _stripResponseStart(assistantContent);
-          final AIMessage assistant = AIMessage(role: 'assistant', content: sanitizedContent);
-          final List<AIMessage> newHistory = <AIMessage>[
-            ...history,
-            AIMessage(role: 'user', content: displayUserMessage),
-            assistant,
-          ];
-          await _settings.saveChatHistoryActive(newHistory);
+          final AIMessage assistant = AIMessage(
+            role: 'assistant',
+            content: sanitizedContent,
+          );
+          if (persistHistory) {
+            final List<AIMessage> newHistory = <AIMessage>[
+              ...history,
+              AIMessage(role: 'user', content: displayUserMessage),
+              assistant,
+            ];
+            await _settings.saveChatHistoryActive(newHistory);
 
-          try {
-            final String? cid = await _settings.getActiveConversationCid();
-            if (cid != null) {
-              final ScreenshotDatabase db = ScreenshotDatabase.instance;
-              await db.database.then((d) => d.execute(
-                    'UPDATE ai_conversations SET model = ? WHERE cid = ?',
-                    <Object?>[usedModel, cid],
-                  ));
-            }
-          } catch (_) {}
-
-          if (history.isEmpty) {
             try {
               final String? cid = await _settings.getActiveConversationCid();
               if (cid != null) {
-                final String title = displayUserMessage.length > 30
-                    ? displayUserMessage.substring(0, 30) + '...'
-                    : displayUserMessage;
-                await _settings.renameConversation(cid, title);
+                final ScreenshotDatabase db = ScreenshotDatabase.instance;
+                await db.database.then(
+                  (d) => d.execute(
+                    'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+                    <Object?>[usedModel, cid],
+                  ),
+                );
               }
             } catch (_) {}
+
+            if (history.isEmpty) {
+              try {
+                final String? cid = await _settings.getActiveConversationCid();
+                if (cid != null) {
+                  final String title = displayUserMessage.length > 30
+                      ? displayUserMessage.substring(0, 30) + '...'
+                      : displayUserMessage;
+                  await _settings.renameConversation(cid, title);
+                }
+              } catch (_) {}
+            }
           }
 
           if (assistant.content.isNotEmpty) {
@@ -737,7 +889,10 @@ class AIChatService {
       final uri = _buildEndpointUriFromBase(baseUri, ep.chatPath);
 
       final List<Map<String, dynamic>> filteredHistory = includeHistory
-          ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
+          ? history
+                .where((m) => m.role != 'system')
+                .map((m) => m.toJson())
+                .toList()
           : <Map<String, dynamic>>[];
       final List<Map<String, dynamic>> messages = [
         {'role': 'system', 'content': systemMsg},
@@ -758,8 +913,13 @@ class AIChatService {
         'stream': true,
       });
       try {
-        final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
-        await FlutterLogger.nativeDebug('AI', 'REQ(stream) preview=' + reqPreview);
+        final String reqPreview = body.length <= 4000
+            ? body
+            : (body.substring(0, 4000) + '…');
+        await FlutterLogger.nativeDebug(
+          'AI',
+          'REQ(stream) preview=' + reqPreview,
+        );
       } catch (_) {}
 
       final client = http.Client();
@@ -770,13 +930,23 @@ class AIChatService {
       final DateTime reasoningStart = DateTime.now();
       try {
         final req = http.Request('POST', uri);
-        try { await FlutterLogger.nativeDebug('AI', 'HTTP STREAM POST ' + uri.toString() + ' bodyLen=' + body.length.toString()); } catch (_) {}
+        try {
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'HTTP STREAM POST ' +
+                uri.toString() +
+                ' bodyLen=' +
+                body.length.toString(),
+          );
+        } catch (_) {}
         req.headers.addAll(headers);
         req.body = body;
         final streamed = await client.send(req).timeout(timeout);
         if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
           final r = await http.Response.fromStream(streamed);
-          throw Exception('Request failed: ' + streamed.statusCode.toString() + ' ' + r.body);
+          throw Exception(
+            'Request failed: ' + streamed.statusCode.toString() + ' ' + r.body,
+          );
         }
 
         String buffer = '';
@@ -795,7 +965,8 @@ class AIChatService {
               break;
             }
             try {
-              final Map<String, dynamic> j = jsonDecode(data) as Map<String, dynamic>;
+              final Map<String, dynamic> j =
+                  jsonDecode(data) as Map<String, dynamic>;
               final choices = j['choices'];
               if (choices is List && choices.isNotEmpty) {
                 final first = choices.first;
@@ -803,7 +974,9 @@ class AIChatService {
                   final delta = first['delta'];
                   if (delta is Map<String, dynamic>) {
                     final rc1 = delta['reasoning_content'];
-                    final rc2 = (delta['reasoning'] is Map) ? (delta['reasoning']['content']) : null;
+                    final rc2 = (delta['reasoning'] is Map)
+                        ? (delta['reasoning']['content'])
+                        : null;
                     final rc3 = delta['thinking'];
                     final reasoningPart = rc1 ?? rc2 ?? rc3;
                     if (reasoningPart is String && reasoningPart.isNotEmpty) {
@@ -812,9 +985,13 @@ class AIChatService {
                     }
                     final part = delta['content'];
                     if (part is String && part.isNotEmpty) {
-                      final _ThinkStreamFilterResult r = thinkFilter.process(part);
+                      final _ThinkStreamFilterResult r = thinkFilter.process(
+                        part,
+                      );
                       if (r.visibleDelta.isNotEmpty) {
-                        final String? sanitized = responseFilter.process(r.visibleDelta);
+                        final String? sanitized = responseFilter.process(
+                          r.visibleDelta,
+                        );
                         if (sanitized != null && sanitized.isNotEmpty) {
                           full.write(sanitized);
                           yield AIStreamEvent('content', sanitized);
@@ -839,11 +1016,21 @@ class AIChatService {
         }
         responseFilter.ensureCompleted();
         final String reasoningText = reasoningBuf.toString();
-        final String cleanedContent = full.toString().replaceAll(RegExp(r'</?think>'), '');
-        final Duration reasoningDuration = DateTime.now().difference(reasoningStart);
+        final String cleanedContent = full.toString().replaceAll(
+          RegExp(r'</?think>'),
+          '',
+        );
+        final Duration reasoningDuration = DateTime.now().difference(
+          reasoningStart,
+        );
         try {
-          final String respPreview = cleanedContent.length <= 4000 ? cleanedContent : (cleanedContent.substring(0, 4000) + '…');
-          await FlutterLogger.nativeDebug('AI', 'RESP(stream) assistant preview=' + respPreview);
+          final String respPreview = cleanedContent.length <= 4000
+              ? cleanedContent
+              : (cleanedContent.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'RESP(stream) assistant preview=' + respPreview,
+          );
         } catch (_) {}
         final assistant = AIMessage(
           role: 'assistant',
@@ -851,31 +1038,42 @@ class AIChatService {
           reasoningContent: reasoningText.isEmpty ? null : reasoningText,
           reasoningDuration: reasoningText.isEmpty ? null : reasoningDuration,
         );
-        final newHistory = <AIMessage>[
-          ...history,
-          AIMessage(role: 'user', content: displayUserMessage),
-          assistant,
-        ];
-        await _settings.saveChatHistoryActive(newHistory);
+        if (persistHistory) {
+          final newHistory = <AIMessage>[
+            ...history,
+            AIMessage(role: 'user', content: displayUserMessage),
+            assistant,
+          ];
+          await _settings.saveChatHistoryActive(newHistory);
 
-        // 保存模型与标题（以显示消息为标题）
-        try {
-          final cid = await _settings.getActiveConversationCid();
-          final db = ScreenshotDatabase.instance;
-          await db.database.then((d) => d.execute('UPDATE ai_conversations SET model = ? WHERE cid = ?', [usedModel, cid]));
-        } catch (_) {}
-        if (history.isEmpty) {
+          // 保存模型与标题（以显示消息为标题）
           try {
             final cid = await _settings.getActiveConversationCid();
-            final title = displayUserMessage.length > 30 ? displayUserMessage.substring(0, 30) + '...' : displayUserMessage;
-            await _settings.renameConversation(cid, title);
+            final db = ScreenshotDatabase.instance;
+            await db.database.then(
+              (d) => d.execute(
+                'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+                [usedModel, cid],
+              ),
+            );
           } catch (_) {}
+          if (history.isEmpty) {
+            try {
+              final cid = await _settings.getActiveConversationCid();
+              final title = displayUserMessage.length > 30
+                  ? displayUserMessage.substring(0, 30) + '...'
+                  : displayUserMessage;
+              await _settings.renameConversation(cid, title);
+            } catch (_) {}
+          }
         }
         return;
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
       } finally {
-        try { client.close(); } catch (_) {}
+        try {
+          client.close();
+        } catch (_) {}
       }
     }
     throw lastError ?? Exception('No valid AI endpoint available');
@@ -903,15 +1101,25 @@ class AIChatService {
       try {
         final Uri uri = _buildEndpointUri(ep.baseUrl, ep.chatPath);
         final history = await _settings.getChatHistory();
-        final String langCode = (LocaleService.instance.locale?.languageCode ??
-                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-            .toLowerCase();
+        final String langCode =
+            (LocaleService.instance.locale?.languageCode ??
+                    WidgetsBinding
+                        .instance
+                        .platformDispatcher
+                        .locale
+                        .languageCode)
+                .toLowerCase();
         final bool isZh = langCode.startsWith('zh');
         final locale = isZh ? const Locale('zh') : const Locale('en');
-        final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+        final String systemMsg = lookupAppLocalizations(
+          locale,
+        ).aiSystemPromptLanguagePolicy;
 
         final List<Map<String, dynamic>> filteredHistory = includeHistory
-            ? history.where((m) => m.role != 'system').map((m) => m.toJson()).toList()
+            ? history
+                  .where((m) => m.role != 'system')
+                  .map((m) => m.toJson())
+                  .toList()
             : <Map<String, dynamic>>[];
         final List<Map<String, dynamic>> messages = [
           {'role': 'system', 'content': systemMsg},
@@ -932,17 +1140,31 @@ class AIChatService {
           'stream': false,
         });
         try {
-          final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
-          await FlutterLogger.nativeDebug('AI', 'REQ(non-stream) preview=' + reqPreview);
+          final String reqPreview = body.length <= 4000
+              ? body
+              : (body.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'REQ(non-stream) preview=' + reqPreview,
+          );
         } catch (_) {}
-        final resp = await http.post(uri, headers: headers, body: body).timeout(timeout);
+        final resp = await http
+            .post(uri, headers: headers, body: body)
+            .timeout(timeout);
         if (resp.statusCode < 200 || resp.statusCode >= 300) {
-          throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+          throw Exception(
+            'Request failed: ' + resp.statusCode.toString() + ' ' + resp.body,
+          );
         }
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         try {
-          final String respPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-          await FlutterLogger.nativeDebug('AI', 'RESP(non-stream) raw preview=' + respPreview);
+          final String respPreview = resp.body.length <= 4000
+              ? resp.body
+              : (resp.body.substring(0, 4000) + '…');
+          await FlutterLogger.nativeDebug(
+            'AI',
+            'RESP(non-stream) raw preview=' + respPreview,
+          );
         } catch (_) {}
         final choices = data['choices'] as List<dynamic>?;
         if (choices == null || choices.isEmpty) {
@@ -955,7 +1177,10 @@ class AIChatService {
         }
         final content = (msg['content'] as String?) ?? '';
         final String sanitizedContent = _stripResponseStart(content);
-        final assistant = AIMessage(role: 'assistant', content: sanitizedContent);
+        final assistant = AIMessage(
+          role: 'assistant',
+          content: sanitizedContent,
+        );
 
         // 保存历史：仅 user(原文) + assistant；不保存最终提示以避免“今天”类误导
         final newHistory = <AIMessage>[
@@ -968,12 +1193,19 @@ class AIChatService {
         try {
           final cid = await _settings.getActiveConversationCid();
           final db = ScreenshotDatabase.instance;
-          await db.database.then((d) => d.execute('UPDATE ai_conversations SET model = ? WHERE cid = ?', [usedModel, cid]));
+          await db.database.then(
+            (d) => d.execute(
+              'UPDATE ai_conversations SET model = ? WHERE cid = ?',
+              [usedModel, cid],
+            ),
+          );
         } catch (_) {}
         if (history.isEmpty) {
           try {
             final cid = await _settings.getActiveConversationCid();
-            final title = displayUserMessage.length > 30 ? displayUserMessage.substring(0, 30) + '...' : displayUserMessage;
+            final title = displayUserMessage.length > 30
+                ? displayUserMessage.substring(0, 30) + '...'
+                : displayUserMessage;
             await _settings.renameConversation(cid, title);
           } catch (_) {}
         }
@@ -1006,46 +1238,74 @@ class AIChatService {
       try {
         final Uri baseUri = _resolveBaseUri(ep.baseUrl);
         final String baseHost = baseUri.host.toLowerCase();
-        final bool isGoogle = baseHost.contains('googleapis.com') || baseHost.contains('generativelanguage');
+        final bool isGoogle =
+            baseHost.contains('googleapis.com') ||
+            baseHost.contains('generativelanguage');
         final headers = <String, String>{'Content-Type': 'application/json'};
         if (isGoogle) {
           headers['x-goog-api-key'] = apiKey;
         } else {
           headers['Authorization'] = 'Bearer ' + apiKey;
         }
-        final String langCode = (LocaleService.instance.locale?.languageCode ??
-                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-            .toLowerCase();
+        final String langCode =
+            (LocaleService.instance.locale?.languageCode ??
+                    WidgetsBinding
+                        .instance
+                        .platformDispatcher
+                        .locale
+                        .languageCode)
+                .toLowerCase();
         final bool isZh = langCode.startsWith('zh');
         final locale = isZh ? const Locale('zh') : const Locale('en');
-        final String systemMsg = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+        final String systemMsg = lookupAppLocalizations(
+          locale,
+        ).aiSystemPromptLanguagePolicy;
 
         if (isGoogle) {
           // Google Gemini REST: POST {base}/v1beta/models/{model}:generateContent
-          final Uri uri = baseUri.resolve('/v1beta/models/${ep.model}:generateContent');
-          final List<Map<String, String>> systemParts = <String>[systemMsg, _responseStartInstruction]
-              .where((s) => s.trim().isNotEmpty)
-              .map((s) => <String, String>{'text': s})
-              .toList();
+          final Uri uri = baseUri.resolve(
+            '/v1beta/models/${ep.model}:generateContent',
+          );
+          final List<Map<String, String>> systemParts =
+              <String>[systemMsg, _responseStartInstruction]
+                  .where((s) => s.trim().isNotEmpty)
+                  .map((s) => <String, String>{'text': s})
+                  .toList();
           final body = jsonEncode({
             'contents': [
               {
                 'parts': [
                   ...systemParts,
                   {'text': userMessage},
-                ]
-              }
-            ]
+                ],
+              },
+            ],
           });
-          final Future<http.Response> req = http.post(uri, headers: headers, body: body);
-          final resp = (timeout == null) ? await req : await req.timeout(timeout);
+          final Future<http.Response> req = http.post(
+            uri,
+            headers: headers,
+            body: body,
+          );
+          final resp = (timeout == null)
+              ? await req
+              : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
             if (resp.statusCode >= 400) {
               try {
-                final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-                await FlutterLogger.nativeError('AI', 'Gemini request failed(${resp.statusCode}): ' + bodyPreview);
-                if (bodyPreview.toLowerCase().contains('user location is not supported')) {
-                  await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+                final String bodyPreview = resp.body.length <= 4000
+                    ? resp.body
+                    : (resp.body.substring(0, 4000) + '…');
+                await FlutterLogger.nativeError(
+                  'AI',
+                  'Gemini request failed(${resp.statusCode}): ' + bodyPreview,
+                );
+                if (bodyPreview.toLowerCase().contains(
+                  'user location is not supported',
+                )) {
+                  await FlutterLogger.nativeError(
+                    'AI',
+                    'Gemini request blocked by region policy',
+                  );
                 }
               } catch (_) {}
             }
@@ -1053,7 +1313,8 @@ class AIChatService {
           }
           String content = '';
           try {
-            final Map<String, dynamic> j = jsonDecode(resp.body) as Map<String, dynamic>;
+            final Map<String, dynamic> j =
+                jsonDecode(resp.body) as Map<String, dynamic>;
             final candidates = j['candidates'];
             if (candidates is List && candidates.isNotEmpty) {
               final c0 = candidates.first;
@@ -1091,19 +1352,38 @@ class AIChatService {
             'stream': false,
           });
           try {
-            final String reqPreview = body.length <= 4000 ? body : (body.substring(0, 4000) + '…');
-            await FlutterLogger.nativeDebug('AI', 'REQ(oneshot) preview=' + reqPreview);
+            final String reqPreview = body.length <= 4000
+                ? body
+                : (body.substring(0, 4000) + '…');
+            await FlutterLogger.nativeDebug(
+              'AI',
+              'REQ(oneshot) preview=' + reqPreview,
+            );
           } catch (_) {}
-          final Future<http.Response> req = http.post(uri, headers: headers, body: body);
-          final resp = (timeout == null) ? await req : await req.timeout(timeout);
+          final Future<http.Response> req = http.post(
+            uri,
+            headers: headers,
+            body: body,
+          );
+          final resp = (timeout == null)
+              ? await req
+              : await req.timeout(timeout);
           if (resp.statusCode < 200 || resp.statusCode >= 300) {
-            throw Exception('Request failed: ' + resp.statusCode.toString() + ' ' + resp.body);
+            throw Exception(
+              'Request failed: ' + resp.statusCode.toString() + ' ' + resp.body,
+            );
           }
           try {
-            final String respPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-            await FlutterLogger.nativeDebug('AI', 'RESP(oneshot) raw preview=' + respPreview);
+            final String respPreview = resp.body.length <= 4000
+                ? resp.body
+                : (resp.body.substring(0, 4000) + '…');
+            await FlutterLogger.nativeDebug(
+              'AI',
+              'RESP(oneshot) raw preview=' + respPreview,
+            );
           } catch (_) {}
-          final Map<String, dynamic> data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final Map<String, dynamic> data =
+              jsonDecode(resp.body) as Map<String, dynamic>;
 
           // 兼容多种非流式结构：
           // - Responses API: data.output[]
@@ -1119,7 +1399,8 @@ class AIChatService {
                 final cont = it['content'];
                 if (cont is List) {
                   for (final p in cont) {
-                    if (p is Map<String, dynamic> && p['type'] == 'output_text') {
+                    if (p is Map<String, dynamic> &&
+                        p['type'] == 'output_text') {
                       final txt = (p['text'] as String?) ?? '';
                       if (txt.isNotEmpty) cbuf.write(txt);
                     }
@@ -1160,7 +1441,8 @@ class AIChatService {
   /// 获取当前会话历史
   Future<List<AIMessage>> getConversation() => _settings.getChatHistory();
 
-  _ResponseStartFilter _createResponseStartFilter() => _ResponseStartFilter(responseStartMarker);
+  _ResponseStartFilter _createResponseStartFilter() =>
+      _ResponseStartFilter(responseStartMarker);
 
   String _stripResponseStart(String text) {
     if (!text.startsWith(responseStartMarker)) {
@@ -1182,8 +1464,9 @@ class AIChatService {
 
   Uri _buildEndpointUriFromBase(Uri baseUri, String path) {
     final String trimmedPath = path.trim();
-    final String effectivePath =
-        trimmedPath.isEmpty ? '/v1/chat/completions' : (trimmedPath.startsWith('/') ? trimmedPath : '/$trimmedPath');
+    final String effectivePath = trimmedPath.isEmpty
+        ? '/v1/chat/completions'
+        : (trimmedPath.startsWith('/') ? trimmedPath : '/$trimmedPath');
     return baseUri.resolve(effectivePath);
   }
 
@@ -1212,8 +1495,9 @@ class InvalidResponseStartException implements Exception {
 
   @override
   String toString() {
-    final String preview =
-        receivedPreview.length > 160 ? '${receivedPreview.substring(0, 160)}…' : receivedPreview;
+    final String preview = receivedPreview.length > 160
+        ? '${receivedPreview.substring(0, 160)}…'
+        : receivedPreview;
     return 'Invalid response start: expected marker "$marker" but received "$preview"';
   }
 }
@@ -1268,7 +1552,6 @@ class _ResponseStartFilter {
   void ensureCompleted() {
     if (_awaiting) {
       throw InvalidResponseStartException(marker, _buffer);
+    }
   }
 }
-}
-
