@@ -1579,39 +1579,41 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 value: 'system',
                 currentValue: currentOption,
                 onTap: () async {
-                  await LocaleService.instance.setOption('system');
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    UINotifier.success(context, t.languageChangedToast(t.languageSystem));
-                  }
+                  await _handleLanguageSelection(
+                    sheetContext: context,
+                    option: 'system',
+                    toastLanguageName: t.languageSystem,
+                  );
                 },
               ),
               
               _buildLanguageOption(
                 context: context,
-                title: t.languageChinese,
+                title: '中文',
                 value: 'zh',
                 currentValue: currentOption,
                 onTap: () async {
-                  await LocaleService.instance.setOption('zh');
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    UINotifier.success(context, t.languageChangedToast(t.languageChinese));
-                  }
+                  await _handleLanguageSelection(
+                    sheetContext: context,
+                    option: 'zh',
+                    toastLocale: const Locale('zh'),
+                    toastLanguageName: '中文',
+                  );
                 },
               ),
               
               _buildLanguageOption(
                 context: context,
-                title: t.languageEnglish,
+                title: 'English',
                 value: 'en',
                 currentValue: currentOption,
                 onTap: () async {
-                  await LocaleService.instance.setOption('en');
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    UINotifier.success(context, t.languageChangedToast(t.languageEnglish));
-                  }
+                  await _handleLanguageSelection(
+                    sheetContext: context,
+                    option: 'en',
+                    toastLocale: const Locale('en'),
+                    toastLanguageName: 'English',
+                  );
                 },
               ),
 
@@ -1621,11 +1623,12 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 value: 'ja',
                 currentValue: currentOption,
                 onTap: () async {
-                  await LocaleService.instance.setOption('ja');
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    UINotifier.success(context, t.languageChangedToast(t.languageJapanese));
-                  }
+                  await _handleLanguageSelection(
+                    sheetContext: context,
+                    option: 'ja',
+                    toastLocale: const Locale('ja'),
+                    toastLanguageName: '日本語',
+                  );
                 },
               ),
 
@@ -1635,11 +1638,12 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                 value: 'ko',
                 currentValue: currentOption,
                 onTap: () async {
-                  await LocaleService.instance.setOption('ko');
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                    UINotifier.success(context, t.languageChangedToast(t.languageKorean));
-                  }
+                  await _handleLanguageSelection(
+                    sheetContext: context,
+                    option: 'ko',
+                    toastLocale: const Locale('ko'),
+                    toastLanguageName: '한국어',
+                  );
                 },
               ),
               
@@ -1649,6 +1653,32 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         ),
       ),
     );
+  }
+
+  Future<void> _handleLanguageSelection({
+    required BuildContext sheetContext,
+    required String option,
+    Locale? toastLocale,
+    required String toastLanguageName,
+  }) async {
+    await LocaleService.instance.setOption(option);
+    if (!mounted) return;
+    if (!sheetContext.mounted) return;
+    Navigator.of(sheetContext).pop();
+    final localization = await _loadToastLocalization(toastLocale);
+    if (!mounted || localization == null) return;
+    UINotifier.success(context, localization.languageChangedToast(toastLanguageName));
+  }
+
+  Future<AppLocalizations?> _loadToastLocalization(Locale? locale) async {
+    if (locale == null) {
+      return AppLocalizations.of(context);
+    }
+    try {
+      return await AppLocalizations.delegate.load(locale);
+    } catch (_) {
+      return AppLocalizations.of(context);
+    }
   }
 
   /// 构建语言选项行

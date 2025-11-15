@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -1067,6 +1068,13 @@ class _SegmentEntryCard extends StatefulWidget {
 }
 
 class _SegmentEntryCardState extends State<_SegmentEntryCard> {
+  static const int _tagWrapThreshold = 18;
+  static const double _tagVirtualListMaxHeight = 168;
+  static const double _tagGridMaxCrossAxisExtent = 220;
+  static const double _tagGridMainAxisExtent = 32;
+  static const double _tagGridMainAxisSpacing = 6;
+  static const double _tagGridCrossAxisSpacing = 6;
+
   bool _expanded = false;
   // 懒加载样本的本地状态，避免每项滚动时触发异步查询导致跳动
   bool _samplesLoading = false;
@@ -1241,33 +1249,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                 children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                alignment: WrapAlignment.start,
-                children: [
-                  if (merged)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
-                      constraints: const BoxConstraints(minHeight: 20),
-                      decoration: BoxDecoration(
-                        color: AppTheme.warning.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
-                      ),
-                      child: Text(
-                        AppLocalizations.of(context).mergedEventTag,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.warning,
-                          height: 1.0,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ...categories.map((c) => _buildChip(context, c)).toList(),
-                ],
-              ),
+              _buildCategorySection(context, categories, merged),
             ],
           ),
           if (errorText != null) ...[
@@ -1487,6 +1469,85 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         style: TextStyle(
           fontSize: 12,
           color: fg,
+          height: 1.0,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategorySection(BuildContext context, List<String> categories, bool merged) {
+    final int total = categories.length + (merged ? 1 : 0);
+    if (total == 0) return const SizedBox.shrink();
+
+    if (total <= _tagWrapThreshold) {
+      return Wrap(
+        spacing: _tagGridCrossAxisSpacing,
+        runSpacing: _tagGridMainAxisSpacing,
+        alignment: WrapAlignment.start,
+        children: [
+          if (merged) _buildMergedTagChip(context),
+          ...categories.map((c) => _buildChip(context, c)),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final double columnExtent = math.min(_tagGridMaxCrossAxisExtent, availableWidth);
+        final int columns = math.max(1, (availableWidth / columnExtent).floor());
+        final int rows = (total / columns).ceil();
+        final double naturalHeight = rows * _tagGridMainAxisExtent +
+            math.max(0, rows - 1) * _tagGridMainAxisSpacing;
+        final double viewportHeight = math.min(_tagVirtualListMaxHeight, naturalHeight);
+
+        return SizedBox(
+          height: viewportHeight,
+          child: Scrollbar(
+            thumbVisibility: naturalHeight > viewportHeight,
+            child: GridView.builder(
+              primary: false,
+              padding: EdgeInsets.zero,
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: _tagGridMaxCrossAxisExtent,
+                mainAxisExtent: _tagGridMainAxisExtent,
+                mainAxisSpacing: _tagGridMainAxisSpacing,
+                crossAxisSpacing: _tagGridCrossAxisSpacing,
+              ),
+              itemCount: total,
+              itemBuilder: (context, index) {
+                if (merged) {
+                  if (index == 0) return _buildMergedTagChip(context);
+                  return _buildChip(context, categories[index - 1]);
+                }
+                return _buildChip(context, categories[index]);
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMergedTagChip(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      constraints: const BoxConstraints(minHeight: 20),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+      ),
+      child: Text(
+        AppLocalizations.of(context).mergedEventTag,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 12,
+          color: AppTheme.warning,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),
