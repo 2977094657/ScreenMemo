@@ -762,7 +762,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
 
             // 如果无法通过窗口获取，则返回 null（避免使用过期缓存）
-            FileLogger.d(TAG, "无法通过窗口获取前台应用，返回 null 以避免使用旧值")
             return null
         } catch (e: Exception) {
             FileLogger.e(TAG, "获取当前前台应用失败", e)
@@ -1174,7 +1173,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         try {
             // 息屏/锁屏或者显示不可见时跳过
             if (shouldPauseForScreenState()) {
-                FileLogger.d(TAG, "屏幕不可交互或处于锁屏/息屏状态，本次定时截屏跳过")
                 return
             }
             // 确定要截图的应用
@@ -1259,9 +1257,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val isDisplayOn = isDisplayReallyOn()
 
             val pause = (!isInteractive) || isLocked || (!isDisplayOn)
-            if (FileLogger.isDebugEnabled()) {
-                FileLogger.d(TAG, "屏幕状态 -> interactive: ${isInteractive}, locked: ${isLocked}, displayOn: ${isDisplayOn}, pause: ${pause}")
-            }
             pause
         } catch (e: Exception) {
             FileLogger.e(TAG, "检查屏幕状态失败，出于保守策略将跳过截屏", e)
@@ -2446,8 +2441,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     if (!fromWindows.isNullOrEmpty()) {
                         FileLogger.d(TAG, "窗口列表兜底命中前台: ${fromWindows}")
                         onForegroundCandidateDetected(fromWindows)
-                    } else {
-                        FileLogger.d(TAG, "本轮未能通过 UsageStats/UsageEvents/窗口列表确定前台")
                     }
                 }
 
@@ -2503,8 +2496,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     return null
                 }
                 FileLogger.d(TAG, "UsageStats检测到前台应用: $result (共${eventCount}个事件)")
-            } else {
-                FileLogger.d(TAG, "UsageStats未检测到前台应用 (共${eventCount}个事件)")
             }
 
             return result
@@ -2552,8 +2543,6 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     return null
                 }
                 FileLogger.d(TAG, "UsageEvents 长窗口: total=${total}, fgHits=${fgHits}, last=${lastPkg}")
-            } else {
-                FileLogger.d(TAG, "UsageEvents 长窗口: 无命中, total=${total}")
             }
             lastPkg
         } catch (e: Exception) {
