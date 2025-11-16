@@ -421,45 +421,6 @@ class _OnboardingPageState extends State<OnboardingPage> with WidgetsBindingObse
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: AppTheme.spacing4),
-          
-          // 功能特点
-          UICard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppLocalizations.of(context).onboardingKeyFeaturesTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppTheme.spacing4),
-                _buildFeatureItem(Icons.memory, AppLocalizations.of(context).featureSmartNotes),
-                _buildFeatureItem(Icons.search, AppLocalizations.of(context).featureQuickSearch),
-                _buildFeatureItem(Icons.privacy_tip, AppLocalizations.of(context).featureLocalStorage),
-                // 移除“使用习惯分析”展示
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildFeatureItem(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing1),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 16,
-            color: AppTheme.primary,
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
         ],
       ),
     );

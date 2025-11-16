@@ -30,6 +30,9 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   bool _loading = false;
+  // 所有可用日期（完整列表，按时间倒序）
+  final List<_DayTabInfo> _allDayTabs = <_DayTabInfo>[];
+  // 当前 UI 中可见的日期Tab窗口（前缀子集：默认最近14天，向前增量加载）
   final List<_DayTabInfo> _dayTabs = <_DayTabInfo>[];
   TabController? _tabController;
   int _currentTabIndex = 0;
@@ -65,6 +68,11 @@ class _TimelinePageState extends State<TimelinePage>
   TimelineJumpRequest? _pendingJump;
   VoidCallback? _jumpListener;
   bool _jumpInProgress = false;
+
+  // 日期窗口控制：默认最近14天，每次向前追加14天
+  static const int _initialVisibleDayTabs = 14;
+  static const int _appendVisibleDayTabs = 14;
+  bool _isExpandingDayTabs = false;
 
   @override
   void initState() {
@@ -161,9 +169,18 @@ class _TimelinePageState extends State<TimelinePage>
 
     if (!mounted) return;
     setState(() {
-      _dayTabs
+      // 完整日期列表按倒序返回（今天在前、越往后越早）
+      _allDayTabs
         ..clear()
         ..addAll(tabs);
+
+      final int visibleCount = _allDayTabs.isEmpty
+          ? 0
+          : math.min(_initialVisibleDayTabs, _allDayTabs.length);
+      _dayTabs
+        ..clear()
+        ..addAll(_allDayTabs.take(visibleCount));
+
       _tabController?.removeListener(_onTabChanged);
       _tabController?.dispose();
       if (_dayTabs.isNotEmpty) {
@@ -221,10 +238,52 @@ class _TimelinePageState extends State<TimelinePage>
       _dateStartMillis = _dayTabs[idx].startMillis;
       _dateEndMillis = _dayTabs[idx].endMillis;
     });
+    // 若当前已处于“最后一个可见日期Tab”，尝试向前扩展更多日期
+    if (idx == _dayTabs.length - 1) {
+      _expandDayTabsIfNeeded();
+    }
     // 相邻Tab后台预取，提升切换体验
     // ignore: unawaited_futures
     _prefetchAdjacentTabs(idx);
     _reloadForCurrentTab(reset: true);
+  }
+
+  /// 当用户滑动到当前最后一个日期Tab附近时，尝试将可见窗口向前扩展14天
+  void _expandDayTabsIfNeeded() {
+    if (!mounted) return;
+    if (_isExpandingDayTabs) return;
+    if (_allDayTabs.isEmpty) return;
+    if (_dayTabs.length >= _allDayTabs.length) return; // 已展示全部日期
+
+    _isExpandingDayTabs = true;
+    try {
+      final int currentVisible = _dayTabs.length;
+      final int targetVisible = math.min(
+        _allDayTabs.length,
+        currentVisible + _appendVisibleDayTabs,
+      );
+      if (targetVisible <= currentVisible) return;
+
+      final int currentIndex = _tabController?.index ?? _currentTabIndex;
+
+      _tabController?.removeListener(_onTabChanged);
+      _tabController?.dispose();
+
+      setState(() {
+        _dayTabs
+          ..clear()
+          ..addAll(_allDayTabs.take(targetVisible));
+      });
+
+      _tabController = TabController(
+        length: _dayTabs.length,
+        vsync: this,
+        initialIndex: currentIndex.clamp(0, _dayTabs.length - 1),
+      );
+      _tabController!.addListener(_onTabChanged);
+    } finally {
+      _isExpandingDayTabs = false;
+    }
   }
 
   Future<void> _reloadForCurrentTab({bool reset = false}) async {
@@ -397,39 +456,64 @@ class _TimelinePageState extends State<TimelinePage>
                           height: 32,
                           child: Transform.translate(
                             offset: const Offset(0, -2),
-                            child: TabBar(
-                              controller: _tabController,
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
-                              padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                              // 与截图列表一致：标签水平留白适中
-                              labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-                              labelColor: selectedColor,
-                              unselectedLabelColor: unselectedColor,
-                              labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                              unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-                              // 与截图列表一致：去掉底部分割线
-                              dividerColor: Colors.transparent,
-                              indicatorSize: TabBarIndicatorSize.label,
-                              // 减少上下空隙
-                              indicatorPadding: EdgeInsets.zero,
-                              // 与截图列表一致：细下划线，较小的左右 insets
-                              indicator: UnderlineTabIndicator(
-                                borderSide: BorderSide(width: 2.0, color: selectedColor),
-                                insets: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: (notification) {
+                                final metrics = notification.metrics;
+                                // 仅在水平方向滚动、且内容可滚动、且存在 TabController 时检测
+                                if (metrics.axis == Axis.horizontal &&
+                                    metrics.maxScrollExtent > 0 &&
+                                    _tabController != null &&
+                                    _tabController!.length > 0) {
+                                  const double kEdgeThreshold = 16.0;
+                                  if (metrics.pixels >=
+                                      metrics.maxScrollExtent - kEdgeThreshold) {
+                                    // 自动切换到最后一个日期 Tab，由 _onTabChanged 统一触发扩展窗口
+                                    final int lastIndex = _tabController!.length - 1;
+                                    if (_tabController!.index != lastIndex) {
+                                      _tabController!.animateTo(lastIndex);
+                                    }
+                                  }
+                                }
+                                return false;
+                              },
+                              child: TabBar(
+                                controller: _tabController,
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
+                                padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                                // 与截图列表一致：标签水平留白适中
+                                labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                                labelColor: selectedColor,
+                                unselectedLabelColor: unselectedColor,
+                                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                // 与截图列表一致：去掉底部分割线
+                                dividerColor: Colors.transparent,
+                                indicatorSize: TabBarIndicatorSize.label,
+                                // 减少上下空隙
+                                indicatorPadding: EdgeInsets.zero,
+                                // 与截图列表一致：细下划线，较小的左右 insets
+                                indicator: UnderlineTabIndicator(
+                                  borderSide: BorderSide(width: 2.0, color: selectedColor),
+                                  insets: const EdgeInsets.symmetric(horizontal: 4.0),
+                                ),
+                                tabs: _dayTabs
+                                    .map((t) {
+                                      final l10n = AppLocalizations.of(context);
+                                      final text = _DayTabInfo._isToday(t.day)
+                                          ? l10n.dayTabToday(t.count)
+                                          : (_DayTabInfo._isYesterday(t.day)
+                                              ? l10n.dayTabYesterday(t.count)
+                                              : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
+                                      return Tab(text: text);
+                                    })
+                                    .toList(),
                               ),
-                              tabs: _dayTabs
-                                  .map((t) {
-                                    final l10n = AppLocalizations.of(context);
-                                    final text = _DayTabInfo._isToday(t.day)
-                                        ? l10n.dayTabToday(t.count)
-                                        : (_DayTabInfo._isYesterday(t.day)
-                                            ? l10n.dayTabYesterday(t.count)
-                                            : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
-                                    return Tab(text: text);
-                                  })
-                                  .toList(),
                             ),
                           ),
                         );

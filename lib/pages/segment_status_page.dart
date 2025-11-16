@@ -61,6 +61,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   bool _autoWatching = false;
   int _autoTickCount = 0;
 
+  // 日期 Tab 可见窗口控制：默认仅展示最近 14 天，向前按批次扩展
+  static const int _initialDayTabs = 14;
+  static const int _appendDayTabs = 14;
+  int _maxVisibleDayTabs = _initialDayTabs;
+  bool _isLoadingMoreDays = false;
+  bool _noMoreOlderSegments = false;
+
   @override
   void initState() {
     super.initState();
@@ -392,13 +399,58 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     setState(() { _loading = true; });
     try {
       final active = await _db.getActiveSegment();
-      // 使用带 has_summary 的查询；当开启“仅看无总结”时直接从SQL过滤
-      // 显示全部日期Tab：非“仅看无总结”时扩大查询范围，避免因行数限制而丢失更早日期
-      final int fetchLimit = _onlyNoSummary ? 100 : 1000000;
-      final segments = await _db.listSegmentsEx(limit: fetchLimit, onlyNoSummary: _onlyNoSummary);
+      List<Map<String, dynamic>> segments;
+
+      if (_onlyNoSummary) {
+        // “仅看无总结”模式：保持原有行为，仅限制行数；由 SQL 侧过滤无总结事件
+        const int fetchLimit = 100;
+        segments = await _db.listSegmentsEx(
+          limit: fetchLimit,
+          onlyNoSummary: true,
+        );
+      } else {
+        // 默认模式：只拉取“最近 14 天”的段落，按 start_time 过滤
+        final DateTime now = DateTime.now();
+        // 使用当天 23:59:59.999 作为上界，避免时区/毫秒误差导致当天事件遗漏
+        final DateTime endOfToday = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+          999,
+        );
+        final DateTime startDay = endOfToday.subtract(
+          const Duration(days: _initialDayTabs - 1),
+        );
+        final int startMs = startDay.millisecondsSinceEpoch;
+        final int endMs = endOfToday.millisecondsSinceEpoch;
+
+        const int fetchLimit = 800;
+        segments = await _db.listSegmentsEx(
+          limit: fetchLimit,
+          onlyNoSummary: false,
+          startMillis: startMs,
+          endMillis: endMs,
+        );
+
+        // 如果最近 14 天内完全没有事件，则回退为“全量但限行数”的查询，
+        // 避免用户长期停用后重新开启时看不到更早历史。
+        if (segments.isEmpty) {
+          segments = await _db.listSegmentsEx(
+            limit: fetchLimit,
+            onlyNoSummary: false,
+          );
+        }
+      }
+
       setState(() {
         _active = active;
         _segments = segments;
+        // 每次刷新都重置日期窗口，仅展示最近两周的日期 Tab
+        _maxVisibleDayTabs = _initialDayTabs;
+        _noMoreOlderSegments = false;
       });
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
       if (_onlyNoSummary) {
@@ -412,6 +464,110 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     } finally {
       if (mounted) setState(() { _loading = false; });
     }
+  }
+
+  /// 从当前已加载的 segments 向前再拉取一批“更早日期”的事件
+  /// - 仅在默认模式下生效（_onlyNoSummary=false）
+  /// - 按 start_time 的日期向前扩展一个固定窗口（_appendDayTabs 天）
+  Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
+    if (_onlyNoSummary || _isLoadingMoreDays || _noMoreOlderSegments) return;
+    if (_segments.isEmpty) return;
+
+    // 计算当前已加载段落中最早的 start_time
+    int? oldestMs;
+    for (final m in _segments) {
+      final int v = (m['start_time'] as int?) ?? 0;
+      if (v <= 0) continue;
+      if (oldestMs == null || v < oldestMs) oldestMs = v;
+    }
+    if (oldestMs == null || oldestMs <= 0) {
+      _noMoreOlderSegments = true;
+      return;
+    }
+
+    _isLoadingMoreDays = true;
+    try {
+      final DateTime oldestDate = DateTime.fromMillisecondsSinceEpoch(oldestMs);
+      // 以“最早事件所在日的前一天 23:59:59.999”为新的上界，向前再扩展 _appendDayTabs 天
+      final DateTime endDay = DateTime(
+        oldestDate.year,
+        oldestDate.month,
+        oldestDate.day,
+      ).subtract(const Duration(milliseconds: 1));
+      final DateTime startDay = endDay.subtract(
+        const Duration(days: _appendDayTabs - 1),
+      );
+      final int startMs = startDay.millisecondsSinceEpoch;
+      final int endMs = endDay.millisecondsSinceEpoch;
+
+      const int extraLimit = 800;
+      final List<Map<String, dynamic>> more = await _db.listSegmentsEx(
+        limit: extraLimit,
+        onlyNoSummary: false,
+        startMillis: startMs,
+        endMillis: endMs,
+      );
+      if (more.isEmpty) {
+        _noMoreOlderSegments = true;
+        return;
+      }
+
+      // 合并去重并按 start_time DESC 排序，保证 UI 与时间线顺序一致
+      final Map<int, Map<String, dynamic>> byId = <int, Map<String, dynamic>>{};
+      for (final m in _segments) {
+        final int id = (m['id'] as int?) ?? 0;
+        if (id <= 0) continue;
+        byId[id] = m;
+      }
+      for (final m in more) {
+        final int id = (m['id'] as int?) ?? 0;
+        if (id <= 0) continue;
+        byId[id] = m;
+      }
+      final List<Map<String, dynamic>> merged = byId.values.toList()
+        ..sort((a, b) {
+          final int ta = (a['start_time'] as int?) ?? 0;
+          final int tb = (b['start_time'] as int?) ?? 0;
+          return tb.compareTo(ta); // 按时间倒序
+        });
+
+      setState(() {
+        _segments = merged;
+        // 向前扩展一个批次的日期窗口
+        _maxVisibleDayTabs += _appendDayTabs;
+      });
+    } finally {
+      _isLoadingMoreDays = false;
+    }
+  }
+
+  /// 当用户滑动日期 Tab 到“当前最后一个可见日期”时触发
+  /// - 若当前 segments 中仍有更多日期尚未展示，则只增加可见天数
+  /// - 若已经展示了所有已加载日期，尝试从数据库再加载更早一批
+  Future<void> _handleLastDayTabReached() async {
+    if (!mounted) return;
+
+    // 基于当前 _segments 统计所有日期 key
+    final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
+    for (final seg in _segments) {
+      final int ms = (seg['start_time'] as int?) ?? 0;
+      if (ms <= 0) continue;
+      final String k = _dateKeyFromMillis(ms);
+      grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
+    }
+    final int totalDays = grouped.length;
+    if (totalDays == 0) return;
+
+    // 还有未展示的日期，只扩展可见窗口，不访问数据库
+    if (_maxVisibleDayTabs < totalDays) {
+      setState(() {
+        _maxVisibleDayTabs = math.min(totalDays, _maxVisibleDayTabs + _appendDayTabs);
+      });
+      return;
+    }
+
+    // 已经展示了当前数据中的所有日期，再尝试向前加载更早一批
+    await _loadOlderSegmentsFromDbIfNeeded();
   }
 
   String _fmtTime(int ms) {
@@ -792,14 +948,25 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           activeHeader: _buildActiveCard(),
           onRefreshRequested: _refresh,
           privacyMode: _privacyMode,
+          maxVisibleDayTabs: _maxVisibleDayTabs,
+          onLastDayTabReached: _handleLastDayTabReached,
         ),
       ),
     );
   }
 }
 
+/// 将毫秒时间戳转换为日期 key（YYYY-MM-DD）
+String _dateKeyFromMillis(int ms) {
+  final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+  final String y = dt.year.toString().padLeft(4, '0');
+  final String m = dt.month.toString().padLeft(2, '0');
+  final String d = dt.day.toString().padLeft(2, '0');
+  return '$y-$m-$d';
+}
+
 // ============= 按日期 Tab 的段落时间轴视图（含分割线/关键动作/Logo/标签/摘要/可展开图片） =============
-class _SegmentTimelineTabView extends StatelessWidget {
+class _SegmentTimelineTabView extends StatefulWidget {
   final List<Map<String, dynamic>> segments;
   final bool onlyNoSummary;
   final bool autoWatching;
@@ -812,6 +979,8 @@ class _SegmentTimelineTabView extends StatelessWidget {
   final Widget activeHeader;
   final Future<void> Function() onRefreshRequested;
   final bool privacyMode;
+  final int maxVisibleDayTabs;
+  final Future<void> Function()? onLastDayTabReached;
 
   const _SegmentTimelineTabView({
     required this.segments,
@@ -826,10 +995,41 @@ class _SegmentTimelineTabView extends StatelessWidget {
     required this.activeHeader,
     required this.onRefreshRequested,
     required this.privacyMode,
+    required this.maxVisibleDayTabs,
+    this.onLastDayTabReached,
   });
 
   @override
+  State<_SegmentTimelineTabView> createState() => _SegmentTimelineTabViewState();
+}
+
+class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
+    with SingleTickerProviderStateMixin {
+  TabController? _tabController;
+
+  @override
+  void dispose() {
+    _tabController?.removeListener(_handleTabChanged);
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  void _handleTabChanged() {
+    final TabController? ctrl = _tabController;
+    if (ctrl == null || !mounted) return;
+    // 仅在动画结束后处理，避免在拖动过程中重复触发
+    if (ctrl.indexIsChanging) return;
+    if (ctrl.length <= 0) return;
+    if (ctrl.index == ctrl.length - 1) {
+      // 已经滑动到当前最后一个日期 Tab，通知外层尝试加载更多
+      widget.onLastDayTabReached?.call();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> segments = widget.segments;
+
     if (segments.isEmpty) {
       return CustomScrollView(
         slivers: [
@@ -838,9 +1038,9 @@ class _SegmentTimelineTabView extends StatelessWidget {
             sliver: SliverToBoxAdapter(
               child: Column(
                 children: [
-                  activeHeader,
+                  widget.activeHeader,
                   const SizedBox(height: 8),
-                  if (onlyNoSummary && autoWatching)
+                  if (widget.onlyNoSummary && widget.autoWatching)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(AppLocalizations.of(context).autoWatchingHint, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
@@ -857,11 +1057,11 @@ class _SegmentTimelineTabView extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.event_note_outlined,
-                      size: 64,
-                      color: AppTheme.mutedForeground.withOpacity(0.5),
-                    ),
+                            Icon(
+                              Icons.event_note_outlined,
+                              size: 64,
+                              color: AppTheme.mutedForeground.withOpacity(0.5),
+                            ),
                     const SizedBox(height: AppTheme.spacing4),
                     Text(
                       AppLocalizations.of(context).noEvents,
@@ -892,29 +1092,70 @@ class _SegmentTimelineTabView extends StatelessWidget {
 
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (final seg in segments) {
-      final k = _dateKey((seg['start_time'] as int?) ?? 0);
+      final k = _dateKeyFromMillis((seg['start_time'] as int?) ?? 0);
       grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
     }
-    final keys = grouped.keys.toList()..sort((a, b) => a.compareTo(b));
-    final ordered = keys.reversed.toList();
-    final String todayKey = _dateKey(DateTime.now().millisecondsSinceEpoch);
+    final List<String> keys = grouped.keys.toList()..sort((a, b) => a.compareTo(b));
+    final List<String> orderedAll = keys.reversed.toList();
 
-    return DefaultTabController(
-      length: ordered.length,
-      child: Column(
-        children: [
-          Builder(
-            builder: (context) {
-              final Color selectedColor = Theme.of(context).brightness == Brightness.dark
-                  ? AppTheme.darkForeground
-                  : AppTheme.foreground;
-              final Color unselectedColor =
-                  Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-              return SizedBox(
-                height: 32,
-                child: Transform.translate(
-                  offset: const Offset(0, -2),
+    // 仅展示“最近 maxVisibleDayTabs 个日期”，其余日期在用户滑动到末尾后再增量展示
+    final int visibleCount = math.min(widget.maxVisibleDayTabs, orderedAll.length);
+    final List<String> ordered = orderedAll.take(visibleCount).toList();
+
+    // 根据当前可见日期数量维护 TabController，尽量保留用户当前选中的索引
+    if (_tabController == null || _tabController!.length != ordered.length) {
+      final int currentIndex = _tabController?.index ?? 0;
+      _tabController?.removeListener(_handleTabChanged);
+      _tabController?.dispose();
+
+      final int initialIndex = ordered.isEmpty
+          ? 0
+          : currentIndex.clamp(0, ordered.length - 1);
+      _tabController = TabController(
+        length: ordered.length,
+        vsync: this,
+        initialIndex: initialIndex,
+      );
+      _tabController!.addListener(_handleTabChanged);
+    }
+
+    return Column(
+      children: [
+        Builder(
+          builder: (context) {
+            final Color selectedColor = Theme.of(context).brightness == Brightness.dark
+                ? AppTheme.darkForeground
+                : AppTheme.foreground;
+            final Color unselectedColor =
+                Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
+            return SizedBox(
+              height: 32,
+              child: Transform.translate(
+                offset: const Offset(0, -2),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    final metrics = notification.metrics;
+                    // 仅在水平方向滚动、且内容可滚动时检测
+                    if (metrics.axis == Axis.horizontal &&
+                        metrics.maxScrollExtent > 0 &&
+                        _tabController != null &&
+                        _tabController!.length > 0) {
+                      // 当滚动位置接近最右端（最后一个日期Tab完全进入视口）时，
+                      // 认为用户意图查看“最后一天”，自动切换到最后一个 Tab，
+                      // 再由 TabController 的监听统一触发外层的“加载更多日期”逻辑。
+                      const double kEdgeThreshold = 16.0;
+                      if (metrics.pixels >=
+                          metrics.maxScrollExtent - kEdgeThreshold) {
+                        final int lastIndex = _tabController!.length - 1;
+                        if (_tabController!.index != lastIndex) {
+                          _tabController!.animateTo(lastIndex);
+                        }
+                      }
+                    }
+                    return false;
+                  },
                   child: TabBar(
+                    controller: _tabController,
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
                     // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
@@ -923,8 +1164,12 @@ class _SegmentTimelineTabView extends StatelessWidget {
                     labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
                     labelColor: selectedColor,
                     unselectedLabelColor: unselectedColor,
-                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                    unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
                     // 与截图列表一致：去掉底部分割线
                     dividerColor: Colors.transparent,
                     indicatorSize: TabBarIndicatorSize.label,
@@ -946,12 +1191,26 @@ class _SegmentTimelineTabView extends StatelessWidget {
                               final d = int.tryParse(parts[2]) ?? 1;
                               final dt = DateTime(y, m, d);
                               final now = DateTime.now();
-                              bool sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
-                              final c = (grouped[k] ?? const <Map<String, dynamic>>[]).length;
+                              bool sameDay(DateTime a, DateTime b) =>
+                                  a.year == b.year &&
+                                  a.month == b.month &&
+                                  a.day == b.day;
+                              final int c =
+                                  (grouped[k] ?? const <Map<String, dynamic>>[])
+                                      .length;
                               final l10n = AppLocalizations.of(context);
                               if (sameDay(dt, now)) return l10n.dayTabToday(c);
-                              if (sameDay(dt, now.subtract(const Duration(days: 1)))) return l10n.dayTabYesterday(c);
-                              return l10n.dayTabMonthDayCount(dt.month, dt.day, c);
+                              if (sameDay(
+                                dt,
+                                now.subtract(const Duration(days: 1)),
+                              )) {
+                                return l10n.dayTabYesterday(c);
+                              }
+                              return l10n.dayTabMonthDayCount(
+                                dt.month,
+                                dt.day,
+                                c,
+                              );
                             }
                             return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
                           })(),
@@ -959,76 +1218,61 @@ class _SegmentTimelineTabView extends StatelessWidget {
                     ],
                   ),
                 ),
-              );
-            },
+              ),
+            );
+          },
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              for (final k in ordered)
+                ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
+                  children: [
+                    widget.activeHeader,
+                    const SizedBox(height: 8),
+                    _buildDailyEntryCard(context, k, grouped),
+                    ...List.generate(
+                      (grouped[k] ?? const <Map<String, dynamic>>[]).length,
+                      (i) => _SegmentEntryCard(
+                        segment: grouped[k]![i],
+                        isLast: i == grouped[k]!.length - 1,
+                        fmtTime: widget.fmtTime,
+                        loadSamples: widget.loadSamples,
+                        loadResult: widget.loadResult,
+                        appInfoByPackage: widget.appInfoByPackage,
+                        onOpenDetail: () => widget.onOpenDetail(grouped[k]![i]),
+                        openGallery: widget.openGallery,
+                        onRefreshRequested: widget.onRefreshRequested,
+                        privacyMode: widget.privacyMode,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+            ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                for (final k in ordered)
-                  ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-                    children: [
-                      activeHeader,
-                      const SizedBox(height: 8),
-                      _buildDailyEntryCard(context, k),
-                      ...List.generate((grouped[k] ?? const <Map<String, dynamic>>[]).length, (i) => _SegmentEntryCard(
-                            segment: grouped[k]![i],
-                            isLast: i == grouped[k]!.length - 1,
-                            fmtTime: fmtTime,
-                            loadSamples: loadSamples,
-                            loadResult: loadResult,
-                            appInfoByPackage: appInfoByPackage,
-                            onOpenDetail: () => onOpenDetail(grouped[k]![i]),
-                            openGallery: openGallery,
-                            onRefreshRequested: onRefreshRequested,
-                            privacyMode: privacyMode,
-                          )),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  String _dateKey(int ms) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  String _buildDayLabel(String key, int count) {
-    try {
-      final parts = key.split('-');
-      if (parts.length == 3) {
-        final y = int.tryParse(parts[0]) ?? 1970;
-        final m = int.tryParse(parts[1]) ?? 1;
-        final d = int.tryParse(parts[2]) ?? 1;
-        final dt = DateTime(y, m, d);
-        final now = DateTime.now();
-        bool sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
-        if (sameDay(dt, now)) return '今天 $count';
-        if (sameDay(dt, now.subtract(const Duration(days: 1)))) return '昨天 $count';
-        return '${dt.month}月${dt.day}日 $count';
-      }
-    } catch (_) {}
-    return '$key $count';
-  }
-
-  Widget _buildDailyEntryCard(BuildContext context, String dateKey) {
+  Widget _buildDailyEntryCard(
+    BuildContext context,
+    String dateKey,
+    Map<String, List<Map<String, dynamic>>> grouped,
+  ) {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.event_note_outlined),
         title: Text(AppLocalizations.of(context).dailySummaryShort),
-        subtitle: Text(AppLocalizations.of(context).viewOrGenerateForDay),
+        subtitle: Text(
+          AppLocalizations.of(context).viewOrGenerateForDay,
+        ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
+          // 这里仍然使用 dateKey（YYYY-MM-DD）作为每日总结的键，与 DailySummaryPage 保持一致
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dateKey)),
           );
