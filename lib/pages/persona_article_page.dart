@@ -32,7 +32,8 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
   @override
   void initState() {
     super.initState();
-    _startGeneration();
+    _loadCachedArticle();
+    _startGeneration(clearExisting: false);
   }
 
   @override
@@ -41,10 +42,22 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
     super.dispose();
   }
 
-  Future<void> _startGeneration() async {
+  Future<void> _loadCachedArticle() async {
+    final PersonaArticleCache? cache =
+        await _service.loadCachedArticle(style: widget.style);
+    if (!mounted || cache == null) return;
+    if (cache.article.trim().isEmpty) return;
+    setState(() {
+      _article = cache.article;
+    });
+  }
+
+  Future<void> _startGeneration({bool clearExisting = true}) async {
     await _subscription?.cancel();
     setState(() {
-      _article = '';
+      if (clearExisting) {
+        _article = '';
+      }
       _generating = true;
       _lastError = null;
     });
@@ -76,7 +89,15 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
         onDone: () {
           if (!mounted) return;
           setState(() => _generating = false);
-          if (_article.trim().isNotEmpty) {
+          final String finalArticle = _article.trim();
+          if (finalArticle.isNotEmpty) {
+            unawaited(
+              _service.persistArticle(
+                style: widget.style,
+                article: finalArticle,
+                localeOverride: Localizations.maybeLocaleOf(context),
+              ),
+            );
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
@@ -137,7 +158,7 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh_outlined),
-            onPressed: _generating ? null : _startGeneration,
+            onPressed: _generating ? null : () => _startGeneration(),
           ),
         ],
       ),
@@ -209,12 +230,12 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
         );
 
     final List<Widget> children = <Widget>[];
-    if (heroHeading != null && heroHeading!.isNotEmpty) {
+    if (heroHeading != null && heroHeading.isNotEmpty) {
       children.add(
         Padding(
           padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
           child: Text(
-            heroHeading!.replaceAll(RegExp(r'^\*+|\*+$'), ''),
+            heroHeading.replaceAll(RegExp(r'^\*+|\*+$'), ''),
             textAlign: TextAlign.center,
             style: heading.copyWith(fontSize: heading.fontSize! + 1),
           ),
@@ -263,7 +284,7 @@ class _PersonaArticlePageState extends State<PersonaArticlePage> {
         ],
         const SizedBox(height: AppTheme.spacing3),
         FilledButton.icon(
-          onPressed: _generating ? null : _startGeneration,
+          onPressed: _generating ? null : () => _startGeneration(),
           icon: const Icon(Icons.refresh_outlined),
           label: Text(t.generatePersonaArticle),
         ),

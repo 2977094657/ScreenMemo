@@ -31,6 +31,8 @@ class MemoryBridgeService {
   MemorySnapshot? _latestSnapshot;
   String _cachedPersonaSummary = '';
   MemoryProgressState _latestProgress = const MemoryProgressIdle();
+  bool _waitingForInitialProgress = false;
+  String? _pendingStageLabel;
 
   StreamSubscription<dynamic>? _snapshotSubscription;
   StreamSubscription<dynamic>? _progressSubscription;
@@ -40,6 +42,8 @@ class MemoryBridgeService {
 
   MemorySnapshot? get latestSnapshot => _latestSnapshot;
   MemoryProgressState get latestProgress => _latestProgress;
+  bool get waitingForInitialProgress => _waitingForInitialProgress;
+  String? get pendingStageLabel => _pendingStageLabel;
   String get latestPersonaSummary {
     final String snapshotSummary = _latestSnapshot?.personaSummary.trim() ?? '';
     if (snapshotSummary.isNotEmpty) {
@@ -55,6 +59,25 @@ class MemoryBridgeService {
 
   PersonaProfile get latestPersonaProfile =>
       _latestSnapshot?.personaProfile ?? PersonaProfile.empty();
+
+  void primeProgressState(
+    MemoryProgressState progress, {
+    bool waitingForInitialProgress = false,
+    String? stageLabel,
+  }) {
+    _latestProgress = progress;
+    _waitingForInitialProgress = waitingForInitialProgress;
+    _pendingStageLabel = stageLabel;
+  }
+
+  void updatePreparationStage(String? stageLabel) {
+    _pendingStageLabel = stageLabel;
+  }
+
+  void clearPreparationState() {
+    _waitingForInitialProgress = false;
+    _pendingStageLabel = null;
+  }
   
   Future<bool> deleteTag(int tagId) async {
     await ensureInitialized();
@@ -416,6 +439,7 @@ class MemoryBridgeService {
     _logInfo('progress event received type=${event.runtimeType}');
     final MemoryProgressState progress = _parseProgress(event);
     _latestProgress = progress;
+    clearPreparationState();
     _progressController.add(progress);
     _logInfo('progress updated runtime=${progress.runtimeType}');
   }
@@ -659,7 +683,7 @@ class MemoryBridgeService {
   String _truncate(String text, int maxLength) {
     if (text.length <= maxLength) return text;
     final int cutoff = maxLength > 3 ? maxLength - 3 : 0;
-    return text.substring(0, cutoff) + '...';
+    return '${text.substring(0, cutoff)}...';
   }
 }
 

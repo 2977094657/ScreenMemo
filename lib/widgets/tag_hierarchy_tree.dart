@@ -15,6 +15,7 @@ class TagHierarchyTree extends StatelessWidget {
     required this.onDeleteTag,
     required this.deletingTagIds,
     required this.confirmingTagIds,
+    this.storagePrefix = 'tag_tree',
   });
 
   final List<MemoryTag> tags;
@@ -24,6 +25,7 @@ class TagHierarchyTree extends StatelessWidget {
   final Future<void> Function(MemoryTag) onDeleteTag;
   final Set<int> deletingTagIds;
   final Set<int> confirmingTagIds;
+  final String storagePrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +69,7 @@ class TagHierarchyTree extends StatelessWidget {
       Map<String, Map<String, List<MemoryTag>>> level2Map) {
     final ThemeData theme = Theme.of(context);
     return ExpansionTile(
-      key: PageStorageKey<String>('tag_level1_$level1'),
+      key: PageStorageKey<String>('${storagePrefix}_level1_$level1'),
       tilePadding: EdgeInsets.zero,
       initiallyExpanded: false,
       title: Text(
@@ -84,7 +86,7 @@ class TagHierarchyTree extends StatelessWidget {
       Map<String, List<MemoryTag>> level3Map) {
     final ThemeData theme = Theme.of(context);
     return ExpansionTile(
-      key: PageStorageKey<String>('tag_level2_${level1}_$level2'),
+      key: PageStorageKey<String>('${storagePrefix}_level2_${level1}_$level2'),
       tilePadding: const EdgeInsets.only(left: 16.0),
       initiallyExpanded: false,
       title: Text(
@@ -101,7 +103,8 @@ class TagHierarchyTree extends StatelessWidget {
       String level3, List<MemoryTag> level4Tags) {
     final ThemeData theme = Theme.of(context);
     return ExpansionTile(
-      key: PageStorageKey<String>('tag_level3_${level1}_${level2}_$level3'),
+      key: PageStorageKey<String>(
+          '${storagePrefix}_level3_${level1}_${level2}_$level3'),
       tilePadding: const EdgeInsets.only(left: 32.0),
       initiallyExpanded: false,
       title: Text(

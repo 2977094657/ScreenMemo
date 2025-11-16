@@ -134,6 +134,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await _createWeeklySummariesTable(db);
 
     await _createMorningInsightsTable(db);
+    await _createPersonaArticlesTable(db);
   }
 
   // v6: 清理旧的 AI 分组表与老配置键（首次打开/升级时执行）
@@ -700,7 +701,13 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
   /// - has_summary: 0 表示无总结；1 表示已有总结
   /// - 仅返回“至少有一张样本图片”的事件，避免前端渲染后再隐藏导致滚动抖动
-  Future<List<Map<String, dynamic>>> listSegmentsEx({int limit = 50, bool onlyNoSummary = false}) async {
+  /// - 可选按 start_time 进行时间范围过滤（用于“动态”页按日期窗口增量加载）
+  Future<List<Map<String, dynamic>>> listSegmentsEx({
+    int limit = 50,
+    bool onlyNoSummary = false,
+    int? startMillis,
+    int? endMillis,
+  }) async {
     final db = await database;
     try {
       const String noSummaryCond =
@@ -709,6 +716,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
       // 组合 WHERE 子句
       final List<String> whereClauses = <String>[hasSamplesCond];
+      final List<Object?> params = <Object?>[];
+
+      if (startMillis != null) {
+        whereClauses.add('s.start_time >= ?');
+        params.add(startMillis);
+      }
+      if (endMillis != null) {
+        whereClauses.add('s.start_time <= ?');
+        params.add(endMillis);
+      }
       if (onlyNoSummary) {
         whereClauses.add('(' + noSummaryCond + ')');
       }
@@ -729,10 +746,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
         $whereSql
-        ORDER BY s.id DESC
+        ORDER BY s.start_time DESC, s.id DESC
         LIMIT ?
       ''';
-      final rows = await db.rawQuery(sql, [limit]);
+      params.add(limit);
+      final rows = await db.rawQuery(sql, params);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
@@ -1024,6 +1042,67 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       return <Map<String, dynamic>>[];
     }
   }
+
+  // ===================== Persona 画像文章缓存 =====================
+  Future<Map<String, dynamic>?> getPersonaArticle(String style) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'persona_articles',
+        where: 'style = ?',
+        whereArgs: [style],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> upsertPersonaArticle({
+    required String style,
+    required String article,
+    String? locale,
+    String? aiProvider,
+    String? aiModel,
+  }) async {
+    final db = await database;
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert(
+        'persona_articles',
+        {
+          'style': style,
+          'article': article,
+          'locale': locale,
+          'ai_provider': aiProvider,
+          'ai_model': aiModel,
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> clearPersonaArticles({String? style}) async {
+    final db = await database;
+    try {
+      if (style == null) {
+        await db.delete('persona_articles');
+      } else {
+        await db.delete(
+          'persona_articles',
+          where: 'style = ?',
+          whereArgs: [style],
+        );
+      }
+    } catch (_) {}
+  }
 }
 
 Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {
@@ -1049,6 +1128,20 @@ Future<void> _createMorningInsightsTable(DatabaseExecutor db) async {
       tips_json TEXT NOT NULL,
       raw_response TEXT,
       created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+    )
+  ''');
+}
+
+Future<void> _createPersonaArticlesTable(DatabaseExecutor db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS persona_articles (
+      style TEXT PRIMARY KEY,
+      article TEXT NOT NULL,
+      locale TEXT,
+      ai_provider TEXT,
+      ai_model TEXT,
+      created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+      updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
     )
   ''');
 }

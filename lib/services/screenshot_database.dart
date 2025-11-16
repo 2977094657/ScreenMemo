@@ -60,7 +60,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 11,
+          version: 12,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -93,7 +93,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 11,
+          version: 12,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -120,7 +120,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 11,
+        version: 12,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );

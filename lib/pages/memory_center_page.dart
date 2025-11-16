@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -29,6 +27,7 @@ class MemoryCenterPage extends StatefulWidget {
 
 class _MemoryCenterPageState extends State<MemoryCenterPage> {
   final MemoryBridgeService _service = MemoryBridgeService.instance;
+  final PersonaArticleService _articleService = PersonaArticleService.instance;
   final Set<int> _confirmingTagIds = <int>{};
   final Set<int> _deletingTagIds = <int>{};
 
@@ -65,6 +64,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   String? _articleError;
   String _lastPersonaSummary = '';
   final List<String> _articleLogs = <String>[];
+  StateSetter? _tagSheetStateSetter;
 
   @override
   void initState() {
@@ -76,6 +76,14 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     _logInfo('bootstrap start');
     await _service.ensureInitialized();
     if (!mounted) return;
+    final MemoryProgressState cachedProgress = _service.latestProgress;
+    final bool progressRunning = cachedProgress is MemoryProgressRunning;
+    final bool waitingFlag =
+        progressRunning ? _service.waitingForInitialProgress : false;
+    final String? stageLabel =
+        progressRunning ? _service.pendingStageLabel : null;
+    final PersonaArticleCache? cachedArticle =
+        await _articleService.loadCachedArticle();
     setState(() {
       _snapshot =
           _service.latestSnapshot ??
@@ -109,7 +117,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _eventVisible,
         math.min(_recentEvents.length, _eventTotal),
       );
-      _progress = _service.latestProgress;
+      _progress = cachedProgress;
+      _initializingHistory = progressRunning;
+      _waitingForInitialProgress = waitingFlag;
+      _preparingStageLabel = stageLabel;
+      if (cachedArticle != null &&
+          cachedArticle.article.trim().isNotEmpty &&
+          _article.trim().isEmpty) {
+        _article = cachedArticle.article;
+      }
     });
     _lastPersonaSummary = _snapshot?.personaSummary.trim() ?? '';
     _snapshotSub = _service.snapshotStream.listen((MemorySnapshot snapshot) {
@@ -130,8 +146,8 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _progress = progress;
         _initializingHistory = progress is MemoryProgressRunning;
         if (progress is MemoryProgressRunning) {
-          _waitingForInitialProgress = false;
-          _preparingStageLabel = null;
+          _waitingForInitialProgress = _service.waitingForInitialProgress;
+          _preparingStageLabel = _service.pendingStageLabel;
         } else {
           _waitingForInitialProgress = false;
           _preparingStageLabel = null;
@@ -169,6 +185,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     _progressSub?.cancel();
     _tagUpdateSub?.cancel();
     _articleSubscription?.cancel();
+    _tagSheetStateSetter = null;
     super.dispose();
   }
 
@@ -259,6 +276,16 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           setState(() {
             _articleGenerating = false;
           });
+          final String finalArticle = _article.trim();
+          if (finalArticle.isNotEmpty) {
+            unawaited(
+              _articleService.persistArticle(
+                style: PersonaArticleStyle.narrative,
+                article: finalArticle,
+                localeOverride: Localizations.maybeLocaleOf(context),
+              ),
+            );
+          }
           _appendArticleLog('画像文章生成完成');
         },
       );
@@ -346,6 +373,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         setState(() {
           _handleTagRemoved(tag.id);
         });
+        _notifyTagSheetRebuild();
         UINotifier.success(context, t.memoryDeleteTagSuccess);
         unawaited(_refresh(initial: true));
       } else {
@@ -374,20 +402,26 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
     _logInfo('startHistoricalProcessing request force=$forceReprocess');
     final AppLocalizations t = AppLocalizations.of(context);
+    final MemoryProgressRunning primedProgress = MemoryProgressRunning(
+      processedCount: 0,
+      totalCount: 0,
+      progress: 0,
+      currentEventId: null,
+      currentEventExternalId: null,
+      currentEventType: null,
+      newlyDiscoveredTags: const <String>[],
+    );
     setState(() {
       _initializingHistory = true;
       _waitingForInitialProgress = true;
       _preparingStageLabel = t.memoryProgressStageSyncSegments;
-      _progress = MemoryProgressRunning(
-        processedCount: 0,
-        totalCount: 0,
-        progress: 0,
-        currentEventId: null,
-        currentEventExternalId: null,
-        currentEventType: null,
-        newlyDiscoveredTags: const <String>[],
-      );
+      _progress = primedProgress;
     });
+    _service.primeProgressState(
+      primedProgress,
+      waitingForInitialProgress: true,
+      stageLabel: t.memoryProgressStageSyncSegments,
+    );
     try {
       final int segmentSynced = await _service.syncSegmentsToMemory();
       _logInfo(
@@ -395,11 +429,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       );
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageSyncChats);
+        _service.updatePreparationStage(_preparingStageLabel);
       }
       final int chatSynced = await _service.syncAllConversationsToMemory();
       _logInfo('startHistoricalProcessing chat sync ingested=$chatSynced');
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageDispatch);
+        _service.updatePreparationStage(_preparingStageLabel);
       }
       await _service.startHistoricalProcessing(forceReprocess: forceReprocess);
       if (!mounted) return;
@@ -412,6 +448,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _preparingStageLabel = null;
         _progress = const MemoryProgressIdle();
       });
+      _service.primeProgressState(
+        const MemoryProgressIdle(),
+        waitingForInitialProgress: false,
+      );
       UINotifier.error(
         context,
         t.memoryConfirmFailedToast(e.message ?? 'error'),
@@ -423,6 +463,10 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _preparingStageLabel = null;
         _progress = const MemoryProgressIdle();
       });
+      _service.primeProgressState(
+        const MemoryProgressIdle(),
+        waitingForInitialProgress: false,
+      );
       UINotifier.error(context, t.memoryConfirmFailedToast(e.toString()));
     } finally {
       if (mounted) {
@@ -515,7 +559,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _initializingHistory = false;
         _waitingForInitialProgress = false;
         _preparingStageLabel = null;
+        _progress = const MemoryProgressIdle();
       });
+      _service.primeProgressState(
+        const MemoryProgressIdle(),
+        waitingForInitialProgress: false,
+      );
       UINotifier.info(context, t.memoryPauseSuccess);
     } on PlatformException catch (e) {
       if (!mounted) return;
@@ -582,7 +631,20 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _pendingVisible = _pageStep;
         _confirmedVisible = _pageStep;
         _eventVisible = _pageStep;
+        _article = '';
+        _articleLogs.clear();
       });
+      _notifyTagSheetRebuild();
+      _service.primeProgressState(
+        const MemoryProgressIdle(),
+        waitingForInitialProgress: false,
+      );
+      try {
+        await _articleService.clearCachedArticle();
+      } catch (e, st) {
+        _logInfo('clear persona article cache failed: $e $st');
+      }
+      if (!mounted) return;
       UINotifier.success(context, t.clearSuccess);
     } on PlatformException catch (e) {
       if (!mounted) return;
@@ -597,6 +659,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       if (mounted) {
         setState(() => _clearing = false);
       }
+    }
+  }
+
+  void _notifyTagSheetRebuild() {
+    final StateSetter? setter = _tagSheetStateSetter;
+    if (setter != null) {
+      setter(() {});
     }
   }
 
@@ -1271,6 +1340,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     required ValueChanged<MemoryTag> onTap,
     VoidCallback? onLoadMore,
     bool isLoadingMore = false,
+    required String storagePrefix,
   }) {
     final ThemeData theme = Theme.of(context);
     final int safeVisible = math.min(
@@ -1341,6 +1411,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
               onDeleteTag: _confirmDeleteTag,
               deletingTagIds: _deletingTagIds,
               confirmingTagIds: _confirmingTagIds,
+              storagePrefix: storagePrefix,
             ),
           if (displayTags.isEmpty && totalCount > 0)
             Padding(
@@ -1397,118 +1468,130 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (BuildContext sheetContext) {
-        final AppLocalizations t = AppLocalizations.of(sheetContext);
-        final ThemeData sheetTheme = Theme.of(sheetContext);
-        final Color selectedColor = sheetTheme.brightness == Brightness.dark
-            ? AppTheme.darkForeground
-            : AppTheme.foreground;
-        final Color unselectedColor =
-            sheetTheme.textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-        return Container(
-          decoration: BoxDecoration(
-            color: sheetTheme.colorScheme.surface,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(AppTheme.radiusLg),
-              topRight: Radius.circular(AppTheme.radiusLg),
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: FractionallySizedBox(
-              heightFactor: 0.9,
-              child: DefaultTabController(
-                length: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(
-                        top: AppTheme.spacing3,
-                        bottom: AppTheme.spacing2,
-                      ),
-                      alignment: Alignment.center,
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: sheetTheme.colorScheme.onSurfaceVariant
-                              .withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 40,
-                      child: TabBar(
-                        isScrollable: false,
-                        tabAlignment: TabAlignment.fill,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing4,
-                        ),
-                        labelPadding: EdgeInsets.zero,
-                        labelColor: selectedColor,
-                        unselectedLabelColor: unselectedColor,
-                        labelStyle: sheetTheme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        unselectedLabelStyle: sheetTheme.textTheme.bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w500),
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicatorPadding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing2,
-                        ),
-                        indicator: UnderlineTabIndicator(
-                          borderSide: BorderSide(
-                            width: 2,
-                            color: selectedColor,
-                          ),
-                        ),
-                        tabs: [
-                          Tab(text: t.memoryPendingSectionTitle),
-                          Tab(text: t.memoryConfirmedSectionTitle),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        physics: const ClampingScrollPhysics(),
-                        children: [
-                          _buildTagSheetTab(
-                            sheetContext,
-                            title: t.memoryPendingSectionTitle,
-                            emptyText: t.memoryNoPending,
-                            tags: _pendingTags,
-                            showConfirmAction: true,
-                            totalCount: _pendingTotal,
-                            visibleCount: _pendingVisible,
-                            onLoadMore: _pendingVisible < _pendingTotal
-                                ? _loadMorePending
-                                : null,
-                          ),
-                          _buildTagSheetTab(
-                            sheetContext,
-                            title: t.memoryConfirmedSectionTitle,
-                            emptyText: t.memoryNoConfirmed,
-                            tags: _confirmedTags,
-                            showConfirmAction: false,
-                            totalCount: _confirmedTotal,
-                            visibleCount: _confirmedVisible,
-                            onLoadMore: _confirmedVisible < _confirmedTotal
-                                ? _loadMoreConfirmed
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+        return StatefulBuilder(
+          builder: (
+            BuildContext contentContext,
+            StateSetter sheetSetState,
+          ) {
+            _tagSheetStateSetter = sheetSetState;
+            final AppLocalizations t = AppLocalizations.of(contentContext);
+            final ThemeData sheetTheme = Theme.of(contentContext);
+            final Color selectedColor = sheetTheme.brightness == Brightness.dark
+                ? AppTheme.darkForeground
+                : AppTheme.foreground;
+            final Color unselectedColor =
+                sheetTheme.textTheme.bodySmall?.color ??
+                AppTheme.mutedForeground;
+            return Container(
+              decoration: BoxDecoration(
+                color: sheetTheme.colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusLg),
+                  topRight: Radius.circular(AppTheme.radiusLg),
                 ),
               ),
-            ),
-          ),
+              child: SafeArea(
+                top: false,
+                child: FractionallySizedBox(
+                  heightFactor: 0.9,
+                  child: DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(
+                            top: AppTheme.spacing3,
+                            bottom: AppTheme.spacing2,
+                          ),
+                          alignment: Alignment.center,
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: sheetTheme.colorScheme.onSurfaceVariant
+                                  .withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 40,
+                          child: TabBar(
+                            isScrollable: false,
+                            tabAlignment: TabAlignment.fill,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.spacing4,
+                            ),
+                            labelPadding: EdgeInsets.zero,
+                            labelColor: selectedColor,
+                            unselectedLabelColor: unselectedColor,
+                            labelStyle: sheetTheme.textTheme.bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                            unselectedLabelStyle: sheetTheme.textTheme.bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w500),
+                            dividerColor: Colors.transparent,
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            indicatorPadding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.spacing2,
+                            ),
+                            indicator: UnderlineTabIndicator(
+                              borderSide: BorderSide(
+                                width: 2,
+                                color: selectedColor,
+                              ),
+                            ),
+                            tabs: [
+                              Tab(text: t.memoryPendingSectionTitle),
+                              Tab(text: t.memoryConfirmedSectionTitle),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: TabBarView(
+                            physics: const ClampingScrollPhysics(),
+                            children: [
+                              _buildTagSheetTab(
+                                contentContext,
+                                title: t.memoryPendingSectionTitle,
+                                emptyText: t.memoryNoPending,
+                                tags: _pendingTags,
+                                showConfirmAction: true,
+                                totalCount: _pendingTotal,
+                                visibleCount: _pendingVisible,
+                                onLoadMore: _pendingVisible < _pendingTotal
+                                    ? _loadMorePending
+                                    : null,
+                                storagePrefix: 'pending',
+                              ),
+                              _buildTagSheetTab(
+                                contentContext,
+                                title: t.memoryConfirmedSectionTitle,
+                                emptyText: t.memoryNoConfirmed,
+                                tags: _confirmedTags,
+                                showConfirmAction: false,
+                                totalCount: _confirmedTotal,
+                                visibleCount: _confirmedVisible,
+                                onLoadMore: _confirmedVisible < _confirmedTotal
+                                    ? _loadMoreConfirmed
+                                    : null,
+                                storagePrefix: 'confirmed',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() {
+      _tagSheetStateSetter = null;
+    });
   }
 
   Widget _buildTagSheetTab(
@@ -1520,6 +1603,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     required int visibleCount,
     required int totalCount,
     VoidCallback? onLoadMore,
+    required String storagePrefix,
   }) {
     return ListView(
       padding: const EdgeInsets.symmetric(
@@ -1537,6 +1621,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           visibleCount: visibleCount,
           onTap: _openTagDetail,
           onLoadMore: onLoadMore,
+          storagePrefix: storagePrefix,
         ),
       ],
     );
@@ -1590,9 +1675,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     if (target <= _pendingVisible) return;
     if (_pendingTags.length >= target) {
       setState(() => _pendingVisible = target);
+      _notifyTagSheetRebuild();
       return;
     }
     setState(() => _loadingPendingMore = true);
+    _notifyTagSheetRebuild();
     try {
       final int offset = _pendingTags.length;
       final int limit = math.max(
@@ -1610,10 +1697,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _pendingVisible = math.min(target, _pendingTags.length);
         _loadingPendingMore = false;
       });
+      _notifyTagSheetRebuild();
     } catch (e) {
       _logInfo('loadMorePending failed: $e');
       if (mounted) {
         setState(() => _loadingPendingMore = false);
+        _notifyTagSheetRebuild();
       } else {
         _loadingPendingMore = false;
       }
@@ -1626,9 +1715,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     if (target <= _confirmedVisible) return;
     if (_confirmedTags.length >= target) {
       setState(() => _confirmedVisible = target);
+      _notifyTagSheetRebuild();
       return;
     }
     setState(() => _loadingConfirmedMore = true);
+    _notifyTagSheetRebuild();
     try {
       final int offset = _confirmedTags.length;
       final int limit = math.max(
@@ -1646,10 +1737,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _confirmedVisible = math.min(target, _confirmedTags.length);
         _loadingConfirmedMore = false;
       });
+      _notifyTagSheetRebuild();
     } catch (e) {
       _logInfo('loadMoreConfirmed failed: $e');
       if (mounted) {
         setState(() => _loadingConfirmedMore = false);
+        _notifyTagSheetRebuild();
       } else {
         _loadingConfirmedMore = false;
       }
@@ -1687,6 +1780,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         math.min(_recentEvents.length, _eventTotal),
       );
     });
+    _notifyTagSheetRebuild();
     _handlePersonaSummaryChange(snapshot.personaSummary);
   }
 

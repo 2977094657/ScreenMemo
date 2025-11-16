@@ -6,8 +6,29 @@ import '../models/memory_models.dart';
 import 'locale_service.dart';
 import 'ai_chat_service.dart';
 import 'memory_bridge_service.dart';
+import 'ai_settings_service.dart';
+import 'ai_providers_service.dart';
+import 'screenshot_database.dart';
 
 enum PersonaArticleStyle { narrative, timeline }
+
+class PersonaArticleCache {
+  const PersonaArticleCache({
+    required this.style,
+    required this.article,
+    this.updatedAt,
+    this.localeTag,
+    this.aiProvider,
+    this.aiModel,
+  });
+
+  final PersonaArticleStyle style;
+  final String article;
+  final DateTime? updatedAt;
+  final String? localeTag;
+  final String? aiProvider;
+  final String? aiModel;
+}
 
 class PersonaArticleService {
   PersonaArticleService._internal();
@@ -16,6 +37,9 @@ class PersonaArticleService {
 
   final MemoryBridgeService _memory = MemoryBridgeService.instance;
   final AIChatService _chat = AIChatService.instance;
+  final AISettingsService _settings = AISettingsService.instance;
+  final AIProvidersService _providers = AIProvidersService.instance;
+  final ScreenshotDatabase _db = ScreenshotDatabase.instance;
 
   Stream<AIStreamEvent> streamArticle({
     PersonaArticleStyle style = PersonaArticleStyle.narrative,
@@ -50,6 +74,79 @@ class PersonaArticleService {
     );
   }
 
+  Future<PersonaArticleCache?> loadCachedArticle({
+    PersonaArticleStyle style = PersonaArticleStyle.narrative,
+  }) async {
+    try {
+      final Map<String, dynamic>? row =
+          await _db.getPersonaArticle(style.name);
+      if (row == null) return null;
+      final int? updatedAt = row['updated_at'] as int?;
+      return PersonaArticleCache(
+        style: style,
+        article: (row['article'] as String?) ?? '',
+        updatedAt: updatedAt != null
+            ? DateTime.fromMillisecondsSinceEpoch(updatedAt)
+            : null,
+        localeTag: row['locale'] as String?,
+        aiProvider: row['ai_provider'] as String?,
+        aiModel: row['ai_model'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> persistArticle({
+    required PersonaArticleStyle style,
+    required String article,
+    Locale? localeOverride,
+  }) async {
+    final String normalized = article.trim();
+    if (normalized.isEmpty) return;
+    final Locale locale =
+        localeOverride ??
+        LocaleService.instance.locale ??
+        WidgetsBinding.instance.platformDispatcher.locale;
+
+    String? providerName;
+    String? model;
+    try {
+      final Map<String, dynamic>? ctx =
+          await _db.getAIContext('chat');
+      AIProvider? provider;
+      if (ctx != null && ctx['provider_id'] is int) {
+        provider =
+            await _providers.getProvider(ctx['provider_id'] as int);
+      } else {
+        provider = await _providers.getDefaultProvider();
+      }
+      providerName = provider?.name;
+      model = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
+      model ??= (provider?.extra['active_model'] as String?)?.trim();
+      if ((model == null || model.isEmpty) && provider != null) {
+        if (provider.defaultModel.isNotEmpty) {
+          model = provider.defaultModel;
+        } else if (provider.models.isNotEmpty) {
+          model = provider.models.first;
+        }
+      }
+    } catch (_) {}
+    model ??= await _settings.getModel();
+
+    await _db.upsertPersonaArticle(
+      style: style.name,
+      article: normalized,
+      locale: _localeTag(locale),
+      aiProvider: providerName,
+      aiModel: model,
+    );
+  }
+
+  Future<void> clearCachedArticle({PersonaArticleStyle? style}) async {
+    await _db.clearPersonaArticles(style: style?.name);
+  }
+
   String _buildPrompt({
     required Locale locale,
     required PersonaArticleStyle style,
@@ -66,6 +163,21 @@ class PersonaArticleService {
         .replaceAll('{{SUMMARY}}', personaSummary)
         .replaceAll('{{MARKDOWN}}', personaMarkdown)
         .replaceAll('{{JSON}}', personaJson);
+  }
+
+  String _localeTag(Locale locale) {
+    final List<String> segments = <String>[
+      locale.languageCode.toLowerCase(),
+    ];
+    final String? script = locale.scriptCode;
+    if (script != null && script.isNotEmpty) {
+      segments.add(script);
+    }
+    final String? country = locale.countryCode;
+    if (country != null && country.isNotEmpty) {
+      segments.add(country.toUpperCase());
+    }
+    return segments.join('-');
   }
 
   String _languageInstruction(Locale locale) {
@@ -89,69 +201,68 @@ class PersonaArticleService {
         if (code.startsWith('ja')) {
           return '''
 構成ガイド：時間軸スタイルで主要な出来事をつなぎ、必要に応じて柔軟に調整してください。
-1. **日常のリズム**：特定の日付や場面を用いて、現在進行形の空気感を描写する。
+1. **日常のリズム**：長期的に繰り返す起点を一文で説明し、「〜の部屋で彼は…」といった場面描写は避ける。
 2. **成長の節目**：動機・行動・結果を時間順にまとめ、必要に応じて使用したツールや作品名を示す。
 3. **振り返りと次の一歩**：これらの行動がユーザーにとって何を意味するのか、今後の方向性とともにまとめる。
-各セクションは2～3段落の散文で記述し、箇条書きは避け、描写と内面の流れを中心に構成してください。''';
+各セクションは2～3段落の散文で記述し、箇条書きは避け、描写と内面の流れを中心に構成してください。記事冒頭で場面描写を行わず、人物と主題を直接提示してください。''';
         }
         if (code.startsWith('ko')) {
           return '''
 작성 가이드: 시간순 로그 스타일로 핵심 사건을 엮되, 필요에 따라 자유롭게 재구성하세요.
-1. **일상의 리듬**: 날짜나 장소 묘사를 사용해 지금 이 순간의 공기를 보여 줍니다.
+1. **일상의 리듬**: 장기적으로 반복되는 시작 지점을 한 문장으로 설명하고 “어느 장소에서 그는…” 같은 장면 묘사는 금지합니다.
 2. **성장의 분기점**: 동기·행동·결과를 시간순으로 정리하고, 사용한 도구나 작품명을 자연스럽게 언급합니다.
 3. **되돌아봄과 다음 단계**: 이러한 경험이 사용자에게 어떤 의미가 있는지, 앞으로의 계획과 함께 정리합니다.
-각 파트는 2~3개의 문단으로 이루어진 산문 형태여야 하며, 나열식 표현을 지양하고 묘사와 내적 흐름에 집중하세요.''';
+각 파트는 2~3개의 문단으로 이루어진 산문 형태여야 하며, 나열식 표현을 지양하고 묘사와 내적 흐름에 집중하세요. 글의 첫 문장은 반드시 주제와 정체성을 직접적으로 밝혀야 합니다.''';
         }
         if (code.startsWith('zh')) {
           return '''
-写作结构：以“时间轴日志”风格串联重要节点，示例结构如下（可根据素材灵活增删）：
-1. **日常仪式感**：用日期或场景感强的句子展开，强调“当下正在发生什么”。
+写作结构：以“时间轴日志”方式串联长期事件，可根据素材灵活增删：
+1. **日常节奏**：用一句话概括他/她固定的起点或节律（如“他总是先整理 GitHub 通知”），禁止使用“在 XXX 里，他……”的场景化句式。
 2. **成长节点**：按时间顺序描述关键事件，突出动机、行为与结果，必要时引用具体工具/作品/地点。
 3. **反思与下一步**：总结这些事件对用户意味着什么，点明下一阶段的关注点或愿望。
-每个部分以 2-3 段文字展开，尽量避免罗列式语言，多用描写与内心独白。''';
+每个部分以 2-3 段文字展开，避免罗列式语言，多用描写与内心独白。全文禁止以场景化开头，直接点出人物与主线。''';
         }
         return '''
 Structure guide: use a "timeline log" tone to connect major moments, adapting as needed.
-1. **Daily cadence** – open with concrete times or scenes that show what is happening right now.
+1. **Daily cadence** – begin with a single sentence that states the recurring starting point (e.g., “He always reviews GitHub notifications first”), never with a cinematic scene such as “In his dorm room…”.
 2. **Growth milestones** – describe motivations, actions, and outcomes in chronological order, mentioning specific tools or works when relevant.
 3. **Reflection and next steps** – explain what these events mean for the user and what they intend to do next.
-Each section should be 2–3 narrative paragraphs; avoid bullet lists and lean on descriptive prose.''';
+Each section should be 2–3 narrative paragraphs; avoid bullet lists and lean on descriptive prose. Never open the article with a scene-setting sentence.''';
       case PersonaArticleStyle.narrative:
-      default:
         if (code.startsWith('ja')) {
           return '''
 構成ガイド：親しい友人にライフストーリーを語るような、温かくも客観的なナラティブでまとめてください。
-1. **情景から入る**：具体的な場所や瞬間を描写し、読者を一気に状況へ引き込みます。
+1. **冒頭は直截に**：ユーザーの核心的な役割・動機を一文で示し、「〜の部屋で彼は…」といった場面描写は禁止。
 2. **役割と課題**：ユーザーの肩書き、目標、直面する葛藤を、日々の習慣や嗜好と絡めて説明します。
 3. **手段とリソース**：どのようなツールやコミュニティを使い、スキルを活かしているかを描写します。
 4. **締めくくり**：内省的な一言、または今後へのメッセージで余韻を残します。
-全体を通して穏やかで観察眼のある語り口を保ち、人と行動の結びつきを際立たせてください。''';
+全体を通して穏やかで観察眼のある語り口を保ち、人と行動の結びつきを際立たせてください。記事冒頭で場面描写を行うことは禁じます。''';
         }
         if (code.startsWith('ko')) {
           return '''
 작성 가이드: 친한 친구에게 삶의 이야기를 들려주듯, 따뜻하지만 객관적인 서술로 정리하세요.
-1. **장면으로 여는 도입부** – 구체적인 시간이나 공간 묘사로 독자를 이야기 속으로 끌어들입니다.
+1. **직접적인 도입** – 첫 문장에서 사용자의 핵심 역할·동기를 명확히 밝히고 “어느 장소에서 그는…” 같은 장면 묘사는 금지합니다.
 2. **역할과 갈등** – 사용자의 정체성, 장기적 목표, 현재의 고민을 일상의 습관이나 취향과 함께 설명합니다.
 3. **방법과 도구** – 어떤 도구·커뮤니티·역량을 활용해 문제를 해결하는지 자연스럽게 드러냅니다.
 4. **여운을 남기는 결말** – 내면의 독백이나 미래에게 보내는 짧은 메시지로 마무리합니다.
-전체적으로 차분하고 관찰력이 느껴지는 어조를 유지하며, 사람과 행동의 연결성을 강조하세요.''';
+전체적으로 차분하고 관찰력이 느껴지는 어조를 유지하며, 사람과 행동의 연결성을 강조하세요. 장면 묘사로 시작하는 문장은 절대로 사용하지 마세요.''';
         }
         if (code.startsWith('zh')) {
           return '''
-写作结构：采用“少数派叙事”风格，像给朋友讲述一段生活史，示例结构如下（可按素材调整）：
-1. **场景化开篇**：用细节把读者带入一个真实的瞬间或地点。
+写作结构：采用“少数派叙事”风格，像给朋友讲述一段生活史，可按素材调整：
+1. **开篇直述**：直接交代该用户的核心身份与主要动机，用事实句开场，禁止出现“在 XXX 里，他……”之类的场景描写。
 2. **角色与矛盾**：介绍用户的身份、长期目标与正在面对的矛盾，穿插典型习惯或喜好。
 3. **方法与工具**：讲述他/她如何配置工具、技能与资源，适当引用产品、社区或作品名。
 4. **尾声/寄语**：以内心独白或给未来自己的话收束全文。
-保持温暖、富有观察力的语气，强调人与事之间的连接感。''';
+保持温暖、富有观察力的语气，强调人与事之间的连接感。全文禁止使用场景化开篇。''';
         }
         return '''
 Structure guide: follow a warm narrative voice, as if telling a trusted friend about the user’s life.
-1. **Scene-setting opening** – drop the reader into a concrete moment or place rich with detail.
+1. **Direct opening** – state who the user is and what drives them in the very first sentence; never begin with “In a dorm room…” or other cinematic scenes.
 2. **Roles and tensions** – explain the user’s identity, long-term goals, and current frictions, weaving in signature habits or tastes.
 3. **Methods and tools** – describe how they deploy tools, communities, or skills to move forward, naming products or platforms when relevant.
 4. **Closing reflection** – end with an intimate observation or a short note to their future self.
-Maintain a calm, observant tone that highlights the relationship between the user and their actions.''';
+Maintain a calm, observant tone that highlights the relationship between the user and their actions, and never use a scene-setting introduction.''';
     }
   }
 
@@ -190,6 +301,7 @@ Maintain a calm, observant tone that highlights the relationship between the use
 6.  **重点突出**: 对人物身份、关键地点、工具名称等重要信息，使用 Markdown 加粗（`**关键词**`）突出。
 7.  **信息完整**: 不要压缩内容，确保每个主题段落都写满 3-4 句，涵盖背景、动机、行为与影响。
 8.  **时间中立**: 所有数据来自长时间累积的画像标签，禁止出现“今天/昨天/本周”之类的即时描述，只能在无法避免时以更抽象的长期表述呈现。
+9.  **禁止场景化开篇**: 第一段必须直接说明用户身份与主线，严禁使用“在……里，他……”等场景描写作为开头。
 
 请确保使用 {{LANG}}。{{STYLE}}
 
@@ -252,6 +364,7 @@ Analyze the [Raw Data] below and, by strictly mimicking the [Example], produce a
 6.  **Emphasize key terms**: Highlight essential identities, locations, tools, or metrics using Markdown bold (`**keyword**`).
 7.  **Rich detail**: Do not keep the article short—each section should include at least 3–4 sentences covering context, motivations, behaviors, and outcomes.
 8.  **Time-neutral narration**: The inputs are aggregated persona tags collected across many days. Avoid phrases like “today” or “yesterday”; only describe enduring traits or routines.
+9.  **No scene-setting openings**: The first paragraph must immediately state who the user is and what drives them; do not begin with sentences like “In his dorm room, he…”.
 
 Make sure the entire article is written in {{LANG}}. {{STYLE}}
 
@@ -314,6 +427,7 @@ Follow every instruction above and generate the report now.
 6.  **強調表示**: ユーザーの肩書きや重要な場所・ツール名などは Markdown の太字（`**キーワード**`）で強調する。
 7.  **十分な分量**: 各セクションは最低 3～4 文で構成し、背景・動機・行動・影響を丁寧に描写する。
 8.  **時間表現の抑制**: ここで扱うデータは複数日にわたり蓄積された画像タグなので、「今日〜した」「昨日〜」のような表現は避け、継続的・長期的な特徴として記述する。
+9.  **場面描写禁止の冒頭**: 最初の段落ではユーザーの正体と主題を即座に述べ、映画的な情景描写（例：「寮の部屋で彼は…」）で始めないこと。
 
 全体を {{LANG}} で記述し、{{STYLE}}
 
@@ -376,6 +490,7 @@ Follow every instruction above and generate the report now.
 6.  **강조 표현**: 직함, 핵심 장소, 도구명 등 중요한 요소는 Markdown 굵게(`**키워드**`) 표기해 강조하세요.
 7.  **충분한 분량**: 각 섹션은 최소 3~4문장으로 구성해 배경·동기·행동·결과를 꼼꼼히 설명하세요.
 8.  **시간 중립적 서술**: 이 데이터는 여러 날 동안 축적된 사용자 태그이므로 “오늘 했다”, “어제 했다”와 같은 표현을 피하고, 장기적 패턴이나 반복 습관 중심으로 설명하세요.
+9.  **장면 묘사 금지**: 첫 문단은 반드시 사용자 정체와 주제를 직접 언급해야 하며 “어느 장소에서 그는…”과 같은 장면 묘사로 시작하면 안 됩니다.
 
 모든 문장은 {{LANG}} 로 작성하고, {{STYLE}}
 
