@@ -27,6 +27,13 @@ Future<void> main() async {
   await FlutterLogger.info('app start');
   StartupProfiler.mark('main.ensureInitialized.done');
 
+  // 提前计算首屏需要用到的首启/引导信息
+  final permissionService = PermissionService.instance;
+  final bool onboardingCompleted =
+      await permissionService.isOnboardingCompleted();
+  final bool isFirstLaunch = await permissionService.isFirstLaunch();
+  final bool showOnboarding = !onboardingCompleted && isFirstLaunch;
+
   // 统一使用 Zone 拦截所有 print，并通过 FlutterLogger 输出
   runZonedGuarded(
     () {
@@ -53,7 +60,10 @@ Future<void> main() async {
       ScreenshotService.instance;
 
       StartupProfiler.begin('runApp');
-      runApp(const ScreenMemoApp());
+      runApp(ScreenMemoApp(
+        initialShowOnboarding: showOnboarding,
+        isFirstLaunch: isFirstLaunch,
+      ));
       StartupProfiler.end('runApp');
     },
     (e, s) {
@@ -72,7 +82,14 @@ Future<void> main() async {
 }
 
 class ScreenMemoApp extends StatefulWidget {
-  const ScreenMemoApp({super.key});
+  const ScreenMemoApp({
+    super.key,
+    required this.initialShowOnboarding,
+    required this.isFirstLaunch,
+  });
+
+  final bool initialShowOnboarding;
+  final bool isFirstLaunch;
 
   @override
   State<ScreenMemoApp> createState() => _ScreenMemoAppState();
@@ -146,7 +163,11 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       locale: _localeService.locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: AppInitializer(themeService: _themeService),
+      home: AppInitializer(
+        themeService: _themeService,
+        initialShowOnboarding: widget.initialShowOnboarding,
+        isFirstLaunch: widget.isFirstLaunch,
+      ),
       debugShowCheckedModeBanner: false,
       navigatorKey: NavigationService.instance.navigatorKey,
       routes: {
@@ -163,84 +184,37 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
 /// 应用初始化器，决定显示引导页面还是主页面
 class AppInitializer extends StatefulWidget {
   final ThemeService themeService;
+  final bool initialShowOnboarding;
+  final bool isFirstLaunch;
 
-  const AppInitializer({super.key, required this.themeService});
+  const AppInitializer({
+    super.key,
+    required this.themeService,
+    required this.initialShowOnboarding,
+    required this.isFirstLaunch,
+  });
 
   @override
   State<AppInitializer> createState() => _AppInitializerState();
 }
 
 class _AppInitializerState extends State<AppInitializer> {
-  bool _isLoading = true;
-  bool _showOnboarding = true;
+  late bool _showOnboarding;
 
   @override
   void initState() {
     super.initState();
-    StartupProfiler.begin('AppInitializer.initState');
-    _checkFirstLaunch();
-    // 首帧回调
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      StartupProfiler.mark('firstFrame.displayed');
-    });
-    StartupProfiler.end('AppInitializer.initState');
-  }
-
-  Future<void> _checkFirstLaunch() async {
-    StartupProfiler.begin('AppInitializer._checkFirstLaunch');
-    try {
-      final permissionService = PermissionService.instance;
-      StartupProfiler.mark('AppInitializer.permissionService.ready');
-
-      // 初始化ScreenshotService以确保Method Channel Handler被设置
-      StartupProfiler.begin('AppInitializer.init.ScreenshotService');
-      ScreenshotService.instance;
-      await ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded();
-      StartupProfiler.end('AppInitializer.init.ScreenshotService');
-
-      // 首先检查引导是否已完成
-      StartupProfiler.begin('AppInitializer.check.onboardingCompleted');
-      final onboardingCompleted = await permissionService
-          .isOnboardingCompleted();
-      StartupProfiler.end('AppInitializer.check.onboardingCompleted');
-
-      if (onboardingCompleted) {
-        // 如果引导已完成，直接进入主页，不再检查权限
-        setState(() {
-          _showOnboarding = false;
-          _isLoading = false;
-        });
-        StartupProfiler.end('AppInitializer._checkFirstLaunch');
-        return;
-      }
-
-      // 如果引导未完成，检查是否首次启动
-      StartupProfiler.begin('AppInitializer.check.isFirstLaunch');
-      final isFirstLaunch = await permissionService.isFirstLaunch();
-      StartupProfiler.end('AppInitializer.check.isFirstLaunch');
-
-      setState(() {
-        _showOnboarding = isFirstLaunch;
-        _isLoading = false;
-      });
-    } catch (e) {
-      print('初始化失败: $e');
-      setState(() {
-        _isLoading = false;
-        _showOnboarding = true;
-      });
+    _showOnboarding = widget.initialShowOnboarding;
+    // 非首次启动时，在后台异步清理一次过期截图（不阻塞首屏）
+    if (!widget.isFirstLaunch) {
+      unawaited(
+        ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(),
+      );
     }
-    StartupProfiler.end('AppInitializer._checkFirstLaunch');
   }
 
   @override
   Widget build(BuildContext context) {
-    StartupProfiler.mark('AppInitializer.build');
-    // 冷启动阶段直接进入主页面（原生冷启动已展示品牌页）
-    if (_isLoading) {
-      return MainNavigationPage(themeService: widget.themeService);
-    }
-
     return _showOnboarding
         ? OnboardingPage(themeService: widget.themeService)
         : MainNavigationPage(themeService: widget.themeService);
