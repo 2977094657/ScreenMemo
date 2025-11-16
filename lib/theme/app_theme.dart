@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// 应用主题配置，参考shadcn/ui设计风格
 class AppTheme {
   // 颜色配置
-  static const Color primary = Color(0xFF09090B);
+  static const Color primary = Color(0xFF3B82F6);
   static const Color primaryForeground = Color(0xFFFAFAFA);
   static const Color secondary = Color(0xFFF4F4F5);
   static const Color secondaryForeground = Color(0xFF09090B);
@@ -15,7 +15,7 @@ class AppTheme {
   static const Color destructiveForeground = Color(0xFFFAFAFA);
   static const Color border = Color(0xFFE4E4E7);
   static const Color input = Color(0xFFE4E4E7);
-  static const Color ring = Color(0xFF09090B);
+  static const Color ring = Color(0xFF3B82F6);
   static const Color background = Color(0xFFFFFFFF);
   static const Color foreground = Color(0xFF09090B);
   static const Color card = Color(0xFFFFFFFF);
@@ -515,7 +515,7 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) return cs.onPrimary;
-          return cs.onSurface; // 关闭态使用深色拇指，提升对比度
+          return cs.surfaceVariant; // 关闭态使用浅灰拇指，避免出现黑色视觉
         }),
         trackColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);
@@ -719,7 +719,7 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) return cs.onPrimary;
-          return cs.onSurface; // 深色模式下关闭态也使用更暗拇指
+          return cs.onSurfaceVariant; // 深色模式下关闭态保持与界面一致的中性颜色
         }),
         trackColor: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);

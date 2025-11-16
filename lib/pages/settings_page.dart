@@ -1066,7 +1066,7 @@ class _SettingsPageState extends State<SettingsPage>
 
   void _showThemeColorSheet() {
     final presets = <Color>[
-      const Color(0xFF3B82F6), // Blue 500
+      const Color(0xFF09090B), // Graphite (legacy default)
       const Color(0xFF22C55E), // Green 500
       const Color(0xFFF59E0B), // Amber 500
       const Color(0xFFEF4444), // Red 500

@@ -7,7 +7,7 @@ class ThemeService extends ChangeNotifier {
   static const String _seedKey = 'theme_seed_color';
   
   ThemeMode _themeMode = ThemeMode.system;
-  Color _seedColor = const Color(0xFF09090B); // 与 AppTheme.primary 保持一致的默认值
+  Color _seedColor = const Color(0xFF3B82F6); // 与 AppTheme.primary 保持一致的默认值
   
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => _seedColor;
@@ -74,7 +74,7 @@ class ThemeService extends ChangeNotifier {
 
   /// 重置主题主色为默认（与设计基色一致）
   Future<void> resetSeedColor() async {
-    _seedColor = const Color(0xFF09090B);
+    _seedColor = const Color(0xFF3B82F6);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_seedKey, _seedColor.value);
     notifyListeners();
