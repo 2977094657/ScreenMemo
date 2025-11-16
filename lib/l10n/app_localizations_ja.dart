@@ -2235,6 +2235,53 @@ class AppLocalizationsJa extends AppLocalizations {
   String get themeModeDark => 'ダーク';
 
   @override
+  String get appStatsSectionTitle => 'スクリーンショット統計';
+
+  @override
+  String appStatsCountLabel(Object count) {
+    return 'スクリーンショット数：$count';
+  }
+
+  @override
+  String appStatsSizeLabel(String size) {
+    return '合計サイズ：$size';
+  }
+
+  @override
+  String get appStatsLastCaptureUnknown => '最新キャプチャ：不明';
+
+  @override
+  String appStatsLastCaptureLabel(Object time) {
+    return '最新キャプチャ：$time';
+  }
+
+  @override
+  String get recomputeAppStatsAction => '統計を再計算';
+
+  @override
+  String get recomputeAppStatsDescription =>
+      'インポート後に枚数やサイズが正しくない場合は、統計を手動で更新できます。';
+
+  @override
+  String get recomputeAppStatsSuccess => '統計を更新しました';
+
+  @override
+  String get recomputeAppStatsConfirmTitle => '統計を再計算';
+
+  @override
+  String get recomputeAppStatsConfirmMessage =>
+      'このアプリのスクリーンショット統計を再計算しますか？データ量によっては時間がかかる場合があります。';
+
+  @override
+  String get appStatsCountTitle => '枚数';
+
+  @override
+  String get appStatsSizeTitle => '合計サイズ';
+
+  @override
+  String get appStatsLastCaptureTitle => '最新キャプチャ';
+
+  @override
   String get aiEmptySelfTitle => 'パーソナルアシスタントの準備完了';
 
   @override

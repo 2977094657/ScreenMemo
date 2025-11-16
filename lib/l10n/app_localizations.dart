@@ -4042,6 +4042,84 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get themeModeDark;
 
+  /// No description provided for @appStatsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot statistics'**
+  String get appStatsSectionTitle;
+
+  /// No description provided for @appStatsCountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshots: {count}'**
+  String appStatsCountLabel(Object count);
+
+  /// No description provided for @appStatsSizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Total size: {size}'**
+  String appStatsSizeLabel(String size);
+
+  /// No description provided for @appStatsLastCaptureUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Last captured: Unknown'**
+  String get appStatsLastCaptureUnknown;
+
+  /// No description provided for @appStatsLastCaptureLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Last captured: {time}'**
+  String appStatsLastCaptureLabel(Object time);
+
+  /// No description provided for @recomputeAppStatsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Recompute statistics'**
+  String get recomputeAppStatsAction;
+
+  /// No description provided for @recomputeAppStatsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Fix screenshot count and size mismatch caused by imports.'**
+  String get recomputeAppStatsDescription;
+
+  /// No description provided for @recomputeAppStatsSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics refreshed'**
+  String get recomputeAppStatsSuccess;
+
+  /// No description provided for @recomputeAppStatsConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recompute statistics'**
+  String get recomputeAppStatsConfirmTitle;
+
+  /// No description provided for @recomputeAppStatsConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Recompute the screenshot statistics for this app? This may take a while for large libraries.'**
+  String get recomputeAppStatsConfirmMessage;
+
+  /// No description provided for @appStatsCountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshots'**
+  String get appStatsCountTitle;
+
+  /// No description provided for @appStatsSizeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Total size'**
+  String get appStatsSizeTitle;
+
+  /// No description provided for @appStatsLastCaptureTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Last captured'**
+  String get appStatsLastCaptureTitle;
+
   /// No description provided for @aiEmptySelfTitle.
   ///
   /// In en, this message translates to:

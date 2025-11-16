@@ -2282,6 +2282,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeModeDark => 'Dark';
 
   @override
+  String get appStatsSectionTitle => 'Screenshot statistics';
+
+  @override
+  String appStatsCountLabel(Object count) {
+    return 'Screenshots: $count';
+  }
+
+  @override
+  String appStatsSizeLabel(String size) {
+    return 'Total size: $size';
+  }
+
+  @override
+  String get appStatsLastCaptureUnknown => 'Last captured: Unknown';
+
+  @override
+  String appStatsLastCaptureLabel(Object time) {
+    return 'Last captured: $time';
+  }
+
+  @override
+  String get recomputeAppStatsAction => 'Recompute statistics';
+
+  @override
+  String get recomputeAppStatsDescription =>
+      'Fix screenshot count and size mismatch caused by imports.';
+
+  @override
+  String get recomputeAppStatsSuccess => 'Statistics refreshed';
+
+  @override
+  String get recomputeAppStatsConfirmTitle => 'Recompute statistics';
+
+  @override
+  String get recomputeAppStatsConfirmMessage =>
+      'Recompute the screenshot statistics for this app? This may take a while for large libraries.';
+
+  @override
+  String get appStatsCountTitle => 'Screenshots';
+
+  @override
+  String get appStatsSizeTitle => 'Total size';
+
+  @override
+  String get appStatsLastCaptureTitle => 'Last captured';
+
+  @override
   String get aiEmptySelfTitle => 'Personal assistant ready';
 
   @override

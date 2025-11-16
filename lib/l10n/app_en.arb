@@ -1043,8 +1043,37 @@
   "loggingScreenshotDesc": "Record screenshot capture and cleanup logs",
   "themeModeAuto": "Auto",
   "themeModeLight": "Light",
-  "themeModeDark": "Dark"
-  ,
+  "themeModeDark": "Dark",
+  "appStatsSectionTitle": "Screenshot statistics",
+  "appStatsCountLabel": "Screenshots: {count}",
+  "@appStatsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "appStatsSizeLabel": "Total size: {size}",
+  "@appStatsSizeLabel": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appStatsLastCaptureUnknown": "Last captured: Unknown",
+  "appStatsLastCaptureLabel": "Last captured: {time}",
+  "@appStatsLastCaptureLabel": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "recomputeAppStatsAction": "Recompute statistics",
+  "recomputeAppStatsDescription": "Fix screenshot count and size mismatch caused by imports.",
+  "recomputeAppStatsSuccess": "Statistics refreshed",
+  "recomputeAppStatsConfirmTitle": "Recompute statistics",
+  "recomputeAppStatsConfirmMessage": "Recompute the screenshot statistics for this app? This may take a while for large libraries.",
+  "appStatsCountTitle": "Screenshots",
+  "appStatsSizeTitle": "Total size",
+  "appStatsLastCaptureTitle": "Last captured",
   "aiEmptySelfTitle": "Personal assistant ready",
   "aiEmptySelfSubtitle": "Ask anything. I will use your data as context."
 }

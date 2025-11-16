@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -922,6 +923,11 @@ class ScreenshotDatabase {
     } catch (e) {
       print('重新计算应用统计失败: $e');
     }
+  }
+
+  Future<void> recomputeAppStatsForPackage(String package) async {
+    final db = await database;
+    await _recomputeAppStatForPackage(db, package);
   }
 
   // ======= 分表架构相关方法 =======

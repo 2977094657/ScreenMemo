@@ -502,6 +502,12 @@ class ScreenshotService {
     return await _database.getTotals();
   }
 
+  /// 重新计算指定应用的统计信息，并刷新缓存
+  Future<void> recomputeAppStats(String packageName) async {
+    await _database.recomputeAppStatsForPackage(packageName);
+    await _refreshStatsCache(force: true);
+  }
+
   /// 重新计算汇总统计（用于数据迁移或修复）
   Future<void> recalculateTotals() async {
     await _database.recalculateTotals();

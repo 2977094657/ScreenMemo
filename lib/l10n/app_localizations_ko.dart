@@ -2233,6 +2233,53 @@ class AppLocalizationsKo extends AppLocalizations {
   String get themeModeDark => '다크';
 
   @override
+  String get appStatsSectionTitle => '스크린샷 통계';
+
+  @override
+  String appStatsCountLabel(Object count) {
+    return '스크린샷 수: $count';
+  }
+
+  @override
+  String appStatsSizeLabel(String size) {
+    return '총 용량: $size';
+  }
+
+  @override
+  String get appStatsLastCaptureUnknown => '마지막 캡처: 알 수 없음';
+
+  @override
+  String appStatsLastCaptureLabel(Object time) {
+    return '마지막 캡처: $time';
+  }
+
+  @override
+  String get recomputeAppStatsAction => '통계 재계산';
+
+  @override
+  String get recomputeAppStatsDescription =>
+      '가져오기 후 수량이나 용량이 맞지 않을 때 수동으로 새로 고칠 수 있습니다.';
+
+  @override
+  String get recomputeAppStatsSuccess => '통계를 새로 고쳤습니다';
+
+  @override
+  String get recomputeAppStatsConfirmTitle => '통계 재계산';
+
+  @override
+  String get recomputeAppStatsConfirmMessage =>
+      '이 앱의 스크린샷 통계를 다시 계산할까요? 데이터가 많으면 시간이 걸릴 수 있습니다.';
+
+  @override
+  String get appStatsCountTitle => '스크린샷';
+
+  @override
+  String get appStatsSizeTitle => '총 용량';
+
+  @override
+  String get appStatsLastCaptureTitle => '마지막 캡처';
+
+  @override
   String get aiEmptySelfTitle => '개인 비서 준비 완료';
 
   @override

@@ -1222,6 +1222,36 @@
   "themeModeAuto": "自動",
   "themeModeLight": "ライト",
   "themeModeDark": "ダーク",
+  "appStatsSectionTitle": "スクリーンショット統計",
+  "appStatsCountLabel": "スクリーンショット数：{count}",
+  "@appStatsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "appStatsSizeLabel": "合計サイズ：{size}",
+  "@appStatsSizeLabel": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appStatsLastCaptureUnknown": "最新キャプチャ：不明",
+  "appStatsLastCaptureLabel": "最新キャプチャ：{time}",
+  "@appStatsLastCaptureLabel": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "recomputeAppStatsAction": "統計を再計算",
+  "recomputeAppStatsDescription": "インポート後に枚数やサイズが正しくない場合は、統計を手動で更新できます。",
+  "recomputeAppStatsSuccess": "統計を更新しました",
+  "recomputeAppStatsConfirmTitle": "統計を再計算",
+  "recomputeAppStatsConfirmMessage": "このアプリのスクリーンショット統計を再計算しますか？データ量によっては時間がかかる場合があります。",
+  "appStatsCountTitle": "枚数",
+  "appStatsSizeTitle": "合計サイズ",
+  "appStatsLastCaptureTitle": "最新キャプチャ",
   "aiEmptySelfTitle": "パーソナルアシスタントの準備完了",
   "aiEmptySelfSubtitle": "何でも質問してください。あなたのデータコンテキストを利用します。",
   "languageJapanese": "日本語",

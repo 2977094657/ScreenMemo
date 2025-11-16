@@ -2216,6 +2216,52 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeModeDark => '深色';
 
   @override
+  String get appStatsSectionTitle => '截图统计';
+
+  @override
+  String appStatsCountLabel(Object count) {
+    return '截图数量：$count';
+  }
+
+  @override
+  String appStatsSizeLabel(String size) {
+    return '总大小：$size';
+  }
+
+  @override
+  String get appStatsLastCaptureUnknown => '最近截取：未知';
+
+  @override
+  String appStatsLastCaptureLabel(Object time) {
+    return '最近截取：$time';
+  }
+
+  @override
+  String get recomputeAppStatsAction => '重新统计';
+
+  @override
+  String get recomputeAppStatsDescription => '导入后统计异常时，可手动刷新截图数量和大小。';
+
+  @override
+  String get recomputeAppStatsSuccess => '统计已刷新';
+
+  @override
+  String get recomputeAppStatsConfirmTitle => '重新统计';
+
+  @override
+  String get recomputeAppStatsConfirmMessage =>
+      '确定要为该应用重新统计截图数据吗？数据量较大时需要一些时间。';
+
+  @override
+  String get appStatsCountTitle => '截图数量';
+
+  @override
+  String get appStatsSizeTitle => '总大小';
+
+  @override
+  String get appStatsLastCaptureTitle => '最近截取';
+
+  @override
   String get aiEmptySelfTitle => '个人助手已就绪';
 
   @override

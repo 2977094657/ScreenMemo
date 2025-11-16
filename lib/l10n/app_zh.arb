@@ -1147,8 +1147,37 @@
   "loggingScreenshotDesc": "记录截图采集与清理过程日志",
   "themeModeAuto": "自动",
   "themeModeLight": "浅色",
-  "themeModeDark": "深色"
-  ,
+  "themeModeDark": "深色",
+  "appStatsSectionTitle": "截图统计",
+  "appStatsCountLabel": "截图数量：{count}",
+  "@appStatsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "appStatsSizeLabel": "总大小：{size}",
+  "@appStatsSizeLabel": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appStatsLastCaptureUnknown": "最近截取：未知",
+  "appStatsLastCaptureLabel": "最近截取：{time}",
+  "@appStatsLastCaptureLabel": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "recomputeAppStatsAction": "重新统计",
+  "recomputeAppStatsDescription": "导入后统计异常时，可手动刷新截图数量和大小。",
+  "recomputeAppStatsSuccess": "统计已刷新",
+  "recomputeAppStatsConfirmTitle": "重新统计",
+  "recomputeAppStatsConfirmMessage": "确定要为该应用重新统计截图数据吗？数据量较大时需要一些时间。",
+  "appStatsCountTitle": "截图数量",
+  "appStatsSizeTitle": "总大小",
+  "appStatsLastCaptureTitle": "最近截取",
   "aiEmptySelfTitle": "个人助手已就绪",
   "aiEmptySelfSubtitle": "直接提问，我会结合您的数据上下文来回答。"
 }

@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/per_app_screenshot_settings_service.dart';
+import '../services/screenshot_service.dart';
 
 /// 应用内独立的“截图设置”页面：严格复用全局设置的视觉与交互
 class AppScreenshotSettingsPage extends StatefulWidget {
@@ -22,6 +23,12 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
 
   bool _initialized = false;
   bool _useCustom = false;
+
+  bool _statsLoading = true;
+  int? _statCount;
+  int? _statSize;
+  DateTime? _statLastCapture;
+  bool _recomputingStats = false;
 
   // 质量设置
   String _imageFormat = 'webp_lossless';
@@ -68,6 +75,136 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
         _intervalSec = (iv ?? _intervalSec).clamp(5, 60);
       });
     } catch (_) {}
+    await _loadStats();
+  }
+
+  Future<void> _loadStats({bool showSpinner = true}) async {
+    if (!mounted) return;
+    if (showSpinner) {
+      setState(() {
+        _statsLoading = true;
+      });
+    }
+    int? count;
+    int? size;
+    DateTime? last;
+    try {
+      final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
+      final appStats = stats['appStatistics'];
+      if (appStats is Map) {
+        final dynamic raw = appStats[_packageName];
+        if (raw is Map) {
+          final c = raw['totalCount'];
+          final s = raw['totalSize'];
+          final lc = raw['lastCaptureTime'];
+          if (c is int) count = c;
+          if (s is int) size = s;
+          if (lc is DateTime) last = lc;
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _statCount = count;
+      _statSize = size;
+      _statLastCapture = last;
+      _statsLoading = false;
+    });
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    double value = bytes.toDouble();
+    int index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index++;
+    }
+    String formatted;
+    if (value >= 100) {
+      formatted = value.toStringAsFixed(0);
+    } else if (value >= 10) {
+      formatted = value.toStringAsFixed(1);
+    } else {
+      formatted = value.toStringAsFixed(2);
+    }
+    return '$formatted ${units[index]}';
+  }
+
+  String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
+  String _formatLastCaptureValue(AppLocalizations l10n) {
+    final dt = _statLastCapture;
+    if (dt == null) {
+      return '--';
+    }
+    final now = DateTime.now();
+    if (dt.year == now.year) {
+      return l10n.monthDayTime(
+        _twoDigits(dt.month),
+        _twoDigits(dt.day),
+        _twoDigits(dt.hour),
+        _twoDigits(dt.minute),
+      );
+    }
+    return l10n.yearMonthDayTime(
+      dt.year,
+      _twoDigits(dt.month),
+      _twoDigits(dt.day),
+      _twoDigits(dt.hour),
+      _twoDigits(dt.minute),
+    );
+  }
+
+  Future<void> _showRecomputeConfirm() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    await showUIDialog<void>(
+      context: context,
+      title: l10n.recomputeAppStatsConfirmTitle,
+      message: l10n.recomputeAppStatsConfirmMessage,
+      actions: [
+        UIDialogAction(text: l10n.dialogCancel),
+        UIDialogAction(
+          text: l10n.dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (dialogCtx) async {
+            await _performRecompute(dialogCtx);
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _performRecompute(BuildContext dialogContext) async {
+    if (_recomputingStats) return;
+    if (mounted) {
+      setState(() {
+        _recomputingStats = true;
+      });
+    }
+    try {
+      await ScreenshotService.instance.recomputeAppStats(_packageName);
+      await _loadStats();
+      if (mounted) {
+        UINotifier.success(context, AppLocalizations.of(context).recomputeAppStatsSuccess);
+      }
+    } catch (_) {
+      if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).operationFailed);
+      }
+    } finally {
+      if (dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+      if (mounted) {
+        setState(() {
+          _recomputingStats = false;
+        });
+      }
+    }
   }
 
   Future<void> _saveUseCustom(bool v) async {
@@ -163,6 +300,168 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     );
   }
 
+  Widget _buildStatsCard(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color cardColor = theme.colorScheme.surfaceVariant.withOpacity(isDark ? 0.28 : 0.6);
+    final Color borderColor = theme.colorScheme.outline.withOpacity(isDark ? 0.2 : 0.35);
+
+    Widget buildStatItem(String label, String value) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Text(
+            value,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final Widget statsContent;
+    if (_statsLoading) {
+      statsContent = SizedBox(
+        height: 48,
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+            ),
+          ),
+        ),
+      );
+    } else {
+      final countValue = (_statCount ?? 0).toString();
+      final sizeValue = _statSize != null ? _formatBytes(_statSize!) : '--';
+      final lastValue = _formatLastCaptureValue(l10n);
+
+      statsContent = Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing3,
+          vertical: AppTheme.spacing2,
+        ),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(isDark ? 0.25 : 0.9),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: buildStatItem(l10n.appStatsCountTitle, countValue),
+            ),
+            const SizedBox(width: AppTheme.spacing4),
+            Expanded(
+              child: buildStatItem(l10n.appStatsSizeTitle, sizeValue),
+            ),
+            const SizedBox(width: AppTheme.spacing4),
+            Expanded(
+              child: buildStatItem(l10n.appStatsLastCaptureTitle, lastValue),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  Icons.insights_outlined,
+                  color: theme.colorScheme.onSecondaryContainer,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.appStatsSectionTitle,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.spacing1),
+                    Text(
+                      l10n.recomputeAppStatsDescription,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              SizedBox(
+                height: 34,
+                child: FilledButton(
+                  onPressed: _recomputingStats ? null : _showRecomputeConfirm,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing3,
+                      vertical: AppTheme.spacing1,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
+                  ),
+                  child: _recomputingStats
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              theme.colorScheme.onPrimary,
+                            ),
+                          ),
+                        )
+                      : Text(l10n.recomputeAppStatsAction),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          statsContent,
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -176,6 +475,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(AppTheme.spacing4),
         children: [
+          _buildStatsCard(l10n),
+          const SizedBox(height: AppTheme.spacing4),
           // 自定义开关（置顶）
           Container(
             padding: const EdgeInsets.all(AppTheme.spacing3),
