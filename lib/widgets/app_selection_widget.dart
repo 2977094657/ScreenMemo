@@ -144,23 +144,26 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
   }
 
   Future<void> _selectAll() async {
-    AppInfo? needConfirm;
+    // 先检查当前筛选列表中是否包含未选中的拼多多应用
+    bool skipPinduoduo = false;
     for (final app in _filteredApps) {
       if (!app.isSelected && _isPinduoduoApp(app)) {
-        needConfirm = app;
+        final allowPinduoduo = await _confirmPinduoduoSelection(app);
+        // 用户点击“取消选择”时，只跳过拼多多的选择，仍然对其他应用执行全选
+        if (!allowPinduoduo) {
+          skipPinduoduo = true;
+        }
         break;
       }
-    }
-
-    if (needConfirm != null && !await _confirmPinduoduoSelection(needConfirm)) {
-      return;
     }
 
     if (!mounted) return;
 
     setState(() {
       for (final app in _filteredApps) {
-        if (!app.isSelected) {
+        // 如果需要跳过拼多多，则仅对非拼多多应用执行全选
+        if (!app.isSelected &&
+            !(skipPinduoduo && _isPinduoduoApp(app))) {
           app.isSelected = true;
           if (!_selectedApps.contains(app)) {
             _selectedApps.add(app);
