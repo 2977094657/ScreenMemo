@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,6 +59,9 @@ class _SettingsPageState extends State<SettingsPage>
   int _batteryCheckCount = 0;
   bool _exportingDb = false;
   bool _importingData = false;
+  // 导入/导出全屏进度状态
+  bool _importExportIsExport = false;
+  String? _importExportStage;
   // 截图过期清理设置
   bool _expireEnabled = false; // 是否启用过期自动删除
   int _expireDays = 30; // 过期天数，下限 1
@@ -310,18 +314,262 @@ class _SettingsPageState extends State<SettingsPage>
     } catch (_) {}
   }
 
+  String _formatImportExportStageLabel(
+    AppLocalizations t,
+    String? stage,
+    bool isExport,
+  ) {
+    final String code = t.localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+
+    if (stage == 'scanning') {
+      if (isZh) {
+        return isExport ? '正在扫描文件…' : '正在扫描压缩包…';
+      }
+      return isExport ? 'Scanning files...' : 'Scanning archive...';
+    }
+    if (stage == 'packing') {
+      if (isZh) {
+        return '正在打包数据…';
+      }
+      return 'Packing data...';
+    }
+    if (stage == 'extracting') {
+      if (isZh) {
+        return '正在解压数据…';
+      }
+      return 'Extracting data...';
+    }
+
+    if (isZh) {
+      return isExport ? '导出数据进行中…' : '导入数据进行中…';
+    }
+    return isExport ? 'Exporting data...' : 'Importing data...';
+  }
+
+  String _importExportDialogTitle(AppLocalizations t, bool isExport) {
+    final String code = t.localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    if (isZh) {
+      return isExport ? '正在导出数据' : '正在导入数据';
+    }
+    return isExport ? 'Exporting data' : 'Importing data';
+  }
+
+  String _importExportDoNotCloseHint(AppLocalizations t) {
+    final String code = t.localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    if (isZh) {
+      return '请保持应用打开，不要离开此页面。';
+    }
+    return 'Please keep the app open and do not leave this page.';
+  }
+
+  Future<void> _showImportExportOverlayDialog({
+    required bool isExport,
+    required ValueListenable<double> progressNotifier,
+    required ValueListenable<String?> stageNotifier,
+    required ValueListenable<String?> entryNotifier,
+  }) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'import_export_progress',
+      barrierColor: Colors.black54,
+      pageBuilder: (BuildContext dialogContext, _, __) {
+        final ThemeData theme = Theme.of(dialogContext);
+        final AppLocalizations t = AppLocalizations.of(dialogContext);
+        final String title = _importExportDialogTitle(t, isExport);
+
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Material(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                elevation: 8,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing4),
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: progressNotifier,
+                    builder: (_, double value, __) {
+                      final String percentText =
+                          (value * 100).clamp(0, 100).toStringAsFixed(0) + '%';
+                      return ValueListenableBuilder<String?>(
+                        valueListenable: stageNotifier,
+                        builder: (_, String? stage, ___) {
+                          final String stageLabel =
+                              _formatImportExportStageLabel(
+                            t,
+                            stage,
+                            isExport,
+                          );
+                          return ValueListenableBuilder<String?>(
+                            valueListenable: entryNotifier,
+                            builder: (_, String? entry, ____) {
+                              final String? entryLabel =
+                                  _shortenImportExportEntry(entry);
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style:
+                                        theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppTheme.spacing3),
+                                  LinearProgressIndicator(
+                                    value: value > 0 ? value : null,
+                                    minHeight: 4,
+                                  ),
+                                  const SizedBox(height: AppTheme.spacing2),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          stageLabel,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        width: AppTheme.spacing2,
+                                      ),
+                                      Text(
+                                        percentText,
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                  if (entryLabel != null) ...[
+                                    const SizedBox(
+                                      height: AppTheme.spacing1,
+                                    ),
+                                    Text(
+                                      entryLabel,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        fontFamily: 'monospace',
+                                        color: theme
+                                            .colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: AppTheme.spacing2),
+                                  Text(
+                                    _importExportDoNotCloseHint(t),
+                                    style:
+                                        theme.textTheme.bodySmall?.copyWith(
+                                      color: theme
+                                          .colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String? _shortenImportExportEntry(String? entry) {
+    if (entry == null || entry.isEmpty) return null;
+    const int maxLen = 48;
+    if (entry.length <= maxLen) return entry;
+    return '...' + entry.substring(entry.length - maxLen);
+  }
+
+  Future<void> _showNativeExportDialog() async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'native_export_progress',
+      barrierColor: Colors.black54,
+      pageBuilder: (BuildContext dialogContext, _, __) {
+        final ThemeData theme = Theme.of(dialogContext);
+        final AppLocalizations t = AppLocalizations.of(dialogContext);
+        final String title = _importExportDialogTitle(t, true);
+        final String hint = _importExportDoNotCloseHint(t);
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Material(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                elevation: 8,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      const LinearProgressIndicator(
+                        value: null,
+                        minHeight: 4,
+                      ),
+                      const SizedBox(height: AppTheme.spacing2),
+                      Text(
+                        hint,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// 导出数据到下载目录
   Future<void> _exportDatabase() async {
     if (_exportingDb) return;
     setState(() {
       _exportingDb = true;
     });
+    // 原生极速导出：不传 onProgress，让底层走 exportOutputToDownloadsNative
+    unawaited(_showNativeExportDialog());
     try {
       await FlutterLogger.nativeInfo('UI_EXPORT', 'begin export');
       final result = await _screenshotDatabase.exportDatabaseToDownloads();
       if (!mounted) return;
       if (result != null) {
-        await FlutterLogger.nativeInfo('UI_EXPORT', 'success -> ' + ((result['humanPath'] as String?) ?? ''));
+        await FlutterLogger.nativeInfo(
+          'UI_EXPORT',
+          'success -> ' + ((result['humanPath'] as String?) ?? ''),
+        );
         final displayPath =
             (result['humanPath'] as String?) ??
             (result['absolutePath'] as String?) ??
@@ -361,7 +609,10 @@ class _SettingsPageState extends State<SettingsPage>
                 await Clipboard.setData(ClipboardData(text: displayPath));
                 if (ctx.mounted) {
                   Navigator.of(ctx).pop();
-                  UINotifier.success(ctx, AppLocalizations.of(ctx).pathCopiedToast);
+                  UINotifier.success(
+                    ctx,
+                    AppLocalizations.of(ctx).pathCopiedToast,
+                  );
                 }
               },
             ),
@@ -379,7 +630,10 @@ class _SettingsPageState extends State<SettingsPage>
           title: AppLocalizations.of(context).exportFailedTitle,
           message: AppLocalizations.of(context).pleaseTryAgain,
           actions: [
-            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
+            UIDialogAction(
+              text: AppLocalizations.of(context).dialogOk,
+              style: UIDialogActionStyle.primary,
+            ),
           ],
         );
       }
@@ -391,7 +645,10 @@ class _SettingsPageState extends State<SettingsPage>
         title: '导出失败',
         content: Text('$e'),
         actions: const [
-          UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
+          UIDialogAction(
+            text: '确定',
+            style: UIDialogActionStyle.primary,
+          ),
         ],
       );
     } finally {
@@ -400,13 +657,37 @@ class _SettingsPageState extends State<SettingsPage>
           _exportingDb = false;
         });
       }
+      try {
+        if (mounted) {
+          final NavigatorState nav =
+              Navigator.of(context, rootNavigator: true);
+          if (nav.canPop()) {
+            nav.pop();
+          }
+        }
+      } catch (_) {}
     }
-
   }
 
   // 从用户选择的ZIP文件导入数据并解压到应用存储
   Future<void> _importData() async {
     if (_importingData) return;
+    final ValueNotifier<double> progressNotifier =
+        ValueNotifier<double>(0.0);
+    final ValueNotifier<String?> stageNotifier =
+        ValueNotifier<String?>(null);
+    final ValueNotifier<String?> entryNotifier =
+        ValueNotifier<String?>(null);
+    _importExportIsExport = false;
+    _importExportStage = null;
+    unawaited(
+      _showImportExportOverlayDialog(
+        isExport: false,
+        progressNotifier: progressNotifier,
+        stageNotifier: stageNotifier,
+        entryNotifier: entryNotifier,
+      ),
+    );
     setState(() {
       _importingData = true;
     });
@@ -421,7 +702,9 @@ class _SettingsPageState extends State<SettingsPage>
       if (!mounted) return;
       if (result == null || result.files.isEmpty) {
         await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled');
-        setState(() { _importingData = false; });
+        setState(() {
+          _importingData = false;
+        });
         return; // 用户取消
       }
 
@@ -436,11 +719,22 @@ class _SettingsPageState extends State<SettingsPage>
         await FlutterLogger.nativeInfo('UI_IMPORT', 'stopping service before import');
         try { await ScreenshotService.instance.stopScreenshotService(); } catch (_) {}
       }
+      void handleProgress(ImportExportProgress p) {
+        progressNotifier.value = p.value;
+        stageNotifier.value = p.stage;
+        entryNotifier.value = p.currentEntry;
+      }
       if (bytes != null && bytes.isNotEmpty && (path == null || path.isEmpty)) {  
         // 仅作为备选方案；优先使用文件路径流式传输
-        importRes = await _screenshotDatabase.importDataFromZipStreaming(zipBytes: bytes); 
+        importRes = await _screenshotDatabase.importDataFromZipStreaming(
+          zipBytes: bytes,
+          onProgress: handleProgress,
+        ); 
       } else if (path != null && path.isNotEmpty) { 
-        importRes = await _screenshotDatabase.importDataFromZipStreaming(zipPath: path); 
+        importRes = await _screenshotDatabase.importDataFromZipStreaming(
+          zipPath: path,
+          onProgress: handleProgress,
+        ); 
       }  
 
       if (!mounted) return;
@@ -507,8 +801,22 @@ class _SettingsPageState extends State<SettingsPage>
         await FlutterLogger.nativeInfo('UI_IMPORT', 'import flow finished');
       } catch (_) {}
       if (mounted) { 
-        setState(() { _importingData = false; }); 
+        setState(() { 
+          _importingData = false; 
+        }); 
       } 
+      try {
+        if (mounted) {
+          final NavigatorState nav =
+              Navigator.of(context, rootNavigator: true);
+          if (nav.canPop()) {
+            nav.pop();
+          }
+        }
+      } catch (_) {}
+      progressNotifier.dispose();
+      stageNotifier.dispose();
+      entryNotifier.dispose();
     } 
   }
 
@@ -733,7 +1041,7 @@ class _SettingsPageState extends State<SettingsPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final Widget scaffold = Scaffold(
       appBar: AppBar(
         toolbarHeight: 36,
         centerTitle: true,
@@ -770,13 +1078,12 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [
                     _buildThemeColorItem(context),
                     _buildPrivacyModeItem(context),
-                  _buildStreamRenderImagesItem(context),
+                    _buildStreamRenderImagesItem(context),
                     _buildNsfwEntryItem(context),
                     _buildLoggingToggleItem(context),
                   ],
                 ),
                 const SizedBox(height: AppTheme.spacing4),
-
 
                 // 截屏设置
                 _buildSection(
@@ -825,6 +1132,8 @@ class _SettingsPageState extends State<SettingsPage>
               ],
             ),
     );
+
+    return scaffold;
   }
 
   // ===== 时间段总结设置 UI =====
