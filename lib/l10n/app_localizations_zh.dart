@@ -588,9 +588,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get intervalInputHint => '请输入 5-60 的整数';
 
   @override
-  String get intervalRangeHint => '范围：5-60 秒，默认 5 秒';
-
-  @override
   String get intervalInvalidError => '请输入 5-60 的有效整数';
 
   @override
@@ -2262,8 +2259,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appStatsLastCaptureTitle => '最近截取';
 
   @override
-  String get aiEmptySelfTitle => '个人助手已就绪';
+  String get aiEmptySelfTitle => '此刻安静，也是一种整理';
 
   @override
-  String get aiEmptySelfSubtitle => '直接提问，我会结合您的数据上下文来回答。';
+  String get aiEmptySelfSubtitle => '打开这里，如同翻阅你的第二记忆，我随时陪你复盘。';
+
+  @override
+  String get homeMorningTipsTitle => '晨间建议';
+
+  @override
+  String get homeMorningTipsLoading => '正在整理昨日日迹的灵感…';
+
+  @override
+  String get homeMorningTipsPullHint => '下拉展开昨日线索酿出的今晨灵感';
+
+  @override
+  String get homeMorningTipsReleaseHint => '松开换一条来自昨日的新灵感';
+
+  @override
+  String get homeMorningTipsEmpty => '在这里停留的片刻，也是对自己的关照，放轻松就好。';
+
+  @override
+  String get homeMorningTipsViewAll => '查看每日总结';
+
+  @override
+  String get homeMorningTipsDismiss => '关闭提醒';
+
+  @override
+  String get homeMorningTipsCooldownHint => '稍作停顿，稍后再刷新灵感';
+
+  @override
+  String get homeMorningTipsCooldownMessage => '已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。';
 }

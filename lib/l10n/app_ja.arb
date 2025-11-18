@@ -265,7 +265,6 @@
   "setIntervalDialogTitle": "スクリーンショットの間隔を設定",
   "intervalSecondsLabel": "間隔（秒）",
   "intervalInputHint": "5 ～ 60 の整数を入力してください",
-  "intervalRangeHint": "範囲：5～60 秒（既定値：5 秒）",
   "intervalInvalidError": "5～60 の有効な整数を入力してください",
   "intervalSavedSuccess": "スクリーンショット間隔を {seconds} 秒に設定しました",
   "@intervalSavedSuccess": {
@@ -1252,8 +1251,17 @@
   "appStatsCountTitle": "枚数",
   "appStatsSizeTitle": "合計サイズ",
   "appStatsLastCaptureTitle": "最新キャプチャ",
-  "aiEmptySelfTitle": "パーソナルアシスタントの準備完了",
-  "aiEmptySelfSubtitle": "何でも質問してください。あなたのデータコンテキストを利用します。",
+  "aiEmptySelfTitle": "この静けさも整える時間です",
+  "aiEmptySelfSubtitle": "ここを開くと第二の記憶をめくるみたいに、いつでも一緒に振り返れます。",
+  "homeMorningTipsTitle": "朝の提案",
+  "homeMorningTipsLoading": "前日の足跡からインスピレーションをまとめています…",
+  "homeMorningTipsPullHint": "引き下げて前日のヒントから生まれた今朝のひらめきをひらく",
+  "homeMorningTipsReleaseHint": "離して前日由来の新しいひらめきを受け取る",
+  "homeMorningTipsEmpty": "ここで少し立ち止まることも、自分をいたわる時間です。肩の力を抜いて。",
+  "homeMorningTipsViewAll": "デイリーサマリーを開く",
+  "homeMorningTipsDismiss": "閉じる",
+  "homeMorningTipsCooldownHint": "少し休んでからもう一度引き下げてください",
+  "homeMorningTipsCooldownMessage": "何度もリフレッシュしましたね。少し画面から目を離して、現実の景色を味わいましょう。",
   "languageJapanese": "日本語",
   "languageKorean": "韓国語"
 }

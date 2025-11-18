@@ -289,7 +289,6 @@
   "setIntervalDialogTitle": "Set screenshot interval",
   "intervalSecondsLabel": "Interval (seconds)",
   "intervalInputHint": "Enter an integer between 5-60",
-  "intervalRangeHint": "Range: 5-60 seconds, default: 5 seconds",
   "intervalInvalidError": "Please enter a valid integer between 5-60",
   "intervalSavedSuccess": "Screenshot interval set to {seconds}s",
   "@intervalSavedSuccess": {
@@ -1074,6 +1073,15 @@
   "appStatsCountTitle": "Screenshots",
   "appStatsSizeTitle": "Total size",
   "appStatsLastCaptureTitle": "Last captured",
-  "aiEmptySelfTitle": "Personal assistant ready",
-  "aiEmptySelfSubtitle": "Ask anything. I will use your data as context."
+  "aiEmptySelfTitle": "This quiet moment is its own reset",
+  "aiEmptySelfSubtitle": "Open this space like leafing through your second memory—I'm here to replay it with you.",
+  "homeMorningTipsTitle": "Morning insights",
+  "homeMorningTipsLoading": "Gathering ideas from yesterday’s trail…",
+  "homeMorningTipsPullHint": "Pull to unveil today’s spark from yesterday",
+  "homeMorningTipsReleaseHint": "Release for another spark from yesterday",
+  "homeMorningTipsEmpty": "This brief pause is a way to care for yourself—take it easy.",
+  "homeMorningTipsViewAll": "Open daily summary",
+  "homeMorningTipsDismiss": "Dismiss card",
+  "homeMorningTipsCooldownHint": "Take a short pause before pulling again",
+  "homeMorningTipsCooldownMessage": "You’ve refreshed quite a lot—take a breath and look up from the screen for a moment."
 }

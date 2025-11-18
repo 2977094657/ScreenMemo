@@ -599,9 +599,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get intervalInputHint => '5 ～ 60 の整数を入力してください';
 
   @override
-  String get intervalRangeHint => '範囲：5～60 秒（既定値：5 秒）';
-
-  @override
   String get intervalInvalidError => '5～60 の有効な整数を入力してください';
 
   @override
@@ -2282,8 +2279,36 @@ class AppLocalizationsJa extends AppLocalizations {
   String get appStatsLastCaptureTitle => '最新キャプチャ';
 
   @override
-  String get aiEmptySelfTitle => 'パーソナルアシスタントの準備完了';
+  String get aiEmptySelfTitle => 'この静けさも整える時間です';
 
   @override
-  String get aiEmptySelfSubtitle => '何でも質問してください。あなたのデータコンテキストを利用します。';
+  String get aiEmptySelfSubtitle => 'ここを開くと第二の記憶をめくるみたいに、いつでも一緒に振り返れます。';
+
+  @override
+  String get homeMorningTipsTitle => '朝の提案';
+
+  @override
+  String get homeMorningTipsLoading => '前日の足跡からインスピレーションをまとめています…';
+
+  @override
+  String get homeMorningTipsPullHint => '引き下げて前日のヒントから生まれた今朝のひらめきをひらく';
+
+  @override
+  String get homeMorningTipsReleaseHint => '離して前日由来の新しいひらめきを受け取る';
+
+  @override
+  String get homeMorningTipsEmpty => 'ここで少し立ち止まることも、自分をいたわる時間です。肩の力を抜いて。';
+
+  @override
+  String get homeMorningTipsViewAll => 'デイリーサマリーを開く';
+
+  @override
+  String get homeMorningTipsDismiss => '閉じる';
+
+  @override
+  String get homeMorningTipsCooldownHint => '少し休んでからもう一度引き下げてください';
+
+  @override
+  String get homeMorningTipsCooldownMessage =>
+      '何度もリフレッシュしましたね。少し画面から目を離して、現実の景色を味わいましょう。';
 }

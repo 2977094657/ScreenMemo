@@ -620,9 +620,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get intervalInputHint => 'Enter an integer between 5-60';
 
   @override
-  String get intervalRangeHint => 'Range: 5-60 seconds, default: 5 seconds';
-
-  @override
   String get intervalInvalidError =>
       'Please enter a valid integer between 5-60';
 
@@ -2329,9 +2326,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appStatsLastCaptureTitle => 'Last captured';
 
   @override
-  String get aiEmptySelfTitle => 'Personal assistant ready';
+  String get aiEmptySelfTitle => 'This quiet moment is its own reset';
 
   @override
   String get aiEmptySelfSubtitle =>
-      'Ask anything. I will use your data as context.';
+      'Open this space like leafing through your second memory—I\'m here to replay it with you.';
+
+  @override
+  String get homeMorningTipsTitle => 'Morning insights';
+
+  @override
+  String get homeMorningTipsLoading =>
+      'Gathering ideas from yesterday’s trail…';
+
+  @override
+  String get homeMorningTipsPullHint =>
+      'Pull to unveil today’s spark from yesterday';
+
+  @override
+  String get homeMorningTipsReleaseHint =>
+      'Release for another spark from yesterday';
+
+  @override
+  String get homeMorningTipsEmpty =>
+      'This brief pause is a way to care for yourself—take it easy.';
+
+  @override
+  String get homeMorningTipsViewAll => 'Open daily summary';
+
+  @override
+  String get homeMorningTipsDismiss => 'Dismiss card';
+
+  @override
+  String get homeMorningTipsCooldownHint =>
+      'Take a short pause before pulling again';
+
+  @override
+  String get homeMorningTipsCooldownMessage =>
+      'You’ve refreshed quite a lot—take a breath and look up from the screen for a moment.';
 }

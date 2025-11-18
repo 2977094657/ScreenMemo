@@ -289,7 +289,6 @@
   "setIntervalDialogTitle": "设置截屏间隔",
   "intervalSecondsLabel": "间隔时间（秒）",
   "intervalInputHint": "请输入 5-60 的整数",
-  "intervalRangeHint": "范围：5-60 秒，默认 5 秒",
   "intervalInvalidError": "请输入 5-60 的有效整数",
   "intervalSavedSuccess": "截屏间隔已设置为 {seconds} 秒",
   "@intervalSavedSuccess": {
@@ -1178,6 +1177,15 @@
   "appStatsCountTitle": "截图数量",
   "appStatsSizeTitle": "总大小",
   "appStatsLastCaptureTitle": "最近截取",
-  "aiEmptySelfTitle": "个人助手已就绪",
-  "aiEmptySelfSubtitle": "直接提问，我会结合您的数据上下文来回答。"
+  "aiEmptySelfTitle": "此刻安静，也是一种整理",
+  "aiEmptySelfSubtitle": "打开这里，如同翻阅你的第二记忆，我随时陪你复盘。",
+  "homeMorningTipsTitle": "晨间建议",
+  "homeMorningTipsLoading": "正在整理昨日日迹的灵感…",
+  "homeMorningTipsPullHint": "下拉展开昨日线索酿出的今晨灵感",
+  "homeMorningTipsReleaseHint": "松开换一条来自昨日的新灵感",
+  "homeMorningTipsEmpty": "在这里停留的片刻，也是对自己的关照，放轻松就好。",
+  "homeMorningTipsViewAll": "查看每日总结",
+  "homeMorningTipsDismiss": "关闭提醒",
+  "homeMorningTipsCooldownHint": "稍作停顿，稍后再刷新灵感",
+  "homeMorningTipsCooldownMessage": "已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。"
 }

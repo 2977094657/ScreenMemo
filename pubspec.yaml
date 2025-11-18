@@ -33,6 +33,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  easy_refresh: ^3.4.0
   
   # 保存图片到系统相册
   gal: ^2.3.0

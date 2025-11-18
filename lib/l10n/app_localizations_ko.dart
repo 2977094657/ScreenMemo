@@ -597,9 +597,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get intervalInputHint => '5~60 사이의 정수를 입력하세요.';
 
   @override
-  String get intervalRangeHint => '범위: 5~60초 (기본값: 5초)';
-
-  @override
   String get intervalInvalidError => '5~60 사이의 유효한 정수를 입력하세요';
 
   @override
@@ -2280,8 +2277,36 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appStatsLastCaptureTitle => '마지막 캡처';
 
   @override
-  String get aiEmptySelfTitle => '개인 비서 준비 완료';
+  String get aiEmptySelfTitle => '지금의 고요도 정리의 한 순간이에요';
 
   @override
-  String get aiEmptySelfSubtitle => '무엇이든 질문하세요. 데이터 컨텍스트를 활용해 답변합니다.';
+  String get aiEmptySelfSubtitle => '이 공간을 열면 두 번째 기억을 넘기듯, 언제든 함께 돌아볼 수 있어요.';
+
+  @override
+  String get homeMorningTipsTitle => '아침 제안';
+
+  @override
+  String get homeMorningTipsLoading => '어제의 흔적에서 영감을 정리하는 중…';
+
+  @override
+  String get homeMorningTipsPullHint => '당겨서 어제의 단서로 빚은 오늘의 영감을 펼쳐보세요';
+
+  @override
+  String get homeMorningTipsReleaseHint => '놓으면 어제에서 온 새로운 영감이 찾아와요';
+
+  @override
+  String get homeMorningTipsEmpty => '여기 잠시 머무는 순간도 자신을 돌보는 시간이니, 천천히 숨을 고르세요.';
+
+  @override
+  String get homeMorningTipsViewAll => '데일리 요약 열기';
+
+  @override
+  String get homeMorningTipsDismiss => '카드 닫기';
+
+  @override
+  String get homeMorningTipsCooldownHint => '잠시 쉬었다가 다시 당겨주세요';
+
+  @override
+  String get homeMorningTipsCooldownMessage =>
+      '많이 새로고침했어요. 잠시 휴대폰을 내려놓고 현실의 풍경을 바라보세요.';
 }

@@ -140,79 +140,222 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   Widget _buildMorningInsightsSection() {
     if (!_isToday) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final tips = _morningInsights?.tips ?? const <String>[];
-    final bool hasTips = tips.isNotEmpty;
-    final Color bgColor = const Color(0xFFFFF7E0);
-    final Color borderColor = const Color(0xFFFFE4A6);
+    final l10n = AppLocalizations.of(context);
+    final MorningInsights? insights = _morningInsights;
+
+    if (_morningLoading && (insights == null || insights.tips.isEmpty)) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing4,
+        ),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            Expanded(
+              child: Text(
+                l10n.homeMorningTipsLoading,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (insights == null || insights.tips.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
+        padding: const EdgeInsets.all(AppTheme.spacing4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.homeMorningTipsTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              l10n.homeMorningTipsEmpty,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppTheme.spacing3),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _morningLoading
+                    ? null
+                    : () => _refreshMorningInsights(regenerate: true),
+                icon: const Icon(Icons.refresh_outlined, size: 18),
+                label: Text(l10n.actionRegenerate),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final tips = insights.tips;
+    final List<Widget> tipWidgets = <Widget>[];
+    for (int i = 0; i < tips.length; i++) {
+      tipWidgets.add(_buildMorningEntryItem(
+        theme: theme,
+        tip: tips[i],
+        index: i,
+      ));
+      if (i != tips.length - 1) {
+        tipWidgets.add(const SizedBox(height: AppTheme.spacing3));
+        tipWidgets.add(Divider(
+          height: AppTheme.spacing4,
+          color: theme.dividerColor.withOpacity(0.4),
+        ));
+        tipWidgets.add(const SizedBox(height: AppTheme.spacing2));
+      }
+    }
 
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
+      padding: const EdgeInsets.all(AppTheme.spacing4),
       decoration: BoxDecoration(
-        color: bgColor,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(color: borderColor),
+        border: Border.all(
+          color: theme.dividerColor.withOpacity(0.4),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.shadowColor.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  '晨间行动建议',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              Text(
+                '${l10n.homeMorningTipsTitle} · ${tips.length}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              if (_morningLoading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: IconButton(
-                    tooltip: hasTips ? '重新生成' : '生成提示',
-                    padding: EdgeInsets.zero,
-                    iconSize: 18,
-                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-                    icon: const Icon(Icons.refresh_outlined),
-                    onPressed: () => _refreshMorningInsights(regenerate: true),
-                  ),
-                ),
+              const Spacer(),
+              IconButton(
+                tooltip: l10n.actionRegenerate,
+                onPressed: _morningLoading
+                    ? null
+                    : () => _refreshMorningInsights(regenerate: true),
+                icon: const Icon(Icons.refresh_outlined),
+              ),
             ],
           ),
-          const SizedBox(height: AppTheme.spacing2),
           if (_morningLoading)
-            Text(
-              '正在生成最新建议…',
-              style: theme.textTheme.bodyMedium,
-            )
-          else if (hasTips)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: List.generate(tips.length, (index) {
-                return Padding(
-                  padding: EdgeInsets.only(bottom: index == tips.length - 1 ? 0 : AppTheme.spacing1),
-                  child: Text(
-                    '${index + 1}. ${tips[index]}',
-                    style: theme.textTheme.bodyMedium,
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.spacing3),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                );
-              }),
-            )
-          else
-            Text(
-              '昨日内容尚未生成提示，点击右侧图标获取最新建议',
-              style: theme.textTheme.bodyMedium,
+                  const SizedBox(width: AppTheme.spacing2),
+                  Text(
+                    l10n.homeMorningTipsLoading,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
+          const SizedBox(height: AppTheme.spacing2),
+          ...tipWidgets,
         ],
       ),
+    );
+  }
+
+  Widget _buildMorningEntryItem({
+    required ThemeData theme,
+    required MorningInsightEntry tip,
+    required int index,
+  }) {
+    final cs = theme.colorScheme;
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: cs.onSurface,
+    );
+    final bodyStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: cs.onSurface,
+      height: 1.4,
+    );
+    final secondaryStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: cs.onSurfaceVariant,
+      height: 1.4,
+    );
+
+    final List<Widget> children = <Widget>[
+      Text('${index + 1}. ${tip.displayTitle}', style: titleStyle),
+    ];
+
+    if (tip.hasSummary) {
+      children.add(const SizedBox(height: AppTheme.spacing1));
+      children.add(Text(tip.summary!, style: secondaryStyle));
+    }
+
+    if (tip.hasActions) {
+      children.add(const SizedBox(height: AppTheme.spacing1));
+      for (final action in tip.actions) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: cs.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTheme.spacing2),
+                Expanded(child: Text(action, style: bodyStyle)),
+              ],
+            ),
+          ),
+        );
+      }
+      // Remove trailing spacing
+      if (children.isNotEmpty && children.last is Padding) {
+        children.removeLast();
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 

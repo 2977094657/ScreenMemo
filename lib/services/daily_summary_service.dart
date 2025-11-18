@@ -3,14 +3,66 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import '../constants/user_settings_keys.dart';
 import 'ai_chat_service.dart';
 import 'ai_settings_service.dart';
 import 'ai_providers_service.dart';
 import 'screenshot_database.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
+import 'user_settings_service.dart';
+
+String _cleanMorningText(String input) {
+  var text = input.trim();
+  if (text.isEmpty) return text;
+  const prefixes = ['- ', '* ', '• ', '-\t', '*\t', '•\t', '-', '*', '•'];
+  for (final prefix in prefixes) {
+    if (text.startsWith(prefix)) {
+      text = text.substring(prefix.length).trimLeft();
+      break;
+    }
+  }
+  text = text.replaceFirst(RegExp(r'^\d+[\.、]\s*'), '');
+  text = text.replaceFirst(RegExp(r'^[A-Za-z]\)\s*'), '');
+  text = text.replaceFirst(RegExp(r'^[A-Za-z][\.、]\s*'), '');
+  text = text.replaceAll(RegExp(r'\s+'), ' ');
+  return text.trim();
+}
+
+String? _stringOrNull(dynamic value) {
+  if (value is String) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+  return null;
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is List) {
+    return value
+        .whereType<String>()
+        .map(_cleanMorningText)
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+  }
+  if (value is String) {
+    final cleaned = _cleanMorningText(value);
+    return cleaned.isEmpty ? const <String>[] : <String>[cleaned];
+  }
+  return const <String>[];
+}
+
+String _deriveMorningTitle(String input) {
+  final cleaned = _cleanMorningText(input);
+  if (cleaned.isEmpty) return '';
+  final match = RegExp(r'[。！？?!:：\n\r]').firstMatch(cleaned);
+  final candidate = match == null ? cleaned : cleaned.substring(0, match.start);
+  if (candidate.length > 32) {
+    return candidate.substring(0, 32).trimRight() + '…';
+  }
+  return candidate;
+}
 
 enum DailySummaryNotificationSlot {
   morning,
@@ -20,29 +72,139 @@ enum DailySummaryNotificationSlot {
   finalReminder,
 }
 
+class MorningInsightEntry {
+  MorningInsightEntry({
+    required String title,
+    String? summary,
+    List<String>? actions,
+    List<String>? tags,
+  })  : title = _cleanMorningText(title),
+        summary = summary == null ? null : _cleanMorningText(summary),
+        actions = (actions ?? const <String>[])
+            .map(_cleanMorningText)
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false),
+        tags = (tags ?? const <String>[])
+            .map(_cleanMorningText)
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false);
+
+  final String title;
+  final String? summary;
+  final List<String> actions;
+  final List<String> tags;
+
+  bool get hasSummary => summary != null && summary!.isNotEmpty;
+  bool get hasActions => actions.isNotEmpty;
+  bool get isMeaningful => title.isNotEmpty || hasSummary || hasActions;
+
+  String get displayTitle {
+    if (title.isNotEmpty) return title;
+    if (hasSummary) return _deriveMorningTitle(summary!);
+    if (hasActions) return _deriveMorningTitle(actions.first);
+    return '';
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'title': title,
+        if (hasSummary) 'summary': summary,
+        if (hasActions) 'actions': actions,
+        if (tags.isNotEmpty) 'tags': tags,
+      };
+
+  factory MorningInsightEntry.fromJson(Map<String, dynamic> json) {
+    final String? rawTitle = _stringOrNull(json['title']) ??
+        _stringOrNull(json['headline']) ??
+        _stringOrNull(json['focus']) ??
+        _stringOrNull(json['label']) ??
+        _stringOrNull(json['name']);
+    final String? rawSummary = _stringOrNull(json['summary']) ??
+        _stringOrNull(json['description']) ??
+        _stringOrNull(json['insight']) ??
+        _stringOrNull(json['note']) ??
+        _stringOrNull(json['context']) ??
+        _stringOrNull(json['why']);
+    final List<String> actions = _stringList(
+      json['actions'] ??
+          json['steps'] ??
+          json['suggestions'] ??
+          json['tasks'] ??
+          json['followUps'] ??
+          json['follow_ups'],
+    );
+    final List<String> tags = _stringList(json['tags'] ?? json['keywords'] ?? json['labels']);
+
+    String resolvedTitle = rawTitle != null ? _cleanMorningText(rawTitle) : '';
+    final String? resolvedSummary = rawSummary == null ? null : _cleanMorningText(rawSummary);
+
+    if (resolvedTitle.isEmpty) {
+      if (resolvedSummary != null && resolvedSummary.isNotEmpty) {
+        resolvedTitle = _deriveMorningTitle(resolvedSummary);
+      } else if (actions.isNotEmpty) {
+        resolvedTitle = _deriveMorningTitle(actions.first);
+      }
+    }
+
+    final String fallbackTitle = resolvedTitle.isNotEmpty
+        ? resolvedTitle
+        : (resolvedSummary != null && resolvedSummary.isNotEmpty
+            ? _deriveMorningTitle(resolvedSummary)
+            : (actions.isNotEmpty ? _deriveMorningTitle(actions.first) : ''));
+
+    final String derivedTitle = fallbackTitle.isNotEmpty
+        ? fallbackTitle
+        : _deriveMorningTitle(resolvedSummary ?? (actions.isNotEmpty ? actions.first : ''));
+
+    final bool meaningful =
+        derivedTitle.isNotEmpty || (resolvedSummary != null && resolvedSummary.isNotEmpty) || actions.isNotEmpty;
+    if (!meaningful) {
+      return MorningInsightEntry(title: '', summary: null);
+    }
+
+    return MorningInsightEntry(
+      title: derivedTitle.isNotEmpty
+          ? derivedTitle
+          : (resolvedSummary?.isNotEmpty ?? false)
+              ? resolvedSummary!
+              : (actions.isNotEmpty ? actions.first : ''),
+      summary: resolvedSummary,
+      actions: actions,
+      tags: tags,
+    );
+  }
+
+  factory MorningInsightEntry.fromLegacy(String raw) {
+    final cleaned = _cleanMorningText(raw);
+    final title = _deriveMorningTitle(cleaned);
+    return MorningInsightEntry(
+      title: title.isNotEmpty ? title : cleaned,
+      summary: cleaned.isNotEmpty ? cleaned : null,
+    );
+  }
+}
+
 class MorningInsights {
   final String dateKey;
   final String sourceDateKey;
-  final List<String> tips;
+  final List<MorningInsightEntry> tips;
   final int createdAt;
   final String? rawResponse;
 
   MorningInsights({
     required this.dateKey,
     required this.sourceDateKey,
-    required this.tips,
+    required List<MorningInsightEntry> tips,
     required this.createdAt,
     this.rawResponse,
-  });
+  }) : tips = List<MorningInsightEntry>.unmodifiable(
+            tips.where((element) => element.isMeaningful).toList());
 
   factory MorningInsights.fromRow(Map<String, dynamic> row) {
     final tipsJson = (row['tips_json'] as String?) ?? '[]';
-    List<String> tips = <String>[];
+    List<MorningInsightEntry> tips = const <MorningInsightEntry>[];
     try {
       final decoded = jsonDecode(tipsJson);
-      if (decoded is List) {
-        tips = decoded.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-      }
+      tips = decodeTipsPayload(decoded);
     } catch (_) {}
     return MorningInsights(
       dateKey: (row['date_key'] as String?) ?? '',
@@ -57,13 +219,94 @@ class MorningInsights {
     return {
       'date_key': dateKey,
       'source_date_key': sourceDateKey,
-      'tips': tips,
+      'tips': tips.map((e) => e.toJson()).toList(),
       'created_at': createdAt,
       if (rawResponse != null) 'raw_response': rawResponse,
     };
   }
 
   bool get hasTips => tips.isNotEmpty;
+
+  static List<MorningInsightEntry> decodeTipsPayload(dynamic payload) {
+    if (payload == null) return const <MorningInsightEntry>[];
+
+    Iterable<dynamic>? source;
+    if (payload is Map<String, dynamic>) {
+      final dynamic candidate = payload['items'] ?? payload['tips'] ?? payload['entries'];
+      if (candidate is List) {
+        source = candidate;
+      } else if (candidate is Map) {
+        source = _orderedValuesFromMap(candidate);
+      }
+    } else if (payload is Map) {
+      final dynamic candidate = payload['items'] ?? payload['tips'] ?? payload['entries'];
+      if (candidate is List) {
+        source = candidate;
+      } else if (candidate is Map) {
+        source = _orderedValuesFromMap(candidate);
+      }
+    } else if (payload is List) {
+      source = payload;
+    }
+    if (source == null) return const <MorningInsightEntry>[];
+
+    final List<MorningInsightEntry> result = <MorningInsightEntry>[];
+    for (final dynamic element in source) {
+      final MorningInsightEntry? entry = _entryFromDynamic(element);
+      if (entry != null && entry.isMeaningful && !_containsEntry(result, entry)) {
+        result.add(entry);
+      }
+    }
+    return result;
+  }
+
+  static MorningInsightEntry? _entryFromDynamic(dynamic element) {
+    if (element is MorningInsightEntry) return element;
+    if (element is Map<String, dynamic>) return MorningInsightEntry.fromJson(element);
+    if (element is Map) {
+      final converted = element.map<String, dynamic>((key, value) => MapEntry(key.toString(), value));
+      return MorningInsightEntry.fromJson(converted);
+    }
+    if (element is String) {
+      final entry = MorningInsightEntry.fromLegacy(element);
+      return entry.isMeaningful ? entry : null;
+    }
+    if (element is List) {
+      final actions = element.whereType<String>().map(_cleanMorningText).where((e) => e.isNotEmpty).toList();
+      if (actions.isEmpty) return null;
+      final title = _deriveMorningTitle(actions.first);
+      return MorningInsightEntry(
+        title: title.isNotEmpty ? title : actions.first,
+        summary: null,
+        actions: actions,
+      );
+    }
+    return null;
+  }
+
+  static bool _containsEntry(List<MorningInsightEntry> list, MorningInsightEntry candidate) {
+    return list.any((item) =>
+        item.title == candidate.title &&
+        (item.summary ?? '') == (candidate.summary ?? '') &&
+        listEquals(item.actions, candidate.actions));
+  }
+
+  static Iterable<dynamic> _orderedValuesFromMap(Map<dynamic, dynamic> map) {
+    final entries = map.entries.toList();
+    entries.sort((a, b) => _compareDynamicKey(a.key, b.key));
+    return entries.map((e) => e.value);
+  }
+
+  static int _compareDynamicKey(dynamic a, dynamic b) {
+    final int? ai = int.tryParse(a?.toString() ?? '');
+    final int? bi = int.tryParse(b?.toString() ?? '');
+    if (ai != null && bi != null) {
+      return ai.compareTo(bi);
+    }
+    final String as = a?.toString() ?? '';
+    final String bs = b?.toString() ?? '';
+    return as.compareTo(bs);
+  }
 }
 
 /// 每日总结服务：
@@ -306,7 +549,13 @@ class DailySummaryService {
   Future<MorningInsights?> fetchOrGenerateMorningInsights(String dateKey, {bool force = false}) async {
     if (!force) {
       final existed = await loadMorningInsights(dateKey);
-      if (existed != null) return existed;
+      if (existed != null) {
+        if (existed.tips.length >= 10) {
+          return existed;
+        }
+        final regenerated = await generateMorningInsights(dateKey);
+        return regenerated ?? existed;
+      }
     }
     return await generateMorningInsights(dateKey);
   }
@@ -334,7 +583,9 @@ class DailySummaryService {
     }
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final rawJson = jsonEncode(tips);
+    final rawJson = jsonEncode({
+      'items': tips.map((e) => e.toJson()).toList(),
+    });
     await _db.upsertMorningInsights(
       dateKey: dateKey,
       sourceDateKey: sourceDateKey,
@@ -700,10 +951,21 @@ class DailySummaryService {
   Future<void> refreshAutoRefreshSchedule() async {
     try {
       _autoRefreshTimer?.cancel();
-      final prefs = await SharedPreferences.getInstance();
-      final bool enabled = prefs.getBool('daily_notify_enabled') ?? true;
-      final int hour = (prefs.getInt('daily_notify_hour') ?? 22).clamp(0, 23);
-      final int minute = (prefs.getInt('daily_notify_minute') ?? 0).clamp(0, 59);
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.dailyNotifyEnabled,
+        defaultValue: true,
+        legacyPrefKeys: const <String>['daily_notify_enabled'],
+      );
+      final int hour = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyHour,
+        defaultValue: 22,
+        legacyPrefKeys: const <String>['daily_notify_hour'],
+      );
+      final int minute = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyMinute,
+        defaultValue: 0,
+        legacyPrefKeys: const <String>['daily_notify_minute'],
+      );
 
       final DateTime now = DateTime.now();
 
@@ -853,29 +1115,21 @@ class DailySummaryService {
     return buffer.toString();
   }
 
-  List<String> _parseMorningTips(String raw) {
-    List<String> tryParse(String text) {
+  List<MorningInsightEntry> _parseMorningTips(String raw) {
+    List<MorningInsightEntry> tryParse(String text) {
       try {
         final decoded = jsonDecode(text);
-        if (decoded is Map<String, dynamic>) {
-          final arr = decoded['tips'];
-          if (arr is List) {
-            return arr
-                .whereType<String>()
-                .map((e) => _cleanupTip(e))
-                .where((e) => e.isNotEmpty)
-                .toList();
-          }
-        }
+        final entries = MorningInsights.decodeTipsPayload(decoded);
+        if (entries.isNotEmpty) return entries;
       } catch (_) {}
-      return const <String>[];
+      return const <MorningInsightEntry>[];
     }
 
     final primary = tryParse(raw);
     if (primary.isNotEmpty) return primary;
 
     try {
-      final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['tips']);
+      final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['items', 'tips']);
       final second = tryParse(repaired);
       if (second.isNotEmpty) return second;
     } catch (_) {}
@@ -886,35 +1140,25 @@ class DailySummaryService {
       if (idxStart >= 0 && idxEnd > idxStart) {
         final arrayText = raw.substring(idxStart, idxEnd + 1);
         final decoded = jsonDecode(arrayText);
+        final entries = MorningInsights.decodeTipsPayload(decoded);
+        if (entries.isNotEmpty) return entries;
         if (decoded is List) {
-          return decoded
+          final legacy = decoded
               .whereType<String>()
-              .map((e) => _cleanupTip(e))
-              .where((e) => e.isNotEmpty)
-              .toList();
+              .map(MorningInsightEntry.fromLegacy)
+              .where((entry) => entry.isMeaningful)
+              .toList(growable: false);
+          if (legacy.isNotEmpty) return legacy;
         }
       }
     } catch (_) {}
 
-    return const <String>[];
-  }
-
-  String _cleanupTip(String input) {
-    var text = input.trim();
-    if (text.isEmpty) return text;
-    const prefixes = ['- ', '* ', '• ', '-', '*', '•'];
-    for (final prefix in prefixes) {
-      if (text.startsWith(prefix)) {
-        text = text.substring(prefix.length).trimLeft();
-        break;
-      }
+    final cleaned = _cleanMorningText(raw);
+    if (cleaned.isNotEmpty) {
+      final entry = MorningInsightEntry.fromLegacy(cleaned);
+      return entry.isMeaningful ? <MorningInsightEntry>[entry] : const <MorningInsightEntry>[];
     }
-    text = text.replaceFirst(RegExp(r'^\d+[\.、]\s*'), '');
-    text = text.replaceFirst(RegExp(r'^[A-Za-z]\)\s*'), '');
-    text = text.replaceFirst(RegExp(r'^[A-Za-z][\.、]\s*'), '');
-    text = text.replaceFirst(RegExp(r'^•\s*'), '');
-    text = text.replaceAll(RegExp(r'\s+'), ' ');
-    return text.trim();
+    return const <MorningInsightEntry>[];
   }
 
   /// 默认每日总结提示词（中文，JSON输出，含 overall_summary、timeline、notification_brief）
@@ -978,63 +1222,100 @@ class DailySummaryService {
   ''';
 
   static const String _defaultMorningPromptZh = '''
-  你是一位中文晨间复盘助手。基于我提供的“昨日多个时间段的 overall_summary（仅用于理解背景）”，请为今天早上生成富有灵感的行动建议。
-
-  输出规范：
-  - 仅输出一个 JSON 对象，键固定为 tips，对应值为字符串数组；不要添加额外说明。
-  - tips 数组长度须为 3-7 条。
-  - 语气需温暖、治愈、富有人文关怀，更多陈述式鼓励与松弛提醒，避免任务驱动语气。
-  - 每条建议使用 18-60 字中文完整句子，可穿插比喻、轻挑战或自我肯定；除非特别必要，仅允许最多一条问句。
-  - 避免模板化措辞，禁止出现“昨天…今天…”“昨日…今日…”等句式，也不要让全部句子以相同词语开头。
-  - 结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态，至少一条关注节奏/情绪/环境准备。
-  - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；纯文本即可。
-  - 若上下文极少，仍需输出 3 条高质量的泛化建议。
-
-  输出示例：{"tips": ["建议1", "建议2", "建议3"]}
+  你是一位中文晨间复盘助手。基于“昨日多个时间段的 overall_summary（仅作为背景）”，请为今天早上生成结构化、富有人文关怀的行动建议。
+  
+  输出规范（必须全部满足）：
+  1. 结构要求
+     - 仅输出一个 JSON 对象，键固定为 items；不要添加任何额外文字或注释。
+     - items 数组长度须为 50 条，且保持顺序完整。
+     - 每条元素必须包含以下字段：
+       {
+         "title": "6-16 字中文短语，不含标点与编号，语气轻柔",
+         "summary": "20-60 字中文描述，语调温暖而具象，可带隐喻或自我肯定",
+         "actions": ["12-36 字中文行动提示，1-3 条，纯文本，无序号/表情/Markdown"]
+       }
+  2. 文风与语气
+     - items 数组内每条建议仍需同时满足以下条件：
+       • 语气温暖、治愈、富有人文关怀；以陈述式鼓励与松弛提醒为主，避免任务驱动的命令口吻。
+       • 每条 summary 或 actions 中的句子须为 18-60 字完整中文句子，可适度穿插比喻、轻挑战或自我肯定。除非特别必要，全篇最多包含一条问句。
+       • 避免模板化措辞，严禁使用“昨天…今天…”、“昨日…今日…”等套话；同一条目内各句的开头需有变化，不能全部使用相同词语。
+       • 至少有一条建议突出节奏/情绪/环境的准备，其余条目结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态。
+     - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；输出均为纯文本。
+  3. 兜底策略
+     - 当上下文极少时，仍需输出 50 条高质量、具启发性的泛化建议，依旧遵循上述结构与文风限定。
+  
+  示例：{"items":[{"title":"晨光热身","summary":"用更松弛的拉伸开启身体，让昨夜的紧绷慢慢散去，心绪也慢慢沉静。","actions":["轻柔伸展 10 分钟，关注呼吸节奏","整理桌面，为今天的思路留出余白"]}]}
   ''';
 
   static const String _defaultMorningPromptEn = '''
-  You are a morning briefing assistant. With the "yesterday overall_summary" snippets (context only), craft imaginative, forward-looking prompts for today.
-
-  Output rules:
-  - Return exactly one JSON object whose single key is tips (array of strings); no extra commentary.
-  - The array must contain 3–7 items.
-  - Aim for a warm, restorative, human-centered tone that favours gentle encouragement over task-driven commands.
-  - Each tip is a complete English sentence (18–65 words); vary the style across items (metaphors, soft challenges, reflective statements). Unless absolutely necessary, use at most one question—prefer calm declarative guidance.
-  - Avoid templated phrasing such as "Yesterday… today…" or starting every sentence with the same words. Weave yesterday’s cues indirectly while projecting fresh perspectives, including at least one note on mindset, cadence, or environment setup.
-  - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
-  - If context is sparse, still provide 3 substantive, broadly applicable ideas.
-
-  Example: {"tips": ["Tip one", "Tip two", "Tip three"]}
+  You are a morning reflection assistant. Using the "yesterday overall_summary" excerpts (context only), craft structured, human-centered inspirations for the upcoming day.
+  
+  Output rules (all mandatory):
+  1. Structure
+     - Return exactly one JSON object whose only key is items; do not add explanations or extra text.
+     - The items array must contain 50 entries, preserving order.
+     - Each entry must follow this structure:
+       {
+         "title": "Gentle 5–14 word headline, no punctuation or numbering",
+         "summary": "Warm 1–2 sentence description (roughly 18–60 words) blending empathy, imagery, or soft challenge",
+         "actions": ["Single-sentence action prompts, 12–36 words each, 1–3 items, plain text (no bullets/emoji/markdown)"]
+       }
+  2. Tone & phrasing
+     - Keep the voice warm, restorative, and human; favour declarative encouragement and grounded calm over task-driven commands.
+     - Each sentence in summary or actions should be a complete, fluent sentence about 18–60 words (or an equivalent natural English length). Use metaphors, gentle challenges, or self-affirmations sparingly; the entire output may contain at most one question.
+     - Avoid templated phrasing such as "Yesterday… today…" and do not begin every sentence with the same words. Ensure at least one entry centres on cadence/mood/environment readiness, while the others extend yesterday’s cues, people, or scenes into today’s opportunities, watchpoints, or mindset adjustments.
+     - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
+  3. Fallback
+     - If context is sparse, still produce 50 meaningful entries that respect the same structure and tone requirements.
+  
+  Example: {"items":[{"title":"Unhurried focus","summary":"Invite a looser morning by airing the room, softening your shoulders, and letting yesterday’s pace dissolve.","actions":["Block a 15-minute buffer before deep work to breathe in quiet","Tidy the desk to leave generous room for the day’s ideas"]}]}
   ''';
 
   static const String _defaultMorningPromptJa = '''
-  あなたは朝の振り返りアシスタントです。提供された「前日の overall_summary（コンテキストのみ）」から、本日へ向けた創造的な提案を生み出してください。
-
-  出力要件：
-  - JSON オブジェクト 1 つのみを返し、キーは tips 固定、値は文字列配列です。余計な説明は不要です。
-  - tips 配列は 3～7 件。
-  - ぬくもりのあるヒューマンタッチな口調で、癒やしやリズム調整を意識した励ましを中心にしてください。
-  - 各提案は 18～60 文字程度の日本語文とし、比喩・小さなチャレンジ・穏やかな宣言など表現を変化させてください。特別な理由がない限り、問いかけは高々 1 件に抑えます。
-  - 「昨日…今日…」「前日…本日…」のような定型句を避け、同じ言葉で始まる文を並べないこと。前日のキーワードをさりげなく織り込みつつ、新たな視点で本日の行動や心構え（少なくとも 1 件はペース/気分/環境整備）を示してください。
-  - Markdown、箇条書き記号、番号、絵文字、コードブロックは禁止し、純テキストのみとします。
-  - コンテキストが少なくても、質の高い汎用的な提案を 3 件以上提示してください。
-
-  例：{"tips": ["提案1", "提案2", "提案3"]}
+  あなたは朝の振り返りアシスタントです。「前日の overall_summary（あくまで文脈）」を用いて、今日に向けた人間味のある提案を構造化して届けてください。
+  
+  出力要件（すべて順守してください）：
+  1. 構造
+     - JSON オブジェクトを 1 つだけ返し、キーは items 固定。説明文や余計な文字は付けないこと。
+     - items 配列は 50 件とし、順番を崩さないこと。
+     - 各要素は次の構造に従うこと：
+       {
+         "title": "やわらかなニュアンスの日本語見出し（5～12文字、句読点・番号なし）",
+         "summary": "18～60文字程度の穏やかな文章で情景や心情を描写する（1～2文）",
+         "actions": ["12～36文字の行動ヒントを1～3件、1文で完結、箇条書き記号・絵文字・Markdown禁止"]
+       }
+  2. 文体と表現
+     - 全体の語り口はあたたかく癒しを意識し、人への配慮を込めてください。命令的・タスク駆動の口調は避けます。
+     - summary や actions の各文は 18～60 文字程度の完全文とし、比喩・小さなチャレンジ・自分への肯定を適度に織り交ぜても構いません。全体で疑問文は最大 1 文までにしてください。
+     - 「昨日…今日…」「前日…本日…」といった定型句を使わず、同じ言葉で始まる文を連続させないこと。少なくとも 1 件はリズム／感情／環境づくりに触れ、他の項目は前日の手がかりや登場人物をヒントに今日の視点・機会・注意点へと広げてください。
+     - すべて純テキストで出力し、Markdown・箇条書き記号・番号・絵文字・コードフェンスは禁止します。
+  3. コンテキストが乏しい場合
+     - 情報がほとんどない場合でも、上記構造と文体を守った質の高い提案を 50 件生成してください。
+  
+  例：{"items":[{"title":"朝の余白","summary":"カーテン越しの光を吸い込みながら深呼吸し、固まった肩をそっとほぐしていきましょう。","actions":["10分間のストレッチで呼吸と体をととのえる","机の上を整えて今日のアイデアに余白を残す"]}]}
   ''';
 
   static const String _defaultMorningPromptKo = '''
-  당신은 아침 리뷰 도우미입니다. 제공된 "전날 overall_summary"(맥락 전용) 정보를 활용해 오늘을 위한 창의적인 제안을 만들어 주세요.
-
-  출력 규칙:
-  - JSON 객체 한 개만 반환하고 키는 tips 로 고정, 값은 문자열 배열입니다. 추가 설명은 금지합니다.
-  - tips 배열 길이는 3~7개입니다.
-  - 따뜻하고 치유적인 어조로 사람 중심의 배려를 강조하고, 과도한 업무 지향적 표현은 피하세요.
-  - 각 제안은 18~60자 분량의 완전한 한국어 문장으로, 비유·작은 도전·부드러운 선언 등을 섞어 주세요. 특별한 사유가 없다면 물음표 사용은 최대 한 번으로 제한합니다.
-  - "어제… 오늘…" "전날… 금일…"과 같은 틀에 박힌 문장을 사용하지 말고, 모든 문장이 같은 말로 시작하지 않도록 합니다. 전날의 단서를 은근히 연결하면서도 새로운 시각으로 오늘의 행동, 리스크, 기회, 혹은 마음가짐(최소 1건은 리듬·감정·환경 준비)을 제시하세요.
-  - Markdown, 목록 기호, 번호, 이모지, 코드블록 사용은 금지합니다.
-  - 맥락이 부족하더라도 가치 있는 일반화된 제안을 최소 3개 이상 작성하세요.
-
-  예시: {"tips": ["제안1", "제안2", "제안3"]}
+  당신은 아침 리뷰 도우미입니다. 제공된 "전날 overall_summary"(맥락 전용)를 참고해 오늘을 위한 구조화된 제안을 따뜻한 어조로 전달하세요.
+  
+  출력 규칙(모두 준수하세요):
+  1. 구조
+     - JSON 객체 한 개만 반환하고, 키는 items 로 고정합니다. 추가 설명이나 다른 텍스트는 금지합니다.
+     - items 배열에는 50개의 항목이 있어야 하며, 순서를 유지해야 합니다.
+     - 각 항목은 아래 구조를 따라야 합니다.
+       {
+         "title": "5~12자 이내의 한국어 짧은 제목, 번호/구두점 없음, 부드러운 톤",
+         "summary": "18~60자 분량의 따뜻한 서술형 문장(1~2문장)으로 장면과 감정을 담아낼 것",
+         "actions": ["12~36자 행동 힌트 1~3개, 한 문장으로, 불릿·이모지·마크다운 금지"]
+       }
+  2. 문체와 표현
+     - 전체 어조는 따뜻하고 치유적인 사람 중심이어야 하며, 과도한 명령형이나 업무 지향적 표현을 피하세요.
+     - summary 와 actions 의 각 문장은 18~60자 분량의 완전한 문장이어야 하며, 비유·가벼운 도전·자기 확언을 적절히 섞어도 좋습니다. 전체 출력에서 물음표 문장은 최대 1개까지만 허용됩니다.
+     - "어제… 오늘…" "전날… 금일…" 등 정형화된 문장을 사용하지 말고, 같은 단어로 시작하는 문장을 연속해서 쓰지 마세요. 최소 1개의 항목은 리듬·감정·환경 정비에 초점을 맞추고, 나머지는 전날의 단서·인물·장면을 오늘의 기회나 주의점·마음가짐으로 확장하세요.
+     - 모든 출력은 순수 텍스트로 작성하며, Markdown·불릿 기호·번호·이모지·코드 블록을 사용하지 마세요.
+  3. 맥락이 부족한 경우
+     - 정보가 매우 적더라도 위 구조와 문체를 지키며 최소 50개의 의미 있는 제안을 생성해야 합니다.
+  
+  예시: {"items":[{"title":"여유로운 숨","summary":"창문을 열어 잔잔한 공기를 들이마시고 굳어 있던 어깨를 천천히 내려놓으며 오늘을 느슨하게 시작해 보세요.","actions":["10분간 스트레칭으로 호흡과 몸의 리듬을 맞추세요","책상 위를 정돈해 오늘의 아이디어가 놓일 공간을 남겨 두세요"]}]}
   ''';
 }

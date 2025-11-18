@@ -1,3 +1,4 @@
+import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
@@ -13,10 +14,13 @@ import '../widgets/ui_dialog.dart';
 import '../services/ime_exclusion_service.dart';
 import '../widgets/app_selection_widget.dart';
 import '../services/per_app_screenshot_settings_service.dart';
+import '../services/daily_summary_service.dart';
+import 'daily_summary_page.dart';
 import 'exclusion_help_page.dart';
 import 'settings_page.dart';
 import '../services/flutter_logger.dart';
 import 'dart:async';
+import 'dart:math';
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -45,10 +49,30 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   final Set<String> _selectedPackages = <String>{};
   // 记录已开启“每应用自定义设置”的应用包名集合
   final Set<String> _customEnabledPackages = <String>{};
+  final DailySummaryService _dailySummaryService = DailySummaryService.instance;
+  late final EasyRefreshController _refreshController;
+  static const double _morningRevealMaxHeight = 72;
+  MorningInsights? _morningInsights;
+  int _morningTipIndex = -1;
+  MorningInsightEntry? _currentMorningTip;
+  final Random _random = Random();
+  List<int> _morningTipDeck = <int>[];
+  String? _morningTipDeckSignature;
+  int? _lastMorningTipIndex;
+  final List<DateTime> _morningRefreshHistory = <DateTime>[];
+  DateTime? _morningCooldownUntil;
+  String? _morningCooldownMessage;
+  static const int _morningMaxRefreshInWindow = 10;
+  static const Duration _morningRefreshWindow = Duration(minutes: 1);
+  static const Duration _morningCooldownDuration = Duration(minutes: 3);
+  static const int _morningAvailableHour = 8;
 
   @override
   void initState() {
     super.initState();
+    _refreshController = EasyRefreshController(
+      controlFinishRefresh: true,
+    );
     WidgetsBinding.instance.addObserver(this);
     StartupProfiler.begin('HomePage.initState+loadData');
     // 将数据加载与权限检查延后到首帧之后，避免阻塞首帧
@@ -66,6 +90,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         _checkPermissionIssues();
         _checkScreenshotToggleState();
       });
+      // 预加载晨间建议，首次展示时可快速切换
+      // ignore: unawaited_futures
+      _preloadMorningInsights();
     });
     ScreenshotService.instance.onScreenshotSaved.listen((_) {
       // 收到新增/删除事件，直接拉取最新统计（不走缓存）
@@ -112,6 +139,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _refreshController.dispose();
     super.dispose();
   }
 
@@ -729,6 +757,185 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     }
   }
 
+  String get _todayKey {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${now.year.toString().padLeft(4, '0')}-${two(now.month)}-${two(now.day)}';
+  }
+
+  Future<void> _preloadMorningInsights() async {
+    try {
+      final insights = await _dailySummaryService.loadMorningInsights(_todayKey);
+      if (!mounted) return;
+      if (insights != null && insights.tips.isNotEmpty) {
+        setState(() {
+          _resetMorningDeckForInsights(insights);
+          _morningInsights = insights;
+          if (_morningTipIndex >= insights.tips.length) {
+            _morningTipIndex = -1;
+            _currentMorningTip = null;
+          }
+        });
+      } else {
+        setState(() {
+          _morningInsights = null;
+          _morningTipIndex = -1;
+          _currentMorningTip = null;
+          _clearMorningDeck();
+        });
+      }
+    } catch (_) {
+      // 静默忽略，避免影响首屏加载
+    }
+  }
+
+  Future<void> _cycleMorningTip() async {
+    try {
+      final insights = await _dailySummaryService.fetchOrGenerateMorningInsights(_todayKey);
+      if (!mounted) return;
+      if (insights == null || insights.tips.isEmpty) {
+        setState(() {
+          _morningInsights = insights;
+          _morningTipIndex = -1;
+          _currentMorningTip = null;
+          _clearMorningDeck();
+        });
+        return;
+      }
+      final List<MorningInsightEntry> tips = insights.tips;
+      _resetMorningDeckForInsights(insights);
+      if (_morningTipDeck.isEmpty) {
+        _rebuildMorningDeck(tips.length, exclude: _lastMorningTipIndex);
+      }
+      int nextIndex;
+      if (_morningTipDeck.isNotEmpty) {
+        nextIndex = _morningTipDeck.removeAt(0);
+      } else {
+        nextIndex = tips.length <= 1 ? 0 : _random.nextInt(tips.length);
+        if (_lastMorningTipIndex != null &&
+            tips.length > 1 &&
+            nextIndex == _lastMorningTipIndex) {
+          nextIndex = (nextIndex + 1) % tips.length;
+        }
+      }
+      setState(() {
+        _morningInsights = insights;
+        _morningTipIndex = nextIndex;
+        _currentMorningTip = tips[nextIndex];
+      });
+      _lastMorningTipIndex = nextIndex;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _morningTipIndex = -1;
+        _currentMorningTip = null;
+        _clearMorningDeck();
+      });
+    }
+  }
+
+  void _clearMorningDeck() {
+    _morningTipDeck = <int>[];
+    _morningTipDeckSignature = null;
+    _lastMorningTipIndex = null;
+  }
+
+  void _resetMorningDeckForInsights(MorningInsights insights) {
+    final String signature = _buildMorningDeckSignature(insights);
+    if (_morningTipDeckSignature != signature) {
+      _morningTipDeckSignature = signature;
+      _morningTipDeck = <int>[];
+      _lastMorningTipIndex = null;
+    }
+  }
+
+  String _buildMorningDeckSignature(MorningInsights insights) {
+    return '${insights.dateKey}|${insights.sourceDateKey}|${insights.tips.length}|${insights.createdAt}';
+  }
+
+  void _rebuildMorningDeck(int total, {int? exclude}) {
+    if (total <= 0) {
+      _morningTipDeck = <int>[];
+      return;
+    }
+    final List<int> indices = List<int>.generate(total, (index) => index);
+    indices.shuffle(_random);
+    if (exclude != null &&
+        total > 1 &&
+        indices.isNotEmpty &&
+        indices.first == exclude) {
+      final int swapIndex = indices.indexWhere((value) => value != exclude, 1);
+      if (swapIndex != -1) {
+        final int temp = indices[0];
+        indices[0] = indices[swapIndex];
+        indices[swapIndex] = temp;
+      }
+    }
+    _morningTipDeck = indices;
+  }
+
+  Future<void> _openMorningSummary() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: _todayKey)),
+    );
+  }
+
+  Future<void> _handleHomeRefresh() async {
+    IndicatorResult result = IndicatorResult.success;
+    final now = DateTime.now();
+    final l10n = AppLocalizations.of(context);
+
+    if (!_isMorningInsightsAvailable(now)) {
+      setState(() {
+        _morningCooldownMessage = null;
+        _morningCooldownUntil = null;
+        _morningInsights = null;
+        _morningTipIndex = -1;
+        _currentMorningTip = null;
+        _clearMorningDeck();
+      });
+      _refreshController.finishRefresh(result);
+      return;
+    }
+
+    if (_morningCooldownUntil != null && now.isBefore(_morningCooldownUntil!)) {
+      setState(() {
+        _morningCooldownMessage = l10n.homeMorningTipsCooldownMessage;
+      });
+      _refreshController.finishRefresh(result);
+      return;
+    }
+
+    _morningRefreshHistory
+        .removeWhere((ts) => now.difference(ts) > _morningRefreshWindow);
+    if (_morningRefreshHistory.length >= _morningMaxRefreshInWindow) {
+      setState(() {
+        _morningCooldownUntil = now.add(_morningCooldownDuration);
+        _morningCooldownMessage = l10n.homeMorningTipsCooldownMessage;
+      });
+      _refreshController.finishRefresh(result);
+      return;
+    }
+
+    try {
+      _morningRefreshHistory.add(now);
+      await _loadData(soft: true);
+      await _cycleMorningTip();
+      if (mounted) {
+        setState(() {
+          _morningCooldownMessage = null;
+        });
+      }
+    } catch (_) {
+      result = IndicatorResult.fail;
+    } finally {
+      if (mounted) {
+        _refreshController.finishRefresh(result);
+      }
+    }
+  }
+
   /// 刷新权限状态
   Future<void> _refreshPermissions() async {
     try {
@@ -1064,9 +1271,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           // 新增：副导航栏
           _buildSubNavigation(),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: () => _loadData(soft: true),
-              child: _buildAppsList(),
+            child: EasyRefresh.builder(
+              controller: _refreshController,
+              header: _buildMorningHeader(context),
+              onRefresh: _handleHomeRefresh,
+              childBuilder: (context, physics) => _buildAppsList(physics),
             ),
           ),
         ],
@@ -1239,53 +1448,198 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     );
   }
 
-  Widget _buildAppsList() {
-    // 不显示全屏加载动画，直接展示当前数据
-
-    // 加载完成后，如果没有选中的应用，显示空状态
-    if (_selectedApps.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.apps,
-              size: 64,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget _buildAppsList(ScrollPhysics physics) {
+    final bool hasApps = _selectedApps.isNotEmpty;
+    return CustomScrollView(
+      physics: physics,
+      slivers: [
+        if (hasApps)
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.spacing2,
+              vertical: AppTheme.spacing1,
             ),
-            const SizedBox(height: AppTheme.spacing4),
-            Text(
-              AppLocalizations.of(context).homeEmptyTitle,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final app = _selectedApps[index];
+                  return _buildAppListItem(app);
+                },
+                childCount: _selectedApps.length,
               ),
             ),
-            const SizedBox(height: AppTheme.spacing2),
-            Text(
-              AppLocalizations.of(context).homeEmptySubtitle,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return _buildListView();
+          )
+        else
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _buildEmptyState(),
+          ),
+        if (hasApps) SliverToBoxAdapter(child: SizedBox(height: AppTheme.spacing4)),
+      ],
+    );
   }
 
-  Widget _buildListView() {
-    return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing2, // 减少水平内边距
-        vertical: AppTheme.spacing1,   // 减少垂直内边距
-      ),
-      itemCount: _selectedApps.length,
-      itemBuilder: (context, index) {
-        final app = _selectedApps[index];
-        return _buildAppListItem(app);
+  Widget _buildEmptyState() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.apps,
+          size: 64,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(height: AppTheme.spacing4),
+        Text(
+          AppLocalizations.of(context).homeEmptyTitle,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Text(
+          AppLocalizations.of(context).homeEmptySubtitle,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  String _resolveMorningTipText(AppLocalizations l10n) {
+    if (_morningCooldownMessage != null) {
+      if (_morningCooldownUntil != null &&
+          DateTime.now().isBefore(_morningCooldownUntil!)) {
+        return _morningCooldownMessage!;
+      } else {
+        _morningCooldownMessage = null;
+        _morningCooldownUntil = null;
+      }
+    }
+    final MorningInsightEntry? tip = _currentMorningTip ??
+        ((_morningInsights?.tips.isNotEmpty ?? false) ? _morningInsights!.tips.first : null);
+    if (tip == null) {
+      final bool hasInsights = _morningInsights?.tips.isNotEmpty ?? false;
+      return hasInsights ? l10n.homeMorningTipsPullHint : l10n.homeMorningTipsEmpty;
+    }
+    if (tip.hasSummary) return tip.summary!;
+    if (tip.actions.isNotEmpty) return tip.actions.first;
+    if (tip.displayTitle.isNotEmpty) return tip.displayTitle;
+    return l10n.homeMorningTipsPullHint;
+  }
+
+  bool _isMorningInsightsAvailable(DateTime now) {
+    if (now.hour > _morningAvailableHour) {
+      return true;
+    }
+    if (now.hour < _morningAvailableHour) {
+      return false;
+    }
+    return true;
+  }
+
+  Header _buildMorningHeader(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return BuilderHeader(
+      position: IndicatorPosition.above,
+      triggerOffset: _morningRevealMaxHeight,
+      clamping: false,
+      builder: (context, state) {
+        double visibleHeight = state.offset.clamp(0.0, _morningRevealMaxHeight);
+        final bool isProcessing =
+            state.mode == IndicatorMode.processing || state.mode == IndicatorMode.ready;
+        if (isProcessing) {
+          visibleHeight = _morningRevealMaxHeight;
+        }
+        if (visibleHeight <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final double progress = (visibleHeight / _morningRevealMaxHeight).clamp(0.0, 1.0);
+        final bool readyToRelease = state.mode == IndicatorMode.armed;
+        final colorScheme = theme.colorScheme;
+        final bool inCooldown = _morningCooldownUntil != null &&
+            DateTime.now().isBefore(_morningCooldownUntil!);
+        final bool suppressHint = !_isMorningInsightsAvailable(DateTime.now());
+
+        final Widget icon = AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: isProcessing
+              ? SizedBox(
+                  key: const ValueKey('loading_icon'),
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.onSurface,
+                  ),
+                )
+              : AnimatedRotation(
+                  key: ValueKey(readyToRelease ? 'arrow_up' : 'arrow_down'),
+                  turns: readyToRelease ? 0.5 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.arrow_downward_rounded,
+                    size: 18,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+        );
+
+        final String hint = readyToRelease
+            ? l10n.homeMorningTipsReleaseHint
+            : (inCooldown
+                ? l10n.homeMorningTipsCooldownHint
+                : (isProcessing
+                    ? l10n.homeMorningTipsLoading
+                    : l10n.homeMorningTipsPullHint));
+
+        final String message = _resolveMorningTipText(l10n);
+
+        return SizedBox(
+          height: visibleHeight,
+          child: ClipRect(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Opacity(
+                opacity: isProcessing ? 1.0 : progress,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    icon,
+                    const SizedBox(height: AppTheme.spacing1),
+                    if (!suppressHint) ...[
+                      Text(
+                        hint,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing1),
+                    ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                      child: Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        softWrap: true,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
       },
     );
   }

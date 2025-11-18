@@ -1194,12 +1194,6 @@ abstract class AppLocalizations {
   /// **'Enter an integer between 5-60'**
   String get intervalInputHint;
 
-  /// No description provided for @intervalRangeHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Range: 5-60 seconds, default: 5 seconds'**
-  String get intervalRangeHint;
-
   /// No description provided for @intervalInvalidError.
   ///
   /// In en, this message translates to:
@@ -4123,14 +4117,68 @@ abstract class AppLocalizations {
   /// No description provided for @aiEmptySelfTitle.
   ///
   /// In en, this message translates to:
-  /// **'Personal assistant ready'**
+  /// **'This quiet moment is its own reset'**
   String get aiEmptySelfTitle;
 
   /// No description provided for @aiEmptySelfSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Ask anything. I will use your data as context.'**
+  /// **'Open this space like leafing through your second memory—I\'m here to replay it with you.'**
   String get aiEmptySelfSubtitle;
+
+  /// No description provided for @homeMorningTipsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Morning insights'**
+  String get homeMorningTipsTitle;
+
+  /// No description provided for @homeMorningTipsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Gathering ideas from yesterday’s trail…'**
+  String get homeMorningTipsLoading;
+
+  /// No description provided for @homeMorningTipsPullHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Pull to unveil today’s spark from yesterday'**
+  String get homeMorningTipsPullHint;
+
+  /// No description provided for @homeMorningTipsReleaseHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Release for another spark from yesterday'**
+  String get homeMorningTipsReleaseHint;
+
+  /// No description provided for @homeMorningTipsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'This brief pause is a way to care for yourself—take it easy.'**
+  String get homeMorningTipsEmpty;
+
+  /// No description provided for @homeMorningTipsViewAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Open daily summary'**
+  String get homeMorningTipsViewAll;
+
+  /// No description provided for @homeMorningTipsDismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss card'**
+  String get homeMorningTipsDismiss;
+
+  /// No description provided for @homeMorningTipsCooldownHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Take a short pause before pulling again'**
+  String get homeMorningTipsCooldownHint;
+
+  /// No description provided for @homeMorningTipsCooldownMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You’ve refreshed quite a lot—take a breath and look up from the screen for a moment.'**
+  String get homeMorningTipsCooldownMessage;
 }
 
 class _AppLocalizationsDelegate
