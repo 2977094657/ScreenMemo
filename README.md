@@ -75,6 +75,7 @@ AI 领先差距
 
 - **服务化架构**：`MemoryBackendService` 常驻后台，串联事件解析、标签状态机、证据存储与进度追踪；对话界面仅负责订阅 EventChannel 进行渲染。
 - **Room 数据库存储**：内置 `memory_backend.db`（事件/标签/证据三张表），支持标签证据去重、待确认 → 已确认的状态流转、用户手动校正。
+- **统一落盘路径**：记忆库与截图库一样写入 `output/databases/memory_backend.db`，导出压缩包即可同时带走所有标签与画像数据。
 - **事件解析模块**：`LlmUserSignalExtractor` 按照前端 AppBar 选择的 LLM（支持 OpenAI / Azure / Gemini 等）调用模型输出结构化标签；启发式兜底已移除。
 - **提示词本地化**：系统 / 用户提示词定义在 `android/app/src/main/res/values(-*lang*)/memory_prompts.xml`，可按语言自定义。
 - **实时同步机制**：`MemoryBridge` 暴露 MethodChannel（`com.fqyw.screen_memo/memory`）与 EventChannel（快照/进度/标签增量），Flutter 层可以：
