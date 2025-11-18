@@ -128,7 +128,7 @@ object ScreenshotDatabaseHelper {
         return Pair(year, month)
     }
 
-    private fun resolveMasterDbPath(context: Context): String? {
+    fun resolveMasterDbPath(context: Context): String? {
         return try {
             val base = context.filesDir.absolutePath
             val dbDir = File(base, MASTER_DB_DIR_RELATIVE)
@@ -184,6 +184,16 @@ object ScreenshotDatabaseHelper {
                 )
                 """.trimIndent()
             )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS user_settings (
+                  key TEXT PRIMARY KEY,
+                  value TEXT,
+                  updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_user_settings_updated_at ON user_settings(updated_at)")
         } catch (_: Exception) {
             // 忽略
         }

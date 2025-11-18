@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/user_settings_keys.dart';
 import '../models/app_info.dart';
 import 'startup_profiler.dart';
 import 'ime_exclusion_service.dart';
+import 'user_settings_service.dart';
 
 /// 应用选择服务
 class AppSelectionService {
@@ -184,8 +186,11 @@ class AppSelectionService {
   /// 保存显示模式
   Future<void> saveDisplayMode(String mode) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_displayModeKey, mode);
+      await UserSettingsService.instance.setString(
+        UserSettingKeys.displayMode,
+        mode,
+        legacyPrefKeys: const <String>[_displayModeKey],
+      );
       _displayMode = mode;
     } catch (e) {
       print('保存显示模式失败: $e');
@@ -195,8 +200,11 @@ class AppSelectionService {
   /// 获取显示模式
   Future<String> getDisplayMode() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _displayMode = prefs.getString(_displayModeKey) ?? 'grid';
+      final String? stored = await UserSettingsService.instance.getString(
+        UserSettingKeys.displayMode,
+        legacyPrefKeys: const <String>[_displayModeKey],
+      );
+      _displayMode = stored ?? 'grid';
       return _displayMode;
     } catch (e) {
       print('获取显示模式失败: $e');
@@ -207,8 +215,11 @@ class AppSelectionService {
   /// 保存排序模式
   Future<void> saveSortMode(String mode) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_sortModeKey, mode);
+      await UserSettingsService.instance.setString(
+        UserSettingKeys.sortMode,
+        mode,
+        legacyPrefKeys: const <String>[_sortModeKey],
+      );
       _sortMode = mode;
       // 广播变更
       _sortModeController.add(mode);
@@ -220,8 +231,10 @@ class AppSelectionService {
   /// 获取排序模式
   Future<String> getSortMode() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getString(_sortModeKey);
+      final String? stored = await UserSettingsService.instance.getString(
+        UserSettingKeys.sortMode,
+        legacyPrefKeys: const <String>[_sortModeKey],
+      );
       // 兼容旧值：'lastScreenshot' -> 'timeDesc'；'screenshotCount' -> 'countDesc'
       String resolved;
       if (stored == null) {
@@ -246,12 +259,15 @@ class AppSelectionService {
     try {
       // 统一约束：5-60 秒
       final int clamped = interval < 5 ? 5 : (interval > 60 ? 60 : interval);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_screenshotIntervalKey, clamped);
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.screenshotInterval,
+        clamped,
+        legacyPrefKeys: <String>[
+          _screenshotIntervalKey,
+          ...LegacySettingKeys.screenshotInterval,
+        ],
+      );
       _screenshotInterval = clamped;
-      // 同步写入原生读取的偏好，避免跨端读取不一致
-      await prefs.setInt('timed_screenshot_interval', clamped);
-      await prefs.setInt('screenshot_interval', clamped);
     } catch (e) {
       print('保存截屏间隔失败: $e');
     }
@@ -260,12 +276,14 @@ class AppSelectionService {
   /// 获取截屏间隔
   Future<int> getScreenshotInterval() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // 优先读通用键，确保与原生一致
-      final raw = prefs.getInt('timed_screenshot_interval') ??
-          prefs.getInt('screenshot_interval') ??
-          prefs.getInt(_screenshotIntervalKey) ??
-          5;
+      final int raw = await UserSettingsService.instance.getInt(
+        UserSettingKeys.screenshotInterval,
+        defaultValue: 5,
+        legacyPrefKeys: <String>[
+          _screenshotIntervalKey,
+          ...LegacySettingKeys.screenshotInterval,
+        ],
+      );
       // 统一约束：5-60 秒
       _screenshotInterval = raw < 5 ? 5 : (raw > 60 ? 60 : raw);
       return _screenshotInterval;
@@ -278,8 +296,11 @@ class AppSelectionService {
   /// 保存截屏开关状态
   Future<void> saveScreenshotEnabled(bool enabled) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_screenshotEnabledKey, enabled);
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.screenshotEnabled,
+        enabled,
+        legacyPrefKeys: const <String>[_screenshotEnabledKey],
+      );
       _screenshotEnabled = enabled;
     } catch (e) {
       print('保存截屏开关状态失败: $e');
@@ -289,8 +310,11 @@ class AppSelectionService {
   /// 获取截屏开关状态
   Future<bool> getScreenshotEnabled() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _screenshotEnabled = prefs.getBool(_screenshotEnabledKey) ?? false;
+      _screenshotEnabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.screenshotEnabled,
+        defaultValue: false,
+        legacyPrefKeys: const <String>[_screenshotEnabledKey],
+      );
       return _screenshotEnabled;
     } catch (e) {
       print('获取截屏开关状态失败: $e');
@@ -310,8 +334,11 @@ class AppSelectionService {
   /// 保存隐私模式开关
   Future<void> savePrivacyModeEnabled(bool enabled) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_privacyModeKey, enabled);
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.privacyModeEnabled,
+        enabled,
+        legacyPrefKeys: const <String>[_privacyModeKey],
+      );
       _privacyModeEnabled = enabled;
       // 广播变更
       _privacyModeController.add(enabled);
@@ -323,8 +350,11 @@ class AppSelectionService {
   /// 获取隐私模式开关（默认开启）
   Future<bool> getPrivacyModeEnabled() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _privacyModeEnabled = prefs.getBool(_privacyModeKey) ?? true;
+      _privacyModeEnabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.privacyModeEnabled,
+        defaultValue: true,
+        legacyPrefKeys: const <String>[_privacyModeKey],
+      );
       return _privacyModeEnabled;
     } catch (e) {
       print('获取隐私模式失败: $e');

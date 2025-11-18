@@ -61,7 +61,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 12,
+          version: 13,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -94,7 +94,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 12,
+          version: 13,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -121,7 +121,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 12,
+        version: 13,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -462,6 +462,9 @@ class ScreenshotDatabase {
 
     // NSFW 偏好相关表（域名规则 + 手动标记）
     await _createNsfwTables(db);
+
+    // 全局设置表，确保导出时包含所有配置
+    await _createUserSettingsTable(db);
   }
 
   /// 升级回调：按版本增量迁移
@@ -509,6 +512,10 @@ class ScreenshotDatabase {
 
     // 幂等确保 NSFW 相关表
     await _createNsfwTables(db);
+
+    if (oldVersion < 13) {
+      await _createUserSettingsTable(db);
+    }
   }
 
   /// 创建汇总统计表（用于版本升级）

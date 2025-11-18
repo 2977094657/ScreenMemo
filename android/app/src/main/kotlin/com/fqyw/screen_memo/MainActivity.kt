@@ -224,15 +224,19 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "setSegmentSettings" -> {
-                    // { sampleIntervalSec, segmentDurationSec }
                     try {
                         val sample = (call.argument<Int>("sampleIntervalSec") ?: 20).coerceAtLeast(5)
                         val duration = (call.argument<Int>("segmentDurationSec") ?: 300).coerceAtLeast(60)
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        sp.edit()
-                            .putInt("segment_sample_interval_sec", sample)
-                            .putInt("segment_duration_sec", duration)
-                            .apply()
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC,
+                            sample
+                        )
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.SEGMENT_DURATION_SEC,
+                            duration
+                        )
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("invalid_args", e.message, null)
@@ -240,13 +244,22 @@ class MainActivity : FlutterActivity() {
                 }
                 "getSegmentSettings" -> {
                     try {
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        val sample = (sp.getInt("segment_sample_interval_sec", 20)).coerceAtLeast(5)
-                        val duration = (sp.getInt("segment_duration_sec", 300)).coerceAtLeast(60)
-                        result.success(mapOf(
-                            "sampleIntervalSec" to sample,
-                            "segmentDurationSec" to duration
-                        ))
+                        val sample = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC,
+                            20
+                        ).coerceAtLeast(5)
+                        val duration = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.SEGMENT_DURATION_SEC,
+                            300
+                        ).coerceAtLeast(60)
+                        result.success(
+                            mapOf(
+                                "sampleIntervalSec" to sample,
+                                "segmentDurationSec" to duration
+                            )
+                        )
                     } catch (e: Exception) {
                         result.error("read_failed", e.message, null)
                     }
@@ -259,8 +272,11 @@ class MainActivity : FlutterActivity() {
                             secRaw > 60 -> 60
                             else -> secRaw
                         }
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        sp.edit().putInt("ai_min_request_interval_sec", sec).apply()
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.AI_MIN_REQUEST_INTERVAL_SEC,
+                            sec
+                        )
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("invalid_args", e.message, null)
@@ -268,14 +284,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "getAiRequestIntervalSec" -> {
                     try {
-                        val sp = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        val secRaw = sp.getInt("ai_min_request_interval_sec", 3)
-                        val sec = when {
-                            secRaw < 1 -> 1
-                            secRaw > 60 -> 60
-                            else -> secRaw
-                        }
-                        result.success(sec)
+                        val sec = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.AI_MIN_REQUEST_INTERVAL_SEC,
+                            3
+                        )
+                        result.success(
+                            when {
+                                sec < 1 -> 1
+                                sec > 60 -> 60
+                                else -> sec
+                            }
+                        )
                     } catch (e: Exception) {
                         result.error("read_failed", e.message, null)
                     }
@@ -302,12 +322,13 @@ class MainActivity : FlutterActivity() {
                 "startTimedScreenshot" -> {
                     // 统一从 SharedPreferences 读取一次持久化间隔，避免调用方传参不同步
                     val intervalPersisted = try {
-                        val prefs = getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
-                        // 多键兜底，任何一个被写入都可恢复正确值
-                        val a = prefs.getInt("timed_screenshot_interval", -1)
-                        val b = prefs.getInt("screenshot_interval", -1)
-                        val c = prefs.getInt("flutter.screenshot_interval", -1) // Flutter侧自定义key可能以flutter.前缀
-                        listOf(a, b, c).firstOrNull { it != -1 } ?: 5
+                        val stored = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.SCREENSHOT_INTERVAL,
+                            5,
+                            legacyPrefKeys = LegacySettingKeysNative.SCREENSHOT_INTERVAL
+                        )
+                        stored
                     } catch (_: Exception) { 5 }
                     val interval = call.argument<Int>("interval") ?: intervalPersisted
                     FileLogger.e(TAG, "=== 收到startTimedScreenshot请求，间隔: ${interval}秒 ===")

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
@@ -11,8 +11,10 @@ import '../services/permission_service.dart';
 import '../services/theme_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/screenshot_service.dart';
+import '../constants/user_settings_keys.dart';
 import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
+import '../services/user_settings_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'nsfw_settings_page.dart';
@@ -2582,18 +2584,6 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             ),
           ),
-          const SizedBox(height: AppTheme.spacing3),
-          Container(
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: AppTheme.info.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Text(
-              AppLocalizations.of(context).intervalRangeHint,
-              style: TextStyle(fontSize: 12, color: AppTheme.info),
-            ),
-          ),
         ],
       ),
       actions: [
@@ -2883,36 +2873,71 @@ class _SettingsPageState extends State<SettingsPage>
 
     Future<void> _loadScreenshotQualitySettings() async {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        setState(() {
-          _imageFormat = prefs.getString('image_format') ?? 'webp_lossless';
-          _imageQuality = (prefs.getInt('image_quality') ?? 90).clamp(1, 100);
-          _useTargetSize = prefs.getBool('use_target_size') ?? false;
-          final tkb = prefs.getInt('target_size_kb') ?? 50;
-          _targetSizeKb = tkb < 50 ? 50 : tkb;
-        _grayscale = false; // 灰度已移除
-        });
+        final String? format = await UserSettingsService.instance.getString(
+          UserSettingKeys.imageFormat,
+          defaultValue: 'webp_lossless',
+          legacyPrefKeys: const <String>['image_format'],
+        );
+        final int quality = await UserSettingsService.instance.getInt(
+          UserSettingKeys.imageQuality,
+          defaultValue: 90,
+          legacyPrefKeys: const <String>['image_quality'],
+        );
+        final bool useTarget = await UserSettingsService.instance.getBool(
+          UserSettingKeys.useTargetSize,
+          defaultValue: false,
+          legacyPrefKeys: const <String>['use_target_size'],
+        );
+        final int targetKb = await UserSettingsService.instance.getInt(
+          UserSettingKeys.targetSizeKb,
+          defaultValue: 50,
+          legacyPrefKeys: const <String>['target_size_kb'],
+        );
+        if (mounted) {
+          setState(() {
+            _imageFormat = format ?? 'webp_lossless';
+            _imageQuality = quality.clamp(1, 100);
+            _useTargetSize = useTarget;
+            _targetSizeKb = targetKb < 50 ? 50 : targetKb;
+            _grayscale = false; // 灰度已移除
+          });
+        }
       } catch (_) {}
     }
 
     Future<void> _loadScreenshotExpireSettings() async {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        setState(() {
-          _expireEnabled = prefs.getBool('screenshot_expire_enabled') ?? false;
-          final d = prefs.getInt('screenshot_expire_days') ?? 30;
-          _expireDays = d < 1 ? 1 : d;
-        });
+        final bool enabled = await UserSettingsService.instance.getBool(
+          UserSettingKeys.screenshotExpireEnabled,
+          defaultValue: false,
+          legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+        );
+        final int days = await UserSettingsService.instance.getInt(
+          UserSettingKeys.screenshotExpireDays,
+          defaultValue: 30,
+          legacyPrefKeys: const <String>['screenshot_expire_days'],
+        );
+        if (mounted) {
+          setState(() {
+            _expireEnabled = enabled;
+            _expireDays = days < 1 ? 1 : days;
+          });
+        }
       } catch (_) {}
     }
 
     Future<void> _saveScreenshotExpireSettings() async {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('screenshot_expire_enabled', _expireEnabled);
-        await prefs.setInt(
-          'screenshot_expire_days',
-          _expireDays < 1 ? 1 : _expireDays,
+        final int days = _expireDays < 1 ? 1 : _expireDays;
+        await UserSettingsService.instance.setBool(
+          UserSettingKeys.screenshotExpireEnabled,
+          _expireEnabled,
+          legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+        );
+        await UserSettingsService.instance.setInt(
+          UserSettingKeys.screenshotExpireDays,
+          days,
+          legacyPrefKeys: const <String>['screenshot_expire_days'],
         );
         if (mounted) {
           UINotifier.success(context, AppLocalizations.of(context).expireCleanupSaved);
@@ -2947,17 +2972,27 @@ class _SettingsPageState extends State<SettingsPage>
 
     Future<void> _saveScreenshotQualitySettings() async {
       try {
-        final prefs = await SharedPreferences.getInstance();
         // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
-        await prefs.setString(
-          'image_format',
-          _useTargetSize ? 'webp_lossy' : 'webp_lossless',
+        final String format = _useTargetSize ? 'webp_lossy' : 'webp_lossless';
+        await UserSettingsService.instance.setString(
+          UserSettingKeys.imageFormat,
+          format,
+          legacyPrefKeys: const <String>['image_format'],
         );
-        await prefs.setInt('image_quality', _imageQuality);
-        await prefs.setBool('use_target_size', _useTargetSize);
-        await prefs.setInt(
-          'target_size_kb',
+        await UserSettingsService.instance.setInt(
+          UserSettingKeys.imageQuality,
+          _imageQuality,
+          legacyPrefKeys: const <String>['image_quality'],
+        );
+        await UserSettingsService.instance.setBool(
+          UserSettingKeys.useTargetSize,
+          _useTargetSize,
+          legacyPrefKeys: const <String>['use_target_size'],
+        );
+        await UserSettingsService.instance.setInt(
+          UserSettingKeys.targetSizeKb,
           _targetSizeKb < 50 ? 50 : _targetSizeKb,
+          legacyPrefKeys: const <String>['target_size_kb'],
         );
         // 不再保存灰度
         if (mounted) {
@@ -3192,12 +3227,28 @@ class _SettingsPageState extends State<SettingsPage>
 extension _DailySummaryNotifyExt on _SettingsPageState {
   Future<void> _loadDailyNotifySettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _dailyNotifyEnabled = prefs.getBool('daily_notify_enabled') ?? true;
-        _dailyNotifyHour = (prefs.getInt('daily_notify_hour') ?? 22).clamp(0, 23);
-        _dailyNotifyMinute = (prefs.getInt('daily_notify_minute') ?? 0).clamp(0, 59);
-      });
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.dailyNotifyEnabled,
+        defaultValue: true,
+        legacyPrefKeys: const <String>['daily_notify_enabled'],
+      );
+      final int hour = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyHour,
+        defaultValue: 22,
+        legacyPrefKeys: const <String>['daily_notify_hour'],
+      );
+      final int minute = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyMinute,
+        defaultValue: 0,
+        legacyPrefKeys: const <String>['daily_notify_minute'],
+      );
+      if (mounted) {
+        setState(() {
+          _dailyNotifyEnabled = enabled;
+          _dailyNotifyHour = hour.clamp(0, 23);
+          _dailyNotifyMinute = minute.clamp(0, 59);
+        });
+      }
       await FlutterLogger.nativeInfo(
         'DailySummaryUI',
         'load settings: enabled=${_dailyNotifyEnabled} time=${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
@@ -3222,14 +3273,25 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     bool toast = true,
   }) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final newEnabled = enabled ?? _dailyNotifyEnabled;
       final newHour = (hour ?? _dailyNotifyHour).clamp(0, 23);
       final newMinute = (minute ?? _dailyNotifyMinute).clamp(0, 59);
 
-      await prefs.setBool('daily_notify_enabled', newEnabled);
-      await prefs.setInt('daily_notify_hour', newHour);
-      await prefs.setInt('daily_notify_minute', newMinute);
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.dailyNotifyEnabled,
+        newEnabled,
+        legacyPrefKeys: const <String>['daily_notify_enabled'],
+      );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.dailyNotifyHour,
+        newHour,
+        legacyPrefKeys: const <String>['daily_notify_hour'],
+      );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.dailyNotifyMinute,
+        newMinute,
+        legacyPrefKeys: const <String>['daily_notify_minute'],
+      );
 
       if (mounted) {
         setState(() {
@@ -3264,91 +3326,179 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   }
 
   Future<void> _pickDailyNotifyTime() async {
-    // 数字输入方式：点击时间数字后弹出输入框，类似"截图质量"的交互
-    final TextEditingController hourController =
-        TextEditingController(text: _two(_dailyNotifyHour));
-    final TextEditingController minuteController =
-        TextEditingController(text: _two(_dailyNotifyMinute));
+    final int initialHour = _dailyNotifyHour.clamp(0, 23);
+    final int initialMinute = _dailyNotifyMinute.clamp(0, 59);
 
-    await showUIDialog<void>(
-      context: context,
-      title: AppLocalizations.of(context).setReminderTimeTitle,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: TextField(
-                    controller: hourController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: InputDecoration(
-                      labelText: AppLocalizations.of(context).hourLabel,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                      floatingLabelBehavior: FloatingLabelBehavior.always,
+    final FixedExtentScrollController hourController =
+        FixedExtentScrollController(initialItem: initialHour);
+    final FixedExtentScrollController minuteController =
+        FixedExtentScrollController(initialItem: initialMinute);
+
+    int tempHour = initialHour;
+    int tempMinute = initialMinute;
+
+    TimeOfDay? result;
+    try {
+      result = await showModalBottomSheet<TimeOfDay>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) {
+          final theme = Theme.of(context);
+          final l10n = AppLocalizations.of(context);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(AppTheme.radiusLg),
+                topRight: Radius.circular(AppTheme.radiusLg),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: AppTheme.spacing3, bottom: AppTheme.spacing2),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing3),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: TextField(
-                    controller: minuteController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: InputDecoration(
-                      labelText: AppLocalizations.of(context).minuteLabel,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                    child: Text(
+                      l10n.setReminderTimeTitle,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                ),
+                  SizedBox(
+                    height: 240,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                l10n.hourLabel,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Expanded(
+                                child: CupertinoPicker(
+                                  scrollController: hourController,
+                                  itemExtent: 36,
+                                  magnification: 1.12,
+                                  squeeze: 1.05,
+                                  useMagnifier: true,
+                                  onSelectedItemChanged: (int index) {
+                                    tempHour = index;
+                                  },
+                                  children: List<Widget>.generate(
+                                    24,
+                                    (int index) => Center(
+                                      child: Text(
+                                        _two(index),
+                                        style: theme.textTheme.titleMedium,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                l10n.minuteLabel,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Expanded(
+                                child: CupertinoPicker(
+                                  scrollController: minuteController,
+                                  itemExtent: 36,
+                                  magnification: 1.12,
+                                  squeeze: 1.05,
+                                  useMagnifier: true,
+                                  onSelectedItemChanged: (int index) {
+                                    tempMinute = index;
+                                  },
+                                  children: List<Widget>.generate(
+                                    60,
+                                    (int index) => Center(
+                                      child: Text(
+                                        _two(index),
+                                        style: theme.textTheme.titleMedium,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing3,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                              ),
+                            ),
+                            child: Text(l10n.dialogCancel),
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.spacing3),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              Navigator.of(ctx).pop(TimeOfDay(hour: tempHour, minute: tempMinute));
+                            },
+                            style: FilledButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                              ),
+                            ),
+                            child: Text(l10n.dialogDone),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          // 移除底部提示文案
-        ],
-      ),
-      actions: [
-        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
-        UIDialogAction(
-          text: AppLocalizations.of(context).dialogOk,
-          style: UIDialogActionStyle.primary,
-          closeOnPress: false,
-          onPressed: (ctx) async {
-            final h = int.tryParse(hourController.text.trim());
-            final m = int.tryParse(minuteController.text.trim());
-            if (h == null || h < 0 || h > 23) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).invalidHourError);
-              return;
-            }
-            if (m == null || m < 0 || m > 59) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).invalidMinuteError);
-              return;
-            }
-            await _saveDailyNotifySettings(hour: h, minute: m);
-            if (ctx.mounted) {
-              Navigator.of(ctx).pop();
-              UINotifier.success(ctx, AppLocalizations.of(ctx).timeSetSuccess(_two(h), _two(m)));
-            }
-          },
-        ),
-      ],
-    );
+            ),
+          );
+        },
+      );
+    } finally {
+      hourController.dispose();
+      minuteController.dispose();
+    }
+
+    if (result != null) {
+      await _saveDailyNotifySettings(hour: result.hour, minute: result.minute);
+    }
   }
 
   Widget _buildDailyNotifyItem(BuildContext context) {

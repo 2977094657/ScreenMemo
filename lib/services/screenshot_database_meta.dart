@@ -2619,6 +2619,19 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     );
   }
 
+  Future<void> _createUserSettingsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_user_settings_updated_at ON user_settings(updated_at)',
+    );
+  }
+
   // ----- 域名规则 CRUD -----
   Future<List<Map<String, dynamic>>> listNsfwDomainRules() async {
     final db = await database;

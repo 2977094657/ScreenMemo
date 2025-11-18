@@ -8,10 +8,12 @@ import 'per_app_screenshot_settings_service.dart';
 import 'permission_service.dart';
 import 'screenshot_database.dart';
 import 'path_service.dart';
+import '../constants/user_settings_keys.dart';
 import '../models/screenshot_record.dart';
 import 'startup_profiler.dart';
 import 'flutter_logger.dart';
 import 'navigation_service.dart';
+import 'user_settings_service.dart';
 
 /// 截屏服务异常类
 class ScreenshotServiceException implements Exception {
@@ -183,10 +185,14 @@ class ScreenshotService {
       print('尝试启动定时截屏服务...');
       // 启动前先持久化一次间隔，确保原生端读取到一致值
       try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('timed_screenshot_interval', clampedInterval);
-        // 同步 UI 侧读取的键
-        await prefs.setInt('screenshot_interval', clampedInterval);
+        await UserSettingsService.instance.setInt(
+          UserSettingKeys.screenshotInterval,
+          clampedInterval,
+          legacyPrefKeys: const <String>[
+            'timed_screenshot_interval',
+            'flutter.screenshot_interval',
+          ],
+        );
       } catch (_) {}
       final success = await _permissionService.startTimedScreenshot(
         clampedInterval,
@@ -234,10 +240,14 @@ class ScreenshotService {
         await _permissionService.stopTimedScreenshot();
         // 启动前先持久化一次间隔，避免原生侧读到旧值
         try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt('timed_screenshot_interval', clampedInterval);
-          // 同步写入UI侧读取的键，避免不同键值不同步
-          await prefs.setInt('screenshot_interval', clampedInterval);
+          await UserSettingsService.instance.setInt(
+            UserSettingKeys.screenshotInterval,
+            clampedInterval,
+            legacyPrefKeys: const <String>[
+              'timed_screenshot_interval',
+              'flutter.screenshot_interval',
+            ],
+          );
         } catch (_) {}
         final success = await _permissionService.startTimedScreenshot(
           clampedInterval,
@@ -251,9 +261,14 @@ class ScreenshotService {
         _currentInterval = clampedInterval;
         await _saveServiceState();
         try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt('timed_screenshot_interval', clampedInterval);
-          await prefs.setInt('screenshot_interval', clampedInterval);
+          await UserSettingsService.instance.setInt(
+            UserSettingKeys.screenshotInterval,
+            clampedInterval,
+            legacyPrefKeys: const <String>[
+              'timed_screenshot_interval',
+              'flutter.screenshot_interval',
+            ],
+          );
         } catch (_) {}
         return true;
       }
