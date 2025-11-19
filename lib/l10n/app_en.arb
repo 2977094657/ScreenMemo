@@ -254,6 +254,81 @@
   "exportDataDesc": "Export ZIP to Download/ScreenMemory",
   "importDataTitle": "Import data",
   "importDataDesc": "Import ZIP file to app storage",
+  "importModeTitle": "Select import strategy",
+  "importModeOverwriteTitle": "Overwrite import",
+  "importModeOverwriteDesc": "Replace the current data directory. Use when fully restoring from backups.",
+  "importModeMergeTitle": "Merge import",
+  "importModeMergeDesc": "Keep current data and merge archive contents with deduplication.",
+  "mergeProgressCopying": "Copying screenshot files...",
+  "mergeProgressCopyingGeneric": "Copying additional assets...",
+  "mergeProgressMergingDb": "Merging database shards...",
+  "mergeProgressMemoryDb": "Merging memory database...",
+  "mergeProgressFinalizing": "Finalizing merge...",
+  "mergeCompleteTitle": "Merge complete",
+  "mergeReportInserted": "New screenshots: {count}",
+  "@mergeReportInserted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportSkipped": "Skipped duplicates: {count}",
+  "@mergeReportSkipped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportCopied": "Files copied: {count}",
+  "@mergeReportCopied": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryEvents": "New memory events: {count}",
+  "@mergeReportMemoryEvents": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryTags": "New memory tags: {count}",
+  "@mergeReportMemoryTags": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryEvidence": "New tag evidence: {count}",
+  "@mergeReportMemoryEvidence": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportAffectedPackages": "Affected app packages: {packages}",
+  "@mergeReportAffectedPackages": {
+    "placeholders": {
+      "packages": {
+        "type": "String"
+      }
+    }
+  },
+  "mergeReportWarnings": "Warnings to review:",
+  "mergeReportNoWarnings": "No warnings detected.",
+  "recalculateAllTitle": "Recalculate all data",
+  "recalculateAllDesc": "Rescan every app to refresh navigation totals for days, apps, screenshots, and size.",
+  "recalculateAllAction": "Recalculate",
+  "recalculateAllProgress": "Recomputing statistics for all apps...",
+  "recalculateAllSuccess": "All statistics have been refreshed.",
+  "recalculateAllFailedTitle": "Recalculation failed",
   "aiAssistantTitle": "AI Assistant",
   "aiAssistantDesc": "Configure AI interface and models, test multi-turn conversations",
 

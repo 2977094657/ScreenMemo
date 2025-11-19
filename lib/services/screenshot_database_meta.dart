@@ -47,9 +47,11 @@ Future<void> _exportZipIsolateEntry(Map<String, dynamic> args) async {
           return true;
         }
       }
-      return relLower.endsWith('.db-wal') ||
-          relLower.endsWith('.db-shm') ||
-          relLower.endsWith('.db-journal');
+      // 保留 SQLite WAL/SHM 辅助文件，确保 WAL 模式数据库在导出时拥有最新数据
+      if (relLower.endsWith('.db-journal')) {
+        return true;
+      }
+      return false;
     }
 
     // 第一次遍历：只收集需要打包的相对路径，避免一次性打开过多文件句柄

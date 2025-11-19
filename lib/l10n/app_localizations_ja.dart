@@ -542,6 +542,100 @@ class AppLocalizationsJa extends AppLocalizations {
   String get importDataDesc => 'ZIP ファイルをアプリストレージに取り込み';
 
   @override
+  String get importModeTitle => 'インポート方法を選択';
+
+  @override
+  String get importModeOverwriteTitle => '上書きインポート';
+
+  @override
+  String get importModeOverwriteDesc =>
+      '現在のデータディレクトリを置き換えます。バックアップの完全復元に使用します。';
+
+  @override
+  String get importModeMergeTitle => 'マージインポート';
+
+  @override
+  String get importModeMergeDesc => '既存データを保持し、アーカイブ内容を重複排除してマージします。';
+
+  @override
+  String get mergeProgressCopying => 'スクリーンショットファイルをコピーしています…';
+
+  @override
+  String get mergeProgressCopyingGeneric => 'その他のリソースをコピーしています…';
+
+  @override
+  String get mergeProgressMergingDb => 'データベースをマージしています…';
+
+  @override
+  String get mergeProgressMemoryDb => 'メモリーデータベースをマージしています…';
+
+  @override
+  String get mergeProgressFinalizing => 'マージを完了しています…';
+
+  @override
+  String get mergeCompleteTitle => 'マージが完了しました';
+
+  @override
+  String mergeReportInserted(int count) {
+    return '追加されたスクリーンショット: $count';
+  }
+
+  @override
+  String mergeReportSkipped(int count) {
+    return 'スキップした重複: $count';
+  }
+
+  @override
+  String mergeReportCopied(int count) {
+    return 'コピーしたファイル: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvents(int count) {
+    return '追加された記憶イベント: $count';
+  }
+
+  @override
+  String mergeReportMemoryTags(int count) {
+    return '追加された記憶タグ: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvidence(int count) {
+    return '追加されたタグ証拠: $count';
+  }
+
+  @override
+  String mergeReportAffectedPackages(String packages) {
+    return '影響を受けたアプリパッケージ: $packages';
+  }
+
+  @override
+  String get mergeReportWarnings => '確認が必要な警告：';
+
+  @override
+  String get mergeReportNoWarnings => '警告はありません。';
+
+  @override
+  String get recalculateAllTitle => 'すべてのデータを再集計';
+
+  @override
+  String get recalculateAllDesc =>
+      'すべてのアプリを再スキャンして、ナビゲーションの表示（日数・アプリ・スクリーンショット・サイズ）を更新します。';
+
+  @override
+  String get recalculateAllAction => '再集計';
+
+  @override
+  String get recalculateAllProgress => '全アプリの統計を再計算しています…';
+
+  @override
+  String get recalculateAllSuccess => '統計を再集計しました。';
+
+  @override
+  String get recalculateAllFailedTitle => '再集計に失敗しました';
+
+  @override
   String get aiAssistantTitle => 'AI アシスタント';
 
   @override

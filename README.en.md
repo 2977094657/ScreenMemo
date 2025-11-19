@@ -172,6 +172,7 @@ Scattered digital self
 <summary>How to backup/migrate data?</summary>
 
 - Use “Data Import/Export” to export/import assets and database in one click for migration or archiving.
+- When importing you can choose “Overwrite Import” or “Merge Import”. Merge keeps existing data and deduplicates the archive before merging, which is useful for stitching multiple backups together.
 </details>
 
 ## Quick Start

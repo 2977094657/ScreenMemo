@@ -1092,6 +1092,162 @@ abstract class AppLocalizations {
   /// **'Import ZIP file to app storage'**
   String get importDataDesc;
 
+  /// No description provided for @importModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select import strategy'**
+  String get importModeTitle;
+
+  /// No description provided for @importModeOverwriteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite import'**
+  String get importModeOverwriteTitle;
+
+  /// No description provided for @importModeOverwriteDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace the current data directory. Use when fully restoring from backups.'**
+  String get importModeOverwriteDesc;
+
+  /// No description provided for @importModeMergeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge import'**
+  String get importModeMergeTitle;
+
+  /// No description provided for @importModeMergeDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep current data and merge archive contents with deduplication.'**
+  String get importModeMergeDesc;
+
+  /// No description provided for @mergeProgressCopying.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying screenshot files...'**
+  String get mergeProgressCopying;
+
+  /// No description provided for @mergeProgressCopyingGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying additional assets...'**
+  String get mergeProgressCopyingGeneric;
+
+  /// No description provided for @mergeProgressMergingDb.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging database shards...'**
+  String get mergeProgressMergingDb;
+
+  /// No description provided for @mergeProgressMemoryDb.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging memory database...'**
+  String get mergeProgressMemoryDb;
+
+  /// No description provided for @mergeProgressFinalizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing merge...'**
+  String get mergeProgressFinalizing;
+
+  /// No description provided for @mergeCompleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge complete'**
+  String get mergeCompleteTitle;
+
+  /// No description provided for @mergeReportInserted.
+  ///
+  /// In en, this message translates to:
+  /// **'New screenshots: {count}'**
+  String mergeReportInserted(int count);
+
+  /// No description provided for @mergeReportSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped duplicates: {count}'**
+  String mergeReportSkipped(int count);
+
+  /// No description provided for @mergeReportCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Files copied: {count}'**
+  String mergeReportCopied(int count);
+
+  /// No description provided for @mergeReportMemoryEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'New memory events: {count}'**
+  String mergeReportMemoryEvents(int count);
+
+  /// No description provided for @mergeReportMemoryTags.
+  ///
+  /// In en, this message translates to:
+  /// **'New memory tags: {count}'**
+  String mergeReportMemoryTags(int count);
+
+  /// No description provided for @mergeReportMemoryEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'New tag evidence: {count}'**
+  String mergeReportMemoryEvidence(int count);
+
+  /// No description provided for @mergeReportAffectedPackages.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected app packages: {packages}'**
+  String mergeReportAffectedPackages(String packages);
+
+  /// No description provided for @mergeReportWarnings.
+  ///
+  /// In en, this message translates to:
+  /// **'Warnings to review:'**
+  String get mergeReportWarnings;
+
+  /// No description provided for @mergeReportNoWarnings.
+  ///
+  /// In en, this message translates to:
+  /// **'No warnings detected.'**
+  String get mergeReportNoWarnings;
+
+  /// No description provided for @recalculateAllTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculate all data'**
+  String get recalculateAllTitle;
+
+  /// No description provided for @recalculateAllDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Rescan every app to refresh navigation totals for days, apps, screenshots, and size.'**
+  String get recalculateAllDesc;
+
+  /// No description provided for @recalculateAllAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculate'**
+  String get recalculateAllAction;
+
+  /// No description provided for @recalculateAllProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Recomputing statistics for all apps...'**
+  String get recalculateAllProgress;
+
+  /// No description provided for @recalculateAllSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'All statistics have been refreshed.'**
+  String get recalculateAllSuccess;
+
+  /// No description provided for @recalculateAllFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recalculation failed'**
+  String get recalculateAllFailedTitle;
+
   /// No description provided for @aiAssistantTitle.
   ///
   /// In en, this message translates to:

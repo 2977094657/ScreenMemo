@@ -531,6 +531,98 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importDataDesc => '将ZIP文件导入到应用存储';
 
   @override
+  String get importModeTitle => '选择导入方式';
+
+  @override
+  String get importModeOverwriteTitle => '覆盖导入';
+
+  @override
+  String get importModeOverwriteDesc => '替换当前数据目录，适用于完整恢复备份。';
+
+  @override
+  String get importModeMergeTitle => '合并导入';
+
+  @override
+  String get importModeMergeDesc => '保留现有数据，将压缩包内容去重后合并。';
+
+  @override
+  String get mergeProgressCopying => '正在复制截图文件…';
+
+  @override
+  String get mergeProgressCopyingGeneric => '正在复制其他资源…';
+
+  @override
+  String get mergeProgressMergingDb => '正在合并数据库…';
+
+  @override
+  String get mergeProgressMemoryDb => '正在合并记忆数据库…';
+
+  @override
+  String get mergeProgressFinalizing => '正在完成合并…';
+
+  @override
+  String get mergeCompleteTitle => '合并完成';
+
+  @override
+  String mergeReportInserted(int count) {
+    return '新增截图：$count';
+  }
+
+  @override
+  String mergeReportSkipped(int count) {
+    return '跳过重复：$count';
+  }
+
+  @override
+  String mergeReportCopied(int count) {
+    return '复制文件：$count';
+  }
+
+  @override
+  String mergeReportMemoryEvents(int count) {
+    return '新增记忆事件：$count';
+  }
+
+  @override
+  String mergeReportMemoryTags(int count) {
+    return '新增记忆标签：$count';
+  }
+
+  @override
+  String mergeReportMemoryEvidence(int count) {
+    return '新增标签证据：$count';
+  }
+
+  @override
+  String mergeReportAffectedPackages(String packages) {
+    return '受影响的应用包：$packages';
+  }
+
+  @override
+  String get mergeReportWarnings => '需要关注的警告：';
+
+  @override
+  String get mergeReportNoWarnings => '未检测到警告。';
+
+  @override
+  String get recalculateAllTitle => '重新统计所有数据';
+
+  @override
+  String get recalculateAllDesc => '重新扫描全部应用以刷新导航栏的天数、应用、截图与容量统计。';
+
+  @override
+  String get recalculateAllAction => '重新统计';
+
+  @override
+  String get recalculateAllProgress => '正在重新统计全部应用…';
+
+  @override
+  String get recalculateAllSuccess => '全局数据已重新统计。';
+
+  @override
+  String get recalculateAllFailedTitle => '重新统计失败';
+
+  @override
   String get aiAssistantTitle => 'AI 助手';
 
   @override

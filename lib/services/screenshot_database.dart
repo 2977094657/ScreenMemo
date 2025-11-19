@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +16,7 @@ import 'path_service.dart';
 
 part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
+part 'screenshot_database_merge.dart';
 
 /// 截屏数据库服务
 class ScreenshotDatabase {
@@ -935,6 +938,22 @@ class ScreenshotDatabase {
   Future<void> recomputeAppStatsForPackage(String package) async {
     final db = await database;
     await _recomputeAppStatForPackage(db, package);
+  }
+
+  Future<List<String>> listRegisteredPackages() async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'app_registry',
+        columns: ['app_package_name'],
+      );
+      return rows
+          .map((row) => row['app_package_name'] as String?)
+          .whereType<String>()
+          .toList();
+    } catch (_) {
+      return <String>[];
+    }
   }
 
   // ======= 分表架构相关方法 =======

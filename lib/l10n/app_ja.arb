@@ -233,6 +233,81 @@
   "exportDataDesc": "ZIP を Download/ScreenMemory にエクスポート",
   "importDataTitle": "データをインポート",
   "importDataDesc": "ZIP ファイルをアプリストレージに取り込み",
+  "importModeTitle": "インポート方法を選択",
+  "importModeOverwriteTitle": "上書きインポート",
+  "importModeOverwriteDesc": "現在のデータディレクトリを置き換えます。バックアップの完全復元に使用します。",
+  "importModeMergeTitle": "マージインポート",
+  "importModeMergeDesc": "既存データを保持し、アーカイブ内容を重複排除してマージします。",
+  "mergeProgressCopying": "スクリーンショットファイルをコピーしています…",
+  "mergeProgressCopyingGeneric": "その他のリソースをコピーしています…",
+  "mergeProgressMergingDb": "データベースをマージしています…",
+  "mergeProgressMemoryDb": "メモリーデータベースをマージしています…",
+  "mergeProgressFinalizing": "マージを完了しています…",
+  "mergeCompleteTitle": "マージが完了しました",
+  "mergeReportInserted": "追加されたスクリーンショット: {count}",
+  "@mergeReportInserted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportSkipped": "スキップした重複: {count}",
+  "@mergeReportSkipped": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportCopied": "コピーしたファイル: {count}",
+  "@mergeReportCopied": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryEvents": "追加された記憶イベント: {count}",
+  "@mergeReportMemoryEvents": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryTags": "追加された記憶タグ: {count}",
+  "@mergeReportMemoryTags": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportMemoryEvidence": "追加されたタグ証拠: {count}",
+  "@mergeReportMemoryEvidence": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mergeReportAffectedPackages": "影響を受けたアプリパッケージ: {packages}",
+  "@mergeReportAffectedPackages": {
+    "placeholders": {
+      "packages": {
+        "type": "String"
+      }
+    }
+  },
+  "mergeReportWarnings": "確認が必要な警告：",
+  "mergeReportNoWarnings": "警告はありません。",
+  "recalculateAllTitle": "すべてのデータを再集計",
+  "recalculateAllDesc": "すべてのアプリを再スキャンして、ナビゲーションの表示（日数・アプリ・スクリーンショット・サイズ）を更新します。",
+  "recalculateAllAction": "再集計",
+  "recalculateAllProgress": "全アプリの統計を再計算しています…",
+  "recalculateAllSuccess": "統計を再集計しました。",
+  "recalculateAllFailedTitle": "再集計に失敗しました",
   "aiAssistantTitle": "AI アシスタント",
   "aiAssistantDesc": "AI インターフェースとモデルを設定し、多段の会話をテスト",
   "segmentSampleIntervalTitle": "サンプル間隔 (秒)",

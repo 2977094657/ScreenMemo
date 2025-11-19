@@ -15,14 +15,14 @@ import '../constants/user_settings_keys.dart';
 import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/user_settings_service.dart';
+import '../models/app_info.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
 import 'nsfw_settings_page.dart';
 import '../services/daily_summary_service.dart';
-import '../services/locale_service.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ai_settings_service.dart';
-import '../services/flutter_logger.dart';
+
+enum _ImportMode { overwrite, merge }
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -62,8 +62,6 @@ class _SettingsPageState extends State<SettingsPage>
   bool _exportingDb = false;
   bool _importingData = false;
   // 导入/导出全屏进度状态
-  bool _importExportIsExport = false;
-  String? _importExportStage;
   // 截图过期清理设置
   bool _expireEnabled = false; // 是否启用过期自动删除
   int _expireDays = 30; // 过期天数，下限 1
@@ -78,6 +76,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _screenshotLoggingEnabled = false;
   // 流式期间实时渲染图片（影响 AI 对话性能的全局开关）
   bool _renderImagesDuringStreaming = false;
+  // 最近一次导入模式，默认合并
+  _ImportMode _lastImportMode = _ImportMode.merge;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -104,6 +104,339 @@ class _SettingsPageState extends State<SettingsPage>
     } catch (_) {
       return false;
     }
+  }
+
+  Future<void> _showMergeResultDialog(MergeReport report) async {
+    if (!mounted) return;
+    final AppLocalizations t = AppLocalizations.of(context);
+    final List<String> affectedPackages =
+        report.affectedPackages.toList()..sort();
+    final String affectedLabel = affectedPackages.join(', ');
+    final Map<String, AppInfo> appInfoMap = {
+      for (final app in await _appService.getAllInstalledApps())
+        app.packageName: app
+    };
+    final ThemeData theme = Theme.of(context);
+    final double maxHeight = ((MediaQuery.of(context).size.height * 0.6)
+            .clamp(280.0, 420.0))
+        .toDouble();
+
+    final Widget statsSection = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t.mergeReportInserted(report.insertedScreenshots),
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Text(
+          t.mergeReportSkipped(report.skippedScreenshotDuplicates),
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Text(
+          t.mergeReportCopied(report.copiedFiles),
+          style: theme.textTheme.bodyMedium,
+        ),
+        if (report.mergedMemoryEvents > 0 ||
+            report.mergedMemoryTags > 0 ||
+            report.mergedMemoryEvidence > 0) ...[
+          const SizedBox(height: AppTheme.spacing3),
+          if (report.mergedMemoryEvents > 0)
+            Text(
+              t.mergeReportMemoryEvents(report.mergedMemoryEvents),
+              style: theme.textTheme.bodyMedium,
+            ),
+          if (report.mergedMemoryTags > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: AppTheme.spacing1),
+              child: Text(
+                t.mergeReportMemoryTags(report.mergedMemoryTags),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          if (report.mergedMemoryEvidence > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: AppTheme.spacing1),
+              child: Text(
+                t.mergeReportMemoryEvidence(report.mergedMemoryEvidence),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+        ],
+        if (affectedPackages.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.spacing3),
+          Text(
+            t.mergeReportAffectedPackages(affectedLabel),
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Wrap(
+            spacing: AppTheme.spacing2,
+            runSpacing: AppTheme.spacing2,
+            children: affectedPackages
+                .map(
+                  (pkg) => _buildAffectedPackageChip(
+                    appInfoMap[pkg],
+                    pkg,
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: AppTheme.spacing3),
+        Text(
+          t.mergeReportWarnings,
+          style: theme
+              .textTheme
+              .bodyMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: AppTheme.spacing1),
+        if (report.warnings.isEmpty)
+          Text(
+            t.mergeReportNoWarnings,
+            style: theme.textTheme.bodySmall,
+          )
+        else
+          ...report.warnings.map(
+            (w) => Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+              child: Text(
+                '• $w',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
+      ],
+    );
+
+    await showUIDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      title: t.mergeCompleteTitle,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(right: AppTheme.spacing1),
+          child: statsSection,
+        ),
+      ),
+      actions: [
+        UIDialogAction(
+          text: t.dialogOk,
+          style: UIDialogActionStyle.primary,
+        ),
+      ],
+    );
+  }
+
+  Future<_ImportMode?> _selectImportMode() async {
+    final AppLocalizations t = AppLocalizations.of(context);
+    final ThemeData theme = Theme.of(context);
+    final _ImportMode initial = _lastImportMode;
+
+    return showModalBottomSheet<_ImportMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(AppTheme.radiusLg),
+              topRight: Radius.circular(AppTheme.radiusLg),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: AppTheme.spacing3),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing4),
+                  child: Text(
+                    t.importModeTitle,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                _buildImportModeOption(
+                  sheetContext: sheetContext,
+                  title: t.importModeOverwriteTitle,
+                  description: t.importModeOverwriteDesc,
+                  icon: Icons.warning_amber_rounded,
+                  iconColor: theme.colorScheme.error,
+                  mode: _ImportMode.overwrite,
+                  selectedMode: initial,
+                ),
+                _buildImportModeOption(
+                  sheetContext: sheetContext,
+                  title: t.importModeMergeTitle,
+                  description: t.importModeMergeDesc,
+                  icon: Icons.merge_type_rounded,
+                  iconColor: theme.colorScheme.primary,
+                  mode: _ImportMode.merge,
+                  selectedMode: initial,
+                ),
+                const SizedBox(height: AppTheme.spacing3),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext, null),
+                    child: Text(t.dialogCancel),
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildImportModeOption({
+    required BuildContext sheetContext,
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color iconColor,
+    required _ImportMode mode,
+    required _ImportMode selectedMode,
+  }) {
+    final bool isSelected = mode == selectedMode;
+    final ColorScheme scheme = Theme.of(sheetContext).colorScheme;
+
+    return InkWell(
+      onTap: () {
+        _lastImportMode = mode;
+        Navigator.pop(sheetContext, mode);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing3,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? scheme.primary.withOpacity(0.08)
+              : Colors.transparent,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(sheetContext).textTheme.bodyLarge?.copyWith(
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.normal,
+                          color: isSelected
+                              ? scheme.primary
+                              : scheme.onSurface,
+                        ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  Text(
+                    description,
+                    style: Theme.of(sheetContext)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Padding(
+                padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                child: Icon(
+                  Icons.check,
+                  color: scheme.primary,
+                  size: 20,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAffectedPackageChip(AppInfo? app, String packageName) {
+    final String label = app?.appName.isNotEmpty == true
+        ? app!.appName
+        : packageName;
+    final ImageProvider? iconImage =
+        (app?.icon != null && app!.icon!.isNotEmpty)
+            ? MemoryImage(app.icon!)
+            : null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: AppTheme.spacing1 + 2,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor:
+                Theme.of(context).colorScheme.primary.withOpacity(0.12),
+            backgroundImage: iconImage,
+            child: iconImage == null
+                ? Text(
+                    label.isNotEmpty ? label.characters.first : '?',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: AppTheme.spacing1 + 2),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 140),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPermissionsDropdown(BuildContext context) {
@@ -341,6 +674,24 @@ class _SettingsPageState extends State<SettingsPage>
         return '正在解压数据…';
       }
       return 'Extracting data...';
+    }
+    if (stage == 'merge_extracting') {
+      return _formatImportExportStageLabel(t, 'extracting', isExport);
+    }
+    if (stage == 'merge_copying_files') {
+      return t.mergeProgressCopying;
+    }
+    if (stage == 'merge_copying_generic') {
+      return t.mergeProgressCopyingGeneric;
+    }
+    if (stage == 'merge_shard_databases') {
+      return t.mergeProgressMergingDb;
+    }
+    if (stage == 'merge_memory_database') {
+      return t.mergeProgressMemoryDb;
+    }
+    if (stage == 'merge_finalizing') {
+      return t.mergeProgressFinalizing;
     }
 
     if (isZh) {
@@ -671,28 +1022,28 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
-  // 从用户选择的ZIP文件导入数据并解压到应用存储
   Future<void> _importData() async {
     if (_importingData) return;
+
+    final _ImportMode? mode = await _selectImportMode();
+    if (!mounted) return;
+    if (mode == null) {
+      await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled mode');
+      return;
+    }
+
+    setState(() {
+      _importingData = true;
+    });
+
     final ValueNotifier<double> progressNotifier =
         ValueNotifier<double>(0.0);
     final ValueNotifier<String?> stageNotifier =
         ValueNotifier<String?>(null);
     final ValueNotifier<String?> entryNotifier =
         ValueNotifier<String?>(null);
-    _importExportIsExport = false;
-    _importExportStage = null;
-    unawaited(
-      _showImportExportOverlayDialog(
-        isExport: false,
-        progressNotifier: progressNotifier,
-        stageNotifier: stageNotifier,
-        entryNotifier: entryNotifier,
-      ),
-    );
-    setState(() {
-      _importingData = true;
-    });
+    bool overlayShown = false;
+
     try {
       await FlutterLogger.nativeInfo('UI_IMPORT', 'open file picker');
       final result = await FilePicker.platform.pickFiles(
@@ -704,44 +1055,105 @@ class _SettingsPageState extends State<SettingsPage>
       if (!mounted) return;
       if (result == null || result.files.isEmpty) {
         await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled');
-        setState(() {
-          _importingData = false;
-        });
-        return; // 用户取消
+        return;
       }
 
-      final file = result.files.first; 
-      final bytes = file.bytes; 
-      final path = file.path; 
-      Map<String, dynamic>? importRes;  
-      await FlutterLogger.nativeInfo('UI_IMPORT', 'selected name=' + file.name + ' size=' + ((bytes?.length ?? 0).toString()) + ' path=' + (path ?? '')); 
+      final file = result.files.first;
+      final Uint8List? bytes = file.bytes;
+      final String? path = file.path;
+      await FlutterLogger.nativeInfo(
+        'UI_IMPORT',
+        'selected name=${file.name} size=${bytes?.length ?? 0} path=${path ?? ''}',
+      );
+
+      unawaited(
+        _showImportExportOverlayDialog(
+          isExport: false,
+          progressNotifier: progressNotifier,
+          stageNotifier: stageNotifier,
+          entryNotifier: entryNotifier,
+        ),
+      );
+      overlayShown = true;
+
       // 停止截图服务以避免导入过程中的DB/FS冲突
       final bool wasRunning = ScreenshotService.instance.isRunning;
       if (wasRunning) {
-        await FlutterLogger.nativeInfo('UI_IMPORT', 'stopping service before import');
-        try { await ScreenshotService.instance.stopScreenshotService(); } catch (_) {}
+        await FlutterLogger.nativeInfo(
+            'UI_IMPORT', 'stopping service before import');
+        try {
+          await ScreenshotService.instance.stopScreenshotService();
+        } catch (_) {}
       }
+
       void handleProgress(ImportExportProgress p) {
         progressNotifier.value = p.value;
         stageNotifier.value = p.stage;
         entryNotifier.value = p.currentEntry;
       }
-      if (bytes != null && bytes.isNotEmpty && (path == null || path.isEmpty)) {  
-        // 仅作为备选方案；优先使用文件路径流式传输
-        importRes = await _screenshotDatabase.importDataFromZipStreaming(
+
+      Map<String, dynamic>? importRes;
+      MergeReport? mergeReport;
+
+      if (mode == _ImportMode.merge) {
+        mergeReport = await _screenshotDatabase.mergeDataFromZip(
+          zipPath: path,
           zipBytes: bytes,
           onProgress: handleProgress,
-        ); 
-      } else if (path != null && path.isNotEmpty) { 
-        importRes = await _screenshotDatabase.importDataFromZipStreaming(
-          zipPath: path,
-          onProgress: handleProgress,
-        ); 
-      }  
+        );
+      } else {
+        if (bytes != null &&
+            bytes.isNotEmpty &&
+            (path == null || path.isEmpty)) {
+          importRes = await _screenshotDatabase.importDataFromZipStreaming(
+            zipBytes: bytes,
+            onProgress: handleProgress,
+          );
+        } else if (path != null && path.isNotEmpty) {
+          importRes = await _screenshotDatabase.importDataFromZipStreaming(
+            zipPath: path,
+            onProgress: handleProgress,
+          );
+        }
+      }
 
       if (!mounted) return;
-      if (importRes != null) { 
-        await FlutterLogger.nativeInfo('UI_IMPORT', 'success extracted=' + (importRes['extracted']?.toString() ?? 'null') + ' target=' + (importRes['targetDir']?.toString() ?? ''));
+      if (mode == _ImportMode.merge) {
+        if (mergeReport != null) {
+          await FlutterLogger.nativeInfo(
+            'UI_IMPORT',
+            'merge success inserted=${mergeReport.insertedScreenshots} skipped=${mergeReport.skippedScreenshotDuplicates} '
+            'memoryEvents=${mergeReport.mergedMemoryEvents} memoryTags=${mergeReport.mergedMemoryTags} '
+            'memoryEvidence=${mergeReport.mergedMemoryEvidence}',
+          );
+          await ScreenshotService.instance.invalidateStatsCache();
+          ScreenshotService.instance.invalidateAvailableDayCountCache();
+          await _showMergeResultDialog(mergeReport);
+        } else {
+          await FlutterLogger.nativeWarn('UI_IMPORT', 'merge returned null');
+          await showUIDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            title: AppLocalizations.of(context).importFailedTitle,
+            message: AppLocalizations.of(context).importFailedCheckZip,
+            actions: [
+              UIDialogAction(
+                text: AppLocalizations.of(context).dialogOk,
+                style: UIDialogActionStyle.primary,
+              ),
+            ],
+          );
+        }
+      } else if (importRes != null) {
+        await FlutterLogger.nativeInfo(
+          'UI_IMPORT',
+          'success extracted=' +
+              (importRes['extracted']?.toString() ?? 'null') +
+              ' target=' +
+              (importRes['targetDir']?.toString() ?? ''),
+        );
+        await ScreenshotService.instance.invalidateStatsCache();
+        ScreenshotService.instance.invalidateAvailableDayCountCache();
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -767,13 +1179,13 @@ class _SettingsPageState extends State<SettingsPage>
             ],
           ),
           actions: [
-            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
+            UIDialogAction(
+              text: AppLocalizations.of(context).dialogOk,
+              style: UIDialogActionStyle.primary,
+            ),
           ],
         );
-        // 使统计缓存失效，以便下次刷新UI
-        // ignore: unawaited_futures
-        ScreenshotService.instance.invalidateStatsCache();
-      } else { 
+      } else {
         await FlutterLogger.nativeWarn('UI_IMPORT', 'import returned null');
         await showUIDialog<void>(
           context: context,
@@ -781,12 +1193,15 @@ class _SettingsPageState extends State<SettingsPage>
           title: AppLocalizations.of(context).importFailedTitle,
           message: AppLocalizations.of(context).importFailedCheckZip,
           actions: [
-            UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
+            UIDialogAction(
+              text: AppLocalizations.of(context).dialogOk,
+              style: UIDialogActionStyle.primary,
+            ),
           ],
         );
       }
-    } catch (e) { 
-      if (!mounted) return; 
+    } catch (e) {
+      if (!mounted) return;
       await FlutterLogger.nativeError('UI_IMPORT', 'exception: ' + e.toString());
       await showUIDialog<void>(
         context: context,
@@ -794,21 +1209,22 @@ class _SettingsPageState extends State<SettingsPage>
         title: AppLocalizations.of(context).importFailedTitle,
         content: Text('$e'),
         actions: [
-          UIDialogAction(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary),
+          UIDialogAction(
+              text: AppLocalizations.of(context).dialogOk,
+              style: UIDialogActionStyle.primary),
         ],
       );
-    } finally { 
+    } finally {
       try {
-        // 尽力而为：不自动重启服务以避免意外。
         await FlutterLogger.nativeInfo('UI_IMPORT', 'import flow finished');
       } catch (_) {}
-      if (mounted) { 
-        setState(() { 
-          _importingData = false; 
-        }); 
-      } 
+      if (mounted) {
+        setState(() {
+          _importingData = false;
+        });
+      }
       try {
-        if (mounted) {
+        if (mounted && overlayShown) {
           final NavigatorState nav =
               Navigator.of(context, rootNavigator: true);
           if (nav.canPop()) {
@@ -819,7 +1235,7 @@ class _SettingsPageState extends State<SettingsPage>
       progressNotifier.dispose();
       stageNotifier.dispose();
       entryNotifier.dispose();
-    } 
+    }
   }
 
   @override

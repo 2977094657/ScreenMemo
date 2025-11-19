@@ -1895,7 +1895,8 @@ class MainActivity : FlutterActivity() {
             // 忽略低价值文件/目录
             val head = relLower.substringBefore('/', "")
             if (head == "cache" || head == "tmp" || head == "temp" || head == ".thumbnails") continue
-            if (relLower.endsWith(".db-wal") || relLower.endsWith(".db-shm") || relLower.endsWith(".db-journal")) continue
+            // 保留 SQLite WAL/SHM 辅助文件，确保 WAL 模式数据库导出完整
+            if (relLower.endsWith(".db-journal")) continue
 
             if (f.isDirectory) {
                 // 目录条目可选写入，常规解压工具不强制需要；这里显式写入更完整

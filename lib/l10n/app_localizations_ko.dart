@@ -540,6 +540,99 @@ class AppLocalizationsKo extends AppLocalizations {
   String get importDataDesc => 'ZIP 파일을 앱 저장소로 가져오기';
 
   @override
+  String get importModeTitle => '가져오기 방식을 선택하세요';
+
+  @override
+  String get importModeOverwriteTitle => '덮어쓰기 가져오기';
+
+  @override
+  String get importModeOverwriteDesc => '현재 데이터 디렉터리를 교체합니다. 전체 백업 복원에 사용하세요.';
+
+  @override
+  String get importModeMergeTitle => '병합 가져오기';
+
+  @override
+  String get importModeMergeDesc => '기존 데이터를 유지하고 압축 파일 내용을 중복 제거 후 병합합니다.';
+
+  @override
+  String get mergeProgressCopying => '스크린샷 파일을 복사하는 중…';
+
+  @override
+  String get mergeProgressCopyingGeneric => '추가 리소스를 복사하는 중…';
+
+  @override
+  String get mergeProgressMergingDb => '데이터베이스를 병합하는 중…';
+
+  @override
+  String get mergeProgressMemoryDb => '메모리 데이터베이스를 병합하는 중…';
+
+  @override
+  String get mergeProgressFinalizing => '병합을 마무리하는 중…';
+
+  @override
+  String get mergeCompleteTitle => '병합이 완료되었습니다';
+
+  @override
+  String mergeReportInserted(int count) {
+    return '새 스크린샷: $count';
+  }
+
+  @override
+  String mergeReportSkipped(int count) {
+    return '중복 건수 건너뜀: $count';
+  }
+
+  @override
+  String mergeReportCopied(int count) {
+    return '복사한 파일: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvents(int count) {
+    return '추가된 메모리 이벤트: $count';
+  }
+
+  @override
+  String mergeReportMemoryTags(int count) {
+    return '추가된 메모리 태그: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvidence(int count) {
+    return '추가된 태그 증거: $count';
+  }
+
+  @override
+  String mergeReportAffectedPackages(String packages) {
+    return '영향받은 앱 패키지: $packages';
+  }
+
+  @override
+  String get mergeReportWarnings => '확인해야 할 경고:';
+
+  @override
+  String get mergeReportNoWarnings => '경고가 없습니다.';
+
+  @override
+  String get recalculateAllTitle => '전체 데이터 다시 집계';
+
+  @override
+  String get recalculateAllDesc =>
+      '모든 앱을 다시 스캔하여 내비게이션의 일수·앱·스크린샷·용량 통계를 새로 고칩니다.';
+
+  @override
+  String get recalculateAllAction => '다시 집계';
+
+  @override
+  String get recalculateAllProgress => '모든 앱의 통계를 다시 계산하는 중…';
+
+  @override
+  String get recalculateAllSuccess => '전체 통계를 새로 고쳤습니다.';
+
+  @override
+  String get recalculateAllFailedTitle => '다시 집계에 실패했습니다';
+
+  @override
   String get aiAssistantTitle => 'AI 어시스턴트';
 
   @override

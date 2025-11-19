@@ -559,6 +559,101 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importDataDesc => 'Import ZIP file to app storage';
 
   @override
+  String get importModeTitle => 'Select import strategy';
+
+  @override
+  String get importModeOverwriteTitle => 'Overwrite import';
+
+  @override
+  String get importModeOverwriteDesc =>
+      'Replace the current data directory. Use when fully restoring from backups.';
+
+  @override
+  String get importModeMergeTitle => 'Merge import';
+
+  @override
+  String get importModeMergeDesc =>
+      'Keep current data and merge archive contents with deduplication.';
+
+  @override
+  String get mergeProgressCopying => 'Copying screenshot files...';
+
+  @override
+  String get mergeProgressCopyingGeneric => 'Copying additional assets...';
+
+  @override
+  String get mergeProgressMergingDb => 'Merging database shards...';
+
+  @override
+  String get mergeProgressMemoryDb => 'Merging memory database...';
+
+  @override
+  String get mergeProgressFinalizing => 'Finalizing merge...';
+
+  @override
+  String get mergeCompleteTitle => 'Merge complete';
+
+  @override
+  String mergeReportInserted(int count) {
+    return 'New screenshots: $count';
+  }
+
+  @override
+  String mergeReportSkipped(int count) {
+    return 'Skipped duplicates: $count';
+  }
+
+  @override
+  String mergeReportCopied(int count) {
+    return 'Files copied: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvents(int count) {
+    return 'New memory events: $count';
+  }
+
+  @override
+  String mergeReportMemoryTags(int count) {
+    return 'New memory tags: $count';
+  }
+
+  @override
+  String mergeReportMemoryEvidence(int count) {
+    return 'New tag evidence: $count';
+  }
+
+  @override
+  String mergeReportAffectedPackages(String packages) {
+    return 'Affected app packages: $packages';
+  }
+
+  @override
+  String get mergeReportWarnings => 'Warnings to review:';
+
+  @override
+  String get mergeReportNoWarnings => 'No warnings detected.';
+
+  @override
+  String get recalculateAllTitle => 'Recalculate all data';
+
+  @override
+  String get recalculateAllDesc =>
+      'Rescan every app to refresh navigation totals for days, apps, screenshots, and size.';
+
+  @override
+  String get recalculateAllAction => 'Recalculate';
+
+  @override
+  String get recalculateAllProgress => 'Recomputing statistics for all apps...';
+
+  @override
+  String get recalculateAllSuccess => 'All statistics have been refreshed.';
+
+  @override
+  String get recalculateAllFailedTitle => 'Recalculation failed';
+
+  @override
   String get aiAssistantTitle => 'AI Assistant';
 
   @override
