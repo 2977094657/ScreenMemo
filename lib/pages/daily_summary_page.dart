@@ -30,7 +30,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   void initState() {
     super.initState();
     _load(initial: true);
-    if (_isToday) {
+    if (_shouldRenderMorningInsights && _isToday) {
       _refreshMorningInsights();
     }
   }
@@ -106,8 +106,10 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     return todayKey == widget.dateKey;
   }
 
+  bool get _shouldRenderMorningInsights => false;
+
   Future<void> _refreshMorningInsights({bool regenerate = false}) async {
-    if (!_isToday) return;
+    if (!_shouldRenderMorningInsights || !_isToday) return;
     setState(() => _morningLoading = true);
     try {
       final MorningInsights? insights = regenerate
@@ -490,7 +492,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (_isToday) _buildMorningInsightsSection(),
+                          if (_shouldRenderMorningInsights && _isToday)
+                            _buildMorningInsightsSection(),
                           if (md.isEmpty)
                             _buildEmptySummaryPlaceholder()
                           else
