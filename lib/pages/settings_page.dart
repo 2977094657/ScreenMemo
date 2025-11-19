@@ -78,6 +78,7 @@ class _SettingsPageState extends State<SettingsPage>
   bool _renderImagesDuringStreaming = false;
   // 最近一次导入模式，默认合并
   _ImportMode _lastImportMode = _ImportMode.merge;
+  bool _recalculatingAll = false;
 
   // NSFW 设置 - 域名清单管理
   final TextEditingController _nsfwDomainController = TextEditingController();
@@ -103,6 +104,106 @@ class _SettingsPageState extends State<SettingsPage>
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<void> _recalculateAllStatistics() async {
+    if (_recalculatingAll) return;
+    final AppLocalizations t = AppLocalizations.of(context);
+    setState(() {
+      _recalculatingAll = true;
+    });
+
+    final NavigatorState navigator =
+        Navigator.of(context, rootNavigator: true);
+    bool dialogClosed = false;
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'recalculate_progress',
+      pageBuilder: (BuildContext dialogContext, _, __) {
+        final ThemeData theme = Theme.of(dialogContext);
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: Material(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                elevation: 8,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.recalculateAllProgress,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      const Center(
+                        child: SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      await ScreenshotService.instance.recomputeAllAppStats();
+      if (mounted) {
+        if (!dialogClosed) {
+          try {
+            navigator.pop();
+            dialogClosed = true;
+          } catch (_) {}
+        }
+        UINotifier.success(context, t.recalculateAllSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        if (!dialogClosed) {
+          try {
+            navigator.pop();
+            dialogClosed = true;
+          } catch (_) {}
+        }
+        await showUIDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          title: t.recalculateAllFailedTitle,
+          content: Text('$e'),
+          actions: [
+            UIDialogAction(
+              text: t.dialogOk,
+              style: UIDialogActionStyle.primary,
+            ),
+          ],
+        );
+      }
+    } finally {
+      if (!dialogClosed) {
+        try {
+          navigator.pop();
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _recalculatingAll = false;
+        });
+      }
     }
   }
 
@@ -1545,6 +1646,7 @@ class _SettingsPageState extends State<SettingsPage>
                   children: [
                     _buildExportItem(context),
                     _buildImportItem(context),
+                    _buildRecalculateAllItem(context),
                   ],
                 ),
               ],
@@ -2313,6 +2415,81 @@ class _SettingsPageState extends State<SettingsPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(AppLocalizations.of(context).actionImport),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecalculateAllItem(BuildContext context) {
+    final AppLocalizations t = AppLocalizations.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.sync,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t.recalculateAllTitle,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  t.recalculateAllDesc,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed:
+                _recalculatingAll ? null : _recalculateAllStatistics,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: _recalculatingAll
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(t.recalculateAllAction),
           ),
         ],
       ),

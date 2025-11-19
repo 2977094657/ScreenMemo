@@ -528,6 +528,18 @@ class ScreenshotService {
     await _database.recalculateTotals();
   }
 
+  /// 重新计算所有应用的统计信息，然后刷新全局统计与缓存
+  Future<void> recomputeAllAppStats() async {
+    final List<String> packages = await _database.listRegisteredPackages();
+    for (final String pkg in packages) {
+      await _database.recomputeAppStatsForPackage(pkg);
+    }
+    await _database.recalculateTotals();
+    await _refreshStatsCache(force: true);
+    invalidateAvailableDayCountCache();
+    await _refreshDayCount();
+  }
+
   /// 获取最新统计（不使用统计缓存，可选择强制全量文件同步）
   Future<Map<String, dynamic>> getScreenshotStatsFresh({
     bool forceFullSync = true,
