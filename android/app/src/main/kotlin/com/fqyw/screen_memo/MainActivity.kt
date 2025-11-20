@@ -44,7 +44,9 @@ import android.view.Gravity
 import androidx.core.content.ContextCompat
 import android.util.TypedValue
 import android.app.Dialog
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -52,12 +54,22 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.Deflater
+import java.util.zip.ZipInputStream
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.max
+import kotlin.math.min
 import com.fqyw.screen_memo.OutputFileLogger
 import com.fqyw.screen_memo.memory.bridge.MemoryBridge
 import com.fqyw.screen_memo.memory.service.MemoryBackendService
+import com.fqyw.screen_memo.storage.StorageAnalyzer
 
 class MainActivity : FlutterActivity() {
 
@@ -468,6 +480,24 @@ class MainActivity : FlutterActivity() {
                         }
                     }.start()
                 }
+                "importZipToOutput" -> {
+                    val zipPath = call.argument<String>("zipPath")
+                    val overwrite = call.argument<Boolean>("overwrite") ?: true
+                    if (zipPath.isNullOrBlank()) {
+                        result.error("import_arg", "zipPath is null or empty", null)
+                    } else {
+                        importZipToOutputAsync(zipPath, overwrite, result)
+                    }
+                }
+                "importFromExtractedOutputDir" -> {
+                    val srcDir = call.argument<String>("srcDir")
+                    val overwrite = call.argument<Boolean>("overwrite") ?: true
+                    if (srcDir.isNullOrBlank()) {
+                        result.error("import_arg", "srcDir is null or empty", null)
+                    } else {
+                        importFromExtractedOutputDirAsync(srcDir, overwrite, result)
+                    }
+                }
                 "insertScreenshotRecord" -> {
                     val packageName = call.argument<String>("packageName") ?: ""
                     val appName = call.argument<String>("appName") ?: ""
@@ -519,6 +549,20 @@ class MainActivity : FlutterActivity() {
                     val subDir = call.argument<String>("subDir")
                     val path = getInternalFilesDirPath(subDir)
                     result.success(path)
+                }
+                "getDetailedStorageStats" -> {
+                    val pendingResult = result
+                    Thread {
+                        try {
+                            val data = StorageAnalyzer.collect(applicationContext)
+                            runOnUiThread { pendingResult.success(data) }
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "getDetailedStorageStats failed", e)
+                            runOnUiThread {
+                                pendingResult.error("storage_stats_failed", e.message, null)
+                            }
+                        }
+                    }.start()
                 }
                 "getStorageMigrationStatus" -> {
                     try {
@@ -625,6 +669,44 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         result.error("ocr_error", e.message, null)
                     }
+                }
+                "compressScreenshotFile" -> {
+                    val filePath = call.argument<String>("filePath")
+                    val format = call.argument<String>("format") ?: "webp_lossy"
+                    val targetBytes = call.argument<Int>("targetBytes") ?: 0
+                    val quality = call.argument<Int>("quality") ?: 90
+                    val useTargetSize = call.argument<Boolean>("useTargetSize") ?: true
+                    if (filePath.isNullOrBlank() || targetBytes <= 0) {
+                        result.error("invalid_args", "filePath and targetBytes are required", null)
+                        return@setMethodCallHandler
+                    }
+                    Thread {
+                        val resp = compressScreenshotFileInternal(
+                            filePath,
+                            format,
+                            targetBytes,
+                            quality,
+                            useTargetSize,
+                        )
+                        runOnUiThread { result.success(resp) }
+                    }.start()
+                }
+                "compressScreenshotsBatch" -> {
+                    val tasksArg = call.argument<List<Map<String, Any?>>>("tasks") ?: emptyList()
+                    val format = call.argument<String>("format") ?: "webp_lossy"
+                    val targetBytes = call.argument<Int>("targetBytes") ?: 0
+                    val quality = call.argument<Int>("quality") ?: 90
+                    val useTargetSize = call.argument<Boolean>("useTargetSize") ?: true
+                    val parallelism = call.argument<Int>("parallelism")
+                    compressScreenshotsBatch(
+                        tasksArg,
+                        format,
+                        targetBytes,
+                        quality,
+                        useTargetSize,
+                        parallelism,
+                        result,
+                    )
                 }
                 "triggerSegmentTick" -> {
                     try {
@@ -1561,6 +1643,371 @@ class MainActivity : FlutterActivity() {
         }
     }
     
+    private fun compressScreenshotFileInternal(
+        filePath: String,
+        format: String,
+        targetBytes: Int,
+        quality: Int,
+        useTargetSize: Boolean,
+    ): Map<String, Any?> {
+        val file = File(filePath)
+        if (!file.exists()) {
+            return mapOf(
+                "success" to false,
+                "error" to "not_found",
+            )
+        }
+        var bitmap: Bitmap? = null
+        return try {
+            bitmap = BitmapFactory.decodeFile(filePath)
+            if (bitmap == null) {
+                return mapOf(
+                    "success" to false,
+                    "error" to "decode_failed",
+                )
+            }
+            val spec = resolveCompressFormat(format)
+            val appliedQuality = quality.coerceIn(1, 100)
+            val bytes = if (useTargetSize && spec.isLossy) {
+                compressToTargetSize(bitmap, spec.compressFormat, targetBytes)
+                    ?: compressOnce(bitmap, spec.compressFormat, appliedQuality)
+            } else {
+                compressOnce(
+                    bitmap,
+                    spec.compressFormat,
+                    if (spec.isLossy) appliedQuality else 100,
+                )
+            }
+            if (bytes == null) {
+                return mapOf(
+                    "success" to false,
+                    "error" to "compress_failed",
+                )
+            }
+            FileOutputStream(file, false).use { fos ->
+                fos.write(bytes)
+                fos.flush()
+            }
+            try {
+                file.setLastModified(System.currentTimeMillis())
+            } catch (_: Exception) {}
+            mapOf(
+                "success" to true,
+                "newSize" to bytes.size,
+                "format" to spec.extension,
+            )
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "compressScreenshotFileInternal failed", e)
+            mapOf(
+                "success" to false,
+                "error" to (e.message ?: "unknown"),
+            )
+        } finally {
+            try { bitmap?.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    private fun compressScreenshotsBatch(
+        tasksArg: List<Map<String, Any?>>,
+        format: String,
+        targetBytes: Int,
+        quality: Int,
+        useTargetSize: Boolean,
+        parallelism: Int?,
+        result: MethodChannel.Result,
+    ) {
+        Thread {
+            try {
+                val parsedTasks = tasksArg.mapNotNull { map ->
+                    val rawPath = map["filePath"] as? String ?: return@mapNotNull null
+                    val filePath = rawPath.trim()
+                    if (filePath.isEmpty()) return@mapNotNull null
+                    val gid = when (val rawGid = map["gid"]) {
+                        is Number -> rawGid.toLong()
+                        is String -> rawGid.toLongOrNull() ?: 0L
+                        else -> 0L
+                    }
+                    val originalSize = when (val rawSize = map["originalSize"]) {
+                        is Number -> rawSize.toLong()
+                        is String -> rawSize.toLongOrNull() ?: 0L
+                        else -> 0L
+                    }
+                    ScreenshotCompressionTask(filePath, gid, originalSize)
+                }
+
+                if (parsedTasks.isEmpty()) {
+                    runOnUiThread {
+                        result.success(
+                            mapOf(
+                                "total" to 0,
+                                "handled" to 0,
+                                "success" to 0,
+                                "skipped" to 0,
+                                "failed" to 0,
+                                "savedBytes" to 0L,
+                                "totalBeforeBytes" to 0L,
+                                "totalAfterBytes" to 0L,
+                                "durationMillis" to 0,
+                                "successes" to emptyList<Map<String, Any?>>(),
+                                "failures" to emptyList<Map<String, Any?>>(),
+                                "skippedEntries" to emptyList<Map<String, Any?>>(),
+                            ),
+                        )
+                    }
+                    return@Thread
+                }
+
+                val total = parsedTasks.size
+                emitCompressionProgress(total, 0, 0, 0, 0, 0L)
+
+                val cpuCount = Runtime.getRuntime().availableProcessors()
+                val desiredParallelism = parallelism ?: cpuCount
+                val poolSize = max(1, min(8, max(2, desiredParallelism)))
+                val executor = Executors.newFixedThreadPool(poolSize)
+                val latch = CountDownLatch(total)
+
+                val handledCount = AtomicInteger(0)
+                val successCount = AtomicInteger(0)
+                val skippedCount = AtomicInteger(0)
+                val failedCount = AtomicInteger(0)
+                val totalBefore = AtomicLong(0)
+                val totalAfter = AtomicLong(0)
+
+                val successes = Collections.synchronizedList(mutableListOf<Map<String, Any?>>())
+                val failures = Collections.synchronizedList(mutableListOf<Map<String, Any?>>())
+                val skipped = Collections.synchronizedList(mutableListOf<Map<String, Any?>>())
+
+                val startTime = SystemClock.elapsedRealtime()
+                val effectiveTargetBytes = if (targetBytes <= 0) 1024 else targetBytes
+
+                parsedTasks.forEach { task ->
+                    executor.execute {
+                        try {
+                            val file = File(task.filePath)
+                            if (!file.exists()) {
+                                failedCount.incrementAndGet()
+                                failures.add(
+                                    mapOf(
+                                        "filePath" to task.filePath,
+                                        "gid" to task.gid,
+                                        "reason" to "not_found",
+                                    ),
+                                )
+                            } else {
+                                val currentSize = if (task.originalSize > 0) task.originalSize else file.length()
+                                if (effectiveTargetBytes > 0 && currentSize <= effectiveTargetBytes.toLong()) {
+                                    skippedCount.incrementAndGet()
+                                    skipped.add(
+                                        mapOf(
+                                            "filePath" to task.filePath,
+                                            "gid" to task.gid,
+                                            "originalSize" to currentSize,
+                                            "reason" to "already_small",
+                                        ),
+                                    )
+                                } else {
+                                    val outcome = compressScreenshotFileInternal(
+                                        task.filePath,
+                                        format,
+                                        effectiveTargetBytes,
+                                        quality,
+                                        useTargetSize,
+                                    )
+                                    val success = outcome["success"] as? Boolean ?: false
+                                    if (success) {
+                                        val newSize = (
+                                            (outcome["newSize"] as? Number)?.toLong()
+                                                ?: File(task.filePath).length()
+                                            ).coerceAtLeast(0L)
+                                        val origin = if (currentSize > 0) currentSize else newSize
+                                        successCount.incrementAndGet()
+                                        totalBefore.addAndGet(origin)
+                                    totalAfter.addAndGet(newSize)
+                                    val effectiveSaved = (origin - newSize).coerceAtLeast(0L)
+                                    val savedBytes = totalBefore.get() - totalAfter.get()
+                                        successes.add(
+                                            mapOf(
+                                                "filePath" to task.filePath,
+                                                "gid" to task.gid,
+                                                "originalSize" to origin,
+                                                "newSize" to newSize,
+                                            "savedBytes" to effectiveSaved,
+                                            ),
+                                        )
+                                    } else {
+                                        failedCount.incrementAndGet()
+                                        failures.add(
+                                            mapOf(
+                                                "filePath" to task.filePath,
+                                                "gid" to task.gid,
+                                                "reason" to (outcome["error"] ?: "compress_failed"),
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            failedCount.incrementAndGet()
+                            failures.add(
+                                mapOf(
+                                    "filePath" to task.filePath,
+                                    "gid" to task.gid,
+                                    "reason" to (e.message ?: "unknown"),
+                                ),
+                            )
+                        } finally {
+                            val handledNow = handledCount.incrementAndGet()
+                            val savedBytes = totalBefore.get() - totalAfter.get()
+                            emitCompressionProgress(
+                                total,
+                                handledNow,
+                                successCount.get(),
+                                skippedCount.get(),
+                                failedCount.get(),
+                                savedBytes,
+                            )
+                            latch.countDown()
+                        }
+                    }
+                }
+
+                executor.shutdown()
+                latch.await()
+
+                val duration = (SystemClock.elapsedRealtime() - startTime).toInt()
+                val savedTotal = (totalBefore.get() - totalAfter.get()).coerceAtLeast(0L)
+                val summary = mapOf(
+                    "total" to total,
+                    "handled" to handledCount.get(),
+                    "success" to successCount.get(),
+                    "skipped" to skippedCount.get(),
+                    "failed" to failedCount.get(),
+                    "savedBytes" to savedTotal,
+                    "totalBeforeBytes" to totalBefore.get(),
+                    "totalAfterBytes" to totalAfter.get(),
+                    "durationMillis" to duration,
+                    "successes" to ArrayList(successes),
+                    "failures" to ArrayList(failures),
+                    "skippedEntries" to ArrayList(skipped),
+                )
+                runOnUiThread { result.success(summary) }
+            } catch (e: Exception) {
+                runOnUiThread { result.error("compress_batch_failed", e.message, null) }
+            }
+        }.start()
+    }
+
+    private fun emitCompressionProgress(
+        total: Int,
+        handled: Int,
+        success: Int,
+        skipped: Int,
+        failed: Int,
+        savedBytes: Long,
+    ) {
+        val adjustedSaved = if (savedBytes < 0L) 0L else savedBytes
+        try {
+            runOnUiThread {
+                try {
+                    methodChannel.invokeMethod(
+                        "onCompressionProgress",
+                        mapOf(
+                            "total" to total,
+                            "handled" to handled,
+                            "success" to success,
+                            "skipped" to skipped,
+                            "failed" to failed,
+                            "savedBytes" to adjustedSaved,
+                        ),
+                    )
+                } catch (_: Exception) {
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private data class ScreenshotCompressionTask(
+        val filePath: String,
+        val gid: Long,
+        val originalSize: Long,
+    )
+
+    private data class FormatSpec(
+        val compressFormat: Bitmap.CompressFormat,
+        val isLossy: Boolean,
+        val extension: String,
+    )
+
+    private fun resolveCompressFormat(name: String): FormatSpec {
+        val lower = name.lowercase()
+        return when (lower) {
+            "jpeg", "jpg" -> FormatSpec(Bitmap.CompressFormat.JPEG, true, "jpg")
+            "png" -> FormatSpec(Bitmap.CompressFormat.PNG, false, "png")
+            "webp_lossless" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    FormatSpec(Bitmap.CompressFormat.WEBP_LOSSLESS, false, "webp")
+                } else {
+                    FormatSpec(Bitmap.CompressFormat.PNG, false, "png")
+                }
+            }
+            else -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    FormatSpec(Bitmap.CompressFormat.WEBP_LOSSY, true, "webp")
+                } else {
+                    FormatSpec(Bitmap.CompressFormat.WEBP, true, "webp")
+                }
+            }
+        }
+    }
+
+    private fun compressOnce(
+        bm: Bitmap,
+        format: Bitmap.CompressFormat,
+        quality: Int,
+    ): ByteArray? {
+        return try {
+            val baos = ByteArrayOutputStream()
+            bm.compress(format, quality.coerceIn(1, 100), baos)
+            baos.toByteArray()
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "compressOnce failed", e)
+            null
+        }
+    }
+
+    private fun compressToTargetSize(
+        bm: Bitmap,
+        format: Bitmap.CompressFormat,
+        targetBytes: Int,
+        minQ: Int = 1,
+        maxQ: Int = 100,
+        maxIterations: Int = 12,
+    ): ByteArray? {
+        var lo = minQ.coerceIn(1, 100)
+        var hi = maxQ.coerceIn(lo, 100)
+        var bestUnder: ByteArray? = null
+        var bestOver: ByteArray? = null
+        var iterations = 0
+        while (lo <= hi && iterations < maxIterations) {
+            iterations++
+            val mid = (lo + hi) / 2
+            val data = compressOnce(bm, format, mid) ?: return null
+            if (data.size <= targetBytes) {
+                if (bestUnder == null || data.size > bestUnder!!.size) {
+                    bestUnder = data
+                }
+                lo = mid + 1
+            } else {
+                if (bestOver == null || data.size < bestOver!!.size) {
+                    bestOver = data
+                }
+                hi = mid - 1
+            }
+        }
+        return bestUnder ?: bestOver
+    }
+
     /**
      * 触发AccessibilityService连接
      */
@@ -1877,6 +2324,143 @@ class MainActivity : FlutterActivity() {
                 "fileName" to displayName,
                 "size" to dest.length()
             )
+        }
+    }
+
+    /**
+     * 原生导入：从 ZIP 文件解压到内部 files/output 目录
+     */
+    private fun importZipToOutputAsync(zipPath: String, overwrite: Boolean, result: MethodChannel.Result) {
+        Thread {
+            try {
+                FileLogger.i(TAG, "IMPORT_NATIVE: begin importZipToOutput, path=$zipPath overwrite=$overwrite")
+                val base = filesDir
+                val outputDir = File(base, "output")
+                if (overwrite && outputDir.exists()) {
+                    outputDir.deleteRecursively()
+                }
+                if (!outputDir.exists()) {
+                    outputDir.mkdirs()
+                }
+
+                val buffer = ByteArray(256 * 1024)
+                ZipInputStream(FileInputStream(zipPath)).use { zis ->
+                    while (true) {
+                        val entry = zis.nextEntry ?: break
+                        val rawName = entry.name.replace("\\", "/")
+                        // 兼容导出时的 "output/..." 前缀
+                        val rel = if (rawName.startsWith("output/")) {
+                            rawName.substring("output/".length)
+                        } else {
+                            rawName
+                        }
+                        if (rel.isEmpty()) {
+                            zis.closeEntry()
+                            continue
+                        }
+                        val destFile = File(outputDir, rel)
+                        if (entry.isDirectory) {
+                            if (!destFile.exists()) {
+                                destFile.mkdirs()
+                            }
+                            zis.closeEntry()
+                            continue
+                        }
+                        val parent = destFile.parentFile
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs()
+                        }
+                        FileOutputStream(destFile).use { out ->
+                            while (true) {
+                                val read = zis.read(buffer)
+                                if (read <= 0) break
+                                out.write(buffer, 0, read)
+                            }
+                            out.flush()
+                        }
+                        zis.closeEntry()
+                    }
+                }
+
+                FileLogger.i(TAG, "IMPORT_NATIVE: importZipToOutput finished, outputDir=${outputDir.absolutePath}")
+                runOnUiThread { result.success(true) }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "IMPORT_NATIVE: importZipToOutput failed", e)
+                runOnUiThread { result.error("import_failed", e.message, null) }
+            }
+        }.start()
+    }
+
+    /**
+     * 原生导入：从已解压的 output 目录复制到内部 files/output 目录
+     */
+    private fun importFromExtractedOutputDirAsync(srcRoot: String, overwrite: Boolean, result: MethodChannel.Result) {
+        Thread {
+            try {
+                FileLogger.i(TAG, "IMPORT_NATIVE: begin importFromExtractedOutputDir, srcRoot=$srcRoot overwrite=$overwrite")
+                val base = filesDir
+                val targetOutput = File(base, "output")
+                // 支持两种选择方式：
+                // 1) 选择到包含 output 的父目录（此时使用 srcRoot/output）
+                // 2) 直接选择到 output 目录本身
+                var srcOutput = File(srcRoot, "output")
+                if (!srcOutput.exists() || !srcOutput.isDirectory) {
+                    val direct = File(srcRoot)
+                    if (direct.exists() && direct.isDirectory && direct.name == "output") {
+                        srcOutput = direct
+                    } else {
+                        FileLogger.e(TAG, "IMPORT_NATIVE: src output dir not found: ${srcOutput.absolutePath}")
+                        runOnUiThread {
+                            result.error("import_src_not_found", "src output dir not found", srcOutput.absolutePath)
+                        }
+                        return@Thread
+                    }
+                }
+
+                if (overwrite && targetOutput.exists()) {
+                    targetOutput.deleteRecursively()
+                }
+                if (!targetOutput.exists()) {
+                    targetOutput.mkdirs()
+                }
+
+                copyDirRecursively(srcOutput, targetOutput)
+
+                FileLogger.i(TAG, "IMPORT_NATIVE: importFromExtractedOutputDir finished, target=${targetOutput.absolutePath}")
+                runOnUiThread { result.success(true) }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "IMPORT_NATIVE: importFromExtractedOutputDir failed", e)
+                runOnUiThread { result.error("import_failed", e.message, null) }
+            }
+        }.start()
+    }
+
+    private fun copyDirRecursively(source: File, destination: File) {
+        if (source.isDirectory) {
+            if (!destination.exists()) {
+                destination.mkdirs()
+            }
+            val children = source.listFiles() ?: return
+            for (child in children) {
+                val destChild = File(destination, child.name)
+                copyDirRecursively(child, destChild)
+            }
+        } else {
+            val parent = destination.parentFile
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs()
+            }
+            val buffer = ByteArray(256 * 1024)
+            FileInputStream(source).use { ins ->
+                FileOutputStream(destination).use { out ->
+                    while (true) {
+                        val read = ins.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                    }
+                    out.flush()
+                }
+            }
         }
     }
 

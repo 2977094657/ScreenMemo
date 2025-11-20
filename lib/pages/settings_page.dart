@@ -18,6 +18,7 @@ import '../services/user_settings_service.dart';
 import '../models/app_info.dart';
 import 'package:file_picker/file_picker.dart';
 import 'nsfw_settings_page.dart';
+import 'storage_analysis_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ai_settings_service.dart';
@@ -114,8 +115,7 @@ class _SettingsPageState extends State<SettingsPage>
       _recalculatingAll = true;
     });
 
-    final NavigatorState navigator =
-        Navigator.of(context, rootNavigator: true);
+    final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
     bool dialogClosed = false;
     showGeneralDialog<void>(
       context: context,
@@ -140,8 +140,9 @@ class _SettingsPageState extends State<SettingsPage>
                     children: [
                       Text(
                         t.recalculateAllProgress,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: AppTheme.spacing3),
                       const Center(
@@ -210,17 +211,18 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _showMergeResultDialog(MergeReport report) async {
     if (!mounted) return;
     final AppLocalizations t = AppLocalizations.of(context);
-    final List<String> affectedPackages =
-        report.affectedPackages.toList()..sort();
+    final List<String> affectedPackages = report.affectedPackages.toList()
+      ..sort();
     final String affectedLabel = affectedPackages.join(', ');
     final Map<String, AppInfo> appInfoMap = {
       for (final app in await _appService.getAllInstalledApps())
-        app.packageName: app
+        app.packageName: app,
     };
     final ThemeData theme = Theme.of(context);
-    final double maxHeight = ((MediaQuery.of(context).size.height * 0.6)
-            .clamp(280.0, 420.0))
-        .toDouble();
+    final double maxHeight = ((MediaQuery.of(context).size.height * 0.6).clamp(
+      280.0,
+      420.0,
+    )).toDouble();
 
     final Widget statsSection = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,37 +278,25 @@ class _SettingsPageState extends State<SettingsPage>
             spacing: AppTheme.spacing2,
             runSpacing: AppTheme.spacing2,
             children: affectedPackages
-                .map(
-                  (pkg) => _buildAffectedPackageChip(
-                    appInfoMap[pkg],
-                    pkg,
-                  ),
-                )
+                .map((pkg) => _buildAffectedPackageChip(appInfoMap[pkg], pkg))
                 .toList(),
           ),
         ],
         const SizedBox(height: AppTheme.spacing3),
         Text(
           t.mergeReportWarnings,
-          style: theme
-              .textTheme
-              .bodyMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: AppTheme.spacing1),
         if (report.warnings.isEmpty)
-          Text(
-            t.mergeReportNoWarnings,
-            style: theme.textTheme.bodySmall,
-          )
+          Text(t.mergeReportNoWarnings, style: theme.textTheme.bodySmall)
         else
           ...report.warnings.map(
             (w) => Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
-              child: Text(
-                '• $w',
-                style: theme.textTheme.bodySmall,
-              ),
+              child: Text('• $w', style: theme.textTheme.bodySmall),
             ),
           ),
       ],
@@ -324,10 +314,7 @@ class _SettingsPageState extends State<SettingsPage>
         ),
       ),
       actions: [
-        UIDialogAction(
-          text: t.dialogOk,
-          style: UIDialogActionStyle.primary,
-        ),
+        UIDialogAction(text: t.dialogOk, style: UIDialogActionStyle.primary),
       ],
     );
   }
@@ -406,6 +393,8 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  // 已移除导入来源选择（统一通过 ZIP 导入）
+
   Widget _buildImportModeOption({
     required BuildContext sheetContext,
     required String title,
@@ -453,22 +442,18 @@ class _SettingsPageState extends State<SettingsPage>
                   Text(
                     title,
                     style: Theme.of(sheetContext).textTheme.bodyLarge?.copyWith(
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.normal,
-                          color: isSelected
-                              ? scheme.primary
-                              : scheme.onSurface,
-                        ),
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: isSelected ? scheme.primary : scheme.onSurface,
+                    ),
                   ),
                   const SizedBox(height: AppTheme.spacing1),
                   Text(
                     description,
-                    style: Theme.of(sheetContext)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                    style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -476,11 +461,7 @@ class _SettingsPageState extends State<SettingsPage>
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                child: Icon(
-                  Icons.check,
-                  color: scheme.primary,
-                  size: 20,
-                ),
+                child: Icon(Icons.check, color: scheme.primary, size: 20),
               ),
           ],
         ),
@@ -494,8 +475,8 @@ class _SettingsPageState extends State<SettingsPage>
         : packageName;
     final ImageProvider? iconImage =
         (app?.icon != null && app!.icon!.isNotEmpty)
-            ? MemoryImage(app.icon!)
-            : null;
+        ? MemoryImage(app.icon!)
+        : null;
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -511,8 +492,9 @@ class _SettingsPageState extends State<SettingsPage>
         children: [
           CircleAvatar(
             radius: 12,
-            backgroundColor:
-                Theme.of(context).colorScheme.primary.withOpacity(0.12),
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withOpacity(0.12),
             backgroundImage: iconImage,
             child: iconImage == null
                 ? Text(
@@ -633,8 +615,7 @@ class _SettingsPageState extends State<SettingsPage>
                     _allPermissionsGranted()
                         ? Icons.verified_user_outlined
                         : Icons.lock_open_outlined,
-                    color:
-                        Theme.of(context).colorScheme.onSecondaryContainer,
+                    color: Theme.of(context).colorScheme.onSecondaryContainer,
                     size: 18,
                   ),
                 ),
@@ -653,7 +634,9 @@ class _SettingsPageState extends State<SettingsPage>
                       Text(
                         _allPermissionsGranted()
                             ? AppLocalizations.of(context).allPermissionsGranted
-                            : AppLocalizations.of(context).permissionsMissingCount(missingCount),
+                            : AppLocalizations.of(
+                                context,
+                              ).permissionsMissingCount(missingCount),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -685,7 +668,9 @@ class _SettingsPageState extends State<SettingsPage>
     try {
       _loggingEnabled = FlutterLogger.enabled;
       _aiLoggingEnabled = await FlutterLogger.getCategoryEnabled('ai');
-      _screenshotLoggingEnabled = await FlutterLogger.getCategoryEnabled('screenshot');
+      _screenshotLoggingEnabled = await FlutterLogger.getCategoryEnabled(
+        'screenshot',
+      );
       if (mounted) setState(() {});
     } catch (_) {}
   }
@@ -726,7 +711,7 @@ class _SettingsPageState extends State<SettingsPage>
     _loadNsfwRules();
     _loadLoggingEnabled();
     _loadRenderImagesDuringStreaming();
-   }
+  }
 
   @override
   void dispose() {
@@ -738,7 +723,8 @@ class _SettingsPageState extends State<SettingsPage>
 
   Future<void> _loadRenderImagesDuringStreaming() async {
     try {
-      final v = await AISettingsService.instance.getRenderImagesDuringStreaming();
+      final v = await AISettingsService.instance
+          .getRenderImagesDuringStreaming();
       if (mounted) setState(() => _renderImagesDuringStreaming = v);
     } catch (_) {}
   }
@@ -849,17 +835,12 @@ class _SettingsPageState extends State<SettingsPage>
                   child: ValueListenableBuilder<double>(
                     valueListenable: progressNotifier,
                     builder: (_, double value, __) {
-                      final String percentText =
-                          (value * 100).clamp(0, 100).toStringAsFixed(0) + '%';
+                      // 不再展示百分比进度，统一使用循环进度条
                       return ValueListenableBuilder<String?>(
                         valueListenable: stageNotifier,
                         builder: (_, String? stage, ___) {
                           final String stageLabel =
-                              _formatImportExportStageLabel(
-                            t,
-                            stage,
-                            isExport,
-                          );
+                              _formatImportExportStageLabel(t, stage, isExport);
                           return ValueListenableBuilder<String?>(
                             valueListenable: entryNotifier,
                             builder: (_, String? entry, ____) {
@@ -871,61 +852,45 @@ class _SettingsPageState extends State<SettingsPage>
                                 children: [
                                   Text(
                                     title,
-                                    style:
-                                        theme.textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                   const SizedBox(height: AppTheme.spacing3),
-                                  LinearProgressIndicator(
-                                    value: value > 0 ? value : null,
-                                    minHeight: 4,
+                                  Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: AppTheme.spacing2),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          stageLabel,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(
-                                        width: AppTheme.spacing2,
-                                      ),
-                                      Text(
-                                        percentText,
-                                        style: theme.textTheme.bodySmall,
-                                      ),
-                                    ],
+                                  Text(
+                                    stageLabel,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme
+                                          .colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                   if (entryLabel != null) ...[
-                                    const SizedBox(
-                                      height: AppTheme.spacing1,
-                                    ),
+                                    const SizedBox(height: AppTheme.spacing1),
                                     Text(
                                       entryLabel,
-                                      style:
-                                          theme.textTheme.bodySmall?.copyWith(
-                                        fontFamily: 'monospace',
-                                        color: theme
-                                            .colorScheme.onSurfaceVariant,
-                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            fontFamily: 'monospace',
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                   const SizedBox(height: AppTheme.spacing2),
                                   Text(
                                     _importExportDoNotCloseHint(t),
-                                    style:
-                                        theme.textTheme.bodySmall?.copyWith(
-                                      color: theme
-                                          .colorScheme.onSurfaceVariant,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ],
@@ -985,10 +950,7 @@ class _SettingsPageState extends State<SettingsPage>
                         ),
                       ),
                       const SizedBox(height: AppTheme.spacing3),
-                      const LinearProgressIndicator(
-                        value: null,
-                        minHeight: 4,
-                      ),
+                      const LinearProgressIndicator(value: null, minHeight: 4),
                       const SizedBox(height: AppTheme.spacing2),
                       Text(
                         hint,
@@ -1099,10 +1061,7 @@ class _SettingsPageState extends State<SettingsPage>
         title: '导出失败',
         content: Text('$e'),
         actions: const [
-          UIDialogAction(
-            text: '确定',
-            style: UIDialogActionStyle.primary,
-          ),
+          UIDialogAction(text: '确定', style: UIDialogActionStyle.primary),
         ],
       );
     } finally {
@@ -1113,8 +1072,7 @@ class _SettingsPageState extends State<SettingsPage>
       }
       try {
         if (mounted) {
-          final NavigatorState nav =
-              Navigator.of(context, rootNavigator: true);
+          final NavigatorState nav = Navigator.of(context, rootNavigator: true);
           if (nav.canPop()) {
             nav.pop();
           }
@@ -1137,12 +1095,9 @@ class _SettingsPageState extends State<SettingsPage>
       _importingData = true;
     });
 
-    final ValueNotifier<double> progressNotifier =
-        ValueNotifier<double>(0.0);
-    final ValueNotifier<String?> stageNotifier =
-        ValueNotifier<String?>(null);
-    final ValueNotifier<String?> entryNotifier =
-        ValueNotifier<String?>(null);
+    final ValueNotifier<double> progressNotifier = ValueNotifier<double>(0.0);
+    final ValueNotifier<String?> stageNotifier = ValueNotifier<String?>(null);
+    final ValueNotifier<String?> entryNotifier = ValueNotifier<String?>(null);
     bool overlayShown = false;
 
     try {
@@ -1181,7 +1136,9 @@ class _SettingsPageState extends State<SettingsPage>
       final bool wasRunning = ScreenshotService.instance.isRunning;
       if (wasRunning) {
         await FlutterLogger.nativeInfo(
-            'UI_IMPORT', 'stopping service before import');
+          'UI_IMPORT',
+          'stopping service before import',
+        );
         try {
           await ScreenshotService.instance.stopScreenshotService();
         } catch (_) {}
@@ -1203,16 +1160,21 @@ class _SettingsPageState extends State<SettingsPage>
           onProgress: handleProgress,
         );
       } else {
-        if (bytes != null &&
-            bytes.isNotEmpty &&
-            (path == null || path.isEmpty)) {
-          importRes = await _screenshotDatabase.importDataFromZipStreaming(
-            zipBytes: bytes,
+        // 覆盖导入优先走原生 ZIP 导入（依赖 zipPath），无法获取路径时回退到 Dart 流式实现
+        if (path != null && path.isNotEmpty) {
+          stageNotifier.value = 'import_native_zip';
+          progressNotifier.value = 0.02;
+          final res = await _screenshotDatabase.importDataFromZip(
+            zipPath: path,
+            zipBytes: null,
+            overwrite: true,
             onProgress: handleProgress,
           );
-        } else if (path != null && path.isNotEmpty) {
+          importRes = res;
+          progressNotifier.value = 1.0;
+        } else if (bytes != null && bytes.isNotEmpty) {
           importRes = await _screenshotDatabase.importDataFromZipStreaming(
-            zipPath: path,
+            zipBytes: bytes,
             onProgress: handleProgress,
           );
         }
@@ -1221,11 +1183,12 @@ class _SettingsPageState extends State<SettingsPage>
       if (!mounted) return;
       if (mode == _ImportMode.merge) {
         if (mergeReport != null) {
+          await _resyncScreenshotSettingsAfterImport();
           await FlutterLogger.nativeInfo(
             'UI_IMPORT',
             'merge success inserted=${mergeReport.insertedScreenshots} skipped=${mergeReport.skippedScreenshotDuplicates} '
-            'memoryEvents=${mergeReport.mergedMemoryEvents} memoryTags=${mergeReport.mergedMemoryTags} '
-            'memoryEvidence=${mergeReport.mergedMemoryEvidence}',
+                'memoryEvents=${mergeReport.mergedMemoryEvents} memoryTags=${mergeReport.mergedMemoryTags} '
+                'memoryEvidence=${mergeReport.mergedMemoryEvidence}',
           );
           await ScreenshotService.instance.invalidateStatsCache();
           ScreenshotService.instance.invalidateAvailableDayCountCache();
@@ -1246,6 +1209,7 @@ class _SettingsPageState extends State<SettingsPage>
           );
         }
       } else if (importRes != null) {
+        await _resyncScreenshotSettingsAfterImport();
         await FlutterLogger.nativeInfo(
           'UI_IMPORT',
           'success extracted=' +
@@ -1303,7 +1267,10 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } catch (e) {
       if (!mounted) return;
-      await FlutterLogger.nativeError('UI_IMPORT', 'exception: ' + e.toString());
+      await FlutterLogger.nativeError(
+        'UI_IMPORT',
+        'exception: ' + e.toString(),
+      );
       await showUIDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -1311,8 +1278,9 @@ class _SettingsPageState extends State<SettingsPage>
         content: Text('$e'),
         actions: [
           UIDialogAction(
-              text: AppLocalizations.of(context).dialogOk,
-              style: UIDialogActionStyle.primary),
+            text: AppLocalizations.of(context).dialogOk,
+            style: UIDialogActionStyle.primary,
+          ),
         ],
       );
     } finally {
@@ -1326,8 +1294,7 @@ class _SettingsPageState extends State<SettingsPage>
       }
       try {
         if (mounted && overlayShown) {
-          final NavigatorState nav =
-              Navigator.of(context, rootNavigator: true);
+          final NavigatorState nav = Navigator.of(context, rootNavigator: true);
           if (nav.canPop()) {
             nav.pop();
           }
@@ -1479,7 +1446,10 @@ class _SettingsPageState extends State<SettingsPage>
           title: AppLocalizations.of(context).confirmPermissionSettingsTitle,
           message: AppLocalizations.of(context).confirmAutostartQuestion,
           actions: [
-            UIDialogAction<bool>(text: AppLocalizations.of(context).notYet, result: false),
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).notYet,
+              result: false,
+            ),
             UIDialogAction<bool>(
               text: AppLocalizations.of(context).done,
               style: UIDialogActionStyle.primary,
@@ -1508,7 +1478,10 @@ class _SettingsPageState extends State<SettingsPage>
           break;
         case 'mediaProjection':
           // 不再需要 MediaProjection 权限
-          UINotifier.info(context, AppLocalizations.of(context).noMediaProjectionNeeded);
+          UINotifier.info(
+            context,
+            AppLocalizations.of(context).noMediaProjectionNeeded,
+          );
           break;
         case 'battery_optimization':
           if (mounted) {
@@ -1553,7 +1526,10 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, AppLocalizations.of(context).requestPermissionFailed(e.toString()));
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).requestPermissionFailed(e.toString()),
+        );
       }
     }
   }
@@ -1618,7 +1594,9 @@ class _SettingsPageState extends State<SettingsPage>
                 // 时间段总结设置
                 _buildSection(
                   context: context,
-                  title: AppLocalizations.of(context).segmentSummarySectionTitle,
+                  title: AppLocalizations.of(
+                    context,
+                  ).segmentSummarySectionTitle,
                   children: [
                     _buildSegmentSampleItem(context),
                     _buildSegmentDurationItem(context),
@@ -1644,6 +1622,7 @@ class _SettingsPageState extends State<SettingsPage>
                   context: context,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
                   children: [
+                    _buildStorageAnalysisItem(context),
                     _buildExportItem(context),
                     _buildImportItem(context),
                     _buildRecalculateAllItem(context),
@@ -1688,9 +1667,21 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).segmentSampleIntervalTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).segmentSampleIntervalTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
-                Text(AppLocalizations.of(context).segmentSampleIntervalDesc(_segmentSampleIntervalSec), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).segmentSampleIntervalDesc(_segmentSampleIntervalSec),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1698,7 +1689,10 @@ class _SettingsPageState extends State<SettingsPage>
           TextButton(
             onPressed: _showSegmentSampleDialog,
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
@@ -1732,9 +1726,21 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).segmentDurationTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).segmentDurationTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
-                Text(AppLocalizations.of(context).segmentDurationDesc(_segmentDurationMin), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).segmentDurationDesc(_segmentDurationMin),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1742,7 +1748,10 @@ class _SettingsPageState extends State<SettingsPage>
           TextButton(
             onPressed: _showSegmentDurationDialog,
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
@@ -1785,9 +1794,21 @@ class _SettingsPageState extends State<SettingsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).aiRequestIntervalTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).aiRequestIntervalTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
-                Text(AppLocalizations.of(context).aiRequestIntervalDesc(_aiRequestIntervalSec), style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).aiRequestIntervalDesc(_aiRequestIntervalSec),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1795,7 +1816,10 @@ class _SettingsPageState extends State<SettingsPage>
           TextButton(
             onPressed: _showAiRequestIntervalDialog,
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
@@ -1805,7 +1829,6 @@ class _SettingsPageState extends State<SettingsPage>
       ),
     );
   }
-
 
   Widget _buildThemeColorItem(BuildContext context) {
     final Color current = widget.themeService.seedColor;
@@ -1841,9 +1864,9 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 Text(
                   AppLocalizations.of(context).themeColorTitle,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -1853,8 +1876,8 @@ class _SettingsPageState extends State<SettingsPage>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(width: AppTheme.spacing3),
                     // 当前色预览
@@ -1936,7 +1959,9 @@ class _SettingsPageState extends State<SettingsPage>
                       height: 4,
                       margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -1946,9 +1971,8 @@ class _SettingsPageState extends State<SettingsPage>
                       Expanded(
                         child: Text(
                           AppLocalizations.of(context).chooseThemeColorTitle,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
                       TextButton(
@@ -2002,7 +2026,11 @@ class _SettingsPageState extends State<SettingsPage>
                               ),
                             ),
                             child: selected
-                                ? const Icon(Icons.check, color: Colors.white, size: 18)
+                                ? const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 18,
+                                  )
                                 : null,
                           ),
                         ),
@@ -2019,13 +2047,17 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-
   void _showAiRequestIntervalDialog() {
-    final TextEditingController controller = TextEditingController(text: _aiRequestIntervalSec.toString());
+    final TextEditingController controller = TextEditingController(
+      text: _aiRequestIntervalSec.toString(),
+    );
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).aiRequestIntervalTitle,
-      content: _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
+      content: _numberField(
+        controller,
+        hint: AppLocalizations.of(context).intervalInputHint,
+      ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
@@ -2034,15 +2066,40 @@ class _SettingsPageState extends State<SettingsPage>
           closeOnPress: false,
           onPressed: (ctx) async {
             final parsed = int.tryParse(controller.text.trim());
-            if (parsed == null || parsed < 1) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
+            if (parsed == null || parsed < 1) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidError,
+              );
+              return;
+            }
             final v = parsed.clamp(1, 60);
             try {
-              const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
-              await platform.invokeMethod('setAiRequestIntervalSec', {'seconds': v});
-              if (mounted) setState(() { _aiRequestIntervalSec = v; });
-              if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(v)); }
+              const platform = MethodChannel(
+                'com.fqyw.screen_memo/accessibility',
+              );
+              await platform.invokeMethod('setAiRequestIntervalSec', {
+                'seconds': v,
+              });
+              if (mounted)
+                setState(() {
+                  _aiRequestIntervalSec = v;
+                });
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop();
+                UINotifier.success(
+                  ctx,
+                  AppLocalizations.of(ctx).intervalSavedSuccess(v),
+                );
+              }
             } catch (e) {
-              if (ctx.mounted) UINotifier.error(ctx, AppLocalizations.of(ctx).requestPermissionFailed(e.toString()));
+              if (ctx.mounted)
+                UINotifier.error(
+                  ctx,
+                  AppLocalizations.of(
+                    ctx,
+                  ).requestPermissionFailed(e.toString()),
+                );
             }
           },
         ),
@@ -2057,8 +2114,12 @@ class _SettingsPageState extends State<SettingsPage>
       final map = Map<String, dynamic>.from(res ?? {});
       if (mounted) {
         setState(() {
-          _segmentSampleIntervalSec = ((map['sampleIntervalSec'] as int?) ?? 20).clamp(5, 3600);
-          final durSec = ((map['segmentDurationSec'] as int?) ?? 300).clamp(60, 24*3600);
+          _segmentSampleIntervalSec = ((map['sampleIntervalSec'] as int?) ?? 20)
+              .clamp(5, 3600);
+          final durSec = ((map['segmentDurationSec'] as int?) ?? 300).clamp(
+            60,
+            24 * 3600,
+          );
           _segmentDurationMin = (durSec / 60).round();
         });
       }
@@ -2072,18 +2133,22 @@ class _SettingsPageState extends State<SettingsPage>
       final sec = await platform.invokeMethod('getAiRequestIntervalSec');
       final v = (sec as int?) ?? 3;
       if (mounted) {
-        setState(() { _aiRequestIntervalSec = v.clamp(1, 60); });
+        setState(() {
+          _aiRequestIntervalSec = v.clamp(1, 60);
+        });
       }
     } catch (_) {
-      if (mounted) setState(() { _aiRequestIntervalSec = 3; });
+      if (mounted)
+        setState(() {
+          _aiRequestIntervalSec = 3;
+        });
     }
   }
 
-
-
-
   void _showSegmentSampleDialog() {
-    final TextEditingController controller = TextEditingController(text: _segmentSampleIntervalSec.toString());
+    final TextEditingController controller = TextEditingController(
+      text: _segmentSampleIntervalSec.toString(),
+    );
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).segmentSampleIntervalTitle,
@@ -2091,7 +2156,10 @@ class _SettingsPageState extends State<SettingsPage>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
+          _numberField(
+            controller,
+            hint: AppLocalizations.of(context).intervalInputHint,
+          ),
           // hint removed
         ],
       ),
@@ -2103,9 +2171,24 @@ class _SettingsPageState extends State<SettingsPage>
           closeOnPress: false,
           onPressed: (ctx) async {
             final v = int.tryParse(controller.text.trim());
-            if (v == null || v < 5) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
-            await _saveSegmentSettings(sample: v, durationMin: _segmentDurationMin);
-            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(v)); }
+            if (v == null || v < 5) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidError,
+              );
+              return;
+            }
+            await _saveSegmentSettings(
+              sample: v,
+              durationMin: _segmentDurationMin,
+            );
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).intervalSavedSuccess(v),
+              );
+            }
           },
         ),
       ],
@@ -2113,11 +2196,16 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   void _showSegmentDurationDialog() {
-    final TextEditingController controller = TextEditingController(text: _segmentDurationMin.toString());
+    final TextEditingController controller = TextEditingController(
+      text: _segmentDurationMin.toString(),
+    );
     showUIDialog<void>(
       context: context,
       title: AppLocalizations.of(context).segmentDurationTitle,
-      content: _numberField(controller, hint: AppLocalizations.of(context).intervalInputHint),
+      content: _numberField(
+        controller,
+        hint: AppLocalizations.of(context).intervalInputHint,
+      ),
       actions: [
         UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
         UIDialogAction(
@@ -2126,9 +2214,24 @@ class _SettingsPageState extends State<SettingsPage>
           closeOnPress: false,
           onPressed: (ctx) async {
             final v = int.tryParse(controller.text.trim());
-            if (v == null || v < 1) { UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError); return; }
-            await _saveSegmentSettings(sample: _segmentSampleIntervalSec, durationMin: v);
-            if (ctx.mounted) { Navigator.of(ctx).pop(); UINotifier.success(ctx, AppLocalizations.of(ctx).expireDaysSavedSuccess(v)); }
+            if (v == null || v < 1) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidError,
+              );
+              return;
+            }
+            await _saveSegmentSettings(
+              sample: _segmentSampleIntervalSec,
+              durationMin: v,
+            );
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).expireDaysSavedSuccess(v),
+              );
+            }
           },
         ),
       ],
@@ -2155,7 +2258,10 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Future<void> _saveSegmentSettings({required int sample, required int durationMin}) async {
+  Future<void> _saveSegmentSettings({
+    required int sample,
+    required int durationMin,
+  }) async {
     final sampleClamped = sample < 5 ? 5 : sample;
     final durationSec = (durationMin <= 0 ? 1 : durationMin) * 60;
     try {
@@ -2164,7 +2270,10 @@ class _SettingsPageState extends State<SettingsPage>
         'sampleIntervalSec': sampleClamped,
         'segmentDurationSec': durationSec,
       });
-      setState(() { _segmentSampleIntervalSec = sampleClamped; _segmentDurationMin = durationMin; });
+      setState(() {
+        _segmentSampleIntervalSec = sampleClamped;
+        _segmentDurationMin = durationMin;
+      });
     } catch (e) {
       if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
     }
@@ -2286,6 +2395,71 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  Widget _buildStorageAnalysisItem(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.storage_outlined,
+              color: theme.colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.storageAnalysisEntryTitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.storageAnalysisEntryDesc,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const StorageAnalysisPage(),
+                ),
+              );
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(l10n.actionEnter),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildExportItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -2382,17 +2556,16 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 Text(
                   AppLocalizations.of(context).importDataTitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   AppLocalizations.of(context).importDataDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -2455,26 +2628,23 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 Text(
                   t.recalculateAllTitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   t.recalculateAllDesc,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
-            onPressed:
-                _recalculatingAll ? null : _recalculateAllStatistics,
+            onPressed: _recalculatingAll ? null : _recalculateAllStatistics,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
@@ -2495,7 +2665,6 @@ class _SettingsPageState extends State<SettingsPage>
       ),
     );
   }
-
 
   Widget _buildNsfwEntryItem(BuildContext context) {
     return Container(
@@ -2530,17 +2699,16 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 Text(
                   AppLocalizations.of(context).nsfwSettingsSectionTitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   AppLocalizations.of(context).blockedDomainListTitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -2549,9 +2717,7 @@ class _SettingsPageState extends State<SettingsPage>
           TextButton(
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const NsfwSettingsPage(),
-                ),
+                MaterialPageRoute(builder: (_) => const NsfwSettingsPage()),
               );
             },
             style: TextButton.styleFrom(
@@ -2568,7 +2734,6 @@ class _SettingsPageState extends State<SettingsPage>
       ),
     );
   }
-
 
   Widget _buildPrivacyModeItem(BuildContext context) {
     return Container(
@@ -2665,17 +2830,19 @@ class _SettingsPageState extends State<SettingsPage>
                         children: [
                           Text(
                             AppLocalizations.of(context).loggingTitle,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             AppLocalizations.of(context).loggingDesc,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
                         ],
@@ -2716,7 +2883,9 @@ class _SettingsPageState extends State<SettingsPage>
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: BorderSide(
-                          color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outline.withOpacity(0.6),
                           width: 1,
                         ),
                       ),
@@ -2730,12 +2899,18 @@ class _SettingsPageState extends State<SettingsPage>
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSm,
+                                ),
                               ),
                               child: Icon(
                                 Icons.smart_toy_outlined,
-                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer,
                                 size: 18,
                               ),
                             ),
@@ -2747,14 +2922,25 @@ class _SettingsPageState extends State<SettingsPage>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      AppLocalizations.of(context).loggingAiTitle,
-                                      style: Theme.of(context).textTheme.bodyMedium,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).loggingAiTitle,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      AppLocalizations.of(context).loggingAiDesc,
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).loggingAiDesc,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                     ),
                                   ],
@@ -2770,7 +2956,8 @@ class _SettingsPageState extends State<SettingsPage>
                             scale: 0.9,
                             child: Switch(
                               value: _aiLoggingEnabled,
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               onChanged: (v) => _updateAiLoggingEnabled(v),
                             ),
                           ),
@@ -2788,7 +2975,9 @@ class _SettingsPageState extends State<SettingsPage>
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: BorderSide(
-                          color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outline.withOpacity(0.6),
                           width: 1,
                         ),
                       ),
@@ -2802,12 +2991,18 @@ class _SettingsPageState extends State<SettingsPage>
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSm,
+                                ),
                               ),
                               child: Icon(
                                 Icons.image_search_outlined,
-                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer,
                                 size: 18,
                               ),
                             ),
@@ -2819,14 +3014,25 @@ class _SettingsPageState extends State<SettingsPage>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      AppLocalizations.of(context).loggingScreenshotTitle,
-                                      style: Theme.of(context).textTheme.bodyMedium,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).loggingScreenshotTitle,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      AppLocalizations.of(context).loggingScreenshotDesc,
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).loggingScreenshotDesc,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                     ),
                                   ],
@@ -2842,8 +3048,10 @@ class _SettingsPageState extends State<SettingsPage>
                             scale: 0.9,
                             child: Switch(
                               value: _screenshotLoggingEnabled,
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              onChanged: (v) => _updateScreenshotLoggingEnabled(v),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (v) =>
+                                  _updateScreenshotLoggingEnabled(v),
                             ),
                           ),
                         ),
@@ -2898,8 +3106,8 @@ class _SettingsPageState extends State<SettingsPage>
                       Text(
                         AppLocalizations.of(context).streamRenderImagesTitle,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -2907,8 +3115,8 @@ class _SettingsPageState extends State<SettingsPage>
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -2972,7 +3180,9 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  AppLocalizations.of(context).screenshotIntervalDesc(_screenshotInterval),
+                  AppLocalizations.of(
+                    context,
+                  ).screenshotIntervalDesc(_screenshotInterval),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -3043,7 +3253,9 @@ class _SettingsPageState extends State<SettingsPage>
                               child: Row(
                                 children: [
                                   Text(
-                                    AppLocalizations.of(context).currentTimeLabel,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).currentTimeLabel,
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: Theme.of(
@@ -3056,23 +3268,27 @@ class _SettingsPageState extends State<SettingsPage>
                                     onTap: _useTargetSize
                                         ? _showTargetSizeDialog
                                         : null,
-                                  child: Text(
-                                    '${_targetSizeKb}KB',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(context).colorScheme.onSurface,
-                                          decoration: _useTargetSize
-                                              ? TextDecoration.underline
-                                              : TextDecoration.none,
-                                        ),
-                                  ),
+                                    child: Text(
+                                      '${_targetSizeKb}KB',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                            decoration: _useTargetSize
+                                                ? TextDecoration.underline
+                                                : TextDecoration.none,
+                                          ),
+                                    ),
                                   ),
                                   const SizedBox(width: AppTheme.spacing1),
                                   Flexible(
                                     child: Text(
-                                      AppLocalizations.of(context).clickToModifyHint,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).clickToModifyHint,
                                       softWrap: false,
                                       overflow: TextOverflow.ellipsis,
                                       style: Theme.of(context)
@@ -3189,13 +3405,19 @@ class _SettingsPageState extends State<SettingsPage>
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 5 || interval > 60) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError);
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidError,
+              );
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedSuccess(interval));
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).intervalSavedSuccess(interval),
+              );
             }
           },
         ),
@@ -3253,7 +3475,10 @@ class _SettingsPageState extends State<SettingsPage>
             final input = controller.text.trim();
             final kb = int.tryParse(input);
             if (kb == null || kb < 50) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).targetSizeInvalidError);
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).targetSizeInvalidError,
+              );
               return;
             }
             setState(() {
@@ -3263,64 +3488,102 @@ class _SettingsPageState extends State<SettingsPage>
             await _saveScreenshotQualitySettings();
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, AppLocalizations.of(ctx).targetSizeSavedSuccess(kb));
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).targetSizeSavedSuccess(kb),
+              );
             }
           },
         ),
       ],
     );
-
   }
 
   Widget _buildScreenshotExpireItem(BuildContext context) {
-      return Container(
-        padding: const EdgeInsets.all(AppTheme.spacing3),
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-              width: 1,
-            ),
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-              ),
-              child: Icon(
-                Icons.auto_delete_outlined,
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-                size: 18,
-              ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
-            const SizedBox(width: AppTheme.spacing3),
-            Expanded(
-              child: Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 72),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context).screenshotExpireTitle,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w500),
+            child: Icon(
+              Icons.auto_delete_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 72),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppLocalizations.of(context).screenshotExpireTitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
                         ),
-                        const SizedBox(height: 2),
-                        IgnorePointer(
-                          ignoring: !_expireEnabled,
-                          child: Opacity(
-                            opacity: _expireEnabled ? 1.0 : 0.5,
-                            child: Row(
-                              children: [
-                                Text(
-                                  AppLocalizations.of(context).currentTimeLabel,
+                      ),
+                      const SizedBox(height: 2),
+                      IgnorePointer(
+                        ignoring: !_expireEnabled,
+                        child: Opacity(
+                          opacity: _expireEnabled ? 1.0 : 0.5,
+                          child: Row(
+                            children: [
+                              Text(
+                                AppLocalizations.of(context).currentTimeLabel,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                              const SizedBox(width: AppTheme.spacing1),
+                              GestureDetector(
+                                onTap: _expireEnabled
+                                    ? _showExpireDaysDialog
+                                    : null,
+                                child: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).expireDaysUnit(_expireDays),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        decoration: _expireEnabled
+                                            ? TextDecoration.underline
+                                            : TextDecoration.none,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: AppTheme.spacing1),
+                              Flexible(
+                                child: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).clickToModifyHint,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: Theme.of(
@@ -3328,493 +3591,535 @@ class _SettingsPageState extends State<SettingsPage>
                                         ).colorScheme.onSurfaceVariant,
                                       ),
                                 ),
-                                const SizedBox(width: AppTheme.spacing1),
-                                GestureDetector(
-                                  onTap: _expireEnabled ? _showExpireDaysDialog : null,
-                                  child: Text(
-                                    AppLocalizations.of(context).expireDaysUnit(_expireDays),
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Theme.of(context).colorScheme.onSurface,
-                                          decoration: _expireEnabled ? TextDecoration.underline : TextDecoration.none,
-                                        ),
-                                  ),
-                                ),
-                                const SizedBox(width: AppTheme.spacing1),
-                                Flexible(
-                                  child: Text(
-                                    AppLocalizations.of(context).clickToModifyHint,
-                                    softWrap: false,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    top: -1,
-                    right: 0,
-                    child: Transform.scale(
-                      scale: 0.9,
-                      child: Switch(
-                        value: _expireEnabled,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        onChanged: (v) async {
-                          setState(() {
-                            _expireEnabled = v;
-                          });
-                          await _saveScreenshotExpireSettings();
-                          // 开启或修改后立即尝试清理一次（后台节流保护）
-                          // ignore: unawaited_futures
-                          ScreenshotService.instance
-                              .cleanupExpiredScreenshotsIfNeeded(force: v);
-                        },
                       ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: -1,
+                  right: 0,
+                  child: Transform.scale(
+                    scale: 0.9,
+                    child: Switch(
+                      value: _expireEnabled,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (v) async {
+                        setState(() {
+                          _expireEnabled = v;
+                        });
+                        await _saveScreenshotExpireSettings();
+                        // 开启或修改后立即尝试清理一次（后台节流保护）
+                        // ignore: unawaited_futures
+                        ScreenshotService.instance
+                            .cleanupExpiredScreenshotsIfNeeded(force: v);
+                      },
                     ),
                   ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    void _showExpireDaysDialog() {
-      final TextEditingController controller = TextEditingController(
-        text: _expireDays.toString(),
-      );
-      showUIDialog<void>(
-        context: context,
-        title: AppLocalizations.of(context).setExpireDaysDialogTitle,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              ),
-              child: TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: InputDecoration(
-                  labelText: AppLocalizations.of(context).expireDaysLabel,
-                  hintText: AppLocalizations.of(context).expireDaysInputHint,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(AppTheme.spacing3),
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  hintStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
                 ),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontSize: AppTheme.fontSizeBase,
-                ),
-              ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
-          UIDialogAction(
-            text: AppLocalizations.of(context).dialogOk,
-            style: UIDialogActionStyle.primary,
-            closeOnPress: false,
-            onPressed: (ctx) async {
-              final input = controller.text.trim();
-              final d = int.tryParse(input);
-              if (d == null || d < 1) {
-                UINotifier.error(ctx, AppLocalizations.of(ctx).expireDaysInvalidError);
-                return;
-              }
-              setState(() {
-                _expireEnabled = true;
-                _expireDays = d;
-              });
-              await _saveScreenshotExpireSettings();
-              if (ctx.mounted) {
-                Navigator.of(ctx).pop();
-                UINotifier.success(ctx, AppLocalizations.of(ctx).expireDaysSavedSuccess(d));
-              }
-              // ignore: unawaited_futures
-              ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
-                force: true,
-              );
-            },
           ),
         ],
+      ),
+    );
+  }
+
+  void _showExpireDaysDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _expireDays.toString(),
+    );
+    showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).setExpireDaysDialogTitle,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: AppLocalizations.of(context).expireDaysLabel,
+                hintText: AppLocalizations.of(context).expireDaysInputHint,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: AppTheme.fontSizeBase,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final input = controller.text.trim();
+            final d = int.tryParse(input);
+            if (d == null || d < 1) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).expireDaysInvalidError,
+              );
+              return;
+            }
+            setState(() {
+              _expireEnabled = true;
+              _expireDays = d;
+            });
+            await _saveScreenshotExpireSettings();
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).expireDaysSavedSuccess(d),
+              );
+            }
+            // ignore: unawaited_futures
+            ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
+              force: true,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _loadScreenshotQualitySettings() async {
+    try {
+      final String? format = await UserSettingsService.instance.getString(
+        UserSettingKeys.imageFormat,
+        defaultValue: 'webp_lossless',
+        legacyPrefKeys: const <String>['image_format'],
       );
-    }
+      final int quality = await UserSettingsService.instance.getInt(
+        UserSettingKeys.imageQuality,
+        defaultValue: 90,
+        legacyPrefKeys: const <String>['image_quality'],
+      );
+      final bool useTarget = await UserSettingsService.instance.getBool(
+        UserSettingKeys.useTargetSize,
+        defaultValue: false,
+        legacyPrefKeys: const <String>['use_target_size'],
+      );
+      final int targetKb = await UserSettingsService.instance.getInt(
+        UserSettingKeys.targetSizeKb,
+        defaultValue: 50,
+        legacyPrefKeys: const <String>['target_size_kb'],
+      );
+      if (mounted) {
+        setState(() {
+          _imageFormat = format ?? 'webp_lossless';
+          _imageQuality = quality.clamp(1, 100);
+          _useTargetSize = useTarget;
+          _targetSizeKb = targetKb < 50 ? 50 : targetKb;
+          _grayscale = false; // 灰度已移除
+        });
+      }
+    } catch (_) {}
+  }
 
+  Future<void> _loadScreenshotExpireSettings() async {
+    try {
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.screenshotExpireEnabled,
+        defaultValue: false,
+        legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+      );
+      final int days = await UserSettingsService.instance.getInt(
+        UserSettingKeys.screenshotExpireDays,
+        defaultValue: 30,
+        legacyPrefKeys: const <String>['screenshot_expire_days'],
+      );
+      if (mounted) {
+        setState(() {
+          _expireEnabled = enabled;
+          _expireDays = days < 1 ? 1 : days;
+        });
+      }
+    } catch (_) {}
+  }
 
-    Future<void> _loadScreenshotQualitySettings() async {
-      try {
-        final String? format = await UserSettingsService.instance.getString(
-          UserSettingKeys.imageFormat,
-          defaultValue: 'webp_lossless',
-          legacyPrefKeys: const <String>['image_format'],
-        );
-        final int quality = await UserSettingsService.instance.getInt(
-          UserSettingKeys.imageQuality,
-          defaultValue: 90,
-          legacyPrefKeys: const <String>['image_quality'],
-        );
-        final bool useTarget = await UserSettingsService.instance.getBool(
-          UserSettingKeys.useTargetSize,
-          defaultValue: false,
-          legacyPrefKeys: const <String>['use_target_size'],
-        );
-        final int targetKb = await UserSettingsService.instance.getInt(
-          UserSettingKeys.targetSizeKb,
-          defaultValue: 50,
-          legacyPrefKeys: const <String>['target_size_kb'],
-        );
-        if (mounted) {
-          setState(() {
-            _imageFormat = format ?? 'webp_lossless';
-            _imageQuality = quality.clamp(1, 100);
-            _useTargetSize = useTarget;
-            _targetSizeKb = targetKb < 50 ? 50 : targetKb;
-            _grayscale = false; // 灰度已移除
-          });
-        }
-      } catch (_) {}
-    }
+  Future<void> _resyncScreenshotSettingsAfterImport() async {
+    await UserSettingsService.instance.resyncScreenshotEncodingSettings();
+    await Future.wait([
+      _loadScreenshotQualitySettings(),
+      _loadScreenshotExpireSettings(),
+    ]);
+  }
 
-    Future<void> _loadScreenshotExpireSettings() async {
-      try {
-        final bool enabled = await UserSettingsService.instance.getBool(
-          UserSettingKeys.screenshotExpireEnabled,
-          defaultValue: false,
-          legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+  Future<void> _saveScreenshotExpireSettings() async {
+    try {
+      final int days = _expireDays < 1 ? 1 : _expireDays;
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.screenshotExpireEnabled,
+        _expireEnabled,
+        legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+      );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.screenshotExpireDays,
+        days,
+        legacyPrefKeys: const <String>['screenshot_expire_days'],
+      );
+      if (mounted) {
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).expireCleanupSaved,
         );
-        final int days = await UserSettingsService.instance.getInt(
-          UserSettingKeys.screenshotExpireDays,
-          defaultValue: 30,
-          legacyPrefKeys: const <String>['screenshot_expire_days'],
-        );
-        if (mounted) {
-          setState(() {
-            _expireEnabled = enabled;
-            _expireDays = days < 1 ? 1 : days;
-          });
-        }
-      } catch (_) {}
-    }
-
-    Future<void> _saveScreenshotExpireSettings() async {
-      try {
-        final int days = _expireDays < 1 ? 1 : _expireDays;
-        await UserSettingsService.instance.setBool(
-          UserSettingKeys.screenshotExpireEnabled,
-          _expireEnabled,
-          legacyPrefKeys: const <String>['screenshot_expire_enabled'],
-        );
-        await UserSettingsService.instance.setInt(
-          UserSettingKeys.screenshotExpireDays,
-          days,
-          legacyPrefKeys: const <String>['screenshot_expire_days'],
-        );
-        if (mounted) {
-          UINotifier.success(context, AppLocalizations.of(context).expireCleanupSaved);
-        }
-      } catch (e) {
-        if (mounted) {
-          UINotifier.error(context, '保存失败: ' + e.toString() + e.toString());
-        }
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(context, '保存失败: ' + e.toString() + e.toString());
       }
     }
+  }
 
-    Future<void> _loadPrivacyMode() async {
-      try {
-        final enabled = await _appService.getPrivacyModeEnabled();
-        if (mounted) {
-          setState(() {
-            _privacyMode = enabled;
-          });
-        }
-      } catch (_) {}
-    }
-
-    Future<void> _updatePrivacyMode(bool enabled) async {
-      await _appService.savePrivacyModeEnabled(enabled);
+  Future<void> _loadPrivacyMode() async {
+    try {
+      final enabled = await _appService.getPrivacyModeEnabled();
       if (mounted) {
         setState(() {
           _privacyMode = enabled;
         });
-        UINotifier.success(context, enabled ? AppLocalizations.of(context).privacyModeEnabledToast : AppLocalizations.of(context).privacyModeDisabledToast);
       }
-    }
+    } catch (_) {}
+  }
 
-    Future<void> _saveScreenshotQualitySettings() async {
-      try {
-        // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
-        final String format = _useTargetSize ? 'webp_lossy' : 'webp_lossless';
-        await UserSettingsService.instance.setString(
-          UserSettingKeys.imageFormat,
-          format,
-          legacyPrefKeys: const <String>['image_format'],
-        );
-        await UserSettingsService.instance.setInt(
-          UserSettingKeys.imageQuality,
-          _imageQuality,
-          legacyPrefKeys: const <String>['image_quality'],
-        );
-        await UserSettingsService.instance.setBool(
-          UserSettingKeys.useTargetSize,
-          _useTargetSize,
-          legacyPrefKeys: const <String>['use_target_size'],
-        );
-        await UserSettingsService.instance.setInt(
-          UserSettingKeys.targetSizeKb,
-          _targetSizeKb < 50 ? 50 : _targetSizeKb,
-          legacyPrefKeys: const <String>['target_size_kb'],
-        );
-        // 不再保存灰度
-        if (mounted) {
-          UINotifier.success(context, AppLocalizations.of(context).screenshotQualitySettingsSaved);
-        }
-      } catch (e) {
-        if (mounted) {
-          UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
-        }
-      }
-    }
-
-    // ===== NSFW 域名清单管理 =====
-    Future<void> _loadNsfwRules() async {
-      try {
-        if (mounted) setState(() => _nsfwLoading = true);
-        await NsfwPreferenceService.instance.ensureRulesLoaded();
-        final rows = await NsfwPreferenceService.instance.listRules();
-        if (mounted) {
-          setState(() {
-            _nsfwRules = rows;
-            _nsfwLoading = false;
-          });
-        }
-      } catch (_) {
-        if (mounted) setState(() => _nsfwLoading = false);
-      }
-    }
-
-    Future<void> _previewNsfwDomain() async {
-      final input = _nsfwDomainController.text.trim();
-      if (input.isEmpty) return;
-      try {
-        final cnt = await NsfwPreferenceService.instance.previewMatchCount(input);
-        if (mounted) {
-          setState(() => _nsfwPreviewCount = cnt);
-          UINotifier.info(context, AppLocalizations.of(context).previewAffectsCount(cnt));
-        }
-      } catch (e) {
-        if (mounted) {
-          UINotifier.error(context, AppLocalizations.of(context).invalidDomainInputError);
-        }
-      }
-    }
-
-    Future<void> _addNsfwDomain() async {
-      final l10n = AppLocalizations.of(context);
-      final input = _nsfwDomainController.text.trim();
-      if (input.isEmpty) return;
-      // 先预览，避免误屏蔽
-      int preview = 0;
-      try {
-        preview = await NsfwPreferenceService.instance.previewMatchCount(input);
-      } catch (e) {
-        UINotifier.error(context, l10n.invalidDomainInputError);
-        return;
-      }
-      final ok = await showUIDialog<bool>(
-        context: context,
-        title: l10n.confirmAddRuleTitle,
-        message: l10n.confirmAddRuleMessage(input),
-        barrierDismissible: false,
-        actions: [
-          UIDialogAction<bool>(text: l10n.dialogCancel, result: false),
-          UIDialogAction<bool>(text: l10n.dialogOk, style: UIDialogActionStyle.primary, result: true),
-        ],
-      ) ?? false;
-      if (!ok) return;
-      final saved = await NsfwPreferenceService.instance.addRule(input);
-      if (!mounted) return;
-      if (saved) {
-        _nsfwDomainController.clear();
-        _nsfwPreviewCount = null;
-        await _loadNsfwRules();
-        UINotifier.success(context, l10n.ruleAddedToast);
-      } else {
-        UINotifier.error(context, l10n.operationFailed);
-      }
-    }
-
-    Future<void> _removeNsfwDomain(String pattern) async {
-      final l10n = AppLocalizations.of(context);
-      final ok = await NsfwPreferenceService.instance.removeRule(pattern);
-      if (!mounted) return;
-      if (ok) {
-        await _loadNsfwRules();
-        UINotifier.success(context, l10n.ruleRemovedToast);
-      } else {
-        UINotifier.error(context, l10n.operationFailed);
-      }
-    }
-
-    Future<void> _clearAllNsfwRules() async {
-      final l10n = AppLocalizations.of(context);
-      final ok = await showUIDialog<bool>(
-        context: context,
-        title: l10n.clearAllRulesConfirmTitle,
-        message: l10n.clearAllRulesMessage,
-        actions: const [
-          UIDialogAction<bool>(text: '取消', result: false),
-          UIDialogAction<bool>(text: '清空', style: UIDialogActionStyle.destructive, result: true),
-        ],
-        barrierDismissible: false,
-      ) ?? false;
-      if (!ok) return;
-      final n = await NsfwPreferenceService.instance.clearRules();
-      if (!mounted) return;
-      if (n >= 0) {
-        await _loadNsfwRules();
-        UINotifier.success(context, l10n.actionClear);
-      } else {
-        UINotifier.error(context, l10n.operationFailed);
-      }
-    }
-
-    Widget _buildNsfwDomainManager(BuildContext context) {
-      final l10n = AppLocalizations.of(context);
-      return Container(
-        padding: const EdgeInsets.all(AppTheme.spacing3),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.6)),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: TextField(
-                      controller: _nsfwDomainController,
-                      decoration: InputDecoration(
-                        hintText: l10n.addDomainPlaceholder,
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppTheme.spacing2),
-                TextButton(
-                  onPressed: _previewNsfwDomain,
-                  child: Text(l10n.previewAction),
-                ),
-                const SizedBox(width: AppTheme.spacing1),
-                ElevatedButton(
-                  onPressed: _addNsfwDomain,
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                  child: Text(l10n.addRuleAction),
-                ),
-              ],
-            ),
-            if (_nsfwPreviewCount != null) ...[
-              const SizedBox(height: AppTheme.spacing2),
-              Text(
-                l10n.previewAffectsCount(_nsfwPreviewCount!),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            const SizedBox(height: AppTheme.spacing3),
-            Row(
-              children: [
-                Text(l10n.blockedDomainListTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                TextButton(
-                  onPressed: _nsfwRules.isEmpty ? null : _clearAllNsfwRules,
-                  child: Text(l10n.clearAllRules),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacing1),
-            if (_nsfwLoading)
-              const SizedBox(
-                height: 28,
-                width: 28,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else if (_nsfwRules.isEmpty)
-              Text(
-                AppLocalizations.of(context).none,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _nsfwRules.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: Theme.of(context).dividerColor),
-                itemBuilder: (context, index) {
-                  final r = _nsfwRules[index];
-                  final pattern = (r['pattern'] as String?) ?? '';
-                  final isWildcard = ((r['is_wildcard'] as int?) ?? 0) == 1;
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Row(
-                      children: [
-                        Expanded(child: Text(pattern)),
-                        if (isWildcard)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.secondaryContainer,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text('*.', style: Theme.of(context).textTheme.labelSmall),
-                          ),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: l10n.removeAction,
-                      onPressed: () => _removeNsfwDomain(pattern),
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
+  Future<void> _updatePrivacyMode(bool enabled) async {
+    await _appService.savePrivacyModeEnabled(enabled);
+    if (mounted) {
+      setState(() {
+        _privacyMode = enabled;
+      });
+      UINotifier.success(
+        context,
+        enabled
+            ? AppLocalizations.of(context).privacyModeEnabledToast
+            : AppLocalizations.of(context).privacyModeDisabledToast,
       );
     }
+  }
 
+  Future<void> _saveScreenshotQualitySettings() async {
+    try {
+      // 根据是否启用目标大小自动设置格式：启用->webp_lossy；关闭->webp_lossless（原画质）
+      final String format = _useTargetSize ? 'webp_lossy' : 'webp_lossless';
+      await UserSettingsService.instance.setString(
+        UserSettingKeys.imageFormat,
+        format,
+        legacyPrefKeys: const <String>['image_format'],
+      );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.imageQuality,
+        _imageQuality,
+        legacyPrefKeys: const <String>['image_quality'],
+      );
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.useTargetSize,
+        _useTargetSize,
+        legacyPrefKeys: const <String>['use_target_size'],
+      );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.targetSizeKb,
+        _targetSizeKb < 50 ? 50 : _targetSizeKb,
+        legacyPrefKeys: const <String>['target_size_kb'],
+      );
+      // 不再保存灰度
+      if (mounted) {
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).screenshotQualitySettingsSaved,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveFailedError(e.toString()),
+        );
+      }
+    }
+  }
+
+  // ===== NSFW 域名清单管理 =====
+  Future<void> _loadNsfwRules() async {
+    try {
+      if (mounted) setState(() => _nsfwLoading = true);
+      await NsfwPreferenceService.instance.ensureRulesLoaded();
+      final rows = await NsfwPreferenceService.instance.listRules();
+      if (mounted) {
+        setState(() {
+          _nsfwRules = rows;
+          _nsfwLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _nsfwLoading = false);
+    }
+  }
+
+  Future<void> _previewNsfwDomain() async {
+    final input = _nsfwDomainController.text.trim();
+    if (input.isEmpty) return;
+    try {
+      final cnt = await NsfwPreferenceService.instance.previewMatchCount(input);
+      if (mounted) {
+        setState(() => _nsfwPreviewCount = cnt);
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).previewAffectsCount(cnt),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).invalidDomainInputError,
+        );
+      }
+    }
+  }
+
+  Future<void> _addNsfwDomain() async {
+    final l10n = AppLocalizations.of(context);
+    final input = _nsfwDomainController.text.trim();
+    if (input.isEmpty) return;
+    // 先预览，避免误屏蔽
+    int preview = 0;
+    try {
+      preview = await NsfwPreferenceService.instance.previewMatchCount(input);
+    } catch (e) {
+      UINotifier.error(context, l10n.invalidDomainInputError);
+      return;
+    }
+    final ok =
+        await showUIDialog<bool>(
+          context: context,
+          title: l10n.confirmAddRuleTitle,
+          message: l10n.confirmAddRuleMessage(input),
+          barrierDismissible: false,
+          actions: [
+            UIDialogAction<bool>(text: l10n.dialogCancel, result: false),
+            UIDialogAction<bool>(
+              text: l10n.dialogOk,
+              style: UIDialogActionStyle.primary,
+              result: true,
+            ),
+          ],
+        ) ??
+        false;
+    if (!ok) return;
+    final saved = await NsfwPreferenceService.instance.addRule(input);
+    if (!mounted) return;
+    if (saved) {
+      _nsfwDomainController.clear();
+      _nsfwPreviewCount = null;
+      await _loadNsfwRules();
+      UINotifier.success(context, l10n.ruleAddedToast);
+    } else {
+      UINotifier.error(context, l10n.operationFailed);
+    }
+  }
+
+  Future<void> _removeNsfwDomain(String pattern) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await NsfwPreferenceService.instance.removeRule(pattern);
+    if (!mounted) return;
+    if (ok) {
+      await _loadNsfwRules();
+      UINotifier.success(context, l10n.ruleRemovedToast);
+    } else {
+      UINotifier.error(context, l10n.operationFailed);
+    }
+  }
+
+  Future<void> _clearAllNsfwRules() async {
+    final l10n = AppLocalizations.of(context);
+    final ok =
+        await showUIDialog<bool>(
+          context: context,
+          title: l10n.clearAllRulesConfirmTitle,
+          message: l10n.clearAllRulesMessage,
+          actions: const [
+            UIDialogAction<bool>(text: '取消', result: false),
+            UIDialogAction<bool>(
+              text: '清空',
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
+          ],
+          barrierDismissible: false,
+        ) ??
+        false;
+    if (!ok) return;
+    final n = await NsfwPreferenceService.instance.clearRules();
+    if (!mounted) return;
+    if (n >= 0) {
+      await _loadNsfwRules();
+      UINotifier.success(context, l10n.actionClear);
+    } else {
+      UINotifier.error(context, l10n.operationFailed);
+    }
+  }
+
+  Widget _buildNsfwDomainManager(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.6),
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: TextField(
+                    controller: _nsfwDomainController,
+                    decoration: InputDecoration(
+                      hintText: l10n.addDomainPlaceholder,
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              TextButton(
+                onPressed: _previewNsfwDomain,
+                child: Text(l10n.previewAction),
+              ),
+              const SizedBox(width: AppTheme.spacing1),
+              ElevatedButton(
+                onPressed: _addNsfwDomain,
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                ),
+                child: Text(l10n.addRuleAction),
+              ),
+            ],
+          ),
+          if (_nsfwPreviewCount != null) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              l10n.previewAffectsCount(_nsfwPreviewCount!),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: AppTheme.spacing3),
+          Row(
+            children: [
+              Text(
+                l10n.blockedDomainListTitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: _nsfwRules.isEmpty ? null : _clearAllNsfwRules,
+                child: Text(l10n.clearAllRules),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          if (_nsfwLoading)
+            const SizedBox(
+              height: 28,
+              width: 28,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else if (_nsfwRules.isEmpty)
+            Text(
+              AppLocalizations.of(context).none,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _nsfwRules.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Theme.of(context).dividerColor),
+              itemBuilder: (context, index) {
+                final r = _nsfwRules[index];
+                final pattern = (r['pattern'] as String?) ?? '';
+                final isWildcard = ((r['is_wildcard'] as int?) ?? 0) == 1;
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Row(
+                    children: [
+                      Expanded(child: Text(pattern)),
+                      if (isWildcard)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '*.',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: l10n.removeAction,
+                    onPressed: () => _removeNsfwDomain(pattern),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
 }
-
 
 // ========== 扩展：每日总结提醒设置（提示时间 + 测试按钮） ==========
 extension _DailySummaryNotifyExt on _SettingsPageState {
@@ -3853,9 +4158,15 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       );
       // 启动一次"自动预生成"调度
       await DailySummaryService.instance.refreshAutoRefreshSchedule();
-      await FlutterLogger.nativeInfo('DailySummaryUI', 'restore schedule on load result=$ok');
+      await FlutterLogger.nativeInfo(
+        'DailySummaryUI',
+        'restore schedule on load result=$ok',
+      );
     } catch (e) {
-      await FlutterLogger.nativeWarn('DailySummaryUI', 'load settings failed: $e');
+      await FlutterLogger.nativeWarn(
+        'DailySummaryUI',
+        'load settings failed: $e',
+      );
     }
   }
 
@@ -3906,15 +4217,24 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
           UINotifier.success(
             context,
             newEnabled
-                ? AppLocalizations.of(context).reminderScheduleSuccess(_two(newHour), _two(newMinute))
+                ? AppLocalizations.of(
+                    context,
+                  ).reminderScheduleSuccess(_two(newHour), _two(newMinute))
                 : AppLocalizations.of(context).reminderDisabledSuccess,
           );
         } else {
-          UINotifier.warning(context, AppLocalizations.of(context).reminderScheduleFailed);
+          UINotifier.warning(
+            context,
+            AppLocalizations.of(context).reminderScheduleFailed,
+          );
         }
       }
     } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveReminderSettingsFailed(e.toString()));
+      if (mounted)
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).saveReminderSettingsFailed(e.toString()),
+        );
     }
   }
 
@@ -3953,11 +4273,16 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    margin: const EdgeInsets.only(top: AppTheme.spacing3, bottom: AppTheme.spacing2),
+                    margin: const EdgeInsets.only(
+                      top: AppTheme.spacing3,
+                      bottom: AppTheme.spacing2,
+                    ),
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3),
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(
+                        0.3,
+                      ),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -3965,7 +4290,9 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                     padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
                     child: Text(
                       l10n.setReminderTimeTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -4055,7 +4382,9 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                             onPressed: () => Navigator.of(ctx).pop(),
                             style: OutlinedButton.styleFrom(
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusMd,
+                                ),
                               ),
                             ),
                             child: Text(l10n.dialogCancel),
@@ -4065,11 +4394,15 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                         Expanded(
                           child: FilledButton(
                             onPressed: () {
-                              Navigator.of(ctx).pop(TimeOfDay(hour: tempHour, minute: tempMinute));
+                              Navigator.of(ctx).pop(
+                                TimeOfDay(hour: tempHour, minute: tempMinute),
+                              );
                             },
                             style: FilledButton.styleFrom(
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusMd,
+                                ),
                               ),
                             ),
                             child: Text(l10n.dialogDone),
@@ -4125,11 +4458,12 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).dailyReminderTimeTitle,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).dailyReminderTimeTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
                 IgnorePointer(
                   ignoring: !_dailyNotifyEnabled,
@@ -4139,17 +4473,27 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                       children: [
                         Text(
                           AppLocalizations.of(context).currentTimeLabel,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                         GestureDetector(
-                          onTap: _dailyNotifyEnabled ? _pickDailyNotifyTime : null,
+                          onTap: _dailyNotifyEnabled
+                              ? _pickDailyNotifyTime
+                              : null,
                           child: Text(
                             '${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  decoration: _dailyNotifyEnabled ? TextDecoration.underline : TextDecoration.none,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  decoration: _dailyNotifyEnabled
+                                      ? TextDecoration.underline
+                                      : TextDecoration.none,
                                 ),
                           ),
                         ),
@@ -4159,8 +4503,11 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
                             AppLocalizations.of(context).clickToModifyHint,
                             softWrap: false,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
                         ),
@@ -4210,18 +4557,18 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).testNotificationTitle,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).testNotificationTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   AppLocalizations.of(context).testNotificationDesc,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -4232,14 +4579,24 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
               // 先强制重新生成当日总结，确保通知内容新鲜
               final key = _todayKey();
               try {
-                await DailySummaryService.instance.getOrGenerate(key, force: true);
+                await DailySummaryService.instance.getOrGenerate(
+                  key,
+                  force: true,
+                );
               } catch (_) {}
-              final ok = await DailySummaryService.instance.triggerNotificationNow(key);
+              final ok = await DailySummaryService.instance
+                  .triggerNotificationNow(key);
               if (!mounted) return;
               if (ok) {
-                UINotifier.success(context, AppLocalizations.of(context).dailyNotifyTriggered);
+                UINotifier.success(
+                  context,
+                  AppLocalizations.of(context).dailyNotifyTriggered,
+                );
               } else {
-                UINotifier.warning(context, AppLocalizations.of(context).dailyNotifyTriggerFailed);
+                UINotifier.warning(
+                  context,
+                  AppLocalizations.of(context).dailyNotifyTriggerFailed,
+                );
               }
             },
             style: TextButton.styleFrom(
@@ -4264,14 +4621,18 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('openDailySummaryNotificationSettings');
     } catch (e) {
-      if (mounted) UINotifier.error(context, 'Open channel settings failed: $e');
+      if (mounted)
+        UINotifier.error(context, 'Open channel settings failed: $e');
     }
   }
 
   // 打开"应用通知"总设置（可选）
   Future<void> _openAppNotificationSettings() async {
     try {
-      await FlutterLogger.nativeInfo('DailySummaryUI', 'open app notification settings');
+      await FlutterLogger.nativeInfo(
+        'DailySummaryUI',
+        'open app notification settings',
+      );
       const platform = MethodChannel('com.fqyw/screen_memo/accessibility');
       // 兼容：统一使用正确通道名
     } catch (_) {}
@@ -4279,10 +4640,10 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('openAppNotificationSettings');
     } catch (e) {
-      if (mounted) UINotifier.error(context, 'Open app notification settings failed: $e');
+      if (mounted)
+        UINotifier.error(context, 'Open app notification settings failed: $e');
     }
   }
-
 
   // 行项：开启横幅/悬浮通知
   Widget _buildDailyNotifyBannerItem(BuildContext context) {
@@ -4316,11 +4677,18 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(AppLocalizations.of(context).enableBannerNotificationTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  AppLocalizations.of(context).enableBannerNotificationTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   AppLocalizations.of(context).enableBannerNotificationDesc,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -4329,7 +4697,10 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
           TextButton(
             onPressed: _openDailyChannelSettings,
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
             ),
@@ -4339,7 +4710,6 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       ),
     );
   }
-
 
   String _todayKey() {
     final now = DateTime.now();
