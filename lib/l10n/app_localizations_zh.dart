@@ -397,6 +397,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dataBackupSectionTitle => '数据与备份';
 
   @override
+  String get storageAnalysisEntryTitle => '存储分析';
+
+  @override
+  String get storageAnalysisEntryDesc => '查看应用内部存储占用及分类详情';
+
+  @override
   String get actionSet => '设置';
 
   @override
@@ -451,6 +457,116 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get importFailedCheckZip => '请检查ZIP文件并重试。';
+
+  @override
+  String get storageAnalysisPageTitle => '存储分析';
+
+  @override
+  String get storageAnalysisLoadFailed => '存储数据加载失败';
+
+  @override
+  String get storageAnalysisEmptyMessage => '暂无存储数据';
+
+  @override
+  String get storageAnalysisSummaryTitle => '存储概要';
+
+  @override
+  String get storageAnalysisTotalLabel => '总占用';
+
+  @override
+  String get storageAnalysisAppLabel => '应用程序';
+
+  @override
+  String get storageAnalysisDataLabel => '应用数据';
+
+  @override
+  String get storageAnalysisCacheLabel => '缓存';
+
+  @override
+  String get storageAnalysisExternalLabel => '外部日志';
+
+  @override
+  String storageAnalysisScanTimestamp(Object timestamp) {
+    return '扫描时间：$timestamp';
+  }
+
+  @override
+  String storageAnalysisScanDurationSeconds(Object seconds) {
+    return '扫描耗时：$seconds 秒';
+  }
+
+  @override
+  String storageAnalysisScanDurationMilliseconds(Object milliseconds) {
+    return '扫描耗时：$milliseconds 毫秒';
+  }
+
+  @override
+  String get storageAnalysisManualNote => '未授权使用统计权限，当前数据基于本地扫描，可能与系统设置略有差异。';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingTitle => '需要使用统计权限';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingDesc =>
+      '为了读取与系统设置一致的存储占用，请前往系统设置授权“使用情况访问”权限。';
+
+  @override
+  String get storageAnalysisUsagePermissionButton => '前往授权';
+
+  @override
+  String get storageAnalysisPartialErrors => '部分统计项获取失败';
+
+  @override
+  String get storageAnalysisBreakdownTitle => '详细分布';
+
+  @override
+  String storageAnalysisFileCount(Object count) {
+    return '$count 个文件';
+  }
+
+  @override
+  String get storageAnalysisPathCopied => '已复制路径';
+
+  @override
+  String get storageAnalysisLabelFiles => 'files 目录';
+
+  @override
+  String get storageAnalysisLabelOutput => 'output 目录';
+
+  @override
+  String get storageAnalysisLabelScreenshots => '截图库';
+
+  @override
+  String get storageAnalysisLabelOutputDatabases => 'output/databases';
+
+  @override
+  String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
+
+  @override
+  String get storageAnalysisLabelNoBackup => 'no_backup';
+
+  @override
+  String get storageAnalysisLabelAppFlutter => 'app_flutter';
+
+  @override
+  String get storageAnalysisLabelDatabases => 'databases 目录';
+
+  @override
+  String get storageAnalysisLabelCacheDir => 'cache 目录';
+
+  @override
+  String get storageAnalysisLabelCodeCache => 'code_cache';
+
+  @override
+  String get storageAnalysisLabelExternalLogs => '外部日志';
+
+  @override
+  String storageAnalysisOthersLabel(Object count) {
+    return '其他（$count 项）';
+  }
+
+  @override
+  String get storageAnalysisOthersFallback => '其他';
 
   @override
   String get noMediaProjectionNeeded => '已使用无障碍服务截图，无需屏幕录制权限';
@@ -517,6 +633,58 @@ class AppLocalizationsZh extends AppLocalizations {
   String expireDaysUnit(Object days) {
     return '$days天';
   }
+
+  @override
+  String get setCompressDaysDialogTitle => '设置天数';
+
+  @override
+  String get compressDaysLabel => '天数';
+
+  @override
+  String get compressDaysInputHint => '请输入天数';
+
+  @override
+  String get compressDaysInvalidError => '请输入大于 0 的天数。';
+
+  @override
+  String get compressHistoryTitle => '历史压缩';
+
+  @override
+  String compressHistoryDescription(Object days, Object size) {
+    return '将最近 $days 天的截图按 $size KB 目标压缩，超过目标的才会处理。';
+  }
+
+  @override
+  String compressHistorySetDays(Object days) {
+    return '天数：$days';
+  }
+
+  @override
+  String compressHistorySetTarget(Object size) {
+    return '目标大小：$size KB';
+  }
+
+  @override
+  String compressHistoryProgress(Object handled, Object total, Object saved) {
+    return '已处理 $handled/$total • 已节省 $saved';
+  }
+
+  @override
+  String get compressHistoryAction => '开始压缩';
+
+  @override
+  String get compressHistoryRequireTarget => '请先启用目标大小后再进行压缩。';
+
+  @override
+  String compressHistorySuccess(int count, Object size) {
+    return '已压缩 $count 张图片，节省 $size。';
+  }
+
+  @override
+  String get compressHistoryNothing => '最近的截图已经满足目标大小，无需压缩。';
+
+  @override
+  String get compressHistoryFailure => '压缩失败，请稍后重试。';
 
   @override
   String get exportDataTitle => '导出数据';

@@ -422,6 +422,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dataBackupSectionTitle => 'Data & backup';
 
   @override
+  String get storageAnalysisEntryTitle => 'Storage analysis';
+
+  @override
+  String get storageAnalysisEntryDesc =>
+      'Inspect detailed storage usage for this app';
+
+  @override
   String get actionSet => 'Set';
 
   @override
@@ -476,6 +483,118 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get importFailedCheckZip => 'Please check the ZIP file and try again.';
+
+  @override
+  String get storageAnalysisPageTitle => 'Storage Analysis';
+
+  @override
+  String get storageAnalysisLoadFailed => 'Failed to load storage data';
+
+  @override
+  String get storageAnalysisEmptyMessage => 'No storage data available';
+
+  @override
+  String get storageAnalysisSummaryTitle => 'Storage Overview';
+
+  @override
+  String get storageAnalysisTotalLabel => 'Total';
+
+  @override
+  String get storageAnalysisAppLabel => 'App';
+
+  @override
+  String get storageAnalysisDataLabel => 'App data';
+
+  @override
+  String get storageAnalysisCacheLabel => 'Cache';
+
+  @override
+  String get storageAnalysisExternalLabel => 'External logs';
+
+  @override
+  String storageAnalysisScanTimestamp(Object timestamp) {
+    return 'Scanned at: $timestamp';
+  }
+
+  @override
+  String storageAnalysisScanDurationSeconds(Object seconds) {
+    return 'Scan duration: ${seconds}s';
+  }
+
+  @override
+  String storageAnalysisScanDurationMilliseconds(Object milliseconds) {
+    return 'Scan duration: $milliseconds ms';
+  }
+
+  @override
+  String get storageAnalysisManualNote =>
+      'Usage Access is not granted. The data shown here is calculated locally and may differ from system settings.';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingTitle =>
+      'Usage access required';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingDesc =>
+      'Grant Usage Access in system settings to retrieve the same storage stats shown in Android settings.';
+
+  @override
+  String get storageAnalysisUsagePermissionButton => 'Open settings';
+
+  @override
+  String get storageAnalysisPartialErrors => 'Some metrics failed to load';
+
+  @override
+  String get storageAnalysisBreakdownTitle => 'Detailed breakdown';
+
+  @override
+  String storageAnalysisFileCount(Object count) {
+    return '$count files';
+  }
+
+  @override
+  String get storageAnalysisPathCopied => 'Path copied';
+
+  @override
+  String get storageAnalysisLabelFiles => 'files directory';
+
+  @override
+  String get storageAnalysisLabelOutput => 'output directory';
+
+  @override
+  String get storageAnalysisLabelScreenshots => 'Screenshot library';
+
+  @override
+  String get storageAnalysisLabelOutputDatabases => 'output/databases';
+
+  @override
+  String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
+
+  @override
+  String get storageAnalysisLabelNoBackup => 'no_backup';
+
+  @override
+  String get storageAnalysisLabelAppFlutter => 'app_flutter';
+
+  @override
+  String get storageAnalysisLabelDatabases => 'databases directory';
+
+  @override
+  String get storageAnalysisLabelCacheDir => 'cache directory';
+
+  @override
+  String get storageAnalysisLabelCodeCache => 'code_cache';
+
+  @override
+  String get storageAnalysisLabelExternalLogs => 'External logs';
+
+  @override
+  String storageAnalysisOthersLabel(Object count) {
+    return 'Others ($count)';
+  }
+
+  @override
+  String get storageAnalysisOthersFallback => 'Others';
 
   @override
   String get noMediaProjectionNeeded =>
@@ -545,6 +664,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String expireDaysUnit(Object days) {
     return '$days days';
   }
+
+  @override
+  String get setCompressDaysDialogTitle => 'Set days';
+
+  @override
+  String get compressDaysLabel => 'Days';
+
+  @override
+  String get compressDaysInputHint => 'Enter number of days';
+
+  @override
+  String get compressDaysInvalidError =>
+      'Please enter a positive number of days.';
+
+  @override
+  String get compressHistoryTitle => 'Compress history';
+
+  @override
+  String compressHistoryDescription(Object days, Object size) {
+    return 'Compress screenshots from the last $days days to $size KB if they exceed the target.';
+  }
+
+  @override
+  String compressHistorySetDays(Object days) {
+    return 'Days: $days';
+  }
+
+  @override
+  String compressHistorySetTarget(Object size) {
+    return 'Target size: $size KB';
+  }
+
+  @override
+  String compressHistoryProgress(Object handled, Object total, Object saved) {
+    return '$handled/$total processed • Saved $saved';
+  }
+
+  @override
+  String get compressHistoryAction => 'Compress now';
+
+  @override
+  String get compressHistoryRequireTarget =>
+      'Enable target size before compressing.';
+
+  @override
+  String compressHistorySuccess(int count, Object size) {
+    return 'Compressed $count screenshots, saved $size.';
+  }
+
+  @override
+  String get compressHistoryNothing =>
+      'All screenshots already meet the target size.';
+
+  @override
+  String get compressHistoryFailure =>
+      'Failed to compress screenshots. Please try again.';
 
   @override
   String get exportDataTitle => 'Export data';

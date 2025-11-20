@@ -173,6 +173,8 @@
   "dailyReminderSectionTitle": "每日总结提醒",
   "aiAssistantSectionTitle": "AI 助手",
   "dataBackupSectionTitle": "数据与备份",
+  "storageAnalysisEntryTitle": "存储分析",
+  "storageAnalysisEntryDesc": "查看应用内部存储占用及分类详情",
   "actionSet": "设置",
   "actionEnter": "进入",
   "actionExport": "导出",
@@ -198,6 +200,65 @@
   "dataExtractedTo": "数据已解压到:",
   "importFailedTitle": "导入失败",
   "importFailedCheckZip": "请检查ZIP文件并重试。",
+
+  "storageAnalysisPageTitle": "存储分析",
+  "storageAnalysisLoadFailed": "存储数据加载失败",
+  "storageAnalysisEmptyMessage": "暂无存储数据",
+  "storageAnalysisSummaryTitle": "存储概要",
+  "storageAnalysisTotalLabel": "总占用",
+  "storageAnalysisAppLabel": "应用程序",
+  "storageAnalysisDataLabel": "应用数据",
+  "storageAnalysisCacheLabel": "缓存",
+  "storageAnalysisExternalLabel": "外部日志",
+  "storageAnalysisScanTimestamp": "扫描时间：{timestamp}",
+  "@storageAnalysisScanTimestamp": {
+    "placeholders": {
+      "timestamp": {}
+    }
+  },
+  "storageAnalysisScanDurationSeconds": "扫描耗时：{seconds} 秒",
+  "@storageAnalysisScanDurationSeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "storageAnalysisScanDurationMilliseconds": "扫描耗时：{milliseconds} 毫秒",
+  "@storageAnalysisScanDurationMilliseconds": {
+    "placeholders": {
+      "milliseconds": {}
+    }
+  },
+  "storageAnalysisManualNote": "未授权使用统计权限，当前数据基于本地扫描，可能与系统设置略有差异。",
+  "storageAnalysisUsagePermissionMissingTitle": "需要使用统计权限",
+  "storageAnalysisUsagePermissionMissingDesc": "为了读取与系统设置一致的存储占用，请前往系统设置授权“使用情况访问”权限。",
+  "storageAnalysisUsagePermissionButton": "前往授权",
+  "storageAnalysisPartialErrors": "部分统计项获取失败",
+  "storageAnalysisBreakdownTitle": "详细分布",
+  "storageAnalysisFileCount": "{count} 个文件",
+  "@storageAnalysisFileCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisPathCopied": "已复制路径",
+  "storageAnalysisLabelFiles": "files 目录",
+  "storageAnalysisLabelOutput": "output 目录",
+  "storageAnalysisLabelScreenshots": "截图库",
+  "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelSharedPrefs": "shared_prefs",
+  "storageAnalysisLabelNoBackup": "no_backup",
+  "storageAnalysisLabelAppFlutter": "app_flutter",
+  "storageAnalysisLabelDatabases": "databases 目录",
+  "storageAnalysisLabelCacheDir": "cache 目录",
+  "storageAnalysisLabelCodeCache": "code_cache",
+  "storageAnalysisLabelExternalLogs": "外部日志",
+  "storageAnalysisOthersLabel": "其他（{count} 项）",
+  "@storageAnalysisOthersLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisOthersFallback": "其他",
 
   "noMediaProjectionNeeded": "已使用无障碍服务截图，无需屏幕录制权限",
   "autostartPermissionMarked": "自启动权限已标记为已授权",
@@ -249,6 +310,51 @@
       "days": {}
     }
   },
+  "setCompressDaysDialogTitle": "设置天数",
+  "compressDaysLabel": "天数",
+  "compressDaysInputHint": "请输入天数",
+  "compressDaysInvalidError": "请输入大于 0 的天数。",
+  "compressHistoryTitle": "历史压缩",
+  "compressHistoryDescription": "将最近 {days} 天的截图按 {size} KB 目标压缩，超过目标的才会处理。",
+  "@compressHistoryDescription": {
+    "placeholders": {
+      "days": {},
+      "size": {}
+    }
+  },
+  "compressHistorySetDays": "天数：{days}",
+  "@compressHistorySetDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "compressHistorySetTarget": "目标大小：{size} KB",
+  "@compressHistorySetTarget": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "compressHistoryProgress": "已处理 {handled}/{total} • 已节省 {saved}",
+  "@compressHistoryProgress": {
+    "placeholders": {
+      "handled": {},
+      "total": {},
+      "saved": {}
+    }
+  },
+  "compressHistoryAction": "开始压缩",
+  "compressHistoryRequireTarget": "请先启用目标大小后再进行压缩。",
+  "compressHistorySuccess": "已压缩 {count} 张图片，节省 {size}。",
+  "@compressHistorySuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {}
+    }
+  },
+  "compressHistoryNothing": "最近的截图已经满足目标大小，无需压缩。",
+  "compressHistoryFailure": "压缩失败，请稍后重试。",
 
   "exportDataTitle": "导出数据",
   "exportDataDesc": "导出 ZIP 至 Download/ScreenMemory",

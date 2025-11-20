@@ -171,6 +171,8 @@
   "dailyReminderSectionTitle": "일일 요약 알림",
   "aiAssistantSectionTitle": "AI 어시스턴트",
   "dataBackupSectionTitle": "데이터 및 백업",
+  "storageAnalysisEntryTitle": "저장소 분석",
+  "storageAnalysisEntryDesc": "앱의 저장소 사용량을 자세히 확인합니다",
   "actionSet": "세트",
   "actionEnter": "입력하다",
   "actionExport": "내보내다",
@@ -194,6 +196,65 @@
   "dataExtractedTo": "데이터 추출 위치:",
   "importFailedTitle": "가져오기에 실패했습니다",
   "importFailedCheckZip": "ZIP 파일을 확인하고 다시 시도해 주세요.",
+
+  "storageAnalysisPageTitle": "저장소 분석",
+  "storageAnalysisLoadFailed": "저장소 데이터를 불러오지 못했습니다",
+  "storageAnalysisEmptyMessage": "표시할 저장소 데이터가 없습니다",
+  "storageAnalysisSummaryTitle": "저장소 요약",
+  "storageAnalysisTotalLabel": "전체",
+  "storageAnalysisAppLabel": "앱",
+  "storageAnalysisDataLabel": "앱 데이터",
+  "storageAnalysisCacheLabel": "캐시",
+  "storageAnalysisExternalLabel": "외부 로그",
+  "storageAnalysisScanTimestamp": "스캔 시각: {timestamp}",
+  "@storageAnalysisScanTimestamp": {
+    "placeholders": {
+      "timestamp": {}
+    }
+  },
+  "storageAnalysisScanDurationSeconds": "스캔 시간: {seconds}초",
+  "@storageAnalysisScanDurationSeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "storageAnalysisScanDurationMilliseconds": "스캔 시간: {milliseconds}밀리초",
+  "@storageAnalysisScanDurationMilliseconds": {
+    "placeholders": {
+      "milliseconds": {}
+    }
+  },
+  "storageAnalysisManualNote": "사용량 접근 권한이 없어 로컬 측정값을 표시합니다. 시스템 설정과 다를 수 있습니다.",
+  "storageAnalysisUsagePermissionMissingTitle": "사용량 접근 권한 필요",
+  "storageAnalysisUsagePermissionMissingDesc": "Android 설정과 동일한 저장소 통계를 가져오려면 시스템 설정에서 '사용량 접근'을 허용하세요.",
+  "storageAnalysisUsagePermissionButton": "설정 열기",
+  "storageAnalysisPartialErrors": "일부 통계를 불러오지 못했습니다",
+  "storageAnalysisBreakdownTitle": "상세 분포",
+  "storageAnalysisFileCount": "파일 {count}개",
+  "@storageAnalysisFileCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisPathCopied": "경로를 복사했습니다",
+  "storageAnalysisLabelFiles": "files 디렉터리",
+  "storageAnalysisLabelOutput": "output 디렉터리",
+  "storageAnalysisLabelScreenshots": "스크린샷 라이브러리",
+  "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelSharedPrefs": "shared_prefs",
+  "storageAnalysisLabelNoBackup": "no_backup",
+  "storageAnalysisLabelAppFlutter": "app_flutter",
+  "storageAnalysisLabelDatabases": "databases 디렉터리",
+  "storageAnalysisLabelCacheDir": "cache 디렉터리",
+  "storageAnalysisLabelCodeCache": "code_cache",
+  "storageAnalysisLabelExternalLogs": "외부 로그",
+  "storageAnalysisOthersLabel": "기타 ({count}개)",
+  "@storageAnalysisOthersLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisOthersFallback": "기타",
   "noMediaProjectionNeeded": "접근성 캡처를 사용 중이므로 화면 녹화 권한이 필요 없습니다",
   "autostartPermissionMarked": "자동 시작 권한이 허용된 것으로 표시되었습니다",
   "requestPermissionFailed": "권한 요청에 실패했습니다: {error}",
@@ -229,6 +290,51 @@
       "days": {}
     }
   },
+  "setCompressDaysDialogTitle": "일수 설정",
+  "compressDaysLabel": "일수",
+  "compressDaysInputHint": "일수를 입력하세요",
+  "compressDaysInvalidError": "1 이상의 일수를 입력하세요.",
+  "compressHistoryTitle": "과거 압축",
+  "compressHistoryDescription": "최근 {days}일 동안의 스크린샷을 {size} KB 목표로 압축하며, 초과한 파일만 처리합니다.",
+  "@compressHistoryDescription": {
+    "placeholders": {
+      "days": {},
+      "size": {}
+    }
+  },
+  "compressHistorySetDays": "일수: {days}",
+  "@compressHistorySetDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "compressHistorySetTarget": "목표 크기: {size}KB",
+  "@compressHistorySetTarget": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "compressHistoryProgress": "{handled}/{total} 처리 • 절약 {saved}",
+  "@compressHistoryProgress": {
+    "placeholders": {
+      "handled": {},
+      "total": {},
+      "saved": {}
+    }
+  },
+  "compressHistoryAction": "지금 압축",
+  "compressHistoryRequireTarget": "압축 전에 목표 크기를 먼저 활성화하세요.",
+  "compressHistorySuccess": "{count}개의 이미지를 압축했고 {size}를 절약했습니다.",
+  "@compressHistorySuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {}
+    }
+  },
+  "compressHistoryNothing": "최근 스크린샷은 이미 목표 크기를 만족합니다.",
+  "compressHistoryFailure": "압축에 실패했습니다. 다시 시도해 주세요.",
   "exportDataTitle": "데이터 내보내기",
   "exportDataDesc": "ZIP을 Download/ScreenMemory에 내보내기",
   "importDataTitle": "데이터 가져오기",

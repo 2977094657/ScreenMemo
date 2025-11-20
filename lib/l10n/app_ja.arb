@@ -171,6 +171,8 @@
   "dailyReminderSectionTitle": "毎日の概要リマインダー",
   "aiAssistantSectionTitle": "AIアシスタント",
   "dataBackupSectionTitle": "データとバックアップ",
+  "storageAnalysisEntryTitle": "ストレージ分析",
+  "storageAnalysisEntryDesc": "アプリのストレージ使用状況を詳しく確認します",
   "actionSet": "セット",
   "actionEnter": "入力",
   "actionExport": "輸出",
@@ -194,6 +196,65 @@
   "dataExtractedTo": "展開先：",
   "importFailedTitle": "インポートに失敗しました",
   "importFailedCheckZip": "ZIP ファイルを確認して、もう一度試してください。",
+
+  "storageAnalysisPageTitle": "ストレージ分析",
+  "storageAnalysisLoadFailed": "ストレージデータの取得に失敗しました",
+  "storageAnalysisEmptyMessage": "表示できるストレージデータがありません",
+  "storageAnalysisSummaryTitle": "ストレージ概要",
+  "storageAnalysisTotalLabel": "合計",
+  "storageAnalysisAppLabel": "アプリ",
+  "storageAnalysisDataLabel": "アプリデータ",
+  "storageAnalysisCacheLabel": "キャッシュ",
+  "storageAnalysisExternalLabel": "外部ログ",
+  "storageAnalysisScanTimestamp": "スキャン時刻：{timestamp}",
+  "@storageAnalysisScanTimestamp": {
+    "placeholders": {
+      "timestamp": {}
+    }
+  },
+  "storageAnalysisScanDurationSeconds": "スキャン時間：{seconds} 秒",
+  "@storageAnalysisScanDurationSeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "storageAnalysisScanDurationMilliseconds": "スキャン時間：{milliseconds} ミリ秒",
+  "@storageAnalysisScanDurationMilliseconds": {
+    "placeholders": {
+      "milliseconds": {}
+    }
+  },
+  "storageAnalysisManualNote": "使用状況アクセスが付与されていないため、ここに表示される値はローカル計測であり、システム設定と異なる場合があります。",
+  "storageAnalysisUsagePermissionMissingTitle": "使用状況アクセスが必要です",
+  "storageAnalysisUsagePermissionMissingDesc": "Android 設定と同じ統計を取得するには、システム設定の「使用状況へのアクセス」を許可してください。",
+  "storageAnalysisUsagePermissionButton": "設定を開く",
+  "storageAnalysisPartialErrors": "一部の統計を取得できませんでした",
+  "storageAnalysisBreakdownTitle": "詳細内訳",
+  "storageAnalysisFileCount": "{count} 件のファイル",
+  "@storageAnalysisFileCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisPathCopied": "パスをコピーしました",
+  "storageAnalysisLabelFiles": "files ディレクトリ",
+  "storageAnalysisLabelOutput": "output ディレクトリ",
+  "storageAnalysisLabelScreenshots": "スクリーンショットライブラリ",
+  "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelSharedPrefs": "shared_prefs",
+  "storageAnalysisLabelNoBackup": "no_backup",
+  "storageAnalysisLabelAppFlutter": "app_flutter",
+  "storageAnalysisLabelDatabases": "databases ディレクトリ",
+  "storageAnalysisLabelCacheDir": "cache ディレクトリ",
+  "storageAnalysisLabelCodeCache": "code_cache",
+  "storageAnalysisLabelExternalLogs": "外部ログ",
+  "storageAnalysisOthersLabel": "その他（{count} 件）",
+  "@storageAnalysisOthersLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisOthersFallback": "その他",
   "noMediaProjectionNeeded": "アクセシビリティのスクリーンショットを使用しているため、画面録画の許可は不要です",
   "autostartPermissionMarked": "自動起動権限を許可済みとしてマークしました",
   "requestPermissionFailed": "権限の要求に失敗しました：{error}",
@@ -229,6 +290,51 @@
       "days": {}
     }
   },
+  "setCompressDaysDialogTitle": "日数を設定",
+  "compressDaysLabel": "日数",
+  "compressDaysInputHint": "日数を入力してください",
+  "compressDaysInvalidError": "1 以上の日数を入力してください。",
+  "compressHistoryTitle": "履歴の圧縮",
+  "compressHistoryDescription": "直近 {days} 日間のスクリーンショットを {size} KB に圧縮し、超過分のみ処理します。",
+  "@compressHistoryDescription": {
+    "placeholders": {
+      "days": {},
+      "size": {}
+    }
+  },
+  "compressHistorySetDays": "日数: {days}",
+  "@compressHistorySetDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "compressHistorySetTarget": "目標サイズ: {size} KB",
+  "@compressHistorySetTarget": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "compressHistoryProgress": "{handled}/{total} 件処理 • 節約 {saved}",
+  "@compressHistoryProgress": {
+    "placeholders": {
+      "handled": {},
+      "total": {},
+      "saved": {}
+    }
+  },
+  "compressHistoryAction": "今すぐ圧縮",
+  "compressHistoryRequireTarget": "圧縮する前に目標サイズを有効にしてください。",
+  "compressHistorySuccess": "{count} 件を圧縮し、{size} を節約しました。",
+  "@compressHistorySuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {}
+    }
+  },
+  "compressHistoryNothing": "直近のスクリーンショットは既に目標サイズを満たしています。",
+  "compressHistoryFailure": "圧縮に失敗しました。もう一度お試しください。",
   "exportDataTitle": "データをエクスポート",
   "exportDataDesc": "ZIP を Download/ScreenMemory にエクスポート",
   "importDataTitle": "データをインポート",

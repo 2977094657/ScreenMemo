@@ -407,6 +407,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get dataBackupSectionTitle => 'データとバックアップ';
 
   @override
+  String get storageAnalysisEntryTitle => 'ストレージ分析';
+
+  @override
+  String get storageAnalysisEntryDesc => 'アプリのストレージ使用状況を詳しく確認します';
+
+  @override
   String get actionSet => 'セット';
 
   @override
@@ -461,6 +467,117 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get importFailedCheckZip => 'ZIP ファイルを確認して、もう一度試してください。';
+
+  @override
+  String get storageAnalysisPageTitle => 'ストレージ分析';
+
+  @override
+  String get storageAnalysisLoadFailed => 'ストレージデータの取得に失敗しました';
+
+  @override
+  String get storageAnalysisEmptyMessage => '表示できるストレージデータがありません';
+
+  @override
+  String get storageAnalysisSummaryTitle => 'ストレージ概要';
+
+  @override
+  String get storageAnalysisTotalLabel => '合計';
+
+  @override
+  String get storageAnalysisAppLabel => 'アプリ';
+
+  @override
+  String get storageAnalysisDataLabel => 'アプリデータ';
+
+  @override
+  String get storageAnalysisCacheLabel => 'キャッシュ';
+
+  @override
+  String get storageAnalysisExternalLabel => '外部ログ';
+
+  @override
+  String storageAnalysisScanTimestamp(Object timestamp) {
+    return 'スキャン時刻：$timestamp';
+  }
+
+  @override
+  String storageAnalysisScanDurationSeconds(Object seconds) {
+    return 'スキャン時間：$seconds 秒';
+  }
+
+  @override
+  String storageAnalysisScanDurationMilliseconds(Object milliseconds) {
+    return 'スキャン時間：$milliseconds ミリ秒';
+  }
+
+  @override
+  String get storageAnalysisManualNote =>
+      '使用状況アクセスが付与されていないため、ここに表示される値はローカル計測であり、システム設定と異なる場合があります。';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingTitle => '使用状況アクセスが必要です';
+
+  @override
+  String get storageAnalysisUsagePermissionMissingDesc =>
+      'Android 設定と同じ統計を取得するには、システム設定の「使用状況へのアクセス」を許可してください。';
+
+  @override
+  String get storageAnalysisUsagePermissionButton => '設定を開く';
+
+  @override
+  String get storageAnalysisPartialErrors => '一部の統計を取得できませんでした';
+
+  @override
+  String get storageAnalysisBreakdownTitle => '詳細内訳';
+
+  @override
+  String storageAnalysisFileCount(Object count) {
+    return '$count 件のファイル';
+  }
+
+  @override
+  String get storageAnalysisPathCopied => 'パスをコピーしました';
+
+  @override
+  String get storageAnalysisLabelFiles => 'files ディレクトリ';
+
+  @override
+  String get storageAnalysisLabelOutput => 'output ディレクトリ';
+
+  @override
+  String get storageAnalysisLabelScreenshots => 'スクリーンショットライブラリ';
+
+  @override
+  String get storageAnalysisLabelOutputDatabases => 'output/databases';
+
+  @override
+  String get storageAnalysisLabelSharedPrefs => 'shared_prefs';
+
+  @override
+  String get storageAnalysisLabelNoBackup => 'no_backup';
+
+  @override
+  String get storageAnalysisLabelAppFlutter => 'app_flutter';
+
+  @override
+  String get storageAnalysisLabelDatabases => 'databases ディレクトリ';
+
+  @override
+  String get storageAnalysisLabelCacheDir => 'cache ディレクトリ';
+
+  @override
+  String get storageAnalysisLabelCodeCache => 'code_cache';
+
+  @override
+  String get storageAnalysisLabelExternalLogs => '外部ログ';
+
+  @override
+  String storageAnalysisOthersLabel(Object count) {
+    return 'その他（$count 件）';
+  }
+
+  @override
+  String get storageAnalysisOthersFallback => 'その他';
 
   @override
   String get noMediaProjectionNeeded =>
@@ -528,6 +645,58 @@ class AppLocalizationsJa extends AppLocalizations {
   String expireDaysUnit(Object days) {
     return '$days 日';
   }
+
+  @override
+  String get setCompressDaysDialogTitle => '日数を設定';
+
+  @override
+  String get compressDaysLabel => '日数';
+
+  @override
+  String get compressDaysInputHint => '日数を入力してください';
+
+  @override
+  String get compressDaysInvalidError => '1 以上の日数を入力してください。';
+
+  @override
+  String get compressHistoryTitle => '履歴の圧縮';
+
+  @override
+  String compressHistoryDescription(Object days, Object size) {
+    return '直近 $days 日間のスクリーンショットを $size KB に圧縮し、超過分のみ処理します。';
+  }
+
+  @override
+  String compressHistorySetDays(Object days) {
+    return '日数: $days';
+  }
+
+  @override
+  String compressHistorySetTarget(Object size) {
+    return '目標サイズ: $size KB';
+  }
+
+  @override
+  String compressHistoryProgress(Object handled, Object total, Object saved) {
+    return '$handled/$total 件処理 • 節約 $saved';
+  }
+
+  @override
+  String get compressHistoryAction => '今すぐ圧縮';
+
+  @override
+  String get compressHistoryRequireTarget => '圧縮する前に目標サイズを有効にしてください。';
+
+  @override
+  String compressHistorySuccess(int count, Object size) {
+    return '$count 件を圧縮し、$size を節約しました。';
+  }
+
+  @override
+  String get compressHistoryNothing => '直近のスクリーンショットは既に目標サイズを満たしています。';
+
+  @override
+  String get compressHistoryFailure => '圧縮に失敗しました。もう一度お試しください。';
 
   @override
   String get exportDataTitle => 'データをエクスポート';

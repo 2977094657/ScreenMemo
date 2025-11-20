@@ -173,6 +173,8 @@
   "dailyReminderSectionTitle": "Daily summary reminder",
   "aiAssistantSectionTitle": "AI Assistant",
   "dataBackupSectionTitle": "Data & backup",
+  "storageAnalysisEntryTitle": "Storage analysis",
+  "storageAnalysisEntryDesc": "Inspect detailed storage usage for this app",
   "actionSet": "Set",
   "actionEnter": "Enter",
   "actionExport": "Export",
@@ -198,6 +200,65 @@
   "dataExtractedTo": "Data extracted to:",
   "importFailedTitle": "Import failed",
   "importFailedCheckZip": "Please check the ZIP file and try again.",
+
+  "storageAnalysisPageTitle": "Storage Analysis",
+  "storageAnalysisLoadFailed": "Failed to load storage data",
+  "storageAnalysisEmptyMessage": "No storage data available",
+  "storageAnalysisSummaryTitle": "Storage Overview",
+  "storageAnalysisTotalLabel": "Total",
+  "storageAnalysisAppLabel": "App",
+  "storageAnalysisDataLabel": "App data",
+  "storageAnalysisCacheLabel": "Cache",
+  "storageAnalysisExternalLabel": "External logs",
+  "storageAnalysisScanTimestamp": "Scanned at: {timestamp}",
+  "@storageAnalysisScanTimestamp": {
+    "placeholders": {
+      "timestamp": {}
+    }
+  },
+  "storageAnalysisScanDurationSeconds": "Scan duration: {seconds}s",
+  "@storageAnalysisScanDurationSeconds": {
+    "placeholders": {
+      "seconds": {}
+    }
+  },
+  "storageAnalysisScanDurationMilliseconds": "Scan duration: {milliseconds} ms",
+  "@storageAnalysisScanDurationMilliseconds": {
+    "placeholders": {
+      "milliseconds": {}
+    }
+  },
+  "storageAnalysisManualNote": "Usage Access is not granted. The data shown here is calculated locally and may differ from system settings.",
+  "storageAnalysisUsagePermissionMissingTitle": "Usage access required",
+  "storageAnalysisUsagePermissionMissingDesc": "Grant Usage Access in system settings to retrieve the same storage stats shown in Android settings.",
+  "storageAnalysisUsagePermissionButton": "Open settings",
+  "storageAnalysisPartialErrors": "Some metrics failed to load",
+  "storageAnalysisBreakdownTitle": "Detailed breakdown",
+  "storageAnalysisFileCount": "{count} files",
+  "@storageAnalysisFileCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisPathCopied": "Path copied",
+  "storageAnalysisLabelFiles": "files directory",
+  "storageAnalysisLabelOutput": "output directory",
+  "storageAnalysisLabelScreenshots": "Screenshot library",
+  "storageAnalysisLabelOutputDatabases": "output/databases",
+  "storageAnalysisLabelSharedPrefs": "shared_prefs",
+  "storageAnalysisLabelNoBackup": "no_backup",
+  "storageAnalysisLabelAppFlutter": "app_flutter",
+  "storageAnalysisLabelDatabases": "databases directory",
+  "storageAnalysisLabelCacheDir": "cache directory",
+  "storageAnalysisLabelCodeCache": "code_cache",
+  "storageAnalysisLabelExternalLogs": "External logs",
+  "storageAnalysisOthersLabel": "Others ({count})",
+  "@storageAnalysisOthersLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "storageAnalysisOthersFallback": "Others",
 
   "noMediaProjectionNeeded": "Using Accessibility screenshots, no screen recording permission needed",
   "autostartPermissionMarked": "Auto-start permission marked as granted",
@@ -249,6 +310,51 @@
       "days": {}
     }
   },
+  "setCompressDaysDialogTitle": "Set days",
+  "compressDaysLabel": "Days",
+  "compressDaysInputHint": "Enter number of days",
+  "compressDaysInvalidError": "Please enter a positive number of days.",
+  "compressHistoryTitle": "Compress history",
+  "compressHistoryDescription": "Compress screenshots from the last {days} days to {size} KB if they exceed the target.",
+  "@compressHistoryDescription": {
+    "placeholders": {
+      "days": {},
+      "size": {}
+    }
+  },
+  "compressHistorySetDays": "Days: {days}",
+  "@compressHistorySetDays": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "compressHistorySetTarget": "Target size: {size} KB",
+  "@compressHistorySetTarget": {
+    "placeholders": {
+      "size": {}
+    }
+  },
+  "compressHistoryProgress": "{handled}/{total} processed • Saved {saved}",
+  "@compressHistoryProgress": {
+    "placeholders": {
+      "handled": {},
+      "total": {},
+      "saved": {}
+    }
+  },
+  "compressHistoryAction": "Compress now",
+  "compressHistoryRequireTarget": "Enable target size before compressing.",
+  "compressHistorySuccess": "Compressed {count} screenshots, saved {size}.",
+  "@compressHistorySuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {}
+    }
+  },
+  "compressHistoryNothing": "All screenshots already meet the target size.",
+  "compressHistoryFailure": "Failed to compress screenshots. Please try again.",
 
   "exportDataTitle": "Export data",
   "exportDataDesc": "Export ZIP to Download/ScreenMemory",

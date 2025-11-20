@@ -840,6 +840,18 @@ abstract class AppLocalizations {
   /// **'Data & backup'**
   String get dataBackupSectionTitle;
 
+  /// No description provided for @storageAnalysisEntryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage analysis'**
+  String get storageAnalysisEntryTitle;
+
+  /// No description provided for @storageAnalysisEntryDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Inspect detailed storage usage for this app'**
+  String get storageAnalysisEntryDesc;
+
   /// No description provided for @actionSet.
   ///
   /// In en, this message translates to:
@@ -947,6 +959,204 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Please check the ZIP file and try again.'**
   String get importFailedCheckZip;
+
+  /// No description provided for @storageAnalysisPageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Analysis'**
+  String get storageAnalysisPageTitle;
+
+  /// No description provided for @storageAnalysisLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load storage data'**
+  String get storageAnalysisLoadFailed;
+
+  /// No description provided for @storageAnalysisEmptyMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'No storage data available'**
+  String get storageAnalysisEmptyMessage;
+
+  /// No description provided for @storageAnalysisSummaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Overview'**
+  String get storageAnalysisSummaryTitle;
+
+  /// No description provided for @storageAnalysisTotalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Total'**
+  String get storageAnalysisTotalLabel;
+
+  /// No description provided for @storageAnalysisAppLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'App'**
+  String get storageAnalysisAppLabel;
+
+  /// No description provided for @storageAnalysisDataLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'App data'**
+  String get storageAnalysisDataLabel;
+
+  /// No description provided for @storageAnalysisCacheLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache'**
+  String get storageAnalysisCacheLabel;
+
+  /// No description provided for @storageAnalysisExternalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'External logs'**
+  String get storageAnalysisExternalLabel;
+
+  /// No description provided for @storageAnalysisScanTimestamp.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanned at: {timestamp}'**
+  String storageAnalysisScanTimestamp(Object timestamp);
+
+  /// No description provided for @storageAnalysisScanDurationSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan duration: {seconds}s'**
+  String storageAnalysisScanDurationSeconds(Object seconds);
+
+  /// No description provided for @storageAnalysisScanDurationMilliseconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan duration: {milliseconds} ms'**
+  String storageAnalysisScanDurationMilliseconds(Object milliseconds);
+
+  /// No description provided for @storageAnalysisManualNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage Access is not granted. The data shown here is calculated locally and may differ from system settings.'**
+  String get storageAnalysisManualNote;
+
+  /// No description provided for @storageAnalysisUsagePermissionMissingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage access required'**
+  String get storageAnalysisUsagePermissionMissingTitle;
+
+  /// No description provided for @storageAnalysisUsagePermissionMissingDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant Usage Access in system settings to retrieve the same storage stats shown in Android settings.'**
+  String get storageAnalysisUsagePermissionMissingDesc;
+
+  /// No description provided for @storageAnalysisUsagePermissionButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Open settings'**
+  String get storageAnalysisUsagePermissionButton;
+
+  /// No description provided for @storageAnalysisPartialErrors.
+  ///
+  /// In en, this message translates to:
+  /// **'Some metrics failed to load'**
+  String get storageAnalysisPartialErrors;
+
+  /// No description provided for @storageAnalysisBreakdownTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Detailed breakdown'**
+  String get storageAnalysisBreakdownTitle;
+
+  /// No description provided for @storageAnalysisFileCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files'**
+  String storageAnalysisFileCount(Object count);
+
+  /// No description provided for @storageAnalysisPathCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Path copied'**
+  String get storageAnalysisPathCopied;
+
+  /// No description provided for @storageAnalysisLabelFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'files directory'**
+  String get storageAnalysisLabelFiles;
+
+  /// No description provided for @storageAnalysisLabelOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'output directory'**
+  String get storageAnalysisLabelOutput;
+
+  /// No description provided for @storageAnalysisLabelScreenshots.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot library'**
+  String get storageAnalysisLabelScreenshots;
+
+  /// No description provided for @storageAnalysisLabelOutputDatabases.
+  ///
+  /// In en, this message translates to:
+  /// **'output/databases'**
+  String get storageAnalysisLabelOutputDatabases;
+
+  /// No description provided for @storageAnalysisLabelSharedPrefs.
+  ///
+  /// In en, this message translates to:
+  /// **'shared_prefs'**
+  String get storageAnalysisLabelSharedPrefs;
+
+  /// No description provided for @storageAnalysisLabelNoBackup.
+  ///
+  /// In en, this message translates to:
+  /// **'no_backup'**
+  String get storageAnalysisLabelNoBackup;
+
+  /// No description provided for @storageAnalysisLabelAppFlutter.
+  ///
+  /// In en, this message translates to:
+  /// **'app_flutter'**
+  String get storageAnalysisLabelAppFlutter;
+
+  /// No description provided for @storageAnalysisLabelDatabases.
+  ///
+  /// In en, this message translates to:
+  /// **'databases directory'**
+  String get storageAnalysisLabelDatabases;
+
+  /// No description provided for @storageAnalysisLabelCacheDir.
+  ///
+  /// In en, this message translates to:
+  /// **'cache directory'**
+  String get storageAnalysisLabelCacheDir;
+
+  /// No description provided for @storageAnalysisLabelCodeCache.
+  ///
+  /// In en, this message translates to:
+  /// **'code_cache'**
+  String get storageAnalysisLabelCodeCache;
+
+  /// No description provided for @storageAnalysisLabelExternalLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'External logs'**
+  String get storageAnalysisLabelExternalLogs;
+
+  /// No description provided for @storageAnalysisOthersLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Others ({count})'**
+  String storageAnalysisOthersLabel(Object count);
+
+  /// No description provided for @storageAnalysisOthersFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Others'**
+  String get storageAnalysisOthersFallback;
 
   /// No description provided for @noMediaProjectionNeeded.
   ///
@@ -1067,6 +1277,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{days} days'**
   String expireDaysUnit(Object days);
+
+  /// No description provided for @setCompressDaysDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Set days'**
+  String get setCompressDaysDialogTitle;
+
+  /// No description provided for @compressDaysLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Days'**
+  String get compressDaysLabel;
+
+  /// No description provided for @compressDaysInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter number of days'**
+  String get compressDaysInputHint;
+
+  /// No description provided for @compressDaysInvalidError.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a positive number of days.'**
+  String get compressDaysInvalidError;
+
+  /// No description provided for @compressHistoryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Compress history'**
+  String get compressHistoryTitle;
+
+  /// No description provided for @compressHistoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Compress screenshots from the last {days} days to {size} KB if they exceed the target.'**
+  String compressHistoryDescription(Object days, Object size);
+
+  /// No description provided for @compressHistorySetDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Days: {days}'**
+  String compressHistorySetDays(Object days);
+
+  /// No description provided for @compressHistorySetTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Target size: {size} KB'**
+  String compressHistorySetTarget(Object size);
+
+  /// No description provided for @compressHistoryProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{handled}/{total} processed • Saved {saved}'**
+  String compressHistoryProgress(Object handled, Object total, Object saved);
+
+  /// No description provided for @compressHistoryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Compress now'**
+  String get compressHistoryAction;
+
+  /// No description provided for @compressHistoryRequireTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable target size before compressing.'**
+  String get compressHistoryRequireTarget;
+
+  /// No description provided for @compressHistorySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Compressed {count} screenshots, saved {size}.'**
+  String compressHistorySuccess(int count, Object size);
+
+  /// No description provided for @compressHistoryNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'All screenshots already meet the target size.'**
+  String get compressHistoryNothing;
+
+  /// No description provided for @compressHistoryFailure.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to compress screenshots. Please try again.'**
+  String get compressHistoryFailure;
 
   /// No description provided for @exportDataTitle.
   ///
