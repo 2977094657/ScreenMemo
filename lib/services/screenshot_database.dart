@@ -406,6 +406,39 @@ class ScreenshotDatabase {
     }
   }
 
+  /// 更新指定截图记录的文件大小（通过 gid + 包名精确定位）。
+  Future<void> updateFileSizeByGid({
+    required String packageName,
+    required int gid,
+    required int newSize,
+  }) async {
+    final List<int>? decoded = _decodeGid(gid);
+    if (decoded == null) return;
+    final int year = decoded[0];
+    final int month = decoded[1];
+    final int localId = decoded[2];
+    if (localId <= 0) return;
+
+    final Database? shardDb = await _openShardDb(packageName, year);
+    if (shardDb == null) return;
+    final String table = _monthTableName(year, month);
+    if (!await _tableExists(shardDb, table)) return;
+
+    try {
+      await shardDb.update(
+        table,
+        <String, Object>{
+          'file_size': newSize,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: <Object>[localId],
+      );
+    } catch (e) {
+      print('更新文件大小失败: $e, gid=$gid, package=$packageName');
+    }
+  }
+
   /// 创建数据库表
   Future<void> _onCreate(Database db, int version) async {
     // 新架构：应用注册表，记录所有已创建的应用表

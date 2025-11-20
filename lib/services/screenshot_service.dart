@@ -63,6 +63,42 @@ class ScreenshotService {
   // static const String _lastSyncTsKey = 'stats_last_sync_ts';
   // static const int _syncThrottleSeconds = 120; // 2分钟
 
+  bool _compressionInFlight = false;
+  void Function(CompressionProgress)? _compressionProgressListener;
+String? _activeCompressionPackage;
+String? _listenerPackageFilter;
+CompressionProgress? _latestCompressionProgress;
+final Map<String, CompressionProgress> _latestCompressionProgressByPackage =
+    <String, CompressionProgress>{};
+
+CompressionProgress? latestCompressionProgressFor(String packageName) {
+  return _latestCompressionProgressByPackage[packageName];
+}
+
+bool compressionInFlightFor(String packageName) {
+  return _compressionInFlight && _activeCompressionPackage == packageName;
+}
+
+void attachCompressionProgressListener(
+  void Function(CompressionProgress)? listener, {
+  bool replayLatest = true,
+  String? packageName,
+}) {
+  _compressionProgressListener = listener;
+  _listenerPackageFilter = packageName;
+  if (listener != null && replayLatest && packageName != null) {
+    final CompressionProgress? latest =
+        _latestCompressionProgressByPackage[packageName];
+    if (latest != null) {
+      try {
+        listener(latest);
+      } catch (e) {
+        print('重放压缩进度回调失败: $e');
+      }
+    }
+  }
+}
+
   /// 检查截屏服务是否正在运行
   bool get isRunning => _isRunning;
 
@@ -377,6 +413,13 @@ class ScreenshotService {
               print('处理通知点击失败: $e');
             }
             break;
+          case 'onCompressionProgress':
+            if (call.arguments is Map) {
+              _handleCompressionProgress(
+                Map<String, dynamic>.from(call.arguments as Map),
+              );
+            }
+            break;
           default:
             print('未处理的方法调用: ${call.method}');
         }
@@ -393,6 +436,43 @@ class ScreenshotService {
     Map<String, dynamic> data,
   ) async {
     await _handleScreenshotSaved(data);
+  }
+
+  void _handleCompressionProgress(Map<String, dynamic> raw) {
+    try {
+      final progress = CompressionProgress(
+        total: _coerceToInt(raw['total']),
+        handled: _coerceToInt(raw['handled']),
+        success: _coerceToInt(raw['success']),
+        skipped: _coerceToInt(raw['skipped']),
+        failed: _coerceToInt(raw['failed']),
+        savedBytes: _coerceToInt(raw['savedBytes']),
+      );
+      _latestCompressionProgress = progress;
+      final String? activePackage = _activeCompressionPackage;
+      if (activePackage != null) {
+        _latestCompressionProgressByPackage[activePackage] = progress;
+      }
+
+      final listener = _compressionProgressListener;
+      if (listener != null) {
+        final String? filter = _listenerPackageFilter;
+        if (filter == null || filter == activePackage) {
+          listener(progress);
+        }
+      }
+    } catch (e) {
+      print('处理压缩进度回调失败: $e');
+    }
+  }
+
+  int _coerceToInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
   }
 
   // 用于跟踪正在处理的文件路径，防止重复处理
@@ -734,6 +814,204 @@ class ScreenshotService {
       print('获取区间截图列表失败: $e');
       return [];
     }
+  }
+
+  /// 对指定应用的历史截图执行批量压缩（仅压缩大于目标大小的文件）。
+  Future<CompressionResult> compressAppScreenshots({
+    required String packageName,
+    required int days,
+    required int targetSizeKb,
+    String? imageFormat,
+    int? imageQuality,
+    bool useTargetSize = true,
+    void Function(CompressionProgress progress)? onProgress,
+  }) async {
+    if (_compressionInFlight) {
+      throw ScreenshotServiceException('已有压缩任务正在执行');
+    }
+    if (targetSizeKb < 1) {
+      const result = CompressionResult.empty();
+      onProgress?.call(result);
+      return result;
+    }
+
+    final DateTime now = DateTime.now();
+    final DateTime start = now.subtract(Duration(days: days < 1 ? 1 : days));
+    final List<ScreenshotRecord> records = await getScreenshotsByAppBetween(
+      packageName,
+      startMillis: start.millisecondsSinceEpoch,
+      endMillis: now.millisecondsSinceEpoch,
+    );
+    if (records.isEmpty) {
+      const result = CompressionResult.empty();
+      onProgress?.call(result);
+      return result;
+    }
+
+    final Map<int, ScreenshotRecord> recordByGid =
+        <int, ScreenshotRecord>{};
+    final List<Map<String, dynamic>> tasks = <Map<String, dynamic>>[];
+    int aggregatedOriginalBytes = 0;
+    for (final ScreenshotRecord record in records) {
+      final int? gid = record.id;
+      if (gid == null) {
+        continue;
+      }
+      final int originalSize = record.fileSize;
+      tasks.add({
+        'filePath': record.filePath,
+        'gid': gid,
+        'originalSize': originalSize,
+      });
+      aggregatedOriginalBytes += originalSize;
+      recordByGid[gid] = record;
+    }
+
+    if (tasks.isEmpty) {
+      const result = CompressionResult.empty();
+      onProgress?.call(result);
+      return result;
+    }
+
+    final Stopwatch stopwatch = Stopwatch()..start();
+    final int targetBytes =
+        ((targetSizeKb * 1024).clamp(1024, 1024 * 1024 * 20)).toInt();
+    final String normalizedFormat =
+        (imageFormat ?? 'webp_lossy').toLowerCase().trim();
+    final bool wantTarget = useTargetSize;
+    final bool formatIsLossy = normalizedFormat == 'webp_lossy' ||
+        normalizedFormat == 'webp' ||
+        normalizedFormat == 'jpeg' ||
+        normalizedFormat == 'jpg';
+    final String finalFormat =
+        wantTarget && !formatIsLossy ? 'webp_lossy' : normalizedFormat;
+    final bool finalUseTarget = wantTarget &&
+        (finalFormat == 'webp_lossy' ||
+            finalFormat == 'webp' ||
+            finalFormat == 'jpeg' ||
+            finalFormat == 'jpg');
+    final int finalQuality = (imageQuality ?? 90).clamp(1, 100);
+
+    _activeCompressionPackage = packageName;
+    _compressionInFlight = true;
+    final CompressionProgress initialProgress = CompressionProgress(
+      total: tasks.length,
+      handled: 0,
+      success: 0,
+      skipped: 0,
+      failed: 0,
+      savedBytes: 0,
+    );
+    _latestCompressionProgress = initialProgress;
+    _latestCompressionProgressByPackage[packageName] = initialProgress;
+    attachCompressionProgressListener(
+      onProgress,
+      replayLatest: false,
+      packageName: packageName,
+    );
+    onProgress?.call(initialProgress);
+
+    Map<String, dynamic> response = const <String, dynamic>{};
+    try {
+      final Map<String, dynamic>? raw =
+          await _channel.invokeMapMethod<String, dynamic>(
+        'compressScreenshotsBatch',
+        <String, dynamic>{
+          'tasks': tasks,
+          'format': finalFormat,
+          'targetBytes': targetBytes,
+          'quality': finalQuality,
+          'useTargetSize': finalUseTarget,
+        },
+      );
+      if (raw != null) {
+        response = raw;
+      }
+    } finally {
+      attachCompressionProgressListener(null, replayLatest: false);
+      _compressionInFlight = false;
+      _activeCompressionPackage = null;
+    }
+
+    final List<dynamic> successesRaw =
+        (response['successes'] as List?) ?? const <dynamic>[];
+    final List<dynamic> failuresRaw =
+        (response['failures'] as List?) ?? const <dynamic>[];
+    final List<dynamic> skippedRaw =
+        (response['skippedEntries'] as List?) ?? const <dynamic>[];
+
+    final int successCount = successesRaw.length;
+    final int skippedCount = skippedRaw.length;
+    final int failedCount = failuresRaw.length;
+    final int handledCount = _coerceToInt(response['handled']);
+    final int totalCount = _coerceToInt(response['total']);
+    final int rawSavedBytes = _coerceToInt(response['savedBytes']);
+    final int rawTotalBefore = _coerceToInt(response['totalBeforeBytes']);
+    final int rawTotalAfter = _coerceToInt(response['totalAfterBytes']);
+    final int durationMillis = _coerceToInt(response['durationMillis']);
+
+    for (final dynamic entry in successesRaw) {
+      if (entry is! Map) continue;
+      final map = Map<String, dynamic>.from(entry);
+      final int gid = _coerceToInt(map['gid']);
+      final int newSize = _coerceToInt(map['newSize']);
+      if (gid > 0 && newSize > 0) {
+        await _database.updateFileSizeByGid(
+          packageName: packageName,
+          gid: gid,
+          newSize: newSize,
+        );
+      }
+    }
+
+    if (successCount > 0) {
+      try {
+        await _database.recomputeAppStatsForPackage(packageName);
+        await _database.recalculateTotals();
+        await _refreshStatsCache(force: true);
+      } catch (e) {
+        print('压缩后刷新统计失败: $e');
+      }
+      _screenshotStreamController.add(null);
+    }
+
+    stopwatch.stop();
+
+    final int fallbackBefore = successesRaw.fold<int>(
+      0,
+      (previousValue, element) {
+        if (element is! Map) return previousValue;
+        return previousValue + _coerceToInt(element['originalSize']);
+      },
+    );
+    final int totalBeforeBytes = rawTotalBefore > 0
+        ? rawTotalBefore
+        : (fallbackBefore > 0 ? fallbackBefore : aggregatedOriginalBytes);
+    final int fallbackAfter = totalBeforeBytes - rawSavedBytes;
+    final int totalAfterBytes = rawTotalAfter > 0
+        ? rawTotalAfter
+        : (fallbackAfter < 0 ? 0 : fallbackAfter);
+    final int computedSaved = totalBeforeBytes - totalAfterBytes;
+    final int safeSavedBytes = computedSaved < 0 ? 0 : computedSaved;
+
+    final CompressionResult result = CompressionResult(
+      total: totalCount == 0 ? tasks.length : totalCount,
+      handled: handledCount == 0
+          ? successCount + skippedCount + failedCount
+          : handledCount,
+      success: successCount,
+      skipped: skippedCount,
+      failed: failedCount,
+      savedBytes: safeSavedBytes,
+      durationMillis:
+          durationMillis == 0 ? stopwatch.elapsedMilliseconds : durationMillis,
+      totalBeforeBytes: totalBeforeBytes,
+      totalAfterBytes: totalAfterBytes,
+    );
+    _latestCompressionProgress = result;
+    _latestCompressionProgressByPackage[packageName] = result;
+    onProgress?.call(result);
+    return result;
   }
 
   /// 获取 OCR 匹配框（原图坐标系）
@@ -1570,4 +1848,55 @@ class ScreenshotService {
       return <Map<String, dynamic>>[];
     }
   }
+}
+
+class CompressionProgress {
+  final int total;
+  final int handled;
+  final int success;
+  final int skipped;
+  final int failed;
+  final int savedBytes;
+
+  const CompressionProgress({
+    required this.total,
+    required this.handled,
+    required this.success,
+    required this.skipped,
+    required this.failed,
+    required this.savedBytes,
+  });
+
+  double get ratio => total == 0 ? 0 : handled / total;
+}
+
+class CompressionResult extends CompressionProgress {
+  final int durationMillis;
+  final int totalBeforeBytes;
+  final int totalAfterBytes;
+
+  const CompressionResult({
+    required super.total,
+    required super.handled,
+    required super.success,
+    required super.skipped,
+    required super.failed,
+    required super.savedBytes,
+    required this.durationMillis,
+    required this.totalBeforeBytes,
+    required this.totalAfterBytes,
+  });
+
+  const CompressionResult.empty()
+      : durationMillis = 0,
+        totalBeforeBytes = 0,
+        totalAfterBytes = 0,
+        super(
+          total: 0,
+          handled: 0,
+          success: 0,
+          skipped: 0,
+          failed: 0,
+          savedBytes: 0,
+        );
 }

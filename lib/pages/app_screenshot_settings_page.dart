@@ -41,6 +41,11 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
   int _expireDays = 30;
   int _intervalSec = 5;
 
+  // 历史压缩
+  int _compressDays = 7;
+  bool _compressingHistory = false;
+  CompressionProgress? _compressionProgress;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -53,7 +58,14 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     }
     _packageName = args['packageName'] as String;
     _appInfo = args['appInfo'] as AppInfo;
+    _restoreCompressionState();
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    ScreenshotService.instance.attachCompressionProgressListener(null, replayLatest: false);
+    super.dispose();
   }
 
   Future<void> _loadAll() async {
@@ -76,6 +88,7 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       });
     } catch (_) {}
     await _loadStats();
+    _restoreCompressionState();
   }
 
   Future<void> _loadStats({bool showSpinner = true}) async {
@@ -155,6 +168,143 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       _twoDigits(dt.hour),
       _twoDigits(dt.minute),
     );
+  }
+
+  void _showCompressDaysDialog() {
+    final l10n = AppLocalizations.of(context);
+    _showIntervalDialogStyle(
+      title: l10n.setCompressDaysDialogTitle,
+      label: l10n.compressDaysLabel,
+      hint: l10n.compressDaysInputHint,
+      value: _compressDays,
+      onValid: (value) async {
+        if (value < 1) {
+          UINotifier.error(context, l10n.compressDaysInvalidError);
+          return;
+        }
+        setState(() => _compressDays = value);
+      },
+    );
+  }
+
+  void _showTargetSizeDialog() {
+    final l10n = AppLocalizations.of(context);
+    _showIntervalDialogStyle(
+      title: l10n.setTargetSizeDialogTitle,
+      label: l10n.targetSizeKbLabel,
+      hint: l10n.targetSizeInvalidError,
+      value: _targetSizeKb,
+      onValid: (kb) async {
+        if (kb < 50) {
+          UINotifier.error(context, l10n.targetSizeInvalidError);
+          return;
+        }
+        setState(() {
+          _targetSizeKb = kb;
+          _useTargetSize = true;
+        });
+        await _saveQuality();
+      },
+    );
+  }
+
+  void _handleCompressionProgress(CompressionProgress progress) {
+    if (!mounted) return;
+    setState(() {
+      _compressionProgress = progress;
+      _compressingHistory =
+          ScreenshotService.instance.compressionInFlightFor(_packageName);
+    });
+  }
+
+  void _restoreCompressionState() {
+    final service = ScreenshotService.instance;
+    final bool ongoing = service.compressionInFlightFor(_packageName);
+    final CompressionProgress? latest =
+        service.latestCompressionProgressFor(_packageName);
+    if (!mounted) return;
+    setState(() {
+      _compressingHistory = ongoing;
+      if (latest != null) {
+        _compressionProgress = latest;
+      }
+    });
+    service.attachCompressionProgressListener(
+      _handleCompressionProgress,
+      packageName: _packageName,
+    );
+  }
+
+  Future<void> _startHistoryCompression() async {
+    if (_compressingHistory) return;
+    if (_targetSizeKb < 50) {
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).targetSizeInvalidError,
+      );
+      return;
+    }
+    setState(() {
+      _compressingHistory = true;
+      _compressionProgress = const CompressionProgress(
+        total: 0,
+        handled: 0,
+        success: 0,
+        skipped: 0,
+        failed: 0,
+        savedBytes: 0,
+      );
+    });
+    CompressionResult? finalResult;
+    try {
+      finalResult = await ScreenshotService.instance.compressAppScreenshots(
+        packageName: _packageName,
+        days: _compressDays,
+        targetSizeKb: _targetSizeKb,
+        imageFormat: _imageFormat,
+        imageQuality: _imageQuality,
+        useTargetSize: true,
+        onProgress: _handleCompressionProgress,
+      );
+      if (!mounted) return;
+      final int savedBytes =
+          finalResult.savedBytes > 0 ? finalResult.savedBytes : 0;
+      if (finalResult.success > 0) {
+        await _loadStats(showSpinner: false);
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).compressHistorySuccess(
+            finalResult.success,
+            _formatBytes(savedBytes),
+          ),
+        );
+      } else if (finalResult.handled == 0 || finalResult.success == 0) {
+        if (finalResult.skipped > 0 && finalResult.failed == 0) {
+          UINotifier.info(
+            context,
+            AppLocalizations.of(context).compressHistoryNothing,
+          );
+        } else {
+          UINotifier.error(
+            context,
+            AppLocalizations.of(context).compressHistoryFailure,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).compressHistoryFailure,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _compressingHistory = false;
+        });
+      }
+    }
   }
 
   Future<void> _showRecomputeConfirm() async {
@@ -462,13 +612,162 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     );
   }
 
+  Widget _buildHistoryCompressionCard(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  Icons.auto_fix_high_outlined,
+                  color: theme.colorScheme.onSecondaryContainer,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.compressHistoryTitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l10n.compressHistoryDescription(_compressDays, _targetSizeKb),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Wrap(
+            spacing: AppTheme.spacing2,
+            runSpacing: AppTheme.spacing2,
+            children: [
+              TextButton(
+                onPressed: _compressingHistory ? null : _showCompressDaysDialog,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing3,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  minimumSize: Size.zero,
+                ),
+                child: Text(l10n.compressHistorySetDays(_compressDays)),
+              ),
+              TextButton(
+                onPressed: _compressingHistory ? null : _showTargetSizeDialog,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing3,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  minimumSize: Size.zero,
+                ),
+                child: Text(l10n.compressHistorySetTarget(_targetSizeKb)),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          if (_compressionProgress != null &&
+              (_compressionProgress!.handled > 0 || _compressingHistory))
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(
+                  value: _compressionProgress!.ratio.clamp(0.0, 1.0),
+                  minHeight: 4,
+                ),
+                const SizedBox(height: AppTheme.spacing1),
+                Text(
+                  l10n.compressHistoryProgress(
+                    _compressionProgress!.handled,
+                    _compressionProgress!.total,
+                    _formatBytes(
+                      _compressionProgress!.savedBytes > 0
+                          ? _compressionProgress!.savedBytes
+                          : 0,
+                    ),
+                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+              ],
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _compressingHistory ? null : _startHistoryCompression,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing3,
+                  vertical: AppTheme.spacing2,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+              ),
+              child: _compressingHistory
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          theme.colorScheme.onPrimary,
+                        ),
+                      ),
+                    )
+                  : Text(l10n.compressHistoryAction),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(l10n.screenshotSectionTitle),
+        title: Text(
+          _appInfo.appName.isEmpty
+              ? l10n.screenshotSectionTitle
+              : '${l10n.screenshotSectionTitle} · ${_appInfo.appName}',
+        ),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
       ),
@@ -476,6 +775,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
         padding: const EdgeInsets.all(AppTheme.spacing4),
         children: [
           _buildStatsCard(l10n),
+          const SizedBox(height: AppTheme.spacing4),
+          _buildHistoryCompressionCard(l10n),
           const SizedBox(height: AppTheme.spacing4),
           // 自定义开关（置顶）
           Container(
@@ -726,6 +1027,7 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
           ),
 
           const SizedBox(height: AppTheme.spacing4),
+        const SizedBox(height: AppTheme.spacing4),
 
           // 截图过期清理（复用样式与交互）
           IgnorePointer(

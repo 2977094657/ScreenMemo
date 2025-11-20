@@ -3061,6 +3061,43 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     bool overwrite = true,
     void Function(ImportExportProgress progress)? onProgress,
   }) async {
+    // 导入前立即清理 output 目录下的缓存子目录（cache/tmp/temp/.thumbnails）
+    try {
+      final base =
+          await PathService.getInternalAppDir(null) ??
+          await _getInternalFilesDir();
+      if (base != null) {
+        final Directory outputDir = Directory(join(base.path, 'output'));
+        await _clearOutputCacheDirs(outputDir);
+      }
+    } catch (_) {}
+
+    // 优先走原生导入（仅支持 zipPath），失败或无路径时回退到 Dart 流式实现
+    if (zipPath != null && zipPath.isNotEmpty) {
+      try {
+        await FlutterLogger.nativeInfo(
+          'IMPORT',
+          'try native importZipToOutput path=' + zipPath,
+        );
+        final bool ok = await _importDataFromZipNative(
+          zipPath: zipPath,
+          overwrite: overwrite,
+        );
+        if (ok) {
+          // 原生导入成功后返回与流式导入相似的结果结构
+          final base =
+              await PathService.getInternalAppDir(null) ??
+              await _getInternalFilesDir();
+          final String? outDir = base != null ? join(base.path, 'output') : null;
+          return <String, dynamic>{
+            'extracted': null,
+            'targetDir': outDir,
+          };
+        }
+      } catch (_) {
+        // 失败时回退到 Dart 实现
+      }
+    }
     return importDataFromZipStreaming(
       zipPath: zipPath,
       zipBytes: zipBytes,
@@ -3171,6 +3208,38 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return null;
     }
   }
+
+  /// 原生导入 ZIP：通过 MethodChannel 调用 MainActivity.importZipToOutput
+  Future<bool> _importDataFromZipNative({
+    required String zipPath,
+    required bool overwrite,
+  }) async {
+    const MethodChannel channel = MethodChannel(
+      'com.fqyw.screen_memo/accessibility',
+    );
+    try {
+      final bool? ok = await channel.invokeMethod<bool>(
+        'importZipToOutput',
+        <String, dynamic>{
+          'zipPath': zipPath,
+          'overwrite': overwrite,
+        },
+      );
+      // 导入后重置数据库连接池，以便后续按新文件重新打开
+      try {
+        await _resetDatabasesAfterImport();
+      } catch (_) {}
+      return ok ?? false;
+    } catch (e) {
+      await FlutterLogger.nativeError(
+        'IMPORT',
+        'native importZipToOutput failed: ' + e.toString(),
+      );
+      return false;
+    }
+  }
+
+  // 已移除文件夹导入 Dart 封装（保留原生实现供未来扩展）
 
   Future<Directory?> _getInternalFilesDir() async {
     try {

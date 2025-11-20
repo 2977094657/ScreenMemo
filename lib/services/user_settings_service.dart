@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../constants/user_settings_keys.dart';
 import 'flutter_logger.dart';
 import 'screenshot_database.dart';
 
@@ -174,6 +175,34 @@ class UserSettingsService {
     }
   }
 
+  /// 导入数据后重建截图相关设置的 SharedPreferences 映射，确保原生服务立刻生效。
+  Future<void> resyncScreenshotEncodingSettings() async {
+    await _resaveStringSetting(
+      UserSettingKeys.imageFormat,
+      legacyPrefKeys: const <String>['image_format'],
+    );
+    await _resaveIntSetting(
+      UserSettingKeys.imageQuality,
+      legacyPrefKeys: const <String>['image_quality'],
+    );
+    await _resaveBoolSetting(
+      UserSettingKeys.useTargetSize,
+      legacyPrefKeys: const <String>['use_target_size'],
+    );
+    await _resaveIntSetting(
+      UserSettingKeys.targetSizeKb,
+      legacyPrefKeys: const <String>['target_size_kb'],
+    );
+    await _resaveBoolSetting(
+      UserSettingKeys.screenshotExpireEnabled,
+      legacyPrefKeys: const <String>['screenshot_expire_enabled'],
+    );
+    await _resaveIntSetting(
+      UserSettingKeys.screenshotExpireDays,
+      legacyPrefKeys: const <String>['screenshot_expire_days'],
+    );
+  }
+
   Future<String?> _getRaw(String key) async {
     try {
       final Database db = await _db;
@@ -190,6 +219,58 @@ class UserSettingsService {
       await FlutterLogger.nativeWarn('UserSettings', 'read key=$key failed: $e');
       return null;
     }
+  }
+
+  Future<void> _resaveStringSetting(
+    String key, {
+    List<String> legacyPrefKeys = const <String>[],
+  }) async {
+    final String? raw = await _getRaw(key);
+    if (raw == null) return;
+    await setString(
+      key,
+      raw,
+      legacyPrefKeys: legacyPrefKeys,
+    );
+  }
+
+  Future<void> _resaveIntSetting(
+    String key, {
+    List<String> legacyPrefKeys = const <String>[],
+  }) async {
+    final String? raw = await _getRaw(key);
+    final int? value = raw != null ? int.tryParse(raw) : null;
+    if (value == null) return;
+    await setInt(
+      key,
+      value,
+      legacyPrefKeys: legacyPrefKeys,
+    );
+  }
+
+  Future<void> _resaveBoolSetting(
+    String key, {
+    List<String> legacyPrefKeys = const <String>[],
+  }) async {
+    final String? raw = await _getRaw(key);
+    final bool? value = raw != null ? _parseBool(raw) : null;
+    if (value == null) return;
+    await setBool(
+      key,
+      value,
+      legacyPrefKeys: legacyPrefKeys,
+    );
+  }
+
+  bool? _parseBool(String raw) {
+    final String lower = raw.trim().toLowerCase();
+    if (lower == '1' || lower == 'true' || lower == 'yes' || lower == 'on') {
+      return true;
+    }
+    if (lower == '0' || lower == 'false' || lower == 'no' || lower == 'off') {
+      return false;
+    }
+    return null;
   }
 
   Future<void> _setRaw(String key, String? value) async {
