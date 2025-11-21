@@ -459,9 +459,13 @@ object StorageAnalyzer {
                 val stats = method.invoke(statsManager, uuid, context.packageName, userHandle)
                 val totalBytesMethod = stats?.javaClass?.getMethod("getTotalBytes")
                 externalBytes = (totalBytesMethod?.invoke(stats) as? Long)
+            } catch (e: ReflectiveOperationException) {
+                FileLogger.i(TAG, "queryExternalStatsForPackage not available on this device: ${e.message}")
+            } catch (e: SecurityException) {
+                FileLogger.i(TAG, "queryExternalStatsForPackage blocked by security policy: ${e.message}")
             } catch (e: Exception) {
                 errors += "external_stats_error:${e.message}"
-                FileLogger.w(TAG, "queryExternalStatsForPackage unavailable: ${e.message}")
+                FileLogger.w(TAG, "queryExternalStatsForPackage invocation failed: ${e.message}")
             }
         }
 
