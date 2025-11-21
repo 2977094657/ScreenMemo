@@ -133,6 +133,11 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         progress: onProgress,
       );
 
+      try {
+        final Directory outputDir = Directory(join(base.path, 'output'));
+        await _clearOutputCacheDirs(outputDir);
+      } catch (_) {}
+
       return ctx.toReport();
     } catch (e) {
       await FlutterLogger.nativeError(
@@ -305,7 +310,11 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     final List<FileSystemEntity> genericEntries = <FileSystemEntity>[];
     for (final FileSystemEntity entry in topEntries) {
       final String name = basename(entry.path);
+      final String lowerName = name.toLowerCase();
       if (name == 'screen' || name == 'databases') {
+        continue;
+      }
+      if (_outputCacheDirNames.contains(lowerName)) {
         continue;
       }
       genericEntries.add(entry);

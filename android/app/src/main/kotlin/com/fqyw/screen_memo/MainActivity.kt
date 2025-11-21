@@ -64,6 +64,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.ArrayList
 import kotlin.math.max
 import kotlin.math.min
 import com.fqyw.screen_memo.OutputFileLogger
@@ -92,6 +93,7 @@ class MainActivity : FlutterActivity() {
     private var activityCreateTs: Long = 0L
     private var splashDialog: Dialog? = null
     private var memoryBridge: MemoryBridge? = null
+    private val outputCacheDirTokens = setOf("cache", "tmp", "temp", ".thumbnails")
     
     private val accessibilityServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -2354,11 +2356,18 @@ class MainActivity : FlutterActivity() {
                         } else {
                             rawName
                         }
-                        if (rel.isEmpty()) {
+                        val normalized = normalizeImportRelativePath(rel)
+                        if (normalized.isEmpty()) {
                             zis.closeEntry()
                             continue
                         }
-                        val destFile = File(outputDir, rel)
+                        val relLower = normalized.lowercase()
+                        if (shouldSkipOutputCache(relLower)) {
+                            FileLogger.i(TAG, "IMPORT_NATIVE: skip cache entry $normalized")
+                            zis.closeEntry()
+                            continue
+                        }
+                        val destFile = File(outputDir, normalized)
                         if (entry.isDirectory) {
                             if (!destFile.exists()) {
                                 destFile.mkdirs()
@@ -2381,6 +2390,14 @@ class MainActivity : FlutterActivity() {
                         zis.closeEntry()
                     }
                 }
+
+                try {
+                    clearOutputCacheDirsNative(outputDir)
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "IMPORT_NATIVE: clear cache dirs failed", e)
+                }
+
+                deleteImportZipIfCached(zipPath)
 
                 FileLogger.i(TAG, "IMPORT_NATIVE: importZipToOutput finished, outputDir=${outputDir.absolutePath}")
                 runOnUiThread { result.success(true) }
@@ -2424,7 +2441,9 @@ class MainActivity : FlutterActivity() {
                     targetOutput.mkdirs()
                 }
 
-                copyDirRecursively(srcOutput, targetOutput)
+                copyDirRecursively(srcOutput, targetOutput, srcOutput)
+
+                clearOutputCacheDirsNative(targetOutput)
 
                 FileLogger.i(TAG, "IMPORT_NATIVE: importFromExtractedOutputDir finished, target=${targetOutput.absolutePath}")
                 runOnUiThread { result.success(true) }
@@ -2435,7 +2454,24 @@ class MainActivity : FlutterActivity() {
         }.start()
     }
 
-    private fun copyDirRecursively(source: File, destination: File) {
+    private fun shouldSkipOutputCache(relLower: String): Boolean {
+        if (relLower.isEmpty()) return false
+        val parts = relLower.split('/').filter { it.isNotEmpty() }
+        for (part in parts) {
+            if (part in outputCacheDirTokens) return true
+            if (part.startsWith("cache") || part.startsWith("tmp") || part.startsWith("temp")) return true
+            if (part.contains("thumbnail")) return true
+        }
+        return false
+    }
+
+    private fun copyDirRecursively(source: File, destination: File, root: File) {
+        val relative = computeRelativePath(root, source)
+        val relLower = relative.lowercase()
+        if (relative.isNotEmpty() && shouldSkipOutputCache(relLower)) {
+            FileLogger.i(TAG, "IMPORT_NATIVE: skip cache entry $relative")
+            return
+        }
         if (source.isDirectory) {
             if (!destination.exists()) {
                 destination.mkdirs()
@@ -2443,7 +2479,7 @@ class MainActivity : FlutterActivity() {
             val children = source.listFiles() ?: return
             for (child in children) {
                 val destChild = File(destination, child.name)
-                copyDirRecursively(child, destChild)
+                copyDirRecursively(child, destChild, root)
             }
         } else {
             val parent = destination.parentFile
@@ -2461,6 +2497,77 @@ class MainActivity : FlutterActivity() {
                     out.flush()
                 }
             }
+        }
+    }
+
+    private fun normalizeImportRelativePath(raw: String): String {
+        val sanitized = raw.replace("\\", "/").trimStart('/')
+        if (sanitized.isEmpty()) return ""
+        val parts = sanitized.split('/')
+        val segments = ArrayList<String>()
+        for (part in parts) {
+            when {
+                part.isEmpty() || part == "." -> continue
+                part == ".." -> return ""
+                else -> segments.add(part)
+            }
+        }
+        return segments.joinToString("/")
+    }
+
+    private fun computeRelativePath(root: File, node: File): String {
+        val rootPath = root.absolutePath
+        val nodePath = node.absolutePath
+        if (!nodePath.startsWith(rootPath)) return ""
+        var rel = nodePath.substring(rootPath.length)
+        if (rel.startsWith(File.separator)) {
+            rel = rel.substring(1)
+        }
+        return rel.replace("\\", "/")
+    }
+
+    private fun clearOutputCacheDirsNative(root: File) {
+        if (!root.exists()) return
+        clearOutputCacheDirsRecursive(root, "")
+    }
+
+    private fun clearOutputCacheDirsRecursive(current: File, relative: String) {
+        val files = current.listFiles() ?: return
+        for (child in files) {
+            val childRel = if (relative.isEmpty()) child.name else "$relative/${child.name}"
+            val relLower = childRel.lowercase()
+            if (child.isDirectory && shouldSkipOutputCache(relLower)) {
+                if (child.deleteRecursively()) {
+                    FileLogger.i(TAG, "IMPORT_NATIVE: cleared cache dir $childRel")
+                } else {
+                    FileLogger.e(TAG, "IMPORT_NATIVE: failed to delete cache dir $childRel")
+                }
+                continue
+            }
+            if (child.isDirectory) {
+                clearOutputCacheDirsRecursive(child, childRel)
+            }
+        }
+    }
+
+    private fun deleteImportZipIfCached(path: String) {
+        try {
+            val cacheDirPath = cacheDir?.absolutePath ?: return
+            if (!path.startsWith(cacheDirPath)) return
+            val zipFile = File(path)
+            if (zipFile.exists()) {
+                zipFile.delete()
+            }
+            var parent = zipFile.parentFile
+            while (parent != null && parent.absolutePath.startsWith(cacheDirPath)) {
+                val children = parent.listFiles()
+                if (children != null && children.isNotEmpty()) break
+                parent.delete()
+                parent = parent.parentFile
+            }
+            FileLogger.i(TAG, "IMPORT_NATIVE: deleted cached import zip: $path")
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "IMPORT_NATIVE: delete cached zip failed path=$path", e)
         }
     }
 

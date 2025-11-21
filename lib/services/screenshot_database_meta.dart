@@ -1,5 +1,12 @@
 part of 'screenshot_database.dart';
 
+const Set<String> _outputCacheDirNames = <String>{
+  'cache',
+  'tmp',
+  'temp',
+  '.thumbnails',
+};
+
 /// 导入/导出进度数据（0~1）
 class ImportExportProgress {
   /// 当前进度，范围 [0, 1]；未知时为 0
@@ -3084,11 +3091,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           overwrite: overwrite,
         );
         if (ok) {
+          String? outDir;
+          try {
+            final Directory? base =
+                await PathService.getInternalAppDir(null) ??
+                await _getInternalFilesDir();
+            if (base != null) {
+              final Directory outputDir = Directory(join(base.path, 'output'));
+              await _clearOutputCacheDirs(outputDir);
+              outDir = outputDir.path;
+            }
+          } catch (_) {}
           // 原生导入成功后返回与流式导入相似的结果结构
-          final base =
-              await PathService.getInternalAppDir(null) ??
-              await _getInternalFilesDir();
-          final String? outDir = base != null ? join(base.path, 'output') : null;
           return <String, dynamic>{
             'extracted': null,
             'targetDir': outDir,
@@ -3132,19 +3146,54 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           await _getInternalFilesDir();
       if (base == null) return null;
       final outputDir = Directory(join(base.path, 'output'));
+      Directory? legacyOutputDir;
+      if (overwrite) {
+        legacyOutputDir = Directory(join(base.path, 'cache'));
+        if (await legacyOutputDir.exists()) {
+          try {
+            await legacyOutputDir.delete(recursive: true);
+            await FlutterLogger.nativeInfo(
+              'IMPORT',
+              'removed legacy cache dir before overwrite: ' + legacyOutputDir.path,
+            );
+          } catch (e) {
+            await FlutterLogger.nativeWarn(
+              'IMPORT',
+              'failed to delete legacy cache dir: ' + e.toString(),
+            );
+          }
+        }
+      }
+
       await FlutterLogger.nativeInfo('IMPORT', 'baseDir=' + base.path);
+
+      if (overwrite && await outputDir.exists()) {
+        try {
+          await outputDir.delete(recursive: true);
+          await FlutterLogger.nativeInfo(
+            'IMPORT',
+            'removed old outputDir before overwrite: ' + outputDir.path,
+          );
+        } catch (e) {
+          await FlutterLogger.nativeWarn(
+            'IMPORT',
+            'failed to delete old outputDir: ' + e.toString(),
+          );
+        }
+      }
+
       if (!await outputDir.exists()) {
         await outputDir.create(recursive: true);
         await FlutterLogger.nativeInfo(
           'IMPORT',
           'created outputDir=' + outputDir.path,
         );
+      } else {
+        try {
+          // 导入前清理缓存目录，避免旧缓存占用空间并与新数据混淆
+          await _clearOutputCacheDirs(outputDir);
+        } catch (_) {}
       }
-
-      try {
-        // 导入前清理缓存目录，避免旧缓存占用空间并与新数据混淆
-        await _clearOutputCacheDirs(outputDir);
-      } catch (_) {}
 
       try {
         await _resetDatabasesAfterImport();
@@ -3202,6 +3251,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             ' 目标=' +
             outputDir.path,
       );
+      try {
+        await _clearOutputCacheDirs(outputDir);
+      } catch (_) {}
       return res;
     } catch (e) {
       await FlutterLogger.nativeError('IMPORT', '异常(流式): ' + e.toString());
@@ -3276,17 +3328,40 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
   /// 清理 output 目录下的缓存子目录，避免导入后旧缓存占用空间
   Future<void> _clearOutputCacheDirs(Directory outputDir) async {
-    final List<String> names = <String>['cache', 'tmp', 'temp', '.thumbnails'];
-    for (final String name in names) {
-      final Directory d = Directory(join(outputDir.path, name));
-      try {
-        if (await d.exists()) {
-          await d.delete(recursive: true);
+    try {
+      final List<FileSystemEntity> entries = await outputDir
+          .list(followLinks: false)
+          .where((FileSystemEntity entity) => entity is Directory)
+          .toList();
+      for (final FileSystemEntity entity in entries) {
+        final String name = basename(entity.path);
+        final String lower = name.toLowerCase();
+        final bool shouldDelete =
+            _outputCacheDirNames.contains(lower) ||
+            lower.startsWith('cache') ||
+            lower.startsWith('tmp') ||
+            lower.startsWith('temp') ||
+            lower.contains('thumbnail');
+        if (!shouldDelete) continue;
+        try {
+          await entity.delete(recursive: true);
           await FlutterLogger.nativeInfo(
             'IMPORT',
-            'cleared cache dir: ' + d.path,
+            'cleared cache dir: ' + entity.path,
+          );
+        } catch (e) {
+          await FlutterLogger.nativeWarn(
+            'IMPORT',
+            'failed to clear cache dir: ' + entity.path + ' error=' + e.toString(),
           );
         }
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'IMPORT',
+          'list cache dirs failed: ' + e.toString(),
+        );
       } catch (_) {}
     }
   }
