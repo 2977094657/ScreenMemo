@@ -1372,70 +1372,68 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                 ? const SizedBox(height: 32)
                 : SizedBox(
                     height: 32,
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: (notification) {
-                        final metrics = notification.metrics;
-                        // 仅在水平方向滚动、且内容可滚动、且存在 TabController 时检测
-                        if (metrics.axis == Axis.horizontal &&
-                            metrics.maxScrollExtent > 0 &&
-                            _tabController != null &&
-                            _tabController!.length > 0) {
-                          const double kEdgeThreshold = 16.0;
-                          if (metrics.pixels >=
-                              metrics.maxScrollExtent - kEdgeThreshold) {
-                            // 自动切换到最后一个日期 Tab，由 _onTabControllerChanged 统一触发扩展窗口
-                            final int lastIndex = _tabController!.length - 1;
-                            if (_tabController!.index != lastIndex) {
-                              _tabController!.animateTo(lastIndex);
-                            }
-                          }
-                        }
-                        return false;
-                      },
-                      child: TabBar(
-                        controller: _tabController,
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
-                        padding: const EdgeInsets.only(left: AppTheme.spacing4),
-                        labelPadding: const EdgeInsets.only(
-                          right: AppTheme.spacing6,
-                        ),
-                        labelColor: selectedColor,
-                        unselectedLabelColor: unselectedColor,
-                        labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontWeight: FontWeight.w600,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TabBar(
+                            controller: _tabController,
+                            isScrollable: true,
+                            tabAlignment: TabAlignment.start,
+                            padding: const EdgeInsets.only(left: AppTheme.spacing4),
+                            labelPadding: const EdgeInsets.only(
+                              right: AppTheme.spacing6,
                             ),
-                        unselectedLabelStyle:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w500,
+                            labelColor: selectedColor,
+                            unselectedLabelColor: unselectedColor,
+                            labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
                                 ),
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.label,
-                        indicator: UnderlineTabIndicator(
-                          borderSide: BorderSide(width: 2.0, color: selectedColor),
-                          insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                            unselectedLabelStyle:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                            dividerColor: Colors.transparent,
+                            indicatorSize: TabBarIndicatorSize.label,
+                            indicator: UnderlineTabIndicator(
+                              borderSide: BorderSide(width: 2.0, color: selectedColor),
+                              insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                            ),
+                            tabs: _dayTabs
+                                .map(
+                                  (t) => Tab(
+                                    text: (() {
+                                      final l = AppLocalizations.of(context);
+                                      if (_DayTabInfo._isToday(t.day)) {
+                                        return l.dayTabToday(t.count);
+                                      }
+                                      if (_DayTabInfo._isYesterday(t.day)) {
+                                        return l.dayTabYesterday(t.count);
+                                      }
+                                      return l.dayTabMonthDayCount(
+                                        t.day.month,
+                                        t.day.day,
+                                        t.count,
+                                      );
+                                    })(),
+                                  ),
+                                )
+                                .toList(),
+                          ),
                         ),
-                        tabs: _dayTabs
-                            .map(
-                              (t) => Tab(
-                                text: (() {
-                                  final l = AppLocalizations.of(context);
-                                  if (_DayTabInfo._isToday(t.day)) {
-                                    return l.dayTabToday(t.count);
-                                  }
-                                  if (_DayTabInfo._isYesterday(t.day)) {
-                                    return l.dayTabYesterday(t.count);
-                                  }
-                                  return l.dayTabMonthDayCount(
-                                    t.day.month,
-                                    t.day.day,
-                                    t.count,
-                                  );
-                                })(),
+                        if (_dayTabs.length < _allDayTabs.length)
+                          Padding(
+                            padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                            child: TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
+                                visualDensity: VisualDensity.compact,
                               ),
-                            )
-                            .toList(),
-                      ),
+                              onPressed: _expandDayTabsIfNeeded,
+                              icon: const Icon(Icons.more_horiz, size: 18),
+                              label: Text(AppLocalizations.of(context).memoryLoadMore),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
         ),

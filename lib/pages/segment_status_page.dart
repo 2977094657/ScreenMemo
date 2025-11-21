@@ -1128,62 +1128,44 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                 : AppTheme.foreground;
             final Color unselectedColor =
                 Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
+            final bool hasMoreTabs = widget.maxVisibleDayTabs < orderedAll.length;
             return SizedBox(
               height: 32,
               child: Transform.translate(
                 offset: const Offset(0, -2),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    final metrics = notification.metrics;
-                    // 仅在水平方向滚动、且内容可滚动时检测
-                    if (metrics.axis == Axis.horizontal &&
-                        metrics.maxScrollExtent > 0 &&
-                        _tabController != null &&
-                        _tabController!.length > 0) {
-                      // 当滚动位置接近最右端（最后一个日期Tab完全进入视口）时，
-                      // 认为用户意图查看“最后一天”，自动切换到最后一个 Tab，
-                      // 再由 TabController 的监听统一触发外层的“加载更多日期”逻辑。
-                      const double kEdgeThreshold = 16.0;
-                      if (metrics.pixels >=
-                          metrics.maxScrollExtent - kEdgeThreshold) {
-                        final int lastIndex = _tabController!.length - 1;
-                        if (_tabController!.index != lastIndex) {
-                          _tabController!.animateTo(lastIndex);
-                        }
-                      }
-                    }
-                    return false;
-                  },
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
-                    padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                    // 与截图列表一致：标签水平留白适中
-                    labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-                    labelColor: selectedColor,
-                    unselectedLabelColor: unselectedColor,
-                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                    // 与截图列表一致：去掉底部分割线
-                    dividerColor: Colors.transparent,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    // 减少上下空隙
-                    indicatorPadding: EdgeInsets.zero,
-                    // 与截图列表一致：细下划线，较小的左右 insets
-                    indicator: UnderlineTabIndicator(
-                      borderSide: BorderSide(width: 2.0, color: selectedColor),
-                      insets: const EdgeInsets.symmetric(horizontal: 4.0),
-                    ),
-                    tabs: [
-                      for (final k in ordered)
-                        Tab(
-                          text: (() {
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TabBar(
+                        controller: _tabController,
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
+                        padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                        // 与截图列表一致：标签水平留白适中
+                        labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                        labelColor: selectedColor,
+                        unselectedLabelColor: unselectedColor,
+                        labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                        // 与截图列表一致：去掉底部分割线
+                        dividerColor: Colors.transparent,
+                        indicatorSize: TabBarIndicatorSize.label,
+                        // 减少上下空隙
+                        indicatorPadding: EdgeInsets.zero,
+                        // 与截图列表一致：细下划线，较小的左右 insets
+                        indicator: UnderlineTabIndicator(
+                          borderSide: BorderSide(width: 2.0, color: selectedColor),
+                          insets: const EdgeInsets.symmetric(horizontal: 4.0),
+                        ),
+                        tabs: [
+                          for (final k in ordered)
+                            Tab(
+                              text: (() {
                             final parts = k.split('-');
                             if (parts.length == 3) {
                               final y = int.tryParse(parts[0]) ?? 1970;
@@ -1213,10 +1195,29 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                               );
                             }
                             return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
-                          })(),
+                              })(),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (hasMoreTabs)
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppTheme.spacing2),
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: widget.onLastDayTabReached == null
+                              ? null
+                              : () {
+                                  widget.onLastDayTabReached!.call();
+                                },
+                          icon: const Icon(Icons.more_horiz, size: 18),
+                          label: Text(AppLocalizations.of(context).memoryLoadMore),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             );
