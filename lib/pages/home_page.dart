@@ -66,6 +66,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   static const Duration _morningRefreshWindow = Duration(minutes: 1);
   static const Duration _morningCooldownDuration = Duration(minutes: 3);
   static const int _morningAvailableHour = 8;
+  bool _morningGenerationRunning = false;
 
   @override
   void initState() {
@@ -789,9 +790,73 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     }
   }
 
-  Future<void> _cycleMorningTip() async {
+  Future<void> _cycleMorningTip({bool ensureGenerate = false}) async {
+    if (ensureGenerate && _morningGenerationRunning) {
+      if (!mounted) return;
+      setState(() {
+        _morningInsights = null;
+        _morningTipIndex = -1;
+        _currentMorningTip = null;
+        _clearMorningDeck();
+      });
+      return;
+    }
+
     try {
-      final insights = await _dailySummaryService.fetchOrGenerateMorningInsights(_todayKey);
+      MorningInsights? insights;
+
+      if (ensureGenerate) {
+        insights = await _dailySummaryService.loadMorningInsights(_todayKey);
+        if (!mounted) return;
+
+        final bool missing = insights == null || insights.tips.isEmpty;
+        if (missing) {
+          if (_morningGenerationRunning) {
+            setState(() {
+              _morningInsights = null;
+              _morningTipIndex = -1;
+              _currentMorningTip = null;
+              _clearMorningDeck();
+            });
+            return;
+          }
+
+          _morningGenerationRunning = true;
+          unawaited(_dailySummaryService.generateMorningInsights(_todayKey).then((value) {
+            if (!mounted) return;
+            _morningGenerationRunning = false;
+            if (value == null || value.tips.isEmpty) {
+              setState(() {
+                _morningInsights = null;
+                _morningTipIndex = -1;
+                _currentMorningTip = null;
+                _clearMorningDeck();
+              });
+              return;
+            }
+            _applyMorningInsights(value);
+          }).catchError((_) {
+            if (!mounted) return;
+            _morningGenerationRunning = false;
+            setState(() {
+              _morningInsights = null;
+              _morningTipIndex = -1;
+              _currentMorningTip = null;
+              _clearMorningDeck();
+            });
+          }));
+
+          setState(() {
+            _morningInsights = null;
+            _morningTipIndex = -1;
+            _currentMorningTip = null;
+            _clearMorningDeck();
+          });
+          return;
+        }
+      }
+
+      insights ??= await _dailySummaryService.fetchOrGenerateMorningInsights(_todayKey);
       if (!mounted) return;
       if (insights == null || insights.tips.isEmpty) {
         setState(() {
@@ -802,28 +867,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         });
         return;
       }
-      final List<MorningInsightEntry> tips = insights.tips;
-      _resetMorningDeckForInsights(insights);
-      if (_morningTipDeck.isEmpty) {
-        _rebuildMorningDeck(tips.length, exclude: _lastMorningTipIndex);
-      }
-      int nextIndex;
-      if (_morningTipDeck.isNotEmpty) {
-        nextIndex = _morningTipDeck.removeAt(0);
-      } else {
-        nextIndex = tips.length <= 1 ? 0 : _random.nextInt(tips.length);
-        if (_lastMorningTipIndex != null &&
-            tips.length > 1 &&
-            nextIndex == _lastMorningTipIndex) {
-          nextIndex = (nextIndex + 1) % tips.length;
-        }
-      }
-      setState(() {
-        _morningInsights = insights;
-        _morningTipIndex = nextIndex;
-        _currentMorningTip = tips[nextIndex];
-      });
-      _lastMorningTipIndex = nextIndex;
+
+      _applyMorningInsights(insights);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -874,6 +919,32 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     _morningTipDeck = indices;
   }
 
+  void _applyMorningInsights(MorningInsights insights) {
+    if (!mounted) return;
+    final List<MorningInsightEntry> tips = insights.tips;
+    _resetMorningDeckForInsights(insights);
+    if (_morningTipDeck.isEmpty) {
+      _rebuildMorningDeck(tips.length, exclude: _lastMorningTipIndex);
+    }
+    int nextIndex;
+    if (_morningTipDeck.isNotEmpty) {
+      nextIndex = _morningTipDeck.removeAt(0);
+    } else {
+      nextIndex = tips.length <= 1 ? 0 : _random.nextInt(tips.length);
+      if (_lastMorningTipIndex != null &&
+          tips.length > 1 &&
+          nextIndex == _lastMorningTipIndex) {
+        nextIndex = (nextIndex + 1) % tips.length;
+      }
+    }
+    setState(() {
+      _morningInsights = insights;
+      _morningTipIndex = nextIndex;
+      _currentMorningTip = tips[nextIndex];
+    });
+    _lastMorningTipIndex = nextIndex;
+  }
+
   Future<void> _openMorningSummary() async {
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -921,7 +992,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     try {
       _morningRefreshHistory.add(now);
       await _loadData(soft: true);
-      await _cycleMorningTip();
+      await _cycleMorningTip(ensureGenerate: true);
       if (mounted) {
         setState(() {
           _morningCooldownMessage = null;
@@ -1759,8 +1830,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   border: Border.all(
                     color: isSelected
                         ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).dividerColor,
-                    width: 2,
+                        : Theme.of(context).colorScheme.outline,
+                    width: isSelected ? 1.6 : 1.2,
                   ),
                 ),
                 alignment: Alignment.center,
