@@ -992,13 +992,14 @@ void _scheduleAutoScroll() {
 
           // 使用"显示内容与实际发送内容分离"的新流式接口：
           final String sysDateGuard = _buildDateGuardSystemMessage(ctxPack);
-          final stream = _chat.sendMessageStreamedV2WithDisplayOverride(
+          final AIStreamingSession session =
+              await _chat.sendMessageStreamedV2WithDisplayOverride(
             text,
             finalQuery,
             includeHistory: intent.skipContext,
             extraSystemMessages: <String>[sysDateGuard],
           );
-          await for (final evt in stream) {
+          await for (final AIStreamEvent evt in session.stream) {
           if (!mounted) return;
           // 优先消费"思考内容"
           if (evt.kind == 'reasoning') {
@@ -1060,6 +1061,7 @@ void _scheduleAutoScroll() {
           });
           _scheduleAutoScroll();
           }
+          await session.completed;
           // 成功路径：更新"上一轮"缓存
           _lastCtxPack = ctxPack;
           _lastIntent = intent;

@@ -63,7 +63,8 @@ class PersonaArticleService {
       personaSummary: personaSummary,
     );
 
-    yield* _chat.sendMessageStreamedV2WithDisplayOverride(
+    final AIStreamingSession session =
+        await _chat.sendMessageStreamedV2WithDisplayOverride(
       'persona_article_${style.name}',
       prompt,
       includeHistory: false,
@@ -72,6 +73,7 @@ class PersonaArticleService {
         'Respond strictly in Markdown paragraphs. Do not output JSON or wrap the entire article inside code fences.',
       ],
     );
+    yield* session.stream;
   }
 
   Future<PersonaArticleCache?> loadCachedArticle({

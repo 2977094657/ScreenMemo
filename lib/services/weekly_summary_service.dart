@@ -36,6 +36,99 @@ class WeeklySummaryService {
   Timer? _scheduleTimer;
   bool _processing = false;
 
+  Future<_WeeklySummaryGenerationContext> _prepareWeeklySummaryContext({
+    required String weekStartKey,
+    required String weekEndKey,
+    required WeeklyContext context,
+  }) async {
+    final String prompt = await _buildWeeklyPrompt(
+      weekStartKey,
+      weekEndKey,
+      context,
+    );
+
+    String providerType = 'segments';
+    late final String modelUsed;
+    final Map<String, dynamic>? ctxRow;
+    try {
+      ctxRow = await _settings.getAIContextRow('segments');
+    } catch (e) {
+      throw StateError('Segments AI context lookup failed: $e');
+    }
+
+    if (ctxRow == null) {
+      throw StateError('Segments AI context not configured');
+    }
+
+    final String? ctxModel = (ctxRow['model'] as String?)?.trim();
+    if (ctxModel == null || ctxModel.isEmpty) {
+      throw StateError('Segments AI context model missing');
+    }
+    modelUsed = ctxModel;
+
+    final int? providerId = ctxRow['provider_id'] as int?;
+    if (providerId == null) {
+      throw StateError('Segments AI context provider missing');
+    }
+
+    try {
+      final provider = await AIProvidersService.instance.getProvider(providerId);
+      if (provider == null) {
+        throw StateError('Segments AI provider unavailable');
+      }
+      final String type = provider.type.trim();
+      if (type.isNotEmpty) {
+        providerType = type;
+      }
+    } catch (e) {
+      throw StateError('Segments AI provider fetch failed: $e');
+    }
+
+    try {
+      await FlutterLogger.nativeInfo(
+        'WeeklySummary',
+        'prepare week $weekStartKey-$weekEndKey provider=$providerType model=$modelUsed contextEntries=${context.totalEntries}',
+      );
+    } catch (_) {}
+
+    return _WeeklySummaryGenerationContext(
+      weekStartKey: weekStartKey,
+      weekEndKey: weekEndKey,
+      prompt: prompt,
+      providerType: providerType,
+      model: modelUsed,
+    );
+  }
+
+  Future<void> _persistWeeklySummary({
+    required _WeeklySummaryGenerationContext ctx,
+    required String raw,
+  }) async {
+    Map<String, dynamic>? structured;
+    String outputText = raw;
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        structured = decoded;
+        final dynamic overview = decoded['weekly_overview'];
+        if (overview is String && overview.trim().isNotEmpty) {
+          outputText = overview.trim();
+        }
+      }
+    } catch (_) {
+      // 保留原始文本作为输出
+    }
+
+    await _db.upsertWeeklySummary(
+      weekStartDate: ctx.weekStartKey,
+      weekEndDate: ctx.weekEndKey,
+      aiProvider: ctx.providerType,
+      aiModel: ctx.model,
+      outputText: outputText,
+      structuredJson: structured == null ? null : jsonEncode(structured),
+    );
+  }
+
   /// 刷新调度：
   /// - 若存在过期的周总结则立即生成
   /// - 否则安排下一次定时器
@@ -190,85 +283,110 @@ class WeeklySummaryService {
       return await _db.getWeeklySummary(weekStartKey);
     }
 
-    final String prompt = await _buildWeeklyPrompt(
-      weekStartKey,
-      weekEndKey,
-      context,
+    final _WeeklySummaryGenerationContext ctx =
+        await _prepareWeeklySummaryContext(
+      weekStartKey: weekStartKey,
+      weekEndKey: weekEndKey,
+      context: context,
     );
 
-    String providerType = 'segments';
-    late final String modelUsed;
-    final Map<String, dynamic>? ctxRow;
-    try {
-      ctxRow = await _settings.getAIContextRow('segments');
-    } catch (e) {
-      throw StateError('Segments AI context lookup failed: $e');
-    }
-
-    if (ctxRow == null) {
-      throw StateError('Segments AI context not configured');
-    }
-
-    final String? ctxModel = (ctxRow['model'] as String?)?.trim();
-    if (ctxModel == null || ctxModel.isEmpty) {
-      throw StateError('Segments AI context model missing');
-    }
-    modelUsed = ctxModel;
-
-    final int? providerId = ctxRow['provider_id'] as int?;
-    if (providerId == null) {
-      throw StateError('Segments AI context provider missing');
-    }
-
-    try {
-      final provider = await AIProvidersService.instance.getProvider(providerId);
-      if (provider == null) {
-        throw StateError('Segments AI provider unavailable');
-      }
-      final String type = provider.type.trim();
-      if (type.isNotEmpty) {
-        providerType = type;
-      }
-    } catch (e) {
-      throw StateError('Segments AI provider fetch failed: $e');
-    }
-
-    try {
-      await FlutterLogger.nativeInfo('WeeklySummary', 'prepare week $weekStartKey-$weekEndKey provider=$providerType model=$modelUsed contextEntries=${context.totalEntries}');
-    } catch (_) {}
-
     final AIMessage response = await _chat.sendMessageOneShot(
-      prompt,
+      ctx.prompt,
       context: 'segments',
       timeout: null,
     );
 
     final String raw = _stripFences(response.content.trim());
-    Map<String, dynamic>? structured;
-    String outputText = raw;
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        structured = decoded;
-        final dynamic overview = decoded['weekly_overview'];
-        if (overview is String && overview.trim().isNotEmpty) {
-          outputText = overview.trim();
-        }
-      }
-    } catch (_) {
-      // 保留原始文本作为输出
+    await _persistWeeklySummary(ctx: ctx, raw: raw);
+    return await _db.getWeeklySummary(weekStartKey);
+  }
+
+  Future<AIStreamingSession?> streamGenerateForWeekStart(
+    String weekStartDate, {
+    bool force = false,
+  }) async {
+    final DateTime? weekStart = _parseDateKey(weekStartDate);
+    if (weekStart == null) {
+      return null;
     }
 
-    await _db.upsertWeeklySummary(
-      weekStartDate: weekStartKey,
-      weekEndDate: weekEndKey,
-      aiProvider: providerType,
-      aiModel: modelUsed,
-      outputText: outputText,
-      structuredJson: structured == null ? null : jsonEncode(structured),
+    if (!force) {
+      final Map<String, dynamic>? existed =
+          await _db.getWeeklySummary(weekStartDate);
+      if (existed != null) {
+        return null;
+      }
+    }
+
+    final WeeklyContext context = await _buildWeeklyContext(weekStart);
+    if (context.totalEntries == 0) {
+      final String weekEndKey =
+          _dateKey(weekStart.add(const Duration(days: 6)));
+      final Map<String, dynamic> fallback = {
+        'weekly_overview': '暂无足够的数据生成周总结。',
+        'daily_breakdowns': const <Map<String, dynamic>>[],
+        'action_items': const <String>[],
+        'notification_brief': '本周暂无记录。',
+      };
+      await _db.upsertWeeklySummary(
+        weekStartDate: weekStartDate,
+        weekEndDate: weekEndKey,
+        aiProvider: 'local',
+        aiModel: 'fallback',
+        outputText: fallback['weekly_overview'] as String,
+        structuredJson: jsonEncode(fallback),
+      );
+      return null;
+    }
+
+    final String weekEndKey =
+        _dateKey(weekStart.add(const Duration(days: 6)));
+    final _WeeklySummaryGenerationContext ctx =
+        await _prepareWeeklySummaryContext(
+      weekStartKey: weekStartDate,
+      weekEndKey: weekEndKey,
+      context: context,
     );
 
-    return await _db.getWeeklySummary(weekStartKey);
+    final AIStreamingSession baseSession =
+        await _chat.sendMessageStreamedV2WithDisplayOverride(
+      'weekly_summary_$weekStartDate',
+      ctx.prompt,
+      includeHistory: false,
+      persistHistory: false,
+      context: 'segments',
+    );
+
+    final StreamController<AIStreamEvent> controller =
+        StreamController<AIStreamEvent>();
+    late final StreamSubscription<AIStreamEvent> subscription;
+    controller.onCancel = () async {
+      await subscription.cancel();
+    };
+    subscription = baseSession.stream.listen(
+      controller.add,
+      onError: (Object error, StackTrace stackTrace) {
+        controller.addError(error, stackTrace);
+        controller.close();
+      },
+      onDone: () {
+        controller.close();
+      },
+      cancelOnError: false,
+    );
+
+    final Future<AIMessage> completed = baseSession.completed.then(
+      (AIMessage message) async {
+        final String raw = _stripFences(message.content.trim());
+        await _persistWeeklySummary(ctx: ctx, raw: raw);
+        return message;
+      },
+    );
+
+    return AIStreamingSession(
+      stream: controller.stream,
+      completed: completed,
+    );
   }
 
   Future<WeeklyContext> _buildWeeklyContext(DateTime weekStart) async {
@@ -532,6 +650,22 @@ Output requirements:
 - notification_brief: Markdown 없는 1~2개의 문장으로 가장 긴급한 메시지를 요약하고 관련 날짜/사건을 언급하세요.
 - 추가 필드, 이미지, 코드 블록은 금지하며 모든 문자열의 앞뒤 공백을 제거하고 JSON 문법을 지키세요.
 ''';
+}
+
+class _WeeklySummaryGenerationContext {
+  const _WeeklySummaryGenerationContext({
+    required this.weekStartKey,
+    required this.weekEndKey,
+    required this.prompt,
+    required this.providerType,
+    required this.model,
+  });
+
+  final String weekStartKey;
+  final String weekEndKey;
+  final String prompt;
+  final String providerType;
+  final String model;
 }
 
 class _ScheduleState {

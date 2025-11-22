@@ -309,6 +309,20 @@ class MorningInsights {
   }
 }
 
+class _DailySummaryGenerationContext {
+  const _DailySummaryGenerationContext({
+    required this.dateKey,
+    required this.prompt,
+    required this.providerType,
+    required this.model,
+  });
+
+  final String dateKey;
+  final String prompt;
+  final String providerType;
+  final String model;
+}
+
 /// 每日总结服务：
 /// - 聚合当天已有“事件AI结果”，仅取 structured_json.overall_summary 作为上下文
 /// - 使用独立一次性 AI 请求（不写入会话历史）生成当日总结
@@ -326,6 +340,207 @@ class DailySummaryService {
 
   // 自动刷新定时器：在前台时按计划预生成当天总结
   Timer? _autoRefreshTimer;
+
+  Future<_DailySummaryGenerationContext?> _prepareDailySummaryContext(String dateKey) async {
+    final range = _dayRangeMillis(dateKey);
+    if (range == null) {
+      try {
+        await FlutterLogger.nativeWarn('DailySummary', 'generateForDate bad dateKey=$dateKey');
+      } catch (_) {}
+      return null;
+    }
+
+    final segments = await _db.listSegmentsWithResultsBetween(
+      startMillis: range[0],
+      endMillis: range[1],
+    );
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'context segments=${segments.length}');
+    } catch (_) {}
+
+    final String prompt = await _buildDailyPrompt(dateKey, segments);
+    try {
+      await FlutterLogger.nativeDebug('DailySummary', 'prompt length=${prompt.length}');
+    } catch (_) {}
+
+    // 读取“动态(segments)”上下文的提供商与模型，用于日志与写库，保证与动态一致
+    String providerTypeUsed = 'openai-compatible';
+    String modelUsed = await _settings.getModel();
+    try {
+      final ctx = await _settings.getAIContextRow('segments');
+      final m = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
+      if (m != null && m.isNotEmpty) modelUsed = m;
+      final pid = (ctx != null ? ctx['provider_id'] : null);
+      if (pid is int) {
+        try {
+          final p = await AIProvidersService.instance.getProvider(pid);
+          if (p != null && (p.type.trim().isNotEmpty)) providerTypeUsed = p.type.trim();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
+      await FlutterLogger.nativeInfo(
+        'DailySummary',
+        'AI prepare: context=segments provider=$providerTypeUsed model=$modelUsed promptLen=${prompt.length}',
+      );
+    } catch (_) {}
+    try {
+      final prev = prompt.length <= 1200 ? prompt : (prompt.substring(0, 1200) + '…');
+      await FlutterLogger.nativeDebug('DailySummary', 'prompt preview: $prev');
+    } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'prompt full BEGIN >>>');
+      const int chunk = 1800;
+      for (int i = 0; i < prompt.length; i += chunk) {
+        final int end = (i + chunk < prompt.length) ? (i + chunk) : prompt.length;
+        await FlutterLogger.nativeInfo('DailySummary', prompt.substring(i, end));
+      }
+      await FlutterLogger.nativeInfo('DailySummary', 'prompt full END <<<');
+    } catch (_) {}
+
+    return _DailySummaryGenerationContext(
+      dateKey: dateKey,
+      prompt: prompt,
+      providerType: providerTypeUsed,
+      model: modelUsed,
+    );
+  }
+
+  Future<void> _persistDailySummary({
+    required _DailySummaryGenerationContext ctx,
+    required String raw,
+  }) async {
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'AI raw length=${raw.length}');
+    } catch (_) {}
+    try {
+      final prev = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
+      await FlutterLogger.nativeDebug('DailySummary', 'AI response preview: $prev');
+    } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo('DailySummary', 'AI response full BEGIN >>>');
+      const int chunk = 1800;
+      for (int i = 0; i < raw.length; i += chunk) {
+        final int end = (i + chunk < raw.length) ? (i + chunk) : raw.length;
+        await FlutterLogger.nativeInfo('DailySummary', raw.substring(i, end));
+      }
+      await FlutterLogger.nativeInfo('DailySummary', 'AI response full END <<<');
+    } catch (_) {}
+
+    Map<String, dynamic>? sj;
+    String outputText = raw;
+    try {
+      final dynamic j = jsonDecode(raw);
+      if (j is Map<String, dynamic>) {
+        sj = j;
+        final dynamic v = j['overall_summary'];
+        if (v is String && v.trim().isNotEmpty) {
+          outputText = v.trim();
+        }
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'DailySummary',
+          'non-JSON AI response, try repair then fallback; error=$e',
+        );
+      } catch (_) {}
+      try {
+        final String repaired = _repairJsonUnescapedQuotes(
+          raw,
+          keys: const ['overall_summary', 'notification_brief'],
+        );
+        final dynamic j2 = jsonDecode(repaired);
+        if (j2 is Map<String, dynamic>) {
+          sj = j2;
+          final dynamic v2 = j2['overall_summary'];
+          if (v2 is String && v2.trim().isNotEmpty) {
+            outputText = v2.trim();
+          }
+        }
+      } catch (_) {
+        try {
+          final String? ov2 = _extractLooseField(
+            raw,
+            'overall_summary',
+            nextKeyHint: '"timeline"',
+          );
+          final String? nb2 = _extractLooseField(raw, 'notification_brief');
+          if (ov2 != null && ov2.trim().isNotEmpty) {
+            final String ov3 = _unescapeJsonStringCandidate(ov2.trim());
+            final String? nb3 =
+                nb2 == null ? null : _unescapeJsonStringCandidate(nb2.trim());
+            outputText = ov3;
+            final Map<String, dynamic> m = <String, dynamic>{'overall_summary': outputText};
+            if (nb3 != null && nb3.trim().isNotEmpty) m['notification_brief'] = nb3.trim();
+            sj = m;
+          } else {
+            final String? ov = _extractJsonStringValue(raw, 'overall_summary');
+            final String? nb = _extractJsonStringValue(raw, 'notification_brief');
+            if (ov != null && ov.trim().isNotEmpty) {
+              outputText = ov.trim();
+              final Map<String, dynamic> m = <String, dynamic>{'overall_summary': outputText};
+              if (nb != null && nb.trim().isNotEmpty) m['notification_brief'] = nb.trim();
+              sj = m;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    await _db.upsertDailySummary(
+      dateKey: ctx.dateKey,
+      aiProvider: ctx.providerType,
+      aiModel: ctx.model,
+      outputText: outputText,
+      structuredJson: sj == null ? null : jsonEncode(sj),
+    );
+
+    try {
+      String briefText = '';
+      final dynamic nb = sj?['notification_brief'];
+      if (nb is String && nb.trim().isNotEmpty) {
+        briefText = nb.trim();
+      } else {
+        String sum = '';
+        final dynamic ov = sj?['overall_summary'];
+        if (ov is String && ov.trim().isNotEmpty) {
+          sum = ov.trim();
+        } else {
+          sum = outputText.trim();
+        }
+        final int idx = sum.indexOf(RegExp(r'[。.!?！？]'));
+        briefText = idx > 0
+            ? sum.substring(0, idx + 1)
+            : (sum.length > 120 ? (sum.substring(0, 120) + '…') : sum);
+      }
+      if (briefText.isNotEmpty) {
+        await _channel.invokeMethod('setDailyBrief', <String, dynamic>{
+          'dateKey': ctx.dateKey,
+          'brief': briefText,
+        });
+        try {
+          await FlutterLogger.nativeInfo(
+            'DailySummary',
+            'setDailyBrief cached len=${briefText.length}',
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief failed: $e');
+      } catch (_) {}
+    }
+
+    try {
+      await FlutterLogger.nativeInfo(
+        'DailySummary',
+        'upsert ok model=${ctx.model} outLen=${outputText.length}',
+      );
+    } catch (_) {}
+  }
+
 
   /// 生成或返回已有的每日总结
   Future<Map<String, dynamic>?> getOrGenerate(String dateKey, {bool force = false}) async {
@@ -346,62 +561,17 @@ class DailySummaryService {
   Future<Map<String, dynamic>?> generateForDate(String dateKey) async {
     // ignore: discarded_futures
     FlutterLogger.nativeInfo('DailySummary', 'generateForDate begin date=$dateKey');
-    final range = _dayRangeMillis(dateKey);
-    if (range == null) {
-      // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'generateForDate bad dateKey=$dateKey');
-      return null;
-    }
+    final _DailySummaryGenerationContext? ctx =
+        await _prepareDailySummaryContext(dateKey);
+    if (ctx == null) return null;
 
-    final segments = await _db.listSegmentsWithResultsBetween(
-      startMillis: range[0],
-      endMillis: range[1],
-    );
-    // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'context segments=${segments.length}');
-
-    // 仅取 structured_json.overall_summary 作为上下文
-    final prompt = await _buildDailyPrompt(dateKey, segments);
-    // ignore: discarded_futures
-    FlutterLogger.nativeDebug('DailySummary', 'prompt length=${prompt.length}');
-
-    // 读取“动态(segments)”上下文的提供商与模型，用于日志与写库，保证与动态一致
-    String providerTypeUsed = 'openai-compatible';
-    String modelUsed = await _settings.getModel();
-    try {
-      final ctx = await _settings.getAIContextRow('segments');
-      final m = (ctx != null ? (ctx['model'] as String?) : null)?.trim();
-      if (m != null && m.isNotEmpty) modelUsed = m;
-      final pid = (ctx != null ? ctx['provider_id'] : null);
-      if (pid is int) {
-        try {
-          final p = await AIProvidersService.instance.getProvider(pid);
-          if (p != null && (p.type.trim().isNotEmpty)) providerTypeUsed = p.type.trim();
-        } catch (_) {}
-      }
-    } catch (_) {}
-
-    // 打印请求准备信息（与原生侧风格一致：预览 + 完整分块）
-    try { await FlutterLogger.nativeInfo('DailySummary', 'AI prepare: context=segments provider='+providerTypeUsed+' model='+modelUsed+' promptLen='+prompt.length.toString()); } catch (_) {}
-    try {
-      final prev = prompt.length <= 1200 ? prompt : (prompt.substring(0, 1200) + '…');
-      await FlutterLogger.nativeDebug('DailySummary', 'prompt preview: '+prev);
-    } catch (_) {}
-    try {
-      await FlutterLogger.nativeInfo('DailySummary', 'prompt full BEGIN >>>');
-      final s = prompt;
-      const int chunk = 1800;
-      for (int i = 0; i < s.length; i += chunk) {
-        final end = (i + chunk < s.length) ? (i + chunk) : s.length;
-        await FlutterLogger.nativeInfo('DailySummary', s.substring(i, end));
-      }
-      await FlutterLogger.nativeInfo('DailySummary', 'prompt full END <<<');
-    } catch (_) {}
-
-    // 使用“动态(segments)”上下文对应的提供商/模型进行一次性请求，确保与动态 AppBar 选择一致
     AIMessage resp;
     try {
-      resp = await _chat.sendMessageOneShot(prompt, context: 'segments', timeout: null);
+      resp = await _chat.sendMessageOneShot(
+        ctx.prompt,
+        context: 'segments',
+        timeout: null,
+      );
     } catch (e, st) {
       // ignore: discarded_futures
       await FlutterLogger.nativeError('DailySummary', 'AI request failed: '+e.toString());
@@ -409,119 +579,58 @@ class DailySummaryService {
       await FlutterLogger.nativeDebug('DailySummary', 'AI exception stack: '+st.toString());
       rethrow;
     }
-    final raw = _stripFences(resp.content.trim());
-    // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'AI raw length=${raw.length}');
-    try {
-      final prev = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
-      await FlutterLogger.nativeDebug('DailySummary', 'AI response preview: '+prev);
-    } catch (_) {}
-    try {
-      await FlutterLogger.nativeInfo('DailySummary', 'AI response full BEGIN >>>');
-      final s = raw;
-      const int chunk = 1800;
-      for (int i = 0; i < s.length; i += chunk) {
-        final end = (i + chunk < s.length) ? (i + chunk) : s.length;
-        await FlutterLogger.nativeInfo('DailySummary', s.substring(i, end));
-      }
-      await FlutterLogger.nativeInfo('DailySummary', 'AI response full END <<<');
-    } catch (_) {}
-
-    Map<String, dynamic>? sj;
-    String outputText = raw;
-    try {
-      final j = jsonDecode(raw);
-      if (j is Map<String, dynamic>) {
-        sj = j;
-        final v = j['overall_summary'];
-        if (v is String && v.trim().isNotEmpty) {
-          outputText = v.trim();
-        }
-      }
-    } catch (e) {
-      // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'non-JSON AI response, try repair then fallback; error=$e');
-      // 先尝试修复 overall_summary / notification_brief 中的未转义引号，然后再次解析
-      try {
-        final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['overall_summary', 'notification_brief']);
-        final j2 = jsonDecode(repaired);
-        if (j2 is Map<String, dynamic>) {
-          sj = j2;
-          final v2 = j2['overall_summary'];
-          if (v2 is String && v2.trim().isNotEmpty) {
-            outputText = v2.trim();
-          }
-        }
-      } catch (_) {
-        // 修复仍失败：使用“宽松截取”避免被内部引号截断
-        try {
-          final ov2 = _extractLooseField(raw, 'overall_summary', nextKeyHint: '"timeline"');
-          final nb2 = _extractLooseField(raw, 'notification_brief');
-          if (ov2 != null && ov2.trim().isNotEmpty) {
-            final ov3 = _unescapeJsonStringCandidate(ov2.trim());
-            final nb3 = nb2 == null ? null : _unescapeJsonStringCandidate(nb2.trim());
-            outputText = ov3;
-            final m = <String, dynamic>{'overall_summary': outputText};
-            if (nb3 != null && nb3.trim().isNotEmpty) m['notification_brief'] = nb3.trim();
-            sj = m;
-          } else {
-            // 最后尝试原先的简易正则提取
-            final ov = _extractJsonStringValue(raw, 'overall_summary');
-            final nb = _extractJsonStringValue(raw, 'notification_brief');
-            if (ov != null && ov.trim().isNotEmpty) {
-              outputText = ov.trim();
-              final m = <String, dynamic>{'overall_summary': outputText};
-              if (nb != null && nb.trim().isNotEmpty) m['notification_brief'] = nb.trim();
-              sj = m;
-            }
-          }
-        } catch (_) {}
-      }
-      // 仍失败则保持 outputText=raw
-    }
-
-    // 写入记录时复用上方解析到的 provider 与 model
-    await _db.upsertDailySummary(
-      dateKey: dateKey,
-      aiProvider: providerTypeUsed,
-      aiModel: modelUsed,
-      outputText: outputText,
-      structuredJson: sj == null ? null : jsonEncode(sj),
-    );
-    // 生成后将“通知简报”写入原生缓存，供闹钟触达时使用一致内容（避免英文兜底）
-    try {
-      String briefText = '';
-      // 优先 structured_json.notification_brief
-      final nb = sj?['notification_brief'];
-      if (nb is String && nb.trim().isNotEmpty) {
-        briefText = nb.trim();
-      } else {
-        // 回退 overall_summary/输出文本首句
-        String sum = '';
-        final ov = sj?['overall_summary'];
-        if (ov is String && ov.trim().isNotEmpty) {
-          sum = ov.trim();
-        } else {
-          sum = outputText.trim();
-        }
-        final idx = sum.indexOf(RegExp(r'[。.!?！？]'));
-        briefText = idx > 0 ? sum.substring(0, idx + 1) : (sum.length > 120 ? (sum.substring(0, 120) + '…') : sum);
-      }
-      if (briefText.isNotEmpty) {
-        await _channel.invokeMethod('setDailyBrief', {
-          'dateKey': dateKey,
-          'brief': briefText,
-        });
-        // ignore: discarded_futures
-        FlutterLogger.nativeInfo('DailySummary', 'setDailyBrief cached len=${briefText.length}');
-      }
-    } catch (e) {
-      // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief failed: $e');
-    }
-    // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'upsert ok model='+modelUsed+' outLen='+outputText.length.toString());
+    final String raw = _stripFences(resp.content.trim());
+    await _persistDailySummary(ctx: ctx, raw: raw);
     return await _db.getDailySummary(dateKey);
+  }
+
+  /// 流式生成每日总结，返回流式会话对象（完成后会自动写入数据库）
+  Future<AIStreamingSession?> streamGenerateForDate(String dateKey) async {
+    final _DailySummaryGenerationContext? ctx =
+        await _prepareDailySummaryContext(dateKey);
+    if (ctx == null) {
+      return null;
+    }
+
+    final AIStreamingSession baseSession =
+        await _chat.sendMessageStreamedV2WithDisplayOverride(
+      'daily_summary_$dateKey',
+      ctx.prompt,
+      includeHistory: false,
+      persistHistory: false,
+      context: 'segments',
+    );
+
+    final StreamController<AIStreamEvent> controller =
+        StreamController<AIStreamEvent>();
+    late final StreamSubscription<AIStreamEvent> subscription;
+    controller.onCancel = () async {
+      await subscription.cancel();
+    };
+    subscription = baseSession.stream.listen(
+      controller.add,
+      onError: (Object error, StackTrace stackTrace) {
+        controller.addError(error, stackTrace);
+        controller.close();
+      },
+      onDone: () {
+        controller.close();
+      },
+      cancelOnError: false,
+    );
+
+    final Future<AIMessage> completed = baseSession.completed.then(
+      (AIMessage message) async {
+        final String raw = _stripFences(message.content.trim());
+        await _persistDailySummary(ctx: ctx, raw: raw);
+        return message;
+      },
+    );
+
+    return AIStreamingSession(
+      stream: controller.stream,
+      completed: completed,
+    );
   }
 
   /// 获取某日的段落（带结果），供页面渲染时间线兜底
@@ -538,7 +647,6 @@ class DailySummaryService {
     final row = await _db.getMorningInsights(dateKey);
     if (row == null) return null;
     final insights = MorningInsights.fromRow(row);
-    if (insights.tips.isEmpty) return null;
     return insights;
   }
 
@@ -550,7 +658,7 @@ class DailySummaryService {
     if (!force) {
       final existed = await loadMorningInsights(dateKey);
       if (existed != null) {
-        if (existed.tips.length >= 10) {
+        if (existed.tips.length >= 20) {
           return existed;
         }
         final regenerated = await generateMorningInsights(dateKey);
@@ -1227,7 +1335,7 @@ class DailySummaryService {
   输出规范（必须全部满足）：
   1. 结构要求
      - 仅输出一个 JSON 对象，键固定为 items；不要添加任何额外文字或注释。
-     - items 数组长度须为 50 条，且保持顺序完整。
+     - items 数组长度须为 20 条，且保持顺序完整。
      - 每条元素必须包含以下字段：
        {
          "title": "6-16 字中文短语，不含标点与编号，语气轻柔",
@@ -1242,7 +1350,7 @@ class DailySummaryService {
        • 至少有一条建议突出节奏/情绪/环境的准备，其余条目结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态。
      - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；输出均为纯文本。
   3. 兜底策略
-     - 当上下文极少时，仍需输出 50 条高质量、具启发性的泛化建议，依旧遵循上述结构与文风限定。
+     - 当上下文极少时，仍需输出 20 条高质量、具启发性的泛化建议，依旧遵循上述结构与文风限定。
   
   示例：{"items":[{"title":"晨光热身","summary":"用更松弛的拉伸开启身体，让昨夜的紧绷慢慢散去，心绪也慢慢沉静。","actions":["轻柔伸展 10 分钟，关注呼吸节奏","整理桌面，为今天的思路留出余白"]}]}
   ''';
@@ -1253,7 +1361,7 @@ class DailySummaryService {
   Output rules (all mandatory):
   1. Structure
      - Return exactly one JSON object whose only key is items; do not add explanations or extra text.
-     - The items array must contain 50 entries, preserving order.
+     - The items array must contain 20 entries, preserving order.
      - Each entry must follow this structure:
        {
          "title": "Gentle 5–14 word headline, no punctuation or numbering",
@@ -1266,7 +1374,7 @@ class DailySummaryService {
      - Avoid templated phrasing such as "Yesterday… today…" and do not begin every sentence with the same words. Ensure at least one entry centres on cadence/mood/environment readiness, while the others extend yesterday’s cues, people, or scenes into today’s opportunities, watchpoints, or mindset adjustments.
      - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
   3. Fallback
-     - If context is sparse, still produce 50 meaningful entries that respect the same structure and tone requirements.
+     - If context is sparse, still produce 20 meaningful entries that respect the same structure and tone requirements.
   
   Example: {"items":[{"title":"Unhurried focus","summary":"Invite a looser morning by airing the room, softening your shoulders, and letting yesterday’s pace dissolve.","actions":["Block a 15-minute buffer before deep work to breathe in quiet","Tidy the desk to leave generous room for the day’s ideas"]}]}
   ''';
@@ -1277,7 +1385,7 @@ class DailySummaryService {
   出力要件（すべて順守してください）：
   1. 構造
      - JSON オブジェクトを 1 つだけ返し、キーは items 固定。説明文や余計な文字は付けないこと。
-     - items 配列は 50 件とし、順番を崩さないこと。
+     - items 配列は 20 件とし、順番を崩さないこと。
      - 各要素は次の構造に従うこと：
        {
          "title": "やわらかなニュアンスの日本語見出し（5～12文字、句読点・番号なし）",
@@ -1290,7 +1398,7 @@ class DailySummaryService {
      - 「昨日…今日…」「前日…本日…」といった定型句を使わず、同じ言葉で始まる文を連続させないこと。少なくとも 1 件はリズム／感情／環境づくりに触れ、他の項目は前日の手がかりや登場人物をヒントに今日の視点・機会・注意点へと広げてください。
      - すべて純テキストで出力し、Markdown・箇条書き記号・番号・絵文字・コードフェンスは禁止します。
   3. コンテキストが乏しい場合
-     - 情報がほとんどない場合でも、上記構造と文体を守った質の高い提案を 50 件生成してください。
+     - 情報がほとんどない場合でも、上記構造と文体を守った質の高い提案を 20 件生成してください。
   
   例：{"items":[{"title":"朝の余白","summary":"カーテン越しの光を吸い込みながら深呼吸し、固まった肩をそっとほぐしていきましょう。","actions":["10分間のストレッチで呼吸と体をととのえる","机の上を整えて今日のアイデアに余白を残す"]}]}
   ''';
@@ -1301,7 +1409,7 @@ class DailySummaryService {
   출력 규칙(모두 준수하세요):
   1. 구조
      - JSON 객체 한 개만 반환하고, 키는 items 로 고정합니다. 추가 설명이나 다른 텍스트는 금지합니다.
-     - items 배열에는 50개의 항목이 있어야 하며, 순서를 유지해야 합니다.
+     - items 배열에는 20개의 항목이 있어야 하며, 순서를 유지해야 합니다.
      - 각 항목은 아래 구조를 따라야 합니다.
        {
          "title": "5~12자 이내의 한국어 짧은 제목, 번호/구두점 없음, 부드러운 톤",
@@ -1314,7 +1422,7 @@ class DailySummaryService {
      - "어제… 오늘…" "전날… 금일…" 등 정형화된 문장을 사용하지 말고, 같은 단어로 시작하는 문장을 연속해서 쓰지 마세요. 최소 1개의 항목은 리듬·감정·환경 정비에 초점을 맞추고, 나머지는 전날의 단서·인물·장면을 오늘의 기회나 주의점·마음가짐으로 확장하세요.
      - 모든 출력은 순수 텍스트로 작성하며, Markdown·불릿 기호·번호·이모지·코드 블록을 사용하지 마세요.
   3. 맥락이 부족한 경우
-     - 정보가 매우 적더라도 위 구조와 문체를 지키며 최소 50개의 의미 있는 제안을 생성해야 합니다.
+     - 정보가 매우 적더라도 위 구조와 문체를 지키며 최소 20개의 의미 있는 제안을 생성해야 합니다.
   
   예시: {"items":[{"title":"여유로운 숨","summary":"창문을 열어 잔잔한 공기를 들이마시고 굳어 있던 어깨를 천천히 내려놓으며 오늘을 느슨하게 시작해 보세요.","actions":["10분간 스트레칭으로 호흡과 몸의 리듬을 맞추세요","책상 위를 정돈해 오늘의 아이디어가 놓일 공간을 남겨 두세요"]}]}
   ''';
