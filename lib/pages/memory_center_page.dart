@@ -4,15 +4,20 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 
 import '../models/memory_models.dart';
+import '../services/ai_providers_service.dart';
+import '../services/ai_settings_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/memory_bridge_service.dart';
 import '../services/persona_article_service.dart';
 import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/model_icon_utils.dart';
+import '../widgets/app_side_drawer.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/tag_hierarchy_tree.dart';
 import '../widgets/ui_dialog.dart';
@@ -28,8 +33,14 @@ class MemoryCenterPage extends StatefulWidget {
 class _MemoryCenterPageState extends State<MemoryCenterPage> {
   final MemoryBridgeService _service = MemoryBridgeService.instance;
   final PersonaArticleService _articleService = PersonaArticleService.instance;
+  final AISettingsService _settings = AISettingsService.instance;
+  final AIProvidersService _providers = AIProvidersService.instance;
   final Set<int> _confirmingTagIds = <int>{};
   final Set<int> _deletingTagIds = <int>{};
+  AIProvider? _memoryProvider;
+  String? _memoryModel;
+  bool _memoryCtxLoading = true;
+  StreamSubscription<String>? _ctxChangedSub;
 
   static const int _pageStep = 10;
   static const int _prefetchStep = 20;
@@ -69,6 +80,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   @override
   void initState() {
     super.initState();
+    _ctxChangedSub = _settings.onContextChanged.listen((String contextName) {
+      if (contextName == 'memory' && mounted) {
+        _loadMemoryContextSelection();
+      }
+    });
+    unawaited(ModelIconUtils.preload());
+    unawaited(_loadMemoryContextSelection());
     _bootstrap();
   }
 
@@ -179,8 +197,341 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     await _refresh(initial: true);
   }
 
+  Future<void> _loadMemoryContextSelection() async {
+    if (!mounted) return;
+    setState(() => _memoryCtxLoading = true);
+    try {
+      final List<AIProvider> providers = await _providers.listProviders();
+      if (!mounted) return;
+      if (providers.isEmpty) {
+        setState(() {
+          _memoryProvider = null;
+          _memoryModel = null;
+          _memoryCtxLoading = false;
+        });
+        await _service.setExtractionContext(provider: null, model: null);
+        return;
+      }
+
+      final Map<String, dynamic>? ctxRow =
+          await _settings.getAIContextRow('memory');
+      AIProvider? provider;
+      String model = '';
+      bool needPersist = false;
+      if (ctxRow != null && ctxRow['provider_id'] is int) {
+        final int ctxProviderId = ctxRow['provider_id'] as int;
+        for (final AIProvider candidate in providers) {
+          if ((candidate.id ?? -1) == ctxProviderId) {
+            provider = candidate;
+            break;
+          }
+        }
+        if (provider == null) {
+          provider = providers.firstWhere(
+            (p) => p.isDefault,
+            orElse: () => providers.first,
+          );
+          needPersist = true;
+        }
+        final String? storedModel = ctxRow['model'] as String?;
+        if (storedModel != null && storedModel.trim().isNotEmpty) {
+          model = storedModel.trim();
+        }
+      } else {
+        provider = providers.firstWhere(
+          (p) => p.isDefault,
+          orElse: () => providers.first,
+        );
+        needPersist = true;
+      }
+
+      provider ??= providers.first;
+      if (model.isEmpty) {
+        model = ((provider.extra['active_model'] as String?) ??
+                provider.defaultModel)
+            .toString()
+            .trim();
+      }
+      final List<String> available = provider.models;
+      if (model.isEmpty && available.isNotEmpty) {
+        model = available.first;
+        needPersist = true;
+      }
+      if (available.isNotEmpty &&
+          model.isNotEmpty &&
+          !available.contains(model)) {
+        final String fallback =
+            ((provider.extra['active_model'] as String?) ??
+                    provider.defaultModel)
+                .toString()
+                .trim();
+        if (fallback.isNotEmpty && available.contains(fallback)) {
+          model = fallback;
+        } else if (available.isNotEmpty) {
+          model = available.first;
+        }
+        needPersist = true;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _memoryProvider = provider;
+        _memoryModel = model;
+        _memoryCtxLoading = false;
+      });
+      await _service.setExtractionContext(
+        provider: provider,
+        model: model,
+      );
+      if (needPersist && provider.id != null && model.trim().isNotEmpty) {
+        await _settings.setAIContextSelection(
+          context: 'memory',
+          providerId: provider.id!,
+          model: model.trim(),
+        );
+      }
+    } catch (e) {
+      _logInfo('loadMemoryContextSelection failed: $e');
+      if (!mounted) return;
+      setState(() => _memoryCtxLoading = false);
+      await _service.setExtractionContext(
+        provider: _memoryProvider,
+        model: _memoryModel,
+      );
+    }
+  }
+
+  Widget _buildMemoryAppBarTitle(BuildContext context) {
+    if (_memoryCtxLoading) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    final ThemeData theme = Theme.of(context);
+    final TextStyle? link = theme.textTheme.labelSmall?.copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      color: theme.colorScheme.onSurface,
+    );
+    final String providerName =
+        (_memoryProvider?.name ?? '').trim().isNotEmpty
+            ? _memoryProvider!.name
+            : '—';
+    final String modelName =
+        (_memoryModel ?? '').trim().isNotEmpty ? _memoryModel!.trim() : '—';
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (modelName.trim().isNotEmpty && modelName != '—') ...[
+          SvgPicture.asset(
+            ModelIconUtils.getIconPath(modelName),
+            width: 18,
+            height: 18,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: GestureDetector(
+            onTap: _showMemoryProviderSheet,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              providerName,
+              style: link,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: GestureDetector(
+            onTap: _showMemoryModelSheet,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              modelName,
+              style: link,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showMemoryProviderSheet() async {
+    final AppLocalizations t = AppLocalizations.of(context);
+    List<AIProvider> providers;
+    try {
+      providers = await _providers.listProviders();
+    } catch (e) {
+      _logInfo('showMemoryProviderSheet listProviders failed: $e');
+      providers = const <AIProvider>[];
+    }
+    if (!mounted) return;
+    if (providers.isEmpty) {
+      UINotifier.info(context, t.providerNotFound);
+      return;
+    }
+    final int activeId = _memoryProvider?.id ?? -1;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        final double maxHeight = MediaQuery.of(context).size.height * 0.7;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: ListView.separated(
+              itemCount: providers.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext itemContext, int index) {
+                final AIProvider provider = providers[index];
+                final bool selected =
+                    (provider.id ?? -1) == activeId && activeId != -1;
+                return ListTile(
+                  leading: SvgPicture.asset(
+                    ModelIconUtils.getProviderIconPath(provider.type),
+                    width: 20,
+                    height: 20,
+                  ),
+                  title: Text(provider.name),
+                  subtitle: (provider.baseUrl != null &&
+                          provider.baseUrl!.trim().isNotEmpty)
+                      ? Text(
+                          provider.baseUrl!.trim(),
+                          style: Theme.of(itemContext).textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : null,
+                  trailing: selected
+                      ? Icon(
+                          Icons.check_circle,
+                          color: Theme.of(itemContext).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: provider.id == null
+                      ? null
+                      : () async {
+                          String nextModel = (_memoryModel ?? '').trim();
+                          final List<String> available = provider.models;
+                          if (nextModel.isEmpty ||
+                              (available.isNotEmpty &&
+                                  !available.contains(nextModel))) {
+                            String fallback =
+                                ((provider.extra['active_model'] as String?) ??
+                                        provider.defaultModel)
+                                    .toString()
+                                    .trim();
+                            if (fallback.isEmpty && available.isNotEmpty) {
+                              fallback = available.first;
+                            }
+                            nextModel = fallback;
+                          }
+                          await _settings.setAIContextSelection(
+                            context: 'memory',
+                            providerId: provider.id!,
+                            model: nextModel.trim(),
+                          );
+                          if (!mounted) return;
+                          setState(() {
+                            _memoryProvider = provider;
+                            _memoryModel = nextModel;
+                          });
+                          await _service.setExtractionContext(
+                            provider: provider,
+                            model: nextModel,
+                          );
+                          Navigator.of(sheetContext).pop();
+                          UINotifier.success(
+                            context,
+                            t.providerSelectedToast(provider.name),
+                          );
+                        },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showMemoryModelSheet() async {
+    final AppLocalizations t = AppLocalizations.of(context);
+    final AIProvider? provider = _memoryProvider;
+    if (provider == null || provider.id == null) {
+      UINotifier.info(context, t.pleaseSelectProviderFirst);
+      return;
+    }
+    final List<String> models = provider.models;
+    if (models.isEmpty) {
+      UINotifier.info(context, t.noModelsForProviderHint);
+      return;
+    }
+    final String active = (_memoryModel ?? '').trim();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        final double maxHeight = MediaQuery.of(context).size.height * 0.7;
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: ListView.separated(
+              itemCount: models.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext itemContext, int index) {
+                final String model = models[index];
+                final bool selected = model == active;
+                return ListTile(
+                  leading: SvgPicture.asset(
+                    ModelIconUtils.getIconPath(model),
+                    width: 20,
+                    height: 20,
+                  ),
+                  title: Text(model),
+                  trailing: selected
+                      ? Icon(
+                          Icons.check_circle,
+                          color: Theme.of(itemContext).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () async {
+                    await _settings.setAIContextSelection(
+                      context: 'memory',
+                      providerId: provider.id!,
+                      model: model,
+                    );
+                    if (!mounted) return;
+                    setState(() => _memoryModel = model);
+                    await _service.setExtractionContext(
+                      provider: provider,
+                      model: model,
+                    );
+                    Navigator.of(sheetContext).pop();
+                    UINotifier.success(
+                      context,
+                      t.modelSwitchedToast(model),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _ctxChangedSub?.cancel();
     _snapshotSub?.cancel();
     _progressSub?.cancel();
     _tagUpdateSub?.cancel();
@@ -493,7 +844,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.memoryCenterTitle),
+        centerTitle: true,
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
+        title: _buildMemoryAppBarTitle(context),
         actions: [
           IconButton(
             tooltip: t.memoryTagsEntranceTooltip,
