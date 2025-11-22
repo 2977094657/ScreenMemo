@@ -1293,6 +1293,7 @@
   "fetchModelsFailedHint": "获取模型失败，可手动添加。",
 
   "useResponseApiLabel": "使用 Response API（仅OpenAI官方支持，第三方服务建议关闭）",
+  "modelsPathOptionalLabel": "Models Path（可选）",
   "chatPathOptionalLabel": "Chat Path（可选）",
   "azureApiVersionLabel": "Azure API Version",
   "azureApiVersionHint": "如 2024-02-15",

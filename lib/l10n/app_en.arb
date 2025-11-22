@@ -1054,6 +1054,7 @@
   "fetchModelsFailedHint": "Fetch models failed. You may add manually.",
 
   "useResponseApiLabel": "Use Response API (only official OpenAI supports; third-party services are not recommended)",
+  "modelsPathOptionalLabel": "Models Path (optional)",
   "chatPathOptionalLabel": "Chat Path (optional)",
   "azureApiVersionLabel": "Azure API Version",
   "azureApiVersionHint": "e.g. 2024-02-15",

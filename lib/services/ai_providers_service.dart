@@ -8,6 +8,39 @@ import 'package:http/http.dart' as http;
 import 'screenshot_database.dart';
 import 'flutter_logger.dart';
 
+String defaultModelsPathForType(String type) {
+  final normalized = type.trim().toLowerCase();
+  switch (normalized) {
+    case AIProviderTypes.openai:
+    case AIProviderTypes.custom:
+    case AIProviderTypes.claude:
+      return '/v1/models';
+    case AIProviderTypes.gemini:
+      return '/v1beta/models';
+    default:
+      return '';
+  }
+}
+
+String? _normalizeModelsPathOrNull(String? value) {
+  if (value == null) return null;
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) return trimmed;
+  return '/$trimmed';
+}
+
+String? _normalizeModelsPathForStorage(String? value) {
+  final normalized = _normalizeModelsPathOrNull(value);
+  if (normalized != null) return normalized;
+  if (value == null) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
 /// 提供商类型定义（与 UI 下拉一致）
 class AIProviderTypes {
   static const String openai = 'openai';
@@ -32,6 +65,7 @@ class AIProvider {
   final String type; // openai | azure_openai | claude | gemini | custom
   final String? baseUrl;
   final String? chatPath;
+  final String modelsPath;
   final bool useResponseApi;
   final bool enabled;
   final bool isDefault;
@@ -45,6 +79,7 @@ class AIProvider {
     required this.type,
     required this.baseUrl,
     required this.chatPath,
+    required this.modelsPath,
     required this.useResponseApi,
     required this.enabled,
     required this.isDefault,
@@ -74,12 +109,15 @@ class AIProvider {
     } catch (_) {
       parsedExtra = <String, dynamic>{};
     }
+    final typeValue = (row['type'] as String?) ?? AIProviderTypes.openai;
+    final normalizedModelsPath = _normalizeModelsPathOrNull(row['models_path'] as String?);
     return AIProvider(
       id: row['id'] as int?,
       name: (row['name'] as String?) ?? '',
-      type: (row['type'] as String?) ?? AIProviderTypes.openai,
+      type: typeValue,
       baseUrl: row['base_url'] as String?,
       chatPath: row['chat_path'] as String?,
+      modelsPath: normalizedModelsPath ?? defaultModelsPathForType(typeValue),
       useResponseApi: ((row['use_response_api'] as int?) ?? 0) == 1,
       enabled: ((row['enabled'] as int?) ?? 1) == 1,
       isDefault: ((row['is_default'] as int?) ?? 0) == 1,
@@ -102,6 +140,7 @@ class AIProvider {
     bool? isDefault,
     List<String>? models,
     Map<String, dynamic>? extra,
+    String? modelsPath,
     int? orderIndex,
   }) {
     return AIProvider(
@@ -110,6 +149,7 @@ class AIProvider {
       type: type ?? this.type,
       baseUrl: baseUrl ?? this.baseUrl,
       chatPath: chatPath ?? this.chatPath,
+      modelsPath: modelsPath ?? this.modelsPath,
       useResponseApi: useResponseApi ?? this.useResponseApi,
       enabled: enabled ?? this.enabled,
       isDefault: isDefault ?? this.isDefault,
@@ -120,11 +160,13 @@ class AIProvider {
   }
 
   Map<String, dynamic> toDbUpdate() {
+    final normalizedModelsPath = _normalizeModelsPathForStorage(modelsPath);
     return <String, dynamic>{
       'name': name,
       'type': type,
       'base_url': baseUrl,
       'chat_path': chatPath,
+      'models_path': normalizedModelsPath,
       'use_response_api': useResponseApi ? 1 : 0,
       'enabled': enabled ? 1 : 0,
       'is_default': isDefault ? 1 : 0,
@@ -185,6 +227,7 @@ class AIProvidersService {
     required String type,
     String? baseUrl,
     String? chatPath,
+    String? modelsPath,
     bool useResponseApi = false,
     bool enabled = true,
     bool isDefault = false,
@@ -193,11 +236,13 @@ class AIProvidersService {
     String? apiKey, // 将写入安全存储
     int? orderIndex,
   }) async {
+    final normalizedModelsPath = _normalizeModelsPathForStorage(modelsPath);
     final id = await _db.insertAIProvider(
       name: name,
       type: type,
       baseUrl: _normalizeBaseUrlOrNull(baseUrl),
       chatPath: chatPath,
+      modelsPath: normalizedModelsPath,
       useResponseApi: useResponseApi,
       enabled: enabled,
       isDefault: isDefault,
@@ -222,6 +267,7 @@ class AIProvidersService {
     String? type,
     String? baseUrl,
     String? chatPath,
+    String? modelsPath,
     bool? useResponseApi,
     bool? enabled,
     bool? isDefault,
@@ -234,6 +280,8 @@ class AIProvidersService {
     final serializedModels = models != null ? jsonEncode(models) : null;
     final serializedExtra = extra != null ? jsonEncode(extra) : null;
     final trimmedApiKey = apiKey?.trim();
+    final normalizedModelsPath = modelsPath != null ? _normalizeModelsPathForStorage(modelsPath) : null;
+    final bool shouldUpdateModelsPath = modelsPath != null;
 
     bool updated = await _db.updateAIProvider(
       id: id,
@@ -241,6 +289,8 @@ class AIProvidersService {
       type: type,
       baseUrl: normalizedBase,
       chatPath: chatPath,
+      modelsPath: normalizedModelsPath,
+      setModelsPath: shouldUpdateModelsPath,
       useResponseApi: useResponseApi,
       enabled: enabled,
       isDefault: isDefault,
@@ -279,6 +329,12 @@ class AIProvidersService {
       }
       if (chatPath == null && (exists['chat_path'] as String?) != null) {
         alreadyUpToDate = false;
+      }
+      if (modelsPath != null) {
+        final stored = _normalizeModelsPathForStorage(exists['models_path'] as String?);
+        if (stored != normalizedModelsPath) {
+          alreadyUpToDate = false;
+        }
       }
       if (useResponseApi != null) {
         final stored = ((exists['use_response_api'] as int?) ?? 0) == 1;
@@ -425,11 +481,13 @@ class AIProvidersService {
         return _fetchOpenAIModels(
           baseUrl: _baseUrlOrDefaultOpenAI(provider.baseUrl),
           apiKey: apiKey,
+          modelsPath: provider.modelsPath,
         );
       case AIProviderTypes.claude:
         return _fetchClaudeModels(
           baseUrl: _ensureBase(provider.baseUrl, 'https://api.anthropic.com'),
           apiKey: apiKey,
+          modelsPath: provider.modelsPath,
         );
       case AIProviderTypes.gemini:
         return _fetchGeminiModels(
@@ -448,6 +506,7 @@ class AIProvidersService {
         return _fetchOpenAIModels(
           baseUrl: _baseUrlOrDefaultOpenAI(provider.baseUrl),
           apiKey: apiKey,
+          modelsPath: provider.modelsPath,
         );
     }
   }
@@ -457,8 +516,13 @@ class AIProvidersService {
   Future<List<String>> _fetchOpenAIModels({
     required String baseUrl,
     required String apiKey,
+    String? modelsPath,
   }) async {
-    final uri = Uri.parse('$baseUrl/v1/models');
+    final uri = _resolveModelsUri(
+      baseUrl: baseUrl,
+      modelsPath: modelsPath,
+      fallbackPath: '/v1/models',
+    );
     final resp = await http.get(
       uri,
       headers: <String, String>{
@@ -474,8 +538,13 @@ class AIProvidersService {
   Future<List<String>> _fetchClaudeModels({
     required String baseUrl,
     required String apiKey,
+    String? modelsPath,
   }) async {
-    final uri = Uri.parse('$baseUrl/v1/models');
+    final uri = _resolveModelsUri(
+      baseUrl: baseUrl,
+      modelsPath: modelsPath,
+      fallbackPath: '/v1/models',
+    );
     final resp = await http.get(
       uri,
       headers: <String, String>{
@@ -574,6 +643,21 @@ class AIProvidersService {
   }
 
   // -------- 解析与工具 --------
+
+  Uri _resolveModelsUri({
+    required String baseUrl,
+    String? modelsPath,
+    required String fallbackPath,
+  }) {
+    final normalizedPath = _normalizeModelsPathOrNull(modelsPath);
+    if (normalizedPath != null &&
+        (normalizedPath.startsWith('http://') || normalizedPath.startsWith('https://'))) {
+      return Uri.parse(normalizedPath);
+    }
+    final effectivePath = normalizedPath ?? fallbackPath;
+    final normalizedBase = _normalizeBaseUrlOrNull(baseUrl) ?? baseUrl;
+    return Uri.parse('$normalizedBase$effectivePath');
+  }
 
   /// 尽量兼容地解析模型列表：
   /// - { "data": [ {"id": "..."} ] }

@@ -2111,6 +2111,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use Response API (only official OpenAI supports; third-party services are not recommended)';
 
   @override
+  String get modelsPathOptionalLabel => 'Models Path (optional)';
+
+  @override
   String get chatPathOptionalLabel => 'Chat Path (optional)';
 
   @override

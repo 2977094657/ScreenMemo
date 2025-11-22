@@ -64,7 +64,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 13,
+          version: 14,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -97,7 +97,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 13,
+          version: 14,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -124,7 +124,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 13,
+        version: 14,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -551,6 +551,11 @@ class ScreenshotDatabase {
 
     if (oldVersion < 13) {
       await _createUserSettingsTable(db);
+    }
+    if (oldVersion < 14) {
+      try {
+        await db.execute('ALTER TABLE ai_providers ADD COLUMN models_path TEXT');
+      } catch (_) {}
     }
   }
 

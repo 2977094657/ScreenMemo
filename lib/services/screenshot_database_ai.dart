@@ -53,6 +53,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         type TEXT NOT NULL,                           -- openai | gemini | claude | azure_openai | custom
         base_url TEXT,
         chat_path TEXT,
+        models_path TEXT,
         use_response_api INTEGER NOT NULL DEFAULT 0,  -- OpenAI Response API 兼容
         enabled INTEGER NOT NULL DEFAULT 1,
         is_default INTEGER NOT NULL DEFAULT 0,
@@ -462,6 +463,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     required String type,
     String? baseUrl,
     String? chatPath,
+    String? modelsPath,
     bool useResponseApi = false,
     bool enabled = true,
     bool isDefault = false,
@@ -477,6 +479,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         'type': type.trim(),
         'base_url': baseUrl?.trim(),
         'chat_path': chatPath?.trim(),
+        'models_path': modelsPath?.trim(),
         'use_response_api': useResponseApi ? 1 : 0,
         'enabled': enabled ? 1 : 0,
         'is_default': isDefault ? 1 : 0,
@@ -502,6 +505,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     String? type,
     String? baseUrl,
     String? chatPath,
+    String? modelsPath,
+    bool setModelsPath = false,
     bool? useResponseApi,
     bool? enabled,
     bool? isDefault,
@@ -517,6 +522,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       if (type != null) data['type'] = type.trim();
       if (baseUrl != null) data['base_url'] = baseUrl.trim();
       if (chatPath != null) data['chat_path'] = chatPath.trim();
+      if (setModelsPath) data['models_path'] = modelsPath?.trim();
       if (useResponseApi != null) data['use_response_api'] = useResponseApi ? 1 : 0;
       if (enabled != null) data['enabled'] = enabled ? 1 : 0;
       if (isDefault != null) data['is_default'] = isDefault ? 1 : 0;

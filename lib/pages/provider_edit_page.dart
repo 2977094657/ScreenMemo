@@ -26,6 +26,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   final _baseUrlCtrl = TextEditingController();
   final _apiKeyCtrl = TextEditingController();
   final _chatPathCtrl = TextEditingController(text: '/v1/chat/completions');
+  final _modelsPathCtrl = TextEditingController(text: defaultModelsPathForType(AIProviderTypes.openai));
   final _azureApiVerCtrl = TextEditingController(text: '2024-02-15');
   final _modelInputCtrl = TextEditingController();
 
@@ -87,6 +88,12 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         _type = p.type;
         _baseUrlCtrl.text = p.baseUrl ?? '';
         _chatPathCtrl.text = p.chatPath ?? '/v1/chat/completions';
+        final path = p.modelsPath.trim();
+        if (path.isEmpty) {
+          _modelsPathCtrl.text = defaultModelsPathForType(_type);
+        } else {
+          _modelsPathCtrl.text = path;
+        }
         _useResponseApi = p.useResponseApi;
         _models = List<String>.from(p.models);
         _apiKeyCtrl.text = apiKey ?? '';
@@ -115,6 +122,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     _baseUrlCtrl.dispose();
     _apiKeyCtrl.dispose();
     _chatPathCtrl.dispose();
+    _modelsPathCtrl.dispose();
     _azureApiVerCtrl.dispose();
     _modelInputCtrl.dispose();
     super.dispose();
@@ -152,6 +160,12 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         _baseUrlCtrl.text = baseDefault ?? '';
       }
     }
+    final defaultModelsPath = defaultModelsPathForType(t);
+    if (defaultModelsPath.isEmpty) {
+      _modelsPathCtrl.clear();
+    } else {
+      _modelsPathCtrl.text = defaultModelsPath;
+    }
     if (t == AIProviderTypes.openai || t == AIProviderTypes.custom) {
       _chatPathCtrl.text = _chatPathCtrl.text.isEmpty ? '/v1/chat/completions' : _chatPathCtrl.text;
     }
@@ -173,6 +187,26 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       default:
         return t;
     }
+  }
+
+  bool get _supportsModelsPath {
+    return _type == AIProviderTypes.openai ||
+        _type == AIProviderTypes.custom ||
+        _type == AIProviderTypes.claude;
+  }
+
+  String _modelsPathHint() {
+    final def = defaultModelsPathForType(_type);
+    if (def.isNotEmpty) return def;
+    return '/v1/models';
+  }
+
+  String _effectiveModelsPath() {
+    if (!_supportsModelsPath) return '';
+    final raw = _modelsPathCtrl.text.trim();
+    if (raw.isNotEmpty) return raw;
+    final def = defaultModelsPathForType(_type);
+    return def.isNotEmpty ? def : '/v1/models';
   }
 
   String _baseUrlHint() {
@@ -217,6 +251,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         type: _type,
         baseUrl: base.isEmpty ? null : base,
         chatPath: _chatPathCtrl.text.trim().isEmpty ? null : _chatPathCtrl.text.trim(),
+        modelsPath: _effectiveModelsPath(),
         useResponseApi: _useResponseApi,
         enabled: true,
         isDefault: false,
@@ -257,6 +292,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     String base = _baseUrlCtrl.text.trim();
     final apiKey = _apiKeyCtrl.text.trim();
     final chatPath = _chatPathCtrl.text.trim().isEmpty ? null : _chatPathCtrl.text.trim();
+    final modelsPathValue = _supportsModelsPath ? _effectiveModelsPath() : null;
 
     if (name.isEmpty) {
       UINotifier.error(context, AppLocalizations.of(context).nameRequiredError);
@@ -300,6 +336,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           type: _type,
           baseUrl: base,
           chatPath: chatPath,
+          modelsPath: modelsPathValue,
           useResponseApi: _useResponseApi,
           enabled: true,
           isDefault: false,
@@ -317,6 +354,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           type: _type,
           baseUrl: base,
           chatPath: chatPath,
+          modelsPath: modelsPathValue,
           useResponseApi: _useResponseApi,
           enabled: true,
           isDefault: false,
@@ -418,6 +456,14 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                             hint: AppLocalizations.of(context).apiKeyHint,
                             obscure: true,
                           ),
+                          if (_supportsModelsPath) ...[
+                            const SizedBox(height: AppTheme.spacing3),
+                            _buildTextInput(
+                              label: AppLocalizations.of(context).modelsPathOptionalLabel,
+                              controller: _modelsPathCtrl,
+                              hint: _modelsPathHint(),
+                            ),
+                          ],
                           if (_type == AIProviderTypes.openai || _type == AIProviderTypes.custom) ...[
                             const SizedBox(height: AppTheme.spacing3),
                             _buildTextInput(
@@ -657,7 +703,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             ),
           ),
           onChanged: (v) {
-            if (controller == _baseUrlCtrl || controller == _apiKeyCtrl) {
+            if (controller == _baseUrlCtrl || controller == _apiKeyCtrl || controller == _modelsPathCtrl) {
               setState(() {
                 _models = <String>[];
               });

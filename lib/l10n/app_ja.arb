@@ -1128,6 +1128,7 @@
   },
   "fetchModelsFailedHint": "モデルの取得に失敗しました。手動で追加できます。",
   "useResponseApiLabel": "Response API を使用（公式 OpenAI のみ対応。サードパーティは推奨されません）",
+  "modelsPathOptionalLabel": "モデルパス（任意）",
   "chatPathOptionalLabel": "チャットパス（任意）",
   "azureApiVersionLabel": "Azure API バージョン",
   "azureApiVersionHint": "例：2024-02-15",
