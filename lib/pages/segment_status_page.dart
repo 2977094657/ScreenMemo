@@ -68,6 +68,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   bool _isLoadingMoreDays = false;
   bool _noMoreOlderSegments = false;
 
+  int _countDistinctDays(List<Map<String, dynamic>> segments) {
+    final Set<String> keys = <String>{};
+    for (final Map<String, dynamic> seg in segments) {
+      final int ms = (seg['start_time'] as int?) ?? 0;
+      if (ms <= 0) continue;
+      keys.add(_dateKeyFromMillis(ms));
+    }
+    return keys.length;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -449,7 +459,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         _active = active;
         _segments = segments;
         // 每次刷新都重置日期窗口，仅展示最近两周的日期 Tab
-        _maxVisibleDayTabs = _initialDayTabs;
+        final int totalDays = _countDistinctDays(segments);
+        _maxVisibleDayTabs = math.min(_initialDayTabs, totalDays);
         _noMoreOlderSegments = false;
       });
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
@@ -481,7 +492,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       if (oldestMs == null || v < oldestMs) oldestMs = v;
     }
     if (oldestMs == null || oldestMs <= 0) {
-      _noMoreOlderSegments = true;
+      if (!_noMoreOlderSegments) {
+        setState(() => _noMoreOlderSegments = true);
+      }
       return;
     }
 
@@ -508,7 +521,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         endMillis: endMs,
       );
       if (more.isEmpty) {
-        _noMoreOlderSegments = true;
+        if (!_noMoreOlderSegments) {
+          setState(() => _noMoreOlderSegments = true);
+        }
         return;
       }
 
@@ -530,18 +545,22 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           final int tb = (b['start_time'] as int?) ?? 0;
           return tb.compareTo(ta); // 按时间倒序
         });
+      final int mergedTotalDays = _countDistinctDays(merged);
 
       setState(() {
         _segments = merged;
         // 向前扩展一个批次的日期窗口
-        _maxVisibleDayTabs += _appendDayTabs;
+        _maxVisibleDayTabs = math.min(
+          mergedTotalDays,
+          _maxVisibleDayTabs + _appendDayTabs,
+        );
       });
     } finally {
       _isLoadingMoreDays = false;
     }
   }
 
-  /// 当用户滑动日期 Tab 到“当前最后一个可见日期”时触发
+  /// 处理“加载更多日期”动作：
   /// - 若当前 segments 中仍有更多日期尚未展示，则只增加可见天数
   /// - 若已经展示了所有已加载日期，尝试从数据库再加载更早一批
   Future<void> _handleLastDayTabReached() async {
@@ -949,6 +968,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           onRefreshRequested: _refresh,
           privacyMode: _privacyMode,
           maxVisibleDayTabs: _maxVisibleDayTabs,
+          isLoadingMoreDays: _isLoadingMoreDays,
+          noMoreOlderSegments: _noMoreOlderSegments,
           onLastDayTabReached: _handleLastDayTabReached,
         ),
       ),
@@ -980,6 +1001,8 @@ class _SegmentTimelineTabView extends StatefulWidget {
   final Future<void> Function() onRefreshRequested;
   final bool privacyMode;
   final int maxVisibleDayTabs;
+  final bool isLoadingMoreDays;
+  final bool noMoreOlderSegments;
   final Future<void> Function()? onLastDayTabReached;
 
   const _SegmentTimelineTabView({
@@ -996,6 +1019,8 @@ class _SegmentTimelineTabView extends StatefulWidget {
     required this.onRefreshRequested,
     required this.privacyMode,
     required this.maxVisibleDayTabs,
+    required this.isLoadingMoreDays,
+    required this.noMoreOlderSegments,
     this.onLastDayTabReached,
   });
 
@@ -1009,21 +1034,8 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
 
   @override
   void dispose() {
-    _tabController?.removeListener(_handleTabChanged);
     _tabController?.dispose();
     super.dispose();
-  }
-
-  void _handleTabChanged() {
-    final TabController? ctrl = _tabController;
-    if (ctrl == null || !mounted) return;
-    // 仅在动画结束后处理，避免在拖动过程中重复触发
-    if (ctrl.indexIsChanging) return;
-    if (ctrl.length <= 0) return;
-    if (ctrl.index == ctrl.length - 1) {
-      // 已经滑动到当前最后一个日期 Tab，通知外层尝试加载更多
-      widget.onLastDayTabReached?.call();
-    }
   }
 
   @override
@@ -1105,7 +1117,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     // 根据当前可见日期数量维护 TabController，尽量保留用户当前选中的索引
     if (_tabController == null || _tabController!.length != ordered.length) {
       final int currentIndex = _tabController?.index ?? 0;
-      _tabController?.removeListener(_handleTabChanged);
       _tabController?.dispose();
 
       final int initialIndex = ordered.isEmpty
@@ -1116,7 +1127,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
         vsync: this,
         initialIndex: initialIndex,
       );
-      _tabController!.addListener(_handleTabChanged);
     }
 
     return Column(
@@ -1128,7 +1138,13 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                 : AppTheme.foreground;
             final Color unselectedColor =
                 Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-            final bool hasMoreTabs = widget.maxVisibleDayTabs < orderedAll.length;
+            final bool hasHiddenTabs = widget.maxVisibleDayTabs < orderedAll.length;
+            final bool canLoadMoreFromDb = !widget.onlyNoSummary &&
+                widget.onLastDayTabReached != null &&
+                !widget.noMoreOlderSegments;
+            final bool showLoadMoreButton = widget.onLastDayTabReached != null &&
+                (hasHiddenTabs || canLoadMoreFromDb);
+            final bool isLoadingMore = widget.isLoadingMoreDays;
             return SizedBox(
               height: 32,
               child: Transform.translate(
@@ -1200,7 +1216,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                         ],
                       ),
                     ),
-                    if (hasMoreTabs)
+                    if (showLoadMoreButton)
                       Padding(
                         padding: const EdgeInsets.only(left: AppTheme.spacing2),
                         child: TextButton.icon(
@@ -1208,12 +1224,18 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                             padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
                             visualDensity: VisualDensity.compact,
                           ),
-                          onPressed: widget.onLastDayTabReached == null
+                          onPressed: (widget.onLastDayTabReached == null || isLoadingMore)
                               ? null
                               : () {
                                   widget.onLastDayTabReached!.call();
                                 },
-                          icon: const Icon(Icons.more_horiz, size: 18),
+                          icon: isLoadingMore
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.more_horiz, size: 18),
                           label: Text(AppLocalizations.of(context).memoryLoadMore),
                         ),
                       ),
