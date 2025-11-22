@@ -821,37 +821,44 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             return;
           }
 
-          _morningGenerationRunning = true;
-          unawaited(_dailySummaryService.generateMorningInsights(_todayKey).then((value) {
+          setState(() {
+            _morningGenerationRunning = true;
+            _morningInsights = null;
+            _morningTipIndex = -1;
+            _currentMorningTip = null;
+            _clearMorningDeck();
+          });
+          MorningInsights? generated;
+          try {
+            generated = await _dailySummaryService.generateMorningInsights(_todayKey);
             if (!mounted) return;
-            _morningGenerationRunning = false;
-            if (value == null || value.tips.isEmpty) {
+            if (generated == null || generated.tips.isEmpty) {
               setState(() {
                 _morningInsights = null;
                 _morningTipIndex = -1;
                 _currentMorningTip = null;
                 _clearMorningDeck();
               });
-              return;
+            } else {
+              _applyMorningInsights(generated);
             }
-            _applyMorningInsights(value);
-          }).catchError((_) {
+          } catch (_) {
             if (!mounted) return;
-            _morningGenerationRunning = false;
             setState(() {
               _morningInsights = null;
               _morningTipIndex = -1;
               _currentMorningTip = null;
               _clearMorningDeck();
             });
-          }));
-
-          setState(() {
-            _morningInsights = null;
-            _morningTipIndex = -1;
-            _currentMorningTip = null;
-            _clearMorningDeck();
-          });
+          } finally {
+            if (mounted) {
+              setState(() {
+                _morningGenerationRunning = false;
+              });
+            } else {
+              _morningGenerationRunning = false;
+            }
+          }
           return;
         }
       }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/daily_summary_service.dart';
 import '../services/screenshot_database.dart';
+import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
 
 class DailySummaryPage extends StatefulWidget {
@@ -25,47 +27,39 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   Map<String, dynamic>? _sj; // parsed structured_json of daily
   MorningInsights? _morningInsights;
   bool _morningLoading = false;
+  StreamSubscription<AIStreamEvent>? _streamSub;
+  bool _streaming = false;
+  String _streamingText = '';
 
   @override
   void initState() {
     super.initState();
     _load(initial: true);
-    if (_shouldRenderMorningInsights && _isToday) {
+    if (_shouldRenderMorningInsights) {
       _refreshMorningInsights();
     }
   }
 
+  @override
+  void dispose() {
+    _streamSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _load({bool initial = false}) async {
+    bool startStreaming = false;
     setState(() => _loading = true);
     try {
-      Map<String, dynamic>? daily = await _db.getDailySummary(widget.dateKey);
+      final Map<String, dynamic>? daily =
+          await _db.getDailySummary(widget.dateKey);
       Map<String, dynamic>? sj;
       if (daily != null) {
-        final raw = (daily['structured_json'] as String?) ?? '';
+        final String raw = (daily['structured_json'] as String?) ?? '';
         if (raw.isNotEmpty) {
           try {
-            final j = jsonDecode(raw);
+            final dynamic j = jsonDecode(raw);
             if (j is Map<String, dynamic>) sj = j;
           } catch (_) {}
-        }
-      }
-
-      // 若为首次进入且当前无记录，则自动触发一次生成，避免用户长时间等待无内容
-      if (initial && daily == null) {
-        try {
-          await _svc.generateForDate(widget.dateKey);
-        } catch (_) {}
-        // 生成完成后重新读取
-        daily = await _db.getDailySummary(widget.dateKey);
-        sj = null;
-        if (daily != null) {
-          final raw2 = (daily['structured_json'] as String?) ?? '';
-          if (raw2.isNotEmpty) {
-            try {
-              final j2 = jsonDecode(raw2);
-              if (j2 is Map<String, dynamic>) sj = j2;
-            } catch (_) {}
-          }
         }
       }
 
@@ -74,28 +68,102 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         _daily = daily;
         _sj = sj;
       });
+      startStreaming = initial && daily == null && !_streaming;
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      if (!startStreaming) {
+        setState(() => _loading = false);
+      }
+    }
+    if (startStreaming) {
+      await _startStreaming(showSuccessSnack: false);
     }
   }
 
   Future<void> _generate({bool force = true}) async {
-    if (_loading) return;
-    setState(() => _loading = true);
+    if (_loading || _streaming) return;
+    await _startStreaming(showSuccessSnack: true);
+  }
+
+  Future<void> _startStreaming({bool showSuccessSnack = true}) async {
+    await _streamSub?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _streaming = true;
+      _streamingText = '';
+      _daily = null;
+      _sj = null;
+      _loading = false;
+    });
+
+    bool hadError = false;
     try {
-      await _svc.generateForDate(widget.dateKey);
-      await _load();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+      final AIStreamingSession? session =
+          await _svc.streamGenerateForDate(widget.dateKey);
+      if (session == null) {
+        await _load(initial: false);
+        if (showSuccessSnack && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context).generateSuccess),
+            ),
+          );
+        }
+        return;
+      }
+
+      _streamSub = session.stream.listen(
+        (AIStreamEvent event) {
+          if (!mounted) return;
+          if (event.kind == 'content' && event.data.isNotEmpty) {
+            setState(() {
+              _streamingText += event.data;
+            });
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          hadError = true;
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                AppLocalizations.of(context).generateFailed,
+              ),
+            ),
+          );
+        },
       );
+
+      await session.completed;
+      if (hadError) return;
+
+      await _load(initial: false);
+      if (showSuccessSnack && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).generateSuccess),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).generateFailed)),
-      );
+      if (!hadError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).generateFailed),
+          ),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      await _streamSub?.cancel();
+      _streamSub = null;
+      if (mounted) {
+        setState(() {
+          _streaming = false;
+          _streamingText = '';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -109,22 +177,19 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   bool get _shouldRenderMorningInsights => false;
 
   Future<void> _refreshMorningInsights({bool regenerate = false}) async {
-    if (!_shouldRenderMorningInsights || !_isToday) return;
+    if (!_shouldRenderMorningInsights) return;
     setState(() => _morningLoading = true);
     try {
       final MorningInsights? insights = regenerate
           ? await _svc.generateMorningInsights(widget.dateKey)
           : await _svc.loadMorningInsights(widget.dateKey);
       if (!mounted) return;
-      final bool success = insights != null && insights.tips.isNotEmpty;
-      if (success) {
+      if (insights != null || !regenerate) {
         setState(() => _morningInsights = insights);
-      } else if (!regenerate) {
-        setState(() => _morningInsights = null);
       }
       if (regenerate) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(success ? '晨间提示已更新' : '晨间提示生成失败')),
+          SnackBar(content: Text(insights != null ? '晨间提示已更新' : '晨间提示生成失败')),
         );
       }
     } catch (_) {
@@ -140,12 +205,16 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   }
 
   Widget _buildMorningInsightsSection() {
-    if (!_isToday) return const SizedBox.shrink();
+    if (!_shouldRenderMorningInsights) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final MorningInsights? insights = _morningInsights;
+    final bool allowRegenerate = _isToday;
+    final String raw = insights?.rawResponse?.trim() ?? '';
+    final bool hasRaw = raw.isNotEmpty;
+    final bool hasParsedTips = insights?.tips.isNotEmpty ?? false;
 
-    if (_morningLoading && (insights == null || insights.tips.isEmpty)) {
+    if (_morningLoading && insights == null) {
       return Container(
         margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
         padding: const EdgeInsets.symmetric(
@@ -175,7 +244,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       );
     }
 
-    if (insights == null || insights.tips.isEmpty) {
+    if (insights == null) {
       return Container(
         margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
         padding: const EdgeInsets.all(AppTheme.spacing4),
@@ -201,9 +270,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             Align(
               alignment: Alignment.centerLeft,
               child: FilledButton.icon(
-                onPressed: _morningLoading
-                    ? null
-                    : () => _refreshMorningInsights(regenerate: true),
+                onPressed: (!_morningLoading && allowRegenerate)
+                    ? () => _refreshMorningInsights(regenerate: true)
+                    : null,
                 icon: const Icon(Icons.refresh_outlined, size: 18),
                 label: Text(l10n.actionRegenerate),
               ),
@@ -215,19 +284,21 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
     final tips = insights.tips;
     final List<Widget> tipWidgets = <Widget>[];
-    for (int i = 0; i < tips.length; i++) {
-      tipWidgets.add(_buildMorningEntryItem(
-        theme: theme,
-        tip: tips[i],
-        index: i,
-      ));
-      if (i != tips.length - 1) {
-        tipWidgets.add(const SizedBox(height: AppTheme.spacing3));
-        tipWidgets.add(Divider(
-          height: AppTheme.spacing4,
-          color: theme.dividerColor.withOpacity(0.4),
+    if (hasParsedTips) {
+      for (int i = 0; i < tips.length; i++) {
+        tipWidgets.add(_buildMorningEntryItem(
+          theme: theme,
+          tip: tips[i],
+          index: i,
         ));
-        tipWidgets.add(const SizedBox(height: AppTheme.spacing2));
+        if (i != tips.length - 1) {
+          tipWidgets.add(const SizedBox(height: AppTheme.spacing3));
+          tipWidgets.add(Divider(
+            height: AppTheme.spacing4,
+            color: theme.dividerColor.withOpacity(0.4),
+          ));
+          tipWidgets.add(const SizedBox(height: AppTheme.spacing2));
+        }
       }
     }
 
@@ -254,7 +325,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           Row(
             children: [
               Text(
-                '${l10n.homeMorningTipsTitle} · ${tips.length}',
+                hasParsedTips
+                    ? '${l10n.homeMorningTipsTitle} · ${tips.length}'
+                    : l10n.homeMorningTipsTitle,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -262,13 +335,21 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               const Spacer(),
               IconButton(
                 tooltip: l10n.actionRegenerate,
-                onPressed: _morningLoading
-                    ? null
-                    : () => _refreshMorningInsights(regenerate: true),
+                onPressed: (!_morningLoading && allowRegenerate)
+                    ? () => _refreshMorningInsights(regenerate: true)
+                    : null,
                 icon: const Icon(Icons.refresh_outlined),
               ),
             ],
           ),
+          if (hasRaw)
+            Padding(
+              padding: const EdgeInsets.only(
+                top: AppTheme.spacing3,
+                bottom: AppTheme.spacing3,
+              ),
+              child: _buildMorningRawBlock(theme: theme, raw: raw),
+            ),
           if (_morningLoading)
             Padding(
               padding: const EdgeInsets.only(bottom: AppTheme.spacing3),
@@ -287,8 +368,79 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                 ],
               ),
             ),
+          if (hasParsedTips) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            ...tipWidgets,
+          ] else ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              l10n.homeMorningTipsEmpty,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMorningRawBlock({required ThemeData theme, required String raw}) {
+    final cs = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surfaceVariant.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: cs.surfaceVariant.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${l10n.homeMorningTipsTitle} RAW',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: raw));
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(l10n.articleCopySuccess)),
+                  );
+                },
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: Text(l10n.actionCopy),
+              ),
+            ],
+          ),
           const SizedBox(height: AppTheme.spacing2),
-          ...tipWidgets,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SelectableText(
+                    raw,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      height: 1.3,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -452,7 +604,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           IconButton(
             tooltip: AppLocalizations.of(context).actionCopy,
             icon: const Icon(Icons.copy_all_outlined),
-            onPressed: _loading
+            onPressed: (_loading || _streaming)
                 ? null
                 : () async {
                     final text = _extractDailySummaryText().trim();
@@ -468,16 +620,18 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             tooltip: _daily == null
                 ? AppLocalizations.of(context).actionGenerate
                 : AppLocalizations.of(context).actionRegenerate,
-            icon: _loading
+            icon: (_loading || _streaming)
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.refresh_outlined),
-            onPressed: _loading ? null : () => _generate(force: true),
+            onPressed: (_loading || _streaming) ? null : () => _generate(force: true),
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-          : LayoutBuilder(
+      body: _streaming
+          ? _buildStreamingView()
+          : _loading
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              : LayoutBuilder(
               builder: (context, constraints) {
                 final double minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
                 return SingleChildScrollView(
@@ -520,6 +674,77 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                 );
               },
             ),
+    );
+  }
+
+  Widget _buildStreamingView() {
+    final theme = Theme.of(context);
+    final String normalized = _fixMarkdownLayout(_streamingText);
+    final bool hasContent = normalized.trim().isNotEmpty;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double minHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
+        return SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+                vertical: AppTheme.spacing3,
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    Text(
+                      '正在生成每日总结…',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: AppTheme.spacing3),
+                    if (hasContent)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: MarkdownBody(
+                          data: normalized,
+                          softLineBreak: true,
+                          styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                            p: theme.textTheme.bodyMedium,
+                          ),
+                          onTapLink: (text, href, title) async {
+                            if (href == null) return;
+                            final uri = Uri.tryParse(href);
+                            if (uri != null) {
+                              try {
+                                await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
+                              } catch (_) {}
+                            }
+                          },
+                        ),
+                      )
+                    else
+                      Text(
+                        '模型正在思考，请稍候…',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

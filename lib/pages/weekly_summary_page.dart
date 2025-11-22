@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -8,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/weekly_summary_service.dart';
+import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
 
 class WeeklySummaryPage extends StatefulWidget {
@@ -28,11 +30,21 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
   String? _selectedWeek;
   bool _listLoading = false;
   bool _detailLoading = false;
+  StreamSubscription<AIStreamEvent>? _streamSub;
+  bool _streaming = false;
+  String _streamingText = '';
+  String? _streamingWeekStart;
 
   @override
   void initState() {
     super.initState();
     _loadWeeks(initialSelected: widget.weekStart);
+  }
+
+  @override
+  void dispose() {
+    _streamSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadWeeks({String? initialSelected}) async {
@@ -94,20 +106,94 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
 
   Future<void> _onRegenerate() async {
     final String? weekStart = _selectedWeek;
-    if (weekStart == null || weekStart.isEmpty) return;
-    setState(() => _detailLoading = true);
+    if (weekStart == null || weekStart.isEmpty || _streaming) return;
+    await _startStreaming(
+      weekStart,
+      force: true,
+      showSuccessSnack: true,
+    );
+  }
+
+  Future<void> _startStreaming(
+    String weekStart, {
+    bool force = false,
+    bool showSuccessSnack = true,
+  }) async {
+    await _streamSub?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _streaming = true;
+      _streamingText = '';
+      _streamingWeekStart = weekStart;
+      _detailLoading = false;
+    });
+
+    bool hadError = false;
     try {
-      await _service.generateForWeekStart(weekStart, force: true);
-      await _loadDetail(weekStart, forceReloadList: true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+      final AIStreamingSession? session =
+          await _service.streamGenerateForWeekStart(weekStart, force: force);
+      if (session == null) {
+        await _loadDetail(weekStart, forceReloadList: true);
+        if (showSuccessSnack && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context).generateSuccess),
+            ),
+          );
+        }
+        return;
+      }
+
+      _streamSub = session.stream.listen(
+        (AIStreamEvent event) {
+          if (!mounted) return;
+          if (event.kind == 'content' && event.data.isNotEmpty) {
+            setState(() {
+              _streamingText += event.data;
+            });
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          hadError = true;
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context).generateFailed),
+            ),
+          );
+        },
       );
+
+      await session.completed;
+      if (hadError) return;
+
+      await _loadDetail(weekStart, forceReloadList: true);
+      if (showSuccessSnack && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).generateSuccess),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).generateFailed)),
-      );
+      if (!hadError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).generateFailed),
+          ),
+        );
+      }
+    } finally {
+      await _streamSub?.cancel();
+      _streamSub = null;
+      if (mounted) {
+        setState(() {
+          _streaming = false;
+          _streamingText = '';
+          _streamingWeekStart = null;
+        });
+      }
     }
   }
 
@@ -174,14 +260,14 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
           IconButton(
             tooltip: l10n.actionCopy,
             icon: const Icon(Icons.copy_all_outlined),
-            onPressed: _current == null ? null : _onCopy,
+            onPressed: (_current == null || _streaming) ? null : _onCopy,
           ),
           IconButton(
             tooltip: _current == null ? l10n.actionGenerate : l10n.actionRegenerate,
-            icon: _detailLoading
+            icon: (_detailLoading || _streaming)
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.refresh_outlined),
-            onPressed: (_current == null || _detailLoading) ? null : _onRegenerate,
+            onPressed: (_current == null || _detailLoading || _streaming) ? null : _onRegenerate,
           ),
         ],
       ),
@@ -198,8 +284,10 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
                     ),
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
-                      if (_detailLoading)
+                      if (_detailLoading && !_streaming)
                         const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                      else if (_streaming && _streamingWeekStart == _selectedWeek)
+                        _buildStreamingSection(context)
                       else
                         ..._buildSummarySections(context),
                     ],
@@ -562,6 +650,65 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
     }
 
     return sections;
+  }
+
+  Widget _buildStreamingSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final String normalized = _streamingText.trim();
+    final bool hasContent = normalized.isNotEmpty;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double minHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
+        return SingleChildScrollView(
+          padding: EdgeInsets.zero,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+                vertical: AppTheme.spacing3,
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    Text(
+                      '正在生成周总结…',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: AppTheme.spacing3),
+                    if (hasContent)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: MarkdownBody(
+                          data: normalized,
+                          softLineBreak: true,
+                          styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                            p: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        '模型正在思考，请稍候…',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   String _formatRange(String start, String end) {

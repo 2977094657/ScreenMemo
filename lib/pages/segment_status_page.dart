@@ -2,28 +2,31 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../services/screenshot_database.dart';
-import '../services/ai_providers_service.dart';
-import '../services/ai_settings_service.dart';
-import '../services/flutter_logger.dart';
-import '../utils/model_icon_utils.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
-import '../services/app_selection_service.dart';
+import 'package:screen_memo/l10n/app_localizations.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
+import '../services/ai_chat_service.dart';
+import '../services/ai_providers_service.dart';
+import '../services/ai_settings_service.dart';
+import '../services/app_selection_service.dart';
+import '../services/flutter_logger.dart';
+import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import '../utils/model_icon_utils.dart';
+import '../widgets/screenshot_image_widget.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
-import 'package:screen_memo/l10n/app_localizations.dart';
-import '../widgets/screenshot_image_widget.dart';
 
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
@@ -1341,6 +1344,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   static const double _tagGridMainAxisExtent = 32;
   static const double _tagGridMainAxisSpacing = 6;
   static const double _tagGridCrossAxisSpacing = 6;
+  static const String _summaryGeneratingPlaceholder = '模型正在思考，请稍候…';
 
   bool _expanded = false;
   // 懒加载样本的本地状态，避免每项滚动时触发异步查询导致跳动
@@ -1353,9 +1357,12 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   bool _retrying = false;
   // 结果轮询器：点击“重新生成”后，直到拿到结果为止持续旋转提示
   Timer? _resultWatchTimer;
+  Timer? _summaryStreamTimer;
   Map<String, dynamic> _segmentData = <String, dynamic>{};
   Map<String, dynamic> _latestExternalSegment = <String, dynamic>{};
   int? _lastResultCreatedAt;
+  bool _summaryStreaming = false;
+  String _summaryStreamingText = '';
 
   @override
   void initState() {
@@ -1377,6 +1384,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   @override
   void dispose() {
     _resultWatchTimer?.cancel();
+    _summaryStreamTimer?.cancel();
     super.dispose();
   }
 
@@ -1416,7 +1424,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final Map<String, dynamic>? structured = _tryParseJson(_segmentData['structured_json'] as String?);
     final String? keyAction = _extractKeyActionDetail(structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
-    final String summary = _extractOverallSummary(resultMeta, structured);
+    final String computedSummary = _extractOverallSummary(resultMeta, structured);
+    final String summary = _summaryStreaming
+        ? (_summaryStreamingText.isEmpty ? _summaryGeneratingPlaceholder : _summaryStreamingText)
+        : computedSummary;
 
     // 错误检测：从 structured_json.error / output_text(JSON) / 关键字启发式 识别错误
     String? errorText;
@@ -1880,6 +1891,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       _retrying = true;
       _segmentData = cleared;
       _lastResultCreatedAt = previousCreatedAt;
+      _summaryStreaming = true;
+      _summaryStreamingText = _summaryGeneratingPlaceholder;
     });
     try {
       // 手动重试不受时间/已有结果限制：强制重跑
@@ -1897,6 +1910,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           _retrying = false;
           _segmentData = Map<String, dynamic>.from(previous);
           _lastResultCreatedAt = previousCreatedAt;
+          _summaryStreaming = false;
+          _summaryStreamingText = '';
         });
       }
     } catch (_) {
@@ -1905,6 +1920,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         _retrying = false;
         _segmentData = Map<String, dynamic>.from(previous);
         _lastResultCreatedAt = previousCreatedAt;
+        _summaryStreaming = false;
+        _summaryStreamingText = '';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.of(context).retryFailed)),
@@ -1969,21 +1986,66 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           }
           t.cancel();
           final merged = _mergeResultIntoSegment(_segmentData, res);
+          final String finalSummary = _extractOverallSummary(
+            {
+              'output_text': merged['output_text'],
+              'categories': merged['categories'],
+            },
+            _tryParseJson(merged['structured_json'] as String?),
+          );
           setState(() {
             _retrying = false;
             _segmentData = merged;
             _lastResultCreatedAt = newCreatedAt > 0 ? newCreatedAt : _lastResultCreatedAt;
+            _summaryStreaming = true;
+            _summaryStreamingText = '';
           });
           _latestExternalSegment = Map<String, dynamic>.from(merged);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
           );
+          _beginSummaryStreaming(finalSummary);
           try {
             await widget.onRefreshRequested();
           } catch (_) {}
         }
       } catch (_) {
         // 读取失败不影响轮询，继续尝试
+      }
+    });
+  }
+
+  void _beginSummaryStreaming(String target) {
+    _summaryStreamTimer?.cancel();
+    if (!mounted) return;
+    if (target.trim().isEmpty) {
+      setState(() {
+        _summaryStreaming = false;
+        _summaryStreamingText = target;
+      });
+      return;
+    }
+    setState(() {
+      _summaryStreaming = true;
+      _summaryStreamingText = '';
+    });
+    const int chunkSize = 24;
+    int idx = 0;
+    _summaryStreamTimer = Timer.periodic(const Duration(milliseconds: 35), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      idx = math.min(idx + chunkSize, target.length);
+      final String next = target.substring(0, idx);
+      setState(() {
+        _summaryStreamingText = next;
+      });
+      if (idx >= target.length) {
+        timer.cancel();
+        setState(() {
+          _summaryStreaming = false;
+        });
       }
     });
   }

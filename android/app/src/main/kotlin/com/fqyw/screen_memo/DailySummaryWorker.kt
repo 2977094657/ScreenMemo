@@ -733,7 +733,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
   输出规范（必须全部满足）：
   1. 结构要求
      - 仅输出一个 JSON 对象，键固定为 items；不要添加任何额外文字或注释。
-     - items 数组长度须为 50 条，且保持顺序完整。
+     - items 数组长度须为 20 条，且保持顺序完整。
      - 每条元素必须包含以下字段：
        {
          "title": "6-16 字中文短语，不含标点与编号，语气轻柔",
@@ -748,7 +748,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
        • 至少有一条建议突出节奏/情绪/环境的准备，其余条目结合昨日的关键线索、人物或场景，从新的角度展望今日行动，可提醒风险、捕捉机会或调节心态。
      - 严禁使用 Markdown、列表符号、编号、表情或代码围栏；输出均为纯文本。
   3. 兜底策略
-     - 当上下文极少时，仍需输出 50 条高质量、具启发性的泛化建议，依旧遵循上述结构与文风限定。
+     - 当上下文极少时，仍需输出 20 条高质量、具启发性的泛化建议，依旧遵循上述结构与文风限定。
   
   示例：{"items":[{"title":"晨光热身","summary":"用更松弛的拉伸开启身体，让昨夜的紧绷慢慢散去，心绪也慢慢沉静。","actions":["轻柔伸展 10 分钟，关注呼吸节奏","整理桌面，为今天的思路留出余白"]}]}
             """
@@ -761,7 +761,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
   Output rules (all mandatory):
   1. Structure
      - Return exactly one JSON object whose only key is items; do not add explanations or extra text.
-     - The items array must contain 50 entries, preserving order.
+     - The items array must contain 20 entries, preserving order.
      - Each entry must follow this structure:
        {
          "title": "Gentle 5–14 word headline, no punctuation or numbering",
@@ -774,7 +774,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
      - Avoid templated phrasing such as "Yesterday… today…" and do not begin every sentence with the same words. Ensure at least one entry centres on cadence/mood/environment readiness, while the others extend yesterday’s cues into today’s opportunities, watchpoints, or mindset adjustments.
      - Plain text only: no Markdown, list markers, numbering, emojis, or code fences.
   3. Fallback
-     - If context is sparse, still produce 50 meaningful entries that respect the same structure and tone requirements.
+     - If context is sparse, still produce 20 meaningful entries that respect the same structure and tone requirements.
   
   Example: {"items":[{"title":"Unhurried focus","summary":"Invite a looser morning by airing the room, softening your shoulders, and letting yesterday’s pace dissolve.","actions":["Block a 15-minute buffer before deep work to breathe in quiet","Tidy the desk to leave generous room for the day’s ideas"]}]}
             """
@@ -787,7 +787,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
   出力要件（すべて順守してください）：
   1. 構造
      - JSON オブジェクトを 1 つだけ返し、キーは items 固定。説明文や余計な文字は付けないこと。
-     - items 配列は 50 件とし、順番を崩さないこと。
+     - items 配列は 20 件とし、順番を崩さないこと。
      - 各要素は次の構造に従うこと：
        {
          "title": "やわらかなニュアンスの日本語見出し（5～12文字、句読点・番号なし）",
@@ -800,7 +800,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
      - 「昨日…今日…」「前日…本日…」といった定型句を使わず、同じ言葉で始まる文を連続させないこと。少なくとも 1 件はリズム／感情／環境づくりに触れ、他の項目は前日の手がかりや登場人物をヒントに今日の視点・機会・注意点へと広げてください。
      - すべて純テキストで出力し、Markdown・箇条書き記号・番号・絵文字・コードフェンスは禁止します。
   3. コンテキストが乏しい場合
-     - 情報がほとんどない場合でも、上記構造と文体を守った質の高い提案を 50 件生成してください。
+     - 情報がほとんどない場合でも、上記構造と文体を守った質の高い提案を 20 件生成してください。
   
   例：{"items":[{"title":"朝の余白","summary":"カーテン越しの光を吸い込みながら深呼吸し、固まった肩をそっとほぐしていきましょう。","actions":["10分間のストレッチで呼吸と体をととのえる","机の上を整えて今日のアイデアに余白を残す"]}]}
             """
@@ -813,7 +813,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
   출력 규칙(모두 준수하세요):
   1. 구조
      - JSON 객체 한 개만 반환하고, 키는 items 로 고정합니다. 추가 설명이나 다른 텍스트는 금지합니다.
-     - items 배열에는 50개의 항목이 있어야 하며, 순서를 유지해야 합니다.
+     - items 배열에는 20개의 항목이 있어야 하며, 순서를 유지해야 합니다.
      - 각 항목은 아래 구조를 따라야 합니다.
        {
          "title": "5~12자 이내의 한국어 짧은 제목, 번호/구두점 없음, 부드러운 톤",
@@ -826,7 +826,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
      - "어제… 오늘…" "전날… 금일…" 등 정형화된 문장을 사용하지 말고, 같은 단어로 시작하는 문장을 연속해서 쓰지 마세요. 최소 1개의 항목은 리듬·감정·환경 정비에 초점을 맞추고, 나머지는 전날의 단서·인물·장면을 오늘의 기회나 주의점·마음가짐으로 확장하세요.
      - 모든 출력은 순수 텍스트로 작성하며, Markdown·불릿 기호·번호·이모지·코드 블록을 사용하지 마세요.
   3. 맥락이 부족한 경우
-     - 정보가 매우 적더라도 위 구조와 문체를 지키며 50개의 의미 있는 제안을 생성해야 합니다.
+     - 정보가 매우 적더라도 위 구조와 문체를 지키며 20개의 의미 있는 제안을 생성해야 합니다.
   
   예시: {"items":[{"title":"여유로운 숨","summary":"창문을 열어 잔잔한 공기를 들이마시고 굳어 있던 어깨를 천천히 내려놓으며 오늘을 느슨하게 시작해 보세요.","actions":["10분간 스트레칭으로 호흡과 몸의 리듬을 맞추세요","책상 위를 정돈해 오늘의 아이디어가 놓일 공간을 남겨 두세요"]}]}
             """
