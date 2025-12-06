@@ -979,6 +979,8 @@
   "filterTimeYesterday": "어제",
   "filterTimeLast7Days": "지난 7일",
   "filterTimeLast30Days": "지난 30일",
+  "filterTimeCustomDays": "사용자 지정 일수",
+  "filterTimeCustomDaysHint": "1-365일 입력",
   "filterTimeCustomRange": "맞춤 범위",
   "filterAppAll": "모든 앱",
   "filterSizeAll": "모든 크기",

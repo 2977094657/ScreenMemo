@@ -1811,6 +1811,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get filterTimeLast30Days => 'Last 30 days';
 
   @override
+  String get filterTimeCustomDays => 'Custom days';
+
+  @override
+  String get filterTimeCustomDaysHint => 'Enter 1-365 days';
+
+  @override
   String get filterTimeCustomRange => 'Custom range';
 
   @override

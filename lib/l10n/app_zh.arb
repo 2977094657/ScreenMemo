@@ -1177,6 +1177,8 @@
 "filterTimeYesterday": "昨天",
 "filterTimeLast7Days": "最近7天",
 "filterTimeLast30Days": "最近30天",
+"filterTimeCustomDays": "自定义天数",
+"filterTimeCustomDaysHint": "请输入1-365的天数",
 "filterTimeCustomRange": "自定义范围",
 "filterAppAll": "全部应用",
 "filterSizeAll": "全部大小",

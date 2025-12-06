@@ -979,6 +979,8 @@
   "filterTimeYesterday": "昨日",
   "filterTimeLast7Days": "過去 7 日間",
   "filterTimeLast30Days": "過去 30 日間",
+  "filterTimeCustomDays": "カスタム日数",
+  "filterTimeCustomDaysHint": "1〜365日を入力",
   "filterTimeCustomRange": "カスタム範囲",
   "filterAppAll": "すべてのアプリ",
   "filterSizeAll": "すべてのサイズ",

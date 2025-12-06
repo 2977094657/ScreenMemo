@@ -13,6 +13,7 @@ import '../services/screenshot_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/nsfw_guard.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
 
 class SearchPage extends StatefulWidget {
@@ -39,7 +40,8 @@ class _SearchPageState extends State<SearchPage> {
   Directory? _baseDir;
   bool _privacyMode = true;
 
-  static const int _pageSize = 24; // 单次获取数量，降低内存与首屏压力
+  static const int _firstBatchSize = 6; // 首批快速返回数量
+  static const int _pageSize = 24; // 后续分页大小
   int _offset = 0;
   bool _hasMore = false;
   bool _loadingMore = false;
@@ -47,7 +49,8 @@ class _SearchPageState extends State<SearchPage> {
 
   // 筛选相关状态
   String _timeFilter =
-      'all'; // all, today, yesterday, last7days, last30days, custom
+      'last30days'; // all, today, yesterday, last7days, last30days, customDays
+  int _customDays = 30; // 自定义天数，默认30天
   String _sizeFilter = 'all'; // all, small, medium, large
   DateTime? _customStartDate;
   DateTime? _customEndDate;
@@ -180,9 +183,8 @@ class _SearchPageState extends State<SearchPage> {
 
   void _onQueryChanged(String text) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
+    _debounce = Timer(const Duration(milliseconds: 300), () {
       _search(text.trim());
-      if (mounted) setState(() {}); // 更新清除按钮显隐（虽然已禁用 actions）
     });
   }
 
@@ -215,10 +217,12 @@ class _SearchPageState extends State<SearchPage> {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      final list = await ScreenshotService.instance
+      
+      // 第一批：快速返回少量结果
+      final firstBatch = await ScreenshotService.instance
           .searchScreenshotsByOcrWithFallback(
             query,
-            limit: _pageSize,
+            limit: _firstBatchSize,
             offset: 0,
             startMillis: range?.$1,
             endMillis: range?.$2,
@@ -228,34 +232,71 @@ class _SearchPageState extends State<SearchPage> {
 
       if (!mounted || token != _searchToken) return;
 
-      final bool hasMoreData = list.length >= _pageSize;
+      // 立即显示首批结果
+      if (firstBatch.isNotEmpty) {
+        setState(() {
+          _results = firstBatch;
+          _totalResultsCount = firstBatch.length;
+          _applyFilters();
+          _isLoading = false;
+          _hasMore = firstBatch.length >= _firstBatchSize;
+        });
+      }
+      
+      sw.stop();
+      try {
+        print('[Search] first batch: ${firstBatch.length} in ${sw.elapsedMilliseconds}ms');
+      } catch (_) {}
+
+      // 如果首批不足，说明没有更多数据
+      if (firstBatch.length < _firstBatchSize) {
+        if (mounted && token == _searchToken) {
+          setState(() {
+            _isLoading = false;
+            _hasMore = false;
+          });
+        }
+        return;
+      }
+
+      // 第二批：后台加载更多结果
+      final sw2 = Stopwatch()..start();
+      final moreBatch = await ScreenshotService.instance
+          .searchScreenshotsByOcrWithFallback(
+            query,
+            limit: _pageSize - _firstBatchSize,
+            offset: _firstBatchSize,
+            startMillis: range?.$1,
+            endMillis: range?.$2,
+            minSize: size?.$1,
+            maxSize: size?.$2,
+          );
+
+      if (!mounted || token != _searchToken) return;
+
+      final allResults = [...firstBatch, ...moreBatch];
+      final bool hasMoreData = allResults.length >= _pageSize;
+      
       setState(() {
-        _results = list;
-        _totalResultsCount = list.length;
+        _results = allResults;
+        _totalResultsCount = allResults.length;
         _applyFilters();
-        _offset = list.length;
+        _offset = allResults.length;
         _hasMore = hasMoreData;
         _isLoading = false;
         _countingTotal = hasMoreData;
       });
-      sw.stop();
+      
+      sw2.stop();
       try {
-        print(
-          '[Search] query="' +
-              query +
-              '" list=' +
-              list.length.toString() +
-              ' hasMore=' +
-              hasMoreData.toString() +
-              ' ms=' +
-              sw.elapsedMilliseconds.toString(),
-        );
+        print('[Search] total: ${allResults.length} (+${sw2.elapsedMilliseconds}ms)');
       } catch (_) {}
 
       if (!hasMoreData) {
         return;
       }
 
+      // 后台统计总数
       ScreenshotService.instance
           .countScreenshotsByOcrWithFallback(
             query,
@@ -339,79 +380,11 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  // 应用筛选条件
+  // 应用筛选条件（数据库层已做时间和大小过滤，此处仅同步结果列表）
   void _applyFilters() {
-    List<ScreenshotRecord> filtered = List.from(_results);
-
-    // 时间筛选
-    if (_timeFilter != 'all') {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-
-      switch (_timeFilter) {
-        case 'today':
-          filtered = filtered
-              .where((r) => r.captureTime.isAfter(today))
-              .toList();
-          break;
-        case 'yesterday':
-          final yesterday = today.subtract(const Duration(days: 1));
-          filtered = filtered
-              .where(
-                (r) =>
-                    r.captureTime.isAfter(yesterday) &&
-                    r.captureTime.isBefore(today),
-              )
-              .toList();
-          break;
-        case 'last7days':
-          final last7 = today.subtract(const Duration(days: 7));
-          filtered = filtered
-              .where((r) => r.captureTime.isAfter(last7))
-              .toList();
-          break;
-        case 'last30days':
-          final last30 = today.subtract(const Duration(days: 30));
-          filtered = filtered
-              .where((r) => r.captureTime.isAfter(last30))
-              .toList();
-          break;
-        case 'custom':
-          if (_customStartDate != null && _customEndDate != null) {
-            filtered = filtered
-                .where(
-                  (r) =>
-                      r.captureTime.isAfter(_customStartDate!) &&
-                      r.captureTime.isBefore(
-                        _customEndDate!.add(const Duration(days: 1)),
-                      ),
-                )
-                .toList();
-          }
-          break;
-      }
-    }
-
-    // 大小筛选
-    if (_sizeFilter != 'all') {
-      switch (_sizeFilter) {
-        case 'small':
-          filtered = filtered.where((r) => r.fileSize < 100 * 1024).toList();
-          break;
-        case 'medium':
-          filtered = filtered
-              .where(
-                (r) => r.fileSize >= 100 * 1024 && r.fileSize <= 1024 * 1024,
-              )
-              .toList();
-          break;
-        case 'large':
-          filtered = filtered.where((r) => r.fileSize > 1024 * 1024).toList();
-          break;
-      }
-    }
-
-    _filteredResults = filtered;
+    // 数据库查询时已传入 startMillis/endMillis 和 minSize/maxSize，
+    // 返回的 _results 已经是过滤后的数据，无需再次过滤
+    _filteredResults = List.from(_results);
     // 清理超出范围的 itemKeys，避免内存泄漏
     _itemKeys.removeWhere((index, _) => index >= _filteredResults.length);
     // 重置可见范围，等待下一帧计算
@@ -467,6 +440,18 @@ class _SearchPageState extends State<SearchPage> {
           59,
         ).millisecondsSinceEpoch;
         break;
+      case 'customDays':
+        final lastN = today.subtract(Duration(days: _customDays));
+        s = lastN.millisecondsSinceEpoch;
+        e = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          23,
+          59,
+          59,
+        ).millisecondsSinceEpoch;
+        break;
       case 'custom':
         if (_customStartDate != null && _customEndDate != null) {
           s = DateTime(
@@ -505,12 +490,15 @@ class _SearchPageState extends State<SearchPage> {
   // 重置筛选条件
   void _resetFilters() {
     setState(() {
-      _timeFilter = 'all';
+      _timeFilter = 'last30days';
       _sizeFilter = 'all';
       _customStartDate = null;
       _customEndDate = null;
-      _applyFilters();
     });
+    // 重新执行搜索以应用重置后的筛选条件
+    if (_lastQuery.isNotEmpty) {
+      _search(_lastQuery);
+    }
   }
 
   // 显示筛选对话框
@@ -529,8 +517,11 @@ class _SearchPageState extends State<SearchPage> {
             _sizeFilter = size;
             _customStartDate = startDate;
             _customEndDate = endDate;
-            _applyFilters();
           });
+          // 重新执行搜索以应用新的筛选条件
+          if (_lastQuery.isNotEmpty) {
+            _search(_lastQuery);
+          }
         },
         onReset: _resetFilters,
       ),
@@ -573,6 +564,256 @@ class _SearchPageState extends State<SearchPage> {
         'appName': record.appName,
         'appInfo': appInfo,
       },
+    );
+  }
+
+  // 获取时间范围显示文本
+  String _getTimeRangeLabel() {
+    final l10n = AppLocalizations.of(context);
+    switch (_timeFilter) {
+      case 'all':
+        return l10n.filterTimeAll;
+      case 'today':
+        return l10n.filterTimeToday;
+      case 'yesterday':
+        return l10n.filterTimeYesterday;
+      case 'last7days':
+        return l10n.filterTimeLast7Days;
+      case 'last30days':
+        return l10n.filterTimeLast30Days;
+      case 'customDays':
+        return '${_customDays}${l10n.days}';
+      default:
+        return l10n.filterTimeLast30Days;
+    }
+  }
+
+  // 显示时间范围选择底部弹窗
+  void _showTimeRangeSheet() {
+    final l10n = AppLocalizations.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  topRight: Radius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 顶部指示器
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
+                          decoration: BoxDecoration(
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        l10n.filterByTime,
+                        style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      // 时间选项
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildTimeChip(ctx, 'all', l10n.filterTimeAll, setSheetState),
+                          _buildTimeChip(ctx, 'today', l10n.filterTimeToday, setSheetState),
+                          _buildTimeChip(ctx, 'yesterday', l10n.filterTimeYesterday, setSheetState),
+                          _buildTimeChip(ctx, 'last7days', l10n.filterTimeLast7Days, setSheetState),
+                          _buildTimeChip(ctx, 'last30days', l10n.filterTimeLast30Days, setSheetState),
+                          _buildCustomDaysChip(ctx, l10n, setSheetState),
+                        ],
+                      ),
+                      const SizedBox(height: AppTheme.spacing2),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 构建时间选项 Chip
+  Widget _buildTimeChip(BuildContext ctx, String value, String label, StateSetter setSheetState) {
+    final bool selected = _timeFilter == value;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _timeFilter = value);
+        setSheetState(() {});
+        Navigator.pop(ctx);
+        if (_lastQuery.isNotEmpty) _search(_lastQuery);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
+              : Theme.of(ctx).colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          border: selected
+              ? null
+              : Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected
+                ? Theme.of(ctx).colorScheme.primary
+                : Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 构建自定义天数 Chip
+  Widget _buildCustomDaysChip(BuildContext ctx, AppLocalizations l10n, StateSetter setSheetState) {
+    final bool selected = _timeFilter == 'customDays';
+    return GestureDetector(
+      onTap: () async {
+        Navigator.pop(ctx);
+        await _showCustomDaysDialog();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
+              : Theme.of(ctx).colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          border: selected
+              ? null
+              : Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              selected ? '${_customDays}${l10n.days}' : l10n.filterTimeCustomDays,
+              style: TextStyle(
+                fontSize: 12,
+                color: selected
+                    ? Theme.of(ctx).colorScheme.primary
+                    : Theme.of(ctx).colorScheme.onSurface,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.edit_outlined,
+              size: 12,
+              color: selected
+                  ? Theme.of(ctx).colorScheme.primary
+                  : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 显示自定义天数输入对话框（使用项目自定义弹窗）
+  Future<void> _showCustomDaysDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final controller = TextEditingController(text: _customDays.toString());
+    
+    final result = await showUIDialog<int>(
+      context: context,
+      title: l10n.filterTimeCustomDays,
+      content: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        autofocus: true,
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          hintText: l10n.filterTimeCustomDaysHint,
+          suffixText: l10n.days,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      ),
+      actions: [
+        UIDialogAction<int>(
+          text: l10n.dialogCancel,
+          style: UIDialogActionStyle.normal,
+        ),
+        UIDialogAction<int>(
+          text: l10n.dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final val = int.tryParse(controller.text.trim());
+            if (val != null && val > 0 && val <= 365) {
+              Navigator.of(ctx).pop<int>(val);
+            }
+          },
+        ),
+      ],
+    );
+    
+    if (result != null) {
+      setState(() {
+        _customDays = result;
+        _timeFilter = 'customDays';
+      });
+      if (_lastQuery.isNotEmpty) {
+        _search(_lastQuery);
+      }
+    }
+  }
+
+  // 构建时间范围按钮（嵌入搜索框内，简洁无背景）
+  Widget _buildTimeRangeDropdown() {
+    final color = Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+    return GestureDetector(
+      onTap: _showTimeRangeSheet,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _getTimeRangeLabel(),
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 16,
+              color: color,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -651,6 +892,8 @@ class _SearchPageState extends State<SearchPage> {
                           onSubmitted: (v) => _search(v.trim()),
                         ),
                       ),
+                      // 时间范围选择按钮（嵌入搜索框内）
+                      _buildTimeRangeDropdown(),
                     ],
                   ),
                 ),
@@ -1066,7 +1309,7 @@ class _FilterSheetState extends State<_FilterSheet> {
       ),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppTheme.radiusMd)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1088,53 +1331,6 @@ class _FilterSheetState extends State<_FilterSheet> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 时间筛选
-          Text(
-            l10n.filterByTime,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              _buildFilterChip(
-                l10n.filterTimeAll,
-                'all',
-                _timeFilter,
-                (v) => setState(() => _timeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterTimeToday,
-                'today',
-                _timeFilter,
-                (v) => setState(() => _timeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterTimeYesterday,
-                'yesterday',
-                _timeFilter,
-                (v) => setState(() => _timeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterTimeLast7Days,
-                'last7days',
-                _timeFilter,
-                (v) => setState(() => _timeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterTimeLast30Days,
-                'last30days',
-                _timeFilter,
-                (v) => setState(() => _timeFilter = v),
               ),
             ],
           ),

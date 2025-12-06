@@ -938,6 +938,8 @@
   "filterTimeYesterday": "Yesterday",
   "filterTimeLast7Days": "Last 7 days",
   "filterTimeLast30Days": "Last 30 days",
+  "filterTimeCustomDays": "Custom days",
+  "filterTimeCustomDaysHint": "Enter 1-365 days",
   "filterTimeCustomRange": "Custom range",
   "filterAppAll": "All apps",
   "filterSizeAll": "All sizes",

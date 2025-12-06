@@ -1771,6 +1771,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get filterTimeLast30Days => '過去 30 日間';
 
   @override
+  String get filterTimeCustomDays => 'カスタム日数';
+
+  @override
+  String get filterTimeCustomDaysHint => '1〜365日を入力';
+
+  @override
   String get filterTimeCustomRange => 'カスタム範囲';
 
   @override

@@ -1767,6 +1767,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get filterTimeLast30Days => '지난 30일';
 
   @override
+  String get filterTimeCustomDays => '사용자 지정 일수';
+
+  @override
+  String get filterTimeCustomDaysHint => '1-365일 입력';
+
+  @override
   String get filterTimeCustomRange => '맞춤 범위';
 
   @override

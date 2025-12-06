@@ -1753,6 +1753,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get filterTimeLast30Days => '最近30天';
 
   @override
+  String get filterTimeCustomDays => '自定义天数';
+
+  @override
+  String get filterTimeCustomDaysHint => '请输入1-365的天数';
+
+  @override
   String get filterTimeCustomRange => '自定义范围';
 
   @override

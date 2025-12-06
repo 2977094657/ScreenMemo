@@ -3228,6 +3228,18 @@ abstract class AppLocalizations {
   /// **'Last 30 days'**
   String get filterTimeLast30Days;
 
+  /// No description provided for @filterTimeCustomDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom days'**
+  String get filterTimeCustomDays;
+
+  /// No description provided for @filterTimeCustomDaysHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter 1-365 days'**
+  String get filterTimeCustomDaysHint;
+
   /// No description provided for @filterTimeCustomRange.
   ///
   /// In en, this message translates to:
