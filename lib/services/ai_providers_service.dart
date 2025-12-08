@@ -2,7 +2,7 @@
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'secure_storage_service.dart';
 import 'package:http/http.dart' as http;
 
 import 'screenshot_database.dart';
@@ -215,7 +215,7 @@ class AIProvidersService {
 
   Future<bool> deleteProvider(int id) async {
     try {
-      await const FlutterSecureStorage().delete(key: _apiKeyKey(id));
+      await SecureStorageService.instance.delete(_apiKeyKey(id));
     } catch (_) {}
     return _db.deleteAIProvider(id);
   }
@@ -402,7 +402,7 @@ class AIProvidersService {
   Future<void> saveApiKey(int providerId, String apiKey) async {
     await _db.setAIProviderApiKey(id: providerId, apiKey: apiKey);
     // 清理旧版安全存储
-    try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
+    try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
   }
 
   Future<String?> getApiKey(int providerId) async {
@@ -410,10 +410,10 @@ class AIProvidersService {
     if (v != null && v.trim().isNotEmpty) return v.trim();
     // 一次性迁移：若 DB 为空，尝试从安全存储读取并写回 DB
     try {
-      final old = await const FlutterSecureStorage().read(key: _apiKeyKey(providerId));
+      final old = await SecureStorageService.instance.read(_apiKeyKey(providerId));
       if (old != null && old.trim().isNotEmpty) {
         await _db.setAIProviderApiKey(id: providerId, apiKey: old.trim());
-        try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
+        try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
         return old.trim();
       }
     } catch (_) {}
@@ -422,7 +422,7 @@ class AIProvidersService {
 
   Future<void> deleteApiKey(int providerId) async {
     await _db.setAIProviderApiKey(id: providerId, apiKey: null);
-    try { await const FlutterSecureStorage().delete(key: _apiKeyKey(providerId)); } catch (_) {}
+    try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
   }
 
   // ---------------- 名称唯一性校验 ----------------
