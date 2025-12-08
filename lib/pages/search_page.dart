@@ -1,20 +1,25 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
-import 'package:path/path.dart' as path;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
 import '../services/app_selection_service.dart';
 import '../services/path_service.dart';
 import '../services/screenshot_service.dart';
+import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
-import '../widgets/nsfw_guard.dart';
 import '../widgets/screenshot_item_widget.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
+
+/// 搜索类型枚举
+enum SearchTab { all, screenshots, moments }
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -23,7 +28,7 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -46,6 +51,40 @@ class _SearchPageState extends State<SearchPage> {
   bool _hasMore = false;
   bool _loadingMore = false;
   String _lastQuery = '';
+
+  // Tab 切换相关
+  late TabController _tabController;
+  
+  // 动态搜索相关状态
+  List<Map<String, dynamic>> _segmentResults = <Map<String, dynamic>>[];
+  int _segmentOffset = 0;
+  bool _segmentHasMore = false;
+  bool _segmentLoadingMore = false;
+  int _segmentTotalCount = 0;
+  bool _segmentCountingTotal = false;
+
+  // 标签筛选相关
+  Set<String> _availableTags = <String>{}; // 从搜索结果中提取的可用标签
+  Set<String> _selectedTags = <String>{}; // 当前选中的标签筛选（支持多选）
+
+  /// 根据标签筛选后的动态数量
+  int get _filteredSegmentCount {
+    if (_selectedTags.isEmpty) return _segmentTotalCount;
+    return _filteredSegments.length;
+  }
+
+  /// 根据标签筛选后的动态列表
+  List<Map<String, dynamic>> get _filteredSegments {
+    if (_selectedTags.isEmpty) return _segmentResults;
+    return _segmentResults.where((seg) {
+      final tags = _extractCategories(
+        {'categories': seg['categories']},
+        _tryParseJson(seg['structured_json'] as String?),
+      );
+      // 检查是否包含所有选中的标签
+      return _selectedTags.every((selected) => tags.contains(selected));
+    }).toList();
+  }
 
   // 筛选相关状态
   String _timeFilter =
@@ -117,6 +156,8 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _initBaseDir();
     _scrollController.addListener(_onScroll);
     _loadAppInfos();
@@ -125,6 +166,19 @@ class _SearchPageState extends State<SearchPage> {
       if (!mounted) return;
       setState(() => _privacyMode = enabled);
     });
+  }
+
+  void _onTabChanged() {
+    // TabBarView 会自动同步，此处可用于将来扩展
+    if (!_tabController.indexIsChanging && mounted) {
+      // 当用户切到“动态”Tab 且当前有查询但还没有动态结果时，再按需触发一次动态搜索
+      if (_tabController.index == 1 &&
+          _lastQuery.isNotEmpty &&
+          _segmentResults.isEmpty) {
+        _searchSegments(_lastQuery);
+      }
+      setState(() {}); // 触发重建以更新 Tab 计数显示
+    }
   }
 
   Future<void> _initBaseDir() async {
@@ -160,6 +214,7 @@ class _SearchPageState extends State<SearchPage> {
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -196,10 +251,14 @@ class _SearchPageState extends State<SearchPage> {
       _error = null;
       _results = <ScreenshotRecord>[];
       _filteredResults = <ScreenshotRecord>[];
+      _segmentResults = <Map<String, dynamic>>[];
       _offset = 0;
+      _segmentOffset = 0;
       _hasMore = false;
+      _segmentHasMore = false;
       _lastQuery = query;
       _countingTotal = false;
+      _segmentCountingTotal = false;
     });
 
     if (query.isEmpty) {
@@ -207,10 +266,16 @@ class _SearchPageState extends State<SearchPage> {
         setState(() {
           _isLoading = false;
           _totalResultsCount = 0;
+          _segmentTotalCount = 0;
           _filteredResults = <ScreenshotRecord>[];
         });
       }
       return;
+    }
+
+    // 按需触发动态搜索：仅当当前处于“动态”Tab 时立即搜索
+    if (_tabController.index == 1) {
+      _searchSegments(query);
     }
 
     try {
@@ -378,6 +443,152 @@ class _SearchPageState extends State<SearchPage> {
         _hasMore = false;
       });
     }
+  }
+
+  // ==================== 动态搜索相关方法 ====================
+  
+  /// 搜索动态内容
+  Future<void> _searchSegments(String query) async {
+    if (!mounted) return;
+    final int token = _searchToken;
+    
+    if (query.isEmpty) {
+      if (mounted && token == _searchToken) {
+        setState(() {
+          _segmentResults = <Map<String, dynamic>>[];
+          _segmentTotalCount = 0;
+          _segmentOffset = 0;
+          _segmentHasMore = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final range = _currentTimeRange();
+      final results = await ScreenshotDatabase.instance.searchSegmentsByText(
+        query,
+        limit: _pageSize,
+        offset: 0,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+      );
+
+      if (!mounted || token != _searchToken) return;
+
+      // 提取标签（使用统一解析和清洗逻辑）
+      final Set<String> tags = <String>{};
+      for (final seg in results) {
+        final String categoriesRaw = (seg['categories'] as String?) ?? '';
+        final String outputText = (seg['output_text'] as String?) ?? '';
+        final String structuredJson = (seg['structured_json'] as String?) ?? '';
+
+        final Map<String, dynamic>? sj = _tryParseJson(structuredJson);
+        final List<String> segTags = _extractCategories(
+          {
+            'categories': categoriesRaw,
+            'output_text': outputText,
+          },
+          sj,
+        );
+
+        for (final t in segTags) {
+          if (t.trim().isEmpty) continue;
+          tags.add(t);
+        }
+      }
+
+      setState(() {
+        _segmentResults = results;
+        _segmentOffset = results.length;
+        _segmentHasMore = results.length >= _pageSize;
+        _segmentTotalCount = results.length;
+        _segmentCountingTotal = _segmentHasMore;
+        _availableTags = tags;
+        _selectedTags = <String>{}; // 重置标签筛选
+      });
+
+      // 后台统计总数
+      if (_segmentHasMore) {
+        ScreenshotDatabase.instance.countSegmentsByText(
+          query,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+        ).then((total) {
+          if (!mounted || token != _searchToken) return;
+          setState(() {
+            _segmentTotalCount = total;
+            _segmentCountingTotal = false;
+          });
+        }).catchError((_) {
+          if (!mounted || token != _searchToken) return;
+          setState(() => _segmentCountingTotal = false);
+        });
+      }
+    } catch (e) {
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _segmentResults = <Map<String, dynamic>>[];
+        _segmentCountingTotal = false;
+      });
+    }
+  }
+
+  /// 加载更多动态
+  Future<void> _loadMoreSegments() async {
+    if (_lastQuery.isEmpty || _segmentLoadingMore || !_segmentHasMore) return;
+    setState(() => _segmentLoadingMore = true);
+    try {
+      final range = _currentTimeRange();
+      final more = await ScreenshotDatabase.instance.searchSegmentsByText(
+        _lastQuery,
+        limit: _pageSize,
+        offset: _segmentOffset,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (more.isEmpty) {
+          _segmentHasMore = false;
+        } else {
+          _segmentResults.addAll(more);
+          _segmentOffset += more.length;
+          _segmentHasMore = more.length >= _pageSize;
+        }
+        _segmentLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _segmentLoadingMore = false;
+        _segmentHasMore = false;
+      });
+    }
+  }
+
+  /// 格式化时间显示
+  String _formatSegmentTime(int startMs, int endMs) {
+    final start = DateTime.fromMillisecondsSinceEpoch(startMs);
+    final end = DateTime.fromMillisecondsSinceEpoch(endMs);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final startDay = DateTime(start.year, start.month, start.day);
+    
+    String dateStr;
+    if (startDay == today) {
+      dateStr = AppLocalizations.of(context).filterTimeToday;
+    } else if (startDay == yesterday) {
+      dateStr = AppLocalizations.of(context).filterTimeYesterday;
+    } else {
+      dateStr = '${start.month}/${start.day}';
+    }
+    
+    final startTime = '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    final endTime = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+    
+    return '$dateStr $startTime-$endTime';
   }
 
   // 应用筛选条件（数据库层已做时间和大小过滤，此处仅同步结果列表）
@@ -631,10 +842,10 @@ class _SearchPageState extends State<SearchPage> {
                         ),
                       ),
                       const SizedBox(height: AppTheme.spacing3),
-                      // 时间选项
+                      // 时间选项（与筛选 Chip 一致的紧凑间距）
                       Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                        spacing: 4,
+                        runSpacing: 4,
                         children: [
                           _buildTimeChip(ctx, 'all', l10n.filterTimeAll, setSheetState),
                           _buildTimeChip(ctx, 'today', l10n.filterTimeToday, setSheetState),
@@ -667,7 +878,7 @@ class _SearchPageState extends State<SearchPage> {
         if (_lastQuery.isNotEmpty) _search(_lastQuery);
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         decoration: BoxDecoration(
           color: selected
               ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
@@ -700,7 +911,7 @@ class _SearchPageState extends State<SearchPage> {
         await _showCustomDaysDialog();
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         decoration: BoxDecoration(
           color: selected
               ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
@@ -907,6 +1118,8 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildBody() {
+    final l10n = AppLocalizations.of(context);
+    
     if (_error != null) {
       return Center(
         child: Text(
@@ -921,9 +1134,17 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     if (_controller.text.trim().isEmpty) {
+      return _buildEmptyState(l10n);
+    }
+
+    // 判断是否有任何结果
+    final bool hasScreenshots = _results.isNotEmpty;
+    final bool hasSegments = _segmentResults.isNotEmpty;
+    
+    if (!hasScreenshots && !hasSegments) {
       return Center(
         child: Text(
-          AppLocalizations.of(context).searchInputHintOcr,
+          l10n.noMatchingScreenshots,
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
@@ -931,13 +1152,61 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    if (_results.isEmpty) {
+    return Column(
+      children: [
+        // Tab 切换栏（两个 Tab 均分整行）
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+            ),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            labelColor: Theme.of(context).colorScheme.primary,
+            unselectedLabelColor: AppTheme.mutedForeground,
+            labelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            indicatorColor: Theme.of(context).colorScheme.primary,
+            indicatorSize: TabBarIndicatorSize.tab,
+            tabs: [
+              Tab(text: '截图 (${_countingTotal ? '...' : _totalResultsCount})'),
+              Tab(text: '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'),
+            ],
+          ),
+        ),
+        // TabBarView 内容
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              // 截图 Tab
+              _buildScreenshotsView(),
+              // 动态 Tab
+              _buildSegmentsView(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建截图视图
+  Widget _buildScreenshotsView() {
+    if (_filteredResults.isEmpty) {
       return Center(
         child: Text(
-          AppLocalizations.of(context).noMatchingScreenshots,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
+          AppLocalizations.of(context).noResultsForFilters,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppTheme.mutedForeground,
+          ),
         ),
       );
     }
@@ -1197,6 +1466,819 @@ class _SearchPageState extends State<SearchPage> {
                 ),
         ),
       ],
+    );
+  }
+
+  /// 构建动态视图
+  Widget _buildSegmentsView() {
+    final segments = _filteredSegments;
+    final l10n = AppLocalizations.of(context);
+    
+    return Column(
+      children: [
+        // 筛选栏（与截图样式一致）
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing3,
+            vertical: AppTheme.spacing2,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              // 左边：结果数量
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '找到 ${_segmentCountingTotal ? '...' : segments.length} 条动态',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_segmentCountingTotal) ...[
+                      const SizedBox(width: AppTheme.spacing1),
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              // 右边：标签筛选按钮（与截图筛选按钮样式一致）
+              InkWell(
+                onTap: _showTagFilterSheet,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _selectedTags.isNotEmpty
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withOpacity(0.3),
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.local_offer_outlined,
+                        size: 16,
+                        color: _selectedTags.isNotEmpty
+                            ? Theme.of(context).colorScheme.primary
+                            : AppTheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _selectedTags.isEmpty
+                            ? '标签'
+                            : '${_selectedTags.length}个标签',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _selectedTags.isNotEmpty
+                              ? Theme.of(context).colorScheme.primary
+                              : AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 动态列表
+        Expanded(
+          child: segments.isEmpty
+              ? Center(
+                  child: Text(
+                    l10n.noResultsForFilters,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.mutedForeground,
+                    ),
+                  ),
+                )
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+                      _loadMoreSegments();
+                    }
+                    return false;
+                  },
+                  child: ListView.builder(
+                    padding: EdgeInsets.only(
+                      left: AppTheme.spacing3,
+                      right: AppTheme.spacing3,
+                      top: AppTheme.spacing2,
+                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                    ),
+                    itemCount: segments.length + (_segmentLoadingMore && _selectedTags.isEmpty ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (_segmentLoadingMore && _selectedTags.isEmpty && index == segments.length) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(AppTheme.spacing4),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      return _buildSegmentCard(segments[index]);
+                    },
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 显示标签筛选底部弹窗
+  void _showTagFilterSheet() {
+    if (_availableTags.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可用标签')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  topRight: Radius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 顶部拖拽指示器
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // 标题栏
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                    child: Row(
+                      children: [
+                        Text(
+                          '标签筛选',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_selectedTags.isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                _selectedTags.clear();
+                              });
+                              setState(() {});
+                            },
+                            child: const Text('清除全部'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing2),
+                  // 标签列表
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                      child: Builder(
+                        builder: (context) {
+                          final List<String> tags = _availableTags
+                              .map((t) => _cleanTagText(t))
+                              .where((t) => _isValidTag(t))
+                              .toList()
+                            ..sort((a, b) => a.compareTo(b));
+
+                          return Wrap
+                          (
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: tags.map((tag) {
+                              final selected = _selectedTags.contains(tag);
+                              return FilterChip(
+                                label: Text(
+                                  tag,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: selected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.onSurface,
+                                    fontWeight:
+                                        selected ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                ),
+                                selected: selected,
+                                showCheckmark: false,
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.surface,
+                                selectedColor: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withOpacity(0.15),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(AppTheme.radiusSm),
+                                ),
+                                side: selected
+                                    ? BorderSide.none
+                                    : BorderSide(
+                                        color: Colors.grey.withOpacity(0.2),
+                                        width: 1,
+                                      ),
+                                onSelected: (value) {
+                                  setSheetState(() {
+                                    if (value) {
+                                      _selectedTags.add(tag);
+                                    } else {
+                                      _selectedTags.remove(tag);
+                                    }
+                                  });
+                                  setState(() {});
+                                },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing4),
+                  // 确认按钮
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: AppTheme.spacing4,
+                      right: AppTheme.spacing4,
+                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing4,
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text('确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 从 structured_json 解析 JSON
+  Map<String, dynamic>? _tryParseJson(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final d = jsonDecode(raw);
+      if (d is Map<String, dynamic>) return d;
+    } catch (_) {}
+    return null;
+  }
+
+  /// 提取摘要：优先从 structured_json.overall_summary，否则回退到 output_text
+  String _extractOverallSummary(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+    final v = sj?['overall_summary'];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+    final out = (result?['output_text'] as String?)?.trim() ?? '';
+    return out.toLowerCase() == 'null' ? '' : out;
+  }
+
+  /// 清理标签文本（移除 [""] 等无效字符）
+  String _cleanTagText(String text) {
+    String cleaned = text.trim();
+    // 移除所有 [ ] " 字符
+    cleaned = cleaned.replaceAll('[', '');
+    cleaned = cleaned.replaceAll(']', '');
+    cleaned = cleaned.replaceAll('"', '');
+    cleaned = cleaned.replaceAll("'", '');
+    return cleaned.trim();
+  }
+
+  /// 检查标签是否有效（过滤掉无效标签）
+  bool _isValidTag(String tag) {
+    final cleaned = tag.trim();
+    if (cleaned.isEmpty) return false;
+    // 过滤掉只包含符号的标签
+    if (RegExp(r'^[\[\]"\s,]+$').hasMatch(cleaned)) return false;
+    return true;
+  }
+
+  /// 提取标签列表：从 categories 字段（可能是 JSON array 或逗号分隔）和 structured_json.categories
+  List<String> _extractCategories(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+    final List<String> out = <String>[];
+    // 1) result.categories 可能是 JSON 或逗号分隔
+    final raw = result?['categories'];
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final obj = jsonDecode(raw);
+        if (obj is List) {
+          out.addAll(obj.map((e) => _cleanTagText(e.toString())));
+        } else {
+          out.addAll(raw.split(RegExp(r'[,\s]+')).map((e) => _cleanTagText(e)));
+        }
+      } catch (_) {
+        out.addAll(raw.split(RegExp(r'[,\s]+')).map((e) => _cleanTagText(e)));
+      }
+    }
+    // 2) structured_json.categories
+    final sc = sj?['categories'];
+    if (sc is List) {
+      out.addAll(sc.map((e) => _cleanTagText(e.toString())));
+    } else if (sc is String && sc.trim().isNotEmpty) {
+      out.addAll(sc.split(RegExp(r'[,\s]+')).map((e) => _cleanTagText(e)));
+    }
+    // 去重并过滤无效标签
+    final set = <String>{};
+    final res = <String>[];
+    for (final c in out) {
+      final v = _cleanTagText(c);
+      if (!_isValidTag(v)) continue;
+      if (set.add(v)) res.add(v);
+    }
+    return res;
+  }
+
+  /// 构建单个标签 chip（与动态页面样式一致）
+  Widget _buildTagChip(BuildContext context, String text) {
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      constraints: const BoxConstraints(minHeight: 20),
+      decoration: BoxDecoration(
+        color: fg.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: fg.withOpacity(0.35), width: 1),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          color: fg,
+          height: 1.0,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  /// 构建应用图标
+  Widget _buildAppIcon(String package) {
+    final app = _appInfoByPackage[package];
+    if (app != null && app.icon != null && app.icon!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.memory(app.icon!, width: 20, height: 20, fit: BoxFit.cover),
+      );
+    }
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Icon(Icons.apps, size: 14),
+    );
+  }
+
+  /// 构建动态卡片（与动态页面样式一致）
+  Widget _buildSegmentCard(Map<String, dynamic> seg) {
+    final int startMs = (seg['start_time'] as int?) ?? 0;
+    final int endMs = (seg['end_time'] as int?) ?? 0;
+    final String outputText = (seg['output_text'] as String?) ?? '';
+    final String categoriesRaw = (seg['categories'] as String?) ?? '';
+    final String structuredJson = (seg['structured_json'] as String?) ?? '';
+    final int sampleCount = (seg['sample_count'] as int?) ?? 0;
+    final bool merged = (seg['merged_flag'] as int?) == 1;
+
+    // 解析 structured_json
+    final Map<String, dynamic>? sj = _tryParseJson(structuredJson);
+    
+    // 提取摘要和标签
+    final Map<String, dynamic> resultMeta = {
+      'categories': categoriesRaw,
+      'output_text': outputText,
+    };
+    final String summary = _extractOverallSummary(resultMeta, sj);
+    final List<String> tags = _extractCategories(resultMeta, sj);
+
+    // 解析应用包名
+    List<String> packages = <String>[];
+    final String? appPkgsDisplay = seg['app_packages_display'] as String?;
+    final String? appPkgsRaw = seg['app_packages'] as String?;
+    final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+        ? appPkgsDisplay
+        : appPkgsRaw;
+    if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
+      packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing1),
+      child: InkWell(
+        onTap: () => _showSegmentDetail(seg),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 时间行
+            SizedBox(
+              height: 22,
+              child: Center(
+                child: Text(
+                  _formatSegmentTime(startMs, endMs),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            // 应用图标
+            if (packages.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: packages.map((pkg) => _buildAppIcon(pkg)).toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+            // 标签
+            if (tags.isNotEmpty || merged) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (merged)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+                      constraints: const BoxConstraints(minHeight: 20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.warning.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                      ),
+                      child: Text(
+                        AppLocalizations.of(context).mergedEventTag,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.warning,
+                          height: 1.0,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ...tags.map((tag) => _buildTagChip(context, tag)),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
+            // 摘要内容（Markdown 渲染，限制高度）
+            if (summary.isNotEmpty)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
+                  // 限制最多 5 行高度
+                  final double lineHeight = (textStyle?.height ?? 1.4) * (textStyle?.fontSize ?? 14.0);
+                  final double maxHeight = lineHeight * 5.0 + 8.0;
+                  
+                  return ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: maxHeight),
+                    child: ClipRect(
+                      child: MarkdownBody(
+                        data: summary,
+                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                          p: textStyle,
+                        ),
+                        onTapLink: (text, href, title) async {
+                          if (href == null) return;
+                          final uri = Uri.tryParse(href);
+                          if (uri != null) {
+                            try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                          }
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            // 样本数量
+            if (sampleCount > 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Spacer(),
+                  Icon(
+                    Icons.photo_library_outlined,
+                    size: 14,
+                    color: AppTheme.mutedForeground,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '$sampleCount',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppTheme.mutedForeground,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            // 分割线
+            const SizedBox(height: AppTheme.spacing2),
+            Container(
+              height: 1,
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 显示动态详情弹窗
+  Future<void> _showSegmentDetail(Map<String, dynamic> seg) async {
+    final int startMs = (seg['start_time'] as int?) ?? 0;
+    final int endMs = (seg['end_time'] as int?) ?? 0;
+    final String outputText = (seg['output_text'] as String?) ?? '';
+    final String categoriesRaw = (seg['categories'] as String?) ?? '';
+    final String structuredJson = (seg['structured_json'] as String?) ?? '';
+    final int segmentId = (seg['id'] as int?) ?? 0;
+    final bool merged = (seg['merged_flag'] as int?) == 1;
+
+    // 解析 structured_json
+    final Map<String, dynamic>? sj = _tryParseJson(structuredJson);
+    final Map<String, dynamic> resultMeta = {
+      'categories': categoriesRaw,
+      'output_text': outputText,
+    };
+    final String summary = _extractOverallSummary(resultMeta, sj);
+    final List<String> tags = _extractCategories(resultMeta, sj);
+
+    // 解析应用包名
+    List<String> packages = <String>[];
+    final String? appPkgsDisplay = seg['app_packages_display'] as String?;
+    final String? appPkgsRaw = seg['app_packages'] as String?;
+    final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+        ? appPkgsDisplay
+        : appPkgsRaw;
+    if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
+      packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
+    }
+
+    // 获取样本
+    final samples = await ScreenshotDatabase.instance.listSegmentSamples(segmentId);
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  topRight: Radius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // 顶部拖拽指示器
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // 内容
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(AppTheme.spacing4),
+                      children: [
+                        // 时间
+                        Text(
+                          _formatSegmentTime(startMs, endMs),
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        // 应用图标
+                        if (packages.isNotEmpty) ...[
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: packages.map((pkg) => _buildAppIcon(pkg)).toList(),
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                        ],
+                        // 标签
+                        if (tags.isNotEmpty || merged) ...[
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if (merged)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+                                  constraints: const BoxConstraints(minHeight: 20),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.warning.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                    border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                                  ),
+                                  child: Text(
+                                    AppLocalizations.of(context).mergedEventTag,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.warning,
+                                      height: 1.0,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ...tags.map((tag) => _buildTagChip(ctx, tag)),
+                            ],
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                        ],
+                        // 摘要（Markdown 渲染）
+                        if (summary.isNotEmpty) ...[
+                          MarkdownBody(
+                            data: summary,
+                            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
+                              p: Theme.of(ctx).textTheme.bodyMedium,
+                            ),
+                            onTapLink: (text, href, title) async {
+                              if (href == null) return;
+                              final uri = Uri.tryParse(href);
+                              if (uri != null) {
+                                try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                              }
+                            },
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                        ],
+                        // 样本图片
+                        if (samples.isNotEmpty) ...[
+                          const Divider(),
+                          const SizedBox(height: AppTheme.spacing2),
+                          Text(
+                            '${AppLocalizations.of(context).samplesTitle(samples.length)}',
+                            style: Theme.of(ctx).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: AppTheme.spacing2),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              crossAxisSpacing: 4,
+                              mainAxisSpacing: 4,
+                              childAspectRatio: 9 / 16,
+                            ),
+                            itemCount: samples.length,
+                            itemBuilder: (c, i) {
+                              final s = samples[i];
+                              final path = (s['file_path'] as String?) ?? '';
+                              if (path.isEmpty) {
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(c).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Center(child: Icon(Icons.image_not_supported_outlined)),
+                                );
+                              }
+                              return ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  File(path),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Theme.of(c).colorScheme.surfaceContainerHighest,
+                                    child: const Center(child: Icon(Icons.broken_image_outlined)),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 构建搜索空状态（简单提示，垂直居中）
+  Widget _buildEmptyState(AppLocalizations l10n) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.search,
+                    size: 48,
+                    color: AppTheme.mutedForeground.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: AppTheme.spacing3),
+                  Text(
+                    l10n.searchInputHintOcr,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.mutedForeground,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

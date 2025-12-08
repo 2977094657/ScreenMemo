@@ -136,6 +136,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
 
     await _createMorningInsightsTable(db);
     await _createPersonaArticlesTable(db);
+    
+    // 创建动态搜索 FTS 索引
+    await _createSegmentResultsFts(db);
+    await _backfillSegmentResultsFts(db);
   }
 
   // v6: 清理旧的 AI 分组表与老配置键（首次打开/升级时执行）
@@ -820,6 +824,204 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     } catch (_) { return null; }
   }
 
+  /// 搜索动态（segment）内容
+  /// 支持搜索 AI 摘要文本和分类标签
+  Future<List<Map<String, dynamic>>> searchSegmentsByText(
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+  }) async {
+    final db = await database;
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return <Map<String, dynamic>>[];
+
+      final int fetchLimit = limit ?? 50;
+      final int fetchOffset = offset ?? 0;
+
+      // 构建 FTS MATCH 字符串
+      String buildMatch(String text) {
+        final parts = text.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+        if (parts.isEmpty) return text;
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+        return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+      }
+
+      final String match = buildMatch(q);
+      final List<Object?> args = <Object?>[match];
+      final List<String> filters = <String>[];
+
+      if (startMillis != null) {
+        filters.add('s.start_time >= ?');
+        args.add(startMillis);
+      }
+      if (endMillis != null) {
+        filters.add('s.start_time <= ?');
+        args.add(endMillis);
+      }
+
+      final String whereClause = filters.isEmpty ? '' : 'AND ${filters.join(' AND ')}';
+
+      // 尝试 FTS 搜索
+      try {
+        final String sql = '''
+          SELECT
+            s.*,
+            r.output_text,
+            r.structured_json,
+            r.categories,
+            r.ai_provider,
+            r.ai_model,
+            COALESCE(
+              NULLIF(TRIM(s.app_packages), ''),
+              (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+            ) AS app_packages_display,
+            (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count
+          FROM segment_results_fts fts
+          JOIN segment_results r ON r.segment_id = fts.rowid
+          JOIN segments s ON s.id = r.segment_id
+          WHERE segment_results_fts MATCH ?
+            $whereClause
+          ORDER BY s.start_time DESC
+          LIMIT ? OFFSET ?
+        ''';
+        args.add(fetchLimit);
+        args.add(fetchOffset);
+
+        final rows = await db.rawQuery(sql, args);
+        return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+      } catch (ftsError) {
+        // FTS 不可用，回退到 LIKE 搜索
+        try { await FlutterLogger.nativeWarn('DB', 'FTS search failed, fallback to LIKE: $ftsError'); } catch (_) {}
+        
+        final String likeTerm = '%$q%';
+        final List<Object?> likeArgs = <Object?>[];
+        final List<String> likeFilters = <String>[
+          "(r.output_text LIKE ? OR r.categories LIKE ?)"
+        ];
+        likeArgs.add(likeTerm);
+        likeArgs.add(likeTerm);
+
+        if (startMillis != null) {
+          likeFilters.add('s.start_time >= ?');
+          likeArgs.add(startMillis);
+        }
+        if (endMillis != null) {
+          likeFilters.add('s.start_time <= ?');
+          likeArgs.add(endMillis);
+        }
+
+        likeArgs.add(fetchLimit);
+        likeArgs.add(fetchOffset);
+
+        final String likeSql = '''
+          SELECT
+            s.*,
+            r.output_text,
+            r.structured_json,
+            r.categories,
+            r.ai_provider,
+            r.ai_model,
+            COALESCE(
+              NULLIF(TRIM(s.app_packages), ''),
+              (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+            ) AS app_packages_display,
+            (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count
+          FROM segments s
+          JOIN segment_results r ON r.segment_id = s.id
+          WHERE ${likeFilters.join(' AND ')}
+          ORDER BY s.start_time DESC
+          LIMIT ? OFFSET ?
+        ''';
+
+        final rows = await db.rawQuery(likeSql, likeArgs);
+        return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (e) {
+      try { await FlutterLogger.nativeError('DB', 'searchSegmentsByText failed: $e'); } catch (_) {}
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 统计搜索动态结果总数
+  Future<int> countSegmentsByText(
+    String query, {
+    int? startMillis,
+    int? endMillis,
+  }) async {
+    final db = await database;
+    try {
+      final String q = query.trim();
+      if (q.isEmpty) return 0;
+
+      String buildMatch(String text) {
+        final parts = text.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+        if (parts.isEmpty) return text;
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+        return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+      }
+
+      final String match = buildMatch(q);
+      final List<Object?> args = <Object?>[match];
+      final List<String> filters = <String>[];
+
+      if (startMillis != null) {
+        filters.add('s.start_time >= ?');
+        args.add(startMillis);
+      }
+      if (endMillis != null) {
+        filters.add('s.start_time <= ?');
+        args.add(endMillis);
+      }
+
+      final String whereClause = filters.isEmpty ? '' : 'AND ${filters.join(' AND ')}';
+
+      try {
+        final String sql = '''
+          SELECT COUNT(*) AS c
+          FROM segment_results_fts fts
+          JOIN segment_results r ON r.segment_id = fts.rowid
+          JOIN segments s ON s.id = r.segment_id
+          WHERE segment_results_fts MATCH ?
+            $whereClause
+        ''';
+
+        final rows = await db.rawQuery(sql, args);
+        return (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+      } catch (_) {
+        // 回退 LIKE
+        final String likeTerm = '%$q%';
+        final List<Object?> likeArgs = <Object?>[likeTerm, likeTerm];
+        final List<String> likeFilters = <String>[
+          "(r.output_text LIKE ? OR r.categories LIKE ?)"
+        ];
+
+        if (startMillis != null) {
+          likeFilters.add('s.start_time >= ?');
+          likeArgs.add(startMillis);
+        }
+        if (endMillis != null) {
+          likeFilters.add('s.start_time <= ?');
+          likeArgs.add(endMillis);
+        }
+
+        final String likeSql = '''
+          SELECT COUNT(*) AS c
+          FROM segments s
+          JOIN segment_results r ON r.segment_id = s.id
+          WHERE ${likeFilters.join(' AND ')}
+        ''';
+
+        final rows = await db.rawQuery(likeSql, likeArgs);
+        return (rows.isNotEmpty ? ((rows.first['c'] as int?) ?? 0) : 0);
+      }
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// 删除单个段落事件（仅删除事件及其结果/样本，不删除月表中的图片记录/文件）
   Future<bool> deleteSegmentOnly(int segmentId) async {
     final db = await database;
@@ -1150,6 +1352,56 @@ Future<void> _createPersonaArticlesTable(DatabaseExecutor db) async {
       updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
     )
   ''');
+}
+
+/// 创建 segment_results 的 FTS5 全文搜索索引
+Future<void> _createSegmentResultsFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      CREATE VIRTUAL TABLE IF NOT EXISTS segment_results_fts USING fts5(
+        output_text,
+        categories,
+        content='segment_results',
+        content_rowid='segment_id'
+      )
+    ''');
+    // 创建触发器保持 FTS 同步
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS segment_results_ai AFTER INSERT ON segment_results BEGIN
+        INSERT INTO segment_results_fts(rowid, output_text, categories)
+        VALUES (NEW.segment_id, NEW.output_text, NEW.categories);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS segment_results_ad AFTER DELETE ON segment_results BEGIN
+        INSERT INTO segment_results_fts(segment_results_fts, rowid, output_text, categories)
+        VALUES ('delete', OLD.segment_id, OLD.output_text, OLD.categories);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS segment_results_au AFTER UPDATE ON segment_results BEGIN
+        INSERT INTO segment_results_fts(segment_results_fts, rowid, output_text, categories)
+        VALUES ('delete', OLD.segment_id, OLD.output_text, OLD.categories);
+        INSERT INTO segment_results_fts(rowid, output_text, categories)
+        VALUES (NEW.segment_id, NEW.output_text, NEW.categories);
+      END
+    ''');
+  } catch (e) {
+    try { FlutterLogger.nativeWarn('DB', 'FTS5 for segment_results not supported: $e'); } catch (_) {}
+  }
+}
+
+/// 回填已有数据到 FTS 索引
+Future<void> _backfillSegmentResultsFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      INSERT OR IGNORE INTO segment_results_fts(rowid, output_text, categories)
+      SELECT segment_id, output_text, categories FROM segment_results
+      WHERE output_text IS NOT NULL AND TRIM(output_text) != ''
+    ''');
+  } catch (e) {
+    try { FlutterLogger.nativeWarn('DB', 'Backfill segment_results_fts failed: $e'); } catch (_) {}
+  }
 }
 
 
