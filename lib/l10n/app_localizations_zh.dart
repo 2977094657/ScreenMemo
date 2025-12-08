@@ -2559,4 +2559,205 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeMorningTipsCooldownMessage => '已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。';
+
+  @override
+  String get expireCleanupConfirmTitle => '确认开启截图过期清理';
+
+  @override
+  String expireCleanupConfirmMessage(Object days) {
+    return '开启后将立即清理超过 $days 天的截图图片。\n\n注意：仅清理图片文件，动态、总结等内容会保留。';
+  }
+
+  @override
+  String get expireCleanupConfirmAction => '确认开启';
+
+  @override
+  String get desktopMergerTitle => '数据合并工具';
+
+  @override
+  String get desktopMergerDescription => '高效合并多个备份文件';
+
+  @override
+  String get desktopMergerSteps =>
+      '1. 选择输出目录（合并后的数据将保存在此目录）\n2. 添加要合并的 ZIP 备份文件\n3. 点击开始合并';
+
+  @override
+  String get desktopMergerOutputDir => '输出目录';
+
+  @override
+  String get desktopMergerSelectOutputDir => '选择输出目录...';
+
+  @override
+  String get desktopMergerBrowse => '浏览';
+
+  @override
+  String get desktopMergerZipFiles => 'ZIP 备份文件';
+
+  @override
+  String desktopMergerSelectedCount(Object count) {
+    return '已选择 $count 个文件';
+  }
+
+  @override
+  String get desktopMergerAddFiles => '添加文件';
+
+  @override
+  String get desktopMergerNoFiles => '暂无选择的文件';
+
+  @override
+  String get desktopMergerDragHint => '点击上方按钮添加 ZIP 备份文件';
+
+  @override
+  String get desktopMergerResultTitle => '合并结果';
+
+  @override
+  String desktopMergerInsertedCount(Object count) {
+    return '+$count 张截图';
+  }
+
+  @override
+  String get desktopMergerClear => '清空列表';
+
+  @override
+  String get desktopMergerMerging => '合并中...';
+
+  @override
+  String get desktopMergerStart => '开始合并';
+
+  @override
+  String get desktopMergerSelectZips => '选择 ZIP 备份文件';
+
+  @override
+  String get desktopMergerStageExtracting => '正在解压...';
+
+  @override
+  String get desktopMergerStageCopying => '正在复制文件...';
+
+  @override
+  String get desktopMergerStageMerging => '正在合并数据库...';
+
+  @override
+  String get desktopMergerStageMemory => '正在合并记忆数据...';
+
+  @override
+  String get desktopMergerStageFinalizing => '正在完成...';
+
+  @override
+  String get desktopMergerStageProcessing => '正在处理...';
+
+  @override
+  String get desktopMergerStageCompleted => '合并完成';
+
+  @override
+  String get desktopMergerLiveStats => '实时统计';
+
+  @override
+  String desktopMergerProcessingFile(Object fileName) {
+    return '正在处理: $fileName';
+  }
+
+  @override
+  String desktopMergerFileProgress(Object current, Object total) {
+    return '文件进度: $current/$total';
+  }
+
+  @override
+  String get desktopMergerStatScreenshots => '新增截图';
+
+  @override
+  String get desktopMergerStatSkipped => '跳过重复';
+
+  @override
+  String get desktopMergerStatFiles => '复制文件';
+
+  @override
+  String get desktopMergerStatReused => '复用文件';
+
+  @override
+  String get desktopMergerStatEvents => '记忆事件';
+
+  @override
+  String get desktopMergerStatTags => '记忆标签';
+
+  @override
+  String get desktopMergerStatEvidence => '记忆证据';
+
+  @override
+  String get desktopMergerSummaryTitle => '合并汇总';
+
+  @override
+  String desktopMergerSummaryTotal(Object count) {
+    return '总计处理 $count 个文件';
+  }
+
+  @override
+  String desktopMergerSummarySuccess(Object count) {
+    return '成功: $count';
+  }
+
+  @override
+  String desktopMergerSummaryFailed(Object count) {
+    return '失败: $count';
+  }
+
+  @override
+  String desktopMergerAffectedApps(Object count) {
+    return '涉及应用 ($count)';
+  }
+
+  @override
+  String desktopMergerWarnings(Object count) {
+    return '警告 ($count)';
+  }
+
+  @override
+  String get desktopMergerDetailTitle => '详细结果';
+
+  @override
+  String get desktopMergerFileSuccess => '成功';
+
+  @override
+  String get desktopMergerFileFailed => '失败';
+
+  @override
+  String get desktopMergerNoData => '无数据变更';
+
+  @override
+  String get desktopMergerExpandAll => '展开全部';
+
+  @override
+  String get desktopMergerCollapseAll => '折叠全部';
+
+  @override
+  String get desktopMergerStagePacking => '正在打包 ZIP...';
+
+  @override
+  String get desktopMergerOutputZip => '输出文件';
+
+  @override
+  String get desktopMergerOpenFolder => '打开文件夹';
+
+  @override
+  String desktopMergerPackingProgress(Object percent) {
+    return '打包进度: $percent%';
+  }
+
+  @override
+  String get desktopMergerMinFilesHint => '请至少选择 2 个备份文件进行合并';
+
+  @override
+  String get desktopMergerExtractingHint =>
+      '正在解压备份文件，大型备份（数万张截图）可能需要几分钟，请耐心等待...';
+
+  @override
+  String get desktopMergerCopyingHint => '正在复制截图文件，跳过已存在的图片...';
+
+  @override
+  String get desktopMergerMergingHint => '正在合并数据库记录，智能去重处理中...';
+
+  @override
+  String get desktopMergerMemoryHint => '正在合并记忆档案数据...';
+
+  @override
+  String get desktopMergerPackingHint => '正在将合并结果打包为 ZIP 文件...';
 }

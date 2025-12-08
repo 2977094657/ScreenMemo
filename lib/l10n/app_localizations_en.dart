@@ -2643,4 +2643,211 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeMorningTipsCooldownMessage =>
       'You’ve refreshed quite a lot—take a breath and look up from the screen for a moment.';
+
+  @override
+  String get expireCleanupConfirmTitle => 'Confirm enabling screenshot cleanup';
+
+  @override
+  String expireCleanupConfirmMessage(Object days) {
+    return 'Once enabled, screenshots older than $days days will be cleaned up immediately.\n\nNote: Only image files will be deleted; events, summaries, and other content will be preserved.';
+  }
+
+  @override
+  String get expireCleanupConfirmAction => 'Confirm';
+
+  @override
+  String get desktopMergerTitle => 'Data Merger Tool';
+
+  @override
+  String get desktopMergerDescription =>
+      'Efficiently merge multiple backup files';
+
+  @override
+  String get desktopMergerSteps =>
+      '1. Select output directory (merged data will be saved here)\n2. Add ZIP backup files to merge\n3. Click Start Merge';
+
+  @override
+  String get desktopMergerOutputDir => 'Output Directory';
+
+  @override
+  String get desktopMergerSelectOutputDir => 'Select output directory...';
+
+  @override
+  String get desktopMergerBrowse => 'Browse';
+
+  @override
+  String get desktopMergerZipFiles => 'ZIP Backup Files';
+
+  @override
+  String desktopMergerSelectedCount(Object count) {
+    return '$count files selected';
+  }
+
+  @override
+  String get desktopMergerAddFiles => 'Add Files';
+
+  @override
+  String get desktopMergerNoFiles => 'No files selected';
+
+  @override
+  String get desktopMergerDragHint =>
+      'Click the button above to add ZIP backup files';
+
+  @override
+  String get desktopMergerResultTitle => 'Merge Results';
+
+  @override
+  String desktopMergerInsertedCount(Object count) {
+    return '+$count screenshots';
+  }
+
+  @override
+  String get desktopMergerClear => 'Clear List';
+
+  @override
+  String get desktopMergerMerging => 'Merging...';
+
+  @override
+  String get desktopMergerStart => 'Start Merge';
+
+  @override
+  String get desktopMergerSelectZips => 'Select ZIP backup files';
+
+  @override
+  String get desktopMergerStageExtracting => 'Extracting...';
+
+  @override
+  String get desktopMergerStageCopying => 'Copying files...';
+
+  @override
+  String get desktopMergerStageMerging => 'Merging databases...';
+
+  @override
+  String get desktopMergerStageMemory => 'Merging memory data...';
+
+  @override
+  String get desktopMergerStageFinalizing => 'Finalizing...';
+
+  @override
+  String get desktopMergerStageProcessing => 'Processing...';
+
+  @override
+  String get desktopMergerStageCompleted => 'Merge completed';
+
+  @override
+  String get desktopMergerLiveStats => 'Live Statistics';
+
+  @override
+  String desktopMergerProcessingFile(Object fileName) {
+    return 'Processing: $fileName';
+  }
+
+  @override
+  String desktopMergerFileProgress(Object current, Object total) {
+    return 'File Progress: $current/$total';
+  }
+
+  @override
+  String get desktopMergerStatScreenshots => 'New Screenshots';
+
+  @override
+  String get desktopMergerStatSkipped => 'Skipped Duplicates';
+
+  @override
+  String get desktopMergerStatFiles => 'Copied Files';
+
+  @override
+  String get desktopMergerStatReused => 'Reused Files';
+
+  @override
+  String get desktopMergerStatEvents => 'Memory Events';
+
+  @override
+  String get desktopMergerStatTags => 'Memory Tags';
+
+  @override
+  String get desktopMergerStatEvidence => 'Memory Evidence';
+
+  @override
+  String get desktopMergerSummaryTitle => 'Merge Summary';
+
+  @override
+  String desktopMergerSummaryTotal(Object count) {
+    return 'Processed $count files in total';
+  }
+
+  @override
+  String desktopMergerSummarySuccess(Object count) {
+    return 'Success: $count';
+  }
+
+  @override
+  String desktopMergerSummaryFailed(Object count) {
+    return 'Failed: $count';
+  }
+
+  @override
+  String desktopMergerAffectedApps(Object count) {
+    return 'Affected Apps ($count)';
+  }
+
+  @override
+  String desktopMergerWarnings(Object count) {
+    return 'Warnings ($count)';
+  }
+
+  @override
+  String get desktopMergerDetailTitle => 'Detailed Results';
+
+  @override
+  String get desktopMergerFileSuccess => 'Success';
+
+  @override
+  String get desktopMergerFileFailed => 'Failed';
+
+  @override
+  String get desktopMergerNoData => 'No data changes';
+
+  @override
+  String get desktopMergerExpandAll => 'Expand All';
+
+  @override
+  String get desktopMergerCollapseAll => 'Collapse All';
+
+  @override
+  String get desktopMergerStagePacking => 'Packing ZIP...';
+
+  @override
+  String get desktopMergerOutputZip => 'Output File';
+
+  @override
+  String get desktopMergerOpenFolder => 'Open Folder';
+
+  @override
+  String desktopMergerPackingProgress(Object percent) {
+    return 'Packing: $percent%';
+  }
+
+  @override
+  String get desktopMergerMinFilesHint =>
+      'Please select at least 2 backup files to merge';
+
+  @override
+  String get desktopMergerExtractingHint =>
+      'Extracting backup file. Large backups (tens of thousands of screenshots) may take several minutes, please be patient...';
+
+  @override
+  String get desktopMergerCopyingHint =>
+      'Copying screenshot files, skipping existing images...';
+
+  @override
+  String get desktopMergerMergingHint =>
+      'Merging database records with smart deduplication...';
+
+  @override
+  String get desktopMergerMemoryHint => 'Merging memory archive data...';
+
+  @override
+  String get desktopMergerPackingHint =>
+      'Packing merged results into ZIP file...';
 }

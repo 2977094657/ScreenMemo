@@ -1447,5 +1447,125 @@
   "homeMorningTipsCooldownHint": "少し休んでからもう一度引き下げてください",
   "homeMorningTipsCooldownMessage": "何度もリフレッシュしましたね。少し画面から目を離して、現実の景色を味わいましょう。",
   "languageJapanese": "日本語",
-  "languageKorean": "韓国語"
+  "languageKorean": "韓国語",
+
+  "expireCleanupConfirmTitle": "スクリーンショット期限切れ削除を有効にしますか？",
+  "expireCleanupConfirmMessage": "有効にすると、{days}日以上経過したスクリーンショット画像が即座に削除されます。\n\n注意：画像ファイルのみが削除され、イベントやサマリーなどのコンテンツは保持されます。",
+  "@expireCleanupConfirmMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "expireCleanupConfirmAction": "有効にする",
+
+  "desktopMergerTitle": "データ統合ツール",
+  "desktopMergerDescription": "複数のバックアップファイルを効率的に統合",
+  "desktopMergerSteps": "1. 出力ディレクトリを選択（統合データはここに保存されます）\n2. 統合するZIPバックアップファイルを追加\n3. 統合開始をクリック",
+  "desktopMergerOutputDir": "出力ディレクトリ",
+  "desktopMergerSelectOutputDir": "出力ディレクトリを選択...",
+  "desktopMergerBrowse": "参照",
+  "desktopMergerZipFiles": "ZIPバックアップファイル",
+  "desktopMergerSelectedCount": "{count}ファイルを選択",
+  "@desktopMergerSelectedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAddFiles": "ファイルを追加",
+  "desktopMergerNoFiles": "ファイルが選択されていません",
+  "desktopMergerDragHint": "上のボタンをクリックしてZIPバックアップファイルを追加",
+  "desktopMergerResultTitle": "統合結果",
+  "desktopMergerInsertedCount": "+{count}枚のスクリーンショット",
+  "@desktopMergerInsertedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerClear": "リストをクリア",
+  "desktopMergerMerging": "統合中...",
+  "desktopMergerStart": "統合を開始",
+  "desktopMergerSelectZips": "ZIPバックアップファイルを選択",
+  "desktopMergerStageExtracting": "解凍中...",
+  "desktopMergerStageCopying": "ファイルをコピー中...",
+  "desktopMergerStageMerging": "データベースを統合中...",
+  "desktopMergerStageMemory": "メモリデータを統合中...",
+  "desktopMergerStageFinalizing": "完了処理中...",
+  "desktopMergerStageProcessing": "処理中...",
+  "desktopMergerStageCompleted": "統合完了",
+
+  "desktopMergerLiveStats": "リアルタイム統計",
+  "desktopMergerProcessingFile": "処理中: {fileName}",
+  "@desktopMergerProcessingFile": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "desktopMergerFileProgress": "ファイル進捗: {current}/{total}",
+  "@desktopMergerFileProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "desktopMergerStatScreenshots": "新規スクリーンショット",
+  "desktopMergerStatSkipped": "スキップした重複",
+  "desktopMergerStatFiles": "コピーしたファイル",
+  "desktopMergerStatReused": "再利用ファイル",
+  "desktopMergerStatEvents": "メモリイベント",
+  "desktopMergerStatTags": "メモリタグ",
+  "desktopMergerStatEvidence": "メモリ証拠",
+
+  "desktopMergerSummaryTitle": "統合サマリー",
+  "desktopMergerSummaryTotal": "合計 {count} ファイルを処理",
+  "@desktopMergerSummaryTotal": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummarySuccess": "成功: {count}",
+  "@desktopMergerSummarySuccess": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummaryFailed": "失敗: {count}",
+  "@desktopMergerSummaryFailed": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAffectedApps": "影響を受けたアプリ ({count})",
+  "@desktopMergerAffectedApps": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerWarnings": "警告 ({count})",
+  "@desktopMergerWarnings": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerDetailTitle": "詳細結果",
+  "desktopMergerFileSuccess": "成功",
+  "desktopMergerFileFailed": "失敗",
+  "desktopMergerNoData": "データ変更なし",
+  "desktopMergerExpandAll": "すべて展開",
+  "desktopMergerCollapseAll": "すべて折りたたむ",
+
+  "desktopMergerStagePacking": "ZIP作成中...",
+  "desktopMergerOutputZip": "出力ファイル",
+  "desktopMergerOpenFolder": "フォルダを開く",
+  "desktopMergerPackingProgress": "パッキング: {percent}%",
+  "@desktopMergerPackingProgress": {
+    "placeholders": {
+      "percent": {}
+    }
+  },
+  "desktopMergerMinFilesHint": "統合するには少なくとも2つのバックアップファイルを選択してください",
+  "desktopMergerExtractingHint": "バックアップファイルを解凍中です。大規模なバックアップ（数万枚のスクリーンショット）は数分かかる場合があります。しばらくお待ちください...",
+  "desktopMergerCopyingHint": "スクリーンショットファイルをコピー中、既存の画像はスキップ...",
+  "desktopMergerMergingHint": "データベースレコードを統合中、スマート重複排除処理中...",
+  "desktopMergerMemoryHint": "メモリアーカイブデータを統合中...",
+  "desktopMergerPackingHint": "統合結果をZIPファイルにパッキング中..."
 }

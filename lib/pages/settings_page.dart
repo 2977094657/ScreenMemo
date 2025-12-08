@@ -3541,60 +3541,50 @@ class _SettingsPageState extends State<SettingsPage>
                         ),
                       ),
                       const SizedBox(height: 2),
-                      IgnorePointer(
-                        ignoring: !_expireEnabled,
-                        child: Opacity(
-                          opacity: _expireEnabled ? 1.0 : 0.5,
-                          child: Row(
-                            children: [
-                              Text(
-                                AppLocalizations.of(context).currentTimeLabel,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                              const SizedBox(width: AppTheme.spacing1),
-                              GestureDetector(
-                                onTap: _expireEnabled
-                                    ? _showExpireDaysDialog
-                                    : null,
-                                child: Text(
-                                  AppLocalizations.of(
+                      Row(
+                        children: [
+                          Text(
+                            AppLocalizations.of(context).currentTimeLabel,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
                                     context,
-                                  ).expireDaysUnit(_expireDays),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                        decoration: _expireEnabled
-                                            ? TextDecoration.underline
-                                            : TextDecoration.none,
-                                      ),
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
-                              ),
-                              const SizedBox(width: AppTheme.spacing1),
-                              Flexible(
-                                child: Text(
-                                  AppLocalizations.of(
-                                    context,
-                                  ).clickToModifyHint,
-                                  softWrap: false,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ),
-                            ],
                           ),
-                        ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          GestureDetector(
+                            onTap: _showExpireDaysDialog,
+                            child: Text(
+                              AppLocalizations.of(
+                                context,
+                              ).expireDaysUnit(_expireDays),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          Flexible(
+                            child: Text(
+                              AppLocalizations.of(
+                                context,
+                              ).clickToModifyHint,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -3608,14 +3598,16 @@ class _SettingsPageState extends State<SettingsPage>
                       value: _expireEnabled,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       onChanged: (v) async {
-                        setState(() {
-                          _expireEnabled = v;
-                        });
-                        await _saveScreenshotExpireSettings();
-                        // 开启或修改后立即尝试清理一次（后台节流保护）
-                        // ignore: unawaited_futures
-                        ScreenshotService.instance
-                            .cleanupExpiredScreenshotsIfNeeded(force: v);
+                        if (v) {
+                          // 开启时显示二次确认对话框
+                          _showExpireEnableConfirmDialog();
+                        } else {
+                          // 关闭时直接保存
+                          setState(() {
+                            _expireEnabled = false;
+                          });
+                          await _saveScreenshotExpireSettings();
+                        }
                       },
                     ),
                   ),
@@ -3625,6 +3617,35 @@ class _SettingsPageState extends State<SettingsPage>
           ),
         ],
       ),
+    );
+  }
+
+  void _showExpireEnableConfirmDialog() {
+    showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).expireCleanupConfirmTitle,
+      content: Text(
+        AppLocalizations.of(context).expireCleanupConfirmMessage(_expireDays),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).expireCleanupConfirmAction,
+          style: UIDialogActionStyle.primary,
+          onPressed: (ctx) async {
+            setState(() {
+              _expireEnabled = true;
+            });
+            await _saveScreenshotExpireSettings();
+            // 立即执行清理
+            // ignore: unawaited_futures
+            ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
+              force: true,
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -3687,7 +3708,6 @@ class _SettingsPageState extends State<SettingsPage>
               return;
             }
             setState(() {
-              _expireEnabled = true;
               _expireDays = d;
             });
             await _saveScreenshotExpireSettings();
@@ -3698,10 +3718,13 @@ class _SettingsPageState extends State<SettingsPage>
                 AppLocalizations.of(ctx).expireDaysSavedSuccess(d),
               );
             }
-            // ignore: unawaited_futures
-            ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
-              force: true,
-            );
+            // 如果开关已开启，则立即清理
+            if (_expireEnabled) {
+              // ignore: unawaited_futures
+              ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(
+                force: true,
+              );
+            }
           },
         ),
       ],

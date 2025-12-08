@@ -2583,4 +2583,205 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get homeMorningTipsCooldownMessage =>
       '何度もリフレッシュしましたね。少し画面から目を離して、現実の景色を味わいましょう。';
+
+  @override
+  String get expireCleanupConfirmTitle => 'スクリーンショット期限切れ削除を有効にしますか？';
+
+  @override
+  String expireCleanupConfirmMessage(Object days) {
+    return '有効にすると、$days日以上経過したスクリーンショット画像が即座に削除されます。\n\n注意：画像ファイルのみが削除され、イベントやサマリーなどのコンテンツは保持されます。';
+  }
+
+  @override
+  String get expireCleanupConfirmAction => '有効にする';
+
+  @override
+  String get desktopMergerTitle => 'データ統合ツール';
+
+  @override
+  String get desktopMergerDescription => '複数のバックアップファイルを効率的に統合';
+
+  @override
+  String get desktopMergerSteps =>
+      '1. 出力ディレクトリを選択（統合データはここに保存されます）\n2. 統合するZIPバックアップファイルを追加\n3. 統合開始をクリック';
+
+  @override
+  String get desktopMergerOutputDir => '出力ディレクトリ';
+
+  @override
+  String get desktopMergerSelectOutputDir => '出力ディレクトリを選択...';
+
+  @override
+  String get desktopMergerBrowse => '参照';
+
+  @override
+  String get desktopMergerZipFiles => 'ZIPバックアップファイル';
+
+  @override
+  String desktopMergerSelectedCount(Object count) {
+    return '$countファイルを選択';
+  }
+
+  @override
+  String get desktopMergerAddFiles => 'ファイルを追加';
+
+  @override
+  String get desktopMergerNoFiles => 'ファイルが選択されていません';
+
+  @override
+  String get desktopMergerDragHint => '上のボタンをクリックしてZIPバックアップファイルを追加';
+
+  @override
+  String get desktopMergerResultTitle => '統合結果';
+
+  @override
+  String desktopMergerInsertedCount(Object count) {
+    return '+$count枚のスクリーンショット';
+  }
+
+  @override
+  String get desktopMergerClear => 'リストをクリア';
+
+  @override
+  String get desktopMergerMerging => '統合中...';
+
+  @override
+  String get desktopMergerStart => '統合を開始';
+
+  @override
+  String get desktopMergerSelectZips => 'ZIPバックアップファイルを選択';
+
+  @override
+  String get desktopMergerStageExtracting => '解凍中...';
+
+  @override
+  String get desktopMergerStageCopying => 'ファイルをコピー中...';
+
+  @override
+  String get desktopMergerStageMerging => 'データベースを統合中...';
+
+  @override
+  String get desktopMergerStageMemory => 'メモリデータを統合中...';
+
+  @override
+  String get desktopMergerStageFinalizing => '完了処理中...';
+
+  @override
+  String get desktopMergerStageProcessing => '処理中...';
+
+  @override
+  String get desktopMergerStageCompleted => '統合完了';
+
+  @override
+  String get desktopMergerLiveStats => 'リアルタイム統計';
+
+  @override
+  String desktopMergerProcessingFile(Object fileName) {
+    return '処理中: $fileName';
+  }
+
+  @override
+  String desktopMergerFileProgress(Object current, Object total) {
+    return 'ファイル進捗: $current/$total';
+  }
+
+  @override
+  String get desktopMergerStatScreenshots => '新規スクリーンショット';
+
+  @override
+  String get desktopMergerStatSkipped => 'スキップした重複';
+
+  @override
+  String get desktopMergerStatFiles => 'コピーしたファイル';
+
+  @override
+  String get desktopMergerStatReused => '再利用ファイル';
+
+  @override
+  String get desktopMergerStatEvents => 'メモリイベント';
+
+  @override
+  String get desktopMergerStatTags => 'メモリタグ';
+
+  @override
+  String get desktopMergerStatEvidence => 'メモリ証拠';
+
+  @override
+  String get desktopMergerSummaryTitle => '統合サマリー';
+
+  @override
+  String desktopMergerSummaryTotal(Object count) {
+    return '合計 $count ファイルを処理';
+  }
+
+  @override
+  String desktopMergerSummarySuccess(Object count) {
+    return '成功: $count';
+  }
+
+  @override
+  String desktopMergerSummaryFailed(Object count) {
+    return '失敗: $count';
+  }
+
+  @override
+  String desktopMergerAffectedApps(Object count) {
+    return '影響を受けたアプリ ($count)';
+  }
+
+  @override
+  String desktopMergerWarnings(Object count) {
+    return '警告 ($count)';
+  }
+
+  @override
+  String get desktopMergerDetailTitle => '詳細結果';
+
+  @override
+  String get desktopMergerFileSuccess => '成功';
+
+  @override
+  String get desktopMergerFileFailed => '失敗';
+
+  @override
+  String get desktopMergerNoData => 'データ変更なし';
+
+  @override
+  String get desktopMergerExpandAll => 'すべて展開';
+
+  @override
+  String get desktopMergerCollapseAll => 'すべて折りたたむ';
+
+  @override
+  String get desktopMergerStagePacking => 'ZIP作成中...';
+
+  @override
+  String get desktopMergerOutputZip => '出力ファイル';
+
+  @override
+  String get desktopMergerOpenFolder => 'フォルダを開く';
+
+  @override
+  String desktopMergerPackingProgress(Object percent) {
+    return 'パッキング: $percent%';
+  }
+
+  @override
+  String get desktopMergerMinFilesHint => '統合するには少なくとも2つのバックアップファイルを選択してください';
+
+  @override
+  String get desktopMergerExtractingHint =>
+      'バックアップファイルを解凍中です。大規模なバックアップ（数万枚のスクリーンショット）は数分かかる場合があります。しばらくお待ちください...';
+
+  @override
+  String get desktopMergerCopyingHint => 'スクリーンショットファイルをコピー中、既存の画像はスキップ...';
+
+  @override
+  String get desktopMergerMergingHint => 'データベースレコードを統合中、スマート重複排除処理中...';
+
+  @override
+  String get desktopMergerMemoryHint => 'メモリアーカイブデータを統合中...';
+
+  @override
+  String get desktopMergerPackingHint => '統合結果をZIPファイルにパッキング中...';
 }

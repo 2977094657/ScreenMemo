@@ -4647,6 +4647,360 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You’ve refreshed quite a lot—take a breath and look up from the screen for a moment.'**
   String get homeMorningTipsCooldownMessage;
+
+  /// No description provided for @expireCleanupConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm enabling screenshot cleanup'**
+  String get expireCleanupConfirmTitle;
+
+  /// No description provided for @expireCleanupConfirmMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Once enabled, screenshots older than {days} days will be cleaned up immediately.\n\nNote: Only image files will be deleted; events, summaries, and other content will be preserved.'**
+  String expireCleanupConfirmMessage(Object days);
+
+  /// No description provided for @expireCleanupConfirmAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get expireCleanupConfirmAction;
+
+  /// No description provided for @desktopMergerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Data Merger Tool'**
+  String get desktopMergerTitle;
+
+  /// No description provided for @desktopMergerDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Efficiently merge multiple backup files'**
+  String get desktopMergerDescription;
+
+  /// No description provided for @desktopMergerSteps.
+  ///
+  /// In en, this message translates to:
+  /// **'1. Select output directory (merged data will be saved here)\n2. Add ZIP backup files to merge\n3. Click Start Merge'**
+  String get desktopMergerSteps;
+
+  /// No description provided for @desktopMergerOutputDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Output Directory'**
+  String get desktopMergerOutputDir;
+
+  /// No description provided for @desktopMergerSelectOutputDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Select output directory...'**
+  String get desktopMergerSelectOutputDir;
+
+  /// No description provided for @desktopMergerBrowse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse'**
+  String get desktopMergerBrowse;
+
+  /// No description provided for @desktopMergerZipFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'ZIP Backup Files'**
+  String get desktopMergerZipFiles;
+
+  /// No description provided for @desktopMergerSelectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files selected'**
+  String desktopMergerSelectedCount(Object count);
+
+  /// No description provided for @desktopMergerAddFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Files'**
+  String get desktopMergerAddFiles;
+
+  /// No description provided for @desktopMergerNoFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No files selected'**
+  String get desktopMergerNoFiles;
+
+  /// No description provided for @desktopMergerDragHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Click the button above to add ZIP backup files'**
+  String get desktopMergerDragHint;
+
+  /// No description provided for @desktopMergerResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge Results'**
+  String get desktopMergerResultTitle;
+
+  /// No description provided for @desktopMergerInsertedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'+{count} screenshots'**
+  String desktopMergerInsertedCount(Object count);
+
+  /// No description provided for @desktopMergerClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear List'**
+  String get desktopMergerClear;
+
+  /// No description provided for @desktopMergerMerging.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging...'**
+  String get desktopMergerMerging;
+
+  /// No description provided for @desktopMergerStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start Merge'**
+  String get desktopMergerStart;
+
+  /// No description provided for @desktopMergerSelectZips.
+  ///
+  /// In en, this message translates to:
+  /// **'Select ZIP backup files'**
+  String get desktopMergerSelectZips;
+
+  /// No description provided for @desktopMergerStageExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting...'**
+  String get desktopMergerStageExtracting;
+
+  /// No description provided for @desktopMergerStageCopying.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying files...'**
+  String get desktopMergerStageCopying;
+
+  /// No description provided for @desktopMergerStageMerging.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging databases...'**
+  String get desktopMergerStageMerging;
+
+  /// No description provided for @desktopMergerStageMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging memory data...'**
+  String get desktopMergerStageMemory;
+
+  /// No description provided for @desktopMergerStageFinalizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finalizing...'**
+  String get desktopMergerStageFinalizing;
+
+  /// No description provided for @desktopMergerStageProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing...'**
+  String get desktopMergerStageProcessing;
+
+  /// No description provided for @desktopMergerStageCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge completed'**
+  String get desktopMergerStageCompleted;
+
+  /// No description provided for @desktopMergerLiveStats.
+  ///
+  /// In en, this message translates to:
+  /// **'Live Statistics'**
+  String get desktopMergerLiveStats;
+
+  /// No description provided for @desktopMergerProcessingFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing: {fileName}'**
+  String desktopMergerProcessingFile(Object fileName);
+
+  /// No description provided for @desktopMergerFileProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'File Progress: {current}/{total}'**
+  String desktopMergerFileProgress(Object current, Object total);
+
+  /// No description provided for @desktopMergerStatScreenshots.
+  ///
+  /// In en, this message translates to:
+  /// **'New Screenshots'**
+  String get desktopMergerStatScreenshots;
+
+  /// No description provided for @desktopMergerStatSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped Duplicates'**
+  String get desktopMergerStatSkipped;
+
+  /// No description provided for @desktopMergerStatFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied Files'**
+  String get desktopMergerStatFiles;
+
+  /// No description provided for @desktopMergerStatReused.
+  ///
+  /// In en, this message translates to:
+  /// **'Reused Files'**
+  String get desktopMergerStatReused;
+
+  /// No description provided for @desktopMergerStatEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Events'**
+  String get desktopMergerStatEvents;
+
+  /// No description provided for @desktopMergerStatTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Tags'**
+  String get desktopMergerStatTags;
+
+  /// No description provided for @desktopMergerStatEvidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory Evidence'**
+  String get desktopMergerStatEvidence;
+
+  /// No description provided for @desktopMergerSummaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge Summary'**
+  String get desktopMergerSummaryTitle;
+
+  /// No description provided for @desktopMergerSummaryTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Processed {count} files in total'**
+  String desktopMergerSummaryTotal(Object count);
+
+  /// No description provided for @desktopMergerSummarySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Success: {count}'**
+  String desktopMergerSummarySuccess(Object count);
+
+  /// No description provided for @desktopMergerSummaryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {count}'**
+  String desktopMergerSummaryFailed(Object count);
+
+  /// No description provided for @desktopMergerAffectedApps.
+  ///
+  /// In en, this message translates to:
+  /// **'Affected Apps ({count})'**
+  String desktopMergerAffectedApps(Object count);
+
+  /// No description provided for @desktopMergerWarnings.
+  ///
+  /// In en, this message translates to:
+  /// **'Warnings ({count})'**
+  String desktopMergerWarnings(Object count);
+
+  /// No description provided for @desktopMergerDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Detailed Results'**
+  String get desktopMergerDetailTitle;
+
+  /// No description provided for @desktopMergerFileSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Success'**
+  String get desktopMergerFileSuccess;
+
+  /// No description provided for @desktopMergerFileFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get desktopMergerFileFailed;
+
+  /// No description provided for @desktopMergerNoData.
+  ///
+  /// In en, this message translates to:
+  /// **'No data changes'**
+  String get desktopMergerNoData;
+
+  /// No description provided for @desktopMergerExpandAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand All'**
+  String get desktopMergerExpandAll;
+
+  /// No description provided for @desktopMergerCollapseAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse All'**
+  String get desktopMergerCollapseAll;
+
+  /// No description provided for @desktopMergerStagePacking.
+  ///
+  /// In en, this message translates to:
+  /// **'Packing ZIP...'**
+  String get desktopMergerStagePacking;
+
+  /// No description provided for @desktopMergerOutputZip.
+  ///
+  /// In en, this message translates to:
+  /// **'Output File'**
+  String get desktopMergerOutputZip;
+
+  /// No description provided for @desktopMergerOpenFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Folder'**
+  String get desktopMergerOpenFolder;
+
+  /// No description provided for @desktopMergerPackingProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Packing: {percent}%'**
+  String desktopMergerPackingProgress(Object percent);
+
+  /// No description provided for @desktopMergerMinFilesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select at least 2 backup files to merge'**
+  String get desktopMergerMinFilesHint;
+
+  /// No description provided for @desktopMergerExtractingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting backup file. Large backups (tens of thousands of screenshots) may take several minutes, please be patient...'**
+  String get desktopMergerExtractingHint;
+
+  /// No description provided for @desktopMergerCopyingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying screenshot files, skipping existing images...'**
+  String get desktopMergerCopyingHint;
+
+  /// No description provided for @desktopMergerMergingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging database records with smart deduplication...'**
+  String get desktopMergerMergingHint;
+
+  /// No description provided for @desktopMergerMemoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Merging memory archive data...'**
+  String get desktopMergerMemoryHint;
+
+  /// No description provided for @desktopMergerPackingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Packing merged results into ZIP file...'**
+  String get desktopMergerPackingHint;
 }
 
 class _AppLocalizationsDelegate

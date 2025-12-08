@@ -1267,5 +1267,124 @@
   "homeMorningTipsViewAll": "Open daily summary",
   "homeMorningTipsDismiss": "Dismiss card",
   "homeMorningTipsCooldownHint": "Take a short pause before pulling again",
-  "homeMorningTipsCooldownMessage": "You’ve refreshed quite a lot—take a breath and look up from the screen for a moment."
+  "homeMorningTipsCooldownMessage": "You’ve refreshed quite a lot—take a breath and look up from the screen for a moment.",
+  "expireCleanupConfirmTitle": "Confirm enabling screenshot cleanup",
+  "expireCleanupConfirmMessage": "Once enabled, screenshots older than {days} days will be cleaned up immediately.\n\nNote: Only image files will be deleted; events, summaries, and other content will be preserved.",
+  "@expireCleanupConfirmMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "expireCleanupConfirmAction": "Confirm",
+
+  "desktopMergerTitle": "Data Merger Tool",
+  "desktopMergerDescription": "Efficiently merge multiple backup files",
+  "desktopMergerSteps": "1. Select output directory (merged data will be saved here)\n2. Add ZIP backup files to merge\n3. Click Start Merge",
+  "desktopMergerOutputDir": "Output Directory",
+  "desktopMergerSelectOutputDir": "Select output directory...",
+  "desktopMergerBrowse": "Browse",
+  "desktopMergerZipFiles": "ZIP Backup Files",
+  "desktopMergerSelectedCount": "{count} files selected",
+  "@desktopMergerSelectedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAddFiles": "Add Files",
+  "desktopMergerNoFiles": "No files selected",
+  "desktopMergerDragHint": "Click the button above to add ZIP backup files",
+  "desktopMergerResultTitle": "Merge Results",
+  "desktopMergerInsertedCount": "+{count} screenshots",
+  "@desktopMergerInsertedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerClear": "Clear List",
+  "desktopMergerMerging": "Merging...",
+  "desktopMergerStart": "Start Merge",
+  "desktopMergerSelectZips": "Select ZIP backup files",
+  "desktopMergerStageExtracting": "Extracting...",
+  "desktopMergerStageCopying": "Copying files...",
+  "desktopMergerStageMerging": "Merging databases...",
+  "desktopMergerStageMemory": "Merging memory data...",
+  "desktopMergerStageFinalizing": "Finalizing...",
+  "desktopMergerStageProcessing": "Processing...",
+  "desktopMergerStageCompleted": "Merge completed",
+
+  "desktopMergerLiveStats": "Live Statistics",
+  "desktopMergerProcessingFile": "Processing: {fileName}",
+  "@desktopMergerProcessingFile": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "desktopMergerFileProgress": "File Progress: {current}/{total}",
+  "@desktopMergerFileProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "desktopMergerStatScreenshots": "New Screenshots",
+  "desktopMergerStatSkipped": "Skipped Duplicates",
+  "desktopMergerStatFiles": "Copied Files",
+  "desktopMergerStatReused": "Reused Files",
+  "desktopMergerStatEvents": "Memory Events",
+  "desktopMergerStatTags": "Memory Tags",
+  "desktopMergerStatEvidence": "Memory Evidence",
+
+  "desktopMergerSummaryTitle": "Merge Summary",
+  "desktopMergerSummaryTotal": "Processed {count} files in total",
+  "@desktopMergerSummaryTotal": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummarySuccess": "Success: {count}",
+  "@desktopMergerSummarySuccess": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummaryFailed": "Failed: {count}",
+  "@desktopMergerSummaryFailed": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAffectedApps": "Affected Apps ({count})",
+  "@desktopMergerAffectedApps": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerWarnings": "Warnings ({count})",
+  "@desktopMergerWarnings": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerDetailTitle": "Detailed Results",
+  "desktopMergerFileSuccess": "Success",
+  "desktopMergerFileFailed": "Failed",
+  "desktopMergerNoData": "No data changes",
+  "desktopMergerExpandAll": "Expand All",
+  "desktopMergerCollapseAll": "Collapse All",
+
+  "desktopMergerStagePacking": "Packing ZIP...",
+  "desktopMergerOutputZip": "Output File",
+  "desktopMergerOpenFolder": "Open Folder",
+  "desktopMergerPackingProgress": "Packing: {percent}%",
+  "@desktopMergerPackingProgress": {
+    "placeholders": {
+      "percent": {}
+    }
+  },
+  "desktopMergerMinFilesHint": "Please select at least 2 backup files to merge",
+  "desktopMergerExtractingHint": "Extracting backup file. Large backups (tens of thousands of screenshots) may take several minutes, please be patient...",
+  "desktopMergerCopyingHint": "Copying screenshot files, skipping existing images...",
+  "desktopMergerMergingHint": "Merging database records with smart deduplication...",
+  "desktopMergerMemoryHint": "Merging memory archive data...",
+  "desktopMergerPackingHint": "Packing merged results into ZIP file..."
 }

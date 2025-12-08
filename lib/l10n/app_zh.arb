@@ -1371,5 +1371,125 @@
   "homeMorningTipsViewAll": "查看每日总结",
   "homeMorningTipsDismiss": "关闭提醒",
   "homeMorningTipsCooldownHint": "稍作停顿，稍后再刷新灵感",
-  "homeMorningTipsCooldownMessage": "已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。"
+  "homeMorningTipsCooldownMessage": "已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。",
+
+  "expireCleanupConfirmTitle": "确认开启截图过期清理",
+  "expireCleanupConfirmMessage": "开启后将立即清理超过 {days} 天的截图图片。\n\n注意：仅清理图片文件，动态、总结等内容会保留。",
+  "@expireCleanupConfirmMessage": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "expireCleanupConfirmAction": "确认开启",
+
+  "desktopMergerTitle": "数据合并工具",
+  "desktopMergerDescription": "高效合并多个备份文件",
+  "desktopMergerSteps": "1. 选择输出目录（合并后的数据将保存在此目录）\n2. 添加要合并的 ZIP 备份文件\n3. 点击开始合并",
+  "desktopMergerOutputDir": "输出目录",
+  "desktopMergerSelectOutputDir": "选择输出目录...",
+  "desktopMergerBrowse": "浏览",
+  "desktopMergerZipFiles": "ZIP 备份文件",
+  "desktopMergerSelectedCount": "已选择 {count} 个文件",
+  "@desktopMergerSelectedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAddFiles": "添加文件",
+  "desktopMergerNoFiles": "暂无选择的文件",
+  "desktopMergerDragHint": "点击上方按钮添加 ZIP 备份文件",
+  "desktopMergerResultTitle": "合并结果",
+  "desktopMergerInsertedCount": "+{count} 张截图",
+  "@desktopMergerInsertedCount": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerClear": "清空列表",
+  "desktopMergerMerging": "合并中...",
+  "desktopMergerStart": "开始合并",
+  "desktopMergerSelectZips": "选择 ZIP 备份文件",
+  "desktopMergerStageExtracting": "正在解压...",
+  "desktopMergerStageCopying": "正在复制文件...",
+  "desktopMergerStageMerging": "正在合并数据库...",
+  "desktopMergerStageMemory": "正在合并记忆数据...",
+  "desktopMergerStageFinalizing": "正在完成...",
+  "desktopMergerStageProcessing": "正在处理...",
+  "desktopMergerStageCompleted": "合并完成",
+
+  "desktopMergerLiveStats": "实时统计",
+  "desktopMergerProcessingFile": "正在处理: {fileName}",
+  "@desktopMergerProcessingFile": {
+    "placeholders": {
+      "fileName": {}
+    }
+  },
+  "desktopMergerFileProgress": "文件进度: {current}/{total}",
+  "@desktopMergerFileProgress": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+  },
+  "desktopMergerStatScreenshots": "新增截图",
+  "desktopMergerStatSkipped": "跳过重复",
+  "desktopMergerStatFiles": "复制文件",
+  "desktopMergerStatReused": "复用文件",
+  "desktopMergerStatEvents": "记忆事件",
+  "desktopMergerStatTags": "记忆标签",
+  "desktopMergerStatEvidence": "记忆证据",
+
+  "desktopMergerSummaryTitle": "合并汇总",
+  "desktopMergerSummaryTotal": "总计处理 {count} 个文件",
+  "@desktopMergerSummaryTotal": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummarySuccess": "成功: {count}",
+  "@desktopMergerSummarySuccess": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerSummaryFailed": "失败: {count}",
+  "@desktopMergerSummaryFailed": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerAffectedApps": "涉及应用 ({count})",
+  "@desktopMergerAffectedApps": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerWarnings": "警告 ({count})",
+  "@desktopMergerWarnings": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "desktopMergerDetailTitle": "详细结果",
+  "desktopMergerFileSuccess": "成功",
+  "desktopMergerFileFailed": "失败",
+  "desktopMergerNoData": "无数据变更",
+  "desktopMergerExpandAll": "展开全部",
+  "desktopMergerCollapseAll": "折叠全部",
+
+  "desktopMergerStagePacking": "正在打包 ZIP...",
+  "desktopMergerOutputZip": "输出文件",
+  "desktopMergerOpenFolder": "打开文件夹",
+  "desktopMergerPackingProgress": "打包进度: {percent}%",
+  "@desktopMergerPackingProgress": {
+    "placeholders": {
+      "percent": {}
+    }
+  },
+  "desktopMergerMinFilesHint": "请至少选择 2 个备份文件进行合并",
+  "desktopMergerExtractingHint": "正在解压备份文件，大型备份（数万张截图）可能需要几分钟，请耐心等待...",
+  "desktopMergerCopyingHint": "正在复制截图文件，跳过已存在的图片...",
+  "desktopMergerMergingHint": "正在合并数据库记录，智能去重处理中...",
+  "desktopMergerMemoryHint": "正在合并记忆档案数据...",
+  "desktopMergerPackingHint": "正在将合并结果打包为 ZIP 文件..."
 }
