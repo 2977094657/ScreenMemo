@@ -1,0 +1,1270 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:isolate';
+import 'package:archive/archive_io.dart';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
+import '../l10n/app_localizations.dart';
+import '../services/screenshot_database.dart';
+import '../theme/app_theme.dart';
+
+/// 桌面端数据合并工具页面
+/// 支持选择多个 ZIP 文件并合并到指定目录
+class DesktopMergerPage extends StatefulWidget {
+  const DesktopMergerPage({super.key});
+
+  @override
+  State<DesktopMergerPage> createState() => _DesktopMergerPageState();
+}
+
+class _DesktopMergerPageState extends State<DesktopMergerPage> {
+  final List<File> _selectedZipFiles = [];
+  String? _outputDirectory;
+  bool _isMerging = false;
+  double _progress = 0.0;
+  String _currentStage = '';
+  String? _currentEntry;
+  String? _currentFileName;
+  int _currentFileIndex = 0;
+  final List<_MergeResult> _results = [];
+  String? _errorMessage;
+  bool _showDetails = true;
+
+  // 累计统计（实时更新）
+  int _totalScreenshots = 0;
+  int _totalSkipped = 0;
+  int _totalFiles = 0;
+  int _totalReused = 0;
+  int _totalEvents = 0;
+  int _totalTags = 0;
+  int _totalEvidence = 0;
+  final Set<String> _allAffectedApps = {};
+  final List<String> _allWarnings = [];
+
+  // 打包相关
+  String? _outputZipPath;
+  double _packingProgress = 0.0;
+  bool _isPacking = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t.desktopMergerTitle),
+        centerTitle: true,
+        elevation: 0,
+        toolbarHeight: 40,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 左侧：选择区域
+            SizedBox(
+              width: 320,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 输出目录选择
+                  _buildDirectorySelector(context),
+                  const SizedBox(height: AppTheme.spacing2),
+                  // ZIP 文件选择
+                  _buildZipFileSelector(context),
+                  const SizedBox(height: AppTheme.spacing2),
+                  // 已选文件列表
+                  Expanded(child: _buildFileList(context)),
+                  const SizedBox(height: AppTheme.spacing2),
+                  // 操作按钮
+                  _buildActionButtons(context),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            // 右侧：进度和结果区域
+            Expanded(
+              child: (_isMerging || _results.isNotEmpty || _errorMessage != null)
+                  ? SingleChildScrollView(child: _buildProgressArea(context))
+                  : _buildEmptyState(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.merge_type, size: 48, color: theme.colorScheme.primary.withOpacity(0.5)),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            t.desktopMergerDescription,
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDirectorySelector(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+        child: Row(
+          children: [
+            Icon(Icons.folder, color: theme.colorScheme.primary, size: 20),
+            const SizedBox(width: AppTheme.spacing2),
+            Expanded(
+              child: Text(
+                _outputDirectory ?? t.desktopMergerSelectOutputDir,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: _outputDirectory != null ? FontWeight.w500 : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: _isMerging ? null : _selectOutputDirectory,
+              child: Text(t.desktopMergerBrowse, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZipFileSelector(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+        child: Row(
+          children: [
+            Icon(Icons.archive, color: Colors.orange.shade700, size: 20),
+            const SizedBox(width: AppTheme.spacing2),
+            Expanded(
+              child: Text(
+                '${t.desktopMergerZipFiles} (${_selectedZipFiles.length})',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _isMerging ? null : _selectZipFiles,
+              child: Text(t.desktopMergerAddFiles, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFileList(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    if (_selectedZipFiles.isEmpty) {
+      return Card(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.upload_file, size: 32, color: Colors.orange.shade700),
+              const SizedBox(height: AppTheme.spacing2),
+              Text(t.desktopMergerNoFiles, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: ListView.builder(
+        padding: const EdgeInsets.all(AppTheme.spacing1),
+        itemCount: _selectedZipFiles.length,
+        itemBuilder: (context, index) {
+          final file = _selectedZipFiles[index];
+          final fileName = p.basename(file.path);
+          final fileSize = _formatFileSize(file.lengthSync());
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(Icons.archive, size: 16, color: Colors.orange.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(fileName, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(fileSize, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                if (!_isMerging)
+                  InkWell(
+                    onTap: () => setState(() => _selectedZipFiles.removeAt(index)),
+                    child: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildProgressArea(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.spacing2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 合并进行中：显示进度和实时统计
+            if (_isMerging) ...[
+              // 进度头部
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_isPacking) ...[
+                          Text(
+                            t.desktopMergerStagePacking,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            t.desktopMergerPackingProgress((_packingProgress * 100).toInt()),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (_currentEntry != null)
+                            Text(
+                              _currentEntry!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ] else ...[
+                          Row(
+                            children: [
+                              Text(
+                                t.desktopMergerFileProgress(
+                                  _currentFileIndex + 1,
+                                  _selectedZipFiles.length,
+                                ),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (_currentFileName != null) ...[
+                                const SizedBox(width: AppTheme.spacing2),
+                                Expanded(
+                                  child: Text(
+                                    _currentFileName!,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _getStageLabel(_currentStage, t),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (_currentEntry != null && _currentEntry != _currentFileName)
+                            Text(
+                              _currentEntry!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _isPacking
+                        ? '${(_packingProgress * 100).toInt()}%'
+                        : '${(_progress * 100).toInt()}%',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              LinearProgressIndicator(value: _isPacking ? _packingProgress : _progress),
+
+              // 阶段提示信息
+              Builder(builder: (context) {
+                final hint = _getStageHint(_isPacking ? 'packing' : _currentStage, t);
+                if (hint != null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: AppTheme.spacing2),
+                    child: Container(
+                      padding: const EdgeInsets.all(AppTheme.spacing2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: AppTheme.spacing2),
+                          Expanded(
+                            child: Text(
+                              hint,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              }),
+              const SizedBox(height: AppTheme.spacing3),
+
+              // 实时统计面板（打包时不显示，只有有数据时才显示）
+              if (!_isPacking && _hasAnyStats()) _buildLiveStatsPanel(context),
+            ],
+
+            // 错误信息
+            if (_errorMessage != null) ...[
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacing3),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: theme.colorScheme.error),
+                    const SizedBox(width: AppTheme.spacing2),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // 合并完成：显示详细汇总
+            if (_results.isNotEmpty && !_isMerging) ...[
+              _buildSummarySection(context),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建实时统计面板
+  Widget _buildLiveStatsPanel(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t.desktopMergerLiveStats,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Wrap(
+            spacing: AppTheme.spacing4,
+            runSpacing: AppTheme.spacing2,
+            children: [
+              // 实时统计中仅展示“新增截图数”，其余统计放在下方汇总区域
+              _buildStatChip(
+                context,
+                t.desktopMergerStatScreenshots,
+                _totalScreenshots,
+                Icons.photo_library,
+                theme.colorScheme.primary,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(BuildContext context, String label, int value, IconData icon, Color color) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            '$label: ',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          Text(
+            value.toString(),
+            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建汇总区域
+  Widget _buildSummarySection(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final successCount = _results.where((r) => r.success).length;
+    final failedCount = _results.where((r) => !r.success).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 汇总标题
+        Row(
+          children: [
+            Icon(
+              Icons.summarize,
+              color: theme.colorScheme.primary,
+              size: 20,
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            Text(
+              t.desktopMergerSummaryTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => setState(() => _showDetails = !_showDetails),
+              icon: Icon(_showDetails ? Icons.expand_less : Icons.expand_more, size: 18),
+              label: Text(_showDetails ? t.desktopMergerCollapseAll : t.desktopMergerExpandAll),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+
+        // 输出目录显示
+        if (_outputZipPath != null) ...[
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing2),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                const SizedBox(width: AppTheme.spacing2),
+                Expanded(
+                  child: Text(
+                    _outputZipPath!,
+                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.spacing1),
+                TextButton.icon(
+                  onPressed: _openOutputFolder,
+                  icon: const Icon(Icons.folder_open, size: 16),
+                  label: Text(t.desktopMergerOpenFolder, style: const TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+        ],
+
+        // 简洁统计
+        Container(
+          padding: const EdgeInsets.all(AppTheme.spacing2),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildSimpleStat(context, '${_results.length}', t.desktopMergerSummaryTotal(_results.length).split(' ').last, Icons.folder_zip, theme.colorScheme.primary),
+              _buildSimpleStat(context, '$_totalScreenshots', t.desktopMergerStatScreenshots, Icons.photo_library, Colors.green),
+              _buildSimpleStat(context, '$_totalSkipped', t.desktopMergerStatSkipped, Icons.skip_next, theme.colorScheme.secondary),
+              if (failedCount > 0)
+                _buildSimpleStat(context, '$failedCount', t.desktopMergerFileFailed, Icons.error, theme.colorScheme.error),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSimpleStat(BuildContext context, String value, String label, IconData icon, Color color) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 4),
+            Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: color)),
+          ],
+        ),
+        Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      ],
+    );
+  }
+
+  Widget _buildWarningsSection(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: Text(
+        t.desktopMergerWarnings(_allWarnings.length),
+        style: theme.textTheme.titleSmall?.copyWith(color: Colors.orange),
+      ),
+      leading: const Icon(Icons.warning_amber, color: Colors.orange),
+      initiallyExpanded: false,
+      children: [
+        ..._allWarnings.take(10).map((w) => Padding(
+          padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('• ', style: TextStyle(color: Colors.orange)),
+              Expanded(
+                child: Text(
+                  w,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        )),
+        if (_allWarnings.length > 10)
+          Text(
+            '... +${_allWarnings.length - 10} more',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDetailedResultsSection(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t.desktopMergerDetailTitle,
+          style: theme.textTheme.titleSmall,
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        ..._results.map((r) => _buildFileResultCard(context, r)),
+      ],
+    );
+  }
+
+  Widget _buildFileResultCard(BuildContext context, _MergeResult result) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final report = result.report;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppTheme.spacing2),
+      child: ExpansionTile(
+        leading: Icon(
+          result.success ? Icons.check_circle : Icons.error,
+          color: result.success ? Colors.green : theme.colorScheme.error,
+        ),
+        title: Text(
+          result.fileName,
+          style: theme.textTheme.bodyMedium,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          result.success
+              ? (report != null && report.insertedScreenshots > 0
+                  ? t.desktopMergerInsertedCount(report.insertedScreenshots)
+                  : t.desktopMergerNoData)
+              : t.desktopMergerFileFailed,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: result.success ? theme.colorScheme.primary : theme.colorScheme.error,
+          ),
+        ),
+        children: [
+          if (report != null)
+            Padding(
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 文件统计
+                  Wrap(
+                    spacing: AppTheme.spacing3,
+                    runSpacing: AppTheme.spacing1,
+                    children: [
+                      _buildMiniStat(context, t.desktopMergerStatScreenshots, report.insertedScreenshots),
+                      _buildMiniStat(context, t.desktopMergerStatSkipped, report.skippedScreenshotDuplicates),
+                      _buildMiniStat(context, t.desktopMergerStatFiles, report.copiedFiles),
+                      _buildMiniStat(context, t.desktopMergerStatReused, report.reusedFiles),
+                      _buildMiniStat(context, t.desktopMergerStatEvents, report.mergedMemoryEvents),
+                      _buildMiniStat(context, t.desktopMergerStatTags, report.mergedMemoryTags),
+                    ],
+                  ),
+                  // 涉及应用
+                  if (report.affectedPackages.isNotEmpty) ...[
+                    const SizedBox(height: AppTheme.spacing2),
+                    Text(
+                      t.desktopMergerAffectedApps(report.affectedPackages.length),
+                      style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      report.affectedPackages.map(_getAppDisplayName).join(', '),
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (result.errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              child: Text(
+                result.errorMessage!,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniStat(BuildContext context, String label, int value) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$label: ', style: theme.textTheme.bodySmall),
+        Text(
+          value.toString(),
+          style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  String _getAppDisplayName(String packageName) {
+    // 简化包名显示，只取最后一部分
+    final parts = packageName.split('.');
+    if (parts.length > 2) {
+      return parts.sublist(parts.length - 2).join('.');
+    }
+    return packageName;
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final needMoreFiles = _selectedZipFiles.length < 2 && !_isMerging;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 文件数量不足提示
+        if (needMoreFiles && _selectedZipFiles.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              t.desktopMergerMinFilesHint,
+              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.tertiary),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        Row(
+          children: [
+            if (_selectedZipFiles.isNotEmpty && !_isMerging)
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () => setState(() {
+                    _selectedZipFiles.clear();
+                    _results.clear();
+                    _errorMessage = null;
+                  }),
+                  child: Text(t.desktopMergerClear, style: const TextStyle(fontSize: 12)),
+                ),
+              ),
+            if (_selectedZipFiles.isNotEmpty && !_isMerging)
+              const SizedBox(width: AppTheme.spacing1),
+            Expanded(
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _canStartMerge() ? _startMerge : null,
+                child: _isMerging
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(t.desktopMergerStart, style: const TextStyle(fontSize: 12)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectOutputDirectory() async {
+    final result = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: AppLocalizations.of(context).desktopMergerSelectOutputDir,
+    );
+    if (result != null) {
+      setState(() {
+        _outputDirectory = result;
+      });
+    }
+  }
+
+  Future<void> _selectZipFiles() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+      allowMultiple: true,
+      dialogTitle: AppLocalizations.of(context).desktopMergerSelectZips,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        for (final file in result.files) {
+          if (file.path != null) {
+            final f = File(file.path!);
+            // 避免重复添加
+            if (!_selectedZipFiles.any((e) => e.path == f.path)) {
+              _selectedZipFiles.add(f);
+            }
+          }
+        }
+      });
+    }
+  }
+
+  bool _canStartMerge() {
+    return !_isMerging &&
+        _selectedZipFiles.length >= 2 &&  // 至少需要 2 个文件才能合并
+        _outputDirectory != null;
+  }
+
+  /// 是否有任何统计数据
+  bool _hasAnyStats() {
+    return _totalScreenshots > 0 ||
+        _totalSkipped > 0 ||
+        _totalFiles > 0 ||
+        _totalEvents > 0 ||
+        _totalTags > 0 ||
+        _results.isNotEmpty;
+  }
+
+  Future<void> _startMerge() async {
+    if (!_canStartMerge()) return;
+
+    // 根据文件大小降序排序，确保最大的压缩包作为基准先合并
+    _selectedZipFiles.sort((a, b) {
+      try {
+        final aSize = a.lengthSync();
+        final bSize = b.lengthSync();
+        return bSize.compareTo(aSize);
+      } catch (_) {
+        return 0;
+      }
+    });
+
+    setState(() {
+      _isMerging = true;
+      _progress = 0.0;
+      _currentStage = '';
+      _currentEntry = null;
+      _currentFileName = null;
+      _currentFileIndex = 0;
+      _results.clear();
+      _errorMessage = null;
+      _outputZipPath = null;
+      _packingProgress = 0.0;
+      _isPacking = false;
+      // 重置累计统计
+      _totalScreenshots = 0;
+      _totalSkipped = 0;
+      _totalFiles = 0;
+      _totalReused = 0;
+      _totalEvents = 0;
+      _totalTags = 0;
+      _totalEvidence = 0;
+      _allAffectedApps.clear();
+      _allWarnings.clear();
+    });
+
+    // 只统计相对于“最大压缩包基线”新增的截图数量
+    int totalNewScreenshots = 0;
+
+    try {
+      // 初始化数据库到输出目录
+      final outputDir = Directory(_outputDirectory!);
+      if (!await outputDir.exists()) {
+        await outputDir.create(recursive: true);
+      }
+
+      // 设置数据库路径到输出目录
+      await ScreenshotDatabase.instance.initializeForDesktop(_outputDirectory!);
+
+      final totalFilesCount = _selectedZipFiles.length;
+      for (int i = 0; i < totalFilesCount; i++) {
+        final file = _selectedZipFiles[i];
+        final fileName = p.basename(file.path);
+
+        setState(() {
+          _currentFileIndex = i;
+          _currentFileName = fileName;
+          _currentStage = 'processing_file';
+          _currentEntry = '$fileName (${i + 1}/$totalFilesCount)';
+        });
+
+        try {
+          final report = await ScreenshotDatabase.instance.mergeDataFromZip(
+            zipPath: file.path,
+            onProgress: (progress) {
+              setState(() {
+                // 计算总体进度
+                final fileProgress = (i + progress.value) / totalFilesCount;
+                _progress = fileProgress;
+                _currentStage = progress.stage ?? 'processing';
+                _currentEntry = progress.currentEntry ?? fileName;
+              });
+            },
+          );
+
+          _results.add(_MergeResult(
+            fileName: fileName,
+            success: report != null,
+            report: report,
+          ));
+
+          // 更新累计统计
+          if (report != null) {
+            // 第一个（最大的）压缩包作为基准，不计入“新增截图”
+            final bool isBaselineFile = i == 0;
+            final int addedScreenshots =
+                isBaselineFile ? 0 : report.insertedScreenshots;
+            totalNewScreenshots += addedScreenshots;
+
+            setState(() {
+              _totalScreenshots = totalNewScreenshots;
+              _totalSkipped += report.skippedScreenshotDuplicates;
+              _totalFiles += report.copiedFiles;
+              _totalReused += report.reusedFiles;
+              _totalEvents += report.mergedMemoryEvents;
+              _totalTags += report.mergedMemoryTags;
+              _totalEvidence += report.mergedMemoryEvidence;
+              _allAffectedApps.addAll(report.affectedPackages);
+              _allWarnings.addAll(report.warnings);
+            });
+          }
+        } catch (e) {
+          _results.add(_MergeResult(
+            fileName: fileName,
+            success: false,
+            errorMessage: e.toString(),
+          ));
+        }
+      }
+
+      // 合并完成，开始打包
+      setState(() {
+        _currentStage = 'packing';
+        _isPacking = true;
+        _packingProgress = 0.0;
+        _currentEntry = null;
+      });
+
+      // 生成输出 ZIP 文件名
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final zipFileName = 'merged_backup_$timestamp.zip';
+      final mergedOutputDir = p.join(_outputDirectory!, 'output');
+      _outputZipPath = p.join(_outputDirectory!, zipFileName);
+
+      // 使用系统命令打包（避免内存溢出）
+      await _packWithSystemCommand(mergedOutputDir, _outputZipPath!);
+
+      // 打包完成后清理 output 目录，保持输出根目录干净
+      try {
+        // 关闭桌面端数据库连接，避免删除时文件被占用
+        await ScreenshotDatabase.instance.disposeDesktop();
+      } catch (_) {}
+
+      try {
+        final cleanupDir = Directory(mergedOutputDir);
+        if (await cleanupDir.exists()) {
+          await cleanupDir.delete(recursive: true);
+        }
+      } catch (_) {
+        // 清理失败不影响已生成的压缩包
+      }
+
+      setState(() {
+        _progress = 1.0;
+        _currentStage = 'completed';
+        _isPacking = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isMerging = false;
+        _isPacking = false;
+      });
+    }
+  }
+
+  /// 将输出目录打包成 ZIP 文件
+  Future<void> _packOutputToZip(String outputDirPath, String zipPath) async {
+    // 打包整个输出目录
+    final dir = Directory(outputDirPath);
+    if (!await dir.exists()) return;
+
+    // 收集所有文件，添加异常处理
+    final files = <String>[];
+    try {
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is! File) continue;
+        final relPath = entity.path.substring(dir.path.length + 1).replaceAll('\\', '/');
+        // 跳过系统目录、缓存目录和临时文件
+        final relLower = relPath.toLowerCase();
+        if (relLower.startsWith('\$') ||
+            relLower.startsWith('system volume information') ||
+            relLower.startsWith('cache/') ||
+            relLower.startsWith('tmp/') ||
+            relLower.startsWith('temp/') ||
+            relLower.startsWith('.thumbnails/') ||
+            relLower.endsWith('.db-journal')) {
+          continue;
+        }
+        files.add(relPath);
+      }
+    } catch (e) {
+      // 忽略权限错误，继续处理已收集的文件
+    }
+
+    if (files.isEmpty) return;
+
+    // 使用 Isolate 进行打包避免阻塞 UI
+    final receivePort = ReceivePort();
+    await Isolate.spawn(
+      _zipPackingIsolate,
+      {
+        'sendPort': receivePort.sendPort,
+        'outputDirPath': dir.path,  // 使用实际的打包目录
+        'zipPath': zipPath,
+        'files': files,
+      },
+    );
+
+    await for (final message in receivePort) {
+      if (message is Map<String, dynamic>) {
+        final type = message['type'] as String?;
+        if (type == 'progress') {
+          setState(() {
+            _packingProgress = (message['progress'] as double?) ?? 0.0;
+            _currentEntry = message['entry'] as String?;
+          });
+        } else if (type == 'done') {
+          receivePort.close();
+          break;
+        } else if (type == 'error') {
+          receivePort.close();
+          throw Exception(message['error']);
+        }
+      }
+    }
+  }
+
+  /// 使用系统命令打包（避免内存一次性占用过大），并轮询更新进度
+  Future<void> _packWithSystemCommand(String sourceDir, String zipPath) async {
+    final dir = Directory(sourceDir);
+    if (!await dir.exists()) {
+      throw Exception('Output directory does not exist: $sourceDir');
+    }
+
+    // 预先计算待打包文件的总大小，用于估算进度
+    int totalSize = 0;
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        try {
+          totalSize += await entity.length();
+        } catch (_) {
+          // 忽略单个文件的统计错误
+        }
+      }
+    }
+
+    if (totalSize <= 0) {
+      throw Exception('No files to pack in: $sourceDir');
+    }
+
+    // 删除已存在的 ZIP 文件
+    final zipFile = File(zipPath);
+    if (await zipFile.exists()) {
+      await zipFile.delete();
+    }
+
+    // 使用 tar/zip 等外部工具进行打包（这些工具本身是流式写入的）
+    final isWindows = Platform.isWindows;
+
+    Process process;
+    if (isWindows) {
+      // Windows 10+ 自带 tar，可用 tar -a -cf archive.zip . 生成 zip
+      process = await Process.start(
+        'tar',
+        ['-a', '-cf', zipPath, '.'],
+        workingDirectory: sourceDir,
+        runInShell: true,
+      );
+    } else {
+      // macOS/Linux 使用 zip 命令（-0 只存储不压缩，速度更快，内存占用更低）
+      process = await Process.start(
+        'zip',
+        ['-r', '-0', zipPath, '.'],
+        workingDirectory: sourceDir,
+      );
+    }
+
+    // 周期性检查目标 zip 文件大小，估算进度
+    bool running = true;
+    final timer = Timer.periodic(const Duration(milliseconds: 700), (_) async {
+      if (!running) return;
+      try {
+        if (await zipFile.exists()) {
+          final currentSize = await zipFile.length();
+          if (totalSize > 0 && mounted) {
+            final ratio = (currentSize / totalSize).clamp(0.0, 1.0);
+            setState(() {
+              _packingProgress = ratio;
+            });
+          }
+        }
+      } catch (_) {
+        // 读取过程中可能出现短暂错误，忽略即可
+      }
+    });
+
+    final exitCode = await process.exitCode;
+    running = false;
+    timer.cancel();
+
+    if (exitCode != 0) {
+      throw Exception('Failed to create ZIP (exitCode=$exitCode)');
+    }
+
+    if (mounted) {
+      setState(() {
+        _packingProgress = 1.0;
+      });
+    }
+  }
+
+  String _getStageLabel(String stage, AppLocalizations t) {
+    switch (stage) {
+      case 'merge_extracting':
+        return t.desktopMergerStageExtracting;
+      case 'merge_copying_files':
+        return t.desktopMergerStageCopying;
+      case 'merge_shard_databases':
+        return t.desktopMergerStageMerging;
+      case 'merge_memory_database':
+        return t.desktopMergerStageMemory;
+      case 'merge_finalizing':
+        return t.desktopMergerStageFinalizing;
+      case 'processing_file':
+        return t.desktopMergerStageProcessing;
+      case 'packing':
+        return t.desktopMergerStagePacking;
+      case 'completed':
+        return t.desktopMergerStageCompleted;
+      default:
+        return t.desktopMergerStageProcessing;
+    }
+  }
+
+  /// 获取阶段提示信息（解释为什么需要时间）
+  String? _getStageHint(String stage, AppLocalizations t) {
+    switch (stage) {
+      case 'merge_extracting':
+        return t.desktopMergerExtractingHint;
+      case 'merge_copying_files':
+        return t.desktopMergerCopyingHint;
+      case 'merge_shard_databases':
+        return t.desktopMergerMergingHint;
+      case 'merge_memory_database':
+        return t.desktopMergerMemoryHint;
+      case 'packing':
+        return t.desktopMergerPackingHint;
+      default:
+        return null;
+    }
+  }
+
+  /// 打开输出文件所在文件夹
+  Future<void> _openOutputFolder() async {
+    if (_outputZipPath == null) return;
+    final dir = p.dirname(_outputZipPath!);
+    final uri = Uri.file(dir);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+}
+
+class _MergeResult {
+  final String fileName;
+  final bool success;
+  final MergeReport? report;
+  final String? errorMessage;
+
+  _MergeResult({
+    required this.fileName,
+    required this.success,
+    this.report,
+    this.errorMessage,
+  });
+}
+
+/// Isolate 打包入口（必须是顶级函数）
+void _zipPackingIsolate(Map<String, dynamic> args) {
+  final sendPort = args['sendPort'] as SendPort;
+  final outputDirPath = args['outputDirPath'] as String;
+  final zipPath = args['zipPath'] as String;
+  final files = args['files'] as List<String>;
+
+  try {
+    final total = files.length;
+    final encoder = ZipFileEncoder();
+    encoder.create(zipPath, level: 0); // store 模式，只打包不压缩
+
+    for (int i = 0; i < files.length; i++) {
+      final relPath = files[i];
+      final file = File(p.join(outputDirPath, relPath));
+      if (file.existsSync()) {
+        encoder.addFile(file, relPath);
+      }
+      // 每 20 个文件更新一次进度，减少 UI 更新开销
+      if (i % 20 == 0 || i == total - 1) {
+        final progress = (i + 1) / total;
+        sendPort.send({
+          'type': 'progress',
+          'progress': progress.clamp(0.0, 1.0),
+          'entry': relPath,
+        });
+      }
+    }
+
+    encoder.close();
+    sendPort.send({'type': 'done'});
+  } catch (e) {
+    sendPort.send({'type': 'error', 'error': e.toString()});
+  }
+}

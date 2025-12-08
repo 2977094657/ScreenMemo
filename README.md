@@ -293,6 +293,47 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
 - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
 - `build/app/outputs/flutter-apk/app-x86_64-release.apk`
+
+---
+
+## 桌面数据合并工具
+
+由于手机端合并导入性能有限，提供 Windows/macOS/Linux 桌面版数据合并工具，可在电脑上高效合并多个备份 ZIP 文件。
+
+### 功能特性
+
+- 选择多个导出的 ZIP 备份文件
+- 指定输出目录（合并后的数据保存位置）
+- 显示合并进度和详细结果
+- 支持截图、数据库、记忆档案的完整合并
+
+### 构建可执行文件
+
+**Windows**：
+```powershell
+flutter build windows -t lib/main_desktop_merger.dart --release
+```
+
+**macOS**：
+```bash
+flutter build macos -t lib/main_desktop_merger.dart --release
+```
+
+**Linux**：
+```bash
+flutter build linux -t lib/main_desktop_merger.dart --release
+```
+
+### 产物位置
+
+| 平台 | 输出目录 |
+|------|----------|
+| Windows | `build/windows/x64/runner/Release/` |
+| macOS | `build/macos/Build/Products/Release/` |
+| Linux | `build/linux/x64/release/bundle/` |
+
+> 产物为文件夹，包含 `screen_memo.exe` 及所需 DLL，可直接复制整个文件夹到目标电脑运行。
+
 ---
 
 ## 权限说明

@@ -73,8 +73,13 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       return null;
     }
 
-    final Directory? base =
-        await PathService.getInternalAppDir(null) ?? await _getInternalFilesDir();
+    // 优先使用桌面端设置的目录，否则使用默认目录
+    Directory? base;
+    if (ScreenshotDatabase._desktopBasePath != null && ScreenshotDatabase._desktopBasePath!.isNotEmpty) {
+      base = Directory(ScreenshotDatabase._desktopBasePath!);
+    } else {
+      base = await PathService.getInternalAppDir(null) ?? await _getInternalFilesDir();
+    }
     if (base == null) {
       await FlutterLogger.nativeError(
         'MERGE',

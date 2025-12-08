@@ -31,6 +31,57 @@ class ScreenshotDatabase {
 
   ScreenshotDatabase._();
 
+  // 桌面端自定义根目录（用于合并工具）
+  static String? _desktopBasePath;
+
+  /// 为桌面端初始化数据库到指定目录
+  /// 用于合并工具将数据保存到用户选择的目录
+  Future<void> initializeForDesktop(String basePath) async {
+    // 关闭现有连接
+    if (_database != null) {
+      try {
+        await _database!.close();
+      } catch (_) {}
+      _database = null;
+    }
+    for (final db in _shardDbCache.values) {
+      try {
+        await db.close();
+      } catch (_) {}
+    }
+    _shardDbCache.clear();
+
+    // 设置新的基础路径
+    _desktopBasePath = basePath;
+
+    // 创建必要的目录结构
+    final databasesDir = Directory(join(basePath, 'output', 'databases'));
+    if (!await databasesDir.exists()) {
+      await databasesDir.create(recursive: true);
+    }
+
+    // 重新初始化数据库
+    _database = await _initDatabase();
+  }
+
+  /// 释放桌面端数据库资源，便于后续清理输出目录
+  Future<void> disposeDesktop() async {
+    try {
+      if (_database != null) {
+        try {
+          await _database!.close();
+        } catch (_) {}
+        _database = null;
+      }
+      for (final db in _shardDbCache.values) {
+        try {
+          await db.close();
+        } catch (_) {}
+      }
+      _shardDbCache.clear();
+    } catch (_) {}
+  }
+
   // 分库缓存（key: "<package>|<year>")
   static final Map<String, Database> _shardDbCache = {};
   // 分库根目录（相对外部存储目录）
@@ -46,6 +97,38 @@ class ScreenshotDatabase {
   Future<Database> _initDatabase() async {
     try {
       StartupProfiler.begin('ScreenshotDatabase._initDatabase');
+
+      // 桌面端使用自定义路径
+      if (_desktopBasePath != null) {
+        final databasesDir = Directory(
+          join(_desktopBasePath!, 'output', 'databases'),
+        );
+        if (!await databasesDir.exists()) {
+          await databasesDir.create(recursive: true);
+        }
+        final path = join(databasesDir.path, 'screenshot_memo.db');
+        final db = await openDatabase(
+          path,
+          version: 14,
+          onConfigure: (db) async {
+            try {
+              await db.execute('PRAGMA journal_mode=WAL');
+            } catch (_) {
+              try {
+                await db.rawQuery('PRAGMA journal_mode=WAL');
+              } catch (_) {}
+            }
+            try {
+              await db.execute('PRAGMA auto_vacuum=2');
+            } catch (_) {}
+          },
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+        );
+        StartupProfiler.end('ScreenshotDatabase._initDatabase');
+        return db;
+      }
+
       // 获取应用的外部存储目录
       final internalDir =
           await PathService.getInternalAppDir(null) ??
