@@ -21,6 +21,7 @@ class UserSettingKeys {
   static const String segmentSampleIntervalSec = 'segment_sample_interval_sec';
   static const String segmentDurationSec = 'segment_duration_sec';
   static const String aiMinRequestIntervalSec = 'ai_min_request_interval_sec';
+  static const String embeddingMaxRequestMb = 'embedding_max_request_mb';
 
   // 每日总结提醒
   static const String dailyNotifyEnabled = 'daily_notify_enabled';

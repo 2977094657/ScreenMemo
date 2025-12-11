@@ -109,7 +109,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 14,
+          version: 15,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -147,7 +147,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 14,
+          version: 15,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -207,7 +207,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 14,
+        version: 15,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -639,6 +639,52 @@ class ScreenshotDatabase {
       try {
         await db.execute('ALTER TABLE ai_providers ADD COLUMN models_path TEXT');
       } catch (_) {}
+    }
+    if (oldVersion < 15) {
+      // 为 segment_samples 增加多模态检索所需字段
+      try {
+        await db.execute('ALTER TABLE segment_samples ADD COLUMN p_hash INTEGER');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segment_samples ADD COLUMN is_keyframe INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segment_samples ADD COLUMN hash_distance INTEGER');
+      } catch (_) {}
+
+      // 确保 embeddings 与 fts_content 表存在（在 _createAiTables 中也会幂等创建）
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id INTEGER UNIQUE,
+            segment_id INTEGER,
+            embedding BLOB,
+            model_version TEXT,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id)');
+      } catch (_) {}
+
+      // 尝试创建 fts_content FTS5 虚拟表（如不支持 FTS5 则忽略）
+      try {
+        await db.execute('''
+          CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
+            sample_id UNINDEXED,
+            segment_id UNINDEXED,
+            ocr_text,
+            summary,
+            app_name
+          )
+        ''');
+      } catch (e) {
+        try {
+          await FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString());
+        } catch (_) {}
+      }
     }
   }
 

@@ -13,6 +13,7 @@ import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
 import '../pages/weekly_summary_page.dart';
+import '../pages/embedding_debug_page.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
 class AppSideDrawer extends StatelessWidget {
@@ -65,6 +66,18 @@ class AppSideDrawer extends StatelessWidget {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MemoryCenterPage()),
+                );
+              },
+            ),
+            _buildMenuItem(
+              context: context,
+              icon: Icons.image_search_outlined,
+              title: 'Embedding 调试',
+              isFirst: false,
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const EmbeddingDebugPage()),
                 );
               },
             ),

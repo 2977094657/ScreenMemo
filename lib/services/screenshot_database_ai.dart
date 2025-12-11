@@ -103,11 +103,40 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         app_package_name TEXT NOT NULL,
         app_name TEXT NOT NULL,
         position_index INTEGER NOT NULL,
+        p_hash INTEGER,
+        is_keyframe INTEGER NOT NULL DEFAULT 0,
+        hash_distance INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         UNIQUE(segment_id, file_path)
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS embeddings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sample_id INTEGER UNIQUE,
+        segment_id INTEGER,
+        embedding BLOB,
+        model_version TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id)');
+
+    try {
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
+          sample_id UNINDEXED,
+          segment_id UNINDEXED,
+          ocr_text,
+          summary,
+          app_name
+        )
+      ''');
+    } catch (e) {
+      try { FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString()); } catch (_) {}
+    }
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS segment_results (
@@ -806,6 +835,44 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       );
       return rows;
     } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  Future<List<Map<String, dynamic>>> listLatestSamples({int limit = 10}) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segment_samples',
+        orderBy: 'capture_time DESC, id DESC',
+        limit: limit,
+      );
+      return rows;
+    } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  Future<void> saveEmbeddingForSample({
+    required int sampleId,
+    required int segmentId,
+    required List<double> embedding,
+    required String modelVersion,
+  }) async {
+    final db = await database;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final Float32List floats = Float32List(embedding.length);
+    for (int i = 0; i < embedding.length; i++) {
+      floats[i] = embedding[i].toDouble();
+    }
+    final Uint8List bytes = floats.buffer.asUint8List();
+    await db.insert(
+      'embeddings',
+      <String, Object?>{
+        'sample_id': sampleId,
+        'segment_id': segmentId,
+        'embedding': bytes,
+        'model_version': modelVersion,
+        'created_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<Map<String, dynamic>?> getSegmentResult(int segmentId) async {
