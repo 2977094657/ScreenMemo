@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
 import 'ai_chat_service.dart';
@@ -19,22 +18,13 @@ class WeeklySummaryService {
   WeeklySummaryService._internal();
   static final WeeklySummaryService instance = WeeklySummaryService._internal();
 
-  static const Duration _weekLength = Duration(days: 7);
-  static const Duration _generationTimeOffset = Duration(hours: 8);
   static const int _maxSegmentsPerDay = 40;
   static const int _maxSegmentLength = 500;
   static const int _maxDailySummaryLength = 1200;
 
-  static const String _prefsFirstDateKey = 'weekly_summary_first_date';
-  static const String _prefsCompletedWeeksKey = 'weekly_summary_completed_weeks';
-  static const String _prefsLastGeneratedAtKey = 'weekly_summary_last_generated_at';
-
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
   final AIChatService _chat = AIChatService.instance;
   final AISettingsService _settings = AISettingsService.instance;
-
-  Timer? _scheduleTimer;
-  bool _processing = false;
 
   Future<_WeeklySummaryGenerationContext> _prepareWeeklySummaryContext({
     required String weekStartKey,
@@ -129,14 +119,6 @@ class WeeklySummaryService {
     );
   }
 
-  /// 刷新调度：
-  /// - 若存在过期的周总结则立即生成
-  /// - 否则安排下一次定时器
-  Future<void> refreshSchedule({bool forceProcess = false}) async {
-    _scheduleTimer?.cancel();
-    await _processPendingSummaries(force: forceProcess);
-  }
-
   /// 根据周起始日生成（或获取已缓存的）周总结
   Future<Map<String, dynamic>?> generateForWeekStart(String weekStartDate, {bool force = false}) async {
     final DateTime? weekStart = _parseDateKey(weekStartDate);
@@ -160,99 +142,6 @@ class WeeklySummaryService {
       if (end == null || end.isEmpty) return false;
       return end.compareTo(todayKey) <= 0;
     }).toList();
-  }
-
-  Future<void> _processPendingSummaries({bool force = false}) async {
-    if (_processing) return;
-    _processing = true;
-    SharedPreferences? prefs;
-    try {
-      prefs = await SharedPreferences.getInstance();
-      while (true) {
-        final _ScheduleState? state = await _computeNextSchedule(prefs);
-        if (state == null) {
-          _scheduleTimer = null;
-          return;
-        }
-        final DateTime now = DateTime.now();
-        final bool shouldGenerate = force || !state.due.isAfter(now);
-        if (shouldGenerate) {
-          try {
-            await _generateForWeek(state.weekStart);
-            await prefs.setInt(_prefsCompletedWeeksKey, state.completedWeeks + 1);
-            await prefs.setInt(_prefsLastGeneratedAtKey, DateTime.now().millisecondsSinceEpoch);
-            force = true;
-          } catch (e, stackTrace) {
-            try {
-              await FlutterLogger.nativeWarn('WeeklySummary', 'generate failed: $e');
-              await FlutterLogger.nativeDebug('WeeklySummary', stackTrace.toString());
-            } catch (_) {}
-            break; // 避免死循环，待下次重新调度
-          }
-          continue; // 检查是否仍有未完成的周
-        }
-
-        final Duration delay = state.due.difference(now);
-        _scheduleTimer = Timer(delay, () {
-          refreshSchedule(forceProcess: true);
-        });
-        break;
-      }
-    } finally {
-      _processing = false;
-    }
-  }
-
-  Future<_ScheduleState?> _computeNextSchedule(SharedPreferences prefs) async {
-    final String? firstDateKey = await _ensureFirstDate(prefs);
-    if (firstDateKey == null || firstDateKey.isEmpty) return null;
-
-    final DateTime? firstDate = _parseDateKey(firstDateKey);
-    if (firstDate == null) return null;
-
-    int completedWeeks = prefs.getInt(_prefsCompletedWeeksKey) ?? 0;
-    if (completedWeeks < 0) completedWeeks = 0;
-
-    // 计算下一周的起始日
-    final DateTime weekStart = firstDate.add(Duration(days: completedWeeks * 7));
-    final DateTime weekEnd = weekStart.add(const Duration(days: 6));
-    final DateTime due = weekStart.add(_weekLength).add(_generationTimeOffset);
-
-    return _ScheduleState(
-      firstDateKey: firstDateKey,
-      completedWeeks: completedWeeks,
-      weekStart: weekStart,
-      weekEnd: weekEnd,
-      due: due,
-    );
-  }
-
-  Future<String?> _ensureFirstDate(SharedPreferences prefs) async {
-    String? stored = prefs.getString(_prefsFirstDateKey);
-    final String? earliest = await _findEarliestAvailableDateKey();
-    if (earliest == null) return stored;
-
-    if (stored == null) {
-      await prefs.setString(_prefsFirstDateKey, earliest);
-      await prefs.setInt(_prefsCompletedWeeksKey, 0);
-      return earliest;
-    }
-
-    if (_compareDateKey(earliest, stored) < 0) {
-      await prefs.setString(_prefsFirstDateKey, earliest);
-      await prefs.setInt(_prefsCompletedWeeksKey, 0);
-      return earliest;
-    }
-
-    return stored;
-  }
-
-  Future<String?> _findEarliestAvailableDateKey() async {
-    final List<Map<String, dynamic>> days = await _db.listAvailableDaysGlobal();
-    if (days.isEmpty) return null;
-    final Map<String, dynamic>? last = days.last;
-    final String? key = last?['date'] as String?;
-    return key;
   }
 
   Future<Map<String, dynamic>?> _generateForWeek(DateTime weekStart, {bool force = false}) async {
@@ -546,10 +435,6 @@ class WeeklySummaryService {
 
   String _two(int v) => v.toString().padLeft(2, '0');
 
-  int _compareDateKey(String a, String b) {
-    return a.compareTo(b);
-  }
-
   DateTime? _parseDateKey(String key) {
     final parts = key.split('-');
     if (parts.length != 3) return null;
@@ -666,22 +551,6 @@ class _WeeklySummaryGenerationContext {
   final String prompt;
   final String providerType;
   final String model;
-}
-
-class _ScheduleState {
-  _ScheduleState({
-    required this.firstDateKey,
-    required this.completedWeeks,
-    required this.weekStart,
-    required this.weekEnd,
-    required this.due,
-  });
-
-  final String firstDateKey;
-  final int completedWeeks;
-  final DateTime weekStart;
-  final DateTime weekEnd;
-  final DateTime due;
 }
 
 class WeeklyContext {
