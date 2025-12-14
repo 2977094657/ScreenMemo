@@ -134,14 +134,45 @@ class WeeklySummaryService {
   /// 列出已生成的周总结（按周起始日倒序）
   Future<List<Map<String, dynamic>>> listWeeklySummaries({int? limit, int? offset, bool onlyCompleted = false}) async {
     final List<Map<String, dynamic>> rows = await _db.listWeeklySummaries(limit: limit, offset: offset);
-    if (!onlyCompleted) return rows;
+    List<Map<String, dynamic>> filtered = rows;
+    if (onlyCompleted) {
+      final String todayKey = _dateKey(DateTime.now());
+      filtered = rows.where((row) {
+        final String? end = (row['week_end_date'] as String?)?.trim();
+        if (end == null || end.isEmpty) return false;
+        return end.compareTo(todayKey) <= 0;
+      }).toList();
+    }
+    return sanitizeWeeklyRows(filtered);
+  }
 
-    final String todayKey = _dateKey(DateTime.now());
-    return rows.where((row) {
-      final String? end = (row['week_end_date'] as String?)?.trim();
-      if (end == null || end.isEmpty) return false;
-      return end.compareTo(todayKey) <= 0;
-    }).toList();
+  static List<Map<String, dynamic>> sanitizeWeeklyRows(List<Map<String, dynamic>> rows) {
+    if (rows.length <= 1) return rows;
+
+    final List<Map<String, dynamic>> ascending = rows.reversed.toList();
+    final List<Map<String, dynamic>> keptAscending = <Map<String, dynamic>>[];
+
+    DateTime? lastEnd;
+    for (final Map<String, dynamic> row in ascending) {
+      final String startKey = (row['week_start_date'] as String? ?? '').trim();
+      if (startKey.isEmpty) continue;
+      final DateTime? startDate = DateTime.tryParse(startKey);
+      if (startDate == null) continue;
+
+      final String endKey = (row['week_end_date'] as String? ?? '').trim();
+      final DateTime endDate = DateTime.tryParse(endKey) ?? startDate.add(const Duration(days: 6));
+
+      if (lastEnd != null && !startDate.isAfter(lastEnd)) {
+        continue;
+      }
+
+      keptAscending.add(row);
+      if (lastEnd == null || endDate.isAfter(lastEnd)) {
+        lastEnd = endDate;
+      }
+    }
+
+    return keptAscending.reversed.toList();
   }
 
   Future<Map<String, dynamic>?> _generateForWeek(DateTime weekStart, {bool force = false}) async {

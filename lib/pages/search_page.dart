@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -20,6 +21,18 @@ import '../services/nsfw_preference_service.dart';
 
 /// 搜索类型枚举
 enum SearchTab { all, screenshots, moments }
+
+/// 自定义 <mark> 语法解析
+class MarkSyntax extends md.InlineSyntax {
+  MarkSyntax() : super(r'<mark>(.+?)</mark>');
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final text = match[1] ?? '';
+    parser.addNode(md.Element.text('mark', text));
+    return true;
+  }
+}
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -62,6 +75,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   bool _segmentLoadingMore = false;
   int _segmentTotalCount = 0;
   bool _segmentCountingTotal = false;
+  bool _segmentSearchFinished = false;
 
   // 标签筛选相关
   Set<String> _availableTags = <String>{}; // 从搜索结果中提取的可用标签
@@ -71,6 +85,88 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   int get _filteredSegmentCount {
     if (_selectedTags.isEmpty) return _segmentTotalCount;
     return _filteredSegments.length;
+  }
+
+  /// 将 segment 样本记录转换为 ScreenshotRecord 列表，便于复用统一渲染组件
+  List<ScreenshotRecord> _mapSamplesToScreenshots(List<Map<String, dynamic>> samples) {
+    return samples.map((s) {
+      final int capture = (s['capture_time'] as int?) ?? 0;
+      return ScreenshotRecord(
+        id: s['id'] as int?,
+        appPackageName: (s['app_package_name'] as String?) ?? '',
+        appName: (s['app_name'] as String?) ?? '',
+        filePath: (s['file_path'] as String?) ?? '',
+        captureTime: DateTime.fromMillisecondsSinceEpoch(capture),
+        fileSize: (s['file_size'] as int?) ?? 0,
+        isDeleted: false,
+        pageUrl: null,
+        ocrText: null,
+      );
+    }).toList();
+  }
+
+  /// 打开样本查看器（复用截图查看器样式）
+  void _openSampleViewer(List<ScreenshotRecord> samples, int index) {
+    if (samples.isEmpty) return;
+    final record = samples[index.clamp(0, samples.length - 1)];
+    final appInfo =
+        _appInfoByPackage[record.appPackageName] ??
+        AppInfo(
+          packageName: record.appPackageName,
+          appName: record.appName,
+          icon: null,
+          version: '',
+          isSystemApp: false,
+        );
+    Navigator.pushNamed(
+      context,
+      '/screenshot_viewer',
+      arguments: {
+        'screenshots': samples,
+        'initialIndex': index,
+        'appName': record.appName,
+        'appInfo': appInfo,
+      },
+    );
+  }
+
+  /// 高亮显示命中关键词的 Markdown 文本（橙色荧光笔效果，同时保留 Markdown 渲染）
+  Widget _buildHighlightedMarkdown({
+    required BuildContext context,
+    required String text,
+    TextStyle? style,
+  }) {
+    final String query = _lastQuery.trim();
+    String data = text;
+    if (query.isNotEmpty) {
+      final reg = RegExp(RegExp.escape(query), caseSensitive: false);
+      data = text.replaceAllMapped(reg, (m) => '<mark>${m[0]}</mark>');
+    }
+
+    final Color highlightColor = Colors.orangeAccent.withOpacity(0.28);
+
+    return MarkdownBody(
+      data: data,
+      extensionSet: md.ExtensionSet.gitHubWeb,
+      inlineSyntaxes: [MarkSyntax()],
+      selectable: false,
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: style,
+      ),
+      builders: {
+        'mark': MarkBuilder(highlightColor),
+      },
+      softLineBreak: true,
+      onTapLink: (text, href, title) async {
+        if (href == null) return;
+        final uri = Uri.tryParse(href);
+        if (uri != null) {
+          try {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } catch (_) {}
+        }
+      },
+    );
   }
 
   /// 根据标签筛选后的动态列表
@@ -259,6 +355,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       _lastQuery = query;
       _countingTotal = false;
       _segmentCountingTotal = false;
+      _segmentSearchFinished = false;
     });
 
     if (query.isEmpty) {
@@ -268,6 +365,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           _totalResultsCount = 0;
           _segmentTotalCount = 0;
           _filteredResults = <ScreenshotRecord>[];
+          _segmentSearchFinished = false;
         });
       }
       return;
@@ -459,6 +557,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           _segmentTotalCount = 0;
           _segmentOffset = 0;
           _segmentHasMore = false;
+          _segmentSearchFinished = false;
         });
       }
       return;
@@ -506,11 +605,13 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         _segmentCountingTotal = _segmentHasMore;
         _availableTags = tags;
         _selectedTags = <String>{}; // 重置标签筛选
+        _segmentSearchFinished = true;
       });
 
-      // 后台统计总数
+      // 如果还有更多，后台统计总数
       if (_segmentHasMore) {
-        ScreenshotDatabase.instance.countSegmentsByText(
+        ScreenshotDatabase.instance
+.countSegmentsByText(
           query,
           startMillis: range?.$1,
           endMillis: range?.$2,
@@ -519,10 +620,14 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           setState(() {
             _segmentTotalCount = total;
             _segmentCountingTotal = false;
+            _segmentSearchFinished = true;
           });
         }).catchError((_) {
           if (!mounted || token != _searchToken) return;
-          setState(() => _segmentCountingTotal = false);
+          setState(() {
+            _segmentCountingTotal = false;
+            _segmentSearchFinished = true;
+          });
         });
       }
     } catch (e) {
@@ -530,6 +635,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       setState(() {
         _segmentResults = <Map<String, dynamic>>[];
         _segmentCountingTotal = false;
+        _segmentSearchFinished = true;
       });
     }
   }
@@ -870,81 +976,83 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   // 构建时间选项 Chip
   Widget _buildTimeChip(BuildContext ctx, String value, String label, StateSetter setSheetState) {
     final bool selected = _timeFilter == value;
-    return GestureDetector(
-      onTap: () {
+    return FilterChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: selected
+              ? Theme.of(ctx).colorScheme.primary
+              : Theme.of(ctx).colorScheme.onSurface,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      selected: selected,
+      showCheckmark: false,
+      backgroundColor: Theme.of(ctx).colorScheme.surface,
+      selectedColor: Theme.of(ctx).colorScheme.primary.withOpacity(0.15),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        side: selected
+            ? BorderSide.none
+            : BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+      ),
+      onSelected: (_) {
         setState(() => _timeFilter = value);
         setSheetState(() {});
         Navigator.pop(ctx);
         if (_lastQuery.isNotEmpty) _search(_lastQuery);
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
-              : Theme.of(ctx).colorScheme.surface,
-          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-          border: selected
-              ? null
-              : Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: selected
-                ? Theme.of(ctx).colorScheme.primary
-                : Theme.of(ctx).colorScheme.onSurface,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
     );
   }
 
   // 构建自定义天数 Chip
   Widget _buildCustomDaysChip(BuildContext ctx, AppLocalizations l10n, StateSetter setSheetState) {
     final bool selected = _timeFilter == 'customDays';
-    return GestureDetector(
-      onTap: () async {
+    return FilterChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            selected ? '${_customDays}${l10n.days}' : l10n.filterTimeCustomDays,
+            style: TextStyle(
+              fontSize: 12,
+              color: selected
+                  ? Theme.of(ctx).colorScheme.primary
+                  : Theme.of(ctx).colorScheme.onSurface,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(
+            Icons.edit_outlined,
+            size: 12,
+            color: selected
+                ? Theme.of(ctx).colorScheme.primary
+                : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6),
+          ),
+        ],
+      ),
+      selected: selected,
+      showCheckmark: false,
+      backgroundColor: Theme.of(ctx).colorScheme.surface,
+      selectedColor: Theme.of(ctx).colorScheme.primary.withOpacity(0.15),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        side: selected
+            ? BorderSide.none
+            : BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+      ),
+      onSelected: (_) async {
         Navigator.pop(ctx);
         await _showCustomDaysDialog();
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(ctx).colorScheme.primary.withOpacity(0.15)
-              : Theme.of(ctx).colorScheme.surface,
-          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-          border: selected
-              ? null
-              : Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              selected ? '${_customDays}${l10n.days}' : l10n.filterTimeCustomDays,
-              style: TextStyle(
-                fontSize: 12,
-                color: selected
-                    ? Theme.of(ctx).colorScheme.primary
-                    : Theme.of(ctx).colorScheme.onSurface,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-            const SizedBox(width: 2),
-            Icon(
-              Icons.edit_outlined,
-              size: 12,
-              color: selected
-                  ? Theme.of(ctx).colorScheme.primary
-                  : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1178,7 +1286,11 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
             indicatorSize: TabBarIndicatorSize.tab,
             tabs: [
               Tab(text: '截图 (${_countingTotal ? '...' : _totalResultsCount})'),
-              Tab(text: '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'),
+              Tab(
+                text: _segmentSearchFinished
+                    ? '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'
+                    : '点击搜索动态',
+              ),
             ],
           ),
         ),
@@ -1988,7 +2100,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 6),
             ],
-            // 摘要内容（Markdown 渲染，限制高度）
+            // 摘要内容（高亮命中词，限制高度）
             if (summary.isNotEmpty)
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -2000,18 +2112,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                   return ConstrainedBox(
                     constraints: BoxConstraints(maxHeight: maxHeight),
                     child: ClipRect(
-                      child: MarkdownBody(
-                        data: summary,
-                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                          p: textStyle,
-                        ),
-                        onTapLink: (text, href, title) async {
-                          if (href == null) return;
-                          final uri = Uri.tryParse(href);
-                          if (uri != null) {
-                            try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
-                          }
-                        },
+                      child: _buildHighlightedMarkdown(
+                        context: context,
+                        text: summary,
+                        style: textStyle,
                       ),
                     ),
                   );
@@ -2173,20 +2277,12 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                         ],
-                        // 摘要（Markdown 渲染）
+                        // 摘要（高亮命中词）
                         if (summary.isNotEmpty) ...[
-                          MarkdownBody(
-                            data: summary,
-                            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(ctx)).copyWith(
-                              p: Theme.of(ctx).textTheme.bodyMedium,
-                            ),
-                            onTapLink: (text, href, title) async {
-                              if (href == null) return;
-                              final uri = Uri.tryParse(href);
-                              if (uri != null) {
-                                try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
-                              }
-                            },
+                          _buildHighlightedMarkdown(
+                            context: ctx,
+                            text: summary,
+                            style: Theme.of(ctx).textTheme.bodyMedium,
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                         ],
@@ -2195,42 +2291,39 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                           const Divider(),
                           const SizedBox(height: AppTheme.spacing2),
                           Text(
-                            '${AppLocalizations.of(context).samplesTitle(samples.length)}',
+                            '${AppLocalizations.of(context).images} (${samples.length})',
                             style: Theme.of(ctx).textTheme.titleSmall,
                           ),
                           const SizedBox(height: AppTheme.spacing2),
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 4,
-                              mainAxisSpacing: 4,
-                              childAspectRatio: 9 / 16,
-                            ),
-                            itemCount: samples.length,
-                            itemBuilder: (c, i) {
-                              final s = samples[i];
-                              final path = (s['file_path'] as String?) ?? '';
-                              if (path.isEmpty) {
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(c).colorScheme.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Center(child: Icon(Icons.image_not_supported_outlined)),
-                                );
-                              }
-                              return ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.file(
-                                  File(path),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: Theme.of(c).colorScheme.surfaceContainerHighest,
-                                    child: const Center(child: Icon(Icons.broken_image_outlined)),
-                                  ),
+                          Builder(
+                            builder: (c) {
+                              final sampleRecords = _mapSamplesToScreenshots(samples);
+                              return GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 4,
+                                  mainAxisSpacing: 4,
+                                  childAspectRatio: 9 / 16,
                                 ),
+                                itemCount: sampleRecords.length,
+                                itemBuilder: (c, i) {
+                                  final rec = sampleRecords[i];
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                    child: ScreenshotItemWidget(
+                                      screenshot: rec,
+                                      baseDir: _baseDir,
+                                      appInfoMap: _appInfoByPackage,
+                                      privacyMode: _privacyMode,
+                                      onTap: () => _openSampleViewer(sampleRecords, i),
+                                      showCheckbox: false,
+                                      showFavoriteButton: false,
+                                      showNsfwButton: false,
+                                    ),
+                                  );
+                                },
                               );
                             },
                           ),
@@ -2279,6 +2372,31 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           ),
         );
       },
+    );
+  }
+}
+
+/// Markdown 自定义高亮标签渲染
+class MarkBuilder extends MarkdownElementBuilder {
+  MarkBuilder(this.highlightColor);
+
+  final Color highlightColor;
+
+  @override
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    final children = <InlineSpan>[];
+    for (final node in element.children ?? <md.Node>[]) {
+      if (node is md.Text) {
+        children.add(TextSpan(text: node.text, style: preferredStyle));
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      decoration: BoxDecoration(
+        color: highlightColor,
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: Text.rich(TextSpan(children: children)),
     );
   }
 }

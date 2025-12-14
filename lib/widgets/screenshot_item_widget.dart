@@ -272,24 +272,7 @@ class ScreenshotItemWidget extends StatelessWidget {
           children: [
             // 应用图标
             _buildAppIcon(context),
-            // 间隔
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  _formatFileSize(screenshot.fileSize),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Theme.of(context).textTheme.bodySmall?.color
-                        : Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
+            const SizedBox(width: 6),
             // 时间
             Text(
               _formatTime(screenshot.captureTime),
@@ -446,15 +429,5 @@ class ScreenshotItemWidget extends StatelessWidget {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
   
-  /// 格式化文件大小
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '${bytes}B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    } else {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
-  }
 }
 
