@@ -41,6 +41,8 @@ object OutputFileLogger {
     @Volatile
     private var enabled = true
 
+    private val directWriteLock = Any()
+
     fun setEnabled(enable: Boolean) {
         enabled = enable
     }
@@ -59,6 +61,37 @@ object OutputFileLogger {
 
     fun error(context: Context, tag: String, message: String) {
         enqueue(context, true, tag, message)
+    }
+
+    fun infoForce(context: Context, tag: String, message: String) {
+        try { writeDirect(context, false, tag, message) } catch (_: Exception) {}
+        enqueueForce(context, false, tag, message)
+    }
+
+    fun errorForce(context: Context, tag: String, message: String) {
+        try { writeDirect(context, true, tag, message) } catch (_: Exception) {}
+        enqueueForce(context, true, tag, message)
+    }
+
+    private fun writeDirect(context: Context, isError: Boolean, tag: String, message: String) {
+        val ts = System.currentTimeMillis()
+        val base = context.getExternalFilesDir(null) ?: return
+        val dayKey = dateDirFmt.format(Date(ts))
+        val dir = File(base, "output/logs/$dayKey")
+        if (!dir.exists()) dir.mkdirs()
+
+        val day = dayFmt.format(Date(ts))
+        val suffix = if (isError) "error" else "info"
+        val file = File(dir, "${day}_${suffix}.log")
+        val level = if (isError) "ERROR" else "INFO"
+        val line = "${tsFmt.format(Date(ts))} [$level] $tag: $message\n"
+        synchronized(directWriteLock) {
+            try {
+                file.appendText(line, Charsets.UTF_8)
+            } catch (_: Exception) {
+                // ignore
+            }
+        }
     }
 
     /**
@@ -96,6 +129,23 @@ object OutputFileLogger {
             }
         } catch (e: Exception) {
             Log.w(TAG, "enqueue failed", e)
+        }
+    }
+
+    private fun enqueueForce(context: Context, isError: Boolean, tag: String, message: String) {
+        try {
+            ensureWorker()
+            val appCtx = context.applicationContext
+            val offered = queue.offer(LogItem(appCtx, isError, tag, message))
+            if (!offered) {
+                val now = System.currentTimeMillis()
+                if (now - lastDropWarnAt >= 5000) {
+                    lastDropWarnAt = now
+                    Log.w(TAG, "log queue is full, dropping incoming logs")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "enqueueForce failed", e)
         }
     }
 

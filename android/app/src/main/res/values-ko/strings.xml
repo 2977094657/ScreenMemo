@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">스크린메모</string>
+    <string name="notification_channel_name">스크린샷 서비스</string>
+    <string name="notification_channel_description">스크린샷 서비스 상태를 표시합니다</string>
+    <string name="fg_notif_interval_value">%1$d초</string>
+    <string name="fg_notif_title_with_interval">%1$s · %2$s</string>
+    <string name="fg_notif_last_never">없음</string>
+    <string name="fg_notif_capture_on">이 앱 캡처 중</string>
+    <string name="fg_notif_capture_off">이 앱 캡처 안 함</string>
+    <string name="fg_notif_status_collapsed">%1$s · 마지막 %2$s</string>
+    <string name="fg_notif_status_expanded">%1$s\n마지막 %2$s</string>
+    <string name="fg_time_just_now">방금</string>
+    <string name="fg_time_minutes_ago">%1$d분 전</string>
+    <string name="fg_time_hours_ago">%1$d시간 전</string>
+    <string name="fg_time_days_ago">%1$d일 전</string>
+</resources>

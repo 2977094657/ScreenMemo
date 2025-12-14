@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Screen Memo</string>
+    <string name="notification_channel_name">Screen capture service</string>
+    <string name="notification_channel_description">Shows the screen capture service status</string>
+    <string name="fg_notif_interval_value">%1$ds</string>
+    <string name="fg_notif_title_with_interval">%1$s · %2$s</string>
+    <string name="fg_notif_last_never">Never</string>
+    <string name="fg_notif_capture_on">Capturing this app</string>
+    <string name="fg_notif_capture_off">Not capturing this app</string>
+    <string name="fg_notif_status_collapsed">%1$s · Last %2$s</string>
+    <string name="fg_notif_status_expanded">%1$s\nLast %2$s</string>
+    <string name="fg_time_just_now">Just now</string>
+    <string name="fg_time_minutes_ago">%1$d min ago</string>
+    <string name="fg_time_hours_ago">%1$d hr ago</string>
+    <string name="fg_time_days_ago">%1$d d ago</string>
 </resources>
