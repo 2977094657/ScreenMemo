@@ -137,7 +137,6 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     } catch (e) {
       try { FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString()); } catch (_) {}
     }
-
     await db.execute('''
       CREATE TABLE IF NOT EXISTS segment_results (
         segment_id INTEGER PRIMARY KEY,
@@ -169,6 +168,15 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     // 创建动态搜索 FTS 索引
     await _createSegmentResultsFts(db);
     await _backfillSegmentResultsFts(db);
+  }
+
+  Future<int> clearAllEmbeddings() async {
+    final db = await database;
+    try {
+      return await db.delete('embeddings');
+    } catch (_) {
+      return 0;
+    }
   }
 
   // v6: 清理旧的 AI 分组表与老配置键（首次打开/升级时执行）
@@ -234,6 +242,55 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         offset: offset,
       );
       return rows;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listSamplesMissingEmbeddingsCursor({
+    int limit = 1000,
+    int? segmentId,
+    int? beforeCaptureTime,
+    int? beforeId,
+  }) async {
+    final db = await database;
+    try {
+      final int n = limit <= 0 ? 1000 : limit;
+      final List<Object?> args = <Object?>[];
+      final List<String> where = <String>[
+        'e.sample_id IS NULL',
+      ];
+      if (segmentId != null) {
+        where.add('ss.segment_id = ?');
+        args.add(segmentId);
+      }
+
+      if (beforeCaptureTime != null && beforeId != null) {
+        where.add('(ss.capture_time < ? OR (ss.capture_time = ? AND ss.id < ?))');
+        args.add(beforeCaptureTime);
+        args.add(beforeCaptureTime);
+        args.add(beforeId);
+      }
+
+      final String sql = '''
+        SELECT
+          ss.id,
+          ss.segment_id,
+          ss.capture_time,
+          ss.file_path,
+          ss.app_package_name,
+          ss.app_name,
+          ss.position_index
+        FROM segment_samples ss
+        LEFT JOIN embeddings e ON e.sample_id = ss.id
+        WHERE ${where.join(' AND ')}
+        ORDER BY ss.capture_time DESC, ss.id DESC
+        LIMIT ?
+      ''';
+      args.add(n);
+
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
     }
@@ -837,6 +894,29 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     } catch (_) { return <Map<String, dynamic>>[]; }
   }
 
+  Future<List<Map<String, dynamic>>> listSegmentSamplesMissingEmbeddings(
+    int segmentId, {
+    int limit = 200,
+    bool onlyKeyframes = true,
+  }) async {
+    final db = await database;
+    try {
+      final String keyframeCond = onlyKeyframes ? 'AND ss.is_keyframe = 1' : '';
+      final String sql = '''
+        SELECT ss.*
+        FROM segment_samples ss
+        LEFT JOIN embeddings e ON e.sample_id = ss.id
+        WHERE ss.segment_id = ?
+          AND e.sample_id IS NULL
+          $keyframeCond
+        ORDER BY ss.position_index ASC, ss.id ASC
+        LIMIT ?
+      ''';
+      final rows = await db.rawQuery(sql, <Object?>[segmentId, limit]);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
   Future<List<Map<String, dynamic>>> listLatestSamples({int limit = 10}) async {
     final db = await database;
     try {
@@ -847,6 +927,92 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       );
       return rows;
     } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  /// 列出某个 segment 内最新的 N 条样本（按 capture_time DESC）。
+  /// - 用于“仅对某段做向量化/语义搜索窗口”的场景。
+  Future<List<Map<String, dynamic>>> listLatestSamplesInSegment(
+    int segmentId, {
+    int limit = 1000,
+  }) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'segment_samples',
+        where: 'segment_id = ?',
+        whereArgs: <Object?>[segmentId],
+        orderBy: 'capture_time DESC, id DESC',
+        limit: limit,
+      );
+      return rows;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> listLatestSamplesMissingEmbeddings({
+    int limit = 10,
+    bool onlyKeyframes = true,
+  }) async {
+    final db = await database;
+    try {
+      final String keyframeCond = onlyKeyframes ? 'AND ss.is_keyframe = 1' : '';
+      final String sql = '''
+        SELECT ss.*
+        FROM segment_samples ss
+        LEFT JOIN embeddings e ON e.sample_id = ss.id
+        WHERE e.sample_id IS NULL
+        $keyframeCond
+        ORDER BY ss.capture_time DESC, ss.id DESC
+        LIMIT ?
+      ''';
+      final rows = await db.rawQuery(sql, <Object?>[limit]);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) { return <Map<String, dynamic>>[]; }
+  }
+
+  /// 仅在“最新 N 张样本窗口（默认 1000）”内，列出缺失向量的样本。
+  ///
+  /// - 需求背景：按时间间隔抽样向量化时，只允许在最新 1k 范围内挑选与计算。
+  /// - 注意：这里的 “N” 是窗口大小（最新 N 张样本），不是“返回条数”。
+  Future<List<Map<String, dynamic>>> listSamplesMissingEmbeddingsInLatestWindow({
+    int latestSamplesLimit = 1000,
+    int? segmentId,
+  }) async {
+    final db = await database;
+    try {
+      final int n = latestSamplesLimit <= 0 ? 1000 : latestSamplesLimit;
+      final List<Object?> args = <Object?>[];
+      final String subWhere = segmentId != null ? 'WHERE segment_id = ?' : '';
+      if (segmentId != null) args.add(segmentId);
+      args.add(n);
+
+      final String sql = '''
+        SELECT
+          ss.id,
+          ss.segment_id,
+          ss.capture_time,
+          ss.file_path,
+          ss.app_package_name,
+          ss.app_name,
+          ss.position_index
+        FROM segment_samples ss
+        LEFT JOIN embeddings e ON e.sample_id = ss.id
+        WHERE e.sample_id IS NULL
+          AND ss.id IN (
+            SELECT id
+            FROM segment_samples
+            $subWhere
+            ORDER BY capture_time DESC, id DESC
+            LIMIT ?
+          )
+        ORDER BY ss.capture_time DESC, ss.id DESC
+      ''';
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<void> saveEmbeddingForSample({
@@ -873,6 +1039,103 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<bool> hasEmbeddingForSample(int sampleId) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'embeddings',
+        columns: const <String>['sample_id'],
+        where: 'sample_id = ?',
+        whereArgs: <Object?>[sampleId],
+        limit: 1,
+      );
+      return rows.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 列出最近的 embedding（用于语义搜索小测），并联表取出图片路径与时间信息。
+  Future<List<Map<String, dynamic>>> listLatestEmbeddingsWithSamples({
+    int limit = 1000,
+    int? segmentId,
+  }) async {
+    final db = await database;
+    try {
+      final List<Object?> args = <Object?>[];
+      String where = '';
+      if (segmentId != null) {
+        where = 'WHERE ss.segment_id = ?';
+        args.add(segmentId);
+      }
+      final String sql = '''
+        SELECT
+          e.sample_id AS sample_id,
+          e.segment_id AS segment_id,
+          e.embedding AS embedding,
+          e.model_version AS model_version,
+          ss.capture_time AS capture_time,
+          ss.file_path AS file_path,
+          ss.app_name AS app_name,
+          ss.app_package_name AS app_package_name
+        FROM embeddings e
+        JOIN segment_samples ss ON ss.id = e.sample_id
+        $where
+        ORDER BY ss.capture_time DESC, ss.id DESC
+        LIMIT ?
+      ''';
+      args.add(limit);
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 仅在“最新 N 张样本窗口（默认 1000）”内，列出已有 embedding 的候选集合（用于语义检索）。
+  ///
+  /// - 与 listLatestEmbeddingsWithSamples 的区别：
+  ///   - 这里会先限定“样本窗口”，保证不会检索到最新窗口之外（更早）的截图。
+  Future<List<Map<String, dynamic>>> listEmbeddingsInLatestSamplesWindow({
+    int latestSamplesLimit = 1000,
+    int? segmentId,
+  }) async {
+    final db = await database;
+    try {
+      final int n = latestSamplesLimit <= 0 ? 1000 : latestSamplesLimit;
+      final List<Object?> args = <Object?>[];
+      final String subWhere = segmentId != null ? 'WHERE segment_id = ?' : '';
+      if (segmentId != null) args.add(segmentId);
+      args.add(n);
+
+      final String sql = '''
+        SELECT
+          e.sample_id AS sample_id,
+          e.segment_id AS segment_id,
+          e.embedding AS embedding,
+          e.model_version AS model_version,
+          ss.capture_time AS capture_time,
+          ss.file_path AS file_path,
+          ss.app_name AS app_name,
+          ss.app_package_name AS app_package_name
+        FROM embeddings e
+        JOIN segment_samples ss ON ss.id = e.sample_id
+        WHERE ss.id IN (
+          SELECT id
+          FROM segment_samples
+          $subWhere
+          ORDER BY capture_time DESC, id DESC
+          LIMIT ?
+        )
+        ORDER BY ss.capture_time DESC, ss.id DESC
+      ''';
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<Map<String, dynamic>?> getSegmentResult(int segmentId) async {
