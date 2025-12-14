@@ -5,15 +5,17 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
-import androidx.work.WorkRequest
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.fqyw.screen_memo.AISettingsNative
 import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.OutputFileLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,12 +42,18 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
 
         val zone = ZoneId.systemDefault()
         val weekStartKey = inputData.getString(KEY_WEEK_START)
-            ?: return Result.failure()
+            ?: run {
+                try { OutputFileLogger.errorForce(applicationContext, TAG, "doWork missing input weekStartKey") } catch (_: Exception) {}
+                return Result.failure()
+            }
+
+        try { OutputFileLogger.infoForce(applicationContext, TAG, "doWork begin weekStartKey=$weekStartKey") } catch (_: Exception) {}
 
         val weekStart = try {
             LocalDate.parse(weekStartKey, DATE_FMT)
         } catch (e: Exception) {
             try { FileLogger.e(TAG, "Invalid weekStartKey=$weekStartKey") } catch (_: Exception) {}
+            try { OutputFileLogger.errorForce(applicationContext, TAG, "Invalid weekStartKey=$weekStartKey") } catch (_: Exception) {}
             return Result.failure()
         }
         val weekEnd = weekStart.plusDays(6)
@@ -55,11 +63,16 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
         var db: SQLiteDatabase? = null
         try {
             db = openMasterDb(applicationContext, writable = true)
-            if (db == null) return Result.retry()
+            if (db == null) {
+                try { OutputFileLogger.errorForce(applicationContext, TAG, "openMasterDb returned null; will retry") } catch (_: Exception) {}
+                return Result.retry()
+            }
 
             // 若已存在则直接成功
             if (hasWeeklySummary(db, weekStartKey)) {
                 try { FileLogger.i(TAG, "Weekly summary already exists: $weekStartKey") } catch (_: Exception) {}
+                try { setLastGeneratedWeek(applicationContext, weekStartKey) } catch (_: Exception) {}
+                try { OutputFileLogger.infoForce(applicationContext, TAG, "Weekly summary already exists: $weekStartKey") } catch (_: Exception) {}
                 return Result.success()
             }
 
@@ -81,10 +94,14 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
                 structuredJson = structuredJson
             )
 
+            try { setLastGeneratedWeek(applicationContext, weekStartKey) } catch (_: Exception) {}
+
             try { FileLogger.i(TAG, "Weekly summary generated for $weekStartKey by $model, len=${outputText.length}") } catch (_: Exception) {}
+            try { OutputFileLogger.infoForce(applicationContext, TAG, "Weekly summary generated for $weekStartKey by $model, len=${outputText.length}") } catch (_: Exception) {}
             return Result.success()
         } catch (e: Exception) {
             try { FileLogger.e(TAG, "Weekly worker failed: ${e.message}", e) } catch (_: Exception) {}
+            try { OutputFileLogger.errorForce(applicationContext, TAG, "Weekly worker failed: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             return Result.retry()
         } finally {
             try { db?.close() } catch (_: Exception) {}
@@ -311,6 +328,13 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
         db.insertWithOnConflict("weekly_summaries", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    private fun setLastGeneratedWeek(context: Context, weekStartKey: String) {
+        try {
+            val prefs = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("weekly_summary_last_generated_week", weekStartKey).apply()
+        } catch (_: Exception) {}
+    }
+
     private fun aiProviderName(model: String): String =
         when {
             model.contains("gpt", true) -> "openai"
@@ -405,15 +429,18 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
                 val constraints = Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
-                val req: WorkRequest = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
+                val req: OneTimeWorkRequest = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
                     .setInputData(data)
                     .setConstraints(constraints)
                     .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .build()
-                WorkManager.getInstance(ctx).enqueue(req)
+                val uniqueName = "weekly_summary_$weekStartKey"
+                WorkManager.getInstance(ctx).enqueueUniqueWork(uniqueName, ExistingWorkPolicy.KEEP, req)
                 try { FileLogger.i(TAG, "enqueue weekly summary for $weekStartKey") } catch (_: Exception) {}
+                try { OutputFileLogger.infoForce(ctx, TAG, "enqueueUniqueWork name=$uniqueName") } catch (_: Exception) {}
             } catch (e: Exception) {
                 try { FileLogger.e(TAG, "enqueue failed: ${e.message}", e) } catch (_: Exception) {}
+                try { OutputFileLogger.errorForce(ctx, TAG, "enqueue failed: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             }
         }
     }

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.OutputFileLogger
 import java.time.Instant
 import java.time.ZoneId
 
@@ -23,6 +24,8 @@ object MemoryProcessingScheduler {
             val triggerAt = computeNextTrigger(nowMillis)
             val pendingIntent = buildPendingIntent(context)
 
+            try { OutputFileLogger.infoForce(context, TAG, "scheduleNext now=$nowMillis triggerAt=$triggerAt") } catch (_: Exception) {}
+
             alarmManager.cancel(pendingIntent)
 
             var scheduled = false
@@ -39,8 +42,8 @@ object MemoryProcessingScheduler {
                     alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                 }
                 scheduled = true
-            } catch (e: SecurityException) {
-                FileLogger.w(TAG, "Exact alarm scheduling denied: ${e.message}")
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "Exact alarm scheduling failed: ${e.message}")
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
@@ -51,16 +54,16 @@ object MemoryProcessingScheduler {
                 } catch (ignored: Exception) {
                     FileLogger.e(TAG, "Fallback scheduling failed: ${ignored.message}", ignored)
                 }
-            } catch (e: Exception) {
-                FileLogger.e(TAG, "scheduleNext failed: ${e.message}", e)
             }
 
             if (scheduled) {
                 FileLogger.i(TAG, "Next memory processing scheduled at ${logTime(triggerAt)}")
+                try { OutputFileLogger.infoForce(context, TAG, "Next memory processing scheduled at ${logTime(triggerAt)}") } catch (_: Exception) {}
             }
             scheduled
         } catch (e: Exception) {
             FileLogger.e(TAG, "scheduleNext encountered error: ${e.message}", e)
+            try { OutputFileLogger.errorForce(context, TAG, "scheduleNext encountered error: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             false
         }
     }
