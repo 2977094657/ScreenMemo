@@ -25,7 +25,7 @@ class PathService {
           try {
             await FlutterLogger.nativeWarn(
               'PathService',
-              'getInternalFilesDir returned null, fallback',
+              'getInternalFilesDir 返回 null，使用兜底路径',
             );
           } catch (_) {}
         }
@@ -37,7 +37,7 @@ class PathService {
     } catch (e) {
       try {
         await FlutterLogger.error(
-          'PathService.getInternalAppDir failed: ${e.toString()}',
+          'PathService.getInternalAppDir 获取失败: ${e.toString()}',
         );
       } catch (_) {}
       final fallback = await _getInternalFallbackDirectory();
@@ -73,7 +73,7 @@ class PathService {
     } catch (e) {
       try {
         await FlutterLogger.error(
-          'PathService.getLegacyExternalFilesDir failed: ${e.toString()}',
+          'PathService.getLegacyExternalFilesDir 获取失败: ${e.toString()}',
         );
       } catch (_) {}
       final fallback = await _getExternalFallbackDirectory();
@@ -90,7 +90,7 @@ class PathService {
       final dir = await path_provider.getApplicationSupportDirectory();
       try {
         await FlutterLogger.debug(
-          'PathService.fallback internalSupport: ${dir.path}',
+          'PathService 内部兜底目录（support）：${dir.path}',
         );
       } catch (_) {}
       return dir;
@@ -100,14 +100,14 @@ class PathService {
         try {
           await FlutterLogger.nativeWarn(
             'PathService',
-            'fallback support failed, use documents: ${dir.path}',
+            'support 目录不可用，改用 documents：${dir.path}',
           );
         } catch (_) {}
         return dir;
       } catch (e2) {
         try {
           await FlutterLogger.error(
-            'PathService.internalFallback failed: ${e2.toString()}',
+            'PathService.internalFallback 兜底失败: ${e2.toString()}',
           );
         } catch (_) {}
         return null;
@@ -124,7 +124,7 @@ class PathService {
         if (dir != null) {
           try {
             await FlutterLogger.debug(
-              'PathService.fallback externalStorage: ' + dir.path,
+              'PathService 外部兜底目录（externalStorage）：' + dir.path,
             );
           } catch (_) {}
           return dir;
@@ -133,7 +133,7 @@ class PathService {
         try {
           await FlutterLogger.nativeWarn(
             'PathService',
-            'externalStorageDirectory failed: ' + e.toString(),
+            '获取 externalStorageDirectory 失败：' + e.toString(),
           );
         } catch (_) {}
       }
@@ -142,14 +142,14 @@ class PathService {
       final dir = await path_provider.getApplicationDocumentsDirectory();
       try {
         await FlutterLogger.debug(
-          'PathService.fallback appDocuments: ' + dir.path,
+          'PathService 外部兜底目录（appDocuments）：' + dir.path,
         );
       } catch (_) {}
       return dir;
     } catch (e) {
       try {
         await FlutterLogger.error(
-          'PathService.fallback failed: ' + e.toString(),
+          'PathService 外部兜底失败：' + e.toString(),
         );
       } catch (_) {}
       return null;
@@ -165,19 +165,19 @@ class PathService {
         try {
           await FlutterLogger.nativeWarn(
             'PathService',
-            'screenshot dir is null',
+            '截图目录为空',
           );
         } catch (_) {}
         return null;
       }
       try {
-        await FlutterLogger.debug('PathService screenshot dir: ${dir.path}');
+        await FlutterLogger.debug('截图目录：${dir.path}');
       } catch (_) {}
       return dir;
     } catch (e) {
       try {
         await FlutterLogger.error(
-          'PathService.getScreenshotDirectory failed: ' + e.toString(),
+          'PathService.getScreenshotDirectory 获取失败：' + e.toString(),
         );
       } catch (_) {}
       return null;
@@ -194,17 +194,17 @@ class PathService {
         try {
           await FlutterLogger.nativeWarn(
             'PathService',
-            'app screenshot dir null: $packageName',
+            '应用截图目录为空：$packageName',
           );
         } catch (_) {}
         return null;
       }
       try {
-        await FlutterLogger.info('PathService app dir: ${dir.path}');
+        await FlutterLogger.info('应用目录：${dir.path}');
       } catch (_) {}
       return dir;
     } catch (e) {
-      print('PathService: 获取应用截图目录失败: $e');
+      print('路径服务：获取应用截图目录失败: $e');
       return null;
     }
   }

@@ -345,7 +345,7 @@ class DailySummaryService {
     final range = _dayRangeMillis(dateKey);
     if (range == null) {
       try {
-        await FlutterLogger.nativeWarn('DailySummary', 'generateForDate bad dateKey=$dateKey');
+        await FlutterLogger.nativeWarn('DailySummary', 'generateForDate 参数 dateKey 无效：$dateKey');
       } catch (_) {}
       return null;
     }
@@ -355,12 +355,12 @@ class DailySummaryService {
       endMillis: range[1],
     );
     try {
-      await FlutterLogger.nativeInfo('DailySummary', 'context segments=${segments.length}');
+      await FlutterLogger.nativeInfo('DailySummary', '上下文片段数=${segments.length}');
     } catch (_) {}
 
     final String prompt = await _buildDailyPrompt(dateKey, segments);
     try {
-      await FlutterLogger.nativeDebug('DailySummary', 'prompt length=${prompt.length}');
+      await FlutterLogger.nativeDebug('DailySummary', '提示词长度=${prompt.length}');
     } catch (_) {}
 
     // 读取“动态(segments)”上下文的提供商与模型，用于日志与写库，保证与动态一致
@@ -387,16 +387,16 @@ class DailySummaryService {
     } catch (_) {}
     try {
       final prev = prompt.length <= 1200 ? prompt : (prompt.substring(0, 1200) + '…');
-      await FlutterLogger.nativeDebug('DailySummary', 'prompt preview: $prev');
+      await FlutterLogger.nativeDebug('DailySummary', '提示词预览：$prev');
     } catch (_) {}
     try {
-      await FlutterLogger.nativeInfo('DailySummary', 'prompt full BEGIN >>>');
+      await FlutterLogger.nativeInfo('DailySummary', '提示词完整内容开始 >>>');
       const int chunk = 1800;
       for (int i = 0; i < prompt.length; i += chunk) {
         final int end = (i + chunk < prompt.length) ? (i + chunk) : prompt.length;
         await FlutterLogger.nativeInfo('DailySummary', prompt.substring(i, end));
       }
-      await FlutterLogger.nativeInfo('DailySummary', 'prompt full END <<<');
+      await FlutterLogger.nativeInfo('DailySummary', '提示词完整内容结束 <<<');
     } catch (_) {}
 
     return _DailySummaryGenerationContext(
@@ -412,20 +412,20 @@ class DailySummaryService {
     required String raw,
   }) async {
     try {
-      await FlutterLogger.nativeInfo('DailySummary', 'AI raw length=${raw.length}');
+      await FlutterLogger.nativeInfo('DailySummary', 'AI 原始输出长度=${raw.length}');
     } catch (_) {}
     try {
       final prev = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
-      await FlutterLogger.nativeDebug('DailySummary', 'AI response preview: $prev');
+      await FlutterLogger.nativeDebug('DailySummary', 'AI 响应预览：$prev');
     } catch (_) {}
     try {
-      await FlutterLogger.nativeInfo('DailySummary', 'AI response full BEGIN >>>');
+      await FlutterLogger.nativeInfo('DailySummary', 'AI 响应完整内容开始 >>>');
       const int chunk = 1800;
       for (int i = 0; i < raw.length; i += chunk) {
         final int end = (i + chunk < raw.length) ? (i + chunk) : raw.length;
         await FlutterLogger.nativeInfo('DailySummary', raw.substring(i, end));
       }
-      await FlutterLogger.nativeInfo('DailySummary', 'AI response full END <<<');
+      await FlutterLogger.nativeInfo('DailySummary', 'AI 响应完整内容结束 <<<');
     } catch (_) {}
 
     Map<String, dynamic>? sj;
@@ -443,7 +443,7 @@ class DailySummaryService {
       try {
         await FlutterLogger.nativeWarn(
           'DailySummary',
-          'non-JSON AI response, try repair then fallback; error=$e',
+          'AI 响应非 JSON，尝试修复并回退；error=$e',
         );
       } catch (_) {}
       try {
@@ -529,7 +529,7 @@ class DailySummaryService {
       }
     } catch (e) {
       try {
-        await FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief failed: $e');
+        await FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief 失败：$e');
       } catch (_) {}
     }
 
@@ -545,12 +545,12 @@ class DailySummaryService {
   /// 生成或返回已有的每日总结
   Future<Map<String, dynamic>?> getOrGenerate(String dateKey, {bool force = false}) async {
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'getOrGenerate date=$dateKey force=$force');
+    FlutterLogger.nativeInfo('DailySummary', 'getOrGenerate 日期=$dateKey 强制=$force');
     if (!force) {
       final existed = await _db.getDailySummary(dateKey);
       if (existed != null) {
         // ignore: discarded_futures
-        FlutterLogger.nativeInfo('DailySummary', 'cache hit for $dateKey');
+        FlutterLogger.nativeInfo('DailySummary', '命中缓存：$dateKey');
         return existed;
       }
     }
@@ -560,7 +560,7 @@ class DailySummaryService {
   /// 生成某日总结（强制重算）
   Future<Map<String, dynamic>?> generateForDate(String dateKey) async {
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'generateForDate begin date=$dateKey');
+    FlutterLogger.nativeInfo('DailySummary', 'generateForDate 开始 date=$dateKey');
     final _DailySummaryGenerationContext? ctx =
         await _prepareDailySummaryContext(dateKey);
     if (ctx == null) return null;
@@ -574,9 +574,9 @@ class DailySummaryService {
       );
     } catch (e, st) {
       // ignore: discarded_futures
-      await FlutterLogger.nativeError('DailySummary', 'AI request failed: '+e.toString());
+      await FlutterLogger.nativeError('DailySummary', 'AI 请求失败：'+e.toString());
       // ignore: discarded_futures
-      await FlutterLogger.nativeDebug('DailySummary', 'AI exception stack: '+st.toString());
+      await FlutterLogger.nativeDebug('DailySummary', 'AI 异常堆栈：'+st.toString());
       rethrow;
     }
     final String raw = _stripFences(resp.content.trim());
@@ -679,14 +679,14 @@ class DailySummaryService {
     );
 
     final prompt = await _buildMorningPrompt(dateKey, sourceDateKey, segments);
-    try { await FlutterLogger.nativeInfo('MorningInsights', 'generate start target=$dateKey source=$sourceDateKey segments=${segments.length}'); } catch (_) {}
+    try { await FlutterLogger.nativeInfo('MorningInsights', '生成开始 目标=$dateKey 来源=$sourceDateKey 片段数=${segments.length}'); } catch (_) {}
     final resp = await _chat.sendMessageOneShot(prompt, context: 'segments', timeout: null);
     final stripped = _stripFences(resp.content.trim());
-    try { await FlutterLogger.nativeDebug('MorningInsights', 'AI response preview: '+(stripped.length > 800 ? stripped.substring(0, 800)+'…' : stripped)); } catch (_) {}
+    try { await FlutterLogger.nativeDebug('MorningInsights', 'AI 响应预览：'+(stripped.length > 800 ? stripped.substring(0, 800)+'…' : stripped)); } catch (_) {}
 
     final tips = _parseMorningTips(stripped);
     if (tips.isEmpty) {
-      try { await FlutterLogger.nativeWarn('MorningInsights', 'parsed tips empty'); } catch (_) {}
+      try { await FlutterLogger.nativeWarn('MorningInsights', '解析出的提示为空'); } catch (_) {}
       return null;
     }
 
@@ -700,7 +700,7 @@ class DailySummaryService {
       tipsJson: rawJson,
       rawResponse: stripped,
     );
-    try { await FlutterLogger.nativeInfo('MorningInsights', 'saved tips=${tips.length}'); } catch (_) {}
+    try { await FlutterLogger.nativeInfo('MorningInsights', '已保存提示数量=${tips.length}'); } catch (_) {}
     return MorningInsights(
       dateKey: dateKey,
       sourceDateKey: sourceDateKey,
@@ -927,11 +927,11 @@ class DailySummaryService {
   /// 获取今日通知用的简短文本（优先 structured_json.notification_brief，回退为摘要首句）
   Future<String> getNotificationBrief(String dateKey) async {
     // ignore: discarded_futures
-    FlutterLogger.nativeDebug('DailySummary', 'getNotificationBrief date=$dateKey');
+    FlutterLogger.nativeDebug('DailySummary', '获取通知简报 date=$dateKey');
     final daily = await _db.getDailySummary(dateKey);
     if (daily == null) {
       // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'getNotificationBrief: no daily row for $dateKey');
+      FlutterLogger.nativeWarn('DailySummary', 'getNotificationBrief：未找到 $dateKey 的 daily 记录');
       return '';
     }
     Map<String, dynamic>? sj;
@@ -953,7 +953,7 @@ class DailySummaryService {
     if (brief is String && brief.trim().isNotEmpty) {
       final out = brief.trim();
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'brief from structured_json len=${out.length}');
+      FlutterLogger.nativeInfo('DailySummary', '简报来自 structured_json，长度=${out.length}');
       return out;
     }
     // 2) 回退 overall_summary 的首句
@@ -967,7 +967,7 @@ class DailySummaryService {
     }
     final result = firstSentence(sum);
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'brief from fallback len=${result.length}');
+    FlutterLogger.nativeInfo('DailySummary', '简报来自兜底逻辑，长度=${result.length}');
     return result;
   }
 
@@ -975,11 +975,11 @@ class DailySummaryService {
   Future<bool> triggerNotificationNow(String dateKey) async {
     try {
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'triggerNotificationNow date=$dateKey');
+      FlutterLogger.nativeInfo('DailySummary', '立即触发通知 date=$dateKey');
       final brief = (await getNotificationBrief(dateKey)).trim();
       if (brief.isEmpty) {
         // ignore: discarded_futures
-        FlutterLogger.nativeWarn('DailySummary', 'triggerNotificationNow: empty brief for $dateKey');
+        FlutterLogger.nativeWarn('DailySummary', '立即触发通知：简报为空 date=$dateKey');
         return false;
       }
       // 将简报写入原生侧缓存，便于闹钟触达时使用中文内容
@@ -999,7 +999,7 @@ class DailySummaryService {
         'message': brief,
       });
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'showNotification result=$ok2');
+      FlutterLogger.nativeInfo('DailySummary', '展示通知结果=$ok2');
       if (ok2 == true) return true;
       // 回退为简单通知
       final ok = await _channel.invokeMethod('showSimpleNotification', {
@@ -1007,11 +1007,11 @@ class DailySummaryService {
         'message': brief,
       });
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'showSimpleNotification result=$ok');
+      FlutterLogger.nativeInfo('DailySummary', '展示简单通知结果=$ok');
       return ok == true;
     } catch (e) {
       // ignore: discarded_futures
-      FlutterLogger.nativeError('DailySummary', 'triggerNotification error: $e');
+      FlutterLogger.nativeError('DailySummary', '触发通知异常：$e');
       return false;
     }
   }
@@ -1024,14 +1024,14 @@ class DailySummaryService {
   }) async {
     try {
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'scheduleDailyNotification enabled=$enabled time=$hour:$minute');
+      FlutterLogger.nativeInfo('DailySummary', '安排每日通知 enabled=$enabled time=$hour:$minute');
       final res = await _channel.invokeMethod('scheduleDailySummaryNotification', {
         'hour': hour,
         'minute': minute,
         'enabled': enabled,
       });
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'scheduleDailyNotification result=$res');
+      FlutterLogger.nativeInfo('DailySummary', '安排每日通知结果=$res');
       // 同步安排固定时段（08:00/12:00/17:00/22:00）
       try {
         final ok = await _channel.invokeMethod('scheduleDailySummaryNotification', {
@@ -1042,12 +1042,12 @@ class DailySummaryService {
           'enabled': enabled,
         });
         // ignore: discarded_futures
-        FlutterLogger.nativeDebug('DailySummary', 'schedule fixed slots via native restore side-effect ok=$ok');
+        FlutterLogger.nativeDebug('DailySummary', '通过原生 restore 侧效应安排固定时段 ok=$ok');
       } catch (_) {}
       return res == true;
     } catch (e) {
       // ignore: discarded_futures
-      FlutterLogger.nativeError('DailySummary', 'scheduleDailyNotification error: $e');
+      FlutterLogger.nativeError('DailySummary', '安排每日通知异常：$e');
       return false;
     }
   }
@@ -1111,7 +1111,7 @@ class DailySummaryService {
 
       // 日志
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', 'auto-refresh scheduled at ${nextAt.toIso8601String()} (in ${delay.inSeconds}s)');
+      FlutterLogger.nativeInfo('DailySummary', '自动刷新已安排：${nextAt.toIso8601String()}（${delay.inSeconds}秒后）');
 
       _autoRefreshTimer = Timer(delay, () async {
         try {
@@ -1119,7 +1119,7 @@ class DailySummaryService {
           await generateForDate(key); // 内部已写入通知用 brief
         } catch (e) {
           // ignore: discarded_futures
-          FlutterLogger.nativeWarn('DailySummary', 'auto-refresh generate failed: $e');
+          FlutterLogger.nativeWarn('DailySummary', '自动刷新生成失败：$e');
         } finally {
           // 继续调度下一次
           // ignore: discarded_futures
@@ -1128,7 +1128,7 @@ class DailySummaryService {
       });
     } catch (e) {
       // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'refreshAutoRefreshSchedule failed: $e');
+      FlutterLogger.nativeWarn('DailySummary', '刷新自动刷新调度失败：$e');
     }
   }
 

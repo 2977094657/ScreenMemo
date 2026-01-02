@@ -147,7 +147,11 @@
             android:name=".ScreenCaptureService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="通过无障碍截屏并在后台保持运行" />
+        </service>
 
         <!-- 记忆系统后端服务（事件解析、标签管理、证据存储） -->
         <service

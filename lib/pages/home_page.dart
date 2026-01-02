@@ -150,7 +150,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
     // 日志：记录缓存签名与缓存来源
     // ignore: unawaited_futures
-    FlutterLogger.log('home.loadStats cachedFirst -> total=${stats['totalScreenshots']}, today=${stats['todayScreenshots']}');
+    FlutterLogger.log('home.loadStats 缓存优先 -> 总数=${stats['totalScreenshots']}，今日=${stats['todayScreenshots']}');
     if (mounted) {
       setState(() {
         _screenshotStats = stats;

@@ -63,10 +63,10 @@ object DailySummaryNotifier {
                 builder.setFullScreenIntent(pending, true)
             }
             nm.notify(NOTIFICATION_ID, builder.build())
-            try { FileLogger.i(TAG, "showSimple: title=$title, len=${message.length}, channel=$channelId") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "showSimple：标题=$title，长度=${message.length}，渠道=$channelId") } catch (_: Exception) {}
             true
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "showSimple failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "showSimple 失败：${e.message}", e) } catch (_: Exception) {}
             false
         }
     }
@@ -102,10 +102,10 @@ object DailySummaryNotifier {
                 builder.setFullScreenIntent(pending, true)
             }
             nm.notify(NOTIFICATION_ID, builder.build())
-            try { FileLogger.i(TAG, "showBigText: title=$title, len=${message.length}, channel=$channelId") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "showBigText：标题=$title，长度=${message.length}，渠道=$channelId") } catch (_: Exception) {}
             true
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "showBigText failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "showBigText 失败：${e.message}", e) } catch (_: Exception) {}
             false
         }
     }
@@ -152,7 +152,7 @@ object DailySummaryNotifier {
                 ch.vibrationPattern = longArrayOf(0, 250, 150, 250)
             } catch (_: Exception) {}
             nm.createNotificationChannel(ch)
-            try { FileLogger.i(TAG, "create channel id=$id importance=HIGH") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "创建通知渠道 id=$id importance=HIGH") } catch (_: Exception) {}
         }
     }
 
@@ -226,7 +226,7 @@ object DailySummaryScheduler {
                 }
                 ok = true
             } catch (e: Exception) {
-                try { FileLogger.w(TAG, "setExact failed, fallback setAndAllowWhileIdle: ${e.message}") } catch (_: Exception) {}
+                try { FileLogger.w(TAG, "setExact 失败，回退到 setAndAllowWhileIdle：${e.message}") } catch (_: Exception) {}
                 try { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi); ok = true } catch (_: Exception) {}
             }
 
@@ -240,10 +240,10 @@ object DailySummaryScheduler {
                     .apply()
             } catch (_: Exception) {}
 
-            try { FileLogger.i(TAG, "schedule ok=$ok at ${fmt(trigger)} (hour=$hour, minute=$minute)") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "调度结果 ok=$ok 时间=${fmt(trigger)} (hour=$hour, minute=$minute)") } catch (_: Exception) {}
             ok
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "schedule failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "调度失败：${e.message}", e) } catch (_: Exception) {}
             false
         }
     }
@@ -257,10 +257,10 @@ object DailySummaryScheduler {
                 val sp = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
                 sp.edit().putBoolean(KEY_ENABLED, false).apply()
             } catch (_: Exception) {}
-            try { FileLogger.i(TAG, "cancel: daily summary alarm cancelled") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "取消：每日总结闹钟已取消") } catch (_: Exception) {}
             true
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "cancel failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "取消失败：${e.message}", e) } catch (_: Exception) {}
             false
         }
     }
@@ -301,18 +301,18 @@ object DailySummaryScheduler {
                     }
                     anyOk = true
                 } catch (e: Exception) {
-                    try { FileLogger.w(TAG, "slot $idx setExact failed: ${e.message}") } catch (_: Exception) {}
+                    try { FileLogger.w(TAG, "slot $idx setExact 失败：${e.message}") } catch (_: Exception) {}
                     try {
                         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi)
                         anyOk = true
                     } catch (_: Exception) {}
                 }
 
-                try { FileLogger.i(TAG, "scheduleFixedSlots: slot=$idx time=${fmt(trigger)}") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "固定时段调度：slot=$idx time=${fmt(trigger)}") } catch (_: Exception) {}
             }
             anyOk
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "scheduleFixedSlots failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "固定时段调度失败：${e.message}", e) } catch (_: Exception) {}
             false
         }
     }
@@ -324,7 +324,7 @@ object DailySummaryScheduler {
                 val pi = buildBroadcastPendingIntent(context, REQUEST_CODE_SLOT_BASE + idx)
                 am.cancel(pi)
             }
-            try { FileLogger.i(TAG, "cancelFixedSlots: all fixed slots cancelled") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "取消固定时段：已取消全部固定时段") } catch (_: Exception) {}
         } catch (_: Exception) {}
     }
 
@@ -336,16 +336,16 @@ object DailySummaryScheduler {
             val minute = sp.getInt(KEY_MINUTE, 0)
             if (enabled) {
                 val ok = schedule(context, hour, minute)
-                try { FileLogger.i(TAG, "restore: enabled=true, schedule result=$ok ($hour:$minute)") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "恢复：enabled=true，调度结果=$ok ($hour:$minute)") } catch (_: Exception) {}
                 // 同步安排固定时段
                 val ok2 = scheduleFixedSlots(context)
-                try { FileLogger.i(TAG, "restore: fixed slots schedule result=$ok2") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "恢复：固定时段调度结果=$ok2") } catch (_: Exception) {}
             } else {
                 cancelFixedSlots(context)
-                try { FileLogger.i(TAG, "restore: enabled=false, cancel fixed slots & skip schedule") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "恢复：enabled=false，取消固定时段并跳过调度") } catch (_: Exception) {}
             }
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "restore failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "恢复失败：${e.message}", e) } catch (_: Exception) {}
         }
     }
 
@@ -438,7 +438,7 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         FileLogger.init(context)
         val action = intent.action ?: ""
-        try { FileLogger.i(TAG, "onReceive action=$action") } catch (_: Exception) {}
+        try { FileLogger.i(TAG, "收到广播 action=$action") } catch (_: Exception) {}
         if (action == DailySummaryScheduler.ACTION_ALARM) {
             val pending = goAsync()
             Thread {
@@ -476,7 +476,7 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
                     }
 
                     val ok = DailySummaryNotifier.showBigText(context, title, message)
-                    try { FileLogger.i(TAG, "fired: show notification ok=$ok, len=${message.length}") } catch (_: Exception) {}
+                    try { FileLogger.i(TAG, "触发：展示通知 ok=$ok，长度=${message.length}") } catch (_: Exception) {}
 
                     // 异步触发每日总结生成（保持原行为）
                     try {
@@ -493,7 +493,7 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
                         }
                     } catch (_: Exception) {}
                 } catch (e: Exception) {
-                    try { FileLogger.e(TAG, "Morning alarm handling failed: ${e.message}", e) } catch (_: Exception) {}
+                    try { FileLogger.e(TAG, "早晨闹钟处理失败：${e.message}", e) } catch (_: Exception) {}
                 } finally {
                     pending.finish()
                 }

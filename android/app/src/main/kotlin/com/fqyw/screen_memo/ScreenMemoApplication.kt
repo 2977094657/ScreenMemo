@@ -18,31 +18,30 @@ class ScreenMemoApplication : Application() {
         // 暂不执行 Dart 入口，避免在 Activity 尚未完成通道注册前出现 MissingPluginException。
         // 如需预热引擎，可在此处仅创建并缓存 FlutterEngine（不执行 Dart）。
         try {
-            val cached = FlutterEngineCache.getInstance().get(ENGINE_ID)
+                val cached = FlutterEngineCache.getInstance().get(ENGINE_ID)
             if (cached == null) {
                 val engine = FlutterEngine(this)
                 FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
-                FileLogger.i(TAG, "FlutterEngine cached without executing Dart: $ENGINE_ID")
+                FileLogger.i(TAG, "FlutterEngine 已缓存（未执行 Dart）：$ENGINE_ID")
             }
         } catch (e: Exception) {
-            FileLogger.e(TAG, "Failed to cache FlutterEngine", e)
+            FileLogger.e(TAG, "缓存 FlutterEngine 失败", e)
         }
 
         // 应用启动时恢复每日提醒调度（读取 SharedPreferences 中的上次设置）
         try {
             DailySummaryScheduler.restore(this)
-            OutputFileLogger.info(this, TAG, "Daily summary schedule restored at app start")
+            OutputFileLogger.info(this, TAG, "应用启动时已恢复每日总结调度")
         } catch (e: Exception) {
-            FileLogger.w(TAG, "Daily schedule restore failed: ${e.message}")
+            FileLogger.w(TAG, "恢复每日总结调度失败：${e.message}")
         }
 
         try {
             MemoryProcessingScheduler.scheduleNext(this)
-            FileLogger.i(TAG, "Memory processing schedule prepared on app start")
+            FileLogger.i(TAG, "应用启动时已准备记忆处理调度")
         } catch (e: Exception) {
-            FileLogger.w(TAG, "Memory processing schedule failed: ${e.message}")
+            FileLogger.w(TAG, "记忆处理调度失败：${e.message}")
         }
     }
 }
-
 

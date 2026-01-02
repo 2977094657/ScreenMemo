@@ -31,7 +31,7 @@ object ScreenshotDatabaseHelper {
         var db: SQLiteDatabase? = null
         var shardDb: SQLiteDatabase? = null
         try {
-            FileLogger.i(TAG, "insertIfNotExists begin, app=${appPackageName}, time=${captureTimeMillis}, path=${absoluteFilePath}")
+            FileLogger.i(TAG, "insertIfNotExists 开始：包名=${appPackageName} 时间=${captureTimeMillis} 路径=${absoluteFilePath}")
             val masterDbPath = resolveMasterDbPath(context) ?: return
             db = SQLiteDatabase.openDatabase(masterDbPath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
             ensureSchema(db)
@@ -57,13 +57,13 @@ object ScreenshotDatabaseHelper {
                 if (!pageUrl.isNullOrBlank()) put("page_url", pageUrl)
             }
             val rowId = shardDb!!.insert(tableName, null, values)
-            FileLogger.i(TAG, "inserted into ${tableName}, rowId=${rowId}")
+            FileLogger.i(TAG, "插入成功：table=${tableName} rowId=${rowId}")
 
             // 维护聚合统计（写主库）
             upsertAppStatsOnInsert(db, appPackageName, appName, fileSize, captureTimeMillis)
-            FileLogger.i(TAG, "upsert app_stats ok, app=${appPackageName}, last=${captureTimeMillis}")
+            FileLogger.i(TAG, "更新 app_stats 成功：包名=${appPackageName} last=${captureTimeMillis}")
         } catch (e: Exception) {
-            FileLogger.w(TAG, "Native insertIfNotExists failed: ${e.message}")
+            FileLogger.w(TAG, "原生 insertIfNotExists 失败：${e.message}")
             // 忽略原生侧入库异常，不影响截屏主流程
         } finally {
             try { db?.close() } catch (_: Exception) {}
@@ -475,7 +475,7 @@ object ScreenshotDatabaseHelper {
                 arrayOf(packageName, appName, totalCount, totalSize, lastCapture)
             )
         } catch (e: Exception) {
-            FileLogger.w(TAG, "recomputeAppStatForPackage failed: ${e.message}")
+            FileLogger.w(TAG, "重算应用统计失败：${e.message}")
         }
     }
 

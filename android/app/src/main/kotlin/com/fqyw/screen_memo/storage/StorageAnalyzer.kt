@@ -444,7 +444,7 @@ object StorageAnalyzer {
             storageStats = statsManager.queryStatsForPackage(uuid, context.packageName, userHandle)
         } catch (e: Exception) {
             errors += "internal_stats_error:${e.message}"
-            FileLogger.w(TAG, "queryStatsForPackage failed: ${e.message}")
+            FileLogger.w(TAG, "queryStatsForPackage 失败：${e.message}")
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -460,12 +460,12 @@ object StorageAnalyzer {
                 val totalBytesMethod = stats?.javaClass?.getMethod("getTotalBytes")
                 externalBytes = (totalBytesMethod?.invoke(stats) as? Long)
             } catch (e: ReflectiveOperationException) {
-                FileLogger.i(TAG, "queryExternalStatsForPackage not available on this device: ${e.message}")
+                FileLogger.i(TAG, "该设备不支持 queryExternalStatsForPackage：${e.message}")
             } catch (e: SecurityException) {
-                FileLogger.i(TAG, "queryExternalStatsForPackage blocked by security policy: ${e.message}")
+                FileLogger.i(TAG, "queryExternalStatsForPackage 被安全策略阻止：${e.message}")
             } catch (e: Exception) {
                 errors += "external_stats_error:${e.message}"
-                FileLogger.w(TAG, "queryExternalStatsForPackage invocation failed: ${e.message}")
+                FileLogger.w(TAG, "调用 queryExternalStatsForPackage 失败：${e.message}")
             }
         }
 
@@ -487,7 +487,7 @@ object StorageAnalyzer {
             )
             mode == AppOpsManager.MODE_ALLOWED
         } catch (e: Exception) {
-            FileLogger.w(TAG, "check usage stats permission failed: ${e.message}")
+            FileLogger.w(TAG, "检查使用统计权限失败：${e.message}")
             false
         }
     }

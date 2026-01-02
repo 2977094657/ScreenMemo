@@ -470,7 +470,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
           const SizedBox(height: AppTheme.spacing1),
           Text(
             value,
-            style: theme.textTheme.titleMedium?.copyWith(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+            style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.onSurface,
             ),
@@ -614,6 +617,38 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
 
   Widget _buildHistoryCompressionCard(AppLocalizations l10n) {
     final theme = Theme.of(context);
+    Widget buildUnderlinedValueText({
+      required String text,
+      required String value,
+      required bool enabled,
+    }) {
+      final int index = text.indexOf(value);
+      if (index < 0) {
+        return Text(
+          text,
+          style: TextStyle(
+            decoration: enabled ? TextDecoration.underline : TextDecoration.none,
+          ),
+        );
+      }
+
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: text.substring(0, index)),
+            TextSpan(
+              text: value,
+              style: TextStyle(
+                decoration:
+                    enabled ? TextDecoration.underline : TextDecoration.none,
+              ),
+            ),
+            TextSpan(text: text.substring(index + value.length)),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
@@ -681,7 +716,11 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   minimumSize: Size.zero,
                 ),
-                child: Text(l10n.compressHistorySetDays(_compressDays)),
+                child: buildUnderlinedValueText(
+                  text: l10n.compressHistorySetDays(_compressDays),
+                  value: _compressDays.toString(),
+                  enabled: !_compressingHistory,
+                ),
               ),
               TextButton(
                 onPressed: _compressingHistory ? null : _showTargetSizeDialog,
@@ -693,7 +732,11 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   minimumSize: Size.zero,
                 ),
-                child: Text(l10n.compressHistorySetTarget(_targetSizeKb)),
+                child: buildUnderlinedValueText(
+                  text: l10n.compressHistorySetTarget(_targetSizeKb),
+                  value: _targetSizeKb.toString(),
+                  enabled: !_compressingHistory,
+                ),
               ),
             ],
           ),

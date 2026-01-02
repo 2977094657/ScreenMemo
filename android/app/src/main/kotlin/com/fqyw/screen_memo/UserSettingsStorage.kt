@@ -26,7 +26,7 @@ object UserSettingsStorage {
             }
             writePrefsString(context, key, value, legacyPrefKeys + aliasKeys)
         } catch (t: Throwable) {
-            Log.w(TAG, "putString failed key=$key error=${t.message}")
+            Log.w(TAG, "写入字符串失败 key=$key 错误=${t.message}")
         }
     }
 
@@ -81,7 +81,7 @@ object UserSettingsStorage {
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "getString db read failed key=$key error=${t.message}")
+            Log.w(TAG, "读取字符串（DB）失败 key=$key 错误=${t.message}")
         }
 
         val allKeys = uniqueKeys(listOf(key) + aliasKeys + legacyPrefKeys)
@@ -129,7 +129,7 @@ object UserSettingsStorage {
                 db.delete("user_settings", "key = ?", arrayOf(key))
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "remove failed key=$key error=${t.message}")
+            Log.w(TAG, "删除失败 key=$key 错误=${t.message}")
         }
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -148,7 +148,7 @@ object UserSettingsStorage {
             ensureUserSettingsTable(db)
             db
         } catch (t: Throwable) {
-            Log.w(TAG, "openDatabase failed: ${t.message}")
+            Log.w(TAG, "打开数据库失败: ${t.message}")
             null
         }
     }
@@ -186,7 +186,7 @@ object UserSettingsStorage {
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "writeRaw failed key=$key error=${t.message}")
+            Log.w(TAG, "writeRaw 失败 key=$key 错误=${t.message}")
         }
     }
 

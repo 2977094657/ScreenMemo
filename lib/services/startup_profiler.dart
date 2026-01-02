@@ -10,7 +10,7 @@ class StartupProfiler {
   static void mark(String label) {
     final ts = DateTime.now().millisecondsSinceEpoch;
     if (!enabled) return;
-    debugPrint('[STARTUP] mark: $label @${ts}ms');
+    debugPrint('[启动] 标记：$label @${ts}毫秒');
   }
 
   /// 开始计时某个步骤
@@ -18,7 +18,7 @@ class StartupProfiler {
     _stopwatches[name]?.stop();
     _stopwatches[name] = Stopwatch()..start();
     if (!enabled) return;
-    debugPrint('[STARTUP] begin: $name');
+    debugPrint('[启动] 开始：$name');
   }
 
   /// 结束计时并打印耗时
@@ -27,12 +27,12 @@ class StartupProfiler {
     if (sw != null) {
       sw.stop();
       if (enabled) {
-        debugPrint('[STARTUP] end: $name -> ${sw.elapsedMilliseconds}ms');
+        debugPrint('[启动] 结束：$name，耗时 ${sw.elapsedMilliseconds} 毫秒');
       }
       _stopwatches.remove(name);
     } else {
       if (enabled) {
-        debugPrint('[STARTUP] end: $name (no stopwatch)');
+        debugPrint('[启动] 结束：$name（无计时器）');
       }
     }
   }

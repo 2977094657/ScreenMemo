@@ -37,7 +37,7 @@ class UserSettingsService {
           await prefs.remove(name);
         }
       } catch (e) {
-        await FlutterLogger.nativeWarn('UserSettings', 'remove prefs key=$key failed: $e');
+        await FlutterLogger.nativeWarn('UserSettings', '删除 SharedPreferences 失败：key=$key，错误：$e');
       }
       return;
     }
@@ -171,7 +171,7 @@ class UserSettingsService {
       final Database db = await _db;
       await db.delete(_tableName, where: 'key = ?', whereArgs: <Object>[key]);
     } catch (e) {
-      await FlutterLogger.nativeWarn('UserSettings', 'remove key=$key failed: $e');
+      await FlutterLogger.nativeWarn('UserSettings', '删除配置失败：key=$key，错误：$e');
     }
   }
 
@@ -216,7 +216,7 @@ class UserSettingsService {
       if (rows.isEmpty) return null;
       return rows.first['value'] as String?;
     } catch (e) {
-      await FlutterLogger.nativeWarn('UserSettings', 'read key=$key failed: $e');
+      await FlutterLogger.nativeWarn('UserSettings', '读取配置失败：key=$key，错误：$e');
       return null;
     }
   }
@@ -290,7 +290,7 @@ class UserSettingsService {
         );
       }
     } catch (e) {
-      await FlutterLogger.nativeError('UserSettings', 'write key=$key failed: $e');
+      await FlutterLogger.nativeError('UserSettings', '写入配置失败：key=$key，错误：$e');
     }
   }
 
@@ -307,7 +307,7 @@ class UserSettingsService {
         await writer(prefs, k, value);
       }
     } catch (e) {
-      await FlutterLogger.nativeWarn('UserSettings', 'write prefs key=$key failed: $e');
+      await FlutterLogger.nativeWarn('UserSettings', '写入 SharedPreferences 失败：key=$key，错误：$e');
     }
   }
 

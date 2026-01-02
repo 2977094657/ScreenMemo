@@ -123,7 +123,7 @@ void attachCompressionProgressListener(
         } catch (_) {}
         // 日志：观察续期是否生效
         // ignore: unawaited_futures
-        FlutterLogger.log('stats cache hit, renewed ts=$now, ttl=$ttl');
+        FlutterLogger.log('统计缓存命中，已续期：时间戳=$now，有效期=${ttl}秒');
         final map = _deserializeStats(cached);
         // 后台异步刷新缓存
         // ignore: unawaited_futures
@@ -136,7 +136,7 @@ void attachCompressionProgressListener(
         final stale = _deserializeStats(cached);
         // ignore: unawaited_futures
         FlutterLogger.log(
-          'stats cache stale -> serve stale and refresh, ageMs=${now - ts}, ttl=$ttl',
+          '统计缓存已过期 -> 先返回旧缓存并刷新，缓存年龄=${now - ts}毫秒，有效期=${ttl}秒',
         );
         // ignore: unawaited_futures
         _refreshStatsCache(force: true);
@@ -153,7 +153,7 @@ void attachCompressionProgressListener(
           _statsCacheTtlSecondsDefault;
       // ignore: unawaited_futures
       FlutterLogger.log(
-        'stats cache miss -> compute fresh, now-ts=${DateTime.now().millisecondsSinceEpoch - ts}ms, ttl=$ttl',
+        '统计缓存未命中 -> 重新计算，now-ts=${DateTime.now().millisecondsSinceEpoch - ts}毫秒，有效期=${ttl}秒',
       );
     } catch (_) {}
     final stats = await getScreenshotStats();
@@ -358,25 +358,25 @@ void attachCompressionProgressListener(
 
   /// 设置方法通道处理器
   void _setupMethodChannelHandlers() {
-    print('=== 设置ScreenshotService Method Channel Handler ===');
+    print('=== 设置截图服务 方法通道处理器 ===');
     _channel.setMethodCallHandler((call) async {
-      print('=== 收到Method Channel调用: ${call.method} ===');
+      print('=== 收到方法通道调用: ${call.method} ===');
 
       try {
         // 安全地检查参数
         if (call.arguments == null) {
-          print('=== 参数为null ===');
+          print('=== 参数为空 ===');
         } else {
           print('=== 参数类型: ${call.arguments.runtimeType} ===');
           print('=== 参数内容: ${call.arguments} ===');
         }
         switch (call.method) {
           case 'onScreenshotSaved':
-            print('=== 开始处理onScreenshotSaved ===');
+            print('=== 开始处理截图保存回调 ===');
 
             // 安全地转换参数
             if (call.arguments == null) {
-              print('=== 错误：参数为null ===');
+              print('=== 错误：参数为空 ===');
               return;
             }
 
@@ -389,7 +389,7 @@ void attachCompressionProgressListener(
             print('=== 参数转换成功，开始处理 ===');
 
             await _handleScreenshotSaved(arguments);
-            print('=== onScreenshotSaved处理完成 ===');
+            print('=== 截图保存回调处理完成 ===');
             break;
           case 'onDailySummaryNotificationTap':
             // 通知点击：打开每日总结页面
@@ -404,7 +404,7 @@ void attachCompressionProgressListener(
               // ignore: discarded_futures
               FlutterLogger.nativeInfo(
                 'Navigation',
-                'onTap notification dateKey=${dk ?? 'null'}',
+                '通知点击：dateKey=${dk ?? '空'}',
               );
               // 不阻塞当前 handler
               // ignore: unawaited_futures
@@ -424,11 +424,11 @@ void attachCompressionProgressListener(
             print('未处理的方法调用: ${call.method}');
         }
       } catch (e, stackTrace) {
-        print('=== Method Channel处理异常: $e ===');
+        print('=== 方法通道处理异常: $e ===');
         print('=== 堆栈跟踪: $stackTrace ===');
       }
     });
-    print('=== ScreenshotService Method Channel Handler设置完成 ===');
+    print('=== 截图服务 方法通道处理器设置完成 ===');
   }
 
   /// 允许其他服务（如 PermissionService）转发平台事件至此处统一处理
@@ -705,7 +705,7 @@ void attachCompressionProgressListener(
     await _saveStatsCache(stats);
     sw.stop();
     // ignore: unawaited_futures
-    FlutterLogger.log('统计缓存已快速刷新(DB)并保存，用时 ${sw.elapsedMilliseconds}ms');
+    FlutterLogger.log('统计缓存已快速刷新(数据库)并保存，用时 ${sw.elapsedMilliseconds}毫秒');
   }
 
   /// 根据应用包名获取截屏记录（支持分页）
@@ -735,7 +735,7 @@ void attachCompressionProgressListener(
     try {
       return await _database.getScreenshotById(gid, appPackageName);
     } catch (e) {
-      print('getScreenshotById 失败: $e');
+      print('通过ID获取截图失败: $e');
       return null;
     }
   }
@@ -1228,17 +1228,17 @@ void attachCompressionProgressListener(
     try {
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'SERVICE.deleteAllScreenshotsForApp start package=$appPackageName',
+        'SERVICE.deleteAllScreenshotsForApp 开始 包名=$appPackageName',
       );
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo(
         'SERVICE',
-        'deleteAllScreenshotsForApp start package=' + appPackageName,
+        'deleteAllScreenshotsForApp 开始 包名=' + appPackageName,
       );
       final baseDir = await PathService.getInternalAppDir(null);
       if (baseDir == null) {
         // ignore: unawaited_futures
-        FlutterLogger.warn('SERVICE.deleteAllScreenshotsForApp no baseDir');
+        FlutterLogger.warn('SERVICE.deleteAllScreenshotsForApp 未获取到 baseDir');
         return false;
       }
 
@@ -1250,7 +1250,7 @@ void attachCompressionProgressListener(
         await appDir.delete(recursive: true);
         print('已删除应用文件夹: ${appDir.path}');
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo('FS', 'deleted app dir: ' + appDir.path);
+        FlutterLogger.nativeInfo('FS', '已删除应用目录：' + appDir.path);
       }
 
       // 清理数据库中的记录
@@ -1269,17 +1269,17 @@ void attachCompressionProgressListener(
 
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'SERVICE.deleteAllScreenshotsForApp success package=$appPackageName deletedCount=$deletedCount',
+        'SERVICE.deleteAllScreenshotsForApp 成功 包名=$appPackageName 删除数=$deletedCount',
       );
       return true;
     } catch (e) {
       print('删除应用所有截图失败: $e');
       // ignore: unawaited_futures
-      FlutterLogger.error('SERVICE.deleteAllScreenshotsForApp exception: $e');
+      FlutterLogger.error('SERVICE.deleteAllScreenshotsForApp 异常: $e');
       // ignore: unawaited_futures
       FlutterLogger.nativeError(
         'SERVICE',
-        'deleteAllScreenshotsForApp exception: $e',
+        'deleteAllScreenshotsForApp 异常: $e',
       );
       return false;
     }
@@ -1290,12 +1290,12 @@ void attachCompressionProgressListener(
     try {
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'SERVICE.deleteScreenshot start id=$id package=$packageName',
+        'SERVICE.deleteScreenshot 开始 id=$id 包名=$packageName',
       );
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo(
         'SERVICE',
-        'deleteScreenshot start id=' + id.toString(),
+        'deleteScreenshot 开始 id=' + id.toString(),
       );
       final ok = await _database.deleteScreenshot(id, packageName);
       if (ok) {
@@ -1307,21 +1307,21 @@ void attachCompressionProgressListener(
         _refreshStatsCache(force: true);
         // ignore: unawaited_futures
         FlutterLogger.info(
-          'SERVICE.deleteScreenshot success id=$id package=$packageName',
+          'SERVICE.deleteScreenshot 成功 id=$id 包名=$packageName',
         );
         // ignore: unawaited_futures
         FlutterLogger.nativeInfo(
           'SERVICE',
-          'deleteScreenshot success id=' + id.toString(),
+          'deleteScreenshot 成功 id=' + id.toString(),
         );
       }
       return ok;
     } catch (e) {
       print('删除截屏记录失败: $e');
       // ignore: unawaited_futures
-      FlutterLogger.error('SERVICE.deleteScreenshot exception: $e');
+      FlutterLogger.error('SERVICE.deleteScreenshot 异常: $e');
       // ignore: unawaited_futures
-      FlutterLogger.nativeError('SERVICE', 'deleteScreenshot exception: $e');
+      FlutterLogger.nativeError('SERVICE', 'deleteScreenshot 异常: $e');
       return false;
     }
   }
@@ -1335,7 +1335,7 @@ void attachCompressionProgressListener(
       sw.stop();
       // ignore: unawaited_futures
       FlutterLogger.info(
-        'SERVICE.批量删除完成 包名=$packageName 个数=${ids.length} 耗时=${sw.elapsedMilliseconds}ms 实际删除=$deleted',
+        'SERVICE.批量删除完成 包名=$packageName 个数=${ids.length} 耗时=${sw.elapsedMilliseconds}毫秒 实际删除=$deleted',
       );
       if (deleted > 0) {
         // 批量删除后优先进行快速统计缓存刷新并通知，再后台全量刷新

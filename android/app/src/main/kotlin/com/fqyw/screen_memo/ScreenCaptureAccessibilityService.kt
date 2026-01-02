@@ -630,17 +630,26 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             saveServiceState(true)
             FileLogger.e(TAG, "服务状态已保存为运行中")
 
-            // 立即设置重启闹钟
+            // 立即设置重启闹钟（作为兜底）
             scheduleRestart()
             FileLogger.e(TAG, "重启闹钟已设置")
 
-            // 启动前台服务来保持应用活跃
-            try {
-                val serviceIntent = Intent(this, ScreenCaptureService::class.java)
-                startForegroundService(serviceIntent)
-                FileLogger.e(TAG, "前台服务启动成功")
-            } catch (e: Exception) {
-                FileLogger.e(TAG, "启动前台服务失败", e)
+            // 避免重复拉起前台服务导致通知闪烁：仅在未运行时再启动
+            val fgRunning = try {
+                ServiceStateManager.isForegroundServiceRunning(this)
+            } catch (_: Exception) {
+                false
+            }
+            if (fgRunning) {
+                FileLogger.e(TAG, "前台服务已在运行，跳过重复启动（避免通知闪烁）")
+            } else {
+                try {
+                    val serviceIntent = Intent(this, ScreenCaptureService::class.java)
+                    startForegroundService(serviceIntent)
+                    FileLogger.e(TAG, "前台服务启动成功")
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "启动前台服务失败", e)
+                }
             }
             
             // 保存当前的定时截屏状态
@@ -1057,7 +1066,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     @Deprecated("不再需要MediaProjection，现在使用无障碍截屏")
     fun startScreenCapture(): Boolean {
-        FileLogger.w(TAG, "startScreenCapture已废弃，现在直接使用无障碍截屏")
+        FileLogger.w(TAG, "开始屏幕捕获已废弃，现在直接使用无障碍截屏")
         return true
     }
     
@@ -1066,14 +1075,14 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
      */
     @Deprecated("不再需要MediaProjection")
     fun stopScreenCapture() {
-        FileLogger.w(TAG, "stopScreenCapture已废弃")
+        FileLogger.w(TAG, "停止屏幕捕获已废弃")
     }
     
     /**
      * 启动定时截屏
      */
     fun startTimedScreenshot(intervalSeconds: Int): Boolean {
-        FileLogger.e(TAG, "=== AccessibilityService.startTimedScreenshot 开始 ===")
+        FileLogger.e(TAG, "=== 无障碍服务开始定时截屏 ===")
         FileLogger.e(TAG, "请求间隔: ${intervalSeconds}秒")
         FileLogger.e(TAG, "当前运行状态: $isTimedScreenshotRunning")
 
@@ -2324,23 +2333,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                     pendingIntent
                 )
             }
-            
-            // 2. 设置备用重启机制 - 启动ScreenCaptureService
-            val serviceIntent = Intent(this, ScreenCaptureService::class.java)
-            val servicePendingIntent = PendingIntent.getService(
-                this,
-                RESTART_REQUEST_CODE + 1,
-                serviceIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                android.os.SystemClock.elapsedRealtime() + 10000, // 10秒后
-                servicePendingIntent
-            )
 
-            FileLogger.e(TAG, "重启闹钟设置成功，将在5秒和10秒后分别触发")
+            FileLogger.e(TAG, "重启闹钟设置成功，将在5秒后触发")
 
         } catch (e: Exception) {
             FileLogger.e(TAG, "设置重启闹钟失败", e)

@@ -47,7 +47,7 @@ class DesktopSecureStorage implements SecureStorageService {
       final decoded = jsonDecode(content) as Map<String, dynamic>;
       return decoded.map((k, v) => MapEntry(k, v.toString()));
     } catch (e) {
-      debugPrint('DesktopSecureStorage read error: $e');
+      debugPrint('桌面端安全存储读取失败: $e');
       return <String, String>{};
     }
   }
@@ -61,7 +61,7 @@ class DesktopSecureStorage implements SecureStorageService {
       }
       await file.writeAsString(jsonEncode(data));
     } catch (e) {
-      debugPrint('DesktopSecureStorage write error: $e');
+      debugPrint('桌面端安全存储写入失败: $e');
     }
   }
 

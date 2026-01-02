@@ -25,17 +25,51 @@ import '../services/ai_settings_service.dart';
 
 enum _ImportMode { overwrite, merge }
 
+enum _SettingsSubPage {
+  home,
+  permissions,
+  display,
+  screenshot,
+  segmentSummary,
+  dailyReminder,
+  dataBackup,
+  advanced,
+}
+
+class SettingsPageController {
+  _SettingsPageState? _state;
+
+  bool handleBack() {
+    final state = _state;
+    if (state == null) return false;
+    return state._handleBackToSettingsHome();
+  }
+
+  void _attach(_SettingsPageState state) {
+    _state = state;
+  }
+
+  void _detach(_SettingsPageState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
+}
+
 /// 设置页面
 class SettingsPage extends StatefulWidget {
   final ThemeService themeService;
+  final SettingsPageController? controller;
 
-  const SettingsPage({super.key, required this.themeService});
+  const SettingsPage({super.key, required this.themeService, this.controller});
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
 class _SettingsPageState extends State<SettingsPage>
     with WidgetsBindingObserver {
+  _SettingsSubPage _subPage = _SettingsSubPage.home;
+
   final PermissionService _permissionService = PermissionService.instance;
   final ScreenshotDatabase _screenshotDatabase = ScreenshotDatabase.instance;
   final AppSelectionService _appService = AppSelectionService.instance;
@@ -86,6 +120,88 @@ class _SettingsPageState extends State<SettingsPage>
   bool _nsfwLoading = false;
   List<Map<String, dynamic>> _nsfwRules = <Map<String, dynamic>>[];
   int? _nsfwPreviewCount;
+
+  bool _handleBackToSettingsHome() {
+    if (_subPage != _SettingsSubPage.home) {
+      _switchSubPage(_SettingsSubPage.home);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _restoreDailySummaryScheduleOnStartup() async {
+    try {
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.dailyNotifyEnabled,
+        defaultValue: true,
+        legacyPrefKeys: const <String>['daily_notify_enabled'],
+      );
+      final int hour = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyHour,
+        defaultValue: 22,
+        legacyPrefKeys: const <String>['daily_notify_hour'],
+      );
+      final int minute = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dailyNotifyMinute,
+        defaultValue: 0,
+        legacyPrefKeys: const <String>['daily_notify_minute'],
+      );
+      await DailySummaryService.instance.scheduleDailyNotification(
+        hour: hour.clamp(0, 23),
+        minute: minute.clamp(0, 59),
+        enabled: enabled,
+      );
+      await DailySummaryService.instance.refreshAutoRefreshSchedule();
+    } catch (_) {}
+  }
+
+  void _switchSubPage(_SettingsSubPage next) {
+    if (_subPage == next) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    if (_subPage == _SettingsSubPage.permissions &&
+        next != _SettingsSubPage.permissions) {
+      _stopBatteryPermissionCheck();
+    }
+
+    setState(() {
+      _subPage = next;
+      if (next == _SettingsSubPage.permissions) {
+        _isLoading = true;
+        _isLoadingKeepAlive = true;
+        _permissionsExpanded = true;
+      }
+    });
+
+    switch (next) {
+      case _SettingsSubPage.home:
+        break;
+      case _SettingsSubPage.permissions:
+        unawaited(_loadAllPermissions());
+        break;
+      case _SettingsSubPage.display:
+        unawaited(_loadPrivacyMode());
+        break;
+      case _SettingsSubPage.screenshot:
+        unawaited(_loadScreenshotInterval());
+        unawaited(_loadScreenshotQualitySettings());
+        unawaited(_loadScreenshotExpireSettings());
+        break;
+      case _SettingsSubPage.segmentSummary:
+        unawaited(_loadSegmentSettings());
+        unawaited(_loadAiRequestInterval());
+        break;
+      case _SettingsSubPage.dailyReminder:
+        unawaited(_loadDailyNotifySettings());
+        break;
+      case _SettingsSubPage.dataBackup:
+        break;
+      case _SettingsSubPage.advanced:
+        unawaited(_loadLoggingEnabled());
+        unawaited(_loadRenderImagesDuringStreaming());
+        break;
+    }
+  }
 
   bool _allPermissionsGranted() {
     try {
@@ -700,17 +816,17 @@ class _SettingsPageState extends State<SettingsPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadAllPermissions();
-    _loadScreenshotInterval();
-    _loadPrivacyMode();
-    _loadScreenshotQualitySettings();
-    _loadScreenshotExpireSettings();
-    _loadSegmentSettings();
-    _loadAiRequestInterval();
-    _loadDailyNotifySettings();
-    _loadNsfwRules();
-    _loadLoggingEnabled();
-    _loadRenderImagesDuringStreaming();
+    widget.controller?._attach(this);
+    unawaited(_restoreDailySummaryScheduleOnStartup());
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
   }
 
   @override
@@ -718,6 +834,7 @@ class _SettingsPageState extends State<SettingsPage>
     _stopBatteryPermissionCheck();
     WidgetsBinding.instance.removeObserver(this);
     _nsfwDomainController.dispose();
+    widget.controller?._detach(this);
     super.dispose();
   }
 
@@ -978,13 +1095,13 @@ class _SettingsPageState extends State<SettingsPage>
     // 原生极速导出：不传 onProgress，让底层走 exportOutputToDownloadsNative
     unawaited(_showNativeExportDialog());
     try {
-      await FlutterLogger.nativeInfo('UI_EXPORT', 'begin export');
+      await FlutterLogger.nativeInfo('UI_EXPORT', '开始导出');
       final result = await _screenshotDatabase.exportDatabaseToDownloads();
       if (!mounted) return;
       if (result != null) {
         await FlutterLogger.nativeInfo(
           'UI_EXPORT',
-          'success -> ' + ((result['humanPath'] as String?) ?? ''),
+          '导出成功 -> ' + ((result['humanPath'] as String?) ?? ''),
         );
         final displayPath =
             (result['humanPath'] as String?) ??
@@ -1039,7 +1156,7 @@ class _SettingsPageState extends State<SettingsPage>
           ],
         );
       } else {
-        await FlutterLogger.nativeWarn('UI_EXPORT', 'export returned null');
+        await FlutterLogger.nativeWarn('UI_EXPORT', '导出结果为 null');
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -1087,7 +1204,7 @@ class _SettingsPageState extends State<SettingsPage>
     final _ImportMode? mode = await _selectImportMode();
     if (!mounted) return;
     if (mode == null) {
-      await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled mode');
+      await FlutterLogger.nativeWarn('UI_IMPORT', '用户取消选择导入模式');
       return;
     }
 
@@ -1101,7 +1218,7 @@ class _SettingsPageState extends State<SettingsPage>
     bool overlayShown = false;
 
     try {
-      await FlutterLogger.nativeInfo('UI_IMPORT', 'open file picker');
+      await FlutterLogger.nativeInfo('UI_IMPORT', '打开文件选择器');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['zip'],
@@ -1110,7 +1227,7 @@ class _SettingsPageState extends State<SettingsPage>
       );
       if (!mounted) return;
       if (result == null || result.files.isEmpty) {
-        await FlutterLogger.nativeWarn('UI_IMPORT', 'user cancelled');
+        await FlutterLogger.nativeWarn('UI_IMPORT', '用户取消选择文件');
         return;
       }
 
@@ -1119,7 +1236,7 @@ class _SettingsPageState extends State<SettingsPage>
       final String? path = file.path;
       await FlutterLogger.nativeInfo(
         'UI_IMPORT',
-        'selected name=${file.name} size=${bytes?.length ?? 0} path=${path ?? ''}',
+        '已选择 文件名=${file.name} 大小=${bytes?.length ?? 0} 路径=${path ?? ''}',
       );
 
       unawaited(
@@ -1137,7 +1254,7 @@ class _SettingsPageState extends State<SettingsPage>
       if (wasRunning) {
         await FlutterLogger.nativeInfo(
           'UI_IMPORT',
-          'stopping service before import',
+          '导入前停止服务',
         );
         try {
           await ScreenshotService.instance.stopScreenshotService();
@@ -1186,15 +1303,15 @@ class _SettingsPageState extends State<SettingsPage>
           await _resyncScreenshotSettingsAfterImport();
           await FlutterLogger.nativeInfo(
             'UI_IMPORT',
-            'merge success inserted=${mergeReport.insertedScreenshots} skipped=${mergeReport.skippedScreenshotDuplicates} '
-                'memoryEvents=${mergeReport.mergedMemoryEvents} memoryTags=${mergeReport.mergedMemoryTags} '
-                'memoryEvidence=${mergeReport.mergedMemoryEvidence}',
+            '合并成功 插入截图=${mergeReport.insertedScreenshots} 跳过重复=${mergeReport.skippedScreenshotDuplicates} '
+                '动态事件=${mergeReport.mergedMemoryEvents} 标签=${mergeReport.mergedMemoryTags} '
+                '证据=${mergeReport.mergedMemoryEvidence}',
           );
           await ScreenshotService.instance.invalidateStatsCache();
           ScreenshotService.instance.invalidateAvailableDayCountCache();
           await _showMergeResultDialog(mergeReport);
         } else {
-          await FlutterLogger.nativeWarn('UI_IMPORT', 'merge returned null');
+          await FlutterLogger.nativeWarn('UI_IMPORT', '合并结果为 null');
           await showUIDialog<void>(
             context: context,
             barrierDismissible: false,
@@ -1212,9 +1329,9 @@ class _SettingsPageState extends State<SettingsPage>
         await _resyncScreenshotSettingsAfterImport();
         await FlutterLogger.nativeInfo(
           'UI_IMPORT',
-          'success extracted=' +
+          '导入成功 已解压=' +
               (importRes['extracted']?.toString() ?? 'null') +
-              ' target=' +
+              ' 目标=' +
               (importRes['targetDir']?.toString() ?? ''),
         );
         await ScreenshotService.instance.invalidateStatsCache();
@@ -1251,7 +1368,7 @@ class _SettingsPageState extends State<SettingsPage>
           ],
         );
       } else {
-        await FlutterLogger.nativeWarn('UI_IMPORT', 'import returned null');
+        await FlutterLogger.nativeWarn('UI_IMPORT', '导入结果为 null');
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -1269,7 +1386,7 @@ class _SettingsPageState extends State<SettingsPage>
       if (!mounted) return;
       await FlutterLogger.nativeError(
         'UI_IMPORT',
-        'exception: ' + e.toString(),
+        '异常：' + e.toString(),
       );
       await showUIDialog<void>(
         context: context,
@@ -1285,7 +1402,7 @@ class _SettingsPageState extends State<SettingsPage>
       );
     } finally {
       try {
-        await FlutterLogger.nativeInfo('UI_IMPORT', 'import flow finished');
+        await FlutterLogger.nativeInfo('UI_IMPORT', '导入流程结束');
       } catch (_) {}
       if (mounted) {
         setState(() {
@@ -1310,12 +1427,14 @@ class _SettingsPageState extends State<SettingsPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // 应用从后台返回前台时，刷新权限状态
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          _loadAllPermissions();
-        }
-      });
+      if (_subPage == _SettingsSubPage.permissions) {
+        // 应用从后台返回前台时，刷新权限状态
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _loadAllPermissions();
+          }
+        });
+      }
     }
   }
 
@@ -1536,103 +1655,336 @@ class _SettingsPageState extends State<SettingsPage>
 
   @override
   Widget build(BuildContext context) {
-    final Widget scaffold = Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 36,
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(AppLocalizations.of(context).settingsTitle),
-        ),
-        actions: [
+    return WillPopScope(
+      onWillPop: () async {
+        if (_subPage != _SettingsSubPage.home) {
+          _switchSubPage(_SettingsSubPage.home);
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: _buildSettingsAppBar(context),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: _buildSettingsBody(context),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildSettingsAppBar(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    String title = l10n.settingsTitle;
+    if (_subPage == _SettingsSubPage.permissions) {
+      title = l10n.permissionsSectionTitle;
+    } else if (_subPage == _SettingsSubPage.display) {
+      title = l10n.displaySectionTitle;
+    } else if (_subPage == _SettingsSubPage.screenshot) {
+      title = l10n.screenshotSectionTitle;
+    } else if (_subPage == _SettingsSubPage.segmentSummary) {
+      title = l10n.segmentSummarySectionTitle;
+    } else if (_subPage == _SettingsSubPage.dailyReminder) {
+      title = l10n.dailyReminderSectionTitle;
+    } else if (_subPage == _SettingsSubPage.dataBackup) {
+      title = l10n.dataBackupSectionTitle;
+    } else if (_subPage == _SettingsSubPage.advanced) {
+      title = l10n.advancedSectionTitle;
+    }
+
+    return AppBar(
+      toolbarHeight: 36,
+      centerTitle: true,
+      automaticallyImplyLeading: false,
+      leading: _subPage == _SettingsSubPage.home
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => _switchSubPage(_SettingsSubPage.home),
+            ),
+      title: Padding(
+        padding: const EdgeInsets.only(top: 2.0),
+        child: Text(title),
+      ),
+      actions: [
+        if (_subPage == _SettingsSubPage.permissions)
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadPermissions,
-            tooltip: AppLocalizations.of(context).refreshPermissionStatus,
+            onPressed: _loadAllPermissions,
+            tooltip: l10n.refreshPermissionStatus,
           ),
-        ],
-      ),
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: (_isLoading || _isLoadingKeepAlive)
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(AppTheme.spacing4),
+      ],
+    );
+  }
+
+  Widget _buildSettingsBody(BuildContext context) {
+    switch (_subPage) {
+      case _SettingsSubPage.home:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
               children: [
-                // 统一权限下拉菜单
-                _buildSection(
+                _buildNavItem(
                   context: context,
+                  icon: Icons.verified_user_outlined,
                   title: AppLocalizations.of(context).permissionsSectionTitle,
-                  children: [_buildPermissionsDropdown(context)],
+                  subtitle:
+                      AppLocalizations.of(context).permissionsSectionDesc,
+                  showBottomBorder: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.permissions),
                 ),
-                const SizedBox(height: AppTheme.spacing4),
-                // 显示
-                _buildSection(
+                _buildNavItem(
                   context: context,
+                  icon: Icons.palette_outlined,
                   title: AppLocalizations.of(context).displaySectionTitle,
-                  children: [
-                    _buildThemeColorItem(context),
-                    _buildPrivacyModeItem(context),
-                    _buildStreamRenderImagesItem(context),
-                    _buildNsfwEntryItem(context),
-                    _buildLoggingToggleItem(context),
-                  ],
+                  subtitle: AppLocalizations.of(context).displaySectionDesc,
+                  showBottomBorder: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.display),
                 ),
-                const SizedBox(height: AppTheme.spacing4),
-
-                // 截屏设置
-                _buildSection(
+                _buildNavItem(
                   context: context,
+                  icon: Icons.photo_camera_outlined,
                   title: AppLocalizations.of(context).screenshotSectionTitle,
-                  children: [
-                    _buildScreenshotIntervalItem(context),
-                    _buildScreenshotQualityItem(context),
-                    _buildScreenshotExpireItem(context),
-                  ],
+                  subtitle:
+                      AppLocalizations.of(context).screenshotSectionDesc,
+                  showBottomBorder: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.screenshot),
                 ),
-                const SizedBox(height: AppTheme.spacing4),
-                // 时间段总结设置
-                _buildSection(
+                _buildNavItem(
                   context: context,
-                  title: AppLocalizations.of(
-                    context,
-                  ).segmentSummarySectionTitle,
-                  children: [
-                    _buildSegmentSampleItem(context),
-                    _buildSegmentDurationItem(context),
-                    _buildAiRequestIntervalItem(context),
-                  ],
+                  icon: Icons.view_timeline_outlined,
+                  title: AppLocalizations.of(context).segmentSummarySectionTitle,
+                  subtitle: AppLocalizations.of(context)
+                      .segmentSummarySectionDesc,
+                  showBottomBorder: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.segmentSummary),
                 ),
-                const SizedBox(height: AppTheme.spacing4),
-
-                // 每日总结提醒
-                _buildSection(
+                _buildNavItem(
                   context: context,
+                  icon: Icons.notifications_active_outlined,
                   title: AppLocalizations.of(context).dailyReminderSectionTitle,
-                  children: [
-                    _buildDailyNotifyItem(context),
-                    _buildDailyNotifyBannerItem(context),
-                    _buildDailyNotifyTestItem(context),
-                  ],
+                  subtitle:
+                      AppLocalizations.of(context).dailyReminderSectionDesc,
+                  showBottomBorder: true,
+                  onTap: () => _switchSubPage(_SettingsSubPage.dailyReminder),
                 ),
-
-                const SizedBox(height: AppTheme.spacing4),
-                // 数据与备份
-                _buildSection(
+                _buildNavItem(
                   context: context,
+                  icon: Icons.backup_outlined,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
-                  children: [
-                    _buildStorageAnalysisItem(context),
-                    _buildExportItem(context),
-                    _buildImportItem(context),
-                    _buildRecalculateAllItem(context),
-                  ],
+                  subtitle: AppLocalizations.of(context).dataBackupSectionDesc,
+                  showBottomBorder: false,
+                  onTap: () => _switchSubPage(_SettingsSubPage.dataBackup),
                 ),
               ],
             ),
-    );
+            const SizedBox(height: AppTheme.spacing4),
+            _buildCard(
+              context: context,
+              children: [
+                _buildNavItem(
+                  context: context,
+                  icon: Icons.tune_outlined,
+                  title: AppLocalizations.of(context).advancedSectionTitle,
+                  subtitle: AppLocalizations.of(context).advancedSectionDesc,
+                  showBottomBorder: false,
+                  onTap: () => _switchSubPage(_SettingsSubPage.advanced),
+                ),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.permissions:
+        if (_isLoading || _isLoadingKeepAlive) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [_buildPermissionsDropdown(context)],
+            ),
+          ],
+        );
+      case _SettingsSubPage.display:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildThemeColorItem(context),
+                _buildPrivacyModeItem(context),
+                _buildNsfwEntryItem(context),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.screenshot:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildScreenshotIntervalItem(context),
+                _buildScreenshotQualityItem(context),
+                _buildScreenshotExpireItem(context),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.segmentSummary:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildSegmentSampleItem(context),
+                _buildSegmentDurationItem(context),
+                _buildAiRequestIntervalItem(context),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.dailyReminder:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildDailyNotifyItem(context),
+                _buildDailyNotifyBannerItem(context),
+                _buildDailyNotifyTestItem(context),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.dataBackup:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildStorageAnalysisItem(context),
+                _buildExportItem(context),
+                _buildImportItem(context),
+                _buildRecalculateAllItem(context),
+              ],
+            ),
+          ],
+        );
+      case _SettingsSubPage.advanced:
+        return ListView(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          children: [
+            _buildCard(
+              context: context,
+              children: [
+                _buildStreamRenderImagesItem(context),
+                _buildLoggingToggleItem(context),
+              ],
+            ),
+          ],
+        );
+    }
+  }
 
-    return scaffold;
+  Widget _buildCard({
+    required BuildContext context,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.8),
+          width: 1,
+        ),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildNavItem({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required bool showBottomBorder,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final borderSide = BorderSide(
+      color: theme.colorScheme.outline.withOpacity(0.6),
+      width: 1,
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(AppTheme.spacing3),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: showBottomBorder ? borderSide : BorderSide.none,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  icon,
+                  color: theme.colorScheme.onSecondaryContainer,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (subtitle != null && subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ===== 时间段总结设置 UI =====
@@ -2178,11 +2530,11 @@ class _SettingsPageState extends State<SettingsPage>
               );
               return;
             }
-            await _saveSegmentSettings(
+            final ok = await _saveSegmentSettings(
               sample: v,
               durationMin: _segmentDurationMin,
             );
-            if (ctx.mounted) {
+            if (ctx.mounted && ok) {
               Navigator.of(ctx).pop();
               UINotifier.success(
                 ctx,
@@ -2221,11 +2573,11 @@ class _SettingsPageState extends State<SettingsPage>
               );
               return;
             }
-            await _saveSegmentSettings(
+            final ok = await _saveSegmentSettings(
               sample: _segmentSampleIntervalSec,
               durationMin: v,
             );
-            if (ctx.mounted) {
+            if (ctx.mounted && ok) {
               Navigator.of(ctx).pop();
               UINotifier.success(
                 ctx,
@@ -2258,24 +2610,52 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Future<void> _saveSegmentSettings({
+  Future<bool> _saveSegmentSettings({
     required int sample,
     required int durationMin,
   }) async {
     final sampleClamped = sample < 5 ? 5 : sample;
     final durationSec = (durationMin <= 0 ? 1 : durationMin) * 60;
     try {
+      try {
+        await FlutterLogger.nativeInfo(
+          'Settings',
+          '设置动态参数：sampleIntervalSec=$sampleClamped，segmentDurationSec=$durationSec',
+        );
+      } catch (_) {}
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('setSegmentSettings', {
         'sampleIntervalSec': sampleClamped,
         'segmentDurationSec': durationSec,
       });
+      try {
+        final res = await platform.invokeMethod('getSegmentSettings');
+        await FlutterLogger.nativeInfo(
+          'Settings',
+          '保存后读取 getSegmentSettings：$res',
+        );
+      } catch (e) {
+        try {
+          await FlutterLogger.nativeWarn(
+            'Settings',
+            '保存后读取 getSegmentSettings 失败：$e',
+          );
+        } catch (_) {}
+      }
       setState(() {
         _segmentSampleIntervalSec = sampleClamped;
         _segmentDurationMin = durationMin;
       });
+      return true;
     } catch (e) {
       if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
+      try {
+        await FlutterLogger.nativeError(
+          'Settings',
+          'setSegmentSettings 失败：$e',
+        );
+      } catch (_) {}
+      return false;
     }
   }
 
@@ -4172,7 +4552,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       }
       await FlutterLogger.nativeInfo(
         'DailySummaryUI',
-        'load settings: enabled=${_dailyNotifyEnabled} time=${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
+        '加载设置：启用=${_dailyNotifyEnabled} 时间=${_two(_dailyNotifyHour)}:${_two(_dailyNotifyMinute)}',
       );
       final ok = await DailySummaryService.instance.scheduleDailyNotification(
         hour: _dailyNotifyHour,
@@ -4183,12 +4563,12 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       await DailySummaryService.instance.refreshAutoRefreshSchedule();
       await FlutterLogger.nativeInfo(
         'DailySummaryUI',
-        'restore schedule on load result=$ok',
+        '加载后恢复调度 结果=$ok',
       );
     } catch (e) {
       await FlutterLogger.nativeWarn(
         'DailySummaryUI',
-        'load settings failed: $e',
+        '加载设置失败：$e',
       );
     }
   }
@@ -4640,7 +5020,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   // 打开"每日总结提醒"渠道设置（开启横幅/悬浮通知等）
   Future<void> _openDailyChannelSettings() async {
     try {
-      await FlutterLogger.nativeInfo('DailySummaryUI', 'open channel settings');
+      await FlutterLogger.nativeInfo('DailySummaryUI', '打开通知渠道设置');
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
       await platform.invokeMethod('openDailySummaryNotificationSettings');
     } catch (e) {
@@ -4654,7 +5034,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     try {
       await FlutterLogger.nativeInfo(
         'DailySummaryUI',
-        'open app notification settings',
+        '打开应用通知设置',
       );
       const platform = MethodChannel('com.fqyw/screen_memo/accessibility');
       // 兼容：统一使用正确通道名

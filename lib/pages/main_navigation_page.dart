@@ -26,7 +26,9 @@ class MainNavigationPage extends StatefulWidget {
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
   DateTime? _lastBackPressedAt;
-  
+
+  final SettingsPageController _settingsPageController = SettingsPageController();
+
   late final List<Widget> _pages;
   VoidCallback? _jumpListener;
   
@@ -38,7 +40,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       const FavoritesPage(),
       const EventHomePage(),
       const TimelinePage(),
-      SettingsPage(themeService: widget.themeService),
+      SettingsPage(
+        themeService: widget.themeService,
+        controller: _settingsPageController,
+      ),
     ];
 
     // 监听时间线跳转请求：切换到底部索引3（时间线）
@@ -118,6 +123,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
   
   Future<bool> _onWillPop() async {
+    // 让当前 Tab 优先处理自己的“返回”（例如设置二级页返回到设置首页）
+    if (_currentIndex == 4) {
+      final handled = _settingsPageController.handleBack();
+      if (handled) return false;
+    }
+
     final now = DateTime.now();
     if (_lastBackPressedAt == null ||
         now.difference(_lastBackPressedAt!) > const Duration(seconds: 2)) {

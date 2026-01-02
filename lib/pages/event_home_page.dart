@@ -63,7 +63,7 @@ class _EventHomePageState extends State<EventHomePage> {
         final sw = Stopwatch()..start();
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           sw.stop();
-          try { await FlutterLogger.nativeInfo('UI', 'EventHome cleared first-frame ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+          try { await FlutterLogger.nativeInfo('UI', 'EventHome 清空后首帧耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
         });
       }
    });
@@ -812,7 +812,7 @@ class _EventHomePageState extends State<EventHomePage> {
                       Navigator.of(ctx).pop();
                       final ok = await _settings.deleteConversation(cid);
                       sw.stop();
-                      try { await FlutterLogger.nativeInfo('UI', 'EventHome.deleteConversation total ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                      try { await FlutterLogger.nativeInfo('UI', 'EventHome 删除会话总耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
                       if (!ok) {
                         if (mounted) setState(() { _conversations = prev; });
                         if (mounted) UINotifier.error(context, '删除失败');

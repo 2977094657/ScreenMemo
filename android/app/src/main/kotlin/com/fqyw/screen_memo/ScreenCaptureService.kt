@@ -1,6 +1,5 @@
 package com.fqyw.screen_memo
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -322,9 +321,19 @@ class ScreenCaptureService : Service() {
 
         try {
             // 启动前台服务
-            // 注意：我们使用的是无障碍服务截屏，不需要MEDIA_PROJECTION类型
-            startForeground(NOTIFICATION_ID, createNotification())
-            FileLogger.e(TAG, "前台服务通知已创建，服务类型: MEDIA_PROJECTION")
+            // 注意：我们使用的是无障碍服务截屏，不需要 MEDIA_PROJECTION 类型
+            // 使用 ServiceCompat 可在 Android Q+ 传入 manifest 声明的前台服务类型，避免不匹配带来的异常/不稳定
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                createNotification(),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
+                } else {
+                    -1
+                }
+            )
+            FileLogger.e(TAG, "前台服务通知已创建（foregroundServiceType=manifest）")
 
             // 更新状态
             ServiceStateManager.setForegroundServiceRunning(this, true)
@@ -358,29 +367,10 @@ class ScreenCaptureService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         FileLogger.e(TAG, "=== 前台服务 onTaskRemoved ===")
-        FileLogger.e(TAG, "应用任务被移除，重启服务")
-
-        try {
-            // 重启自己
-            val restartIntent = Intent(applicationContext, ScreenCaptureService::class.java)
-            val pendingIntent = PendingIntent.getService(
-                applicationContext,
-                1,
-                restartIntent,
-                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME,
-                android.os.SystemClock.elapsedRealtime() + 1000,
-                pendingIntent
-            )
-
-            FileLogger.e(TAG, "前台服务重启闹钟已设置")
-        } catch (e: Exception) {
-            FileLogger.e(TAG, "设置前台服务重启失败", e)
-        }
+        // 这里不要主动“重启/重复启动”前台服务：
+        // - 前台服务本身应在任务移除后继续运行（stopWithTask=false）
+        // - 反复 startForeground/重复拉起会造成状态栏通知短暂闪烁
+        FileLogger.e(TAG, "应用任务被移除：保持前台服务继续运行（不主动重启）")
     }
     
     override fun onBind(intent: Intent?): IBinder? {

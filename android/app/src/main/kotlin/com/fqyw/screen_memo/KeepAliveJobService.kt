@@ -21,7 +21,7 @@ class KeepAliveJobService : JobService() {
     
     override fun onStartJob(params: JobParameters?): Boolean {
         FileLogger.init(this)
-        FileLogger.e(TAG, "=== KeepAliveJobService onStartJob ===")
+        FileLogger.e(TAG, "=== KeepAliveJobService 开始任务 ===")
         FileLogger.e(TAG, "任务ID: ${params?.jobId}")
         FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
         
@@ -82,7 +82,7 @@ class KeepAliveJobService : JobService() {
     }
     
     override fun onStopJob(params: JobParameters?): Boolean {
-        FileLogger.e(TAG, "=== KeepAliveJobService onStopJob ===")
+        FileLogger.e(TAG, "=== KeepAliveJobService 结束任务 ===")
         return true // true表示需要重新调度
     }
 }

@@ -17,11 +17,11 @@ class NavigationService {
     final dk = (dateKey == null || dateKey.trim().isEmpty) ? _todayKey() : dateKey.trim();
     try {
       // 记录到原生日志，便于核查
-      await FlutterLogger.nativeInfo('Navigation', 'openDailySummary dateKey=$dk');
+      await FlutterLogger.nativeInfo('Navigation', '打开每日总结 dateKey=$dk');
     } catch (_) {}
     final nav = navigatorKey.currentState;
     if (nav == null) {
-      try { await FlutterLogger.nativeWarn('Navigation', 'navigator not ready, drop openDailySummary dateKey=$dk'); } catch (_) {}
+      try { await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开每日总结 dateKey=$dk'); } catch (_) {}
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dk)));
@@ -30,12 +30,12 @@ class NavigationService {
   Future<void> openWeeklySummary(String? weekStartDate) async {
     final String? wk = weekStartDate?.trim().isEmpty == true ? null : weekStartDate?.trim();
     try {
-      await FlutterLogger.nativeInfo('Navigation', 'openWeeklySummary weekStart=${wk ?? 'latest'}');
+      await FlutterLogger.nativeInfo('Navigation', '打开每周总结 weekStart=${wk ?? '最新'}');
     } catch (_) {}
     final nav = navigatorKey.currentState;
     if (nav == null) {
       try {
-        await FlutterLogger.nativeWarn('Navigation', 'navigator not ready, drop openWeeklySummary weekStart=${wk ?? 'latest'}');
+        await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开每周总结 weekStart=${wk ?? '最新'}');
       } catch (_) {}
       return;
     }
@@ -45,7 +45,7 @@ class NavigationService {
   Future<void> openSegmentStatus() async {
     final nav = navigatorKey.currentState;
     if (nav == null) {
-      try { await FlutterLogger.nativeWarn('Navigation', 'navigator not ready, drop openSegmentStatus'); } catch (_) {}
+      try { await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开动态状态页'); } catch (_) {}
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => SegmentStatusPage()));
