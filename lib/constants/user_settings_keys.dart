@@ -21,24 +21,6 @@ class UserSettingKeys {
   static const String segmentSampleIntervalSec = 'segment_sample_interval_sec';
   static const String segmentDurationSec = 'segment_duration_sec';
   static const String aiMinRequestIntervalSec = 'ai_min_request_interval_sec';
-  static const String embeddingMaxRequestMb = 'embedding_max_request_mb';
-
-  // 多模态检索（pHash/向量）
-  // 说明：pHash/关键帧方案已移除，目前仅保留“按时间间隔抽样向量化”。
-
-  // Embedding 调试页（仅用于 UI 记忆，不影响主流程）
-  static const String embeddingDebugApiKey = 'embedding_debug_api_key';
-  static const String embeddingDebugBaseUrl = 'embedding_debug_base_url';
-  static const String embeddingDebugModel = 'embedding_debug_model';
-  static const String embeddingDebugDimensions = 'embedding_debug_dimensions';
-  static const String embeddingDebugLatestCount = 'embedding_debug_latest_count';
-  static const String embeddingDebugSegmentId = 'embedding_debug_segment_id';
-  static const String embeddingDebugEmbeddingBatchSize = 'embedding_debug_embedding_batch_size';
-  static const String embeddingDebugEmbeddingConcurrency = 'embedding_debug_embedding_concurrency';
-  static const String embeddingDebugEmbeddingMaxImagesPerRequest = 'embedding_debug_embedding_max_images_per_request';
-  static const String embeddingDebugEmbeddingIntervalSeconds = 'embedding_debug_embedding_interval_seconds';
-  static const String embeddingDebugTryMultiImageRequest = 'embedding_debug_try_multi_image_request';
-  static const String embeddingDebugSemanticCandidateLimit = 'embedding_debug_semantic_candidate_limit';
 
   // 每日总结提醒
   static const String dailyNotifyEnabled = 'daily_notify_enabled';
@@ -55,5 +37,4 @@ class LegacySettingKeys {
     'flutter.screenshot_interval',
   ];
 }
-
 
