@@ -148,15 +148,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         index: _currentIndex,
         children: _pages,
       ),
-      bottomNavigationBar: SizedBox(
-        height: 52,
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: _onTabTapped,
-          showSelectedLabels: false,
-          showUnselectedLabels: false,
-          items: _buildNavigationItems(context),
-        ),
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: _settingsPageController.isInSubPage,
+        builder: (context, isInSubPage, _) {
+          if (_currentIndex == 4 && isInSubPage) {
+            return const SizedBox.shrink();
+          }
+          return SizedBox(
+            height: 52,
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: _onTabTapped,
+              showSelectedLabels: false,
+              showUnselectedLabels: false,
+              items: _buildNavigationItems(context),
+            ),
+          );
+        },
       ),
       ),
     );
@@ -169,6 +177,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         TimelineJumpService.instance.requestNotifier.removeListener(_jumpListener!);
       }
     } catch (_) {}
+    _settingsPageController.dispose();
     super.dispose();
   }
 }

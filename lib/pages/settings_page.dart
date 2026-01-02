@@ -38,6 +38,7 @@ enum _SettingsSubPage {
 
 class SettingsPageController {
   _SettingsPageState? _state;
+  final ValueNotifier<bool> isInSubPage = ValueNotifier<bool>(false);
 
   bool handleBack() {
     final state = _state;
@@ -47,12 +48,23 @@ class SettingsPageController {
 
   void _attach(_SettingsPageState state) {
     _state = state;
+    isInSubPage.value = state._subPage != _SettingsSubPage.home;
   }
 
   void _detach(_SettingsPageState state) {
     if (_state == state) {
       _state = null;
+      isInSubPage.value = false;
     }
+  }
+
+  void _onSubPageChanged(_SettingsSubPage subPage) {
+    isInSubPage.value = subPage != _SettingsSubPage.home;
+  }
+
+  void dispose() {
+    _state = null;
+    isInSubPage.dispose();
   }
 }
 
@@ -172,6 +184,7 @@ class _SettingsPageState extends State<SettingsPage>
         _permissionsExpanded = true;
       }
     });
+    widget.controller?._onSubPageChanged(next);
 
     switch (next) {
       case _SettingsSubPage.home:
@@ -444,65 +457,49 @@ class _SettingsPageState extends State<SettingsPage>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (BuildContext sheetContext) {
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(AppTheme.radiusLg),
-              topRight: Radius.circular(AppTheme.radiusLg),
-            ),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: AppTheme.spacing3),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(2),
+        return UISheetSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: AppTheme.spacing3),
+              const UISheetHandle(),
+              Padding(
+                padding: const EdgeInsets.all(AppTheme.spacing4),
+                child: Text(
+                  t.importModeTitle,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(AppTheme.spacing4),
-                  child: Text(
-                    t.importModeTitle,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              ),
+              _buildImportModeOption(
+                sheetContext: sheetContext,
+                title: t.importModeOverwriteTitle,
+                description: t.importModeOverwriteDesc,
+                icon: Icons.warning_amber_rounded,
+                iconColor: theme.colorScheme.error,
+                mode: _ImportMode.overwrite,
+                selectedMode: initial,
+              ),
+              _buildImportModeOption(
+                sheetContext: sheetContext,
+                title: t.importModeMergeTitle,
+                description: t.importModeMergeDesc,
+                icon: Icons.merge_type_rounded,
+                iconColor: theme.colorScheme.primary,
+                mode: _ImportMode.merge,
+                selectedMode: initial,
+              ),
+              const SizedBox(height: AppTheme.spacing3),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(sheetContext, null),
+                  child: Text(t.dialogCancel),
                 ),
-                _buildImportModeOption(
-                  sheetContext: sheetContext,
-                  title: t.importModeOverwriteTitle,
-                  description: t.importModeOverwriteDesc,
-                  icon: Icons.warning_amber_rounded,
-                  iconColor: theme.colorScheme.error,
-                  mode: _ImportMode.overwrite,
-                  selectedMode: initial,
-                ),
-                _buildImportModeOption(
-                  sheetContext: sheetContext,
-                  title: t.importModeMergeTitle,
-                  description: t.importModeMergeDesc,
-                  icon: Icons.merge_type_rounded,
-                  iconColor: theme.colorScheme.primary,
-                  mode: _ImportMode.merge,
-                  selectedMode: initial,
-                ),
-                const SizedBox(height: AppTheme.spacing3),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(sheetContext, null),
-                    child: Text(t.dialogCancel),
-                  ),
-                ),
-                const SizedBox(height: AppTheme.spacing2),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+            ],
           ),
         );
       },
@@ -986,8 +983,7 @@ class _SettingsPageState extends State<SettingsPage>
                                   Text(
                                     stageLabel,
                                     style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme
-                                          .colorScheme.onSurfaceVariant,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                   if (entryLabel != null) ...[
@@ -1252,10 +1248,7 @@ class _SettingsPageState extends State<SettingsPage>
       // 停止截图服务以避免导入过程中的DB/FS冲突
       final bool wasRunning = ScreenshotService.instance.isRunning;
       if (wasRunning) {
-        await FlutterLogger.nativeInfo(
-          'UI_IMPORT',
-          '导入前停止服务',
-        );
+        await FlutterLogger.nativeInfo('UI_IMPORT', '导入前停止服务');
         try {
           await ScreenshotService.instance.stopScreenshotService();
         } catch (_) {}
@@ -1384,10 +1377,7 @@ class _SettingsPageState extends State<SettingsPage>
       }
     } catch (e) {
       if (!mounted) return;
-      await FlutterLogger.nativeError(
-        'UI_IMPORT',
-        '异常：' + e.toString(),
-      );
+      await FlutterLogger.nativeError('UI_IMPORT', '异常：' + e.toString());
       await showUIDialog<void>(
         context: context,
         barrierDismissible: false,
@@ -1728,8 +1718,7 @@ class _SettingsPageState extends State<SettingsPage>
                   context: context,
                   icon: Icons.verified_user_outlined,
                   title: AppLocalizations.of(context).permissionsSectionTitle,
-                  subtitle:
-                      AppLocalizations.of(context).permissionsSectionDesc,
+                  subtitle: AppLocalizations.of(context).permissionsSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.permissions),
                 ),
@@ -1745,17 +1734,19 @@ class _SettingsPageState extends State<SettingsPage>
                   context: context,
                   icon: Icons.photo_camera_outlined,
                   title: AppLocalizations.of(context).screenshotSectionTitle,
-                  subtitle:
-                      AppLocalizations.of(context).screenshotSectionDesc,
+                  subtitle: AppLocalizations.of(context).screenshotSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.screenshot),
                 ),
                 _buildNavItem(
                   context: context,
                   icon: Icons.view_timeline_outlined,
-                  title: AppLocalizations.of(context).segmentSummarySectionTitle,
-                  subtitle: AppLocalizations.of(context)
-                      .segmentSummarySectionDesc,
+                  title: AppLocalizations.of(
+                    context,
+                  ).segmentSummarySectionTitle,
+                  subtitle: AppLocalizations.of(
+                    context,
+                  ).segmentSummarySectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.segmentSummary),
                 ),
@@ -1763,8 +1754,9 @@ class _SettingsPageState extends State<SettingsPage>
                   context: context,
                   icon: Icons.notifications_active_outlined,
                   title: AppLocalizations.of(context).dailyReminderSectionTitle,
-                  subtitle:
-                      AppLocalizations.of(context).dailyReminderSectionDesc,
+                  subtitle: AppLocalizations.of(
+                    context,
+                  ).dailyReminderSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.dailyReminder),
                 ),
@@ -2289,109 +2281,89 @@ class _SettingsPageState extends State<SettingsPage>
       backgroundColor: Colors.transparent,
       builder: (context) {
         final Color current = widget.themeService.seedColor;
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(AppTheme.radiusLg),
-              topRight: Radius.circular(AppTheme.radiusLg),
-            ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(AppTheme.spacing4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 顶部指示器
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(2),
+        return UISheetSurface(
+          child: Padding(
+            padding: const EdgeInsets.all(AppTheme.spacing4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: AppTheme.spacing3),
+                const Center(child: UISheetHandle()),
+                const SizedBox(height: AppTheme.spacing3),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        AppLocalizations.of(context).chooseThemeColorTitle,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          AppLocalizations.of(context).chooseThemeColorTitle,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                    TextButton(
+                      onPressed: () async {
+                        await widget.themeService.resetSeedColor();
+                        if (mounted) Navigator.of(context).pop();
+                        if (mounted) setState(() {});
+                      },
+                      child: Text(AppLocalizations.of(context).defaultLabel),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing3),
+                GridView.count(
+                  crossAxisCount: 6,
+                  shrinkWrap: true,
+                  crossAxisSpacing: AppTheme.spacing3,
+                  mainAxisSpacing: AppTheme.spacing3,
+                  children: presets.map((c) {
+                    final bool selected = current.value == c.value;
+                    return InkWell(
+                      onTap: () async {
+                        await widget.themeService.setSeedColor(c);
+                        if (mounted) Navigator.of(context).pop();
+                        if (mounted) setState(() {});
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: c.withOpacity(0.4),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          await widget.themeService.resetSeedColor();
-                          if (mounted) Navigator.of(context).pop();
-                          if (mounted) setState(() {});
-                        },
-                        child: Text(AppLocalizations.of(context).defaultLabel),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.spacing3),
-                  GridView.count(
-                    crossAxisCount: 6,
-                    shrinkWrap: true,
-                    crossAxisSpacing: AppTheme.spacing3,
-                    mainAxisSpacing: AppTheme.spacing3,
-                    children: presets.map((c) {
-                      final bool selected = current.value == c.value;
-                      return InkWell(
-                        onTap: () async {
-                          await widget.themeService.setSeedColor(c);
-                          if (mounted) Navigator.of(context).pop();
-                          if (mounted) setState(() {});
-                        },
-                        borderRadius: BorderRadius.circular(24),
+                        alignment: Alignment.center,
                         child: Container(
+                          width: 32,
+                          height: 32,
                           decoration: BoxDecoration(
+                            color: c,
                             shape: BoxShape.circle,
-                            boxShadow: selected
-                                ? [
-                                    BoxShadow(
-                                      color: c.withOpacity(0.4),
-                                      blurRadius: 8,
-                                      spreadRadius: 1,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          alignment: Alignment.center,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: c,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Theme.of(context).colorScheme.surface,
-                                width: 2,
-                              ),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.surface,
+                              width: 2,
                             ),
-                            child: selected
-                                ? const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 18,
-                                  )
-                                : null,
                           ),
+                          child: selected
+                              ? const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 18,
+                                )
+                              : null,
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: AppTheme.spacing2),
-                ],
-              ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+              ],
             ),
           ),
         );
@@ -2650,10 +2622,7 @@ class _SettingsPageState extends State<SettingsPage>
     } catch (e) {
       if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
       try {
-        await FlutterLogger.nativeError(
-          'Settings',
-          'setSegmentSettings 失败：$e',
-        );
+        await FlutterLogger.nativeError('Settings', 'setSegmentSettings 失败：$e');
       } catch (_) {}
       return false;
     }
@@ -3951,9 +3920,7 @@ class _SettingsPageState extends State<SettingsPage>
                           const SizedBox(width: AppTheme.spacing1),
                           Flexible(
                             child: Text(
-                              AppLocalizations.of(
-                                context,
-                              ).clickToModifyHint,
+                              AppLocalizations.of(context).clickToModifyHint,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.bodySmall
@@ -4561,15 +4528,9 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       );
       // 启动一次"自动预生成"调度
       await DailySummaryService.instance.refreshAutoRefreshSchedule();
-      await FlutterLogger.nativeInfo(
-        'DailySummaryUI',
-        '加载后恢复调度 结果=$ok',
-      );
+      await FlutterLogger.nativeInfo('DailySummaryUI', '加载后恢复调度 结果=$ok');
     } catch (e) {
-      await FlutterLogger.nativeWarn(
-        'DailySummaryUI',
-        '加载设置失败：$e',
-      );
+      await FlutterLogger.nativeWarn('DailySummaryUI', '加载设置失败：$e');
     }
   }
 
@@ -4662,160 +4623,139 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
           final theme = Theme.of(context);
           final l10n = AppLocalizations.of(context);
 
-          return Container(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(AppTheme.radiusLg),
-                topRight: Radius.circular(AppTheme.radiusLg),
-              ),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(
-                      top: AppTheme.spacing3,
-                      bottom: AppTheme.spacing2,
-                    ),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(
-                        0.3,
-                      ),
-                      borderRadius: BorderRadius.circular(2),
+          return UISheetSurface(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: AppTheme.spacing3),
+                const UISheetHandle(),
+                const SizedBox(height: AppTheme.spacing2),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                  child: Text(
+                    l10n.setReminderTimeTitle,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
-                    child: Text(
-                      l10n.setReminderTimeTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 240,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                l10n.hourLabel,
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                ),
+                SizedBox(
+                  height: 240,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text(
+                              l10n.hourLabel,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
-                              Expanded(
-                                child: CupertinoPicker(
-                                  scrollController: hourController,
-                                  itemExtent: 36,
-                                  magnification: 1.12,
-                                  squeeze: 1.05,
-                                  useMagnifier: true,
-                                  onSelectedItemChanged: (int index) {
-                                    tempHour = index;
-                                  },
-                                  children: List<Widget>.generate(
-                                    24,
-                                    (int index) => Center(
-                                      child: Text(
-                                        _two(index),
-                                        style: theme.textTheme.titleMedium,
-                                      ),
+                            ),
+                            Expanded(
+                              child: CupertinoPicker(
+                                scrollController: hourController,
+                                itemExtent: 36,
+                                magnification: 1.12,
+                                squeeze: 1.05,
+                                useMagnifier: true,
+                                onSelectedItemChanged: (int index) {
+                                  tempHour = index;
+                                },
+                                children: List<Widget>.generate(
+                                  24,
+                                  (int index) => Center(
+                                    child: Text(
+                                      _two(index),
+                                      style: theme.textTheme.titleMedium,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Text(
-                                l10n.minuteLabel,
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text(
+                              l10n.minuteLabel,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
-                              Expanded(
-                                child: CupertinoPicker(
-                                  scrollController: minuteController,
-                                  itemExtent: 36,
-                                  magnification: 1.12,
-                                  squeeze: 1.05,
-                                  useMagnifier: true,
-                                  onSelectedItemChanged: (int index) {
-                                    tempMinute = index;
-                                  },
-                                  children: List<Widget>.generate(
-                                    60,
-                                    (int index) => Center(
-                                      child: Text(
-                                        _two(index),
-                                        style: theme.textTheme.titleMedium,
-                                      ),
+                            ),
+                            Expanded(
+                              child: CupertinoPicker(
+                                scrollController: minuteController,
+                                itemExtent: 36,
+                                magnification: 1.12,
+                                squeeze: 1.05,
+                                useMagnifier: true,
+                                onSelectedItemChanged: (int index) {
+                                  tempMinute = index;
+                                },
+                                children: List<Widget>.generate(
+                                  60,
+                                  (int index) => Center(
+                                    child: Text(
+                                      _two(index),
+                                      style: theme.textTheme.titleMedium,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppTheme.spacing4,
-                      AppTheme.spacing3,
-                      AppTheme.spacing4,
-                      AppTheme.spacing4,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusMd,
-                                ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.spacing4,
+                    AppTheme.spacing3,
+                    AppTheme.spacing4,
+                    AppTheme.spacing4,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusMd,
                               ),
                             ),
-                            child: Text(l10n.dialogCancel),
                           ),
+                          child: Text(l10n.dialogCancel),
                         ),
-                        const SizedBox(width: AppTheme.spacing3),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () {
-                              Navigator.of(ctx).pop(
-                                TimeOfDay(hour: tempHour, minute: tempMinute),
-                              );
-                            },
-                            style: FilledButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusMd,
-                                ),
+                      ),
+                      const SizedBox(width: AppTheme.spacing3),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop(
+                              TimeOfDay(hour: tempHour, minute: tempMinute),
+                            );
+                          },
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusMd,
                               ),
                             ),
-                            child: Text(l10n.dialogDone),
                           ),
+                          child: Text(l10n.dialogDone),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },
@@ -5032,10 +4972,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   // 打开"应用通知"总设置（可选）
   Future<void> _openAppNotificationSettings() async {
     try {
-      await FlutterLogger.nativeInfo(
-        'DailySummaryUI',
-        '打开应用通知设置',
-      );
+      await FlutterLogger.nativeInfo('DailySummaryUI', '打开应用通知设置');
       const platform = MethodChannel('com.fqyw/screen_memo/accessibility');
       // 兼容：统一使用正确通道名
     } catch (_) {}
