@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:screen_memo/l10n/app_localizations.dart';
@@ -15,9 +16,14 @@ import '../services/path_service.dart';
 import '../services/screenshot_service.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import '../utils/merged_event_summary.dart';
 import '../widgets/screenshot_item_widget.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
+import 'daily_summary_page.dart';
+import 'weekly_summary_page.dart';
+import 'persona_article_page.dart';
+import '../services/persona_article_service.dart';
 
 /// 搜索类型枚举
 enum SearchTab { all, screenshots, moments }
@@ -41,7 +47,8 @@ class SearchPage extends StatefulWidget {
   State<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateMixin {
+class _SearchPageState extends State<SearchPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -60,14 +67,30 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
   static const int _firstBatchSize = 6; // 首批快速返回数量
   static const int _pageSize = 24; // 后续分页大小
+  static const Set<String> _docTabTypes = <String>{
+    kSearchDocTypeDailySummary,
+    kSearchDocTypeWeeklySummary,
+    kSearchDocTypeMorningInsights,
+    kSearchDocTypePersonaArticle,
+    kSearchDocTypeFavoriteNote,
+  };
+  static const Set<String> _docIndexSources = <String>{
+    kSearchIndexSourceFavorites,
+    kSearchIndexSourceDailySummaries,
+    kSearchIndexSourceWeeklySummaries,
+    kSearchIndexSourceMorningInsights,
+    kSearchIndexSourcePersonaArticles,
+  };
   int _offset = 0;
   bool _hasMore = false;
   bool _loadingMore = false;
   String _lastQuery = '';
+  bool _usingAiImageMeta = false; // OCR 无结果时回退 AI 图片元数据检索
+  bool _usingFavoriteNotes = false; // OCR/AI 都无结果时回退收藏备注检索
 
   // Tab 切换相关
   late TabController _tabController;
-  
+
   // 动态搜索相关状态
   List<Map<String, dynamic>> _segmentResults = <Map<String, dynamic>>[];
   int _segmentOffset = 0;
@@ -76,6 +99,34 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   int _segmentTotalCount = 0;
   bool _segmentCountingTotal = false;
   bool _segmentSearchFinished = false;
+  bool _segmentSearching = false;
+
+  // “更多”搜索相关状态（SearchIndex：daily/weekly/persona/favorite_note 等）
+  List<Map<String, dynamic>> _docResults = <Map<String, dynamic>>[];
+  int _docOffset = 0;
+  bool _docHasMore = false;
+  bool _docLoadingMore = false;
+  int _docTotalCount = 0;
+  bool _docCountingTotal = false;
+  bool _docSearchFinished = false;
+  bool _docSearching = false;
+  // 空集合表示“全部类型”（与其它筛选一致：未选即不过滤）
+  Set<String> _docSelectedTypes = <String>{};
+
+  // “语义”搜索相关状态（ai_image_meta：图片标签/描述）
+  List<ScreenshotRecord> _semanticResults = <ScreenshotRecord>[];
+  List<ScreenshotRecord> _filteredSemanticResults = <ScreenshotRecord>[];
+  final Map<String, Set<String>> _semanticTagsByPath = <String, Set<String>>{};
+  Set<String> _semanticAvailableTags = <String>{};
+  Set<String> _semanticSelectedTags = <String>{};
+  int _semanticOffset = 0;
+  bool _semanticHasMore = false;
+  bool _semanticLoadingMore = false;
+  int _semanticTotalCount = 0;
+  bool _semanticCountingTotal = false;
+  bool _semanticSearchFinished = false;
+  bool _semanticSearching = false;
+  final ScrollController _semanticScrollController = ScrollController();
 
   // 标签筛选相关
   Set<String> _availableTags = <String>{}; // 从搜索结果中提取的可用标签
@@ -87,8 +138,15 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     return _filteredSegments.length;
   }
 
+  int get _filteredSemanticCount {
+    if (_semanticSelectedTags.isEmpty) return _semanticTotalCount;
+    return _filteredSemanticResults.length;
+  }
+
   /// 将 segment 样本记录转换为 ScreenshotRecord 列表，便于复用统一渲染组件
-  List<ScreenshotRecord> _mapSamplesToScreenshots(List<Map<String, dynamic>> samples) {
+  List<ScreenshotRecord> _mapSamplesToScreenshots(
+    List<Map<String, dynamic>> samples,
+  ) {
     return samples.map((s) {
       final int capture = (s['capture_time'] as int?) ?? 0;
       return ScreenshotRecord(
@@ -103,6 +161,122 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         ocrText: null,
       );
     }).toList();
+  }
+
+  /// 将 ai_image_meta 搜索结果转换为 ScreenshotRecord 列表（用于复用统一渲染组件）。
+  List<ScreenshotRecord> _mapAiImageMetaRowsToScreenshots(
+    List<Map<String, dynamic>> rows,
+  ) {
+    if (rows.isEmpty) return <ScreenshotRecord>[];
+    final List<ScreenshotRecord> out = <ScreenshotRecord>[];
+    for (final r in rows) {
+      final String fp = (r['file_path'] as String?)?.trim() ?? '';
+      if (fp.isEmpty) continue;
+      final int capture = (r['capture_time'] as int?) ?? 0;
+      out.add(
+        ScreenshotRecord(
+          id: null,
+          appPackageName: (r['app_package_name'] as String?) ?? '',
+          appName: (r['app_name'] as String?) ?? '',
+          filePath: fp,
+          captureTime: DateTime.fromMillisecondsSinceEpoch(
+            capture > 0 ? capture : DateTime.now().millisecondsSinceEpoch,
+          ),
+          fileSize: 0,
+          isDeleted: false,
+          pageUrl: null,
+          ocrText: null,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> _preloadNsfwForScreenshots(
+    List<ScreenshotRecord> data, {
+    required int token,
+  }) async {
+    if (data.isEmpty) return;
+    try {
+      // 1) AI NSFW（按 file_path，全局复用）
+      final paths = data
+          .map((s) => s.filePath.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+      if (paths.isNotEmpty) {
+        await NsfwPreferenceService.instance.preloadAiNsfwFlags(
+          filePaths: paths,
+        );
+        await NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+          filePaths: paths,
+        );
+      }
+
+      // 2) 手动标记（按 app 分组）
+      final Map<String, List<int>> idsByApp = <String, List<int>>{};
+      for (final s in data) {
+        final id = s.id;
+        final pkg = s.appPackageName.trim();
+        if (id == null || pkg.isEmpty) continue;
+        idsByApp.putIfAbsent(pkg, () => <int>[]).add(id);
+      }
+      for (final entry in idsByApp.entries) {
+        final ids = entry.value;
+        if (ids.isEmpty) continue;
+        await NsfwPreferenceService.instance.preloadManualFlags(
+          appPackageName: entry.key,
+          screenshotIds: ids,
+        );
+      }
+    } catch (_) {}
+    if (!mounted || token != _searchToken) return;
+    setState(() {});
+  }
+
+  Future<List<ScreenshotRecord>> _searchFavoriteNoteScreenshots(
+    String query, {
+    required int limit,
+    required int offset,
+    int? startMillis,
+    int? endMillis,
+  }) async {
+    final String q = query.trim();
+    if (q.isEmpty) return <ScreenshotRecord>[];
+
+    // 兜底：确保索引追赶（收藏由 Flutter 写入，但也可能来自旧数据回填）
+    await ScreenshotDatabase.instance.syncSearchIndex(
+      sources: const <String>{kSearchIndexSourceFavorites},
+    );
+
+    final docs = await ScreenshotDatabase.instance.searchSearchDocsByText(
+      q,
+      docTypes: const <String>{kSearchDocTypeFavoriteNote},
+      limit: limit,
+      offset: offset,
+      startMillis: startMillis,
+      endMillis: endMillis,
+    );
+
+    final List<ScreenshotRecord> out = <ScreenshotRecord>[];
+    for (final d in docs) {
+      final int? gid = d['screenshot_id'] as int?;
+      final String? pkg = d['app_package_name'] as String?;
+      if (gid == null || gid <= 0) continue;
+      if (pkg == null || pkg.trim().isEmpty) continue;
+      final rec = await ScreenshotDatabase.instance.getScreenshotById(
+        gid,
+        pkg,
+      );
+      if (rec == null) continue;
+
+      // 由于索引里无法直接存 capture_time，这里按真实截图时间做一次过滤
+      final int capture = rec.captureTime.millisecondsSinceEpoch;
+      if (startMillis != null && capture < startMillis) continue;
+      if (endMillis != null && capture > endMillis) continue;
+
+      out.add(rec);
+    }
+    return out;
   }
 
   /// 打开样本查看器（复用截图查看器样式）
@@ -150,12 +324,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       extensionSet: md.ExtensionSet.gitHubWeb,
       inlineSyntaxes: [MarkSyntax()],
       selectable: false,
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-        p: style,
-      ),
-      builders: {
-        'mark': MarkBuilder(highlightColor),
-      },
+      styleSheet: MarkdownStyleSheet.fromTheme(
+        Theme.of(context),
+      ).copyWith(p: style),
+      builders: {'mark': MarkBuilder(highlightColor)},
       softLineBreak: true,
       onTapLink: (text, href, title) async {
         if (href == null) return;
@@ -173,10 +345,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   List<Map<String, dynamic>> get _filteredSegments {
     if (_selectedTags.isEmpty) return _segmentResults;
     return _segmentResults.where((seg) {
-      final tags = _extractCategories(
-        {'categories': seg['categories']},
-        _tryParseJson(seg['structured_json'] as String?),
-      );
+      final tags = _extractCategories({
+        'categories': seg['categories'],
+      }, _tryParseJson(seg['structured_json'] as String?));
       // 检查是否包含所有选中的标签
       return _selectedTags.every((selected) => tags.contains(selected));
     }).toList();
@@ -240,6 +411,8 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
   bool _shouldLoadBoxesForIndex(int index) {
     if (_lastQuery.isEmpty) return false;
+    // AI 元数据检索并非基于 OCR 命中词，不加载 OCR 标注框以减少开销
+    if (_usingAiImageMeta || _usingFavoriteNotes) return false;
     // 初次构建不可见范围未就绪时，允许首屏附近少量请求
     if (_visibleEndIndex < 0) return index < 12;
     final int start = (_visibleStartIndex - 10) < 0
@@ -252,12 +425,15 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
     _initBaseDir();
     _scrollController.addListener(_onScroll);
     _loadAppInfos();
     _loadPrivacyMode();
+    // 预加载 NSFW 规则（异步，不阻塞UI）
+    // ignore: unawaited_futures
+    NsfwPreferenceService.instance.ensureRulesLoaded();
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
       setState(() => _privacyMode = enabled);
@@ -265,16 +441,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   void _onTabChanged() {
-    // TabBarView 会自动同步，此处可用于将来扩展
-    if (!_tabController.indexIsChanging && mounted) {
-      // 当用户切到“动态”Tab 且当前有查询但还没有动态结果时，再按需触发一次动态搜索
-      if (_tabController.index == 1 &&
-          _lastQuery.isNotEmpty &&
-          _segmentResults.isEmpty) {
-        _searchSegments(_lastQuery);
-      }
-      setState(() {}); // 触发重建以更新 Tab 计数显示
-    }
+    // TabBarView 会自动同步，此处用于更新 Tab 计数显示
+    if (_tabController.indexIsChanging || !mounted) return;
+    setState(() {});
   }
 
   Future<void> _initBaseDir() async {
@@ -310,6 +479,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
+    _semanticScrollController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -321,12 +491,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     final pos = _scrollController.position.pixels;
     if (pos >= max * 0.85) {
       try {
-        print(
-          '[Search] onScroll loadMore pos=' +
-              pos.toString() +
-              ' max=' +
-              max.toString(),
-        );
+        print('[搜索] 滚动触发加载更多：当前位置=' + pos.toString() + ' 最大=' + max.toString());
       } catch (_) {}
       _loadMore();
     }
@@ -343,44 +508,55 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     if (!mounted) return;
     final int token = ++_searchToken;
     setState(() {
-      _isLoading = true;
+      _isLoading = query.isNotEmpty;
       _error = null;
       _results = <ScreenshotRecord>[];
       _filteredResults = <ScreenshotRecord>[];
+      _totalResultsCount = 0;
       _segmentResults = <Map<String, dynamic>>[];
       _offset = 0;
       _segmentOffset = 0;
       _hasMore = false;
       _segmentHasMore = false;
+      _segmentTotalCount = 0;
       _lastQuery = query;
+      _usingAiImageMeta = false;
+      _usingFavoriteNotes = false;
       _countingTotal = false;
       _segmentCountingTotal = false;
       _segmentSearchFinished = false;
+      _segmentSearching = false;
+      _docResults = <Map<String, dynamic>>[];
+      _docOffset = 0;
+      _docHasMore = false;
+      _docLoadingMore = false;
+      _docTotalCount = 0;
+      _docCountingTotal = false;
+      _docSearchFinished = false;
+      _docSearching = false;
+      _semanticResults = <ScreenshotRecord>[];
+      _filteredSemanticResults = <ScreenshotRecord>[];
+      _semanticTagsByPath.clear();
+      _semanticAvailableTags = <String>{};
+      _semanticSelectedTags = <String>{};
+      _semanticOffset = 0;
+      _semanticHasMore = false;
+      _semanticLoadingMore = false;
+      _semanticTotalCount = 0;
+      _semanticCountingTotal = false;
+      _semanticSearchFinished = false;
+      _semanticSearching = false;
     });
 
-    if (query.isEmpty) {
-      if (mounted && token == _searchToken) {
-        setState(() {
-          _isLoading = false;
-          _totalResultsCount = 0;
-          _segmentTotalCount = 0;
-          _filteredResults = <ScreenshotRecord>[];
-          _segmentSearchFinished = false;
-        });
-      }
-      return;
-    }
+    if (query.isEmpty) return;
 
-    // 按需触发动态搜索：仅当当前处于“动态”Tab 时立即搜索
-    if (_tabController.index == 1) {
-      _searchSegments(query);
-    }
+    // 语义/动态/更多：保持“手动触发”，避免拖累首屏速度（见各 Tab 内的按钮）。
 
     try {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      
+
       // 第一批：快速返回少量结果
       final firstBatch = await ScreenshotService.instance
           .searchScreenshotsByOcrWithFallback(
@@ -395,6 +571,144 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
       if (!mounted || token != _searchToken) return;
 
+      // OCR 无结果：回退 AI 图片元数据（tags/description）检索
+      if (firstBatch.isEmpty) {
+        final aiFirstRows = await ScreenshotDatabase.instance
+            .searchAiImageMetaByText(
+              query,
+              limit: _firstBatchSize,
+              offset: 0,
+              startMillis: range?.$1,
+              endMillis: range?.$2,
+              includeNsfw: true,
+            );
+        if (!mounted || token != _searchToken) return;
+        final aiFirst = _mapAiImageMetaRowsToScreenshots(aiFirstRows);
+        if (aiFirst.isNotEmpty) {
+          setState(() {
+            _usingAiImageMeta = true;
+            _usingFavoriteNotes = false;
+            _results = aiFirst;
+            _totalResultsCount = aiFirst.length;
+            _applyFilters();
+            _isLoading = false;
+            _hasMore = aiFirst.length >= _firstBatchSize;
+            _offset = aiFirst.length;
+            _countingTotal = false; // 目前不做总数统计，避免额外开销
+          });
+          // ignore: unawaited_futures
+          _preloadNsfwForScreenshots(aiFirst, token: token);
+
+          // AI 首批不足：直接结束
+          if (aiFirst.length < _firstBatchSize) {
+            if (mounted && token == _searchToken) {
+              setState(() {
+                _isLoading = false;
+                _hasMore = false;
+                _loadingMore = false;
+                _countingTotal = false;
+              });
+            }
+            return;
+          }
+
+          // AI 第二批：补齐到一页
+          final aiMoreRows = await ScreenshotDatabase.instance
+              .searchAiImageMetaByText(
+                query,
+                limit: _pageSize - _firstBatchSize,
+                offset: _firstBatchSize,
+                startMillis: range?.$1,
+                endMillis: range?.$2,
+                includeNsfw: true,
+              );
+          if (!mounted || token != _searchToken) return;
+          final aiMore = _mapAiImageMetaRowsToScreenshots(aiMoreRows);
+          final allAi = [...aiFirst, ...aiMore];
+          final bool hasMoreData = allAi.length >= _pageSize;
+          setState(() {
+            _usingAiImageMeta = true;
+            _usingFavoriteNotes = false;
+            _results = allAi;
+            _totalResultsCount = allAi.length;
+            _applyFilters();
+            _offset = allAi.length;
+            _hasMore = hasMoreData;
+            _isLoading = false;
+            _countingTotal = false;
+          });
+          if (aiMore.isNotEmpty) {
+            // ignore: unawaited_futures
+            _preloadNsfwForScreenshots(aiMore, token: token);
+          }
+          return;
+        }
+
+        // AI 仍为空：回退收藏备注（SearchIndex）检索
+        final favFirst = await _searchFavoriteNoteScreenshots(
+          query,
+          limit: _firstBatchSize,
+          offset: 0,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+        );
+        if (!mounted || token != _searchToken) return;
+        if (favFirst.isNotEmpty) {
+          setState(() {
+            _usingAiImageMeta = false;
+            _usingFavoriteNotes = true;
+            _results = favFirst;
+            _totalResultsCount = favFirst.length;
+            _applyFilters();
+            _isLoading = false;
+            _hasMore = favFirst.length >= _firstBatchSize;
+            _offset = favFirst.length;
+            _countingTotal = false;
+          });
+          // ignore: unawaited_futures
+          _preloadNsfwForScreenshots(favFirst, token: token);
+        }
+
+        if (favFirst.length < _firstBatchSize) {
+          if (mounted && token == _searchToken) {
+            setState(() {
+              _isLoading = false;
+              _hasMore = false;
+              _loadingMore = false;
+              _countingTotal = false;
+            });
+          }
+          return;
+        }
+
+        final favMore = await _searchFavoriteNoteScreenshots(
+          query,
+          limit: _pageSize - _firstBatchSize,
+          offset: _firstBatchSize,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+        );
+        if (!mounted || token != _searchToken) return;
+        final allFav = [...favFirst, ...favMore];
+        final bool hasMoreData = allFav.length >= _pageSize;
+        setState(() {
+          _usingAiImageMeta = false;
+          _usingFavoriteNotes = true;
+          _results = allFav;
+          _totalResultsCount = allFav.length;
+          _applyFilters();
+          _offset = allFav.length;
+          _hasMore = hasMoreData;
+          _isLoading = false;
+          _countingTotal = false;
+        });
+        if (favMore.isNotEmpty) {
+          // ignore: unawaited_futures
+          _preloadNsfwForScreenshots(favMore, token: token);
+        }
+        return;
+      }
+
       // 立即显示首批结果
       if (firstBatch.isNotEmpty) {
         setState(() {
@@ -404,11 +718,13 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           _isLoading = false;
           _hasMore = firstBatch.length >= _firstBatchSize;
         });
+        // ignore: unawaited_futures
+        _preloadNsfwForScreenshots(firstBatch, token: token);
       }
-      
+
       sw.stop();
       try {
-        print('[Search] first batch: ${firstBatch.length} in ${sw.elapsedMilliseconds}ms');
+        print('[搜索] 首批：${firstBatch.length} 条，耗时 ${sw.elapsedMilliseconds} 毫秒');
       } catch (_) {}
 
       // 如果首批不足，说明没有更多数据
@@ -439,7 +755,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
       final allResults = [...firstBatch, ...moreBatch];
       final bool hasMoreData = allResults.length >= _pageSize;
-      
+
       setState(() {
         _results = allResults;
         _totalResultsCount = allResults.length;
@@ -449,10 +765,14 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         _isLoading = false;
         _countingTotal = hasMoreData;
       });
-      
+      if (moreBatch.isNotEmpty) {
+        // ignore: unawaited_futures
+        _preloadNsfwForScreenshots(moreBatch, token: token);
+      }
+
       sw2.stop();
       try {
-        print('[Search] total: ${allResults.length} (+${sw2.elapsedMilliseconds}ms)');
+        print('[搜索] 总计：${allResults.length} 条（+${sw2.elapsedMilliseconds} 毫秒）');
       } catch (_) {}
 
       if (!hasMoreData) {
@@ -493,44 +813,75 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
   Future<void> _loadMore() async {
     if (_lastQuery.isEmpty) return;
+    final int token = _searchToken;
     setState(() => _loadingMore = true);
     try {
       final sw = Stopwatch()..start();
       final range = _currentTimeRange();
       final size = _currentSizeRange();
-      final more = await ScreenshotService.instance
-          .searchScreenshotsByOcrWithFallback(
-            _lastQuery,
-            limit: _pageSize,
-            offset: _offset,
-            startMillis: range?.$1,
-            endMillis: range?.$2,
-            minSize: size?.$1,
-            maxSize: size?.$2,
-          );
-      if (!mounted) return;
+
+      // 按当前检索来源加载更多
+      final List<ScreenshotRecord> more;
+      if (_usingAiImageMeta) {
+        final rows = await ScreenshotDatabase.instance.searchAiImageMetaByText(
+          _lastQuery,
+          limit: _pageSize,
+          offset: _offset,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+          includeNsfw: true,
+        );
+        more = _mapAiImageMetaRowsToScreenshots(rows);
+      } else if (_usingFavoriteNotes) {
+        more = await _searchFavoriteNoteScreenshots(
+          _lastQuery,
+          limit: _pageSize,
+          offset: _offset,
+          startMillis: range?.$1,
+          endMillis: range?.$2,
+        );
+      } else {
+        more = await ScreenshotService.instance
+            .searchScreenshotsByOcrWithFallback(
+              _lastQuery,
+              limit: _pageSize,
+              offset: _offset,
+              startMillis: range?.$1,
+              endMillis: range?.$2,
+              minSize: size?.$1,
+              maxSize: size?.$2,
+            );
+      }
+      if (!mounted || token != _searchToken) return;
       setState(() {
         if (more.isEmpty) {
           _hasMore = false;
         } else {
           _results.addAll(more);
-          // 保持总结果数为数据库统计的总数，不用已加载数量覆盖
+          // OCR 模式保持总结果数为数据库统计的总数；AI/收藏备注模式则以“已加载数量”为准
+          if (_usingAiImageMeta || _usingFavoriteNotes) {
+            _totalResultsCount = _results.length;
+          }
           _applyFilters();
           _offset += more.length;
           _hasMore = more.length >= _pageSize;
         }
         _loadingMore = false;
       });
+      if (more.isNotEmpty) {
+        // ignore: unawaited_futures
+        _preloadNsfwForScreenshots(more, token: token);
+      }
       sw.stop();
       try {
         print(
-          '[Search] loadMore fetched=' +
+          '[搜索] 加载更多：获取=' +
               more.length.toString() +
-              ' offset=' +
+              ' 偏移=' +
               _offset.toString() +
-              ' hasMore=' +
+              ' 还有更多=' +
               _hasMore.toString() +
-              ' ms=' +
+              ' 耗时=' +
               sw.elapsedMilliseconds.toString(),
         );
       } catch (_) {}
@@ -544,12 +895,12 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   // ==================== 动态搜索相关方法 ====================
-  
+
   /// 搜索动态内容
   Future<void> _searchSegments(String query) async {
     if (!mounted) return;
     final int token = _searchToken;
-    
+
     if (query.isEmpty) {
       if (mounted && token == _searchToken) {
         setState(() {
@@ -558,10 +909,26 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           _segmentOffset = 0;
           _segmentHasMore = false;
           _segmentSearchFinished = false;
+          _segmentSearching = false;
+          _availableTags = <String>{};
+          _selectedTags = <String>{};
         });
       }
       return;
     }
+
+    // 手动触发：标记为“正在搜索”，并清空旧结果
+    setState(() {
+      _segmentSearching = true;
+      _segmentResults = <Map<String, dynamic>>[];
+      _segmentOffset = 0;
+      _segmentHasMore = false;
+      _segmentTotalCount = 0;
+      _segmentCountingTotal = false;
+      _availableTags = <String>{};
+      _selectedTags = <String>{};
+      _segmentSearchFinished = false;
+    });
 
     try {
       final range = _currentTimeRange();
@@ -583,13 +950,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         final String structuredJson = (seg['structured_json'] as String?) ?? '';
 
         final Map<String, dynamic>? sj = _tryParseJson(structuredJson);
-        final List<String> segTags = _extractCategories(
-          {
-            'categories': categoriesRaw,
-            'output_text': outputText,
-          },
-          sj,
-        );
+        final List<String> segTags = _extractCategories({
+          'categories': categoriesRaw,
+          'output_text': outputText,
+        }, sj);
 
         for (final t in segTags) {
           if (t.trim().isEmpty) continue;
@@ -598,6 +962,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       }
 
       setState(() {
+        _segmentSearching = false;
         _segmentResults = results;
         _segmentOffset = results.length;
         _segmentHasMore = results.length >= _pageSize;
@@ -611,28 +976,31 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       // 如果还有更多，后台统计总数
       if (_segmentHasMore) {
         ScreenshotDatabase.instance
-.countSegmentsByText(
-          query,
-          startMillis: range?.$1,
-          endMillis: range?.$2,
-        ).then((total) {
-          if (!mounted || token != _searchToken) return;
-          setState(() {
-            _segmentTotalCount = total;
-            _segmentCountingTotal = false;
-            _segmentSearchFinished = true;
-          });
-        }).catchError((_) {
-          if (!mounted || token != _searchToken) return;
-          setState(() {
-            _segmentCountingTotal = false;
-            _segmentSearchFinished = true;
-          });
-        });
+            .countSegmentsByText(
+              query,
+              startMillis: range?.$1,
+              endMillis: range?.$2,
+            )
+            .then((total) {
+              if (!mounted || token != _searchToken) return;
+              setState(() {
+                _segmentTotalCount = total;
+                _segmentCountingTotal = false;
+                _segmentSearchFinished = true;
+              });
+            })
+            .catchError((_) {
+              if (!mounted || token != _searchToken) return;
+              setState(() {
+                _segmentCountingTotal = false;
+                _segmentSearchFinished = true;
+              });
+            });
       }
     } catch (e) {
       if (!mounted || token != _searchToken) return;
       setState(() {
+        _segmentSearching = false;
         _segmentResults = <Map<String, dynamic>>[];
         _segmentCountingTotal = false;
         _segmentSearchFinished = true;
@@ -673,6 +1041,343 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     }
   }
 
+  // ==================== “语义”搜索（ai_image_meta） ====================
+
+  List<String> _parseAiImageTags(String raw) {
+    final String s = raw.trim();
+    if (s.isEmpty) return const <String>[];
+    try {
+      final decoded = jsonDecode(s);
+      if (decoded is List) {
+        return decoded
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList(growable: false);
+      }
+      if (decoded is String) {
+        return decoded
+            .split(RegExp(r'[，,;；\s]+'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList(growable: false);
+      }
+    } catch (_) {}
+    return s
+        .split(RegExp(r'[，,;；\s]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
+  void _applySemanticTagFilter() {
+    if (_semanticSelectedTags.isEmpty) {
+      _filteredSemanticResults = List<ScreenshotRecord>.from(_semanticResults);
+      return;
+    }
+    _filteredSemanticResults = _semanticResults.where((s) {
+      final Set<String> tags = _semanticTagsByPath[s.filePath] ?? const <String>{};
+      return _semanticSelectedTags.every((t) => tags.contains(t));
+    }).toList(growable: false);
+  }
+
+  Future<void> _searchSemantic(String query) async {
+    if (!mounted) return;
+    final int token = _searchToken;
+
+    final String q = query.trim();
+    if (q.isEmpty) {
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _semanticSearching = false;
+        _semanticSearchFinished = false;
+        _semanticResults = <ScreenshotRecord>[];
+        _filteredSemanticResults = <ScreenshotRecord>[];
+        _semanticTagsByPath.clear();
+        _semanticAvailableTags = <String>{};
+        _semanticSelectedTags = <String>{};
+        _semanticOffset = 0;
+        _semanticHasMore = false;
+        _semanticLoadingMore = false;
+        _semanticTotalCount = 0;
+        _semanticCountingTotal = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _semanticSearching = true;
+      _semanticSearchFinished = false;
+      _semanticResults = <ScreenshotRecord>[];
+      _filteredSemanticResults = <ScreenshotRecord>[];
+      _semanticTagsByPath.clear();
+      _semanticAvailableTags = <String>{};
+      _semanticSelectedTags = <String>{};
+      _semanticOffset = 0;
+      _semanticHasMore = false;
+      _semanticLoadingMore = false;
+      _semanticTotalCount = 0;
+      _semanticCountingTotal = false;
+    });
+
+    try {
+      final range = _currentTimeRange();
+      final rows = await ScreenshotDatabase.instance.searchAiImageMetaByText(
+        q,
+        limit: _pageSize,
+        offset: 0,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        includeNsfw: true,
+      );
+      if (!mounted || token != _searchToken) return;
+
+      final List<ScreenshotRecord> shots = <ScreenshotRecord>[];
+      final Map<String, Set<String>> tagsByPath = <String, Set<String>>{};
+      final Set<String> availableTags = <String>{};
+
+      for (final r in rows) {
+        final String fp = (r['file_path'] as String?)?.trim() ?? '';
+        if (fp.isEmpty) continue;
+        final int capture = (r['capture_time'] as int?) ?? 0;
+        final String tagsJson = (r['tags_json'] as String?)?.trim() ?? '';
+        final List<String> tags = _parseAiImageTags(tagsJson);
+        if (tags.isNotEmpty) {
+          tagsByPath[fp] = tags.toSet();
+          availableTags.addAll(tags);
+        }
+        shots.add(
+          ScreenshotRecord(
+            id: null,
+            appPackageName: (r['app_package_name'] as String?) ?? '',
+            appName: (r['app_name'] as String?) ?? '',
+            filePath: fp,
+            captureTime: DateTime.fromMillisecondsSinceEpoch(
+              capture > 0 ? capture : DateTime.now().millisecondsSinceEpoch,
+            ),
+            fileSize: 0,
+            isDeleted: false,
+            pageUrl: null,
+            ocrText: null,
+          ),
+        );
+      }
+
+      setState(() {
+        _semanticSearching = false;
+        _semanticResults = shots;
+        _semanticTagsByPath
+          ..clear()
+          ..addAll(tagsByPath);
+        _semanticAvailableTags = availableTags;
+        _semanticSelectedTags = <String>{};
+        _semanticOffset = shots.length;
+        _semanticHasMore = rows.length >= _pageSize;
+        _semanticTotalCount = shots.length;
+        _semanticCountingTotal = false;
+        _semanticSearchFinished = true;
+        _applySemanticTagFilter();
+      });
+
+      // ignore: unawaited_futures
+      _preloadNsfwForScreenshots(shots, token: token);
+    } catch (_) {
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _semanticSearching = false;
+        _semanticResults = <ScreenshotRecord>[];
+        _filteredSemanticResults = <ScreenshotRecord>[];
+        _semanticHasMore = false;
+        _semanticLoadingMore = false;
+        _semanticCountingTotal = false;
+        _semanticSearchFinished = true;
+      });
+    }
+  }
+
+  Future<void> _loadMoreSemantic() async {
+    if (_lastQuery.isEmpty || _semanticLoadingMore || !_semanticHasMore) return;
+    setState(() => _semanticLoadingMore = true);
+    final int token = _searchToken;
+    try {
+      final range = _currentTimeRange();
+      final rows = await ScreenshotDatabase.instance.searchAiImageMetaByText(
+        _lastQuery,
+        limit: _pageSize,
+        offset: _semanticOffset,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+        includeNsfw: true,
+      );
+      if (!mounted || token != _searchToken) return;
+
+      final List<ScreenshotRecord> moreShots = <ScreenshotRecord>[];
+      final Set<String> newlyAvailableTags = <String>{};
+
+      for (final r in rows) {
+        final String fp = (r['file_path'] as String?)?.trim() ?? '';
+        if (fp.isEmpty) continue;
+        final int capture = (r['capture_time'] as int?) ?? 0;
+        final String tagsJson = (r['tags_json'] as String?)?.trim() ?? '';
+        final List<String> tags = _parseAiImageTags(tagsJson);
+        if (tags.isNotEmpty) {
+          _semanticTagsByPath[fp] = tags.toSet();
+          newlyAvailableTags.addAll(tags);
+        }
+        moreShots.add(
+          ScreenshotRecord(
+            id: null,
+            appPackageName: (r['app_package_name'] as String?) ?? '',
+            appName: (r['app_name'] as String?) ?? '',
+            filePath: fp,
+            captureTime: DateTime.fromMillisecondsSinceEpoch(
+              capture > 0 ? capture : DateTime.now().millisecondsSinceEpoch,
+            ),
+            fileSize: 0,
+            isDeleted: false,
+            pageUrl: null,
+            ocrText: null,
+          ),
+        );
+      }
+
+      setState(() {
+        if (moreShots.isEmpty) {
+          _semanticHasMore = false;
+        } else {
+          _semanticResults.addAll(moreShots);
+          _semanticOffset += moreShots.length;
+          _semanticHasMore = rows.length >= _pageSize;
+          if (newlyAvailableTags.isNotEmpty) {
+            _semanticAvailableTags =
+                {..._semanticAvailableTags, ...newlyAvailableTags};
+          }
+          _semanticTotalCount = _semanticResults.length;
+          _applySemanticTagFilter();
+        }
+        _semanticLoadingMore = false;
+      });
+
+      if (moreShots.isNotEmpty) {
+        // ignore: unawaited_futures
+        _preloadNsfwForScreenshots(moreShots, token: token);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _semanticLoadingMore = false;
+        _semanticHasMore = false;
+      });
+    }
+  }
+
+  // ==================== “更多”搜索（SearchIndex） ====================
+
+  Future<void> _searchDocs(String query) async {
+    if (!mounted) return;
+    final int token = _searchToken;
+
+    if (query.trim().isEmpty) {
+      if (mounted && token == _searchToken) {
+        setState(() {
+          _docResults = <Map<String, dynamic>>[];
+          _docTotalCount = 0;
+          _docOffset = 0;
+          _docHasMore = false;
+          _docSearchFinished = false;
+          _docSearching = false;
+          _docLoadingMore = false;
+          _docCountingTotal = false;
+        });
+      }
+      return;
+    }
+
+    // 先清空再加载（保持按需触发：仅在“更多”Tab 内调用）
+    setState(() {
+      _docSearching = true;
+      _docResults = <Map<String, dynamic>>[];
+      _docTotalCount = 0;
+      _docOffset = 0;
+      _docHasMore = false;
+      _docLoadingMore = false;
+      _docCountingTotal = false;
+      _docSearchFinished = false;
+    });
+
+    try {
+      final range = _currentTimeRange();
+
+      // 同步/追赶索引（兜底：兼容原生端写入）
+      await ScreenshotDatabase.instance.syncSearchIndex(sources: _docIndexSources);
+      if (!mounted || token != _searchToken) return;
+
+      final results = await ScreenshotDatabase.instance.searchSearchDocsByText(
+        query,
+        docTypes: _docSelectedTypes.isEmpty ? _docTabTypes : _docSelectedTypes,
+        limit: _pageSize,
+        offset: 0,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+      );
+      if (!mounted || token != _searchToken) return;
+
+      setState(() {
+        _docSearching = false;
+        _docResults = results;
+        _docOffset = results.length;
+        _docHasMore = results.length >= _pageSize;
+        _docTotalCount = results.length;
+        _docCountingTotal = false;
+        _docSearchFinished = true;
+      });
+    } catch (_) {
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _docSearching = false;
+        _docResults = <Map<String, dynamic>>[];
+        _docCountingTotal = false;
+        _docSearchFinished = true;
+      });
+    }
+  }
+
+  Future<void> _loadMoreDocs() async {
+    if (_lastQuery.isEmpty || _docLoadingMore || !_docHasMore) return;
+    setState(() => _docLoadingMore = true);
+    try {
+      final range = _currentTimeRange();
+      final more = await ScreenshotDatabase.instance.searchSearchDocsByText(
+        _lastQuery,
+        docTypes: _docSelectedTypes.isEmpty ? _docTabTypes : _docSelectedTypes,
+        limit: _pageSize,
+        offset: _docOffset,
+        startMillis: range?.$1,
+        endMillis: range?.$2,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (more.isEmpty) {
+          _docHasMore = false;
+        } else {
+          _docResults.addAll(more);
+          _docOffset += more.length;
+          _docHasMore = more.length >= _pageSize;
+          _docTotalCount = _docResults.length;
+        }
+        _docLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _docLoadingMore = false;
+        _docHasMore = false;
+      });
+    }
+  }
+
   /// 格式化时间显示
   String _formatSegmentTime(int startMs, int endMs) {
     final start = DateTime.fromMillisecondsSinceEpoch(startMs);
@@ -681,7 +1386,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
     final startDay = DateTime(start.year, start.month, start.day);
-    
+
     String dateStr;
     if (startDay == today) {
       dateStr = AppLocalizations.of(context).filterTimeToday;
@@ -690,11 +1395,21 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     } else {
       dateStr = '${start.month}/${start.day}';
     }
-    
-    final startTime = '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
-    final endTime = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
-    
+
+    final startTime =
+        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    final endTime =
+        '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+
     return '$dateStr $startTime-$endTime';
+  }
+
+  String _todayKey() {
+    final now = DateTime.now();
+    final String y = now.year.toString().padLeft(4, '0');
+    final String m = now.month.toString().padLeft(2, '0');
+    final String d = now.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   // 应用筛选条件（数据库层已做时间和大小过滤，此处仅同步结果列表）
@@ -847,6 +1562,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
   Future<Map<String, dynamic>?> _ensureBoxes(String filePath) async {
     if (_lastQuery.isEmpty) return null;
+    if (_usingAiImageMeta || _usingFavoriteNotes) return null;
     final key = '$filePath|$_lastQuery';
     final fut = _boxesFutureCache.putIfAbsent(key, () {
       return ScreenshotService.instance.getOcrMatchBoxes(
@@ -867,6 +1583,35 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         _appInfoByPackage[record.appPackageName] ??
         AppInfo(
           packageName: record.appPackageName,
+          appName: record.appName,
+          icon: null,
+          version: '',
+          isSystemApp: false,
+        );
+    Navigator.pushNamed(
+      context,
+      '/screenshot_viewer',
+      arguments: {
+        'screenshots': sameApp,
+        'initialIndex': initialIndex < 0 ? 0 : initialIndex,
+        'appName': record.appName,
+        'appInfo': appInfo,
+      },
+    );
+  }
+
+  void _openSemanticViewer(ScreenshotRecord record, int index) {
+    final List<ScreenshotRecord> pool = _filteredSemanticResults;
+    if (pool.isEmpty) return;
+    final String pkg = record.appPackageName.trim();
+    final List<ScreenshotRecord> sameApp = pkg.isEmpty
+        ? pool
+        : pool.where((r) => r.appPackageName.trim() == pkg).toList();
+    final int initialIndex =
+        sameApp.indexWhere((r) => r.filePath == record.filePath);
+    final appInfo = _appInfoByPackage[pkg] ??
+        AppInfo(
+          packageName: pkg.isNotEmpty ? pkg : record.appPackageName,
           appName: record.appName,
           icon: null,
           version: '',
@@ -934,9 +1679,13 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                         child: Container(
                           width: 40,
                           height: 4,
-                          margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
+                          margin: const EdgeInsets.only(
+                            bottom: AppTheme.spacing3,
+                          ),
                           decoration: BoxDecoration(
-                            color: Theme.of(ctx).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                            color: Theme.of(
+                              ctx,
+                            ).colorScheme.onSurfaceVariant.withOpacity(0.4),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -953,11 +1702,36 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                         spacing: 4,
                         runSpacing: 4,
                         children: [
-                          _buildTimeChip(ctx, 'all', l10n.filterTimeAll, setSheetState),
-                          _buildTimeChip(ctx, 'today', l10n.filterTimeToday, setSheetState),
-                          _buildTimeChip(ctx, 'yesterday', l10n.filterTimeYesterday, setSheetState),
-                          _buildTimeChip(ctx, 'last7days', l10n.filterTimeLast7Days, setSheetState),
-                          _buildTimeChip(ctx, 'last30days', l10n.filterTimeLast30Days, setSheetState),
+                          _buildTimeChip(
+                            ctx,
+                            'all',
+                            l10n.filterTimeAll,
+                            setSheetState,
+                          ),
+                          _buildTimeChip(
+                            ctx,
+                            'today',
+                            l10n.filterTimeToday,
+                            setSheetState,
+                          ),
+                          _buildTimeChip(
+                            ctx,
+                            'yesterday',
+                            l10n.filterTimeYesterday,
+                            setSheetState,
+                          ),
+                          _buildTimeChip(
+                            ctx,
+                            'last7days',
+                            l10n.filterTimeLast7Days,
+                            setSheetState,
+                          ),
+                          _buildTimeChip(
+                            ctx,
+                            'last30days',
+                            l10n.filterTimeLast30Days,
+                            setSheetState,
+                          ),
                           _buildCustomDaysChip(ctx, l10n, setSheetState),
                         ],
                       ),
@@ -974,7 +1748,12 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   // 构建时间选项 Chip
-  Widget _buildTimeChip(BuildContext ctx, String value, String label, StateSetter setSheetState) {
+  Widget _buildTimeChip(
+    BuildContext ctx,
+    String value,
+    String label,
+    StateSetter setSheetState,
+  ) {
     final bool selected = _timeFilter == value;
     return FilterChip(
       label: Text(
@@ -1010,7 +1789,11 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   // 构建自定义天数 Chip
-  Widget _buildCustomDaysChip(BuildContext ctx, AppLocalizations l10n, StateSetter setSheetState) {
+  Widget _buildCustomDaysChip(
+    BuildContext ctx,
+    AppLocalizations l10n,
+    StateSetter setSheetState,
+  ) {
     final bool selected = _timeFilter == 'customDays';
     return FilterChip(
       label: Row(
@@ -1060,7 +1843,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   Future<void> _showCustomDaysDialog() async {
     final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: _customDays.toString());
-    
+
     final result = await showUIDialog<int>(
       context: context,
       title: l10n.filterTimeCustomDays,
@@ -1075,7 +1858,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusSm),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
         ),
       ),
       actions: [
@@ -1096,7 +1882,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
         ),
       ],
     );
-    
+
     if (result != null) {
       setState(() {
         _customDays = result;
@@ -1120,16 +1906,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
           children: [
             Text(
               _getTimeRangeLabel(),
-              style: TextStyle(
-                fontSize: 12,
-                color: color,
-              ),
+              style: TextStyle(fontSize: 12, color: color),
             ),
-            Icon(
-              Icons.arrow_drop_down,
-              size: 16,
-              color: color,
-            ),
+            Icon(Icons.arrow_drop_down, size: 16, color: color),
           ],
         ),
       ),
@@ -1211,6 +1990,28 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                           onSubmitted: (v) => _search(v.trim()),
                         ),
                       ),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _controller,
+                        builder: (context, value, _) {
+                          final bool showClear = value.text.trim().isNotEmpty;
+                          if (!showClear) return const SizedBox.shrink();
+                          return IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: AppLocalizations.of(context).actionClear,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                            onPressed: () {
+                              _debounce?.cancel();
+                              _controller.clear();
+                              _search('');
+                              _focusNode.requestFocus();
+                            },
+                          );
+                        },
+                      ),
                       // 时间范围选择按钮（嵌入搜索框内）
                       _buildTimeRangeDropdown(),
                     ],
@@ -1227,7 +2028,11 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
   Widget _buildBody() {
     final l10n = AppLocalizations.of(context);
-    
+
+    if (_controller.text.trim().isEmpty) {
+      return _buildEmptyState(l10n);
+    }
+
     if (_error != null) {
       return Center(
         child: Text(
@@ -1241,59 +2046,75 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_controller.text.trim().isEmpty) {
-      return _buildEmptyState(l10n);
-    }
-
-    // 判断是否有任何结果
-    final bool hasScreenshots = _results.isNotEmpty;
-    final bool hasSegments = _segmentResults.isNotEmpty;
-    
-    if (!hasScreenshots && !hasSegments) {
-      return Center(
-        child: Text(
-          l10n.noMatchingScreenshots,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
-        ),
-      );
-    }
-
     return Column(
       children: [
-        // Tab 切换栏（两个 Tab 均分整行）
-        Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
-            ),
-          ),
-          child: TabBar(
-            controller: _tabController,
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: AppTheme.mutedForeground,
-            labelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            indicatorColor: Theme.of(context).colorScheme.primary,
-            indicatorSize: TabBarIndicatorSize.tab,
-            tabs: [
-              Tab(text: '截图 (${_countingTotal ? '...' : _totalResultsCount})'),
-              Tab(
-                text: _segmentSearchFinished
-                    ? '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'
-                    : '点击搜索动态',
+        // Tab 切换栏（与截图列表一致：左对齐、可滚动、细下划线指示器）
+        Padding(
+          padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
+          child: SizedBox(
+            height: 32,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              padding: const EdgeInsets.only(left: AppTheme.spacing4),
+              labelPadding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
               ),
-            ],
+              labelColor: Theme.of(context).brightness == Brightness.dark
+                  ? AppTheme.darkForeground
+                  : AppTheme.foreground,
+              unselectedLabelColor:
+                  Theme.of(context).textTheme.bodySmall?.color ??
+                  AppTheme.mutedForeground,
+              labelStyle: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+              unselectedLabelStyle: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w500),
+              dividerColor: Colors.transparent,
+              indicatorSize: TabBarIndicatorSize.label,
+              indicatorPadding: EdgeInsets.zero,
+              indicator: UnderlineTabIndicator(
+                borderSide: BorderSide(
+                  width: 2.0,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppTheme.darkForeground
+                      : AppTheme.foreground,
+                ),
+                insets: const EdgeInsets.symmetric(horizontal: 4.0),
+              ),
+              tabs: [
+                Tab(text: '截图 (${_countingTotal ? '...' : _totalResultsCount})'),
+                Tab(
+                  text: _semanticSearching
+                      ? '语义 (...)'
+                      : (_semanticSearchFinished
+                          ? '语义 (${_semanticCountingTotal ? '...' : _filteredSemanticCount})'
+                          : '语义'),
+                ),
+                Tab(
+                  text: _segmentSearching
+                      ? '动态 (...)'
+                      : (_segmentSearchFinished
+                          ? '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'
+                          : '动态'),
+                ),
+                Tab(
+                  text: _docSearching
+                      ? '更多 (...)'
+                      : (_docSearchFinished
+                          ? '更多 (${_docCountingTotal ? '...' : _docTotalCount})'
+                          : '更多'),
+                ),
+              ],
+            ),
           ),
         ),
+        const SizedBox(height: 1),
         // TabBarView 内容
         Expanded(
           child: TabBarView(
@@ -1301,8 +2122,12 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
             children: [
               // 截图 Tab
               _buildScreenshotsView(),
+              // 语义 Tab
+              _buildSemanticView(),
               // 动态 Tab
               _buildSegmentsView(),
+              // 更多 Tab
+              _buildDocsView(),
             ],
           ),
         ),
@@ -1316,9 +2141,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       return Center(
         child: Text(
           AppLocalizations.of(context).noResultsForFilters,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: AppTheme.mutedForeground,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     }
@@ -1424,53 +2249,53 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                     ),
                   ),
                 )
-              : NotificationListener<ScrollNotification>(
-                  onNotification: (n) {
-                    // 更新可见范围
-                    _updateVisibleRange();
-                    // 滚动活跃态：暂停OCR叠加，滚动空闲后再恢复
-                    bool shouldSetActive = false;
-                    if (n is ScrollUpdateNotification ||
-                        n is UserScrollNotification ||
-                        n is OverscrollNotification) {
-                      if (!_scrollActive) shouldSetActive = true;
-                      _scrollIdleTimer?.cancel();
-                      _scrollIdleTimer = Timer(
-                        const Duration(milliseconds: 120),
-                        () {
-                          if (!mounted) return;
-                          if (_scrollActive) {
-                            setState(() {
-                              _scrollActive = false;
-                            });
-                          }
-                        },
-                      );
-                    }
-                    if (shouldSetActive) {
-                      setState(() {
-                        _scrollActive = true;
-                      });
-                    }
-                    // 接近底部时预取下一页
-                    if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
-                      _onScroll();
-                    }
-                    return false;
-                  },
-                  child: GridView.builder(
+              : Padding(
+                  padding: const EdgeInsets.all(AppTheme.spacing1),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      // 更新可见范围
+                      _updateVisibleRange();
+                      // 滚动活跃态：暂停OCR叠加，滚动空闲后再恢复
+                      bool shouldSetActive = false;
+                      if (n is ScrollUpdateNotification ||
+                          n is UserScrollNotification ||
+                          n is OverscrollNotification) {
+                        if (!_scrollActive) shouldSetActive = true;
+                        _scrollIdleTimer?.cancel();
+                        _scrollIdleTimer = Timer(
+                          const Duration(milliseconds: 120),
+                          () {
+                            if (!mounted) return;
+                            if (_scrollActive) {
+                              setState(() {
+                                _scrollActive = false;
+                              });
+                            }
+                          },
+                        );
+                      }
+                      if (shouldSetActive) {
+                        setState(() {
+                          _scrollActive = true;
+                        });
+                      }
+                      // 接近底部时预取下一页
+                      if (n.metrics.pixels >=
+                          n.metrics.maxScrollExtent - 300) {
+                        _onScroll();
+                      }
+                      return false;
+                    },
+                    child: GridView.builder(
                     key: _gridKey,
                     controller: _scrollController,
                     cacheExtent: MediaQuery.of(context).size.height,
                     addAutomaticKeepAlives: false,
                     physics: const ClampingScrollPhysics(),
                     padding: EdgeInsets.only(
-                      left: AppTheme.spacing1,
-                      right: AppTheme.spacing1,
                       bottom:
                           MediaQuery.of(context).padding.bottom +
                           AppTheme.spacing6,
-                      top: AppTheme.spacing1,
                     ),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1541,17 +2366,8 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                         );
                       }
 
-                      final bool nsfwMasked =
-                          _privacyMode &&
+                      final bool isNsfw =
                           NsfwPreferenceService.instance.shouldMaskCached(s);
-                      final bool isManualNsfw =
-                          s.id != null &&
-                          NsfwPreferenceService.instance
-                              .isManuallyFlaggedCached(
-                                screenshotId: s.id!,
-                                appPackageName: s.appPackageName,
-                              );
-                      final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
 
                       final GlobalKey itemKey = _itemKeys.putIfAbsent(
                         index,
@@ -1566,7 +2382,7 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                             appInfoMap: _appInfoByPackage,
                             privacyMode: _privacyMode,
                             showNsfwButton: false,
-                            isNsfwFlagged: isNsfwDisplay,
+                            isNsfwFlagged: isNsfw,
                             onTap: () => _openViewer(s, index),
                             showTimelineJumpButton: true,
                             customOverlay: ocrOverlay,
@@ -1576,7 +2392,217 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                     },
                   ),
                 ),
+              ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildSemanticView() {
+    final l10n = AppLocalizations.of(context);
+
+    if (_lastQuery.trim().isNotEmpty && !_semanticSearchFinished) {
+      if (_semanticSearching) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '语义搜索未开始',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              Text(
+                '这里会搜索图片的 AI 描述/关键词/标签。为避免输入时卡顿，需要手动触发搜索。',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.mutedForeground,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing3),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: () => _searchSemantic(_lastQuery),
+                  icon: const Icon(Icons.search, size: 18),
+                  label: const Text('搜索语义'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final List<ScreenshotRecord> data = _filteredSemanticResults;
+    final bool hasTagFilter = _semanticSelectedTags.isNotEmpty;
+
+    Widget grid;
+    if (data.isEmpty) {
+      grid = Center(
+        child: Text(
+          l10n.noResultsForFilters,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: AppTheme.mutedForeground),
+        ),
+      );
+    } else {
+      grid = Padding(
+        padding: const EdgeInsets.all(AppTheme.spacing1),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+              _loadMoreSemantic();
+            }
+            return false;
+          },
+          child: GridView.builder(
+            controller: _semanticScrollController,
+            cacheExtent: MediaQuery.of(context).size.height,
+            addAutomaticKeepAlives: false,
+            physics: const ClampingScrollPhysics(),
+            padding: EdgeInsets.only(
+              bottom:
+                  MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+            ),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: AppTheme.spacing1,
+              mainAxisSpacing: AppTheme.spacing1,
+              childAspectRatio: 0.45,
+            ),
+            itemCount: data.length + (_semanticLoadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (_semanticLoadingMore && index == data.length) {
+                return const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+              final s = data[index];
+              final bool isNsfw =
+                  NsfwPreferenceService.instance.shouldMaskCached(s);
+
+              return RepaintBoundary(
+                child: ScreenshotItemWidget(
+                  screenshot: s,
+                  baseDir: _baseDir,
+                  appInfoMap: _appInfoByPackage,
+                  privacyMode: _privacyMode,
+                  showNsfwButton: false,
+                  isNsfwFlagged: isNsfw,
+                  onTap: () => _openSemanticViewer(s, index),
+                  showTimelineJumpButton: true,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // 筛选栏（与动态一致：标签筛选）
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing3,
+            vertical: AppTheme.spacing2,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '找到 ${_semanticCountingTotal ? '...' : _filteredSemanticCount} 张图片',
+                        style:
+                            Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.mutedForeground,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_semanticCountingTotal) ...[
+                      const SizedBox(width: AppTheme.spacing1),
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              InkWell(
+                onTap: _showSemanticTagFilterSheet,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: hasTagFilter
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withOpacity(0.3),
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.local_offer_outlined,
+                        size: 16,
+                        color: hasTagFilter
+                            ? Theme.of(context).colorScheme.primary
+                            : AppTheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _semanticSelectedTags.isEmpty
+                            ? '标签'
+                            : '${_semanticSelectedTags.length}个标签',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasTagFilter
+                              ? Theme.of(context).colorScheme.primary
+                              : AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: grid),
       ],
     );
   }
@@ -1585,7 +2611,47 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   Widget _buildSegmentsView() {
     final segments = _filteredSegments;
     final l10n = AppLocalizations.of(context);
-    
+
+    if (_lastQuery.trim().isNotEmpty && !_segmentSearchFinished) {
+      if (_segmentSearching) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '动态搜索未开始',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              Text(
+                '为避免输入时卡顿，需要手动触发搜索。',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.mutedForeground,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing3),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: () => _searchSegments(_lastQuery),
+                  icon: const Icon(Icons.search, size: 18),
+                  label: const Text('搜索动态'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: [
         // 筛选栏（与截图样式一致）
@@ -1699,11 +2765,17 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                       left: AppTheme.spacing3,
                       right: AppTheme.spacing3,
                       top: AppTheme.spacing2,
-                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                      bottom:
+                          MediaQuery.of(context).padding.bottom +
+                          AppTheme.spacing6,
                     ),
-                    itemCount: segments.length + (_segmentLoadingMore && _selectedTags.isEmpty ? 1 : 0),
+                    itemCount:
+                        segments.length +
+                        (_segmentLoadingMore && _selectedTags.isEmpty ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (_segmentLoadingMore && _selectedTags.isEmpty && index == segments.length) {
+                      if (_segmentLoadingMore &&
+                          _selectedTags.isEmpty &&
+                          index == segments.length) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(AppTheme.spacing4),
@@ -1724,12 +2796,646 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     );
   }
 
+  /// 构建“更多”视图（SearchIndex：daily/weekly/morning/persona/favorite_note 等）。
+  Widget _buildDocsView() {
+    final l10n = AppLocalizations.of(context);
+
+    if (_lastQuery.trim().isNotEmpty && !_docSearchFinished) {
+      if (_docSearching) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTheme.spacing4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '更多搜索未开始',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+              Text(
+                '这里会搜索每日/每周总结、早报、画像文章、应用事件、收藏备注等。为避免输入时卡顿，需要手动触发搜索。',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.mutedForeground,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppTheme.spacing3),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: () => _searchDocs(_lastQuery),
+                  icon: const Icon(Icons.search, size: 18),
+                  label: const Text('搜索更多'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final Set<String> activeTypes =
+        _docSelectedTypes.isEmpty ? _docTabTypes : _docSelectedTypes;
+    final bool hasTypeFilter = activeTypes.length != _docTabTypes.length;
+
+    Widget body;
+    if (_docResults.isEmpty) {
+      body = Center(
+        child: Text(
+          l10n.noResultsForFilters,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: AppTheme.mutedForeground),
+        ),
+      );
+    } else {
+      body = NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+            _loadMoreDocs();
+          }
+          return false;
+        },
+        child: ListView.builder(
+          padding: EdgeInsets.only(
+            left: AppTheme.spacing3,
+            right: AppTheme.spacing3,
+            top: AppTheme.spacing2,
+            bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+          ),
+          itemCount: _docResults.length + (_docLoadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (_docLoadingMore && index == _docResults.length) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(AppTheme.spacing4),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            return _buildDocCard(_docResults[index]);
+          },
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // 筛选栏（与截图/动态样式一致）
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing3,
+            vertical: AppTheme.spacing2,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '找到 ${_docCountingTotal ? '...' : _docTotalCount} 条内容',
+                        style:
+                            Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.mutedForeground,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_docCountingTotal) ...[
+                      const SizedBox(width: AppTheme.spacing1),
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              InkWell(
+                onTap: _showDocTypeFilterSheet,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: hasTypeFilter
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey.withOpacity(0.3),
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune,
+                        size: 16,
+                        color: hasTypeFilter
+                            ? Theme.of(context).colorScheme.primary
+                            : AppTheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        hasTypeFilter ? '${activeTypes.length}类' : '类型',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasTypeFilter
+                              ? Theme.of(context).colorScheme.primary
+                              : AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  Widget _buildDocCard(Map<String, dynamic> doc) {
+    final String docType = (doc['doc_type'] as String?)?.trim() ?? '';
+    final String title = (doc['title'] as String?)?.trim().isNotEmpty == true
+        ? (doc['title'] as String).trim()
+        : _docTypeLabel(docType);
+    final String rawContent = (doc['content'] as String?)?.trim() ?? '';
+    final String content = _docContentForDisplay(docType, rawContent);
+    final String tags = (doc['tags'] as String?)?.trim() ?? '';
+    final int updatedAt = (doc['updated_at'] as int?) ?? 0;
+
+    final String preview = _docPreviewText(content);
+    final String when = updatedAt > 0 ? _formatDocUpdatedAt(updatedAt) : '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing1),
+      child: InkWell(
+        onTap: () => _onDocTap(doc),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        child: Container(
+          padding: const EdgeInsets.all(AppTheme.spacing3),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.12),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _buildDocTypeChip(context, _docTypeLabel(docType)),
+                  const Spacer(),
+                  if (when.isNotEmpty)
+                    Text(
+                      when,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.mutedForeground,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (tags.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  tags,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.mutedForeground,
+                  ),
+                ),
+              ],
+              if (preview.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  preview,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocTypeChip(BuildContext context, String text) {
+    final Color c = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: c.withOpacity(0.25), width: 1),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: c,
+          height: 1.0,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _docTypeLabel(String docType) {
+    switch (docType.trim()) {
+      case kSearchDocTypeFavoriteNote:
+        return '收藏备注';
+      case kSearchDocTypeDailySummary:
+        return '每日总结';
+      case kSearchDocTypeWeeklySummary:
+        return '周总结';
+      case kSearchDocTypeMorningInsights:
+        return '早报';
+      case kSearchDocTypePersonaArticle:
+        return '画像文章';
+      default:
+        return docType.trim().isEmpty ? '文档' : docType.trim();
+    }
+  }
+
+  String _formatDocUpdatedAt(int ts) {
+    try {
+      final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+      final String mm = dt.month.toString().padLeft(2, '0');
+      final String dd = dt.day.toString().padLeft(2, '0');
+      final String hh = dt.hour.toString().padLeft(2, '0');
+      final String mi = dt.minute.toString().padLeft(2, '0');
+      return '$mm-$dd $hh:$mi';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _docPreviewText(String raw) {
+    final String s = raw.trim();
+    if (s.isEmpty) return '';
+    final String compact = s.replaceAll(RegExp(r'\\s+'), ' ');
+    if (compact.length <= 160) return compact;
+    return compact.substring(0, 160) + '…';
+  }
+
+  String _renderMorningInsightsMarkdownForUi(String raw) {
+    final String s = raw.trim();
+    if (s.isEmpty) return '';
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(s);
+    } catch (_) {
+      return s;
+    }
+
+    Iterable<dynamic>? source;
+    if (decoded is Map) {
+      final dynamic candidate =
+          decoded['items'] ?? decoded['tips'] ?? decoded['entries'];
+      if (candidate is List) {
+        source = candidate;
+      } else if (candidate is Map) {
+        source = candidate.values;
+      }
+    } else if (decoded is List) {
+      source = decoded;
+    }
+
+    if (source == null) return s;
+
+    final StringBuffer out = StringBuffer();
+    int emitted = 0;
+
+    List<String> normalizeActions(dynamic v) {
+      if (v == null) return const <String>[];
+      if (v is List) {
+        return v
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false);
+      }
+      return v
+          .toString()
+          .split(RegExp(r'[\n\r]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    for (final dynamic item in source) {
+      String title = '';
+      String summary = '';
+      List<String> actions = const <String>[];
+
+      if (item is Map) {
+        final Map<String, dynamic> m =
+            item.map((k, v) => MapEntry(k.toString(), v));
+        title = (m['title'] ?? '').toString().trim();
+        summary = (m['summary'] ?? m['desc'] ?? m['description'] ?? '')
+            .toString()
+            .trim();
+        actions = normalizeActions(m['actions'] ?? m['action'] ?? m['steps']);
+      } else if (item is String) {
+        summary = item.trim();
+      } else {
+        summary = item?.toString().trim() ?? '';
+      }
+
+      if (title.isEmpty) {
+        title = summary;
+      }
+      if (title.isEmpty && actions.isNotEmpty) {
+        title = actions.first;
+      }
+
+      if (title.isEmpty && summary.isEmpty && actions.isEmpty) continue;
+
+      if (emitted > 0) out.writeln();
+      if (title.isNotEmpty) out.writeln('## $title');
+      if (summary.isNotEmpty && summary != title) {
+        out.writeln(summary);
+      }
+      if (actions.isNotEmpty) {
+        if (summary.isNotEmpty || title.isNotEmpty) out.writeln();
+        for (final a in actions) {
+          if (a.trim().isEmpty) continue;
+          out.writeln('- ${a.trim()}');
+        }
+      }
+      emitted++;
+    }
+
+    final String rendered = out.toString().trim();
+    return rendered.isNotEmpty ? rendered : s;
+  }
+
+  String _docContentForDisplay(String docType, String rawContent) {
+    if (docType.trim() == kSearchDocTypeMorningInsights) {
+      return _renderMorningInsightsMarkdownForUi(rawContent);
+    }
+    return rawContent;
+  }
+
+  Future<void> _onDocTap(Map<String, dynamic> doc) async {
+    final String docType = (doc['doc_type'] as String?)?.trim() ?? '';
+
+    if (docType == kSearchDocTypeFavoriteNote) {
+      await _openFavoriteNoteDocScreenshot(doc);
+      return;
+    }
+
+    await _showDocDetail(doc);
+  }
+
+  Future<void> _openFavoriteNoteDocScreenshot(Map<String, dynamic> doc) async {
+    final int? screenshotId = doc['screenshot_id'] as int?;
+    final String pkg = (doc['app_package_name'] as String?)?.trim() ?? '';
+    if (screenshotId == null || screenshotId <= 0) return;
+    if (pkg.isEmpty) return;
+
+    final rec = await ScreenshotDatabase.instance.getScreenshotById(
+      screenshotId,
+      pkg,
+    );
+    if (!mounted || rec == null) return;
+    _openSampleViewer(<ScreenshotRecord>[rec], 0);
+  }
+
+  PersonaArticleStyle _parsePersonaStyleFromDoc(Map<String, dynamic> doc) {
+    final String key = (doc['doc_key'] as String?)?.trim() ?? '';
+    String style = '';
+    if (key.startsWith('persona:')) {
+      style = key.substring('persona:'.length).trim();
+    }
+    if (style.isEmpty) {
+      style = (doc['date_key'] as String?)?.trim() ?? '';
+    }
+    if (style.isEmpty) {
+      style = (doc['title'] as String?)?.trim() ?? '';
+    }
+    final String normalized = style.toLowerCase();
+    if (normalized.contains('timeline')) return PersonaArticleStyle.timeline;
+    return PersonaArticleStyle.narrative;
+  }
+
+  Future<void> _showDocDetail(Map<String, dynamic> doc) async {
+    if (!mounted) return;
+    final String docType = (doc['doc_type'] as String?)?.trim() ?? '';
+    final String title = (doc['title'] as String?)?.trim().isNotEmpty == true
+        ? (doc['title'] as String).trim()
+        : _docTypeLabel(docType);
+    final String rawContent = (doc['content'] as String?)?.trim() ?? '';
+    final String content = _docContentForDisplay(docType, rawContent);
+    final String tags = (doc['tags'] as String?)?.trim() ?? '';
+    final String dateKey = (doc['date_key'] as String?)?.trim() ?? '';
+    final String appPkg = (doc['app_package_name'] as String?)?.trim() ?? '';
+    final int segmentId = (doc['segment_id'] as int?) ?? 0;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.86,
+          minChildSize: 0.55,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, ctrl) {
+            return SafeArea(
+              child: ListView(
+                controller: ctrl,
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.spacing4,
+                  AppTheme.spacing2,
+                  AppTheme.spacing4,
+                  AppTheme.spacing6,
+                ),
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '复制',
+                        onPressed: content.trim().isEmpty
+                            ? null
+                            : () async {
+                                final String copyText = title.trim().isEmpty
+                                    ? content
+                                    : '${title.trim()}\n\n$content';
+                                await Clipboard.setData(
+                                  ClipboardData(text: copyText),
+                                );
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(content: Text('已复制')),
+                                );
+                              },
+                        icon: const Icon(Icons.copy_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildDocTypeChip(ctx, _docTypeLabel(docType)),
+                      const Spacer(),
+                      if (dateKey.isNotEmpty)
+                        Text(
+                          dateKey,
+                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: AppTheme.mutedForeground,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      tags,
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.mutedForeground,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  if (content.isNotEmpty)
+                    _buildHighlightedMarkdown(
+                      context: ctx,
+                      text: content,
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    )
+                  else
+                    Text(
+                      '（无内容）',
+                      style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                        color: AppTheme.mutedForeground,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (docType == kSearchDocTypeDailySummary ||
+                          docType == kSearchDocTypeMorningInsights)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => DailySummaryPage(
+                                  dateKey: dateKey.isNotEmpty
+                                      ? dateKey
+                                      : _todayKey(),
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: const Text('打开每日总结'),
+                        ),
+                      if (docType == kSearchDocTypeWeeklySummary)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => WeeklySummaryPage(
+                                  weekStart: dateKey.isNotEmpty ? dateKey : null,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: const Text('打开周总结'),
+                        ),
+                      if (docType == kSearchDocTypePersonaArticle)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            final style = _parsePersonaStyleFromDoc(doc);
+                            Navigator.of(ctx).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PersonaArticlePage(style: style),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: const Text('打开画像文章'),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   /// 显示标签筛选底部弹窗
   void _showTagFilterSheet() {
     if (_availableTags.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可用标签')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('暂无可用标签')));
       return;
     }
 
@@ -1753,29 +3459,35 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // 顶部拖拽指示器
                   Center(
                     child: Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+                      margin: const EdgeInsets.symmetric(
+                        vertical: AppTheme.spacing3,
+                      ),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                   ),
                   // 标题栏
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                    ),
                     child: Row(
                       children: [
                         Text(
                           '标签筛选',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
                         if (_selectedTags.isNotEmpty)
@@ -1795,17 +3507,19 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                   // 标签列表
                   Flexible(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                      ),
                       child: Builder(
                         builder: (context) {
-                          final List<String> tags = _availableTags
-                              .map((t) => _cleanTagText(t))
-                              .where((t) => _isValidTag(t))
-                              .toList()
-                            ..sort((a, b) => a.compareTo(b));
+                          final List<String> tags =
+                              _availableTags
+                                  .map((t) => _cleanTagText(t))
+                                  .where((t) => _isValidTag(t))
+                                  .toList()
+                                ..sort((a, b) => a.compareTo(b));
 
-                          return Wrap
-                          (
+                          return Wrap(
                             spacing: 4,
                             runSpacing: 4,
                             children: tags.map((tag) {
@@ -1817,19 +3531,22 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                                     fontSize: 12,
                                     color: selected
                                         ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).colorScheme.onSurface,
-                                    fontWeight:
-                                        selected ? FontWeight.w600 : FontWeight.normal,
+                                        : Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                    fontWeight: selected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                 ),
                                 selected: selected,
                                 showCheckmark: false,
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.surface,
-                                selectedColor: Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withOpacity(0.15),
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surface,
+                                selectedColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.15),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 6,
                                   vertical: 3,
@@ -1838,8 +3555,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                                 materialTapTargetSize:
                                     MaterialTapTargetSize.shrinkWrap,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(AppTheme.radiusSm),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.radiusSm,
+                                  ),
                                 ),
                                 side: selected
                                     ? BorderSide.none
@@ -1870,13 +3588,384 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                     padding: EdgeInsets.only(
                       left: AppTheme.spacing4,
                       right: AppTheme.spacing4,
-                      bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing4,
+                      bottom:
+                          MediaQuery.of(context).padding.bottom +
+                          AppTheme.spacing4,
                     ),
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: Text('确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})'),
+                        child: Text(
+                          '确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showSemanticTagFilterSheet() {
+    if (_semanticAvailableTags.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可用标签')),
+      );
+      return;
+    }
+
+    final List<String> ordered = _semanticAvailableTags.toList(growable: false)
+      ..sort();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  topRight: Radius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(
+                        vertical: AppTheme.spacing3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '标签筛选',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const Spacer(),
+                        if (_semanticSelectedTags.isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() => _semanticSelectedTags.clear());
+                              setState(() {
+                                _semanticSelectedTags.clear();
+                                _applySemanticTagFilter();
+                              });
+                            },
+                            child: const Text('清除'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing2),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: ordered.map((tag) {
+                          final bool selected = _semanticSelectedTags.contains(tag);
+                          return FilterChip(
+                            label: Text(
+                              tag,
+                              style: TextStyle(
+                                color: selected
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.onSurface,
+                                fontWeight:
+                                    selected ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                            ),
+                            selected: selected,
+                            showCheckmark: false,
+                            backgroundColor:
+                                Theme.of(context).colorScheme.surface,
+                            selectedColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.15),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(AppTheme.radiusSm),
+                            ),
+                            side: selected
+                                ? BorderSide.none
+                                : BorderSide(
+                                    color: Colors.grey.withOpacity(0.2),
+                                    width: 1,
+                                  ),
+                            onSelected: (value) {
+                              setSheetState(() {
+                                if (value) {
+                                  _semanticSelectedTags.add(tag);
+                                } else {
+                                  _semanticSelectedTags.remove(tag);
+                                }
+                              });
+                              setState(() {
+                                if (value) {
+                                  _semanticSelectedTags.add(tag);
+                                } else {
+                                  _semanticSelectedTags.remove(tag);
+                                }
+                                _applySemanticTagFilter();
+                              });
+                            },
+                          );
+                        }).toList(growable: false),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing4),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: AppTheme.spacing4,
+                      right: AppTheme.spacing4,
+                      bottom: MediaQuery.of(context).padding.bottom +
+                          AppTheme.spacing4,
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(
+                          '确定 (${_semanticSelectedTags.isEmpty ? "全部" : "已选${_semanticSelectedTags.length}个"})',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDocTypeFilterSheet() {
+    final List<String> ordered = <String>[
+      kSearchDocTypeDailySummary,
+      kSearchDocTypeMorningInsights,
+      kSearchDocTypeWeeklySummary,
+      kSearchDocTypePersonaArticle,
+      kSearchDocTypeFavoriteNote,
+    ];
+    final Set<String> active =
+        (_docSelectedTypes.isEmpty || _docSelectedTypes.length == _docTabTypes.length)
+            ? <String>{}
+            : Set<String>.from(_docSelectedTypes);
+    final Set<String> temp = Set<String>.from(active);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusMd),
+                  topRight: Radius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(
+                        vertical: AppTheme.spacing3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '类型筛选',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const Spacer(),
+                        if (temp.isNotEmpty)
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() => temp.clear());
+                            },
+                            child: const Text('清除筛选'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing2),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: ordered.map((type) {
+                            final String label = _docTypeLabel(type);
+                            final bool selected = temp.contains(type);
+                            return FilterChip(
+                              label: Text(
+                                label,
+                                style: TextStyle(
+                                  color: selected
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.onSurface,
+                                  fontWeight:
+                                      selected ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                              ),
+                              selected: selected,
+                              showCheckmark: false,
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.surface,
+                              selectedColor: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.15),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 3,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppTheme.radiusSm),
+                              ),
+                              side: selected
+                                  ? BorderSide.none
+                                  : BorderSide(
+                                      color: Colors.grey.withOpacity(0.2),
+                                      width: 1,
+                                    ),
+                              onSelected: (value) {
+                                setSheetState(() {
+                                  if (value) {
+                                    temp.add(type);
+                                  } else {
+                                    temp.remove(type);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(growable: false),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing4),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: AppTheme.spacing4,
+                      right: AppTheme.spacing4,
+                      bottom: MediaQuery.of(context).padding.bottom +
+                          AppTheme.spacing4,
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final Set<String> nextRaw = Set<String>.from(temp);
+                          final Set<String> next =
+                              (nextRaw.isEmpty ||
+                                      nextRaw.length == _docTabTypes.length)
+                                  ? <String>{}
+                                  : nextRaw;
+
+                          bool equals(Set<String> a, Set<String> b) {
+                            if (a.length != b.length) return false;
+                            for (final v in a) {
+                              if (!b.contains(v)) return false;
+                            }
+                            return true;
+                          }
+
+                          final bool changed = !equals(next, active);
+                          Navigator.of(context).pop();
+                          if (!changed) return;
+                          setState(() {
+                            _docSelectedTypes = next;
+                          });
+                          if (_docSearchFinished &&
+                              _lastQuery.trim().isNotEmpty &&
+                              _tabController.index == 3) {
+                            // ignore: unawaited_futures
+                            _searchDocs(_lastQuery);
+                          }
+                        },
+                        child: Text(
+                          '确定 (${(temp.isEmpty || temp.length == _docTabTypes.length) ? "全部" : "已选${temp.length}类"})',
+                        ),
                       ),
                     ),
                   ),
@@ -1900,7 +3989,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   /// 提取摘要：优先从 structured_json.overall_summary，否则回退到 output_text
-  String _extractOverallSummary(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  String _extractOverallSummary(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final v = sj?['overall_summary'];
     if (v is String && v.trim().isNotEmpty) return v.trim();
     final out = (result?['output_text'] as String?)?.trim() ?? '';
@@ -1928,7 +4020,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
   }
 
   /// 提取标签列表：从 categories 字段（可能是 JSON array 或逗号分隔）和 structured_json.categories
-  List<String> _extractCategories(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  List<String> _extractCategories(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final List<String> out = <String>[];
     // 1) result.categories 可能是 JSON 或逗号分隔
     final raw = result?['categories'];
@@ -1967,7 +4062,10 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
         color: fg.withOpacity(0.10),
@@ -1994,7 +4092,12 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
     if (app != null && app.icon != null && app.icon!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Image.memory(app.icon!, width: 20, height: 20, fit: BoxFit.cover),
+        child: Image.memory(
+          app.icon!,
+          width: 20,
+          height: 20,
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Container(
@@ -2020,24 +4123,31 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
 
     // 解析 structured_json
     final Map<String, dynamic>? sj = _tryParseJson(structuredJson);
-    
+
     // 提取摘要和标签
     final Map<String, dynamic> resultMeta = {
       'categories': categoriesRaw,
       'output_text': outputText,
     };
-    final String summary = _extractOverallSummary(resultMeta, sj);
+    final String summaryAll = _extractOverallSummary(resultMeta, sj);
+    final List<String> mergedParts =
+        merged ? splitMergedEventSummaryParts(summaryAll) : const <String>[];
+    final String summary = mergedParts.isNotEmpty ? mergedParts.first : summaryAll;
     final List<String> tags = _extractCategories(resultMeta, sj);
 
     // 解析应用包名
     List<String> packages = <String>[];
     final String? appPkgsDisplay = seg['app_packages_display'] as String?;
     final String? appPkgsRaw = seg['app_packages'] as String?;
-    final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+    final String? pkgSrc =
+        (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
         ? appPkgsDisplay
         : appPkgsRaw;
     if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
-      packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
+      packages = pkgSrc
+          .split(RegExp(r'[,\s]+'))
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
     }
 
     return Padding(
@@ -2076,12 +4186,18 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                 children: [
                   if (merged)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing2,
+                        vertical: 2,
+                      ),
                       constraints: const BoxConstraints(minHeight: 20),
                       decoration: BoxDecoration(
                         color: AppTheme.warning.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                        border: Border.all(
+                          color: AppTheme.warning.withOpacity(0.45),
+                          width: 1,
+                        ),
                       ),
                       child: Text(
                         AppLocalizations.of(context).mergedEventTag,
@@ -2104,11 +4220,15 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
             if (summary.isNotEmpty)
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
+                  final TextStyle? textStyle = Theme.of(
+                    context,
+                  ).textTheme.bodyMedium;
                   // 限制最多 5 行高度
-                  final double lineHeight = (textStyle?.height ?? 1.4) * (textStyle?.fontSize ?? 14.0);
+                  final double lineHeight =
+                      (textStyle?.height ?? 1.4) *
+                      (textStyle?.fontSize ?? 14.0);
                   final double maxHeight = lineHeight * 5.0 + 8.0;
-                  
+
                   return ConstrainedBox(
                     constraints: BoxConstraints(maxHeight: maxHeight),
                     child: ClipRect(
@@ -2170,22 +4290,50 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
       'categories': categoriesRaw,
       'output_text': outputText,
     };
-    final String summary = _extractOverallSummary(resultMeta, sj);
+    final String summaryAll = _extractOverallSummary(resultMeta, sj);
+    final List<String> mergedParts =
+        merged ? splitMergedEventSummaryParts(summaryAll) : const <String>[];
+    final String summary = mergedParts.isNotEmpty ? mergedParts.first : summaryAll;
+    final List<String> originalSummaries = mergedParts.length > 1
+        ? mergedParts.sublist(1)
+        : const <String>[];
     final List<String> tags = _extractCategories(resultMeta, sj);
 
     // 解析应用包名
     List<String> packages = <String>[];
     final String? appPkgsDisplay = seg['app_packages_display'] as String?;
     final String? appPkgsRaw = seg['app_packages'] as String?;
-    final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+    final String? pkgSrc =
+        (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
         ? appPkgsDisplay
         : appPkgsRaw;
     if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
-      packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
+      packages = pkgSrc
+          .split(RegExp(r'[,\s]+'))
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
     }
 
     // 获取样本
-    final samples = await ScreenshotDatabase.instance.listSegmentSamples(segmentId);
+    final samples = await ScreenshotDatabase.instance.listSegmentSamples(
+      segmentId,
+    );
+    final sampleRecords = _mapSamplesToScreenshots(samples);
+    // 预加载 AI NSFW，确保详情弹窗里的图片遮罩与动态一致
+    try {
+      final paths = sampleRecords
+          .map((s) => s.filePath.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+      if (paths.isNotEmpty) {
+        await NsfwPreferenceService.instance.preloadAiNsfwFlags(
+          filePaths: paths,
+        );
+        await NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+          filePaths: paths,
+        );
+      }
+    } catch (_) {}
 
     if (!mounted) return;
 
@@ -2215,9 +4363,13 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                     child: Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+                      margin: const EdgeInsets.symmetric(
+                        vertical: AppTheme.spacing3,
+                      ),
                       decoration: BoxDecoration(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        color: Theme.of(
+                          ctx,
+                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -2241,7 +4393,9 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                           Wrap(
                             spacing: 6,
                             runSpacing: 6,
-                            children: packages.map((pkg) => _buildAppIcon(pkg)).toList(),
+                            children: packages
+                                .map((pkg) => _buildAppIcon(pkg))
+                                .toList(),
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                         ],
@@ -2253,12 +4407,22 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                             children: [
                               if (merged)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
-                                  constraints: const BoxConstraints(minHeight: 20),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.spacing2,
+                                    vertical: 2,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minHeight: 20,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppTheme.warning.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                                    border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+                                    borderRadius: BorderRadius.circular(
+                                      AppTheme.radiusSm,
+                                    ),
+                                    border: Border.all(
+                                      color: AppTheme.warning.withOpacity(0.45),
+                                      width: 1,
+                                    ),
                                   ),
                                   child: Text(
                                     AppLocalizations.of(context).mergedEventTag,
@@ -2286,6 +4450,117 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                         ],
+                        if (merged && originalSummaries.isNotEmpty) ...[
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withOpacity(0.28),
+                              borderRadius:
+                                  BorderRadius.circular(AppTheme.radiusSm),
+                              border: Border.all(
+                                color: Theme.of(ctx)
+                                    .colorScheme
+                                    .outline
+                                    .withOpacity(0.22),
+                              ),
+                            ),
+                            child: Theme(
+                              data: Theme.of(ctx).copyWith(
+                                dividerColor: Colors.transparent,
+                              ),
+                              child: ExpansionTile(
+                                key: PageStorageKey<String>(
+                                  'seg:$segmentId:mergedOriginalsDetail',
+                                ),
+                                tilePadding: const EdgeInsets.symmetric(
+                                  horizontal: AppTheme.spacing3,
+                                ),
+                                childrenPadding: const EdgeInsets.fromLTRB(
+                                  AppTheme.spacing3,
+                                  0,
+                                  AppTheme.spacing3,
+                                  AppTheme.spacing3,
+                                ),
+                                title: Text(
+                                  AppLocalizations.of(ctx)
+                                      .mergedOriginalEventsTitle(
+                                        originalSummaries.length,
+                                      ),
+                                  style: Theme.of(ctx)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                children: originalSummaries
+                                    .asMap()
+                                    .entries
+                                    .map((entry) {
+                                  final int index = entry.key;
+                                  final String part = entry.value;
+                                  return Container(
+                                    margin: EdgeInsets.only(
+                                      top: index == 0
+                                          ? 0
+                                          : AppTheme.spacing2,
+                                    ),
+                                    padding: const EdgeInsets.all(
+                                      AppTheme.spacing3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx)
+                                          .colorScheme
+                                          .surface
+                                          .withOpacity(0.45),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radiusSm,
+                                      ),
+                                      border: Border(
+                                        left: BorderSide(
+                                          color: Theme.of(ctx)
+                                              .colorScheme
+                                              .outline
+                                              .withOpacity(0.45),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                          AppLocalizations.of(ctx)
+                                              .mergedOriginalEventTitle(
+                                                index + 1,
+                                              ),
+                                          style: Theme.of(ctx)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color:
+                                                    AppTheme.mutedForeground,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        _buildHighlightedMarkdown(
+                                          context: ctx,
+                                          text: part,
+                                          style: Theme.of(ctx)
+                                              .textTheme
+                                              .bodyMedium,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(growable: false),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppTheme.spacing3),
+                        ],
                         // 样本图片
                         if (samples.isNotEmpty) ...[
                           const Divider(),
@@ -2295,35 +4570,41 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                             style: Theme.of(ctx).textTheme.titleSmall,
                           ),
                           const SizedBox(height: AppTheme.spacing2),
-                          Builder(
-                            builder: (c) {
-                              final sampleRecords = _mapSamplesToScreenshots(samples);
-                              return GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 3,
                                   crossAxisSpacing: 4,
                                   mainAxisSpacing: 4,
                                   childAspectRatio: 9 / 16,
                                 ),
-                                itemCount: sampleRecords.length,
-                                itemBuilder: (c, i) {
-                                  final rec = sampleRecords[i];
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                                    child: ScreenshotItemWidget(
-                                      screenshot: rec,
-                                      baseDir: _baseDir,
-                                      appInfoMap: _appInfoByPackage,
-                                      privacyMode: _privacyMode,
-                                      onTap: () => _openSampleViewer(sampleRecords, i),
-                                      showCheckbox: false,
-                                      showFavoriteButton: false,
-                                      showNsfwButton: false,
-                                    ),
+                            itemCount: sampleRecords.length,
+                            itemBuilder: (c, i) {
+                              final rec = sampleRecords[i];
+                              final bool isNsfw =
+                                  NsfwPreferenceService.instance.shouldMaskCached(
+                                    rec,
                                   );
-                                },
+                              return ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSm,
+                                ),
+                                child: ScreenshotItemWidget(
+                                  screenshot: rec,
+                                  baseDir: _baseDir,
+                                  appInfoMap: _appInfoByPackage,
+                                  privacyMode: _privacyMode,
+                                  aiMetaBadgePlacement:
+                                      AiMetaBadgePlacement.topRight,
+                                  isNsfwFlagged: isNsfw,
+                                  onTap: () =>
+                                      _openSampleViewer(sampleRecords, i),
+                                  showCheckbox: false,
+                                  showFavoriteButton: false,
+                                  showNsfwButton: false,
+                                ),
                               );
                             },
                           ),
@@ -2362,8 +4643,8 @@ class _SearchPageState extends State<SearchPage> with SingleTickerProviderStateM
                   Text(
                     l10n.searchInputHintOcr,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppTheme.mutedForeground,
-                        ),
+                      color: AppTheme.mutedForeground,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -2509,7 +4790,9 @@ class _FilterSheetState extends State<_FilterSheet> {
       ),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppTheme.radiusMd)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppTheme.radiusMd),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

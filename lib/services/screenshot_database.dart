@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -16,6 +17,7 @@ import 'path_service.dart';
 
 part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
+part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
 
 /// 截屏数据库服务
@@ -109,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 15,
+          version: 22,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -147,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 15,
+          version: 22,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -180,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 14,
+          version: 22,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -207,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 15,
+        version: 22,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -584,6 +586,9 @@ class ScreenshotDatabase {
 
     // 全局设置表，确保导出时包含所有配置
     await _createUserSettingsTable(db);
+
+    // 统一 SearchIndex（可选用，不影响现有搜索路径）
+    await _createSearchIndexTables(db);
   }
 
   /// 升级回调：按版本增量迁移
@@ -641,7 +646,7 @@ class ScreenshotDatabase {
       } catch (_) {}
     }
     if (oldVersion < 15) {
-      // 为 segment_samples 增加多模态检索所需字段
+      // 为 segment_samples 增加 pHash/关键帧字段
       try {
         await db.execute('ALTER TABLE segment_samples ADD COLUMN p_hash INTEGER');
       } catch (_) {}
@@ -650,23 +655,6 @@ class ScreenshotDatabase {
       } catch (_) {}
       try {
         await db.execute('ALTER TABLE segment_samples ADD COLUMN hash_distance INTEGER');
-      } catch (_) {}
-
-      // 确保 embeddings 与 fts_content 表存在（在 _createAiTables 中也会幂等创建）
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS embeddings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sample_id INTEGER UNIQUE,
-            segment_id INTEGER,
-            embedding BLOB,
-            model_version TEXT,
-            created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
-          )
-        ''');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id)');
       } catch (_) {}
 
       // 尝试创建 fts_content FTS5 虚拟表（如不支持 FTS5 则忽略）
@@ -685,6 +673,69 @@ class ScreenshotDatabase {
           await FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString());
         } catch (_) {}
       }
+    }
+    // v18: 合并链路（非破坏性合并）字段
+    if (oldVersion < 18) {
+      try {
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_attempted INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merged_flag INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segments ADD COLUMN merged_into_id INTEGER');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_segments_merged_into ON segments(merged_into_id)',
+        );
+      } catch (_) {}
+    }
+    // v19: 移除 embeddings 相关表与配置
+    if (oldVersion < 19) {
+      try {
+        await db.execute('DROP TABLE IF EXISTS embeddings');
+      } catch (_) {}
+      try {
+        await db.execute('DROP INDEX IF EXISTS idx_embeddings_segment');
+      } catch (_) {}
+      try {
+        await db.delete(
+          'user_settings',
+          where: 'key LIKE ?',
+          whereArgs: const <Object?>['embedding_%'],
+        );
+      } catch (_) {}
+    }
+    // v21: 统一 SearchIndex（search_docs + FTS）
+    if (oldVersion < 21) {
+      await _createSearchIndexTables(db);
+    }
+    // v22: segments 增加 segment_kind（当前仅使用 global）
+    if (oldVersion < 22) {
+      try {
+        await db.execute(
+          "ALTER TABLE segments ADD COLUMN segment_kind TEXT NOT NULL DEFAULT 'global'",
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          "UPDATE segments SET segment_kind = 'global' WHERE segment_kind IS NULL OR TRIM(segment_kind) = ''",
+        );
+      } catch (_) {}
+      // Android 侧历史版本可能创建了“全局唯一窗口”索引；这里替换为 segment_kind=global 的部分唯一约束。
+      try {
+        await db.execute('DROP INDEX IF EXISTS uniq_segments_window');
+      } catch (_) {}
+      try {
+        await db.execute(
+          "CREATE UNIQUE INDEX IF NOT EXISTS uniq_segments_window_global ON segments(start_time, end_time) WHERE segment_kind = 'global'",
+        );
+      } catch (_) {}
     }
   }
 

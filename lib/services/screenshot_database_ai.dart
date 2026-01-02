@@ -22,7 +22,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_messages_conv ON ai_messages(conversation_id, id)',
+    );
 
     // 新增：会话列表（独立于模型/提供商选择）
     await db.execute('''
@@ -38,10 +40,14 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated ON ai_conversations(updated_at DESC, pinned DESC, id DESC)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated ON ai_conversations(updated_at DESC, pinned DESC, id DESC)',
+    );
 
     // 首次升级/创建时，将 ai_messages 中的会话ID迁移为显式会话条目，并初始化激活会话
-    try { await _migrateLegacyConversations(db); } catch (_) {}
+    try {
+      await _migrateLegacyConversations(db);
+    } catch (_) {}
 
     // [v6] legacy removed: ai_site_groups 已移除（统一走 ai_providers + ai_contexts）
 
@@ -64,9 +70,15 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(enabled, order_index, id)');
-    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_providers_name ON ai_providers(name)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_providers_default ON ai_providers(is_default)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(enabled, order_index, id)',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_providers_name ON ai_providers(name)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_providers_default ON ai_providers(is_default)',
+    );
 
     // AI 上下文选中（chat/segments 等各自独立）
     await db.execute('''
@@ -87,12 +99,23 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         duration_sec INTEGER NOT NULL,
         sample_interval_sec INTEGER NOT NULL,
         status TEXT NOT NULL,
+        segment_kind TEXT NOT NULL DEFAULT 'global',
         app_packages TEXT,
+        merge_attempted INTEGER NOT NULL DEFAULT 0,
+        merged_flag INTEGER NOT NULL DEFAULT 0,
+        merged_into_id INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)',
+    );
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_segments_merged_into ON segments(merged_into_id)',
+      );
+    } catch (_) {}
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS segment_samples (
@@ -110,19 +133,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         UNIQUE(segment_id, file_path)
       )
     ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)');
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS embeddings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sample_id INTEGER UNIQUE,
-        segment_id INTEGER,
-        embedding BLOB,
-        model_version TEXT,
-        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
-      )
-    ''');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_embeddings_segment ON embeddings(segment_id)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)',
+    );
 
     try {
       await db.execute('''
@@ -135,7 +148,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         )
       ''');
     } catch (e) {
-      try { FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString()); } catch (_) {}
+      try {
+        FlutterLogger.nativeWarn('DB', 'FTS5（fts_content）不支持：' + e.toString());
+      } catch (_) {}
     }
     await db.execute('''
       CREATE TABLE IF NOT EXISTS segment_results (
@@ -148,6 +163,29 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
+
+    // AI 图片元数据表：按 file_path 存储标签/自然语言描述（可跨页面复用）
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_image_meta (
+        file_path TEXT PRIMARY KEY,
+        tags_json TEXT,
+        description TEXT,
+        description_range TEXT,
+        nsfw INTEGER NOT NULL DEFAULT 0,
+        segment_id INTEGER,
+        capture_time INTEGER,
+        lang TEXT,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_image_meta_nsfw ON ai_image_meta(nsfw, updated_at DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_image_meta_updated ON ai_image_meta(updated_at DESC)',
+    );
+    await _createAiImageMetaFts(db);
+    await _backfillAiImageMetaFts(db);
     // 每日总结表：按日期聚合（YYYY-MM-DD）
     await db.execute('''
       CREATE TABLE IF NOT EXISTS daily_summaries (
@@ -164,19 +202,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
 
     await _createMorningInsightsTable(db);
     await _createPersonaArticlesTable(db);
-    
+
     // 创建动态搜索 FTS 索引
     await _createSegmentResultsFts(db);
     await _backfillSegmentResultsFts(db);
-  }
-
-  Future<int> clearAllEmbeddings() async {
-    final db = await database;
-    try {
-      return await db.delete('embeddings');
-    } catch (_) {
-      return 0;
-    }
   }
 
   // v6: 清理旧的 AI 分组表与老配置键（首次打开/升级时执行）
@@ -186,7 +215,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     } catch (_) {}
     try {
       await db.execute(
-        "DELETE FROM ai_settings WHERE key IN ('base_url','api_key','model','active_group_id')"
+        "DELETE FROM ai_settings WHERE key IN ('base_url','api_key','model','active_group_id')",
       );
     } catch (_) {}
   }
@@ -212,7 +241,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> setAiSetting(String key, String? value) async {
     final db = await database;
     if (value == null) {
-      try { await db.delete('ai_settings', where: 'key = ?', whereArgs: [key]); } catch (_) {}
+      try {
+        await db.delete('ai_settings', where: 'key = ?', whereArgs: [key]);
+      } catch (_) {}
       return;
     }
     try {
@@ -222,7 +253,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       );
     } catch (_) {
       try {
-        final count = await db.update('ai_settings', {'value': value}, where: 'key = ?', whereArgs: [key]);
+        final count = await db.update(
+          'ai_settings',
+          {'value': value},
+          where: 'key = ?',
+          whereArgs: [key],
+        );
         if (count == 0) {
           await db.insert('ai_settings', {'key': key, 'value': value});
         }
@@ -230,7 +266,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAiMessages(String conversationId, {int? limit, int? offset}) async {
+  Future<List<Map<String, dynamic>>> getAiMessages(
+    String conversationId, {
+    int? limit,
+    int? offset,
+  }) async {
     try {
       final db = await database;
       final rows = await db.query(
@@ -247,57 +287,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  Future<List<Map<String, dynamic>>> listSamplesMissingEmbeddingsCursor({
-    int limit = 1000,
-    int? segmentId,
-    int? beforeCaptureTime,
-    int? beforeId,
-  }) async {
-    final db = await database;
-    try {
-      final int n = limit <= 0 ? 1000 : limit;
-      final List<Object?> args = <Object?>[];
-      final List<String> where = <String>[
-        'e.sample_id IS NULL',
-      ];
-      if (segmentId != null) {
-        where.add('ss.segment_id = ?');
-        args.add(segmentId);
-      }
-
-      if (beforeCaptureTime != null && beforeId != null) {
-        where.add('(ss.capture_time < ? OR (ss.capture_time = ? AND ss.id < ?))');
-        args.add(beforeCaptureTime);
-        args.add(beforeCaptureTime);
-        args.add(beforeId);
-      }
-
-      final String sql = '''
-        SELECT
-          ss.id,
-          ss.segment_id,
-          ss.capture_time,
-          ss.file_path,
-          ss.app_package_name,
-          ss.app_name,
-          ss.position_index
-        FROM segment_samples ss
-        LEFT JOIN embeddings e ON e.sample_id = ss.id
-        WHERE ${where.join(' AND ')}
-        ORDER BY ss.capture_time DESC, ss.id DESC
-        LIMIT ?
-      ''';
-      args.add(n);
-
-      final rows = await db.rawQuery(sql, args);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
-  }
-
   /// 仅返回会话的“最新 N 条”消息，按 id DESC 读取后再倒序为升序返回
-  Future<List<Map<String, dynamic>>> getAiMessagesTail(String conversationId, {int limit = 40}) async {
+  Future<List<Map<String, dynamic>>> getAiMessagesTail(
+    String conversationId, {
+    int limit = 40,
+  }) async {
     try {
       final db = await database;
       final rowsDesc = await db.query(
@@ -308,13 +302,22 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         limit: limit,
       );
       // UI 仍按时间顺序展示
-      return rowsDesc.reversed.map((e) => Map<String, dynamic>.from(e)).toList();
+      return rowsDesc.reversed
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
     }
   }
 
-  Future<void> appendAiMessage(String conversationId, String role, String content, {int? createdAt, String? reasoningContent, int? reasoningDurationMs}) async {
+  Future<void> appendAiMessage(
+    String conversationId,
+    String role,
+    String content, {
+    int? createdAt,
+    String? reasoningContent,
+    int? reasoningDurationMs,
+  }) async {
     try {
       final db = await database;
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -332,13 +335,19 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         'role': role,
         'content': content,
         if (reasoningContent != null) 'reasoning_content': reasoningContent,
-        if (reasoningDurationMs != null) 'reasoning_duration_ms': reasoningDurationMs,
+        if (reasoningDurationMs != null)
+          'reasoning_duration_ms': reasoningDurationMs,
         if (createdAt != null) 'created_at': createdAt,
       });
 
       // 更新会话的最近更新时间
       try {
-        await db.update('ai_conversations', {'updated_at': now}, where: 'cid = ?', whereArgs: [conversationId]);
+        await db.update(
+          'ai_conversations',
+          {'updated_at': now},
+          where: 'cid = ?',
+          whereArgs: [conversationId],
+        );
       } catch (_) {}
     } catch (_) {}
   }
@@ -346,7 +355,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> clearAiConversation(String conversationId) async {
     try {
       final db = await database;
-      await db.delete('ai_messages', where: 'conversation_id = ?', whereArgs: [conversationId]);
+      await db.delete(
+        'ai_messages',
+        where: 'conversation_id = ?',
+        whereArgs: [conversationId],
+      );
     } catch (_) {}
   }
 
@@ -354,7 +367,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> _migrateLegacyConversations(DatabaseExecutor exec) async {
     try {
       // 若已有会话条目：兜底写入激活键（直接使用 exec，避免递归打开 DB）
-      final exists = await exec.query('ai_conversations', columns: ['id'], limit: 1);
+      final exists = await exec.query(
+        'ai_conversations',
+        columns: ['id'],
+        limit: 1,
+      );
       if (exists.isNotEmpty) {
         try {
           final activeRows = await exec.query(
@@ -364,7 +381,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
             whereArgs: ['chat_active_cid'],
             limit: 1,
           );
-          final hasActive = activeRows.isNotEmpty && ((activeRows.first['value'] as String?)?.trim().isNotEmpty == true);
+          final hasActive =
+              activeRows.isNotEmpty &&
+              ((activeRows.first['value'] as String?)?.trim().isNotEmpty ==
+                  true);
           if (!hasActive) {
             final r2 = await exec.query(
               'ai_conversations',
@@ -372,8 +392,13 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
               orderBy: 'pinned DESC, updated_at DESC, id DESC',
               limit: 1,
             );
-            final cid = r2.isNotEmpty ? ((r2.first['cid'] as String?) ?? 'default') : 'default';
-            await exec.execute('INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)', ['chat_active_cid', cid]);
+            final cid = r2.isNotEmpty
+                ? ((r2.first['cid'] as String?) ?? 'default')
+                : 'default';
+            await exec.execute(
+              'INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)',
+              ['chat_active_cid', cid],
+            );
           }
         } catch (_) {}
         return;
@@ -382,7 +407,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       // 从历史消息推断所有会话ID并生成会话条目
       List<Map<String, Object?>> mids = [];
       try {
-        mids = await exec.rawQuery('SELECT DISTINCT conversation_id AS cid FROM ai_messages');
+        mids = await exec.rawQuery(
+          'SELECT DISTINCT conversation_id AS cid FROM ai_messages',
+        );
       } catch (_) {}
 
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -397,7 +424,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         } catch (_) {}
         try {
-          await exec.execute('INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)', ['chat_active_cid', 'default']);
+          await exec.execute(
+            'INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)',
+            ['chat_active_cid', 'default'],
+          );
         } catch (_) {}
         return;
       }
@@ -406,7 +436,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         final cid = (m['cid'] as String?) ?? 'default';
         final String title = (cid == 'default')
             ? '默认会话'
-            : (cid.startsWith('group:') ? ('模型会话 ' + cid.substring(6)) : ('会话 ' + cid));
+            : (cid.startsWith('group:')
+                  ? ('模型会话 ' + cid.substring(6))
+                  : ('会话 ' + cid));
         try {
           await exec.insert('ai_conversations', {
             'cid': cid,
@@ -419,20 +451,39 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
 
       // 初始化激活会话：优先 default -> 否则取最近更新
       try {
-        final r = await exec.query('ai_conversations', columns: ['cid'], where: 'cid = ?', whereArgs: ['default'], limit: 1);
+        final r = await exec.query(
+          'ai_conversations',
+          columns: ['cid'],
+          where: 'cid = ?',
+          whereArgs: ['default'],
+          limit: 1,
+        );
         String cid;
         if (r.isNotEmpty) {
           cid = (r.first['cid'] as String?) ?? 'default';
         } else {
-          final r2 = await exec.query('ai_conversations', columns: ['cid'], orderBy: 'updated_at DESC, id DESC', limit: 1);
-          cid = r2.isNotEmpty ? ((r2.first['cid'] as String?) ?? 'default') : 'default';
+          final r2 = await exec.query(
+            'ai_conversations',
+            columns: ['cid'],
+            orderBy: 'updated_at DESC, id DESC',
+            limit: 1,
+          );
+          cid = r2.isNotEmpty
+              ? ((r2.first['cid'] as String?) ?? 'default')
+              : 'default';
         }
-        await exec.execute('INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)', ['chat_active_cid', cid]);
+        await exec.execute(
+          'INSERT OR REPLACE INTO ai_settings(key, value) VALUES(?, ?)',
+          ['chat_active_cid', cid],
+        );
       } catch (_) {}
     } catch (_) {}
   }
 
-  Future<List<Map<String, dynamic>>> listAiConversations({int? limit, int? offset}) async {
+  Future<List<Map<String, dynamic>>> listAiConversations({
+    int? limit,
+    int? offset,
+  }) async {
     final db = await database;
     try {
       final rows = await db.query(
@@ -450,7 +501,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<Map<String, dynamic>?> getAiConversationByCid(String cid) async {
     final db = await database;
     try {
-      final rows = await db.query('ai_conversations', where: 'cid = ?', whereArgs: [cid], limit: 1);
+      final rows = await db.query(
+        'ai_conversations',
+        where: 'cid = ?',
+        whereArgs: [cid],
+        limit: 1,
+      );
       if (rows.isEmpty) return null;
       return rows.first;
     } catch (_) {
@@ -458,12 +514,20 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  String _genConvCid() => 'c' + DateTime.now().millisecondsSinceEpoch.toString();
+  String _genConvCid() =>
+      'c' + DateTime.now().millisecondsSinceEpoch.toString();
 
-  Future<String> createAiConversation({String? title, int? providerId, String? model, String? cid}) async {
+  Future<String> createAiConversation({
+    String? title,
+    int? providerId,
+    String? model,
+    String? cid,
+  }) async {
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final theCid = (cid == null || cid.trim().isEmpty) ? _genConvCid() : cid.trim();
+    final theCid = (cid == null || cid.trim().isEmpty)
+        ? _genConvCid()
+        : cid.trim();
     try {
       await db.insert('ai_conversations', {
         'cid': theCid,
@@ -485,7 +549,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     try {
       final count = await db.update(
         'ai_conversations',
-        {'title': title.trim(), 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        {
+          'title': title.trim(),
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
         where: 'cid = ?',
         whereArgs: [cid],
       );
@@ -501,15 +568,41 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       final swTotal = Stopwatch()..start();
       await db.transaction((txn) async {
         final swMsg = Stopwatch()..start();
-        try { await txn.delete('ai_messages', where: 'conversation_id = ?', whereArgs: [cid]); } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_messages',
+            where: 'conversation_id = ?',
+            whereArgs: [cid],
+          );
+        } catch (_) {}
         swMsg.stop();
         final swConv = Stopwatch()..start();
-        await txn.delete('ai_conversations', where: 'cid = ?', whereArgs: [cid]);
+        await txn.delete(
+          'ai_conversations',
+          where: 'cid = ?',
+          whereArgs: [cid],
+        );
         swConv.stop();
-        try { await FlutterLogger.nativeInfo('DB', 'deleteAiConversation txn parts ms msg='+swMsg.elapsedMilliseconds.toString()+' conv='+swConv.elapsedMilliseconds.toString()); } catch (_) {}
+        try {
+          await FlutterLogger.nativeInfo(
+            'DB',
+            'deleteAiConversation 事务耗时(毫秒)：msg=' +
+                swMsg.elapsedMilliseconds.toString() +
+                ' conv=' +
+                swConv.elapsedMilliseconds.toString(),
+          );
+        } catch (_) {}
       });
       swTotal.stop();
-      try { await FlutterLogger.nativeInfo('DB', 'deleteAiConversation total ms='+swTotal.elapsedMilliseconds.toString()+' cid='+cid); } catch (_) {}
+      try {
+        await FlutterLogger.nativeInfo(
+          'DB',
+          'deleteAiConversation 总耗时(毫秒)=' +
+              swTotal.elapsedMilliseconds.toString() +
+              ' cid=' +
+              cid,
+        );
+      } catch (_) {}
       return true;
     } catch (_) {
       return false;
@@ -519,7 +612,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> touchAiConversation(String cid) async {
     final db = await database;
     try {
-      await db.update('ai_conversations', {'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'cid = ?', whereArgs: [cid]);
+      await db.update(
+        'ai_conversations',
+        {'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'cid = ?',
+        whereArgs: [cid],
+      );
     } catch (_) {}
   }
 
@@ -529,7 +627,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     try {
       final rows = await db.query(
         'ai_providers',
-        orderBy: 'enabled DESC, order_index ASC, id ASC'
+        orderBy: 'enabled DESC, order_index ASC, id ASC',
       );
       return rows;
     } catch (_) {
@@ -540,7 +638,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<Map<String, dynamic>?> getAIProviderById(int id) async {
     final db = await database;
     try {
-      final rows = await db.query('ai_providers', where: 'id = ?', whereArgs: [id], limit: 1);
+      final rows = await db.query(
+        'ai_providers',
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
       if (rows.isEmpty) return null;
       return rows.first;
     } catch (_) {
@@ -613,7 +716,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       if (baseUrl != null) data['base_url'] = baseUrl.trim();
       if (chatPath != null) data['chat_path'] = chatPath.trim();
       if (setModelsPath) data['models_path'] = modelsPath?.trim();
-      if (useResponseApi != null) data['use_response_api'] = useResponseApi ? 1 : 0;
+      if (useResponseApi != null)
+        data['use_response_api'] = useResponseApi ? 1 : 0;
       if (enabled != null) data['enabled'] = enabled ? 1 : 0;
       if (isDefault != null) data['is_default'] = isDefault ? 1 : 0;
       if (modelsJson != null) data['models_json'] = modelsJson;
@@ -632,7 +736,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         return true;
       }
 
-      final count = await db.update('ai_providers', data, where: 'id = ?', whereArgs: [id]);
+      final count = await db.update(
+        'ai_providers',
+        data,
+        where: 'id = ?',
+        whereArgs: [id],
+      );
       if (count > 0) {
         if (isDefault == true) {
           await setDefaultAIProvider(id);
@@ -656,7 +765,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<bool> deleteAIProvider(int id) async {
     final db = await database;
     try {
-      final count = await db.delete('ai_providers', where: 'id = ?', whereArgs: [id]);
+      final count = await db.delete(
+        'ai_providers',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
       return count > 0;
     } catch (_) {
       return false;
@@ -667,8 +780,15 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     final db = await database;
     try {
       await db.transaction((txn) async {
-        await txn.update('ai_providers', {'is_default': 0}, where: 'is_default = 1');
-        await txn.update('ai_providers', {'is_default': 1}, where: 'id = ?', whereArgs: [id]);
+        await txn.update('ai_providers', {
+          'is_default': 0,
+        }, where: 'is_default = 1');
+        await txn.update(
+          'ai_providers',
+          {'is_default': 1},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
       });
       return true;
     } catch (_) {
@@ -679,7 +799,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<Map<String, dynamic>?> getDefaultAIProvider() async {
     final db = await database;
     try {
-      final rows = await db.query('ai_providers', where: 'is_default = 1', limit: 1);
+      final rows = await db.query(
+        'ai_providers',
+        where: 'is_default = 1',
+        limit: 1,
+      );
       if (rows.isEmpty) return null;
       return rows.first;
     } catch (_) {
@@ -687,10 +811,18 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  Future<bool> saveAIProviderModelsJson({required int id, required String modelsJson}) async {
+  Future<bool> saveAIProviderModelsJson({
+    required int id,
+    required String modelsJson,
+  }) async {
     final db = await database;
     try {
-      final count = await db.update('ai_providers', {'models_json': modelsJson}, where: 'id = ?', whereArgs: [id]);
+      final count = await db.update(
+        'ai_providers',
+        {'models_json': modelsJson},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
       return count > 0;
     } catch (_) {
       return false;
@@ -720,7 +852,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     try {
       await db.update(
         'ai_providers',
-        {'api_key': (apiKey == null || apiKey.trim().isEmpty) ? null : apiKey.trim()},
+        {
+          'api_key': (apiKey == null || apiKey.trim().isEmpty)
+              ? null
+              : apiKey.trim(),
+        },
         where: 'id = ?',
         whereArgs: [id],
       );
@@ -751,14 +887,17 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.execute('''
+      await db.execute(
+        '''
         INSERT INTO ai_contexts (context, provider_id, model, updated_at)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(context) DO UPDATE SET
           provider_id = excluded.provider_id,
           model = excluded.model,
           updated_at = excluded.updated_at
-      ''', [context, providerId, model, DateTime.now().millisecondsSinceEpoch]);
+      ''',
+        [context, providerId, model, DateTime.now().millisecondsSinceEpoch],
+      );
       return true;
     } catch (_) {
       return false;
@@ -769,29 +908,48 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<Map<String, dynamic>?> getActiveSegment() async {
     final db = await database;
     try {
-      final rows = await db.query(
-        'segments',
-        where: 'status = ?',
-        whereArgs: ['collecting'],
-        orderBy: 'id DESC',
-        limit: 1,
+      // 兜底：若某段已产出总结（segment_results 有内容）但 status 仍是 collecting，
+      // 不应在 UI 顶部继续显示“进行中”（常见于原生链路合并/网络卡住导致状态未及时落库）。
+      const String noSummaryCond =
+          "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
+      final rows = await db.rawQuery(
+        '''
+        SELECT s.*
+        FROM segments s
+        LEFT JOIN segment_results r ON r.segment_id = s.id
+        WHERE s.status = ?
+          AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
+          AND ($noSummaryCond)
+        ORDER BY s.id DESC
+        LIMIT 1
+        ''',
+        ['collecting'],
       );
       if (rows.isEmpty) return null;
       return rows.first;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
-  Future<List<Map<String, dynamic>>> listSegments({int limit = 50, int offset = 0}) async {
+  Future<List<Map<String, dynamic>>> listSegments({
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final db = await database;
     try {
       final rows = await db.query(
         'segments',
+        where:
+            "merged_into_id IS NULL AND (segment_kind IS NULL OR segment_kind = 'global')",
         orderBy: 'id DESC',
         limit: limit,
         offset: offset,
       );
       return rows;
-    } catch (_) { return <Map<String, dynamic>>[]; }
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
   }
 
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
@@ -800,19 +958,37 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// - 可选按 start_time 进行时间范围过滤（用于“动态”页按日期窗口增量加载）
   Future<List<Map<String, dynamic>>> listSegmentsEx({
     int limit = 50,
+    int offset = 0,
     bool onlyNoSummary = false,
     int? startMillis,
     int? endMillis,
+    String? appPackageName,
   }) async {
     final db = await database;
     try {
+      int safeOffset = offset;
+      if (safeOffset < 0) safeOffset = 0;
+
       const String noSummaryCond =
           "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
       const String hasSamplesCond =
           "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
       // 组合 WHERE 子句
-      final List<String> whereClauses = <String>[hasSamplesCond];
+      final List<String> whereClauses = <String>[
+        's.merged_into_id IS NULL',
+        "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+      ];
       final List<Object?> params = <Object?>[];
+
+      final String appPkg = (appPackageName ?? '').trim();
+      if (appPkg.isNotEmpty) {
+        whereClauses.add(
+          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id AND ss.app_package_name = ?)",
+        );
+        params.add(appPkg);
+      } else {
+        whereClauses.add(hasSamplesCond);
+      }
 
       if (startMillis != null) {
         whereClauses.add('s.start_time >= ?');
@@ -825,8 +1001,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       if (onlyNoSummary) {
         whereClauses.add('(' + noSummaryCond + ')');
       }
-      final String whereSql = whereClauses.isEmpty ? '' : ('WHERE ' + whereClauses.join(' AND '));
-      final String sql = '''
+      final String whereSql = whereClauses.isEmpty
+          ? ''
+          : ('WHERE ' + whereClauses.join(' AND '));
+      final String sql =
+          '''
         SELECT
           s.*,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
@@ -843,9 +1022,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         LEFT JOIN segment_results r ON r.segment_id = s.id
         $whereSql
         ORDER BY s.start_time DESC, s.id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       ''';
       params.add(limit);
+      params.add(safeOffset);
       final rows = await db.rawQuery(sql, params);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
@@ -856,9 +1036,26 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// 触发一次原生端的段落推进/补救扫描（用于点击刷新时重试缺失总结）
   Future<bool> triggerSegmentTick() async {
     try {
-      final res = await ScreenshotDatabase._channel.invokeMethod('triggerSegmentTick');
+      try {
+        await FlutterLogger.nativeInfo('DB', 'triggerSegmentTick 调用');
+      } catch (_) {}
+      final res = await ScreenshotDatabase._channel.invokeMethod(
+        'triggerSegmentTick',
+      );
+      try {
+        await FlutterLogger.nativeInfo(
+          'DB',
+          'triggerSegmentTick 结果=${res == true} raw=${res?.toString() ?? 'null'}',
+        );
+      } catch (_) {}
       return res == true;
-    } catch (_) {
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeError(
+          'DB',
+          'triggerSegmentTick 失败 err=${e.toString()}',
+        );
+      } catch (_) {}
       return false;
     }
   }
@@ -867,10 +1064,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// force=true 时无视已有结果与时间范围，直接强制重跑
   Future<int> retrySegments(List<int> ids, {bool force = false}) async {
     try {
-      final res = await ScreenshotDatabase._channel.invokeMethod('retrySegments', {
-        'ids': ids,
-        'force': force,
-      });
+      final res = await ScreenshotDatabase._channel.invokeMethod(
+        'retrySegments',
+        {'ids': ids, 'force': force},
+      );
       if (res is int) return res;
       if (res is num) return res.toInt();
       return 0;
@@ -882,8 +1079,14 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
     final db = await database;
     try {
-      final String sql = 'SELECT id, segment_id, capture_time, file_path, app_package_name, app_name, position_index FROM segment_samples WHERE segment_id = ? ORDER BY position_index ASC';
-      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceAll('?', segmentId.toString())); } catch (_) {}
+      final String sql =
+          'SELECT id, segment_id, capture_time, file_path, app_package_name, app_name, position_index FROM segment_samples WHERE segment_id = ? ORDER BY position_index ASC';
+      try {
+        await FlutterLogger.nativeDebug(
+          'DB',
+          'SQL: ' + sql.replaceAll('?', segmentId.toString()),
+        );
+      } catch (_) {}
       final rows = await db.query(
         'segment_samples',
         where: 'segment_id = ?',
@@ -891,30 +1094,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         orderBy: 'position_index ASC',
       );
       return rows;
-    } catch (_) { return <Map<String, dynamic>>[]; }
-  }
-
-  Future<List<Map<String, dynamic>>> listSegmentSamplesMissingEmbeddings(
-    int segmentId, {
-    int limit = 200,
-    bool onlyKeyframes = true,
-  }) async {
-    final db = await database;
-    try {
-      final String keyframeCond = onlyKeyframes ? 'AND ss.is_keyframe = 1' : '';
-      final String sql = '''
-        SELECT ss.*
-        FROM segment_samples ss
-        LEFT JOIN embeddings e ON e.sample_id = ss.id
-        WHERE ss.segment_id = ?
-          AND e.sample_id IS NULL
-          $keyframeCond
-        ORDER BY ss.position_index ASC, ss.id ASC
-        LIMIT ?
-      ''';
-      final rows = await db.rawQuery(sql, <Object?>[segmentId, limit]);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) { return <Map<String, dynamic>>[]; }
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<List<Map<String, dynamic>>> listLatestSamples({int limit = 10}) async {
@@ -926,11 +1108,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         limit: limit,
       );
       return rows;
-    } catch (_) { return <Map<String, dynamic>>[]; }
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
   }
 
   /// 列出某个 segment 内最新的 N 条样本（按 capture_time DESC）。
-  /// - 用于“仅对某段做向量化/语义搜索窗口”的场景。
   Future<List<Map<String, dynamic>>> listLatestSamplesInSegment(
     int segmentId, {
     int limit = 1000,
@@ -950,199 +1133,17 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  Future<List<Map<String, dynamic>>> listLatestSamplesMissingEmbeddings({
-    int limit = 10,
-    bool onlyKeyframes = true,
-  }) async {
-    final db = await database;
-    try {
-      final String keyframeCond = onlyKeyframes ? 'AND ss.is_keyframe = 1' : '';
-      final String sql = '''
-        SELECT ss.*
-        FROM segment_samples ss
-        LEFT JOIN embeddings e ON e.sample_id = ss.id
-        WHERE e.sample_id IS NULL
-        $keyframeCond
-        ORDER BY ss.capture_time DESC, ss.id DESC
-        LIMIT ?
-      ''';
-      final rows = await db.rawQuery(sql, <Object?>[limit]);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) { return <Map<String, dynamic>>[]; }
-  }
-
-  /// 仅在“最新 N 张样本窗口（默认 1000）”内，列出缺失向量的样本。
-  ///
-  /// - 需求背景：按时间间隔抽样向量化时，只允许在最新 1k 范围内挑选与计算。
-  /// - 注意：这里的 “N” 是窗口大小（最新 N 张样本），不是“返回条数”。
-  Future<List<Map<String, dynamic>>> listSamplesMissingEmbeddingsInLatestWindow({
-    int latestSamplesLimit = 1000,
-    int? segmentId,
-  }) async {
-    final db = await database;
-    try {
-      final int n = latestSamplesLimit <= 0 ? 1000 : latestSamplesLimit;
-      final List<Object?> args = <Object?>[];
-      final String subWhere = segmentId != null ? 'WHERE segment_id = ?' : '';
-      if (segmentId != null) args.add(segmentId);
-      args.add(n);
-
-      final String sql = '''
-        SELECT
-          ss.id,
-          ss.segment_id,
-          ss.capture_time,
-          ss.file_path,
-          ss.app_package_name,
-          ss.app_name,
-          ss.position_index
-        FROM segment_samples ss
-        LEFT JOIN embeddings e ON e.sample_id = ss.id
-        WHERE e.sample_id IS NULL
-          AND ss.id IN (
-            SELECT id
-            FROM segment_samples
-            $subWhere
-            ORDER BY capture_time DESC, id DESC
-            LIMIT ?
-          )
-        ORDER BY ss.capture_time DESC, ss.id DESC
-      ''';
-      final rows = await db.rawQuery(sql, args);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
-  }
-
-  Future<void> saveEmbeddingForSample({
-    required int sampleId,
-    required int segmentId,
-    required List<double> embedding,
-    required String modelVersion,
-  }) async {
-    final db = await database;
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    final Float32List floats = Float32List(embedding.length);
-    for (int i = 0; i < embedding.length; i++) {
-      floats[i] = embedding[i].toDouble();
-    }
-    final Uint8List bytes = floats.buffer.asUint8List();
-    await db.insert(
-      'embeddings',
-      <String, Object?>{
-        'sample_id': sampleId,
-        'segment_id': segmentId,
-        'embedding': bytes,
-        'model_version': modelVersion,
-        'created_at': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<bool> hasEmbeddingForSample(int sampleId) async {
-    final db = await database;
-    try {
-      final rows = await db.query(
-        'embeddings',
-        columns: const <String>['sample_id'],
-        where: 'sample_id = ?',
-        whereArgs: <Object?>[sampleId],
-        limit: 1,
-      );
-      return rows.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// 列出最近的 embedding（用于语义搜索小测），并联表取出图片路径与时间信息。
-  Future<List<Map<String, dynamic>>> listLatestEmbeddingsWithSamples({
-    int limit = 1000,
-    int? segmentId,
-  }) async {
-    final db = await database;
-    try {
-      final List<Object?> args = <Object?>[];
-      String where = '';
-      if (segmentId != null) {
-        where = 'WHERE ss.segment_id = ?';
-        args.add(segmentId);
-      }
-      final String sql = '''
-        SELECT
-          e.sample_id AS sample_id,
-          e.segment_id AS segment_id,
-          e.embedding AS embedding,
-          e.model_version AS model_version,
-          ss.capture_time AS capture_time,
-          ss.file_path AS file_path,
-          ss.app_name AS app_name,
-          ss.app_package_name AS app_package_name
-        FROM embeddings e
-        JOIN segment_samples ss ON ss.id = e.sample_id
-        $where
-        ORDER BY ss.capture_time DESC, ss.id DESC
-        LIMIT ?
-      ''';
-      args.add(limit);
-      final rows = await db.rawQuery(sql, args);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
-  }
-
-  /// 仅在“最新 N 张样本窗口（默认 1000）”内，列出已有 embedding 的候选集合（用于语义检索）。
-  ///
-  /// - 与 listLatestEmbeddingsWithSamples 的区别：
-  ///   - 这里会先限定“样本窗口”，保证不会检索到最新窗口之外（更早）的截图。
-  Future<List<Map<String, dynamic>>> listEmbeddingsInLatestSamplesWindow({
-    int latestSamplesLimit = 1000,
-    int? segmentId,
-  }) async {
-    final db = await database;
-    try {
-      final int n = latestSamplesLimit <= 0 ? 1000 : latestSamplesLimit;
-      final List<Object?> args = <Object?>[];
-      final String subWhere = segmentId != null ? 'WHERE segment_id = ?' : '';
-      if (segmentId != null) args.add(segmentId);
-      args.add(n);
-
-      final String sql = '''
-        SELECT
-          e.sample_id AS sample_id,
-          e.segment_id AS segment_id,
-          e.embedding AS embedding,
-          e.model_version AS model_version,
-          ss.capture_time AS capture_time,
-          ss.file_path AS file_path,
-          ss.app_name AS app_name,
-          ss.app_package_name AS app_package_name
-        FROM embeddings e
-        JOIN segment_samples ss ON ss.id = e.sample_id
-        WHERE ss.id IN (
-          SELECT id
-          FROM segment_samples
-          $subWhere
-          ORDER BY capture_time DESC, id DESC
-          LIMIT ?
-        )
-        ORDER BY ss.capture_time DESC, ss.id DESC
-      ''';
-      final rows = await db.rawQuery(sql, args);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
-  }
-
   Future<Map<String, dynamic>?> getSegmentResult(int segmentId) async {
     final db = await database;
     try {
-      final String sql = 'SELECT segment_id, ai_provider, ai_model, output_text, structured_json, categories, created_at FROM segment_results WHERE segment_id = ? LIMIT 1';
-      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceAll('?', segmentId.toString())); } catch (_) {}
+      final String sql =
+          'SELECT segment_id, ai_provider, ai_model, output_text, structured_json, categories, created_at FROM segment_results WHERE segment_id = ? LIMIT 1';
+      try {
+        await FlutterLogger.nativeDebug(
+          'DB',
+          'SQL: ' + sql.replaceAll('?', segmentId.toString()),
+        );
+      } catch (_) {}
       final rows = await db.query(
         'segment_results',
         where: 'segment_id = ?',
@@ -1151,7 +1152,391 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       );
       if (rows.isEmpty) return null;
       return rows.first;
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ===================== AI 图片元数据（全局复用） =====================
+
+  Future<Map<String, dynamic>?> getAiImageMetaByFilePath(
+    String filePath,
+  ) async {
+    final String p = filePath.trim();
+    if (p.isEmpty) return null;
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'ai_image_meta',
+        where: 'file_path = ?',
+        whereArgs: <Object?>[p],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return Map<String, dynamic>.from(rows.first);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 批量查询 AI 图片元数据（key=file_path）。
+  ///
+  /// - 内部会自动去重与分批，避免 SQLite 参数上限。
+  Future<Map<String, Map<String, dynamic>>> getAiImageMetaByFilePaths(
+    List<String> filePaths,
+  ) async {
+    final List<String> paths = filePaths
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (paths.isEmpty) return <String, Map<String, dynamic>>{};
+
+    final db = await database;
+    final Map<String, Map<String, dynamic>> out =
+        <String, Map<String, dynamic>>{};
+
+    // SQLite 参数默认上限 999，这里保守分批。
+    const int chunkSize = 400;
+    for (int i = 0; i < paths.length; i += chunkSize) {
+      final int end = (i + chunkSize) > paths.length
+          ? paths.length
+          : (i + chunkSize);
+      final List<String> chunk = paths.sublist(i, end);
+      final String placeholders = List.filled(chunk.length, '?').join(',');
+      final List<Map<String, Object?>> rows = await db.query(
+        'ai_image_meta',
+        where: 'file_path IN ($placeholders)',
+        whereArgs: chunk,
+      );
+      for (final r in rows) {
+        final String? fp = r['file_path'] as String?;
+        if (fp == null || fp.isEmpty) continue;
+        out[fp] = Map<String, dynamic>.from(r);
+      }
+    }
+    return out;
+  }
+
+  /// 批量查询“动态（segment）里标记为 NSFW”的截图文件路径集合。
+  ///
+  /// 说明：
+  /// - 用于把“动态里的 NSFW 标签”传播到全局（截图列表/时间线/搜索）。
+  /// - 仅返回命中 NSFW 的 file_path 集合；未命中的 file_path 视为“非 NSFW”。
+  Future<Set<String>> getSegmentNsfwFilePaths(List<String> filePaths) async {
+    final List<String> paths = filePaths
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (paths.isEmpty) return <String>{};
+
+    final db = await database;
+
+    String basenameOf(String path) {
+      final normalized = path.trim().replaceAll('\\', '/');
+      final int idx = normalized.lastIndexOf('/');
+      return idx >= 0 ? normalized.substring(idx + 1) : normalized;
+    }
+
+    Set<String> parseNsfwBasenamesFromStructuredJson(String raw) {
+      final String s = raw.trim();
+      if (s.isEmpty || s.toLowerCase() == 'null') return <String>{};
+      try {
+        final decoded = jsonDecode(s);
+        if (decoded is! Map) return <String>{};
+        final dynamic rawTags = decoded['image_tags'];
+        if (rawTags is! List) return <String>{};
+        final Set<String> out = <String>{};
+
+        bool containsExactNsfw(dynamic tags) {
+          if (tags == null) return false;
+          if (tags is List) {
+            return tags.any(
+              (t) => t.toString().trim().toLowerCase() == 'nsfw',
+            );
+          }
+          if (tags is String) {
+            final String tt = tags.trim();
+            if (tt.isEmpty) return false;
+            try {
+              final dynamic v = jsonDecode(tt);
+              if (v is List) {
+                return v.any(
+                  (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                );
+              }
+              if (v is String) {
+                return v
+                    .split(RegExp(r'[，,;；\s]+'))
+                    .any((e) => e.trim().toLowerCase() == 'nsfw');
+              }
+            } catch (_) {}
+            return tt
+                .split(RegExp(r'[，,;；\s]+'))
+                .any((e) => e.trim().toLowerCase() == 'nsfw');
+          }
+          return false;
+        }
+
+        for (final e in rawTags) {
+          if (e is! Map) continue;
+          final m = Map<String, dynamic>.from(e as Map);
+          final String file = (m['file'] ?? '').toString().trim();
+          if (file.isEmpty) continue;
+          final String bn = basenameOf(file);
+
+          final bool nsfw = containsExactNsfw(m['tags']);
+
+          if (nsfw) out.add(bn);
+        }
+        return out;
+      } catch (_) {
+        return <String>{};
+      }
+    }
+
+    // 1) 先查 file_path -> segment_id 映射
+    final Map<int, List<String>> filePathsBySegment = <int, List<String>>{};
+    const int chunkSize = 400;
+    for (int i = 0; i < paths.length; i += chunkSize) {
+      final int end = (i + chunkSize) > paths.length
+          ? paths.length
+          : (i + chunkSize);
+      final List<String> chunk = paths.sublist(i, end);
+      final String placeholders = List.filled(chunk.length, '?').join(',');
+      final String sql = '''
+        SELECT file_path, segment_id
+        FROM segment_samples
+        WHERE file_path IN ($placeholders)
+      ''';
+      final rows = await (db as Database).rawQuery(sql, chunk);
+      for (final r in rows) {
+        final String? fp = r['file_path'] as String?;
+        final int sid = (r['segment_id'] as int?) ?? 0;
+        if (fp == null || fp.trim().isEmpty) continue;
+        if (sid <= 0) continue;
+        filePathsBySegment.putIfAbsent(sid, () => <String>[]).add(fp.trim());
+      }
+    }
+    if (filePathsBySegment.isEmpty) return <String>{};
+
+    // 2) 批量取 segment_results.structured_json，并解析 image_tags[] 里的 nsfw 文件名
+    final List<int> segmentIds = filePathsBySegment.keys.toList(growable: false);
+    final Map<int, Set<String>> nsfwBasenamesBySegment = <int, Set<String>>{};
+
+    for (int i = 0; i < segmentIds.length; i += chunkSize) {
+      final int end = (i + chunkSize) > segmentIds.length
+          ? segmentIds.length
+          : (i + chunkSize);
+      final List<int> chunk = segmentIds.sublist(i, end);
+      final String placeholders = List.filled(chunk.length, '?').join(',');
+      final String sql = '''
+        SELECT segment_id, structured_json
+        FROM segment_results
+        WHERE segment_id IN ($placeholders)
+      ''';
+      final rows = await (db as Database).rawQuery(sql, chunk);
+      for (final r in rows) {
+        final int sid = (r['segment_id'] as int?) ?? 0;
+        if (sid <= 0) continue;
+        final String sj = (r['structured_json'] as String?)?.toString() ?? '';
+        final Set<String> basenames = parseNsfwBasenamesFromStructuredJson(sj);
+        if (basenames.isNotEmpty) {
+          nsfwBasenamesBySegment[sid] = basenames;
+        }
+      }
+    }
+
+    // 3) 将 nsfw basenames 映射回入参 file_path（按 basename 匹配）
+    final Set<String> out = <String>{};
+    for (final entry in filePathsBySegment.entries) {
+      final Set<String>? basenames = nsfwBasenamesBySegment[entry.key];
+      if (basenames == null || basenames.isEmpty) continue;
+      for (final fp in entry.value) {
+        final String bn = basenameOf(fp);
+        if (basenames.contains(bn)) {
+          out.add(fp);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// 索引可用性：检测 SQLite 是否支持 AI 图片元数据 FTS（fts5）。
+  Future<bool> isAiImageMetaIndexAvailable() async {
+    try {
+      final db = await database;
+      return await _tableExists(db, 'ai_image_meta_fts');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 搜索 AI 图片元数据（tags/description），用于“无 OCR 或 OCR 不足”的图片检索。
+  ///
+  /// - 优先使用 FTS；如 FTS 不可用或命中为空，则回退 LIKE（更适配中文子串）。
+  /// - 支持按时间范围过滤（capture_time）。
+  Future<List<Map<String, dynamic>>> searchAiImageMetaByText(
+    String query, {
+    int? limit,
+    int? offset,
+    int? startMillis,
+    int? endMillis,
+    bool includeNsfw = false,
+    String? appPackageName,
+  }) async {
+    final db = await database;
+    final String q = query.trim();
+    if (q.isEmpty) return <Map<String, dynamic>>[];
+
+    final int fetchLimit = (limit ?? 50).clamp(1, 50);
+    int fetchOffset = offset ?? 0;
+    if (fetchOffset < 0) fetchOffset = 0;
+
+    bool isLikelyCjkNoSpaces() {
+      if (q.contains(' ')) return false;
+      return RegExp(r'[\u4e00-\u9fff]').hasMatch(q);
+    }
+
+    String buildMatch(String text) {
+      final parts = text
+          .split(RegExp(r'\s+'))
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (parts.isEmpty) return text;
+      final limited = parts.length > 6 ? parts.sublist(0, 6) : parts;
+      return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+    }
+
+    Future<List<Map<String, dynamic>>> runFts() async {
+      final bool ftsExists = await _tableExists(db, 'ai_image_meta_fts');
+      if (!ftsExists) return <Map<String, dynamic>>[];
+
+      final String match = buildMatch(q);
+      final List<Object?> args = <Object?>[match];
+      final List<String> filters = <String>[];
+      if (!includeNsfw) {
+        filters.add('m.nsfw = 0');
+      }
+      if (startMillis != null) {
+        filters.add('m.capture_time >= ?');
+        args.add(startMillis);
+      }
+      if (endMillis != null) {
+        filters.add('m.capture_time <= ?');
+        args.add(endMillis);
+      }
+      if (appPackageName != null && appPackageName.trim().isNotEmpty) {
+        filters.add('ss.app_package_name = ?');
+        args.add(appPackageName.trim());
+      }
+
+      final String whereClause = filters.isEmpty
+          ? ''
+          : 'AND ${filters.join(' AND ')}';
+      final String sql =
+          '''
+        SELECT
+          m.file_path,
+          m.tags_json,
+          m.description,
+          m.description_range,
+          m.nsfw,
+          m.segment_id,
+          m.capture_time,
+          m.lang,
+          m.updated_at,
+          ss.app_package_name,
+          ss.app_name
+        FROM ai_image_meta_fts fts
+        JOIN ai_image_meta m ON m.rowid = fts.rowid
+        LEFT JOIN segment_samples ss
+          ON ss.segment_id = m.segment_id AND ss.file_path = m.file_path
+        WHERE ai_image_meta_fts MATCH ?
+          $whereClause
+        ORDER BY bm25(ai_image_meta_fts) ASC, m.capture_time DESC
+        LIMIT ? OFFSET ?
+      ''';
+      args.add(fetchLimit);
+      args.add(fetchOffset);
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+
+    Future<List<Map<String, dynamic>>> runLike() async {
+      final String likeTerm = '%$q%';
+      final List<Object?> args = <Object?>[likeTerm, likeTerm];
+      final List<String> filters = <String>[
+        '(m.description LIKE ? OR m.tags_json LIKE ?)',
+      ];
+      if (!includeNsfw) {
+        filters.add('m.nsfw = 0');
+      }
+      if (startMillis != null) {
+        filters.add('m.capture_time >= ?');
+        args.add(startMillis);
+      }
+      if (endMillis != null) {
+        filters.add('m.capture_time <= ?');
+        args.add(endMillis);
+      }
+      if (appPackageName != null && appPackageName.trim().isNotEmpty) {
+        filters.add('ss.app_package_name = ?');
+        args.add(appPackageName.trim());
+      }
+      args.add(fetchLimit);
+      args.add(fetchOffset);
+      final String sql =
+          '''
+        SELECT
+          m.file_path,
+          m.tags_json,
+          m.description,
+          m.description_range,
+          m.nsfw,
+          m.segment_id,
+          m.capture_time,
+          m.lang,
+          m.updated_at,
+          ss.app_package_name,
+          ss.app_name
+        FROM ai_image_meta m
+        LEFT JOIN segment_samples ss
+          ON ss.segment_id = m.segment_id AND ss.file_path = m.file_path
+        WHERE ${filters.join(' AND ')}
+        ORDER BY m.capture_time DESC
+        LIMIT ? OFFSET ?
+      ''';
+      final rows = await db.rawQuery(sql, args);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+
+    try {
+      // 中文无空格关键词更偏向子串检索，先走 LIKE 可减少“FTS 命中为空”的误判。
+      if (isLikelyCjkNoSpaces()) {
+        final likeRows = await runLike();
+        if (likeRows.isNotEmpty) return likeRows;
+      }
+
+      final ftsRows = await runFts();
+      if (ftsRows.isNotEmpty) return ftsRows;
+
+      // FTS 命中为空时再回退 LIKE，提升中文/短词命中率。
+      return await runLike();
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'DB',
+          'searchAiImageMetaByText failed, fallback to LIKE: $e',
+        );
+      } catch (_) {}
+      try {
+        return await runLike();
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    }
   }
 
   /// 搜索动态（segment）内容
@@ -1162,6 +1547,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? offset,
     int? startMillis,
     int? endMillis,
+    String? appPackageName,
   }) async {
     final db = await database;
     try {
@@ -1173,7 +1559,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
 
       // 构建 FTS MATCH 字符串
       String buildMatch(String text) {
-        final parts = text.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+        final parts = text
+            .split(RegExp(r'\s+'))
+            .where((e) => e.isNotEmpty)
+            .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
         return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
@@ -1183,6 +1572,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       final List<Object?> args = <Object?>[match];
       final List<String> filters = <String>[];
 
+      filters.add('s.merged_into_id IS NULL');
       if (startMillis != null) {
         filters.add('s.start_time >= ?');
         args.add(startMillis);
@@ -1191,12 +1581,22 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         filters.add('s.start_time <= ?');
         args.add(endMillis);
       }
+      final String appPkg = (appPackageName ?? '').trim();
+      if (appPkg.isNotEmpty) {
+        filters.add(
+          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+        );
+        args.add(appPkg);
+      }
 
-      final String whereClause = filters.isEmpty ? '' : 'AND ${filters.join(' AND ')}';
+      final String whereClause = filters.isEmpty
+          ? ''
+          : 'AND ${filters.join(' AND ')}';
 
       // 尝试 FTS 搜索
       try {
-        final String sql = '''
+        final String sql =
+            '''
           SELECT
             s.*,
             r.output_text,
@@ -1224,12 +1624,15 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         return rows.map((e) => Map<String, dynamic>.from(e)).toList();
       } catch (ftsError) {
         // FTS 不可用，回退到 LIKE 搜索
-        try { await FlutterLogger.nativeWarn('DB', 'FTS search failed, fallback to LIKE: $ftsError'); } catch (_) {}
-        
+        try {
+          await FlutterLogger.nativeWarn('DB', 'FTS 搜索失败，回退到 LIKE：$ftsError');
+        } catch (_) {}
+
         final String likeTerm = '%$q%';
         final List<Object?> likeArgs = <Object?>[];
         final List<String> likeFilters = <String>[
-          "(r.output_text LIKE ? OR r.categories LIKE ?)"
+          "(r.output_text LIKE ? OR r.categories LIKE ?)",
+          's.merged_into_id IS NULL',
         ];
         likeArgs.add(likeTerm);
         likeArgs.add(likeTerm);
@@ -1242,11 +1645,19 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           likeFilters.add('s.start_time <= ?');
           likeArgs.add(endMillis);
         }
+        final String appPkg = (appPackageName ?? '').trim();
+        if (appPkg.isNotEmpty) {
+          likeFilters.add(
+            'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+          );
+          likeArgs.add(appPkg);
+        }
 
         likeArgs.add(fetchLimit);
         likeArgs.add(fetchOffset);
 
-        final String likeSql = '''
+        final String likeSql =
+            '''
           SELECT
             s.*,
             r.output_text,
@@ -1270,7 +1681,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         return rows.map((e) => Map<String, dynamic>.from(e)).toList();
       }
     } catch (e) {
-      try { await FlutterLogger.nativeError('DB', 'searchSegmentsByText failed: $e'); } catch (_) {}
+      try {
+        await FlutterLogger.nativeError('DB', 'searchSegmentsByText 失败：$e');
+      } catch (_) {}
       return <Map<String, dynamic>>[];
     }
   }
@@ -1280,6 +1693,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     String query, {
     int? startMillis,
     int? endMillis,
+    String? appPackageName,
   }) async {
     final db = await database;
     try {
@@ -1287,7 +1701,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       if (q.isEmpty) return 0;
 
       String buildMatch(String text) {
-        final parts = text.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+        final parts = text
+            .split(RegExp(r'\s+'))
+            .where((e) => e.isNotEmpty)
+            .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
         return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
@@ -1297,6 +1714,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       final List<Object?> args = <Object?>[match];
       final List<String> filters = <String>[];
 
+      filters.add('s.merged_into_id IS NULL');
       if (startMillis != null) {
         filters.add('s.start_time >= ?');
         args.add(startMillis);
@@ -1305,11 +1723,21 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         filters.add('s.start_time <= ?');
         args.add(endMillis);
       }
+      final String appPkg = (appPackageName ?? '').trim();
+      if (appPkg.isNotEmpty) {
+        filters.add(
+          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+        );
+        args.add(appPkg);
+      }
 
-      final String whereClause = filters.isEmpty ? '' : 'AND ${filters.join(' AND ')}';
+      final String whereClause = filters.isEmpty
+          ? ''
+          : 'AND ${filters.join(' AND ')}';
 
       try {
-        final String sql = '''
+        final String sql =
+            '''
           SELECT COUNT(*) AS c
           FROM segment_results_fts fts
           JOIN segment_results r ON r.segment_id = fts.rowid
@@ -1325,7 +1753,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         final String likeTerm = '%$q%';
         final List<Object?> likeArgs = <Object?>[likeTerm, likeTerm];
         final List<String> likeFilters = <String>[
-          "(r.output_text LIKE ? OR r.categories LIKE ?)"
+          "(r.output_text LIKE ? OR r.categories LIKE ?)",
+          's.merged_into_id IS NULL',
         ];
 
         if (startMillis != null) {
@@ -1336,8 +1765,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           likeFilters.add('s.start_time <= ?');
           likeArgs.add(endMillis);
         }
+        final String appPkg = (appPackageName ?? '').trim();
+        if (appPkg.isNotEmpty) {
+          likeFilters.add(
+            'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+          );
+          likeArgs.add(appPkg);
+        }
 
-        final String likeSql = '''
+        final String likeSql =
+            '''
           SELECT COUNT(*) AS c
           FROM segments s
           JOIN segment_results r ON r.segment_id = s.id
@@ -1357,8 +1794,64 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     final db = await database;
     try {
       await db.transaction((txn) async {
-        await txn.delete('segment_results', where: 'segment_id = ?', whereArgs: [segmentId]);
-        await txn.delete('segment_samples', where: 'segment_id = ?', whereArgs: [segmentId]);
+        // 先抓取该段落关联的图片路径：即使 ai_image_meta.segment_id 被后续流程覆盖，
+        // 也能按 file_path 兜底清理，避免“图片描述/标签”残留在查看器/搜索中。
+        final List<String> sampleFilePaths = <String>[];
+        try {
+          final rows = await txn.query(
+            'segment_samples',
+            columns: const ['file_path'],
+            where: 'segment_id = ?',
+            whereArgs: [segmentId],
+          );
+          for (final r in rows) {
+            final String p = (r['file_path'] as String?)?.trim() ?? '';
+            if (p.isNotEmpty) sampleFilePaths.add(p);
+          }
+        } catch (_) {}
+
+        await txn.delete(
+          'segment_results',
+          where: 'segment_id = ?',
+          whereArgs: [segmentId],
+        );
+        await txn.delete(
+          'segment_samples',
+          where: 'segment_id = ?',
+          whereArgs: [segmentId],
+        );
+        // 同步删除该段落生成的图片标签/描述，避免删除事件后“图片描述”仍残留在查看器/搜索中。
+        try {
+          await txn.delete(
+            'ai_image_meta',
+            where: 'segment_id = ?',
+            whereArgs: [segmentId],
+          );
+        } catch (_) {}
+
+        // 兜底：按 file_path 再删一遍（分批避免 SQLite 参数上限）。
+        final List<String> paths = sampleFilePaths
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList(growable: false);
+        if (paths.isNotEmpty) {
+          const int chunkSize = 400;
+          for (int i = 0; i < paths.length; i += chunkSize) {
+            final int end = (i + chunkSize) > paths.length
+                ? paths.length
+                : (i + chunkSize);
+            final List<String> chunk = paths.sublist(i, end);
+            final String placeholders = List.filled(chunk.length, '?').join(',');
+            try {
+              await txn.delete(
+                'ai_image_meta',
+                where: 'file_path IN ($placeholders)',
+                whereArgs: chunk,
+              );
+            } catch (_) {}
+          }
+        }
         await txn.delete('segments', where: 'id = ?', whereArgs: [segmentId]);
       });
       return true;
@@ -1393,17 +1886,25 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.insert(
-        'daily_summaries',
-        {
-          'date_key': dateKey,
-          'ai_provider': aiProvider,
-          'ai_model': aiModel,
-          'output_text': outputText,
-          'structured_json': structuredJson,
-          'created_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert('daily_summaries', {
+        'date_key': dateKey,
+        'ai_provider': aiProvider,
+        'ai_model': aiModel,
+        'output_text': outputText,
+        'structured_json': structuredJson,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // ignore: unawaited_futures
+      this.upsertSearchDoc(
+        docKey: _dailySummaryDocKey(dateKey),
+        docType: kSearchDocTypeDailySummary,
+        title: '每日总结 $dateKey',
+        content: outputText,
+        dateKey: dateKey,
+        startTime: _parseYmdToStartMillis(dateKey),
+        updatedAt: now,
       );
       return true;
     } catch (_) {
@@ -1437,18 +1938,29 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.insert(
-        'weekly_summaries',
-        {
-          'week_start_date': weekStartDate,
-          'week_end_date': weekEndDate,
-          'ai_provider': aiProvider,
-          'ai_model': aiModel,
-          'output_text': outputText,
-          'structured_json': structuredJson,
-          'created_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert('weekly_summaries', {
+        'week_start_date': weekStartDate,
+        'week_end_date': weekEndDate,
+        'ai_provider': aiProvider,
+        'ai_model': aiModel,
+        'output_text': outputText,
+        'structured_json': structuredJson,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      final String title = weekEndDate.trim().isEmpty
+          ? '周总结 $weekStartDate'
+          : '周总结 $weekStartDate ~ $weekEndDate';
+      // ignore: unawaited_futures
+      this.upsertSearchDoc(
+        docKey: _weeklySummaryDocKey(weekStartDate),
+        docType: kSearchDocTypeWeeklySummary,
+        title: title,
+        content: outputText,
+        dateKey: weekStartDate,
+        startTime: _parseYmdToStartMillis(weekStartDate),
+        updatedAt: now,
       );
       return true;
     } catch (_) {
@@ -1456,7 +1968,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  Future<List<Map<String, dynamic>>> listWeeklySummaries({int? limit, int? offset}) async {
+  Future<List<Map<String, dynamic>>> listWeeklySummaries({
+    int? limit,
+    int? offset,
+  }) async {
     final db = await database;
     try {
       final rows = await db.query(
@@ -1495,16 +2010,28 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
-      await db.insert(
-        'morning_insights',
-        {
-          'date_key': dateKey,
-          'source_date_key': sourceDateKey,
-          'tips_json': tipsJson,
-          if (rawResponse != null) 'raw_response': rawResponse,
-          'created_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.insert('morning_insights', {
+        'date_key': dateKey,
+        'source_date_key': sourceDateKey,
+        'tips_json': tipsJson,
+        if (rawResponse != null) 'raw_response': rawResponse,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // ignore: unawaited_futures
+      this.upsertSearchDoc(
+        docKey: _morningInsightsDocKey(dateKey),
+        docType: kSearchDocTypeMorningInsights,
+        title: '早报 $dateKey',
+        content: _renderMorningInsightsMarkdown(
+          (rawResponse != null && rawResponse.trim().isNotEmpty)
+              ? rawResponse
+              : tipsJson,
+        ),
+        dateKey: dateKey,
+        startTime: _parseYmdToStartMillis(dateKey),
+        updatedAt: now,
       );
       return true;
     } catch (_) {
@@ -1515,7 +2042,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<int> deleteMorningInsights(String dateKey) async {
     final db = await database;
     try {
-      return await db.delete('morning_insights', where: 'date_key = ?', whereArgs: [dateKey]);
+      return await db.delete(
+        'morning_insights',
+        where: 'date_key = ?',
+        whereArgs: [dateKey],
+      );
     } catch (_) {
       return 0;
     }
@@ -1536,10 +2067,20 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           r.categories
         FROM segments s
         JOIN segment_results r ON r.segment_id = s.id
-        WHERE s.start_time >= ? AND s.start_time <= ?
+        WHERE s.merged_into_id IS NULL
+          AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
+          AND s.start_time >= ? AND s.start_time <= ?
         ORDER BY s.start_time ASC
       ''';
-      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceFirst('?', startMillis.toString()).replaceFirst('?', endMillis.toString())); } catch (_) {}
+      try {
+        await FlutterLogger.nativeDebug(
+          'DB',
+          'SQL: ' +
+              sql
+                  .replaceFirst('?', startMillis.toString())
+                  .replaceFirst('?', endMillis.toString()),
+        );
+      } catch (_) {}
       final rows = await db.rawQuery(sql, [startMillis, endMillis]);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
@@ -1569,11 +2110,21 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           r.categories
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
-        WHERE s.start_time <= ? AND s.end_time >= ?
+        WHERE s.merged_into_id IS NULL
+          AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
+          AND s.start_time <= ? AND s.end_time >= ?
           AND EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)
         ORDER BY s.start_time ASC
       ''';
-      try { await FlutterLogger.nativeDebug('DB', 'SQL: ' + sql.replaceFirst('?', endMillis.toString()).replaceFirst('?', startMillis.toString())); } catch (_) {}
+      try {
+        await FlutterLogger.nativeDebug(
+          'DB',
+          'SQL: ' +
+              sql
+                  .replaceFirst('?', endMillis.toString())
+                  .replaceFirst('?', startMillis.toString()),
+        );
+      } catch (_) {}
       final rows = await db.rawQuery(sql, [endMillis, startMillis]);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
@@ -1608,18 +2159,24 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     final db = await database;
     try {
       final now = DateTime.now().millisecondsSinceEpoch;
-      await db.insert(
-        'persona_articles',
-        {
-          'style': style,
-          'article': article,
-          'locale': locale,
-          'ai_provider': aiProvider,
-          'ai_model': aiModel,
-          'created_at': now,
-          'updated_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      await db.insert('persona_articles', {
+        'style': style,
+        'article': article,
+        'locale': locale,
+        'ai_provider': aiProvider,
+        'ai_model': aiModel,
+        'created_at': now,
+        'updated_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // ignore: unawaited_futures
+      this.upsertSearchDoc(
+        docKey: _personaArticleDocKey(style),
+        docType: kSearchDocTypePersonaArticle,
+        title: '画像文章 · $style',
+        content: article,
+        tags: locale,
+        updatedAt: now,
       );
       return true;
     } catch (_) {
@@ -1632,12 +2189,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     try {
       if (style == null) {
         await db.delete('persona_articles');
+        // ignore: unawaited_futures
+        this.deleteSearchDocsByType(kSearchDocTypePersonaArticle);
       } else {
         await db.delete(
           'persona_articles',
           where: 'style = ?',
           whereArgs: [style],
         );
+        // ignore: unawaited_futures
+        this.deleteSearchDoc(_personaArticleDocKey(style));
       }
     } catch (_) {}
   }
@@ -1655,7 +2216,9 @@ Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {
       created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
     )
   ''');
-  await db.execute('CREATE INDEX IF NOT EXISTS idx_weekly_summaries_created ON weekly_summaries(created_at DESC)');
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_weekly_summaries_created ON weekly_summaries(created_at DESC)',
+  );
 }
 
 Future<void> _createMorningInsightsTable(DatabaseExecutor db) async {
@@ -1717,7 +2280,9 @@ Future<void> _createSegmentResultsFts(DatabaseExecutor db) async {
       END
     ''');
   } catch (e) {
-    try { FlutterLogger.nativeWarn('DB', 'FTS5 for segment_results not supported: $e'); } catch (_) {}
+    try {
+      FlutterLogger.nativeWarn('DB', 'FTS5（segment_results）不支持：$e');
+    } catch (_) {}
   }
 }
 
@@ -1730,8 +2295,64 @@ Future<void> _backfillSegmentResultsFts(DatabaseExecutor db) async {
       WHERE output_text IS NOT NULL AND TRIM(output_text) != ''
     ''');
   } catch (e) {
-    try { FlutterLogger.nativeWarn('DB', 'Backfill segment_results_fts failed: $e'); } catch (_) {}
+    try {
+      FlutterLogger.nativeWarn('DB', '回填 segment_results_fts 失败：$e');
+    } catch (_) {}
   }
 }
 
+/// 创建 ai_image_meta 的 FTS5 全文搜索索引（用于按图片标签/描述检索）。
+Future<void> _createAiImageMetaFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      CREATE VIRTUAL TABLE IF NOT EXISTS ai_image_meta_fts USING fts5(
+        tags_json,
+        description,
+        description_range,
+        content='ai_image_meta',
+        content_rowid='rowid'
+      )
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_image_meta_ai AFTER INSERT ON ai_image_meta BEGIN
+        INSERT INTO ai_image_meta_fts(rowid, tags_json, description, description_range)
+        VALUES (NEW.rowid, NEW.tags_json, NEW.description, NEW.description_range);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_image_meta_ad AFTER DELETE ON ai_image_meta BEGIN
+        INSERT INTO ai_image_meta_fts(ai_image_meta_fts, rowid, tags_json, description, description_range)
+        VALUES ('delete', OLD.rowid, OLD.tags_json, OLD.description, OLD.description_range);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_image_meta_au AFTER UPDATE ON ai_image_meta BEGIN
+        INSERT INTO ai_image_meta_fts(ai_image_meta_fts, rowid, tags_json, description, description_range)
+        VALUES ('delete', OLD.rowid, OLD.tags_json, OLD.description, OLD.description_range);
+        INSERT INTO ai_image_meta_fts(rowid, tags_json, description, description_range)
+        VALUES (NEW.rowid, NEW.tags_json, NEW.description, NEW.description_range);
+      END
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', 'FTS5（ai_image_meta）不支持：$e');
+    } catch (_) {}
+  }
+}
 
+/// 回填已有数据到 ai_image_meta_fts 索引
+Future<void> _backfillAiImageMetaFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      INSERT OR IGNORE INTO ai_image_meta_fts(rowid, tags_json, description, description_range)
+      SELECT rowid, tags_json, description, description_range FROM ai_image_meta
+      WHERE
+        (description IS NOT NULL AND TRIM(description) != '')
+        OR (tags_json IS NOT NULL AND TRIM(tags_json) != '')
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', '回填 ai_image_meta_fts 失败：$e');
+    } catch (_) {}
+  }
+}
