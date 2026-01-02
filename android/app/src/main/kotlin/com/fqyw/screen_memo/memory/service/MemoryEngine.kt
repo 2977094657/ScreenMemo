@@ -106,7 +106,7 @@ class MemoryEngine private constructor(
                     }
                 }
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "Failed to load persona state from repository", t)
+                FileLogger.e(TAG, "从仓库加载人设状态失败", t)
             }
         }
     }
@@ -115,7 +115,7 @@ class MemoryEngine private constructor(
         return withContext(scope.coroutineContext) {
             val totalSegments = SegmentDatabaseHelper.countSegments(context)
             if (totalSegments == 0) {
-                FileLogger.i(TAG, "syncSegments: no segments found")
+                FileLogger.i(TAG, "syncSegments：未找到段落")
                 return@withContext 0
             }
 
@@ -191,7 +191,7 @@ class MemoryEngine private constructor(
                         )
                         repository.upsertEvent(event)
                     } catch (t: Throwable) {
-                        FileLogger.e(TAG, "syncSegments: failed to ingest segment ${segment.id}", t)
+                        FileLogger.e(TAG, "syncSegments：导入段落失败 id=${segment.id}", t)
                     }
                     processed += 1
                 }
@@ -211,7 +211,7 @@ class MemoryEngine private constructor(
     private suspend fun extractWithLlm(event: UserEvent): UserSignalExtractionResult {
         val context = extractionContext
         if (context == null || !context.isValid) {
-            FileLogger.w(TAG, "LLM extraction skipped due to missing extraction context")
+            FileLogger.w(TAG, "LLM 提取已跳过：缺少提取上下文")
             return UserSignalExtractionResult(emptyList(), null, null)
         }
         val existingTagPaths = repository.listAllTagPaths()
@@ -405,11 +405,11 @@ class MemoryEngine private constructor(
             } catch (t: Throwable) {
                 when (t) {
                     is CancellationException -> {
-                        FileLogger.i(TAG, "Historical processing cancelled")
+                        FileLogger.i(TAG, "历史处理已取消")
                         _progressState.value = MemoryProgressState.Idle
                     }
                     is LlmHttpException -> {
-                        FileLogger.e(TAG, "Historical processing failed with HTTP ${t.statusCode}", t)
+                        FileLogger.e(TAG, "历史处理失败：HTTP ${t.statusCode}", t)
                         val raw = truncate(t.responseBody, MAX_METADATA_TEXT)
                         _progressState.value = MemoryProgressState.Failed(
                             processedCount = processedDays,
@@ -421,7 +421,7 @@ class MemoryEngine private constructor(
                         )
                     }
                     is LlmEndpointConfigurationException -> {
-                        FileLogger.e(TAG, "Historical processing endpoint error: ${t.message}", t)
+                        FileLogger.e(TAG, "历史处理接口错误：${t.message}", t)
                         _progressState.value = MemoryProgressState.Failed(
                             processedCount = processedDays,
                             totalCount = totalDays,
@@ -431,7 +431,7 @@ class MemoryEngine private constructor(
                         )
                     }
                     else -> {
-                        FileLogger.e(TAG, "Historical processing failed", t)
+                        FileLogger.e(TAG, "历史处理失败", t)
                         _progressState.value = MemoryProgressState.Failed(
                             processedCount = processedDays,
                             totalCount = totalDays,
@@ -738,7 +738,7 @@ class MemoryEngine private constructor(
                 try {
                     repository.savePersonaSummary(sanitized)
                 } catch (t: Throwable) {
-                    FileLogger.e(TAG, "Failed to persist persona summary fallback", t)
+                    FileLogger.e(TAG, "持久化人设摘要兜底结果失败", t)
                 }
             }
             return
@@ -754,7 +754,7 @@ class MemoryEngine private constructor(
             repository.savePersonaProfile(updatedProfile)
             repository.savePersonaSummary(markdown)
         } catch (t: Throwable) {
-            FileLogger.e(TAG, "Failed to persist persona profile", t)
+            FileLogger.e(TAG, "持久化人设档案失败", t)
         }
     }
 
@@ -820,12 +820,12 @@ class MemoryEngine private constructor(
             try {
                 repository.clearPersonaSummary()
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "Failed to clear persona summary metadata", t)
+                FileLogger.e(TAG, "清理人设摘要元数据失败", t)
             }
             try {
                 repository.clearPersonaProfile()
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "Failed to clear persona profile metadata", t)
+                FileLogger.e(TAG, "清理人设档案元数据失败", t)
             }
         }
     }
@@ -833,7 +833,7 @@ class MemoryEngine private constructor(
     suspend fun processSampleHistoricalEvents(limit: Int = SAMPLE_TEST_EVENT_LIMIT): Int {
         return withContext(scope.coroutineContext) {
             if (initializing.get()) {
-                FileLogger.w(TAG, "processSampleHistoricalEvents skipped: initialization in progress")
+                FileLogger.w(TAG, "跳过处理历史样本事件：初始化进行中")
                 return@withContext 0
             }
             val safeLimit = limit.coerceAtLeast(1)
@@ -933,4 +933,3 @@ class MemoryEngine private constructor(
         }
     }
 }
-

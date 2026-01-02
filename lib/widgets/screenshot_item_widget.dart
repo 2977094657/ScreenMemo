@@ -1,15 +1,27 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
+import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import 'ai_meta_sheet.dart';
 import 'nsfw_guard.dart';
 import '../services/nsfw_preference_service.dart';
 import 'timeline_jump_overlay.dart';
 
+/// AI 元数据徽标（可点击打开 AiMetaSheet）的显示位置。
+enum AiMetaBadgePlacement {
+  /// 显示在底部信息遮罩内（默认）。
+  bottomOverlay,
+
+  /// 显示在右上角（更适合窄缩略图/三列网格）。
+  topRight,
+}
+
 /// 截图项组件 - 统一的截图显示样式
-/// 
+///
 /// 功能包括：
 /// - 显示应用logo
 /// - 图片大小
@@ -19,39 +31,42 @@ import 'timeline_jump_overlay.dart';
 /// - 深色模式支持
 /// - 深度链接显示
 class ScreenshotItemWidget extends StatelessWidget {
+  static final Map<String, int> _lazyFileSizeCache = <String, int>{};
+  static final Map<String, Future<int>> _lazyFileSizeFutures =
+      <String, Future<int>>{};
   /// 截图记录
   final ScreenshotRecord screenshot;
-  
+
   /// 基础目录（用于解析相对路径）
   final Directory? baseDir;
-  
+
   /// 应用信息映射（用于获取应用图标）
   final Map<String, AppInfo>? appInfoMap;
-  
+
   /// 是否启用隐私模式
   final bool privacyMode;
-  
+
   /// 点击回调
   final VoidCallback? onTap;
-  
+
   /// 长按回调
   final VoidCallback? onLongPress;
-  
+
   /// 链接点击回调
   final void Function(String url)? onLinkTap;
-  
+
   /// 是否显示选择框
   final bool showCheckbox;
-  
+
   /// 是否选中
   final bool isSelected;
-  
+
   /// 是否显示收藏按钮
   final bool showFavoriteButton;
-  
+
   /// 是否已收藏
   final bool isFavorited;
-  
+
   /// 收藏按钮点击回调
   final VoidCallback? onFavoriteToggle;
 
@@ -63,43 +78,51 @@ class ScreenshotItemWidget extends StatelessWidget {
 
   /// NSFW 按钮点击回调（切换标记）
   final VoidCallback? onNsfwToggle;
-  
+
   /// 自定义叠加层（如 OCR 标注）
   final Widget? customOverlay;
 
   /// 是否显示“时间线跳转”按钮（默认关闭）
   final bool showTimelineJumpButton;
-  
+
+  /// AI 元数据徽标显示位置（默认在底部遮罩内）。
+  final AiMetaBadgePlacement aiMetaBadgePlacement;
+
   const ScreenshotItemWidget({
-     super.key,
-     required this.screenshot,
-     this.baseDir,
-     this.appInfoMap,
-     this.privacyMode = true,
-     this.onTap,
-     this.onLongPress,
-     this.onLinkTap,
-     this.showCheckbox = false,
-     this.isSelected = false,
-     this.showFavoriteButton = false,
-     this.isFavorited = false,
-     this.onFavoriteToggle,
-     this.showNsfwButton = false,
-     this.isNsfwFlagged = false,
-     this.onNsfwToggle,
-     this.customOverlay,
-     this.showTimelineJumpButton = false,
-   });
+    super.key,
+    required this.screenshot,
+    this.baseDir,
+    this.appInfoMap,
+    this.privacyMode = true,
+    this.onTap,
+    this.onLongPress,
+    this.onLinkTap,
+    this.showCheckbox = false,
+    this.isSelected = false,
+    this.showFavoriteButton = false,
+    this.isFavorited = false,
+    this.onFavoriteToggle,
+    this.showNsfwButton = false,
+    this.isNsfwFlagged = false,
+    this.onNsfwToggle,
+    this.customOverlay,
+    this.showTimelineJumpButton = false,
+    this.aiMetaBadgePlacement = AiMetaBadgePlacement.bottomOverlay,
+  });
 
   @override
   Widget build(BuildContext context) {
     final file = _resolveFile();
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool nsfwMasked = privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
-    
-    final List<Widget> layers = <Widget>[
-      _buildImage(context, file, isDark),
-    ];
+    final bool nsfwMasked =
+        privacyMode &&
+        NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+
+    final List<Widget> layers = <Widget>[_buildImage(context, file, isDark)];
+
+    final bool hasAiMeta = NsfwPreferenceService.instance.hasAiMetaCached(
+      filePath: screenshot.filePath,
+    );
 
     if (customOverlay != null) layers.add(customOverlay!);
 
@@ -115,11 +138,23 @@ class ScreenshotItemWidget extends StatelessWidget {
       );
     }
 
-    if (!nsfwMasked && screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty) {
+    if (!nsfwMasked &&
+        screenshot.pageUrl != null &&
+        screenshot.pageUrl!.isNotEmpty) {
       layers.add(_buildLinkOverlay(context));
     }
 
-    layers.add(_buildBottomOverlay(context));
+    layers.add(
+      _buildBottomOverlay(
+        context,
+        showAiMetaBadge: hasAiMeta &&
+            aiMetaBadgePlacement == AiMetaBadgePlacement.bottomOverlay,
+      ),
+    );
+
+    if (hasAiMeta && aiMetaBadgePlacement == AiMetaBadgePlacement.topRight) {
+      layers.add(_buildTopRightAiMetaBadge(context));
+    }
 
     if (showCheckbox) layers.add(_buildCheckbox(context));
     if (showFavoriteButton) layers.add(_buildFavoriteButton(context));
@@ -135,7 +170,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       child: Stack(children: layers),
     );
   }
-  
+
   /// 解析文件路径
   File _resolveFile() {
     if (path.isAbsolute(screenshot.filePath)) {
@@ -146,18 +181,16 @@ class ScreenshotItemWidget extends StatelessWidget {
     }
     return File(screenshot.filePath);
   }
-  
+
   /// 构建图片
   Widget _buildImage(BuildContext context, File file, bool isDark) {
     final screenWidth = MediaQuery.of(context).size.width;
     final double logicalTileWidth = (screenWidth - AppTheme.spacing1 * 3) / 2;
-    final int targetWidth = (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
-    
-    final imageProvider = ResizeImage(
-      FileImage(file),
-      width: targetWidth,
-    );
-    
+    final int targetWidth =
+        (logicalTileWidth * MediaQuery.of(context).devicePixelRatio).round();
+
+    final imageProvider = ResizeImage(FileImage(file), width: targetWidth);
+
     final baseImage = Image(
       image: imageProvider,
       width: double.infinity,
@@ -167,7 +200,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       gaplessPlayback: true,
       errorBuilder: (context, error, stackTrace) => _buildErrorItem(context),
     );
-    
+
     final image = ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       child: isDark
@@ -180,10 +213,10 @@ class ScreenshotItemWidget extends StatelessWidget {
             )
           : baseImage,
     );
-    
+
     return image;
   }
-  
+
   /// 构建顶部链接遮罩
   Widget _buildLinkOverlay(BuildContext context) {
     return Positioned(
@@ -202,10 +235,7 @@ class ScreenshotItemWidget extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.7),
-                Colors.transparent,
-              ],
+              colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
             ),
             borderRadius: const BorderRadius.vertical(
               top: Radius.circular(AppTheme.radiusSm),
@@ -228,12 +258,12 @@ class ScreenshotItemWidget extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontSize: 11,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Theme.of(context).textTheme.bodySmall?.color
-                            : Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    fontSize: 11,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Theme.of(context).textTheme.bodySmall?.color
+                        : Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -242,9 +272,33 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建底部信息遮罩
-  Widget _buildBottomOverlay(BuildContext context) {
+  Widget _buildBottomOverlay(
+    BuildContext context, {
+    required bool showAiMetaBadge,
+  }) {
+    return _buildBottomOverlayImpl(
+      context,
+      _resolveFile(),
+      showAiMetaBadge: showAiMetaBadge,
+    );
+  }
+
+  Widget _buildBottomOverlayImpl(
+    BuildContext context,
+    File file, {
+    required bool showAiMetaBadge,
+  }) {
+    final Color? textColor = Theme.of(context).brightness == Brightness.dark
+        ? Theme.of(context).textTheme.bodySmall?.color
+        : Colors.white;
+    final TextStyle infoStyle = TextStyle(
+      fontSize: 11,
+      color: textColor,
+      fontWeight: FontWeight.w600,
+    );
+
     return Positioned(
       bottom: 0,
       left: 0,
@@ -258,30 +312,133 @@ class ScreenshotItemWidget extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.7),
-            ],
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
           ),
           borderRadius: const BorderRadius.vertical(
             bottom: Radius.circular(AppTheme.radiusSm),
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Row(
+            children: [
+              // 应用图标
+              _buildAppIcon(context),
+              _buildFileSizeInfo(file, infoStyle),
+              if (showAiMetaBadge) ...[
+                const SizedBox(width: 6),
+                _buildAiMetaBadge(context),
+              ],
+              const Spacer(),
+              // 时间
+            Text(_formatTime(screenshot.captureTime), style: infoStyle),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopRightAiMetaBadge(BuildContext context) {
+    return Positioned(
+      top: 6,
+      right: 6,
+      child: _buildAiMetaBadge(context),
+    );
+  }
+
+  Widget _buildFileSizeInfo(File file, TextStyle style) {
+    final int bytes = screenshot.fileSize;
+    if (bytes > 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 6),
+          Text(_formatFileSize(bytes), style: style),
+        ],
+      );
+    }
+
+    final String key = file.path;
+    final int? cached = _lazyFileSizeCache[key];
+    if (cached != null && cached > 0) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 6),
+          Text(_formatFileSize(cached), style: style),
+        ],
+      );
+    }
+
+    final Future<int> fut = _lazyFileSizeFutures.putIfAbsent(key, () async {
+      try {
+        if (!await file.exists()) return 0;
+        final int v = await file.length();
+        if (v > 0) {
+          _lazyFileSizeCache[key] = v;
+          final int? gid = screenshot.id;
+          if (gid != null) {
+            unawaited(
+              ScreenshotDatabase.instance.updateFileSizeByGid(
+                packageName: screenshot.appPackageName,
+                gid: gid,
+                newSize: v,
+              ),
+            );
+          }
+        }
+        return v;
+      } catch (_) {
+        return 0;
+      } finally {
+        _lazyFileSizeFutures.remove(key);
+      }
+    });
+
+    return FutureBuilder<int>(
+      future: fut,
+      builder: (context, snap) {
+        final int v = (snap.data ?? 0);
+        if (v <= 0) return const SizedBox.shrink();
+        return Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // 应用图标
-            _buildAppIcon(context),
             const SizedBox(width: 6),
-            // 时间
+            Text(_formatFileSize(v), style: style),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAiMetaBadge(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => AiMetaSheet.show(
+        context,
+        filePath: screenshot.filePath,
+        fallbackOcrText: screenshot.ocrText,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.22),
+            width: 1,
+          ),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome, size: 12, color: Colors.white),
+            SizedBox(width: 4),
             Text(
-              _formatTime(screenshot.captureTime),
+              'AI',
               style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Theme.of(context).textTheme.bodySmall?.color
-                    : Colors.white,
-                fontWeight: FontWeight.w600,
+                fontSize: 10,
+                color: Colors.white,
+                height: 1.0,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],
@@ -289,7 +446,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建应用图标
   Widget _buildAppIcon(BuildContext context) {
     final app = appInfoMap?[screenshot.appPackageName];
@@ -304,7 +461,7 @@ class ScreenshotItemWidget extends StatelessWidget {
         ),
       );
     }
-    
+
     // 占位符
     final parts = screenshot.appPackageName.split('.');
     final head = parts.isNotEmpty ? parts.last : screenshot.appPackageName;
@@ -327,7 +484,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建选择框
   Widget _buildCheckbox(BuildContext context) {
     return Positioned(
@@ -351,7 +508,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建收藏按钮
   Widget _buildFavoriteButton(BuildContext context) {
     return Positioned(
@@ -401,7 +558,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 构建错误占位
   Widget _buildErrorItem(BuildContext context) {
     return Container(
@@ -423,11 +580,21 @@ class ScreenshotItemWidget extends StatelessWidget {
       ),
     );
   }
-  
+
   /// 格式化时间
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
-  
-}
 
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) {
+      return '${bytes}B';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    } else {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)}GB';
+    }
+  }
+}

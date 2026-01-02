@@ -68,7 +68,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         (zipBytes == null || zipBytes.isEmpty)) {
       await FlutterLogger.nativeWarn(
         'MERGE',
-        'mergeDataFromZip: no input provided',
+        'mergeDataFromZip：未提供输入数据',
       );
       return null;
     }
@@ -83,7 +83,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (base == null) {
       await FlutterLogger.nativeError(
         'MERGE',
-        'mergeDataFromZip: base directory unavailable',
+        'mergeDataFromZip：base 目录不可用',
       );
       return null;
     }
@@ -125,7 +125,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       if (extraction == null) {
         await FlutterLogger.nativeWarn(
           'MERGE',
-          'mergeDataFromZip: extraction returned null',
+          'mergeDataFromZip：解压结果为 null',
         );
         return null;
       }
@@ -147,7 +147,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     } catch (e) {
       await FlutterLogger.nativeError(
         'MERGE',
-        'mergeDataFromZip exception: $e',
+        'mergeDataFromZip 异常：$e',
       );
       return null;
     } finally {

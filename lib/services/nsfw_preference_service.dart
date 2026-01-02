@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:collection/collection.dart';
 import '../models/screenshot_record.dart';
 import 'screenshot_database.dart';
 import '../widgets/nsfw_guard.dart';
@@ -13,7 +12,8 @@ import '../widgets/nsfw_guard.dart';
 /// - 本服务为内存缓存 + DB 持久化。建议在页面加载/分页追加后调用预加载接口，保证判定为 O(1)。
 class NsfwPreferenceService {
   static NsfwPreferenceService? _instance;
-  static NsfwPreferenceService get instance => _instance ??= NsfwPreferenceService._();
+  static NsfwPreferenceService get instance =>
+      _instance ??= NsfwPreferenceService._();
 
   NsfwPreferenceService._();
 
@@ -21,15 +21,28 @@ class NsfwPreferenceService {
 
   // 规则缓存
   bool _rulesLoaded = false;
-  final Set<String> _exactHosts = <String>{};       // 例：example.com
-  final Set<String> _wildcardBases = <String>{};    // 例：example.com（对应 *.example.com）
+  final Set<String> _exactHosts = <String>{}; // 例：example.com
+  final Set<String> _wildcardBases =
+      <String>{}; // 例：example.com（对应 *.example.com）
 
   // 手动标记缓存：key = "$appPackageName#$screenshotId"
   final Set<String> _manualKeys = <String>{};
 
+  // AI 自动识别 NSFW（ai_image_meta.nsfw）缓存：key = file_path
+  final Set<String> _aiNsfwFilePaths = <String>{};
+
+  // AI 图片元数据存在性缓存：key = file_path（tags/description/desc_range 任一非空）
+  final Set<String> _aiMetaFilePaths = <String>{};
+
+  // 动态/事件标签 NSFW（来自 segments/segment_results）：key = file_path
+  final Set<String> _segmentNsfwFilePaths = <String>{};
+
   // 简单并发保护
   Future<void>? _rulesLoading;
-  final Map<String, Future<void>> _manualBatchLoadingByApp = <String, Future<void>>{};
+  final Map<String, Future<void>> _manualBatchLoadingByApp =
+      <String, Future<void>>{};
+  Future<void>? _aiNsfwLoading;
+  Future<void>? _segmentNsfwLoading;
 
   // ============ 规则加载与缓存 ============
 
@@ -121,12 +134,19 @@ class NsfwPreferenceService {
   Future<int> previewMatchCount(String input) async {
     final (host, isWildcard) = normalizeAndValidate(input);
     await ensureRulesLoaded();
-    return await _db.countScreenshotsMatchingDomain(host: host, includeSubdomains: isWildcard);
+    return await _db.countScreenshotsMatchingDomain(
+      host: host,
+      includeSubdomains: isWildcard,
+    );
   }
 
   Future<bool> addRule(String input, {String? comment}) async {
     final (host, isWildcard) = normalizeAndValidate(input);
-    final ok = await _db.addNsfwDomainRule(pattern: host, isWildcard: isWildcard, comment: comment);
+    final ok = await _db.addNsfwDomainRule(
+      pattern: host,
+      isWildcard: isWildcard,
+      comment: comment,
+    );
     if (ok) {
       await reloadRules();
     }
@@ -193,6 +213,119 @@ class NsfwPreferenceService {
     await f;
   }
 
+  /// 预加载 AI 自动识别的 NSFW 标记（ai_image_meta.nsfw）。
+  ///
+  /// - 以 file_path 为唯一键，适用于“跨页面/跨列表”的统一遮罩。
+  /// - 仅更新传入路径的缓存；未出现在 DB 的路径将被视为“非 NSFW”。
+  Future<void> preloadAiNsfwFlags({required List<String> filePaths}) async {
+    if (filePaths.isEmpty) return;
+
+    final List<String> paths = filePaths
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (paths.isEmpty) return;
+
+    // 合并并发：同一时刻只跑一个 ai_meta 批量查询，避免滚动触发风暴
+    if (_aiNsfwLoading != null) {
+      try {
+        await _aiNsfwLoading;
+      } catch (_) {}
+    }
+
+    final load = () async {
+      try {
+        final map = await _db.getAiImageMetaByFilePaths(paths);
+        for (final p in paths) {
+          final row = map[p];
+          final bool nsfw = ((row?['nsfw'] as int?) ?? 0) == 1;
+          final String tagsJson = (row?['tags_json'] as String?)?.trim() ?? '';
+          final String desc = (row?['description'] as String?)?.trim() ?? '';
+          final String descRange =
+              (row?['description_range'] as String?)?.trim() ?? '';
+          final bool hasMeta =
+              tagsJson.isNotEmpty || desc.isNotEmpty || descRange.isNotEmpty;
+          if (nsfw) {
+            _aiNsfwFilePaths.add(p);
+          } else {
+            _aiNsfwFilePaths.remove(p);
+          }
+          if (hasMeta) {
+            _aiMetaFilePaths.add(p);
+          } else {
+            _aiMetaFilePaths.remove(p);
+          }
+        }
+      } finally {
+        _aiNsfwLoading = null;
+      }
+    };
+
+    final f = load();
+    _aiNsfwLoading = f;
+    await f;
+  }
+
+  bool isAiNsfwCached({required String filePath}) {
+    final String p = filePath.trim();
+    if (p.isEmpty) return false;
+    return _aiNsfwFilePaths.contains(p);
+  }
+
+  bool hasAiMetaCached({required String filePath}) {
+    final String p = filePath.trim();
+    if (p.isEmpty) return false;
+    return _aiMetaFilePaths.contains(p);
+  }
+
+  /// 预加载“动态里标记为 NSFW”的 file_path（segment_results.categories/structured_json 含 nsfw）。
+  ///
+  /// - 以 file_path 为唯一键；适用于把动态标签传播到截图列表/时间线/搜索。
+  /// - 仅更新传入路径的缓存；未命中的路径将被视为“非 NSFW”。
+  Future<void> preloadSegmentNsfwFlags({required List<String> filePaths}) async {
+    if (filePaths.isEmpty) return;
+
+    final List<String> paths = filePaths
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (paths.isEmpty) return;
+
+    // 合并并发：同一时刻只跑一个 segment 批量查询，避免滚动触发风暴
+    if (_segmentNsfwLoading != null) {
+      try {
+        await _segmentNsfwLoading;
+      } catch (_) {}
+    }
+
+    final load = () async {
+      try {
+        final Set<String> flagged = await _db.getSegmentNsfwFilePaths(paths);
+        for (final p in paths) {
+          if (flagged.contains(p)) {
+            _segmentNsfwFilePaths.add(p);
+          } else {
+            _segmentNsfwFilePaths.remove(p);
+          }
+        }
+      } finally {
+        _segmentNsfwLoading = null;
+      }
+    };
+
+    final f = load();
+    _segmentNsfwLoading = f;
+    await f;
+  }
+
+  bool isSegmentNsfwCached({required String filePath}) {
+    final String p = filePath.trim();
+    if (p.isEmpty) return false;
+    return _segmentNsfwFilePaths.contains(p);
+  }
+
   Future<bool> setManualFlag({
     required int screenshotId,
     required String appPackageName,
@@ -226,17 +359,27 @@ class NsfwPreferenceService {
   // ============ 聚合决策（同步，依赖预加载缓存） ============
 
   /// 同步判定：若未预加载，可能返回“保守假阴性”（不遮罩）。
-  /// 建议：先调用 [preloadManualFlags] 与 [ensureRulesLoaded]。
+  /// 建议：先调用 [preloadManualFlags] / [preloadAiNsfwFlags] 与 [ensureRulesLoaded]。
   bool shouldMaskCached(ScreenshotRecord s, {String? imageUrl}) {
     // 1) 手动标记优先
-    if (s.id != null && isManuallyFlaggedCached(screenshotId: s.id!, appPackageName: s.appPackageName)) {
+    if (s.id != null &&
+        isManuallyFlaggedCached(
+          screenshotId: s.id!,
+          appPackageName: s.appPackageName,
+        )) {
       return true;
     }
     // 2) 域名规则（pageUrl / imageUrl）
     if (_matchesBlockedHost(s.pageUrl)) return true;
     if (_matchesBlockedHost(imageUrl)) return true;
 
-    // 3) 现有自动识别（关键字/站点模式）
+    // 3) AI 自动识别（ai_image_meta.nsfw）
+    if (isAiNsfwCached(filePath: s.filePath)) return true;
+
+    // 3.5) 动态 NSFW 标签（segment_results.categories/structured_json）
+    if (isSegmentNsfwCached(filePath: s.filePath)) return true;
+
+    // 4) 现有自动识别（关键字/站点模式）
     return NsfwDetector.isNsfwUrl(s.pageUrl);
   }
 

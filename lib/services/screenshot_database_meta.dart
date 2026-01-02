@@ -1203,10 +1203,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         final file = File(filePath);
         if (await file.exists()) {
           await file.delete();
-          FlutterLogger.nativeInfo('FS', 'deleted file: ' + filePath);
+          FlutterLogger.nativeInfo('FS', '已删除文件：' + filePath);
         }
       } catch (e) {
-        FlutterLogger.nativeWarn('FS', 'delete file failed: ' + e.toString());
+        FlutterLogger.nativeWarn('FS', '删除文件失败：' + e.toString());
       }
       await _recomputeAppStatForPackage(db, packageName);
       FlutterLogger.nativeInfo('DB', '删除后重算统计 gid=' + id.toString());
@@ -1280,7 +1280,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       await _deleteFilesConcurrently(filePaths, maxConcurrent: 6);
 
       sw.stop();
-      FlutterLogger.nativeInfo('TOTAL', '批量删除总耗时 ${sw.elapsedMilliseconds}ms');
+      FlutterLogger.nativeInfo('TOTAL', '批量删除总耗时 ${sw.elapsedMilliseconds}毫秒');
       return deletedTotal;
     } catch (e) {
       print('批量删除截屏记录失败: $e');
@@ -1505,6 +1505,95 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  /// 批量读取截图 OCR 文本（按 segment_samples 的字段：file_path/app_package_name/capture_time）。
+  ///
+  /// - 返回值 key 为 file_path（与入参一致）
+  /// - 仅返回非空 OCR（trim 后长度 > 0）
+  /// - 通过 capture_time 计算 year/month 定位分库分表，避免对所有表进行全量扫描
+  Future<Map<String, String>> getOcrTextBySampleRows(
+    List<Map<String, dynamic>> sampleRows,
+  ) async {
+    final Map<String, String> out = <String, String>{};
+    if (sampleRows.isEmpty) return out;
+
+    int? asInt(Object? v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse('$v');
+    }
+
+    final Map<String, Map<int, Map<int, Set<String>>>> grouped =
+        <String, Map<int, Map<int, Set<String>>>>{};
+
+    for (final Map<String, dynamic> row in sampleRows) {
+      final String pkg = ((row['app_package_name'] as String?) ?? '').trim();
+      final String path = ((row['file_path'] as String?) ?? '').trim();
+      final int? ts = asInt(row['capture_time']);
+      if (pkg.isEmpty || path.isEmpty || ts == null || ts <= 0) continue;
+
+      final DateTime dt = DateTime.fromMillisecondsSinceEpoch(ts);
+      final int year = dt.year;
+      final int month = dt.month;
+      if (year <= 1970 || month < 1 || month > 12) continue;
+
+      grouped
+          .putIfAbsent(pkg, () => <int, Map<int, Set<String>>>{})
+          .putIfAbsent(year, () => <int, Set<String>>{})
+          .putIfAbsent(month, () => <String>{})
+          .add(path);
+    }
+
+    if (grouped.isEmpty) return out;
+
+    // SQLite 参数默认上限 999，这里保守分批。
+    const int chunkSize = 400;
+
+    for (final pkgEntry in grouped.entries) {
+      final String pkg = pkgEntry.key;
+      for (final yearEntry in pkgEntry.value.entries) {
+        final int year = yearEntry.key;
+        final shardDb = await _openShardDb(pkg, year);
+        if (shardDb == null) continue;
+
+        for (final monthEntry in yearEntry.value.entries) {
+          final int month = monthEntry.key;
+          final String table = _monthTableName(year, month);
+          if (!await _tableExists(shardDb, table)) continue;
+
+          final List<String> paths =
+              monthEntry.value.toList(growable: false);
+          if (paths.isEmpty) continue;
+
+          for (int i = 0; i < paths.length; i += chunkSize) {
+            final int end =
+                (i + chunkSize) > paths.length ? paths.length : (i + chunkSize);
+            final List<String> chunk = paths.sublist(i, end);
+            final String placeholders = List.filled(chunk.length, '?').join(',');
+
+            try {
+              final List<Map<String, Object?>> rows = await shardDb.query(
+                table,
+                columns: const <String>['file_path', 'ocr_text'],
+                where:
+                    'file_path IN ($placeholders) AND ocr_text IS NOT NULL AND LENGTH(ocr_text) > 0',
+                whereArgs: chunk,
+              );
+              for (final r in rows) {
+                final String? p = r['file_path'] as String?;
+                if (p == null || p.trim().isEmpty) continue;
+                final String t = ((r['ocr_text'] as String?) ?? '').trim();
+                if (t.isEmpty) continue;
+                out[p.trim()] = t;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    return out;
+  }
+
   /// 通过文件名在所有分库中查找截图的绝对路径（找到一条即返回）
   Future<String?> findScreenshotPathByBasename(String filename) async {
     try {
@@ -1537,6 +1626,51 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             if (p.isNotEmpty) return p;
           }
         } catch (_) {}
+      }
+
+      // 兼容：聊天引用可能是 segment_id（纯数字），而不是文件名。
+      // 这种情况下，尝试从 segment_samples 中取该段的一张“代表截图”（优先 keyframe）。
+      final int? segmentId = int.tryParse(base);
+      if (segmentId != null && segmentId > 0) {
+        Future<String?> pickSegmentSamplePath({required bool keyframesOnly}) async {
+          try {
+            final String where = keyframesOnly
+                ? 'segment_id = ? AND is_keyframe = 1'
+                : 'segment_id = ?';
+            final List<Map<String, Object?>> stats = await master.rawQuery(
+              'SELECT MIN(position_index) AS minp, MAX(position_index) AS maxp FROM segment_samples WHERE $where',
+              <Object?>[segmentId],
+            );
+            if (stats.isEmpty) return null;
+            final int? minp = stats.first['minp'] as int?;
+            final int? maxp = stats.first['maxp'] as int?;
+            if (minp == null || maxp == null) return null;
+            final int target = ((minp + maxp) / 2).round();
+
+            final List<Map<String, Object?>> pick = await master.rawQuery(
+              'SELECT file_path FROM segment_samples WHERE $where ORDER BY ABS(position_index - ?) ASC, position_index ASC LIMIT 1',
+              <Object?>[segmentId, target],
+            );
+            if (pick.isEmpty) return null;
+            final String p = (pick.first['file_path'] as String?) ?? '';
+            return p.isEmpty ? null : p;
+          } catch (_) {
+            return null;
+          }
+        }
+
+        final String? keyframePath =
+            await pickSegmentSamplePath(keyframesOnly: true);
+        if (keyframePath != null && keyframePath.isNotEmpty) return keyframePath;
+
+        final String? anyPath = await pickSegmentSamplePath(keyframesOnly: false);
+        if (anyPath != null && anyPath.isNotEmpty) return anyPath;
+
+        // 兜底：若该段没有 segment_samples（例如仅有 AI 结果、样本表为空/被清理），
+        // 则尝试用 segments 的时间窗在分库截图表中挑一张“最接近中间时间”的截图作为代表。
+        final String? shardPicked =
+            await _pickRepresentativeScreenshotPathForSegment(segmentId);
+        if (shardPicked != null && shardPicked.isNotEmpty) return shardPicked;
       }
 
       // 列出所有应用包（从 shard_registry 或 app_registry 猜测）
@@ -1612,6 +1746,147 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         }
       } catch (_) {}
       return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<String> _splitCsv(String raw) => raw
+      .split(',')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toSet()
+      .toList();
+
+  Future<String?> _pickRepresentativeScreenshotPathForSegment(int segmentId) async {
+    try {
+      final master = await database;
+      final segRows = await master.query(
+        'segments',
+        columns: const <String>['start_time', 'end_time', 'app_packages'],
+        where: 'id = ?',
+        whereArgs: <Object?>[segmentId],
+        limit: 1,
+      );
+      if (segRows.isEmpty) return null;
+      final int startMillis = (segRows.first['start_time'] as int?) ?? 0;
+      final int endMillis0 = (segRows.first['end_time'] as int?) ?? 0;
+      if (startMillis <= 0 || endMillis0 <= 0) return null;
+      final int endMillis = endMillis0 >= startMillis ? endMillis0 : startMillis;
+      final int midMillis = ((startMillis + endMillis) / 2).round();
+
+      final String pkgsRaw = (segRows.first['app_packages'] as String?)?.trim() ?? '';
+      final List<String> pkgs = pkgsRaw.isEmpty ? const <String>[] : _splitCsv(pkgsRaw);
+
+      final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime de = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final List<List<int>> ymList = _listYearMonthBetween(ds, de);
+
+      String? bestPath;
+      int bestDiff = 1 << 62;
+
+      void considerCandidate(String path, int captureTime) {
+        if (path.trim().isEmpty) return;
+        final int diff = (captureTime - midMillis).abs();
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestPath = path;
+        }
+      }
+
+      Future<void> considerFromTable(Database shardDb, String table) async {
+        List<Map<String, Object?>> rows = const <Map<String, Object?>>[];
+
+        // <= mid (before)
+        try {
+          rows = await shardDb.rawQuery(
+            'SELECT file_path, capture_time FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0 AND capture_time <= ? ORDER BY capture_time DESC LIMIT 1',
+            <Object?>[startMillis, endMillis, midMillis],
+          );
+        } catch (_) {
+          try {
+            rows = await shardDb.rawQuery(
+              'SELECT file_path, capture_time FROM $table WHERE capture_time >= ? AND capture_time <= ? AND capture_time <= ? ORDER BY capture_time DESC LIMIT 1',
+              <Object?>[startMillis, endMillis, midMillis],
+            );
+          } catch (_) {
+            rows = const <Map<String, Object?>>[];
+          }
+        }
+        if (rows.isNotEmpty) {
+          final String p = (rows.first['file_path'] as String?) ?? '';
+          final int t = (rows.first['capture_time'] as int?) ?? 0;
+          if (p.isNotEmpty && t > 0) considerCandidate(p, t);
+        }
+
+        // >= mid (after)
+        try {
+          rows = await shardDb.rawQuery(
+            'SELECT file_path, capture_time FROM $table WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0 AND capture_time >= ? ORDER BY capture_time ASC LIMIT 1',
+            <Object?>[startMillis, endMillis, midMillis],
+          );
+        } catch (_) {
+          try {
+            rows = await shardDb.rawQuery(
+              'SELECT file_path, capture_time FROM $table WHERE capture_time >= ? AND capture_time <= ? AND capture_time >= ? ORDER BY capture_time ASC LIMIT 1',
+              <Object?>[startMillis, endMillis, midMillis],
+            );
+          } catch (_) {
+            rows = const <Map<String, Object?>>[];
+          }
+        }
+        if (rows.isNotEmpty) {
+          final String p = (rows.first['file_path'] as String?) ?? '';
+          final int t = (rows.first['capture_time'] as int?) ?? 0;
+          if (p.isNotEmpty && t > 0) considerCandidate(p, t);
+        }
+      }
+
+      // 优先：若 segments.app_packages 给出了应用集合，则仅在这些应用的分库中寻找
+      if (pkgs.isNotEmpty) {
+        for (final pkg in pkgs) {
+          final years = await _listShardYearsForApp(pkg);
+          if (years.isEmpty) continue;
+          for (final ym in ymList) {
+            final int y = ym[0];
+            final int m = ym[1];
+            if (!years.contains(y)) continue;
+            final shardDb = await _openShardDb(pkg, y);
+            if (shardDb == null) continue;
+            final String t = _monthTableName(y, m);
+            if (!await _tableExists(shardDb, t)) continue;
+            await considerFromTable(shardDb, t);
+          }
+        }
+        return bestPath;
+      }
+
+      // 兜底：未知应用时，全局扫描 shard_registry（仅扫描时间窗涉及的 year）
+      final shardRows = await master.query(
+        'shard_registry',
+        columns: const <String>['app_package_name', 'year'],
+        distinct: true,
+      );
+      if (shardRows.isEmpty) return null;
+      for (final sh in shardRows) {
+        final String pkg = (sh['app_package_name'] as String?) ?? '';
+        final int y = (sh['year'] as int?) ?? 0;
+        if (pkg.isEmpty || y <= 0) continue;
+        final bool containsYear = ymList.any((ym) => ym[0] == y);
+        if (!containsYear) continue;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        for (final ym in ymList) {
+          final int year = ym[0];
+          final int month = ym[1];
+          if (year != y) continue;
+          final String t = _monthTableName(year, month);
+          if (!await _tableExists(shardDb, t)) continue;
+          await considerFromTable(shardDb, t);
+        }
+      }
+
+      return bestPath;
     } catch (_) {
       return null;
     }
@@ -2447,13 +2722,33 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
+      final now = DateTime.now().millisecondsSinceEpoch;
       await db.insert('favorites', {
         'screenshot_id': screenshotId,
         'app_package_name': appPackageName,
-        'favorite_time': DateTime.now().millisecondsSinceEpoch,
+        'favorite_time': now,
         'note': note,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // 同步 SearchIndex：仅索引“有备注”的收藏
+      final String trimmed = (note ?? '').trim();
+      final String docKey = _favoriteNoteDocKey(appPackageName, screenshotId);
+      if (trimmed.isNotEmpty) {
+        // ignore: unawaited_futures
+        this.upsertSearchDoc(
+          docKey: docKey,
+          docType: kSearchDocTypeFavoriteNote,
+          title: '收藏备注',
+          content: trimmed,
+          appPackageName: appPackageName,
+          screenshotId: screenshotId,
+          updatedAt: now,
+        );
+      } else {
+        // ignore: unawaited_futures
+        this.deleteSearchDoc(docKey);
+      }
       return true;
     } catch (e) {
       print('添加收藏失败: $e');
@@ -2472,6 +2767,10 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         where: 'screenshot_id = ? AND app_package_name = ?',
         whereArgs: [screenshotId, appPackageName],
       );
+      if (result > 0) {
+        // ignore: unawaited_futures
+        this.deleteSearchDoc(_favoriteNoteDocKey(appPackageName, screenshotId));
+      }
       return result > 0;
     } catch (e) {
       print('移除收藏失败: $e');
@@ -2565,12 +2864,33 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
   }) async {
     final db = await database;
     try {
+      final now = DateTime.now().millisecondsSinceEpoch;
       final result = await db.update(
         'favorites',
-        {'note': note, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        {'note': note, 'updated_at': now},
         where: 'screenshot_id = ? AND app_package_name = ?',
         whereArgs: [screenshotId, appPackageName],
       );
+      if (result > 0) {
+        // 同步 SearchIndex：仅索引“有备注”的收藏
+        final String trimmed = (note ?? '').trim();
+        final String docKey = _favoriteNoteDocKey(appPackageName, screenshotId);
+        if (trimmed.isNotEmpty) {
+          // ignore: unawaited_futures
+          this.upsertSearchDoc(
+            docKey: docKey,
+            docType: kSearchDocTypeFavoriteNote,
+            title: '收藏备注',
+            content: trimmed,
+            appPackageName: appPackageName,
+            screenshotId: screenshotId,
+            updatedAt: now,
+          );
+        } else {
+          // ignore: unawaited_futures
+          this.deleteSearchDoc(docKey);
+        }
+      }
       return result > 0;
     } catch (e) {
       print('更新收藏备注失败: $e');
@@ -2956,14 +3276,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           await _getInternalFilesDir();
       await FlutterLogger.nativeInfo(
         'EXPORT',
-        'exportDatabaseToDownloads: baseDir=' + (base?.path ?? 'null'),
+        '导出到下载目录：baseDir=' + (base?.path ?? 'null'),
       );
       if (base == null) return null;
       final outputDir = Directory(join(base.path, 'output'));
       if (!await outputDir.exists()) {
         await FlutterLogger.nativeWarn(
           'EXPORT',
-          'output not found: ' + outputDir.path,
+          '未找到 output 目录：' + outputDir.path,
         );
         return null;
       }
@@ -2973,7 +3293,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         try {
           await FlutterLogger.nativeInfo(
             'EXPORT',
-            'try native fast exportOutputToDownloadsNative',
+            '尝试原生快速导出 exportOutputToDownloadsNative',
           );
           final dynamic fast = await ScreenshotDatabase._channel.invokeMethod(
             'exportOutputToDownloadsNative',
@@ -2989,14 +3309,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
                 (map['displayPath'] as String?);
             await FlutterLogger.nativeInfo(
               'EXPORT',
-              'native fast saved to ' + (map['humanPath']?.toString() ?? ''),
+              '原生快速导出已保存至 ' + (map['humanPath']?.toString() ?? ''),
             );
             return map;
           }
         } catch (e) {
           await FlutterLogger.nativeWarn(
             'EXPORT',
-            'native fast path unavailable, fallback: ' + e.toString(),
+            '原生快速导出不可用，回退：' + e.toString(),
           );
         }
       }
@@ -3008,7 +3328,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
       await FlutterLogger.nativeInfo(
         'EXPORT',
-        'fallback zip path=' + tmpZip.path,
+        '兜底 zip 路径=' + tmpZip.path,
       );
       final String outputPath = outputDir.path;
       final String tmpZipPath = tmpZip.path;
@@ -3021,7 +3341,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       if (zippedPath == null) return null;
       await FlutterLogger.nativeInfo(
         'EXPORT',
-        'fallback zip ready path=' + zippedPath,
+        '兜底 zip 已就绪 路径=' + zippedPath,
       );
 
       final dynamic result = await ScreenshotDatabase._channel
@@ -3041,13 +3361,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
         await FlutterLogger.nativeInfo(
           'EXPORT',
-          'saved to ' + (map['humanPath']?.toString() ?? ''),
+          '已保存至 ' + (map['humanPath']?.toString() ?? ''),
         );
         return map;
       }
       await FlutterLogger.nativeWarn(
         'EXPORT',
-        'exportFileToDownloads result is not Map, result=' + result.toString(),
+        'exportFileToDownloads 返回值不是 Map，result=' + result.toString(),
       );
       return null;
     } catch (e) {
@@ -3055,7 +3375,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       try {
         await FlutterLogger.nativeError(
           'EXPORT',
-          'exportDatabaseToDownloads exception: ' + e.toString(),
+          'exportDatabaseToDownloads 异常：' + e.toString(),
         );
       } catch (_) {}
       return null;
@@ -3084,7 +3404,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       try {
         await FlutterLogger.nativeInfo(
           'IMPORT',
-          'try native importZipToOutput path=' + zipPath,
+          '尝试原生导入 importZipToOutput 路径=' + zipPath,
         );
         final bool ok = await _importDataFromZipNative(
           zipPath: zipPath,
@@ -3137,7 +3457,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       );
       if ((zipPath == null || zipPath.isEmpty) &&
           (zipBytes == null || zipBytes.isEmpty)) {
-        await FlutterLogger.nativeWarn('IMPORT', 'no input');
+        await FlutterLogger.nativeWarn('IMPORT', '无输入数据');
         return null;
       }
 
@@ -3154,30 +3474,30 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             await legacyOutputDir.delete(recursive: true);
             await FlutterLogger.nativeInfo(
               'IMPORT',
-              'removed legacy cache dir before overwrite: ' + legacyOutputDir.path,
+              '覆盖导入前已删除旧 cache 目录：' + legacyOutputDir.path,
             );
           } catch (e) {
             await FlutterLogger.nativeWarn(
               'IMPORT',
-              'failed to delete legacy cache dir: ' + e.toString(),
+              '删除旧 cache 目录失败：' + e.toString(),
             );
           }
         }
       }
 
-      await FlutterLogger.nativeInfo('IMPORT', 'baseDir=' + base.path);
+      await FlutterLogger.nativeInfo('IMPORT', '基础目录=' + base.path);
 
       if (overwrite && await outputDir.exists()) {
         try {
           await outputDir.delete(recursive: true);
           await FlutterLogger.nativeInfo(
             'IMPORT',
-            'removed old outputDir before overwrite: ' + outputDir.path,
+            '覆盖导入前已删除旧 outputDir：' + outputDir.path,
           );
         } catch (e) {
           await FlutterLogger.nativeWarn(
             'IMPORT',
-            'failed to delete old outputDir: ' + e.toString(),
+            '删除旧 outputDir 失败：' + e.toString(),
           );
         }
       }
@@ -3186,7 +3506,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         await outputDir.create(recursive: true);
         await FlutterLogger.nativeInfo(
           'IMPORT',
-          'created outputDir=' + outputDir.path,
+          '已创建 outputDir=' + outputDir.path,
         );
       } else {
         try {
@@ -3285,7 +3605,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     } catch (e) {
       await FlutterLogger.nativeError(
         'IMPORT',
-        'native importZipToOutput failed: ' + e.toString(),
+        '原生 importZipToOutput 失败：' + e.toString(),
       );
       return false;
     }
@@ -3347,12 +3667,12 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           await entity.delete(recursive: true);
           await FlutterLogger.nativeInfo(
             'IMPORT',
-            'cleared cache dir: ' + entity.path,
+            '已清理缓存目录：' + entity.path,
           );
         } catch (e) {
           await FlutterLogger.nativeWarn(
             'IMPORT',
-            'failed to clear cache dir: ' + entity.path + ' error=' + e.toString(),
+            '清理缓存目录失败：' + entity.path + ' 错误=' + e.toString(),
           );
         }
       }
@@ -3360,7 +3680,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       try {
         await FlutterLogger.nativeWarn(
           'IMPORT',
-          'list cache dirs failed: ' + e.toString(),
+          '列举缓存目录失败：' + e.toString(),
         );
       } catch (_) {}
     }

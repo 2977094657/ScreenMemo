@@ -546,7 +546,7 @@ class AISettingsService {
     final sw = Stopwatch()..start();
     final ok = await db.deleteAiConversation(cid);
     sw.stop();
-    try { await FlutterLogger.nativeInfo('UI', 'deleteConversation done ms='+sw.elapsedMilliseconds.toString()+' cid='+cid); } catch (_) {}
+    try { await FlutterLogger.nativeInfo('UI', '删除对话完成 耗时(毫秒)='+sw.elapsedMilliseconds.toString()+' cid='+cid); } catch (_) {}
     if (ok) {
       // 若删除的是当前激活，则选择最新一条或 default
       try {
@@ -700,6 +700,12 @@ class AIMessage {
   // 新增：深度思考内容与耗时（仅用于本地持久化与 UI 展示，不参与上行）
   final String? reasoningContent;
   final Duration? reasoningDuration;
+  // —— 以下字段仅用于上行请求（不参与本地持久化）——
+  // 多模态/结构化 content：如 [{type:'text',text:'..'},{type:'image_url',image_url:{url:'data:...'}}]
+  final Object? apiContent;
+  // 工具调用：role=assistant 时附带 tool_calls；role=tool 时附带 tool_call_id
+  final List<Map<String, dynamic>>? toolCalls;
+  final String? toolCallId;
 
   AIMessage({
     required this.role,
@@ -707,12 +713,29 @@ class AIMessage {
     DateTime? createdAt,
     this.reasoningContent,
     this.reasoningDuration,
+    this.apiContent,
+    this.toolCalls,
+    this.toolCallId,
   }) : createdAt = createdAt ?? DateTime.now();
 
-  Map<String, dynamic> toJson() => {
-        'role': role,
-        'content': content,
-      };
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> m = <String, dynamic>{'role': role};
+
+    Object? effectiveContent = apiContent ?? content;
+    if (role == 'assistant' &&
+        apiContent == null &&
+        (toolCalls != null && toolCalls!.isNotEmpty) &&
+        content.trim().isEmpty) {
+      effectiveContent = null;
+    }
+    m['content'] = effectiveContent;
+
+    if (toolCalls != null && toolCalls!.isNotEmpty) m['tool_calls'] = toolCalls;
+    if (toolCallId != null && toolCallId!.trim().isNotEmpty) {
+      m['tool_call_id'] = toolCallId!.trim();
+    }
+    return m;
+  }
 
   factory AIMessage.fromJson(Map<String, dynamic> json) {
     return AIMessage(

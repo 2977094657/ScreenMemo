@@ -71,7 +71,7 @@ class MemoryBridge(
                 val count = memoryEngine.syncSegments(appContext)
                 result.success(count)
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "syncSegments failed", t)
+                FileLogger.e(TAG, "syncSegments 失败", t)
                 result.error("sync_segments_failed", t.message, null)
             }
         }
@@ -94,7 +94,7 @@ class MemoryBridge(
                 val tags = memoryEngine.loadTagsByStatus(status, limit, offset)
                 result.success(tags.map { it.toMap() })
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "loadTags failed", t)
+                FileLogger.e(TAG, "loadTags 失败", t)
                 result.error("load_tags_failed", t.message, null)
             }
         }
@@ -108,7 +108,7 @@ class MemoryBridge(
                 val events = memoryEngine.loadRecentEvents(limit, offset)
                 result.success(events.map { it.toMap() })
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "loadRecentEvents failed", t)
+                FileLogger.e(TAG, "loadRecentEvents 失败", t)
                 result.error("load_events_failed", t.message, null)
             }
         }
@@ -135,7 +135,7 @@ class MemoryBridge(
             MemoryBackendService.start(appContext)
             result.success(true)
         } catch (t: Throwable) {
-            FileLogger.e(TAG, "Failed to start MemoryBackendService", t)
+            FileLogger.e(TAG, "启动 MemoryBackendService 失败", t)
             result.error("start_service_failed", t.message, null)
         }
     }
@@ -167,7 +167,7 @@ class MemoryBridge(
                 memoryEngine.ingestEvent(event)
                 result.success(true)
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "ingestEvent failed", t)
+                FileLogger.e(TAG, "ingestEvent 失败", t)
                 result.error("ingest_failed", t.message, null)
             }
         }
@@ -211,7 +211,7 @@ class MemoryBridge(
                 val removed = memoryEngine.deleteTag(tagId)
                 result.success(removed)
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "deleteTag failed", t)
+                FileLogger.e(TAG, "deleteTag 失败", t)
                 result.error("delete_tag_failed", t.message, null)
             }
         }
@@ -252,7 +252,7 @@ class MemoryBridge(
                 val processed = memoryEngine.processSampleHistoricalEvents(limit)
                 result.success(processed)
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "processSampleEvents failed", t)
+                FileLogger.e(TAG, "processSampleEvents 失败", t)
                 result.error("process_sample_failed", t.message, null)
             }
         }
@@ -264,7 +264,7 @@ class MemoryBridge(
                 memoryEngine.clearAllMemoryData()
                 result.success(true)
             } catch (t: Throwable) {
-                FileLogger.e(TAG, "clearMemoryData failed", t)
+                FileLogger.e(TAG, "clearMemoryData 失败", t)
                 result.error("clear_memory_failed", t.message, null)
             }
         }
@@ -450,4 +450,3 @@ class MemoryBridge(
         private const val SNAPSHOT_EVENT_LIMIT = 60
     }
 }
-

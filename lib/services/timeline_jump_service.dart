@@ -30,7 +30,7 @@ class TimelineJumpService {
         if (e == AppLifecycleEvent.timelineShown) {
           final req = requestNotifier.value;
           if (req != null) {
-            try { FlutterLogger.nativeDebug('TimelineJump', 'timelineShown 事件触发，重发跳转请求 path=' + req.filePath); } catch (_) {}
+            try { FlutterLogger.nativeDebug('TimelineJump', 'timelineShown 事件触发，重发跳转请求 路径=' + req.filePath); } catch (_) {}
             // 通过赋同值触发监听方刷新处理
             requestNotifier.value = TimelineJumpRequest(filePath: req.filePath, createdAt: DateTime.now());
           }
@@ -41,7 +41,7 @@ class TimelineJumpService {
 
   /// 对外：按截图绝对路径发起跳转
   Future<void> jumpToFilePath(String filePath) async {
-    try { await FlutterLogger.info('JumpService: jumpToFilePath path=' + filePath); } catch (_) {}
+    try { await FlutterLogger.info('JumpService：jumpToFilePath 路径=' + filePath); } catch (_) {}
     _ensureInitialized();
     // 尽可能回到根页面，展示底部主导航
     try {

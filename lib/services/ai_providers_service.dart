@@ -306,7 +306,7 @@ class AIProvidersService {
         try {
           await FlutterLogger.nativeError(
             'AI',
-            'updateProvider missing record id=$id type=${type ?? 'unknown'}',
+            'updateProvider 未找到记录 id=$id type=${type ?? 'unknown'}',
           );
         } catch (_) {}
         return false;
@@ -370,7 +370,7 @@ class AIProvidersService {
         try {
           await FlutterLogger.nativeError(
             'AI',
-            'updateProvider unexpected no-change id=$id name=${name ?? exists['name']}',
+            'updateProvider 异常：更新未生效 id=$id name=${name ?? exists['name']}',
           );
         } catch (_) {}
         return false;
@@ -379,7 +379,7 @@ class AIProvidersService {
       try {
         await FlutterLogger.nativeInfo(
           'AI',
-          'updateProvider db unchanged but values already up to date id=$id',
+          'updateProvider：DB 未变更，但值已是最新 id=$id',
         );
       } catch (_) {}
     }
@@ -572,9 +572,9 @@ class AIProvidersService {
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       try {
         final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-        await FlutterLogger.nativeError('AI', 'Gemini model fetch failed(${resp.statusCode}): ' + bodyPreview);
+        await FlutterLogger.nativeError('AI', '获取 Gemini 模型列表失败(${resp.statusCode}): ' + bodyPreview);
         if (bodyPreview.toLowerCase().contains('user location is not supported')) {
-          await FlutterLogger.nativeError('AI', 'Gemini request blocked by region policy');
+          await FlutterLogger.nativeError('AI', 'Gemini 请求因地区策略被阻止');
         }
       } catch (_) {}
       throw Exception('Gemini models request failed: ${resp.statusCode} ${resp.body}');

@@ -52,10 +52,12 @@ class _TimelinePageState extends State<TimelinePage>
   bool _privacyMode = true; // 默认开启，初始化时从偏好读取
 
   // 每个Tab的缓存与偏移
-  final Map<int, List<ScreenshotRecord>> _tabCache = <int, List<ScreenshotRecord>>{};
+  final Map<int, List<ScreenshotRecord>> _tabCache =
+      <int, List<ScreenshotRecord>>{};
   final Map<int, int> _tabOffset = <int, int>{};
   final Map<int, bool> _tabHasMore = <int, bool>{};
-  final Map<int, AutoScrollController> _tabScrollControllers = <int, AutoScrollController>{};
+  final Map<int, AutoScrollController> _tabScrollControllers =
+      <int, AutoScrollController>{};
   final Map<int, double> _tabScrollOffset = <int, double>{};
   // 时间线滚动条交互状态（右侧快速滚动）
   bool _timelineActive = false;
@@ -78,16 +80,23 @@ class _TimelinePageState extends State<TimelinePage>
   void initState() {
     super.initState();
     _init();
+    // 预加载 NSFW 规则（异步，不阻塞UI）
+    // ignore: unawaited_futures
+    NsfwPreferenceService.instance.ensureRulesLoaded();
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
-      setState(() { _privacyMode = enabled; });
+      setState(() {
+        _privacyMode = enabled;
+      });
     });
     // 订阅应用生命周期事件：进入应用/首次进入时自动刷新
     _lifecycleSub = AppLifecycleService.instance.events.listen((event) {
       if (!mounted) return;
       if (_jumpInProgress) return; // 跳转处理中忽略生命周期触发的刷新，避免打断
-      if (event == AppLifecycleEvent.resumed || event == AppLifecycleEvent.firstUiResumed || event == AppLifecycleEvent.timelineShown) {
+      if (event == AppLifecycleEvent.resumed ||
+          event == AppLifecycleEvent.firstUiResumed ||
+          event == AppLifecycleEvent.timelineShown) {
         // 等价于右上角刷新按钮
         _refresh();
       }
@@ -104,7 +113,12 @@ class _TimelinePageState extends State<TimelinePage>
       final req = TimelineJumpService.instance.requestNotifier.value;
       if (req == null) return;
       _pendingJump = req;
-      try { FlutterLogger.nativeInfo('TimelineJump', '收到跳转请求，准备处理 path=' + req.filePath); } catch (_) {}
+      try {
+        FlutterLogger.nativeInfo(
+          'TimelineJump',
+          '收到跳转请求，准备处理 路径=' + req.filePath,
+        );
+      } catch (_) {}
       _handleJumpRequestIfPossible();
     };
     TimelineJumpService.instance.requestNotifier.addListener(_jumpListener!);
@@ -121,14 +135,20 @@ class _TimelinePageState extends State<TimelinePage>
     await _loadPrivacyMode();
     await _prepareDayTabs();
     sw.stop();
-    try { print('[Timeline] init done in ${sw.elapsedMilliseconds}ms'); } catch (_) {}
+    try {
+      print('[时间线] 初始化完成，耗时 ${sw.elapsedMilliseconds} 毫秒');
+    } catch (_) {}
     if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _loadPrivacyMode() async {
     try {
-      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
-      if (mounted) setState(() { _privacyMode = enabled; });
+      final enabled = await AppSelectionService.instance
+          .getPrivacyModeEnabled();
+      if (mounted)
+        setState(() {
+          _privacyMode = enabled;
+        });
     } catch (_) {}
   }
 
@@ -162,7 +182,14 @@ class _TimelinePageState extends State<TimelinePage>
           final DateTime day = DateTime(y, mo, d);
           final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
           final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
-          tabs.add(_DayTabInfo(day: day, startMillis: start, endMillis: end, count: count));
+          tabs.add(
+            _DayTabInfo(
+              day: day,
+              startMillis: start,
+              endMillis: end,
+              count: count,
+            ),
+          );
         } catch (_) {}
       }
     } catch (_) {}
@@ -199,10 +226,17 @@ class _TimelinePageState extends State<TimelinePage>
     _prefetchAdjacentTabs(_currentTabIndex);
     await _reloadForCurrentTab(reset: true);
     sw.stop();
-    try { print('[Timeline] prepareDayTabs done in ${sw.elapsedMilliseconds}ms tabs=${_dayTabs.length}'); } catch (_) {}
+    try {
+      print(
+        '[时间线] 准备日期标签完成，耗时 ${sw.elapsedMilliseconds} 毫秒 标签数=${_dayTabs.length}',
+      );
+    } catch (_) {}
   }
 
-  Future<void> _computeDayCountsConcurrently(List<_DayTabInfo> tabs, {int concurrency = 4}) async {
+  Future<void> _computeDayCountsConcurrently(
+    List<_DayTabInfo> tabs, {
+    int concurrency = 4,
+  }) async {
     if (tabs.isEmpty) return;
     final int maxConcurrent = concurrency <= 0 ? 1 : concurrency;
     int nextIndex = 0;
@@ -214,17 +248,22 @@ class _TimelinePageState extends State<TimelinePage>
         nextIndex++;
         final day = tabs[myIndex];
         try {
-          final c = await ScreenshotService.instance.getGlobalScreenshotCountBetween(
-            startMillis: day.startMillis,
-            endMillis: day.endMillis,
-          );
+          final c = await ScreenshotService.instance
+              .getGlobalScreenshotCountBetween(
+                startMillis: day.startMillis,
+                endMillis: day.endMillis,
+              );
           day.count = c;
         } catch (_) {
           day.count = 0;
         }
       }
     }
-    final List<Future<void>> futures = List<Future<void>>.generate(maxConcurrent, (_) => worker());
+
+    final List<Future<void>> futures = List<Future<void>>.generate(
+      maxConcurrent,
+      (_) => worker(),
+    );
     await Future.wait(futures);
   }
 
@@ -301,12 +340,13 @@ class _TimelinePageState extends State<TimelinePage>
     }
     final int limit = _screenshots.isEmpty ? _initialPageSize : _pageSize;
     try {
-      final batch = await ScreenshotService.instance.getGlobalScreenshotsBetween(
-        startMillis: _dateStartMillis!,
-        endMillis: _dateEndMillis!,
-        limit: limit,
-        offset: _pageOffset,
-      );
+      final batch = await ScreenshotService.instance
+          .getGlobalScreenshotsBetween(
+            startMillis: _dateStartMillis!,
+            endMillis: _dateEndMillis!,
+            limit: limit,
+            offset: _pageOffset,
+          );
       if (!mounted) return;
       setState(() {
         _screenshots.addAll(batch);
@@ -314,26 +354,38 @@ class _TimelinePageState extends State<TimelinePage>
         _hasMore = batch.length >= limit;
         // 写回当前Tab缓存
         final list = _tabCache[_currentTabIndex] ?? <ScreenshotRecord>[];
-        _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(list)..addAll(batch);
+        _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(list)
+          ..addAll(batch);
         _tabOffset[_currentTabIndex] = _pageOffset;
         _tabHasMore[_currentTabIndex] = _hasMore;
       });
+      // 预加载 NSFW（手动标记 + AI NSFW），确保遮罩/标记一致
+      // ignore: unawaited_futures
+      _preloadNsfwFor(batch);
       try {
         if (batch.isNotEmpty) {
           final DateTime first = batch.first.captureTime;
           final DateTime last = batch.last.captureTime;
-          print('[Timeline] load batch size=' + batch.length.toString() +
-              ' offset=' + (_pageOffset - batch.length).toString() +
-              ' first=' + first.toIso8601String() +
-              ' last=' + last.toIso8601String());
+          print(
+            '[时间线] 加载批次 数量=' +
+                batch.length.toString() +
+                ' 偏移=' +
+                (_pageOffset - batch.length).toString() +
+                ' 首条=' +
+                first.toIso8601String() +
+                ' 末条=' +
+                last.toIso8601String(),
+          );
         } else {
-          print('[Timeline] load batch empty at offset=' + _pageOffset.toString());
+          print('[时间线] 加载批次为空 偏移=' + _pageOffset.toString());
         }
       } catch (_) {}
     } catch (_) {}
     // 加载完成后，如果存在待处理跳转且未处于跳转处理中，则尝试处理
     if (_pendingJump != null && !_jumpInProgress) {
-      try { FlutterLogger.nativeDebug('TimelineJump', '数据加载完成，检查是否可处理待跳转'); } catch (_) {}
+      try {
+        FlutterLogger.nativeDebug('TimelineJump', '数据加载完成，检查是否可处理待跳转');
+      } catch (_) {}
       _handleJumpRequestIfPossible();
     }
   }
@@ -348,7 +400,9 @@ class _TimelinePageState extends State<TimelinePage>
   /// 顶部刷新：重载当前日期的时间线数据并更新计数
   Future<void> _refresh() async {
     if (!mounted) return;
-    if (_dayTabs.isEmpty || _dateStartMillis == null || _dateEndMillis == null) {
+    if (_dayTabs.isEmpty ||
+        _dateStartMillis == null ||
+        _dateEndMillis == null) {
       await _prepareDayTabs();
       return;
     }
@@ -370,10 +424,11 @@ class _TimelinePageState extends State<TimelinePage>
   Future<void> _refreshCurrentTabCount() async {
     if (_currentTabIndex < 0 || _currentTabIndex >= _dayTabs.length) return;
     try {
-      final c = await ScreenshotService.instance.getGlobalScreenshotCountBetween(
-        startMillis: _dayTabs[_currentTabIndex].startMillis,
-        endMillis: _dayTabs[_currentTabIndex].endMillis,
-      );
+      final c = await ScreenshotService.instance
+          .getGlobalScreenshotCountBetween(
+            startMillis: _dayTabs[_currentTabIndex].startMillis,
+            endMillis: _dayTabs[_currentTabIndex].endMillis,
+          );
       if (!mounted) return;
       setState(() {
         _dayTabs[_currentTabIndex].count = c;
@@ -404,145 +459,173 @@ class _TimelinePageState extends State<TimelinePage>
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dayTabs.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.photo_library_outlined,
-                          size: 64,
-                          color: AppTheme.mutedForeground.withOpacity(0.5),
-                        ),
-                        const SizedBox(height: AppTheme.spacing4),
-                        Text(
-                          AppLocalizations.of(context).noScreenshotsTitle,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: AppTheme.mutedForeground,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: AppTheme.spacing2),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 300),
-                          child: Text(
-                            AppLocalizations.of(context).noScreenshotsSubtitle,
-                            style: const TextStyle(color: AppTheme.mutedForeground),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing6,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // 与截图列表一致的Tab样式与内边距
-                    Builder(
-                      builder: (context) {
-                        if (_dayTabs.isEmpty || _tabController == null) {
-                          return const SizedBox(height: 32);
-                        }
-                        final Color selectedColor = Theme.of(context).brightness == Brightness.dark
-                            ? AppTheme.darkForeground
-                            : AppTheme.foreground;
-                        final Color unselectedColor =
-                            Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-                        final bool hasMoreTabs = _dayTabs.length < _allDayTabs.length;
-                        return SizedBox(
-                          height: 32,
-                          child: Transform.translate(
-                            offset: const Offset(0, -2),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TabBar(
-                                    controller: _tabController,
-                                    isScrollable: true,
-                                    tabAlignment: TabAlignment.start,
-                                    // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
-                                    padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                                    // 与截图列表一致：标签水平留白适中
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-                                    labelColor: selectedColor,
-                                    unselectedLabelColor: unselectedColor,
-                                    labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                    unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                    // 与截图列表一致：去掉底部分割线
-                                    dividerColor: Colors.transparent,
-                                    indicatorSize: TabBarIndicatorSize.label,
-                                    // 减少上下空隙
-                                    indicatorPadding: EdgeInsets.zero,
-                                    // 与截图列表一致：细下划线，较小的左右 insets
-                                    indicator: UnderlineTabIndicator(
-                                      borderSide: BorderSide(width: 2.0, color: selectedColor),
-                                      insets: const EdgeInsets.symmetric(horizontal: 4.0),
-                                    ),
-                                    tabs: _dayTabs
-                                        .map((t) {
-                                          final l10n = AppLocalizations.of(context);
-                                          final text = _DayTabInfo._isToday(t.day)
-                                              ? l10n.dayTabToday(t.count)
-                                              : (_DayTabInfo._isYesterday(t.day)
-                                                  ? l10n.dayTabYesterday(t.count)
-                                                  : l10n.dayTabMonthDayCount(t.day.month, t.day.day, t.count));
-                                          return Tab(text: text);
-                                        })
-                                        .toList(),
-                                  ),
-                                ),
-                                if (hasMoreTabs)
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                                    child: TextButton.icon(
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                      onPressed: _expandDayTabsIfNeeded,
-                                      icon: const Icon(Icons.more_horiz, size: 18),
-                                      label: Text(AppLocalizations.of(context).memoryLoadMore),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                    Icon(
+                      Icons.photo_library_outlined,
+                      size: 64,
+                      color: AppTheme.mutedForeground.withOpacity(0.5),
                     ),
-                    // 日期Tab与内容之间增加1px底部外边距
-                    const SizedBox(height: 1),
-                    Expanded(
-                      child: TabBarView(
-                        controller: _tabController,
-                        physics: const ClampingScrollPhysics(),
-                        children: _dayTabs
-                            .asMap()
-                            .entries
-                            .map((entry) => Builder(builder: (_) => _buildGridForIndex(entry.key)))
-                            .toList(),
+                    const SizedBox(height: AppTheme.spacing4),
+                    Text(
+                      AppLocalizations.of(context).noScreenshotsTitle,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.mutedForeground,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: Text(
+                        AppLocalizations.of(context).noScreenshotsSubtitle,
+                        style: const TextStyle(color: AppTheme.mutedForeground),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ],
                 ),
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 与截图列表一致的Tab样式与内边距
+                Builder(
+                  builder: (context) {
+                    if (_dayTabs.isEmpty || _tabController == null) {
+                      return const SizedBox(height: 32);
+                    }
+                    final Color selectedColor =
+                        Theme.of(context).brightness == Brightness.dark
+                        ? AppTheme.darkForeground
+                        : AppTheme.foreground;
+                    final Color unselectedColor =
+                        Theme.of(context).textTheme.bodySmall?.color ??
+                        AppTheme.mutedForeground;
+                    final bool hasMoreTabs =
+                        _dayTabs.length < _allDayTabs.length;
+                    return SizedBox(
+                      height: 32,
+                      child: Transform.translate(
+                        offset: const Offset(0, -2),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TabBar(
+                                controller: _tabController,
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
+                                padding: const EdgeInsets.only(
+                                  left: AppTheme.spacing2,
+                                ),
+                                // 与截图列表一致：标签水平留白适中
+                                labelPadding: const EdgeInsets.symmetric(
+                                  horizontal: AppTheme.spacing4,
+                                ),
+                                labelColor: selectedColor,
+                                unselectedLabelColor: unselectedColor,
+                                labelStyle: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                unselectedLabelStyle: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.w500),
+                                // 与截图列表一致：去掉底部分割线
+                                dividerColor: Colors.transparent,
+                                indicatorSize: TabBarIndicatorSize.label,
+                                // 减少上下空隙
+                                indicatorPadding: EdgeInsets.zero,
+                                // 与截图列表一致：细下划线，较小的左右 insets
+                                indicator: UnderlineTabIndicator(
+                                  borderSide: BorderSide(
+                                    width: 2.0,
+                                    color: selectedColor,
+                                  ),
+                                  insets: const EdgeInsets.symmetric(
+                                    horizontal: 4.0,
+                                  ),
+                                ),
+                                tabs: _dayTabs.map((t) {
+                                  final l10n = AppLocalizations.of(context);
+                                  final text = _DayTabInfo._isToday(t.day)
+                                      ? l10n.dayTabToday(t.count)
+                                      : (_DayTabInfo._isYesterday(t.day)
+                                            ? l10n.dayTabYesterday(t.count)
+                                            : l10n.dayTabMonthDayCount(
+                                                t.day.month,
+                                                t.day.day,
+                                                t.count,
+                                              ));
+                                  return Tab(text: text);
+                                }).toList(),
+                              ),
+                            ),
+                            if (hasMoreTabs)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: AppTheme.spacing2,
+                                ),
+                                child: TextButton.icon(
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppTheme.spacing2,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: _expandDayTabsIfNeeded,
+                                  icon: const Icon(Icons.more_horiz, size: 18),
+                                  label: Text(
+                                    AppLocalizations.of(context).memoryLoadMore,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                // 日期Tab与内容之间增加1px底部外边距
+                const SizedBox(height: 1),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    physics: const ClampingScrollPhysics(),
+                    children: _dayTabs
+                        .asMap()
+                        .entries
+                        .map(
+                          (entry) => Builder(
+                            builder: (_) => _buildGridForIndex(entry.key),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
     );
   }
-
-
 
   Widget _buildGridForIndex(int tabIndex) {
     final bool isCurrent = tabIndex == _currentTabIndex;
     final List<ScreenshotRecord> data = isCurrent
         ? _screenshots
-        : List<ScreenshotRecord>.from(_tabCache[tabIndex] ?? const <ScreenshotRecord>[]);
+        : List<ScreenshotRecord>.from(
+            _tabCache[tabIndex] ?? const <ScreenshotRecord>[],
+          );
     if (!isCurrent && data.isEmpty) {
       // 若缓存尚未就绪，展示轻量占位
       return const Center(
@@ -556,13 +639,19 @@ class _TimelinePageState extends State<TimelinePage>
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(AppTheme.spacing1, 0, AppTheme.spacing1, AppTheme.spacing1),
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.spacing1,
+            0,
+            AppTheme.spacing1,
+            AppTheme.spacing1,
+          ),
           child: Container(
             key: isCurrent ? _gridKey : null,
             child: NotificationListener<ScrollNotification>(
               onNotification: (n) {
                 _tabScrollOffset[tabIndex] = n.metrics.pixels;
-                if (isCurrent && n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+                if (isCurrent &&
+                    n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
                   _loadMore();
                 }
                 return false;
@@ -575,7 +664,8 @@ class _TimelinePageState extends State<TimelinePage>
                 addAutomaticKeepAlives: false,
                 physics: const ClampingScrollPhysics(),
                 padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+                  bottom:
+                      MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
                 ),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
@@ -601,9 +691,22 @@ class _TimelinePageState extends State<TimelinePage>
   }
 
   Future<void> _ensureTabsIncludeDate(DateTime dt) async {
-    final int targetStart = DateTime(dt.year, dt.month, dt.day).millisecondsSinceEpoch;
-    final int targetEnd = DateTime(dt.year, dt.month, dt.day, 23, 59, 59).millisecondsSinceEpoch;
-    final bool exists = _dayTabs.any((t) => t.startMillis == targetStart && t.endMillis == targetEnd);
+    final int targetStart = DateTime(
+      dt.year,
+      dt.month,
+      dt.day,
+    ).millisecondsSinceEpoch;
+    final int targetEnd = DateTime(
+      dt.year,
+      dt.month,
+      dt.day,
+      23,
+      59,
+      59,
+    ).millisecondsSinceEpoch;
+    final bool exists = _dayTabs.any(
+      (t) => t.startMillis == targetStart && t.endMillis == targetEnd,
+    );
     if (exists) return;
 
     // 仅查询目标日期的计数，避免扩展至大量天数导致卡顿
@@ -633,7 +736,9 @@ class _TimelinePageState extends State<TimelinePage>
       _tabController?.dispose();
       _tabController = TabController(length: _dayTabs.length, vsync: this);
       _tabController!.addListener(_onTabChanged);
-      _tabController!.index = (oldIndex >= 0 && oldIndex < _dayTabs.length) ? oldIndex : 0;
+      _tabController!.index = (oldIndex >= 0 && oldIndex < _dayTabs.length)
+          ? oldIndex
+          : 0;
 
       // 为新 Tab 建立占位缓存，避免访问空映射
       final int newIndex = _dayTabs.length - 1;
@@ -648,13 +753,22 @@ class _TimelinePageState extends State<TimelinePage>
     _jumpInProgress = true;
     try {
       final String targetPath = _pendingJump!.filePath;
-      try { FlutterLogger.nativeInfo('TimelineJump', '开始处理跳转请求 path=' + targetPath); } catch (_) {}
+      try {
+        FlutterLogger.nativeInfo('TimelineJump', '开始处理跳转请求 路径=' + targetPath);
+      } catch (_) {}
       // 解析目标记录，确定 captureTime
       ScreenshotRecord? rec;
-      try { rec = await ScreenshotDatabase.instance.getScreenshotByPath(targetPath); } catch (_) {}
+      try {
+        rec = await ScreenshotDatabase.instance.getScreenshotByPath(targetPath);
+      } catch (_) {}
       if (rec == null) {
         // 数据库未命中，保持请求并稍后重试（冷启动导入尚未完成的可能）
-        try { FlutterLogger.nativeWarn('TimelineJump', '数据库未命中，延迟重试 path=' + targetPath); } catch (_) {}
+        try {
+          FlutterLogger.nativeWarn(
+            'TimelineJump',
+            '数据库未命中，延迟重试 路径=' + targetPath,
+          );
+        } catch (_) {}
         // 释放进行中标记，稍后重试
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           await Future.delayed(const Duration(milliseconds: 300));
@@ -668,12 +782,24 @@ class _TimelinePageState extends State<TimelinePage>
 
       // 选择日期标签
       final dt = rec.captureTime;
-      final int start = DateTime(dt.year, dt.month, dt.day).millisecondsSinceEpoch;
-      final int end = DateTime(dt.year, dt.month, dt.day, 23, 59, 59).millisecondsSinceEpoch;
+      final int start = DateTime(
+        dt.year,
+        dt.month,
+        dt.day,
+      ).millisecondsSinceEpoch;
+      final int end = DateTime(
+        dt.year,
+        dt.month,
+        dt.day,
+        23,
+        59,
+        59,
+      ).millisecondsSinceEpoch;
       int tabIndex = 0;
       for (int i = 0; i < _dayTabs.length; i++) {
         if (_dayTabs[i].startMillis == start && _dayTabs[i].endMillis == end) {
-          tabIndex = i; break;
+          tabIndex = i;
+          break;
         }
       }
       if (_tabController == null || _dayTabs.isEmpty) return;
@@ -683,7 +809,9 @@ class _TimelinePageState extends State<TimelinePage>
         _onTabChanged();
         // 等待一帧，确保 Tab 切换和列表构建
         await Future.delayed(const Duration(milliseconds: 16));
-        try { FlutterLogger.nativeDebug('TimelineJump', '已切换到目标日期标签，等待网格就绪'); } catch (_) {}
+        try {
+          FlutterLogger.nativeDebug('TimelineJump', '已切换到目标日期标签，等待网格就绪');
+        } catch (_) {}
       }
 
       // 确保当前标签数据加载
@@ -692,9 +820,13 @@ class _TimelinePageState extends State<TimelinePage>
       }
 
       // 额外等待网格与滚动控制器就绪（首帧可能尚未有尺寸）
-      final bool ready = await _waitForGridReady(timeout: const Duration(seconds: 2));
+      final bool ready = await _waitForGridReady(
+        timeout: const Duration(seconds: 2),
+      );
       if (!ready) {
-        try { FlutterLogger.nativeWarn('TimelineJump', '等待网格就绪超时，将稍后重试'); } catch (_) {}
+        try {
+          FlutterLogger.nativeWarn('TimelineJump', '等待网格就绪超时，将稍后重试');
+        } catch (_) {}
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           await Future.delayed(const Duration(milliseconds: 200));
           if (mounted) _handleJumpRequestIfPossible();
@@ -705,43 +837,78 @@ class _TimelinePageState extends State<TimelinePage>
       // 在当前列表中查找目标索引（以文件路径比对）
       int idx = _screenshots.indexWhere((e) => e.filePath == targetPath);
       if (idx >= 0) {
-        try { FlutterLogger.nativeInfo('TimelineJump', '找到目标索引 idx=' + idx.toString()); } catch (_) {}
+        try {
+          FlutterLogger.nativeInfo(
+            'TimelineJump',
+            '找到目标索引 idx=' + idx.toString(),
+          );
+        } catch (_) {}
         await _scrollToIndexAndHighlight(idx);
         _pendingJump = null; // 完成
         // 消费一次后清空全局跳转请求，避免下次进入仍然触发
-        try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
+        try {
+          TimelineJumpService.instance.requestNotifier.value = null;
+        } catch (_) {}
         return;
       }
 
       // 快速路径：通过 DB 计算“当日中比目标更新的数量”，直接定位到近似页，再在页内精确查找
       bool jumped = false;
       try {
-        final int startMs = DateTime(dt.year, dt.month, dt.day).millisecondsSinceEpoch;
-        final int endMs = DateTime(dt.year, dt.month, dt.day, 23, 59, 59).millisecondsSinceEpoch;
+        final int startMs = DateTime(
+          dt.year,
+          dt.month,
+          dt.day,
+        ).millisecondsSinceEpoch;
+        final int endMs = DateTime(
+          dt.year,
+          dt.month,
+          dt.day,
+          23,
+          59,
+          59,
+        ).millisecondsSinceEpoch;
         final int targetMs = dt.millisecondsSinceEpoch;
-        final int newerCount = await ScreenshotService.instance.getGlobalScreenshotCountBetween(
-          startMillis: targetMs + 1, // 严格更“新”的数量，避免等时冲突
-          endMillis: endMs,
-        );
-        final int dayCount = (_dayTabs.isNotEmpty && _currentTabIndex >= 0 && _currentTabIndex < _dayTabs.length)
+        final int newerCount = await ScreenshotService.instance
+            .getGlobalScreenshotCountBetween(
+              startMillis: targetMs + 1, // 严格更“新”的数量，避免等时冲突
+              endMillis: endMs,
+            );
+        final int dayCount =
+            (_dayTabs.isNotEmpty &&
+                _currentTabIndex >= 0 &&
+                _currentTabIndex < _dayTabs.length)
             ? (_dayTabs[_currentTabIndex].count)
             : 0;
         final int pageStart = (newerCount ~/ _pageSize) * _pageSize;
         final int primaryLimit = _pageSize * 2; // 主动多取一页，提升命中概率
-        try { FlutterLogger.nativeInfo('TimelineJump', '快速定位计算: newer=' + newerCount.toString() + ', pageStart=' + pageStart.toString() + ', limit=' + primaryLimit.toString()); } catch (_) {}
+        try {
+          FlutterLogger.nativeInfo(
+            'TimelineJump',
+            '快速定位计算: 更近数量=' +
+                newerCount.toString() +
+                ', 页起始=' +
+                pageStart.toString() +
+                ', 限制=' +
+                primaryLimit.toString(),
+          );
+        } catch (_) {}
 
         // 主尝试：以 pageStart 为起点加载一个较大的切片
-        List<ScreenshotRecord> batch = await ScreenshotService.instance.getGlobalScreenshotsBetween(
-          startMillis: startMs,
-          endMillis: endMs,
-          limit: primaryLimit,
-          offset: pageStart,
-        );
+        List<ScreenshotRecord> batch = await ScreenshotService.instance
+            .getGlobalScreenshotsBetween(
+              startMillis: startMs,
+              endMillis: endMs,
+              limit: primaryLimit,
+              offset: pageStart,
+            );
         if (mounted) {
           setState(() {
             _screenshots = List<ScreenshotRecord>.from(batch);
             _pageOffset = pageStart + batch.length;
-            _hasMore = (dayCount > 0) ? (_pageOffset < dayCount) : (batch.length >= primaryLimit);
+            _hasMore = (dayCount > 0)
+                ? (_pageOffset < dayCount)
+                : (batch.length >= primaryLimit);
             _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(batch);
             _tabOffset[_currentTabIndex] = _pageOffset;
             _tabHasMore[_currentTabIndex] = _hasMore;
@@ -749,16 +916,31 @@ class _TimelinePageState extends State<TimelinePage>
         }
         idx = _screenshots.indexWhere((e) => e.filePath == targetPath);
         if (idx >= 0) {
-          try { FlutterLogger.nativeInfo('TimelineJump', '快速路径命中，目标位于当前切片 idx=' + idx.toString()); } catch (_) {}
+          try {
+            FlutterLogger.nativeInfo(
+              'TimelineJump',
+              '快速路径命中，目标位于当前切片 idx=' + idx.toString(),
+            );
+          } catch (_) {}
           await _scrollToIndexAndHighlight(idx);
           _pendingJump = null;
-          try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
+          try {
+            TimelineJumpService.instance.requestNotifier.value = null;
+          } catch (_) {}
           jumped = true;
         } else {
           // 备选尝试：向前回退一页扩大窗口
           final int altStart = math.max(0, pageStart - _pageSize);
           final int altLimit = _pageSize * 3; // 再扩大一点窗口
-          try { FlutterLogger.nativeDebug('TimelineJump', '快速路径未命中，尝试回退窗口 altStart=' + altStart.toString() + ', limit=' + altLimit.toString()); } catch (_) {}
+          try {
+            FlutterLogger.nativeDebug(
+              'TimelineJump',
+              '快速路径未命中，尝试回退窗口 备用起点=' +
+                  altStart.toString() +
+                  ', 限制=' +
+                  altLimit.toString(),
+            );
+          } catch (_) {}
           batch = await ScreenshotService.instance.getGlobalScreenshotsBetween(
             startMillis: startMs,
             endMillis: endMs,
@@ -769,7 +951,9 @@ class _TimelinePageState extends State<TimelinePage>
             setState(() {
               _screenshots = List<ScreenshotRecord>.from(batch);
               _pageOffset = altStart + batch.length;
-              _hasMore = (dayCount > 0) ? (_pageOffset < dayCount) : (batch.length >= altLimit);
+              _hasMore = (dayCount > 0)
+                  ? (_pageOffset < dayCount)
+                  : (batch.length >= altLimit);
               _tabCache[_currentTabIndex] = List<ScreenshotRecord>.from(batch);
               _tabOffset[_currentTabIndex] = _pageOffset;
               _tabHasMore[_currentTabIndex] = _hasMore;
@@ -777,10 +961,17 @@ class _TimelinePageState extends State<TimelinePage>
           }
           idx = _screenshots.indexWhere((e) => e.filePath == targetPath);
           if (idx >= 0) {
-            try { FlutterLogger.nativeInfo('TimelineJump', '回退窗口命中，目标位于切片 idx=' + idx.toString()); } catch (_) {}
+            try {
+              FlutterLogger.nativeInfo(
+                'TimelineJump',
+                '回退窗口命中，目标位于切片 idx=' + idx.toString(),
+              );
+            } catch (_) {}
             await _scrollToIndexAndHighlight(idx);
             _pendingJump = null;
-            try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
+            try {
+              TimelineJumpService.instance.requestNotifier.value = null;
+            } catch (_) {}
             jumped = true;
           }
         }
@@ -791,14 +982,23 @@ class _TimelinePageState extends State<TimelinePage>
       // 回退：未命中时再做按页加载（设上限，避免长时间阻塞）
       int safetyRounds = 6; // 最多再加载6批
       while (_hasMore && safetyRounds-- > 0) {
-        try { FlutterLogger.nativeDebug('TimelineJump', '未找到目标，尝试分页加载更多'); } catch (_) {}
+        try {
+          FlutterLogger.nativeDebug('TimelineJump', '未找到目标，尝试分页加载更多');
+        } catch (_) {}
         await _loadMore();
         idx = _screenshots.indexWhere((e) => e.filePath == targetPath);
         if (idx >= 0) {
-          try { FlutterLogger.nativeInfo('TimelineJump', '分页后找到目标索引 idx=' + idx.toString()); } catch (_) {}
+          try {
+            FlutterLogger.nativeInfo(
+              'TimelineJump',
+              '分页后找到目标索引 idx=' + idx.toString(),
+            );
+          } catch (_) {}
           await _scrollToIndexAndHighlight(idx);
           _pendingJump = null;
-          try { TimelineJumpService.instance.requestNotifier.value = null; } catch (_) {}
+          try {
+            TimelineJumpService.instance.requestNotifier.value = null;
+          } catch (_) {}
           break;
         }
       }
@@ -810,14 +1010,21 @@ class _TimelinePageState extends State<TimelinePage>
   Future<void> _scrollToIndexAndHighlight(int index) async {
     final ctrl = _controllerForTab(_currentTabIndex);
     if (!ctrl.hasClients) return;
-    try { FlutterLogger.nativeInfo('TimelineJump', '使用 scroll_to_index 定位 idx=' + index.toString()); } catch (_) {}
+    try {
+      FlutterLogger.nativeInfo(
+        'TimelineJump',
+        '使用 scroll_to_index 定位 idx=' + index.toString(),
+      );
+    } catch (_) {}
     try {
       await ctrl.scrollToIndex(index, preferPosition: AutoScrollPosition.begin);
     } catch (_) {}
   }
 
   /// 等待当前时间线网格与滚动控制器就绪（尺寸可用、hasClients）
-  Future<bool> _waitForGridReady({Duration timeout = const Duration(milliseconds: 1500)}) async {
+  Future<bool> _waitForGridReady({
+    Duration timeout = const Duration(milliseconds: 1500),
+  }) async {
     final sw = Stopwatch()..start();
     while (mounted && sw.elapsed < timeout) {
       final ctrl = _controllerForTab(_currentTabIndex);
@@ -834,8 +1041,11 @@ class _TimelinePageState extends State<TimelinePage>
   }
 
   AutoScrollController _controllerForTab(int index) {
-    if (_tabScrollControllers.containsKey(index)) return _tabScrollControllers[index]!;
-    final c = AutoScrollController(initialScrollOffset: _tabScrollOffset[index] ?? 0.0);
+    if (_tabScrollControllers.containsKey(index))
+      return _tabScrollControllers[index]!;
+    final c = AutoScrollController(
+      initialScrollOffset: _tabScrollOffset[index] ?? 0.0,
+    );
     c.addListener(() {
       _tabScrollOffset[index] = c.offset;
     });
@@ -860,8 +1070,13 @@ class _TimelinePageState extends State<TimelinePage>
         builder: (context, constraints) {
           final double viewHeight = constraints.maxHeight;
           final double bottomMargin =
-              MediaQuery.of(context).padding.bottom + AppTheme.spacing6 + AppTheme.spacing1;
-          final double trackHeight = (viewHeight - bottomMargin).clamp(0, viewHeight);
+              MediaQuery.of(context).padding.bottom +
+              AppTheme.spacing6 +
+              AppTheme.spacing1;
+          final double trackHeight = (viewHeight - bottomMargin).clamp(
+            0,
+            viewHeight,
+          );
 
           final ctrl = _controllerForTab(_currentTabIndex);
           if (trackHeight <= 0 || !ctrl.hasClients) {
@@ -872,11 +1087,15 @@ class _TimelinePageState extends State<TimelinePage>
               ? _timelineFraction
               : _currentScrollFraction();
           final double clampedFraction = currentFraction.clamp(0.0, 1.0);
-          final double thumbTop = clampedFraction * (trackHeight - thumbHeight).clamp(0, trackHeight);
+          final double thumbTop =
+              clampedFraction *
+              (trackHeight - thumbHeight).clamp(0, trackHeight);
 
           // 计算首个可见项时间
           final int firstVisibleIndex = _getFirstVisibleIndex();
-          final String timeLabel = (firstVisibleIndex >= 0 && firstVisibleIndex < _screenshots.length)
+          final String timeLabel =
+              (firstVisibleIndex >= 0 &&
+                  firstVisibleIndex < _screenshots.length)
               ? _formatTimelineTime(_screenshots[firstVisibleIndex].captureTime)
               : '';
 
@@ -892,38 +1111,60 @@ class _TimelinePageState extends State<TimelinePage>
                   onVerticalDragStart: (details) {
                     if (trackHeight > thumbHeight) {
                       _timelineActive = true;
-                      _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
+                      _timelineFraction =
+                          (details.localPosition.dy / trackHeight).clamp(
+                            0.0,
+                            1.0,
+                          );
                       setState(() {});
                       _scheduleScrubJump();
                     }
                   },
                   onVerticalDragUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
-                      _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
+                      _timelineFraction =
+                          (details.localPosition.dy / trackHeight).clamp(
+                            0.0,
+                            1.0,
+                          );
                       setState(() {});
                       _scheduleScrubJump();
                     }
                   },
                   onVerticalDragEnd: (_) {
-                    if (mounted) setState(() { _timelineActive = false; });
+                    if (mounted)
+                      setState(() {
+                        _timelineActive = false;
+                      });
                   },
                   onLongPressStart: (details) {
                     if (trackHeight > thumbHeight) {
                       _timelineActive = true;
-                      _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
+                      _timelineFraction =
+                          (details.localPosition.dy / trackHeight).clamp(
+                            0.0,
+                            1.0,
+                          );
                       setState(() {});
                       _scheduleScrubJump();
                     }
                   },
                   onLongPressMoveUpdate: (details) {
                     if (trackHeight > thumbHeight && _timelineActive) {
-                      _timelineFraction = (details.localPosition.dy / trackHeight).clamp(0.0, 1.0);
+                      _timelineFraction =
+                          (details.localPosition.dy / trackHeight).clamp(
+                            0.0,
+                            1.0,
+                          );
                       setState(() {});
                       _scheduleScrubJump();
                     }
                   },
                   onLongPressEnd: (_) {
-                    if (mounted) setState(() { _timelineActive = false; });
+                    if (mounted)
+                      setState(() {
+                        _timelineActive = false;
+                      });
                   },
                   child: Stack(
                     children: [
@@ -957,7 +1198,10 @@ class _TimelinePageState extends State<TimelinePage>
               if (_timelineActive)
                 Positioned(
                   right: gestureWidth + 8,
-                  top: (clampedFraction * (trackHeight - labelHeight)).clamp(0, trackHeight - labelHeight),
+                  top: (clampedFraction * (trackHeight - labelHeight)).clamp(
+                    0,
+                    trackHeight - labelHeight,
+                  ),
                   child: Container(
                     height: labelHeight,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -965,11 +1209,16 @@ class _TimelinePageState extends State<TimelinePage>
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Theme.of(context).dividerColor, width: 1),
+                      border: Border.all(
+                        color: Theme.of(context).dividerColor,
+                        width: 1,
+                      ),
                     ),
                     child: Text(
                       timeLabel,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -1004,13 +1253,18 @@ class _TimelinePageState extends State<TimelinePage>
         firstIdx = index;
       }
     });
-    return (firstIdx != null && firstIdx! < _screenshots.length) ? firstIdx! : 0;
+    return (firstIdx != null && firstIdx! < _screenshots.length)
+        ? firstIdx!
+        : 0;
   }
 
   String _formatTimelineTime(DateTime dateTime) {
     final now = DateTime.now();
     final t = AppLocalizations.of(context);
-    final bool sameDay = now.year == dateTime.year && now.month == dateTime.month && now.day == dateTime.day;
+    final bool sameDay =
+        now.year == dateTime.year &&
+        now.month == dateTime.month &&
+        now.day == dateTime.day;
     final bool sameYear = now.year == dateTime.year;
     final String hh = dateTime.hour.toString().padLeft(2, '0');
     final String mm = dateTime.minute.toString().padLeft(2, '0');
@@ -1019,7 +1273,13 @@ class _TimelinePageState extends State<TimelinePage>
     } else if (sameYear) {
       return t.monthDayTime(dateTime.month, dateTime.day, hh, mm);
     } else {
-      return t.yearMonthDayTime(dateTime.year, dateTime.month, dateTime.day, hh, mm);
+      return t.yearMonthDayTime(
+        dateTime.year,
+        dateTime.month,
+        dateTime.day,
+        hh,
+        mm,
+      );
     }
   }
 
@@ -1068,12 +1328,13 @@ class _TimelinePageState extends State<TimelinePage>
     final day = _dayTabs[index];
     if (day.count <= 0) return;
     try {
-      final batch = await ScreenshotService.instance.getGlobalScreenshotsBetween(
-        startMillis: day.startMillis,
-        endMillis: day.endMillis,
-        limit: _initialPageSize,
-        offset: 0,
-      );
+      final batch = await ScreenshotService.instance
+          .getGlobalScreenshotsBetween(
+            startMillis: day.startMillis,
+            endMillis: day.endMillis,
+            limit: _initialPageSize,
+            offset: 0,
+          );
       if (!mounted) return;
       setState(() {
         _tabCache[index] = List<ScreenshotRecord>.from(batch);
@@ -1085,7 +1346,46 @@ class _TimelinePageState extends State<TimelinePage>
           _hasMore = _tabHasMore[index] ?? false;
         }
       });
+      // ignore: unawaited_futures
+      _preloadNsfwFor(batch);
     } catch (_) {}
+  }
+
+  Future<void> _preloadNsfwFor(List<ScreenshotRecord> data) async {
+    if (data.isEmpty) return;
+    try {
+      // 1) AI NSFW（按 file_path，全局复用）
+      final paths = data
+          .map((s) => s.filePath.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+      if (paths.isNotEmpty) {
+        await NsfwPreferenceService.instance.preloadAiNsfwFlags(
+          filePaths: paths,
+        );
+        await NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+          filePaths: paths,
+        );
+      }
+
+      // 2) 手动标记（按 app 分组）
+      final Map<String, List<int>> idsByApp = <String, List<int>>{};
+      for (final s in data) {
+        final id = s.id;
+        final pkg = s.appPackageName.trim();
+        if (id == null || pkg.isEmpty) continue;
+        idsByApp.putIfAbsent(pkg, () => <int>[]).add(id);
+      }
+      for (final entry in idsByApp.entries) {
+        final ids = entry.value;
+        if (ids.isEmpty) continue;
+        await NsfwPreferenceService.instance.preloadManualFlags(
+          appPackageName: entry.key,
+          screenshotIds: ids,
+        );
+      }
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   Future<void> _prefetchAllTabsFirst8() async {
@@ -1094,31 +1394,29 @@ class _TimelinePageState extends State<TimelinePage>
 
   Future<void> _prefetchAdjacentTabs(int center) async {
     if (!mounted || _dayTabs.isEmpty) return;
-    final List<int> candidates = <int>{center - 1, center + 1}
-        .where((i) => i >= 0 && i < _dayTabs.length)
-        .toList();
+    final List<int> candidates = <int>{
+      center - 1,
+      center + 1,
+    }.where((i) => i >= 0 && i < _dayTabs.length).toList();
     for (final i in candidates) {
-      try { await _prefetchFirstPageForTab(i); } catch (_) {}
+      try {
+        await _prefetchFirstPageForTab(i);
+      } catch (_) {}
     }
   }
 
   Widget _buildItem(ScreenshotRecord screenshot, int index) {
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool nsfwMasked = _privacyMode && NsfwPreferenceService.instance.shouldMaskCached(screenshot);
-    
-    final bool isManualNsfw = screenshot.id != null &&
-        NsfwPreferenceService.instance.isManuallyFlaggedCached(
-          screenshotId: screenshot.id!,
-          appPackageName: screenshot.appPackageName,
-        );
-    final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+    final bool isNsfw =
+        NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+    final bool nsfwMasked = _privacyMode && isNsfw;
 
     final content = ScreenshotItemWidget(
       screenshot: screenshot,
       appInfoMap: _appInfoByPackage,
       privacyMode: _privacyMode,
       showNsfwButton: false,
-      isNsfwFlagged: isNsfwDisplay,
+      isNsfwFlagged: isNsfw,
       onTap: () {
         if (!nsfwMasked) {
           _viewFromCurrent(index);
@@ -1126,7 +1424,7 @@ class _TimelinePageState extends State<TimelinePage>
       },
       onLinkTap: (url) => _openLink(url),
     );
-    
+
     return KeyedSubtree(key: itemKey, child: content);
   }
 
@@ -1142,7 +1440,8 @@ class _TimelinePageState extends State<TimelinePage>
   void _viewFromCurrent(int index) {
     if (index < 0 || index >= _screenshots.length) return;
     final shot = _screenshots[index];
-    final app = _appInfoByPackage[shot.appPackageName] ??
+    final app =
+        _appInfoByPackage[shot.appPackageName] ??
         AppInfo(
           packageName: shot.appPackageName,
           appName: shot.appName,
@@ -1176,7 +1475,12 @@ class _TimelinePageState extends State<TimelinePage>
     }
     // 取消生命周期订阅
     _lifecycleSub?.cancel();
-    try { if (_jumpListener != null) TimelineJumpService.instance.requestNotifier.removeListener(_jumpListener!); } catch (_) {}
+    try {
+      if (_jumpListener != null)
+        TimelineJumpService.instance.requestNotifier.removeListener(
+          _jumpListener!,
+        );
+    } catch (_) {}
     super.dispose();
   }
 }

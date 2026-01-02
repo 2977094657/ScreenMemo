@@ -36,7 +36,7 @@ object AISettingsNative {
             val path = resolveMasterDbPath(context) ?: return null
             SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
         } catch (e: Exception) {
-            FileLogger.w(TAG, "openMasterDb failed: ${e.message}")
+            FileLogger.w(TAG, "打开主库失败：${e.message}")
             null
         }
     }

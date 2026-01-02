@@ -6,17 +6,27 @@ import 'flutter_logger.dart';
 
 /// 意图分析结果
 class IntentResult {
-  final String intent; // 例如: time_range_query | app_time_range_query | keyword_lookup
+  final String
+  intent; // 例如: time_range_query | app_time_range_query | keyword_lookup
   final String intentSummary; // 面向用户的意图摘要，用于 UI 展示
   final int startMs; // 时间范围起点（毫秒，Epoch）
-  final int endMs;   // 时间范围终点（毫秒，Epoch）
+  final int endMs; // 时间范围终点（毫秒，Epoch）
   final String timezone; // 例如: Asia/Shanghai 或 UTC+08:00
   final List<String> apps; // 可混合应用名/包名，前端后续归一化
+  final List<String> keywords; // 可选：关键词（用于无时间时的探测检索）
   final Map<String, dynamic> sqlFill; // 仅关键填充项（不含完整 SQL）
   // 当非首条消息时，AI 判断本次是否可复用上一轮上下文（跳过新的上下文检索）
   final bool skipContext;
+  // 上下文加载策略（由意图模型判断）：reuse | refresh | page_prev | page_next
+  // - reuse: 复用缓存上下文包（不重新查库）
+  // - refresh: 重新构建默认窗口上下文（通常是范围末尾 7 天）
+  // - page_prev/page_next: 在多周范围内，建议向前/向后翻一周重新构建上下文窗口
+  final String contextAction;
+  // 用户是否明确表示“先按现有线索开始找/别再追问/直接查”等（用于跳过澄清，先给候选）
+  final bool userWantsProceed;
   // 新增：错误信息（当解析失败或歧义时由 AI 返回）
-  final String? errorCode; // 如 MISSING_DATE | AMBIGUOUS_DATE | INVALID_DATE | UNSUPPORTED
+  final String?
+  errorCode; // 如 MISSING_DATE | AMBIGUOUS_DATE | INVALID_DATE | UNSUPPORTED
   final String? errorMessage; // 中文错误原因
 
   const IntentResult({
@@ -26,8 +36,11 @@ class IntentResult {
     required this.endMs,
     required this.timezone,
     required this.apps,
+    this.keywords = const <String>[],
     required this.sqlFill,
     this.skipContext = false,
+    this.contextAction = 'reuse',
+    this.userWantsProceed = false,
     this.errorCode,
     this.errorMessage,
   });
@@ -39,7 +52,8 @@ class IntentResult {
 /// 意图分析服务：调用 LLM 严格输出 JSON，仅返回关键 SQL 填充项与意图摘要
 class IntentAnalysisService {
   IntentAnalysisService._internal();
-  static final IntentAnalysisService instance = IntentAnalysisService._internal();
+  static final IntentAnalysisService instance =
+      IntentAnalysisService._internal();
 
   final AIChatService _chat = AIChatService.instance;
 
@@ -66,11 +80,21 @@ class IntentAnalysisService {
       prevUsers: previousUserQueries,
     );
 
-    try { await FlutterLogger.nativeInfo('Intent', 'analyze begin userText="${_clip(userText, 200)}" now=${now.toIso8601String()} tz=$tzName($tzReadable)'); } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo(
+        'Intent',
+        'analyze begin userText="${_clip(userText, 200)}" now=${now.toIso8601String()} tz=$tzName($tzReadable)',
+      );
+    } catch (_) {}
     try {
       final prev = (sys + '\n\n' + user);
-      final preview = prev.length <= 1200 ? prev : (prev.substring(0, 1200) + '…');
-      await FlutterLogger.nativeDebug('Intent', 'promptLen=${prev.length} preview=\n' + preview);
+      final preview = prev.length <= 1200
+          ? prev
+          : (prev.substring(0, 1200) + '…');
+      await FlutterLogger.nativeDebug(
+        'Intent',
+        'promptLen=${prev.length} preview=\n' + preview,
+      );
     } catch (_) {}
 
     // 使用一次性请求，避免污染会话历史
@@ -83,13 +107,29 @@ class IntentAnalysisService {
     try {
       final raw = resp.content;
       final preview = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
-      await FlutterLogger.nativeInfo('Intent', 'ai response rawLen=${raw.length} preview=\n' + preview);
+      await FlutterLogger.nativeInfo(
+        'Intent',
+        'ai response rawLen=${raw.length} preview=\n' + preview,
+      );
     } catch (_) {}
 
     final Map<String, dynamic> json = _safeExtractJson(resp.content);
-    final result = _mapToResult(json, now, tzReadable);
+    IntentResult result = _mapToResult(json, now, tzReadable);
+    final IntentResult fixed = _maybeFixRelativeRange(userText, result, now);
+    if (fixed.startMs != result.startMs || fixed.endMs != result.endMs) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'Intent',
+          'range corrected by heuristic: [${result.startMs}-${result.endMs}] -> [${fixed.startMs}-${fixed.endMs}] user="${_clip(userText, 80)}"',
+        );
+      } catch (_) {}
+      result = fixed;
+    }
     try {
-      await FlutterLogger.nativeInfo('Intent', 'parsed intent=${result.intent} summary=${_clip(result.intentSummary, 80)} range=[${result.startMs}-${result.endMs}] tz=${result.timezone} apps=${result.apps.length}');
+      await FlutterLogger.nativeInfo(
+        'Intent',
+        'parsed intent=${result.intent} summary=${_clip(result.intentSummary, 80)} range=[${result.startMs}-${result.endMs}] tz=${result.timezone} apps=${result.apps.length}',
+      );
     } catch (_) {}
     return result;
   }
@@ -108,7 +148,11 @@ class IntentAnalysisService {
     ].join('\n');
   }
 
-  String _buildUserPrompt(String userText, {IntentPrevHint? prev, List<String> prevUsers = const <String>[]}) {
+  String _buildUserPrompt(
+    String userText, {
+    IntentPrevHint? prev,
+    List<String> prevUsers = const <String>[],
+  }) {
     final List<String> lines = <String>[];
     lines.add('User query: "${userText.replaceAll('"', '\\"')}"');
     if (prevUsers.isNotEmpty) {
@@ -130,10 +174,16 @@ class IntentAnalysisService {
         final int absMin = off.inMinutes.abs();
         final String oh = (absMin ~/ 60).toString().padLeft(2, '0');
         final String om = (absMin % 60).toString().padLeft(2, '0');
-        String ymdhms(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}T${two(d.hour)}:${two(d.minute)}:${two(d.second)}$sign$oh:$om';
+        String ymdhms(DateTime d) =>
+            '${d.year}-${two(d.month)}-${two(d.day)}T${two(d.hour)}:${two(d.minute)}:${two(d.second)}$sign$oh:$om';
         final String prevStartIso = ymdhms(ds);
         final String prevEndIso = ymdhms(de);
-        lines.add('Previous context window ISO(local): ' + prevStartIso + ' – ' + prevEndIso);
+        lines.add(
+          'Previous context window ISO(local): ' +
+              prevStartIso +
+              ' – ' +
+              prevEndIso,
+        );
       }
       if (prev.apps.isNotEmpty) {
         lines.add('Previous apps: ' + prev.apps.join(', '));
@@ -141,10 +191,15 @@ class IntentAnalysisService {
       if (prev.summary.trim().isNotEmpty) {
         lines.add('Previous intent summary (CN): ' + prev.summary.trim());
       }
-      lines.add('If this query is a follow-up within the previous context window (or a subset like narrowing by app), set "skip_context" = true, and you MUST copy the exact ISO datetimes from "Previous context window ISO(local)" into start_local and end_local.');
-      lines.add('If this is NOT a follow-up, set skip_context=false and compute a new start_local/end_local explicitly (do NOT default to today).');
+      lines.add(
+        'If this query is a follow-up within the previous context window (or a subset like narrowing by app), set "skip_context" = true, and you MUST copy the exact ISO datetimes from "Previous context window ISO(local)" into start_local and end_local.',
+      );
+      lines.add(
+        'If this is NOT a follow-up, set skip_context=false and compute a new start_local/end_local explicitly (do NOT default to today).',
+      );
     }
     lines.addAll(<String>[
+      'Note: The app can only preload a 7-day context window at a time (default: the LAST 7 days within the requested range). If the user wants to keep searching across weeks, you can set context_action=page_prev/page_next to page the context window.',
       'Respond with exactly this JSON shape (do NOT add extra fields):',
       '{',
       '  "intent": "time_range_query | app_time_range_query | keyword_lookup | other",',
@@ -155,6 +210,8 @@ class IntentAnalysisService {
       '  "apps": ["可选，应用名或包名"],',
       '  "keywords": ["可选，关键词"],',
       '  "skip_context": true | false,',
+      '  "context_action": "reuse | refresh | page_prev | page_next",',
+      '  "user_wants_proceed": true | false,',
       '  "error": { "code": "MISSING_DATE | AMBIGUOUS_DATE | INVALID_DATE | UNSUPPORTED", "message": "中文错误原因" }',
       '}',
       'Rules:',
@@ -163,6 +220,8 @@ class IntentAnalysisService {
       '- 若用户说“今天/昨天/今晚”等相对时间，也要换算为本地具体日期时间并填入。',
       '- intent_summary 必须为中文。',
       '- 若为上一轮时间窗内的续问，合理设置 skip_context=true。',
+      '- context_action 用于指导“上下文包”的复用/刷新/翻页（由你判断；不要依赖固定关键词）。',
+      '- 若用户明确表示希望“先按现有线索开始找/别再追问/直接先找找看”，请将 user_wants_proceed=true（即使时间缺失/歧义也要填这个字段）。',
     ]);
     return lines.join('\n');
   }
@@ -203,26 +262,49 @@ class IntentAnalysisService {
     DateTime end;
 
     // 基于本地时间的“今天/昨天”等计算
-    DateTime startOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
-    DateTime endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
+    DateTime startOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
+    DateTime endOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
 
     final String low = p.toLowerCase();
-    
+
     // 显式中文日期（如：10月10日/10月10号/2025年10月10日，支持 上午/下午/晚上）
     final List<int> explicit = _parseExplicitChineseDate(p, now);
-    if (explicit.isNotEmpty && explicit[0] > 0 && explicit[1] > 0 && explicit[1] >= explicit[0]) {
+    if (explicit.isNotEmpty &&
+        explicit[0] > 0 &&
+        explicit[1] > 0 &&
+        explicit[1] >= explicit[0]) {
       return explicit;
     }
 
     // 明确列出的口语映射
     if (low.contains('今天上午')) {
       start = DateTime(now.year, now.month, now.day, 8, 0, 0, 0, 0);
-      end = DateTime(now.year, now.month, now.day, 12, 0, 0, 0, 0).subtract(const Duration(milliseconds: 1));
+      end = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        12,
+        0,
+        0,
+        0,
+        0,
+      ).subtract(const Duration(milliseconds: 1));
       return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
     }
     if (low.contains('今天下午')) {
       start = DateTime(now.year, now.month, now.day, 12, 0, 0, 0, 0);
-      end = DateTime(now.year, now.month, now.day, 18, 0, 0, 0, 0).subtract(const Duration(milliseconds: 1));
+      end = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        18,
+        0,
+        0,
+        0,
+        0,
+      ).subtract(const Duration(milliseconds: 1));
       return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
     }
     if (low.contains('今天晚上') || low == '今晚') {
@@ -238,6 +320,16 @@ class IntentAnalysisService {
     }
     if (low.contains('最近一周') || low.contains('最近7天')) {
       start = now.subtract(const Duration(days: 7));
+      end = now;
+      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
+    }
+    if (low.contains('最近一月') ||
+        low.contains('最近一个月') ||
+        low.contains('近一月') ||
+        low.contains('近一个月') ||
+        low.contains('最近30天') ||
+        low.contains('近30天')) {
+      start = now.subtract(const Duration(days: 30));
       end = now;
       return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
     }
@@ -260,6 +352,83 @@ class IntentAnalysisService {
     return const <int>[0, 0];
   }
 
+  IntentResult _maybeFixRelativeRange(
+    String userText,
+    IntentResult result,
+    DateTime now,
+  ) {
+    if (result.hasError || !result.hasValidRange) return result;
+    // Only apply to relative-time phrases; do not touch explicit dates.
+    final String t = userText.trim().toLowerCase();
+    if (t.isEmpty) return result;
+    if (RegExp(r'[12]\d{3}\s*年|\d{1,2}\s*月\s*\d{1,2}').hasMatch(t)) {
+      return result;
+    }
+
+    String? period;
+    if (t.contains('最近一月') ||
+        t.contains('最近一个月') ||
+        t.contains('近一月') ||
+        t.contains('近一个月') ||
+        t.contains('最近30天') ||
+        t.contains('近30天')) {
+      period = '最近一个月';
+    } else if (t.contains('最近一周') || t.contains('最近7天')) {
+      period = '最近一周';
+    } else if (t.contains('最近三天') || t.contains('最近3天')) {
+      period = '最近三天';
+    } else if (t.contains('最近24小时') || t.contains('最近二十四小时')) {
+      period = '最近24小时';
+    } else if (t.contains('昨天')) {
+      period = '昨天';
+    } else if (t.contains('今天') || t == '今日') {
+      period = '今天';
+    }
+    if (period == null) return result;
+
+    final List<int> expected = _computeRangeFromTimePeriod(period, now);
+    if (expected.length < 2 || expected[0] <= 0 || expected[1] <= 0)
+      return result;
+
+    final int expStart = expected[0];
+    final int expEnd = expected[1];
+    final int gotStart = result.startMs;
+    final int gotEnd = result.endMs;
+
+    // If model output is clearly out-of-bounds (e.g. "last month" but returned ~1 year),
+    // clamp to a sane window.
+    final int gotSpan = (gotEnd > 0 && gotStart > 0)
+        ? (gotEnd - gotStart).abs()
+        : 0;
+    final int maxSpan = (period == '最近一个月')
+        ? const Duration(days: 45).inMilliseconds
+        : const Duration(days: 14).inMilliseconds;
+    final bool spanTooLarge = gotSpan > maxSpan;
+
+    final int nowMs = now.millisecondsSinceEpoch;
+    final bool endFarFromNow =
+        gotEnd > 0 &&
+        (gotEnd - nowMs).abs() > const Duration(days: 3).inMilliseconds;
+
+    if (!spanTooLarge && !endFarFromNow) return result;
+
+    return IntentResult(
+      intent: result.intent,
+      intentSummary: result.intentSummary,
+      startMs: expStart,
+      endMs: expEnd,
+      timezone: result.timezone,
+      apps: result.apps,
+      keywords: result.keywords,
+      sqlFill: result.sqlFill,
+      skipContext: result.skipContext,
+      contextAction: result.contextAction,
+      userWantsProceed: result.userWantsProceed,
+      errorCode: result.errorCode,
+      errorMessage: result.errorMessage,
+    );
+  }
+
   /// 解析显式中文日期：
   /// - 10月10日 / 10月10号
   /// - 2025年10月10日
@@ -267,7 +436,9 @@ class IntentAnalysisService {
   List<int> _parseExplicitChineseDate(String text, DateTime now) {
     // 注意：这里使用原始字符串(r'...')，不要对正则中的反斜杠做二次转义
     // 正确写法示例：\d -> 在原始字符串中写成 \d，而不是 \\\\d
-    final RegExp reYmd = RegExp(r'(?:([12]\d{3})年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*(?:[日号])?');
+    final RegExp reYmd = RegExp(
+      r'(?:([12]\d{3})年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*(?:[日号])?',
+    );
     final Match? m = reYmd.firstMatch(text);
     if (m == null) {
       return const <int>[0, 0];
@@ -288,8 +459,10 @@ class IntentAnalysisService {
       return const <int>[0, 0];
     }
 
-    DateTime startOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
-    DateTime endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
+    DateTime startOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
+    DateTime endOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
 
     late final DateTime base;
     try {
@@ -303,16 +476,40 @@ class IntentAnalysisService {
 
     final bool isMorning = text.contains('上午') || text.contains('早上');
     final bool isAfternoon = text.contains('下午');
-    final bool isEvening = text.contains('晚上') || text.contains('晚间') || text.contains('夜里') || text.contains('夜间') || text.contains('夜晚') || text.contains('傍晚');
+    final bool isEvening =
+        text.contains('晚上') ||
+        text.contains('晚间') ||
+        text.contains('夜里') ||
+        text.contains('夜间') ||
+        text.contains('夜晚') ||
+        text.contains('傍晚');
 
     DateTime start;
     DateTime end;
     if (isMorning) {
       start = DateTime(base.year, base.month, base.day, 8, 0, 0, 0, 0);
-      end = DateTime(base.year, base.month, base.day, 12, 0, 0, 0, 0).subtract(const Duration(milliseconds: 1));
+      end = DateTime(
+        base.year,
+        base.month,
+        base.day,
+        12,
+        0,
+        0,
+        0,
+        0,
+      ).subtract(const Duration(milliseconds: 1));
     } else if (isAfternoon) {
       start = DateTime(base.year, base.month, base.day, 12, 0, 0, 0, 0);
-      end = DateTime(base.year, base.month, base.day, 18, 0, 0, 0, 0).subtract(const Duration(milliseconds: 1));
+      end = DateTime(
+        base.year,
+        base.month,
+        base.day,
+        18,
+        0,
+        0,
+        0,
+        0,
+      ).subtract(const Duration(milliseconds: 1));
     } else if (isEvening) {
       start = DateTime(base.year, base.month, base.day, 18, 0, 0, 0, 0);
       end = endOfDay(base);
@@ -324,14 +521,24 @@ class IntentAnalysisService {
     return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
   }
 
-  IntentResult _mapToResult(Map<String, dynamic> j, DateTime now, String tzReadable) {
+  IntentResult _mapToResult(
+    Map<String, dynamic> j,
+    DateTime now,
+    String tzReadable,
+  ) {
     int startMs = 0;
     int endMs = 0;
     String intent = (j['intent'] as String?)?.trim() ?? 'time_range_query';
-    String intentSummary = (j['intent_summary'] as String?)?.trim() ?? '用户查询近期活动';
-    final Map<String, dynamic> sql = (j['sql_fill'] is Map) ? Map<String, dynamic>.from(j['sql_fill']) : <String, dynamic>{};
+    String intentSummary =
+        (j['intent_summary'] as String?)?.trim() ?? '用户查询近期活动';
+    final Map<String, dynamic> sql = (j['sql_fill'] is Map)
+        ? Map<String, dynamic>.from(j['sql_fill'])
+        : <String, dynamic>{};
     List<String> apps = <String>[];
+    List<String> keywords = <String>[];
     bool skipContext = false;
+    String contextAction = 'reuse';
+    bool userWantsProceed = false;
     String? errorCode;
     String? errorMessage;
 
@@ -341,7 +548,10 @@ class IntentAnalysisService {
     try {
       sLocalRaw = (j['start_local'] as String?)?.trim();
       eLocalRaw = (j['end_local'] as String?)?.trim();
-      if (sLocalRaw != null && sLocalRaw!.isNotEmpty && eLocalRaw != null && eLocalRaw!.isNotEmpty) {
+      if (sLocalRaw != null &&
+          sLocalRaw!.isNotEmpty &&
+          eLocalRaw != null &&
+          eLocalRaw!.isNotEmpty) {
         try {
           final DateTime s = DateTime.parse(sLocalRaw!);
           final DateTime e = DateTime.parse(eLocalRaw!);
@@ -356,7 +566,9 @@ class IntentAnalysisService {
 
     // 读取 error 对象（若模型认为输入缺失/歧义）
     try {
-      final Map<String, dynamic>? err = (j['error'] is Map) ? Map<String, dynamic>.from(j['error']) : null;
+      final Map<String, dynamic>? err = (j['error'] is Map)
+          ? Map<String, dynamic>.from(j['error'])
+          : null;
       final String? ec = (err?['code'] as String?)?.trim();
       final String? em = (err?['message'] as String?)?.trim();
       if (ec != null && ec.isNotEmpty) errorCode = ec;
@@ -366,7 +578,22 @@ class IntentAnalysisService {
     try {
       final dynamic a = j['apps'];
       if (a is List) {
-        apps = a.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        apps = a
+            .whereType<String>()
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {}
+
+    try {
+      final dynamic k = j['keywords'];
+      if (k is List) {
+        keywords = k
+            .whereType<String>()
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
       }
     } catch (_) {}
 
@@ -380,14 +607,53 @@ class IntentAnalysisService {
       }
     } catch (_) {}
 
+    try {
+      final dynamic ca =
+          j['context_action'] ?? j['contextAction'] ?? j['context'];
+      if (ca is String) {
+        final String s = ca.trim().toLowerCase();
+        if (s == 'reuse' || s == 'cache' || s == 'cached') {
+          contextAction = 'reuse';
+        } else if (s == 'refresh' || s == 'reload' || s == 'new') {
+          contextAction = 'refresh';
+        } else if (s == 'page_prev' ||
+            s == 'prev' ||
+            s == 'previous' ||
+            s == 'pageprevious') {
+          contextAction = 'page_prev';
+        } else if (s == 'page_next' || s == 'next' || s == 'pagenext') {
+          contextAction = 'page_next';
+        }
+      }
+    } catch (_) {}
+
+    if (!skipContext && contextAction == 'reuse') {
+      contextAction = 'refresh';
+    }
+
+    try {
+      final dynamic p =
+          j['user_wants_proceed'] ?? j['wants_proceed'] ?? j['proceed'];
+      if (p is bool) userWantsProceed = p;
+      if (p is String) {
+        final String s = p.trim().toLowerCase();
+        if (s == 'true' || s == 'yes' || s == '1') userWantsProceed = true;
+        if (s == 'false' || s == 'no' || s == '0') userWantsProceed = false;
+      }
+    } catch (_) {}
+
     // 禁止回退：若无效则保持无效，由上层终止流程并提示错误
 
     // 始终填充 SQL 段与日期键（若有效）
     if (startMs > 0 && endMs > 0 && endMs >= startMs) {
       sql['segments_between'] = {'start_ms': startMs, 'end_ms': endMs};
       try {
-        final String? sd = (sLocalRaw != null && sLocalRaw!.contains('T')) ? sLocalRaw!.split('T').first : null;
-        final String? ed = (eLocalRaw != null && eLocalRaw!.contains('T')) ? eLocalRaw!.split('T').first : null;
+        final String? sd = (sLocalRaw != null && sLocalRaw!.contains('T'))
+            ? sLocalRaw!.split('T').first
+            : null;
+        final String? ed = (eLocalRaw != null && eLocalRaw!.contains('T'))
+            ? eLocalRaw!.split('T').first
+            : null;
         if (sd != null || ed != null) {
           sql['context_date'] = {
             if (sd != null) 'start_date': sd,
@@ -397,7 +663,8 @@ class IntentAnalysisService {
         if (sLocalRaw != null) sql['start_local'] = sLocalRaw;
         if (eLocalRaw != null) sql['end_local'] = eLocalRaw;
         final String? tzFromModel = (j['timezone'] as String?)?.trim();
-        if (tzFromModel != null && tzFromModel.isNotEmpty) sql['timezone'] = tzFromModel;
+        if (tzFromModel != null && tzFromModel.isNotEmpty)
+          sql['timezone'] = tzFromModel;
       } catch (_) {}
     }
 
@@ -406,10 +673,15 @@ class IntentAnalysisService {
       intentSummary: intentSummary,
       startMs: startMs,
       endMs: endMs,
-      timezone: (j['timezone'] as String?)?.trim().isNotEmpty == true ? (j['timezone'] as String).trim() : tzReadable,
+      timezone: (j['timezone'] as String?)?.trim().isNotEmpty == true
+          ? (j['timezone'] as String).trim()
+          : tzReadable,
       apps: apps,
+      keywords: keywords,
       sqlFill: sql,
       skipContext: skipContext,
+      contextAction: contextAction,
+      userWantsProceed: userWantsProceed,
       errorCode: errorCode,
       errorMessage: errorMessage,
     );
@@ -429,5 +701,3 @@ class IntentPrevHint {
     this.summary = '',
   });
 }
-
-

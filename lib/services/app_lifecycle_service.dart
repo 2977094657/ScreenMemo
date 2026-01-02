@@ -20,24 +20,24 @@ class AppLifecycleService {
 
   /// 发送 resumed（应用回到前台）
   void emitResumed() {
-    _log('emitResumed');
+    _log('发送 resumed 事件');
     _safeAdd(AppLifecycleEvent.resumed);
   }
 
   /// 发送 firstUiResumed（冷启动或首次进入UI，仅一次）
   void emitFirstUiResumed() {
     if (firstUiResumedEmitted) {
-      _log('emitFirstUiResumed skipped (already emitted)');
+      _log('跳过发送 firstUiResumed（已发送过）');
       return;
     }
     firstUiResumedEmitted = true;
-    _log('emitFirstUiResumed');
+    _log('发送 firstUiResumed 事件');
     _safeAdd(AppLifecycleEvent.firstUiResumed);
   }
 
   /// 发送 timelineShown（时间线页被展示）
   void emitTimelineShown() {
-    _log('emitTimelineShown');
+    _log('发送 timelineShown 事件');
     _safeAdd(AppLifecycleEvent.timelineShown);
   }
 

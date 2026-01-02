@@ -373,7 +373,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       try {
         await FlutterLogger.nativeError(
           'AI',
-          'Provider save failed id=${_loaded?.id ?? 'new'} type=$_type error=$e',
+          '保存提供商失败 id=${_loaded?.id ?? 'new'} type=$_type error=$e',
         );
       } catch (_) {}
       if (mounted) {

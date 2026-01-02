@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">屏忆</string>
     <string name="app_name_en">Screen Memo</string>
@@ -40,11 +40,23 @@
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；其余图片不得逐图描述；
 - 所有 content_groups[].representative_images 在所有分组中的总和不得超过上述上限；
 - 所有 key_actions[].ref_image 必须复用已选代表图片，不得新增超出上限的图片引用；
-以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], described_images[], overall_summary；
+
+image_tags[]：
+- 必须为每张输入图片输出 1 条 image_tags（覆盖全部文件名，不缺不重）。
+- tags 用中文本地化标签；若成人/裸露/性暗示等，额外添加英文统一标签 "nsfw"（小写），除 "nsfw" 外不要输出英文标签。
+
+ image_descriptions[]：
+- 必须输出 image_descriptions[] 覆盖全部输入图片（不缺不重）。每项：{from_file:"文件名", to_file:"文件名", description:"至少6句自然语言（尽可能 8-12 句）"}。
+- 允许将连续且内容高度一致的图片合并为一段（例如连续聊天截图），用 from_file/to_file 表示范围；确保所有文件名被覆盖且不重复。
+- description 需尽可能详尽、多角度描述画面（场景/界面布局/关键元素/可能的操作与意图/状态变化等），并在末尾追加 1 行：`关键词：...`（尽可能多，建议至少 20 个，用“、”分隔）；不要输出“可见文字”字段/清单，也不要逐字抄写长段文字。
+
+以 JSON 输出以下字段（不要省略字段名）：apps[], categories[], timeline[], key_actions[], described_images[], image_tags[], image_descriptions[], overall_summary；
 仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown；
 字段约定：
 key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"应用名","ref_image":"文件名","ref_time":"HH:mm:ss","detail":"(Markdown) 精简说明，避免敏感信息","confidence":0.0}],
 described_images[]: [{"file":"文件名","ref_time":"HH:mm:ss","app":"应用名","summary":"(Markdown) 单图关键信息与选择理由"}],
+image_tags[]: [{"file":"文件名","ref_time":"HH:mm:ss","app":"应用名","tags":["标签1","标签2","nsfw"]}],
+image_descriptions[]: [{"from_file":"文件名","to_file":"文件名","description":"至少2-3句自然语言（可合并连续相似图片）"}],
 timeline[]: [{"time":"HH:mm:ss","app":"应用名","action":"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他","summary":"(Markdown) 一句话行为（可简短强调）"}],
 overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使用小节与要点，避免流水账并尽可能保留信息"]]> </string>
 
@@ -64,11 +76,23 @@ overall_summary: "(Markdown) 开头是一段无标题的总结段落，随后使
 - Provide textual descriptions for at most one-third of the images (floor; may be 0). Do not narrate the rest image-by-image.
 - The total across all content_groups[].representative_images must not exceed this cap.
 - key_actions[].ref_image must reuse the chosen representative images; do not introduce additional images beyond the cap.
-Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], described_images[], overall_summary.
+
+image_tags[]:
+- You MUST output one image_tags item for every input image (cover all filenames with no missing/duplicates).
+- tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
+
+ image_descriptions[]:
+- You MUST output image_descriptions[] covering ALL images (no missing, no duplicates). Each item: {from_file:"filename", to_file:"filename", description:"at least 6 natural language sentences (aim for 8-12 if reasonable)"}.
+ - You may merge highly similar consecutive images (e.g., continuous chat screenshots) into one description group and use from_file/to_file to denote the range.
+ - For retrieval/semantic search: make each description detailed and multi-angle, and append exactly ONE final line: `Keywords: ...` (aim for 20+ keywords). Do NOT output a separate "Visible text" field/section and do not transcribe long on-screen text.
+
+Output these JSON fields (do not omit field names): apps[], categories[], timeline[], key_actions[], described_images[], image_tags[], image_descriptions[], overall_summary.
 Only output a single JSON object; do not add explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).
 Field conventions:
 key_actions[]: [{"type":"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other","app":"App","ref_image":"filename","ref_time":"HH:mm:ss","detail":"(Markdown) brief, avoid sensitive info","confidence":0.0}],
 described_images[]: [{"file":"filename","ref_time":"HH:mm:ss","app":"App","summary":"(Markdown) key info and selection reason for the single image"}],
+image_tags[]: [{"file":"filename","ref_time":"HH:mm:ss","app":"App","tags":["tag1","tag2","nsfw"]}],
+image_descriptions[]: [{"from_file":"filename","to_file":"filename","description":"at least 2-3 natural language sentences (may group consecutive similar images)"}],
 timeline[]: [{"time":"HH:mm:ss","app":"App","action":"browse|watch|chat|shop|search|edit|game|settings|download|share|other","summary":"(Markdown) one-liner (may emphasize briefly)"}],
 overall_summary: "(Markdown) start with a single untitled paragraph; then sections with bullets; avoid narration and retain key info"]]> </string>
 
@@ -80,11 +104,25 @@ overall_summary: "(Markdown) start with a single untitled paragraph; then sectio
 - 对同一文章/视频/页面的连续图片，归为同一 content_group，做整体总结；
 - 开头先输出一段对本时间段的简短总结（纯文本，不使用任何标题；不要出现“## 概览”或“## 总结”等）；随后再使用 Markdown 小节呈现后续内容；
 - Markdown 要求：所有“用于展示的文本字段”须使用 Markdown（overall_summary 与 content_groups[].summary），用小标题与项目符号清晰呈现；禁止输出 Markdown 代码块标记（如 ```），仅纯 Markdown 文本；
-- 后续小节建议包含："## 关键操作"、"## 主要活动"、"## 重点内容"；
+- overall_summary 必须按以下固定顺序包含且只能包含这三个二级标题：
+  "## 关键操作"
+  "## 主要活动"
+  "## 重点内容"
+  每个小节必须使用 "- " 输出至少 3 条要点；如信息不足，仍必须保留该小节并至少提供 1 条有意义的占位要点；不得省略、改名或调整顺序。
 - 在“## 关键操作”中，将相邻/连续同类行为合并为区间，格式“HH:mm:ss-HH:mm:ss：行为描述”；仅在行为中断或切换时新起一条；控制 3-8 条精要；
 - content_groups[].summary 使用 1–3 条 Markdown 要点描述话题/代表性标题/意图；
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；所有 content_groups[].representative_images 的合计不得超过该上限；key_actions[].ref_image 必须复用代表图片，不得新增超限图片；
-以 JSON 输出字段：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary。
+
+image_tags[]：
+- 必须为每张输入图片输出 1 条 image_tags（覆盖全部文件名，不缺不重）。
+- tags 用中文本地化标签；若成人/裸露/性暗示等，额外添加英文统一标签 "nsfw"（小写），除 "nsfw" 外不要输出英文标签。
+
+ image_descriptions[]：
+- 必须输出 image_descriptions[] 覆盖全部输入图片（不缺不重）。每项：{from_file:"文件名", to_file:"文件名", description:"至少6句自然语言（尽可能 8-12 句）"}。
+- 允许将连续且内容高度一致的图片合并为一段（例如连续聊天截图），用 from_file/to_file 表示范围；确保所有文件名被覆盖且不重复。
+- description 需尽可能详尽、多角度描述画面（场景/界面布局/关键元素/可能的操作与意图/状态变化等），并在末尾追加 1 行：`关键词：...`（尽可能多，建议至少 20 个，用“、”分隔）；不要输出“可见文字”字段/清单，也不要逐字抄写长段文字。
+
+以 JSON 输出字段：apps[], categories[], timeline[], key_actions[], content_groups[], image_tags[], image_descriptions[], overall_summary。
 仅输出一个 JSON 对象；不要输出解释或 JSON 外的 Markdown；展示内容写入 overall_summary。]]></string>
 
     <string name="merge_prompt_default_en"><![CDATA[Please produce a merged summary for the following images. MUST follow (English output, structured JSON, behavior-focused, no per-image narration / no OCR):
@@ -102,7 +140,17 @@ overall_summary: "(Markdown) start with a single untitled paragraph; then sectio
 - In "## Key Actions", merge adjacent same-type actions into ranges "HH:mm:ss-HH:mm:ss: description"; only new item when action breaks; keep 3–8 concise lines.
 - content_groups[].summary uses 1–3 Markdown bullets for group topic/representative titles/intent.
 - Provide textual descriptions for at most one-third of images (floor; may be 0). The total across all content_groups[].representative_images must not exceed this cap; key_actions[].ref_image must reuse those representative images and must not exceed the cap.
-Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary.
+
+image_tags[]:
+- You MUST output one image_tags item for every input image (cover all filenames with no missing/duplicates).
+- tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
+
+ image_descriptions[]:
+- You MUST output image_descriptions[] covering ALL images (no missing, no duplicates). Each item: {from_file:"filename", to_file:"filename", description:"at least 6 natural language sentences (aim for 8-12 if reasonable)"}.
+ - You may merge highly similar consecutive images (e.g., continuous chat screenshots) into one description group and use from_file/to_file to denote the range.
+ - For retrieval/semantic search: make each description detailed and multi-angle, and append exactly ONE final line: `Keywords: ...` (aim for 20+ keywords). Do NOT output a separate "Visible text" field/section and do not transcribe long on-screen text.
+
+Output JSON fields (same as normal event): apps[], categories[], timeline[], key_actions[], content_groups[], image_tags[], image_descriptions[], overall_summary.
 Only output ONE JSON object; no explanations or Markdown outside JSON; all display content belongs to overall_summary (Markdown).]]></string>
 
     <string name="merge_prompt_default_ja"><![CDATA[以下の画像を基に日本語で統合サマリーを作成してください。必ず次のルールに従います（構造化JSON、行動重視、逐一説明禁止／OCR禁止）:

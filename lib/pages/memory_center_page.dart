@@ -91,7 +91,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   }
 
   Future<void> _bootstrap() async {
-    _logInfo('bootstrap start');
+    _logInfo('启动初始化开始');
     await _service.ensureInitialized();
     if (!mounted) return;
     final MemoryProgressState cachedProgress = _service.latestProgress;
@@ -291,7 +291,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         );
       }
     } catch (e) {
-      _logInfo('loadMemoryContextSelection failed: $e');
+      _logInfo('加载上下文选择失败：$e');
       if (!mounted) return;
       setState(() => _memoryCtxLoading = false);
       await _service.setExtractionContext(
@@ -367,7 +367,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     try {
       providers = await _providers.listProviders();
     } catch (e) {
-      _logInfo('showMemoryProviderSheet listProviders failed: $e');
+      _logInfo('打开提供商选择面板：获取列表失败：$e');
       providers = const <AIProvider>[];
     }
     if (!mounted) return;
@@ -544,7 +544,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     if (!mounted) return;
     setState(() => _refreshing = true);
     try {
-      _logInfo('fetchSnapshot start initial=$initial');
+      _logInfo('获取快照开始 初始=$initial');
       final MemorySnapshot? snap = await _service.fetchSnapshot();
       if (!mounted) return;
       if (!initial && snap != null) {
@@ -577,18 +577,18 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   Future<void> _runInitialSync() async {
     try {
       final int segmentSynced = await _service.syncSegmentsToMemory();
-      _logInfo('initial sync segment ingested=$segmentSynced');
+      _logInfo('初始同步：动态导入=$segmentSynced');
       final int chatSynced = await _service.syncAllConversationsToMemory();
-      _logInfo('initial sync chat ingested=$chatSynced');
+      _logInfo('初始同步：聊天导入=$chatSynced');
       if (!mounted) return;
       await _refresh(initial: false);
     } catch (e) {
-      _logInfo('initial sync failed: $e');
+      _logInfo('初始同步失败：$e');
     }
   }
 
   Future<void> _regenerateArticle({bool force = false}) async {
-    _appendArticleLog('收到画像文章生成请求 force=$force generating=$_articleGenerating');
+    _appendArticleLog('收到画像文章生成请求 强制=$force 生成中=$_articleGenerating');
     if (_articleGenerating && !force) {
       _appendArticleLog('已有生成任务在执行，跳过此次触发');
       return;
@@ -651,22 +651,22 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   }
 
   void _scheduleArticleRegeneration({bool force = false}) {
-    _appendArticleLog('调度画像文章生成，force=$force');
+    _appendArticleLog('调度画像文章生成，强制=$force');
     unawaited(_regenerateArticle(force: force));
   }
 
   Future<void> _confirmTag(MemoryTag tag) async {
     if (_confirmingTagIds.contains(tag.id)) {
-      _logInfo('confirmTag ignored (already running) tagId=${tag.id}');
+      _logInfo('确认标签已忽略（正在运行）tagId=${tag.id}');
       return;
     }
-    _logInfo('confirmTag start tagId=${tag.id}');
+    _logInfo('确认标签开始 tagId=${tag.id}');
     setState(() => _confirmingTagIds.add(tag.id));
     try {
       final MemoryTag? updated = await _service.confirmTag(tag.id);
       if (!mounted) return;
       _logInfo(
-        'confirmTag success tagId=${tag.id} status=${(updated ?? tag).status}',
+        '确认标签成功 tagId=${tag.id} 状态=${(updated ?? tag).status}',
       );
       UINotifier.success(
         context,
@@ -747,11 +747,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   }) async {
     if (_initializingHistory) {
       _logInfo(
-        'startHistoricalProcessing skipped (busy) force=$forceReprocess',
+        '跳过历史处理（忙碌中）强制=$forceReprocess',
       );
       return;
     }
-    _logInfo('startHistoricalProcessing request force=$forceReprocess');
+    _logInfo('发起历史处理请求 强制=$forceReprocess');
     final AppLocalizations t = AppLocalizations.of(context);
     final MemoryProgressRunning primedProgress = MemoryProgressRunning(
       processedCount: 0,
@@ -776,21 +776,21 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     try {
       final int segmentSynced = await _service.syncSegmentsToMemory();
       _logInfo(
-        'startHistoricalProcessing segment sync ingested=$segmentSynced',
+        '历史处理：动态同步导入=$segmentSynced',
       );
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageSyncChats);
         _service.updatePreparationStage(_preparingStageLabel);
       }
       final int chatSynced = await _service.syncAllConversationsToMemory();
-      _logInfo('startHistoricalProcessing chat sync ingested=$chatSynced');
+      _logInfo('历史处理：聊天同步导入=$chatSynced');
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageDispatch);
         _service.updatePreparationStage(_preparingStageLabel);
       }
       await _service.startHistoricalProcessing(forceReprocess: forceReprocess);
       if (!mounted) return;
-      _logInfo('startHistoricalProcessing dispatched force=$forceReprocess');
+      _logInfo('历史处理已派发 强制=$forceReprocess');
       UINotifier.success(context, t.memoryStartProcessingToast);
     } on PlatformException catch (e) {
       if (!mounted) return;
@@ -824,7 +824,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         setState(() {
           _initializingHistory = _progress is MemoryProgressRunning;
         });
-        _logInfo('startHistoricalProcessing finished force=$forceReprocess');
+        _logInfo('历史处理完成 强制=$forceReprocess');
       }
     }
   }
@@ -1001,7 +1001,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       try {
         await _articleService.clearCachedArticle();
       } catch (e, st) {
-        _logInfo('clear persona article cache failed: $e $st');
+        _logInfo('清理人设文章缓存失败：$e $st');
       }
       if (!mounted) return;
       UINotifier.success(context, t.clearSuccess);
@@ -2017,15 +2017,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
 
   String _describeProgress(MemoryProgressState progress) {
     if (progress is MemoryProgressRunning) {
-      return 'running processed=${progress.processedCount}/${progress.totalCount} progress=${progress.safeProgress.toStringAsFixed(3)} currentEventId=${progress.currentEventId}';
+      return '运行中 已处理=${progress.processedCount}/${progress.totalCount} 进度=${progress.safeProgress.toStringAsFixed(3)} 当前事件ID=${progress.currentEventId}';
     }
     if (progress is MemoryProgressCompleted) {
-      return 'completed total=${progress.totalCount} duration=${progress.duration.inMilliseconds}ms';
+      return '已完成 总数=${progress.totalCount} 耗时=${progress.duration.inMilliseconds}毫秒';
     }
     if (progress is MemoryProgressFailed) {
-      return 'failed processed=${progress.processedCount}/${progress.totalCount} error=${progress.errorMessage}';
+      return '失败 已处理=${progress.processedCount}/${progress.totalCount} 错误=${progress.errorMessage}';
     }
-    return 'idle';
+    return '空闲';
   }
 
   Future<void> _loadMorePending() async {
@@ -2058,7 +2058,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       });
       _notifyTagSheetRebuild();
     } catch (e) {
-      _logInfo('loadMorePending failed: $e');
+      _logInfo('加载更多（待确认）失败：$e');
       if (mounted) {
         setState(() => _loadingPendingMore = false);
         _notifyTagSheetRebuild();
@@ -2098,7 +2098,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       });
       _notifyTagSheetRebuild();
     } catch (e) {
-      _logInfo('loadMoreConfirmed failed: $e');
+      _logInfo('加载更多（已确认）失败：$e');
       if (mounted) {
         setState(() => _loadingConfirmedMore = false);
         _notifyTagSheetRebuild();

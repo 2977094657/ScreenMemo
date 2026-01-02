@@ -67,9 +67,10 @@ String preprocessForChatMarkdown(String content) {
       // 对非代码块内容：先移除 <think>，再做 LaTeX 转标签（跳过行内代码片段）
       final s1 = _removeThinkBlocks(seg.text);
       final s2 = _replaceLatexToTagsSkippingInlineCode(s1);
-      final s3 = _removeTrailingPunctuationAfterEvidence(s2);
-      final s4 = _ensureEvidenceBlocksOnOwnLine(s3);
-      buf.write(s4);
+      final s3 = _normalizeEvidenceTagsSkippingInlineCode(s2);
+      final s4 = _removeTrailingPunctuationAfterEvidence(s3);
+      final s5 = _ensureEvidenceBlocksOnOwnLine(s4);
+      buf.write(s5);
     }
   }
   return buf.toString();
@@ -79,6 +80,57 @@ String preprocessForChatMarkdown(String content) {
 String _removeThinkBlocks(String text) {
   final thinkRegex = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', multiLine: true);
   return text.replaceAll(thinkRegex, '');
+}
+
+/// 规范化模型输出的 evidence 引用格式，尽量修复以下常见错误：
+/// - 大小写不一致：[Evidence: ...] -> [evidence: ...]
+/// - 多证据塞进同一对括号：[evidence: a, b] -> [evidence: a] [evidence: b]
+/// - 各类分隔符（,，、;；）混用
+///
+/// 注意：仅用于渲染阶段的“容错修复”，不改变原始消息存储。
+/// 仅处理普通文本；行内代码 (`...`) 内容保持原样。
+String _normalizeEvidenceTagsSkippingInlineCode(String input) {
+  final inlineCode = RegExp(r'`[^`\n]*`'); // 单行内联代码
+  final parts = <String>[];
+  int p = 0;
+  for (final m in inlineCode.allMatches(input)) {
+    if (m.start > p) {
+      parts.add(_normalizeEvidenceTags(input.substring(p, m.start)));
+    }
+    parts.add(input.substring(m.start, m.end)); // 保持内联代码原样
+    p = m.end;
+  }
+  if (p < input.length) {
+    parts.add(_normalizeEvidenceTags(input.substring(p)));
+  }
+  return parts.join();
+}
+
+String _normalizeEvidenceTags(String input) {
+  final evAny = RegExp(
+    r'\[\s*evidence\s*[:：]\s*([^\]]+)\]',
+    caseSensitive: false,
+  );
+  return input.replaceAllMapped(evAny, (m) {
+    final String rawInside = (m.group(1) ?? '').trim();
+    if (rawInside.isEmpty) return m.group(0) ?? '';
+
+    // 统一分隔符为逗号，便于拆分
+    String normalized = rawInside.replaceAll(RegExp(r'[，、;；]+'), ',');
+
+    // 允许用空格/逗号分隔多个证据
+    final List<String> tokens = normalized
+        .split(RegExp(r'[\s,]+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .map((s) => s.replaceAll(RegExp(r'^[,，、;；。\.]+'), ''))
+        .map((s) => s.replaceAll(RegExp(r'[,，、;；。\.]+$'), ''))
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (tokens.isEmpty) return m.group(0) ?? '';
+    return tokens.map((t) => '[evidence: $t]').join(' ');
+  });
 }
 
 /// 去除紧跟在 [evidence: FILENAME.EXT] 后面的句号（英文 . 或中文 。）
@@ -266,6 +318,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
 
   final Map<String, String> evidenceNameToPath;
   final List<String> orderedEvidencePaths;
+  static final Set<String> _loggedMissing = <String>{};
 
   @override
   Widget? visitElementAfter(element, TextStyle? preferredStyle) {
@@ -282,6 +335,12 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
       }
     }
     if (resolvedPath == null || resolvedPath.isEmpty) {
+      // 便于排查：当引用格式正确但无法解析到本地文件时，打一次日志（去重）。
+      if (_loggedMissing.add(name)) {
+        try {
+          FlutterLogger.nativeWarn('UI.Chat-Evidence', '无法解析证据引用：' + name);
+        } catch (_) {}
+      }
       // 未匹配到文件名时，回退为可选的明文占位，避免渲染空白
       return Text('[evidence: ' + name + ']', style: preferredStyle);
     }
@@ -311,7 +370,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
                   final List<String> paths = <String>{...galleryPaths}.toList();
                   if (!paths.contains(path)) paths.insert(0, path);
                   final int initialIndex = paths.indexOf(path);
-                  try { await FlutterLogger.info('UI.Chat-ImageTap: navigate viewer (reveal) count='+paths.length.toString()); } catch (_) {}
+                  try { await FlutterLogger.info('UI.Chat-ImageTap：跳转查看器（显示）数量='+paths.length.toString()); } catch (_) {}
                   final nav = NavigationService.instance.navigatorKey.currentState;
                   nav?.pushNamed(
                     '/screenshot_viewer',
@@ -343,7 +402,7 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
                   final List<String> paths = <String>{...galleryPaths}.toList();
                   if (!paths.contains(path)) paths.insert(0, path);
                   final int initialIndex = paths.indexOf(path);
-                  try { await FlutterLogger.info('UI.Chat-ImageTap: navigate viewer (tap) count='+paths.length.toString()); } catch (_) {}
+                  try { await FlutterLogger.info('UI.Chat-ImageTap：跳转查看器（点击）数量='+paths.length.toString()); } catch (_) {}
                   final nav = NavigationService.instance.navigatorKey.currentState;
                   nav?.pushNamed(
                     '/screenshot_viewer',

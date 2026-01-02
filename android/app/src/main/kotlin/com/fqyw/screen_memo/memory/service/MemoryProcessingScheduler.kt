@@ -24,7 +24,7 @@ object MemoryProcessingScheduler {
             val triggerAt = computeNextTrigger(nowMillis)
             val pendingIntent = buildPendingIntent(context)
 
-            try { OutputFileLogger.infoForce(context, TAG, "scheduleNext now=$nowMillis triggerAt=$triggerAt") } catch (_: Exception) {}
+            try { OutputFileLogger.infoForce(context, TAG, "scheduleNext：当前=$nowMillis 触发时间=$triggerAt") } catch (_: Exception) {}
 
             alarmManager.cancel(pendingIntent)
 
@@ -43,7 +43,7 @@ object MemoryProcessingScheduler {
                 }
                 scheduled = true
             } catch (e: Exception) {
-                FileLogger.w(TAG, "Exact alarm scheduling failed: ${e.message}")
+                FileLogger.w(TAG, "精确闹钟调度失败：${e.message}")
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
@@ -52,18 +52,18 @@ object MemoryProcessingScheduler {
                     }
                     scheduled = true
                 } catch (ignored: Exception) {
-                    FileLogger.e(TAG, "Fallback scheduling failed: ${ignored.message}", ignored)
+                    FileLogger.e(TAG, "兜底调度失败：${ignored.message}", ignored)
                 }
             }
 
             if (scheduled) {
-                FileLogger.i(TAG, "Next memory processing scheduled at ${logTime(triggerAt)}")
-                try { OutputFileLogger.infoForce(context, TAG, "Next memory processing scheduled at ${logTime(triggerAt)}") } catch (_: Exception) {}
+                FileLogger.i(TAG, "下一次记忆处理已安排于 ${logTime(triggerAt)}")
+                try { OutputFileLogger.infoForce(context, TAG, "下一次记忆处理已安排于 ${logTime(triggerAt)}") } catch (_: Exception) {}
             }
             scheduled
         } catch (e: Exception) {
-            FileLogger.e(TAG, "scheduleNext encountered error: ${e.message}", e)
-            try { OutputFileLogger.errorForce(context, TAG, "scheduleNext encountered error: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            FileLogger.e(TAG, "scheduleNext 遇到异常：${e.message}", e)
+            try { OutputFileLogger.errorForce(context, TAG, "scheduleNext 遇到异常：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             false
         }
     }
@@ -73,9 +73,9 @@ object MemoryProcessingScheduler {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
             val pendingIntent = buildPendingIntent(context)
             alarmManager.cancel(pendingIntent)
-            FileLogger.i(TAG, "Memory processing alarm cancelled")
+            FileLogger.i(TAG, "记忆处理闹钟已取消")
         } catch (e: Exception) {
-            FileLogger.w(TAG, "cancel failed: ${e.message}")
+            FileLogger.w(TAG, "取消失败：${e.message}")
         }
     }
 

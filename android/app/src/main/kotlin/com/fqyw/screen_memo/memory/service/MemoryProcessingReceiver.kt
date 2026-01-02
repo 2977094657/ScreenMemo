@@ -18,17 +18,17 @@ class MemoryProcessingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         FileLogger.init(context)
         val action = intent?.action
-        try { OutputFileLogger.infoForce(context, TAG, "onReceive action=$action") } catch (_: Exception) {}
+        try { OutputFileLogger.infoForce(context, TAG, "收到广播 action=$action") } catch (_: Exception) {}
         if (action != MemoryProcessingScheduler.ACTION_MEMORY_PROCESSING) {
-            FileLogger.w(TAG, "Ignored action: $action")
-            try { OutputFileLogger.infoForce(context, TAG, "Ignored action: $action") } catch (_: Exception) {}
+            FileLogger.w(TAG, "忽略 action：$action")
+            try { OutputFileLogger.infoForce(context, TAG, "忽略 action：$action") } catch (_: Exception) {}
             return
         }
 
         val appContext = context.applicationContext ?: context
         val cutoffMillis = resolveCutoffMillis()
-        FileLogger.i(TAG, "Trigger memory processing cutoff=$cutoffMillis")
-        try { OutputFileLogger.infoForce(appContext, TAG, "Trigger memory processing cutoff=$cutoffMillis") } catch (_: Exception) {}
+        FileLogger.i(TAG, "触发记忆处理 截止=$cutoffMillis")
+        try { OutputFileLogger.infoForce(appContext, TAG, "触发记忆处理 截止=$cutoffMillis") } catch (_: Exception) {}
 
         try {
             MemoryBackendService.startHistoricalProcessing(
@@ -37,23 +37,23 @@ class MemoryProcessingReceiver : BroadcastReceiver() {
                 targetEndExclusiveMillis = cutoffMillis
             )
         } catch (e: Exception) {
-            FileLogger.e(TAG, "Failed to trigger historical processing: ${e.message}", e)
-            try { OutputFileLogger.errorForce(appContext, TAG, "Failed to trigger historical processing: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            FileLogger.e(TAG, "触发历史处理失败：${e.message}", e)
+            try { OutputFileLogger.errorForce(appContext, TAG, "触发历史处理失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
         }
 
         // 额外：若上周周总结尚未生成，则在每日调度时触发一轮周总结（原生执行，避免 Dart 定时器失效）
         try {
             enqueueWeeklySummaryIfDue(appContext)
         } catch (e: Exception) {
-            FileLogger.e(TAG, "Failed to enqueue weekly summary: ${e.message}", e)
-            try { OutputFileLogger.errorForce(appContext, TAG, "Failed to enqueue weekly summary: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            FileLogger.e(TAG, "加入周总结队列失败：${e.message}", e)
+            try { OutputFileLogger.errorForce(appContext, TAG, "加入周总结队列失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
         }
 
         try {
             MemoryProcessingScheduler.scheduleNext(appContext)
         } catch (e: Exception) {
-            FileLogger.e(TAG, "Failed to schedule next memory processing: ${e.message}", e)
-            try { OutputFileLogger.errorForce(appContext, TAG, "Failed to schedule next memory processing: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            FileLogger.e(TAG, "安排下一次记忆处理失败：${e.message}", e)
+            try { OutputFileLogger.errorForce(appContext, TAG, "安排下一次记忆处理失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
         }
     }
 
@@ -85,13 +85,13 @@ class MemoryProcessingReceiver : BroadcastReceiver() {
         try {
             db = openMasterDb(context, writable = false)
             if (db == null) {
-                try { OutputFileLogger.errorForce(context, TAG, "openMasterDb returned null; skip weekly summary") } catch (_: Exception) {}
+                try { OutputFileLogger.errorForce(context, TAG, "openMasterDb 返回 null；跳过周总结") } catch (_: Exception) {}
                 return
             }
 
             val anchor = resolveWeeklyAnchor(db, zone)
             if (anchor == null) {
-                try { OutputFileLogger.infoForce(context, TAG, "weekly summary anchor not found; skip") } catch (_: Exception) {}
+                try { OutputFileLogger.infoForce(context, TAG, "未找到周总结锚点；跳过") } catch (_: Exception) {}
                 return
             }
 
@@ -114,11 +114,11 @@ class MemoryProcessingReceiver : BroadcastReceiver() {
             }
 
             WeeklySummaryWorker.enqueueOnce(context.applicationContext, weekStartKey)
-            FileLogger.i(TAG, "Weekly summary enqueued for weekStart=$weekStartKey (end=${weekEnd.format(DATE_FMT)})")
-            try { OutputFileLogger.infoForce(context, TAG, "Weekly summary enqueued for weekStart=$weekStartKey") } catch (_: Exception) {}
+            FileLogger.i(TAG, "周总结已入队 weekStart=$weekStartKey (end=${weekEnd.format(DATE_FMT)})")
+            try { OutputFileLogger.infoForce(context, TAG, "周总结已入队 weekStart=$weekStartKey") } catch (_: Exception) {}
         } catch (e: Exception) {
-            FileLogger.e(TAG, "Failed to compute weekly summary due week: ${e.message}", e)
-            try { OutputFileLogger.errorForce(context, TAG, "Failed to compute weekly summary due week: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            FileLogger.e(TAG, "计算需要生成的周总结失败：${e.message}", e)
+            try { OutputFileLogger.errorForce(context, TAG, "计算需要生成的周总结失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
         } finally {
             try { db?.close() } catch (_: Exception) {}
         }
@@ -136,7 +136,7 @@ class MemoryProcessingReceiver : BroadcastReceiver() {
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
             }
         } catch (e: Exception) {
-            try { FileLogger.w(TAG, "openMasterDb failed: ${e.message}") } catch (_: Exception) {}
+            try { FileLogger.w(TAG, "openMasterDb 失败：${e.message}") } catch (_: Exception) {}
             null
         }
     }

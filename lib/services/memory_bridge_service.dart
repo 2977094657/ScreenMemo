@@ -81,7 +81,7 @@ class MemoryBridgeService {
   
   Future<bool> deleteTag(int tagId) async {
     await ensureInitialized();
-    _logInfo('deleteTag invoke tagId=$tagId');
+    _logInfo('删除标签调用 tagId=$tagId');
     final dynamic result =
         await _methodChannel.invokeMethod('memory#deleteTag', <String, dynamic>{'tagId': tagId});
     return result == true;
@@ -92,7 +92,7 @@ class MemoryBridgeService {
   Stream<MemoryTagUpdate> get tagUpdateStream => _tagUpdateController.stream;
 
   Future<void> ensureInitialized() async {
-    _logInfo('ensureInitialized invoked; initialized=$_initialized');
+    _logInfo('ensureInitialized 调用；initialized=$_initialized');
     if (_initialized) return;
     _initialized = true;
     await _startBackendService();
@@ -102,7 +102,7 @@ class MemoryBridgeService {
         _progressChannel.receiveBroadcastStream().listen(_onProgressEvent, onError: _logError);
     _tagUpdateSubscription ??=
         _tagUpdateChannel.receiveBroadcastStream().listen(_onTagUpdateEvent, onError: _logError);
-    _logInfo('ensureInitialized completed; subscriptions active=${_snapshotSubscription != null}');
+    _logInfo('ensureInitialized 完成；订阅已激活=${_snapshotSubscription != null}');
   }
 
   Future<void> setExtractionContext({
@@ -111,7 +111,7 @@ class MemoryBridgeService {
   }) async {
     await ensureInitialized();
     if (provider == null || provider.id == null || model == null || model.trim().isEmpty) {
-      _logInfo('setExtractionContext clearing context (provider/model missing)');
+      _logInfo('setExtractionContext 清空上下文（provider/model 缺失）');
     }
     if (provider == null || provider.id == null || model == null || model.trim().isEmpty) {
       await _methodChannel.invokeMethod('memory#setExtractionContext', <String, dynamic>{
@@ -174,7 +174,7 @@ class MemoryBridgeService {
     bool ensureInit = true,
   }) async {
     if (content.trim().isEmpty) {
-      _logInfo('ingestEvent skipped empty content type=$type source=$source externalId=$externalId');
+      _logInfo('导入事件跳过：内容为空 type=$type source=$source externalId=$externalId');
       return;
     }
     if (ensureInit) {
@@ -193,7 +193,7 @@ class MemoryBridgeService {
     try {
       await _methodChannel.invokeMethod('memory#ingestEvent', <String, dynamic>{'event': event});
     } catch (err) {
-      _logWarn('ingestEvent failed type=$type source=$source externalId=$externalId error=$err');
+      _logWarn('导入事件失败 type=$type source=$source externalId=$externalId error=$err');
     }
   }
 
@@ -211,7 +211,7 @@ class MemoryBridgeService {
       }
     }
     if (cids.isEmpty) {
-      _logInfo('syncAllConversationsToMemory skipped (no conversations)');
+      _logInfo('同步所有会话到记忆：跳过（无会话）');
       return 0;
     }
     int totalIngested = 0;
@@ -219,9 +219,9 @@ class MemoryBridgeService {
       final List<Map<String, dynamic>> rows = await db.getAiMessages(cid);
       final int ingested = await _ingestChatRows(cid, rows);
       totalIngested += ingested;
-      _logInfo('syncAllConversationsToMemory conversation=$cid messages=${rows.length} ingested=$ingested');
+      _logInfo('同步会话到记忆 cid=$cid 消息数=${rows.length} 已导入=$ingested');
     }
-    _logInfo('syncAllConversationsToMemory completed totalIngested=$totalIngested conversations=${cids.length}');
+    _logInfo('同步所有会话到记忆完成 总导入=$totalIngested 会话数=${cids.length}');
     return totalIngested;
   }
 
@@ -265,7 +265,7 @@ class MemoryBridgeService {
 
   Future<MemorySnapshot?> fetchSnapshot() async {
     await ensureInitialized();
-    _logInfo('fetchSnapshot invokeMethod memory#getSnapshot');
+    _logInfo('fetchSnapshot 调用 memory#getSnapshot');
     final dynamic result = await _methodChannel.invokeMethod('memory#getSnapshot');
     final MemorySnapshot? snapshot = _parseSnapshot(result);
     if (snapshot != null) {
@@ -274,7 +274,7 @@ class MemoryBridgeService {
         'fetchSnapshot received pending=${snapshot.pendingTags.length} confirmed=${snapshot.confirmedTags.length} events=${snapshot.recentEvents.length}',
       );
     } else {
-      _logInfo('fetchSnapshot received null snapshot');
+      _logInfo('fetchSnapshot 返回 null snapshot');
     }
     return snapshot;
   }
@@ -294,7 +294,7 @@ class MemoryBridgeService {
       );
       return processed ?? 0;
     } catch (err) {
-      _logWarn('processSampleEvents failed error=$err');
+      _logWarn('处理样本事件失败 错误=$err');
       rethrow;
     }
   }
@@ -304,7 +304,7 @@ class MemoryBridgeService {
     try {
       await _methodChannel.invokeMethod('memory#cancelInitialization');
     } catch (err) {
-      _logWarn('cancelInitialization failed error=$err');
+      _logWarn('取消初始化失败 错误=$err');
       rethrow;
     }
   }
@@ -315,31 +315,31 @@ class MemoryBridgeService {
       await _methodChannel.invokeMethod('memory#clearMemoryData');
       _cachedPersonaSummary = '';
     } catch (err) {
-      _logWarn('clearMemoryData failed error=$err');
+      _logWarn('清理记忆数据失败 错误=$err');
       rethrow;
     }
   }
 
   Future<MemoryTag?> fetchTagById(int tagId) async {
     await ensureInitialized();
-    _logInfo('fetchTagById invoke tagId=$tagId');
+    _logInfo('fetchTagById 调用 tagId=$tagId');
     final dynamic result =
         await _methodChannel.invokeMethod('memory#getTag', <String, dynamic>{'tagId': tagId});
     final MemoryTag? tag = _parseTag(result);
     if (tag == null) {
-      _logWarn('fetchTagById received null tagId=$tagId');
+      _logWarn('fetchTagById 返回 null tagId=$tagId');
     }
     return tag;
   }
 
   Future<MemoryEventSummary?> fetchEventById(int eventId) async {
     await ensureInitialized();
-    _logInfo('fetchEventById invoke eventId=$eventId');
+    _logInfo('fetchEventById 调用 eventId=$eventId');
     final dynamic result =
         await _methodChannel.invokeMethod('memory#getEvent', <String, dynamic>{'eventId': eventId});
     final MemoryEventSummary? summary = _parseEvent(result);
     if (summary == null) {
-      _logWarn('fetchEventById received null eventId=$eventId');
+      _logWarn('fetchEventById 返回 null eventId=$eventId');
     }
     return summary;
   }
@@ -384,16 +384,16 @@ class MemoryBridgeService {
 
   Future<MemoryTag?> confirmTag(int tagId) async {
     await ensureInitialized();
-    _logInfo('confirmTag invoke tagId=$tagId');
+    _logInfo('confirmTag 调用 tagId=$tagId');
     final dynamic result =
         await _methodChannel.invokeMethod('memory#confirmTag', <String, dynamic>{'tagId': tagId});
     if (result == null) {
-      _logInfo('confirmTag response null tagId=$tagId');
+      _logInfo('confirmTag 返回 null tagId=$tagId');
       return null;
     }
     final MemoryTag? tag = _parseTag(result);
     if (tag != null) {
-      _logInfo('confirmTag received status=${tag.status} occurrences=${tag.occurrences}');
+      _logInfo('confirmTag 响应 status=${tag.status} occurrences=${tag.occurrences}');
       _handleTagUpdate(MemoryTagUpdate(tag: tag, isNewTag: false, statusChanged: true));
     }
     return tag;
@@ -401,11 +401,11 @@ class MemoryBridgeService {
 
   Future<void> startHistoricalProcessing({bool forceReprocess = false}) async {
     await ensureInitialized();
-    _logInfo('startHistoricalProcessing invoke force=$forceReprocess');
+    _logInfo('startHistoricalProcessing 调用 force=$forceReprocess');
     await _methodChannel.invokeMethod('memory#initialize', <String, dynamic>{
       'forceReprocess': forceReprocess,
     });
-    _logInfo('startHistoricalProcessing invoke completed force=$forceReprocess');
+    _logInfo('startHistoricalProcessing 调用完成 force=$forceReprocess');
   }
 
   void dispose() {
@@ -419,12 +419,12 @@ class MemoryBridgeService {
   }
 
   Future<void> _startBackendService() async {
-    _logInfo('startBackendService invoked');
+    _logInfo('startBackendService 调用');
     try {
       await _methodChannel.invokeMethod('memory#startService');
-      _logInfo('startBackendService request sent');
+      _logInfo('startBackendService 请求已发送');
     } catch (err) {
-      _logWarn('startService failed: $err');
+      _logWarn('启动服务失败：$err');
     }
   }
 
@@ -436,16 +436,16 @@ class MemoryBridgeService {
   }
 
   void _onProgressEvent(dynamic event) {
-    _logInfo('progress event received type=${event.runtimeType}');
+    _logInfo('收到进度事件 type=${event.runtimeType}');
     final MemoryProgressState progress = _parseProgress(event);
     _latestProgress = progress;
     clearPreparationState();
     _progressController.add(progress);
-    _logInfo('progress updated runtime=${progress.runtimeType}');
+    _logInfo('进度更新 runtime=${progress.runtimeType}');
   }
 
   void _onTagUpdateEvent(dynamic event) {
-    _logInfo('tag update event received type=${event.runtimeType}');
+    _logInfo('收到标签更新事件 type=${event.runtimeType}');
     final MemoryTagUpdate? update = _parseTagUpdate(event);
     if (update != null) {
       _logInfo(
@@ -478,7 +478,7 @@ class MemoryBridgeService {
   }
 
   void _handleTagUpdate(MemoryTagUpdate update) {
-    _logInfo('handleTagUpdate tagId=${update.tag.id} status=${update.tag.status}');
+    _logInfo('处理标签更新 tagId=${update.tag.id} status=${update.tag.status}');
     final MemorySnapshot? snapshot = _latestSnapshot;
     if (snapshot == null) {
       unawaited(fetchSnapshot());
@@ -505,13 +505,13 @@ class MemoryBridgeService {
 
   MemoryProgressState _parseProgress(dynamic data) {
     if (data is! Map) {
-      _logInfo('parseProgress received non-map payload');
+      _logInfo('parseProgress 收到非 Map 的 payload');
       return const MemoryProgressIdle();
     }
     final Map<String, dynamic> map = _toStringMap(data);
     final String state = (map['state'] as String?) ?? 'idle';
     _logInfo(
-      'parseProgress state=$state processed=${map['processedCount']} total=${map['totalCount']} progress=${map['progress']} duration=${map['durationMillis']} error=${map['errorMessage']}',
+      'parseProgress 状态=$state 已处理=${map['processedCount']} 总数=${map['totalCount']} 进度=${map['progress']} 耗时=${map['durationMillis']} 错误=${map['errorMessage']}',
     );
     switch (state) {
       case 'running':
@@ -531,7 +531,7 @@ class MemoryBridgeService {
         final Duration duration =
             Duration(milliseconds: _toInt(map['durationMillis']) ?? 0);
         _logInfo(
-          'parseProgress completed total=${map['totalCount']} durationMs=${duration.inMilliseconds}',
+          'parseProgress 已完成 总数=${map['totalCount']} 耗时Ms=${duration.inMilliseconds}',
         );
         return MemoryProgressCompleted(
           totalCount: _toInt(map['totalCount']) ?? 0,
@@ -539,7 +539,7 @@ class MemoryBridgeService {
         );
       case 'failed':
         _logWarn(
-          'parseProgress failed processed=${map['processedCount']} total=${map['totalCount']} error=${map['errorMessage']}',
+          'parseProgress 失败 已处理=${map['processedCount']} 总数=${map['totalCount']} 错误=${map['errorMessage']}',
         );
         return MemoryProgressFailed(
           processedCount: _toInt(map['processedCount']) ?? 0,

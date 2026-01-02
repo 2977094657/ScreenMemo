@@ -724,7 +724,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         throw Exception("无法获取应用目录");
       }
 
-      print('PathService返回的目录: ${dir.path}');
+      print('路径服务返回的目录: ${dir.path}');
 
       setState(() {
         _baseDir = dir;
@@ -939,7 +939,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo(
         'UI',
-        'deleteScreenshot id=${screenshot.id} package=${_appInfo.packageName}',
+        '删除截图 id=${screenshot.id} 包名=${_appInfo.packageName}',
       );
       try {
         final success = await ScreenshotService.instance.deleteScreenshot(
@@ -952,10 +952,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             'UI.删除单图-成功 id=${screenshot.id} 包=${_appInfo.packageName}',
           );
           // ignore: unawaited_futures
-          FlutterLogger.nativeInfo(
-            'UI',
-            'deleteScreenshot success id=${screenshot.id}',
-          );
+          FlutterLogger.nativeInfo('UI', '删除截图成功 id=${screenshot.id}');
           setState(() {
             _screenshots.removeWhere((s) => s.id == screenshot.id);
             _currentDisplayCount = _screenshots.length;
@@ -985,10 +982,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             'UI.删除单图-失败 id=${screenshot.id} 包=${_appInfo.packageName}',
           );
           // ignore: unawaited_futures
-          FlutterLogger.nativeWarn(
-            'UI',
-            'deleteScreenshot failed id=${screenshot.id}',
-          );
+          FlutterLogger.nativeWarn('UI', '删除截图失败 id=${screenshot.id}');
           if (mounted) {
             UINotifier.error(
               context,
@@ -1000,7 +994,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.error('UI.删除单图-异常: $e');
         // ignore: unawaited_futures
-        FlutterLogger.nativeError('UI', 'deleteScreenshot exception: $e');
+        FlutterLogger.nativeError('UI', '删除截图异常：$e');
         if (mounted) {
           UINotifier.error(
             context,
@@ -1368,74 +1362,84 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // 与 AppBar 内容左对齐：TabBar 自身通过 padding 控制左内边距
         Padding(
           padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
-            child: _dayTabs.isEmpty || _tabController == null
-                ? const SizedBox(height: 32)
-                : SizedBox(
-                    height: 32,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TabBar(
-                            controller: _tabController,
-                            isScrollable: true,
-                            tabAlignment: TabAlignment.start,
-                            padding: const EdgeInsets.only(left: AppTheme.spacing4),
-                            labelPadding: const EdgeInsets.only(
-                              right: AppTheme.spacing6,
+          child: _dayTabs.isEmpty || _tabController == null
+              ? const SizedBox(height: 32)
+              : SizedBox(
+                  height: 32,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TabBar(
+                          controller: _tabController,
+                          isScrollable: true,
+                          tabAlignment: TabAlignment.start,
+                          padding: const EdgeInsets.only(
+                            left: AppTheme.spacing4,
+                          ),
+                          labelPadding: const EdgeInsets.only(
+                            right: AppTheme.spacing6,
+                          ),
+                          labelColor: selectedColor,
+                          unselectedLabelColor: unselectedColor,
+                          labelStyle: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          unselectedLabelStyle: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w500),
+                          dividerColor: Colors.transparent,
+                          indicatorSize: TabBarIndicatorSize.label,
+                          indicator: UnderlineTabIndicator(
+                            borderSide: BorderSide(
+                              width: 2.0,
+                              color: selectedColor,
                             ),
-                            labelColor: selectedColor,
-                            unselectedLabelColor: unselectedColor,
-                            labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                            insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                          ),
+                          tabs: _dayTabs
+                              .map(
+                                (t) => Tab(
+                                  text: (() {
+                                    final l = AppLocalizations.of(context);
+                                    if (_DayTabInfo._isToday(t.day)) {
+                                      return l.dayTabToday(t.count);
+                                    }
+                                    if (_DayTabInfo._isYesterday(t.day)) {
+                                      return l.dayTabYesterday(t.count);
+                                    }
+                                    return l.dayTabMonthDayCount(
+                                      t.day.month,
+                                      t.day.day,
+                                      t.count,
+                                    );
+                                  })(),
                                 ),
-                            unselectedLabelStyle:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                            dividerColor: Colors.transparent,
-                            indicatorSize: TabBarIndicatorSize.label,
-                            indicator: UnderlineTabIndicator(
-                              borderSide: BorderSide(width: 2.0, color: selectedColor),
-                              insets: const EdgeInsets.symmetric(horizontal: 8.0),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                      if (_dayTabs.length < _allDayTabs.length)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: AppTheme.spacing2,
+                          ),
+                          child: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTheme.spacing2,
+                              ),
+                              visualDensity: VisualDensity.compact,
                             ),
-                            tabs: _dayTabs
-                                .map(
-                                  (t) => Tab(
-                                    text: (() {
-                                      final l = AppLocalizations.of(context);
-                                      if (_DayTabInfo._isToday(t.day)) {
-                                        return l.dayTabToday(t.count);
-                                      }
-                                      if (_DayTabInfo._isYesterday(t.day)) {
-                                        return l.dayTabYesterday(t.count);
-                                      }
-                                      return l.dayTabMonthDayCount(
-                                        t.day.month,
-                                        t.day.day,
-                                        t.count,
-                                      );
-                                    })(),
-                                  ),
-                                )
-                                .toList(),
+                            onPressed: _expandDayTabsIfNeeded,
+                            icon: const Icon(Icons.more_horiz, size: 18),
+                            label: Text(
+                              AppLocalizations.of(context).memoryLoadMore,
+                            ),
                           ),
                         ),
-                        if (_dayTabs.length < _allDayTabs.length)
-                          Padding(
-                            padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                            child: TextButton.icon(
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: _expandDayTabsIfNeeded,
-                              icon: const Icon(Icons.more_horiz, size: 18),
-                              label: Text(AppLocalizations.of(context).memoryLoadMore),
-                            ),
-                          ),
-                      ],
-                    ),
+                    ],
                   ),
+                ),
         ),
         // 日期Tab与内容之间增加1px底部外边距
         const SizedBox(height: 1),
@@ -1563,9 +1567,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool nsfwMasked =
-        _privacyMode &&
+    final bool isNsfw =
         NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+    final bool nsfwMasked = _privacyMode && isNsfw;
     // 手动标记状态（仅 DB）
     final bool isManualNsfw =
         screenshot.id != null &&
@@ -1573,8 +1577,8 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           screenshotId: screenshot.id!,
           appPackageName: screenshot.appPackageName,
         );
-    // UI 显示状态：若被域名规则/自动识别遮罩，也显示“斜杠眼睛”
-    final bool isNsfwDisplay = isManualNsfw || nsfwMasked;
+    // UI 显示状态：全局统一展示（不依赖隐私模式开关）
+    final bool isNsfwDisplay = isNsfw;
 
     final itemContent = ScreenshotItemWidget(
       screenshot: screenshot,
@@ -1610,7 +1614,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
       onNsfwToggle: () async {
         if (screenshot.id == null) return;
         // 若当前因域名规则/自动识别被遮罩，但未手动标记，则提示在设置中管理域名规则
-        if (!isManualNsfw && nsfwMasked) {
+        if (!isManualNsfw && isNsfw) {
           if (!mounted) return;
           UINotifier.info(
             context,
@@ -1687,7 +1691,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               // ignore: unawaited_futures
               FlutterLogger.info('UI.网格-复制链接 成功');
               // ignore: unawaited_futures
-              FlutterLogger.nativeInfo('UI', 'grid copy link success');
+              FlutterLogger.nativeInfo('UI', '网格复制链接成功');
               if (mounted) {
                 UINotifier.success(
                   context,
@@ -1698,10 +1702,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
               // ignore: unawaited_futures
               FlutterLogger.error('UI.网格-复制链接 失败: ' + e.toString());
               // ignore: unawaited_futures
-              FlutterLogger.nativeError(
-                'UI',
-                'grid copy link failed: ' + e.toString(),
-              );
+              FlutterLogger.nativeError('UI', '网格复制链接失败：' + e.toString());
               if (mounted) {
                 UINotifier.error(
                   context,
@@ -2153,7 +2154,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     // ignore: unawaited_futures
     FlutterLogger.nativeInfo(
       'UI',
-      'deleteSelected start count=${_selectedIds.length} isAll=$isSelectAll',
+      '批量删除开始 数量=${_selectedIds.length} 是否全删=$isSelectAll',
     );
 
     final bool inDayScope =
@@ -2171,7 +2172,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.info('UI.全删-成功 包=$_packageName 总数=$totalCount');
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo('UI', 'deleteAll success total=$totalCount');
+        FlutterLogger.nativeInfo('UI', '全删成功 总数=$totalCount');
         // 清空本地数据
         setState(() {
           _screenshots.clear();
@@ -2201,7 +2202,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         // ignore: unawaited_futures
         FlutterLogger.warn('UI.全删-失败 包=$_packageName');
         // ignore: unawaited_futures
-        FlutterLogger.nativeWarn('UI', 'deleteAll failed');
+        FlutterLogger.nativeWarn('UI', '全删失败');
         if (mounted) {
           UINotifier.error(
             context,
@@ -2229,10 +2230,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           'UI.fastDeleteKeepOnly start package=$_packageName keep=${keepIds.length} delete=${_selectedIds.length}',
         );
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo(
-          'UI',
-          'fastDeleteKeepOnly start keep=${keepIds.length}',
-        );
+        FlutterLogger.nativeInfo('UI', '仅保留快速删除开始 保留=${keepIds.length}');
         usedFastKeepOnly = await ScreenshotService.instance.fastDeleteKeepOnly(
           packageName: _packageName,
           keepIds: keepIds,
@@ -2248,7 +2246,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           'UI.批量删除-开始 包=${_appInfo.packageName} 数量=${ids.length}',
         );
         // ignore: unawaited_futures
-        FlutterLogger.nativeInfo('UI', 'deleteBatch start ids=${ids.length}');
+        FlutterLogger.nativeInfo('UI', '批量删除开始 数量=${ids.length}');
         if (mounted) {
           UINotifier.showProgress(context, message: '正在删除...', progress: null);
         }
@@ -2326,7 +2324,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           // ignore: unawaited_futures
           FlutterLogger.nativeInfo(
             'UI',
-            'deleteBatch success deleted=' + deletedShown.toString(),
+            '批量删除成功 删除数=' + deletedShown.toString(),
           );
           UINotifier.success(
             context,
@@ -2352,7 +2350,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
             'UI.仅保留-完成 保留=$keepCount 删除=${totalCount - keepCount}',
           );
           // ignore: unawaited_futures
-          FlutterLogger.nativeInfo('UI', 'fastDeleteKeepOnly finished');
+          FlutterLogger.nativeInfo('UI', '仅保留快速删除完成');
           UINotifier.success(
             context,
             AppLocalizations.of(
@@ -2469,12 +2467,29 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
   Future<void> _preloadManualFlagsFor(List<ScreenshotRecord> data) async {
     try {
       final ids = data.where((s) => s.id != null).map((s) => s.id!).toList();
-      if (ids.isEmpty) return;
-      await NsfwPreferenceService.instance.preloadManualFlags(
-        appPackageName: _packageName,
-        screenshotIds: ids,
-      );
+      // 1) 手动标记（按 app）
+      if (ids.isNotEmpty) {
+        await NsfwPreferenceService.instance.preloadManualFlags(
+          appPackageName: _packageName,
+          screenshotIds: ids,
+        );
+      }
+
+      // 2) AI NSFW（按 file_path，全局复用）
+      final paths = data
+          .map((s) => s.filePath.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
+      if (paths.isNotEmpty) {
+        await NsfwPreferenceService.instance.preloadAiNsfwFlags(
+          filePaths: paths,
+        );
+        await NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+          filePaths: paths,
+        );
+      }
     } catch (_) {}
+    if (mounted) setState(() {});
   }
 }
 

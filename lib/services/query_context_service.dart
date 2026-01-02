@@ -7,18 +7,18 @@ import 'flutter_logger.dart';
 
 /// 关键图片附件（供聊天 UI 展示）
 class EvidenceImageAttachment {
-  final String path;       // 本地文件绝对路径
-  final String label;      // 简短描述，如 "09:31:02 AppA"
+  final String path; // 本地文件绝对路径
+  final String label; // 简短描述，如 "09:31:02 AppA"
   const EvidenceImageAttachment({required this.path, required this.label});
 }
 
 /// 单个事件（段落）可供 LLM 使用的上下文条目
 class ContextEventEntry {
   final int segmentId;
-  final String window;     // 如 "[09:30:12–09:44:58]"
-  final String summary;    // 从 structured_json.overall_summary 或 output_text（不再截断）
+  final String window; // 如 "[09:30:12–09:44:58]"
+  final String summary; // 从 structured_json.overall_summary 或 output_text（不再截断）
   final String? structuredJson; // 事件的完整 structured_json（若有则优先用于上下文）
-  final String? outputText;     // 事件的文本输出（作为 structured_json 缺省的回退）
+  final String? outputText; // 事件的文本输出（作为 structured_json 缺省的回退）
   final List<String> apps; // 去重后的应用集合（包名/应用名）
   final List<EvidenceImageAttachment> keyImages; // 关键图片与标签
   const ContextEventEntry({
@@ -37,7 +37,11 @@ class QueryContextPack {
   final int startMs;
   final int endMs;
   final List<ContextEventEntry> events;
-  const QueryContextPack({required this.startMs, required this.endMs, required this.events});
+  const QueryContextPack({
+    required this.startMs,
+    required this.endMs,
+    required this.events,
+  });
 }
 
 /// 上下文查询与拼装服务
@@ -50,8 +54,13 @@ class QueryContextService {
   // 最近一次构建的上下文缓存（仅内存，跨页面复用，避免紧邻多轮对话重复查询）
   QueryContextPack? _lastPack;
   QueryContextPack? get lastPack => _lastPack;
-  void setLastPack(QueryContextPack pack) { _lastPack = pack; }
-  void clearLastPack() { _lastPack = null; }
+  void setLastPack(QueryContextPack pack) {
+    _lastPack = pack;
+  }
+
+  void clearLastPack() {
+    _lastPack = null;
+  }
 
   /// 查询时间窗内的“已有总结”的段落，并选取关键图片，产出上下文包
   Future<QueryContextPack> buildContext({
@@ -59,13 +68,28 @@ class QueryContextService {
     required int endMs,
     int maxEvents = 0, // 0 表示无限制
     int maxImagesTotal = 0, // 0 表示无限制
+    int maxImagesPerEvent = 15, // 0 表示不限制（受 maxImagesTotal 约束）
+    bool includeImages = true,
   }) async {
-    try { await FlutterLogger.nativeInfo('Context', 'buildContext begin range=[$startMs-$endMs] maxEvents=$maxEvents maxImagesTotal=$maxImagesTotal'); } catch (_) {}
-    // 同时取“有结果”的事件与“时间窗有重叠且有样本”的事件，合并去重，保证上下文尽可能完整
-    final List<Map<String, dynamic>> withResults = await _db.listSegmentsWithResultsBetween(startMillis: startMs, endMillis: endMs);
-    final List<Map<String, dynamic>> overlapWithSamples = await _db.listSegmentsOverlapWithSamplesBetween(startMillis: startMs, endMillis: endMs);
     try {
-      await FlutterLogger.nativeDebug('Context', 'withResults=${withResults.length} overlapWithSamples=${overlapWithSamples.length}');
+      await FlutterLogger.nativeInfo(
+        'Context',
+        'buildContext begin range=[$startMs-$endMs] maxEvents=$maxEvents maxImagesTotal=$maxImagesTotal',
+      );
+    } catch (_) {}
+    // 同时取“有结果”的事件与“时间窗有重叠且有样本”的事件，合并去重，保证上下文尽可能完整
+    final List<Map<String, dynamic>> withResults = await _db
+        .listSegmentsWithResultsBetween(startMillis: startMs, endMillis: endMs);
+    final List<Map<String, dynamic>> overlapWithSamples = await _db
+        .listSegmentsOverlapWithSamplesBetween(
+          startMillis: startMs,
+          endMillis: endMs,
+        );
+    try {
+      await FlutterLogger.nativeDebug(
+        'Context',
+        'withResults=${withResults.length} overlapWithSamples=${overlapWithSamples.length}',
+      );
     } catch (_) {}
     final Map<int, Map<String, dynamic>> byId = <int, Map<String, dynamic>>{};
     void addOrMerge(Map<String, dynamic> m) {
@@ -79,25 +103,44 @@ class QueryContextService {
         void fillIfEmpty(String key) {
           final v1 = existing[key];
           final v2 = m[key];
-          bool isEmpty(dynamic v) => v == null || (v is String && v.trim().isEmpty);
+          bool isEmpty(dynamic v) =>
+              v == null || (v is String && v.trim().isEmpty);
           if (isEmpty(v1) && !isEmpty(v2)) existing[key] = v2;
         }
-        for (final k in <String>['output_text', 'structured_json', 'categories', 'app_packages_display', 'app_packages']) {
+
+        for (final k in <String>[
+          'output_text',
+          'structured_json',
+          'categories',
+          'app_packages_display',
+          'app_packages',
+        ]) {
           fillIfEmpty(k);
         }
       }
     }
-    for (final m in withResults) { addOrMerge(m); }
-    for (final m in overlapWithSamples) { addOrMerge(m); }
+
+    for (final m in withResults) {
+      addOrMerge(m);
+    }
+    for (final m in overlapWithSamples) {
+      addOrMerge(m);
+    }
     List<Map<String, dynamic>> rows = byId.values.toList()
-      ..sort((a, b) => ((a['start_time'] as int?) ?? 0).compareTo(((b['start_time'] as int?) ?? 0)));
+      ..sort(
+        (a, b) => ((a['start_time'] as int?) ?? 0).compareTo(
+          ((b['start_time'] as int?) ?? 0),
+        ),
+      );
     final List<ContextEventEntry> events = <ContextEventEntry>[];
     int remainingImages = maxImagesTotal;
 
-    final Iterable<Map<String, dynamic>> segIter = (maxEvents != null && maxEvents > 0)
-        ? rows.take(maxEvents)
+    final List<Map<String, dynamic>> segList =
+        (maxEvents != null && maxEvents > 0)
+        ? rows.take(maxEvents).toList()
         : rows;
-    for (final seg in segIter) {
+    for (int segIndex = 0; segIndex < segList.length; segIndex++) {
+      final Map<String, dynamic> seg = segList[segIndex];
       final int sid = (seg['id'] as int?) ?? 0;
       if (sid <= 0) continue;
 
@@ -113,38 +156,103 @@ class QueryContextService {
       final String? otRaw = (seg['output_text'] as String?)?.trim();
 
       // 应用集合
-      final String disp = (seg['app_packages_display'] as String? ?? (seg['app_packages'] as String? ?? '')).trim();
+      final String disp =
+          (seg['app_packages_display'] as String? ??
+                  (seg['app_packages'] as String? ?? ''))
+              .trim();
       final List<String> apps = disp.isEmpty
           ? <String>[]
-          : disp.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+          : disp
+                .split(',')
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
 
       // 样本图片：按 position_index 选取头/中/尾关键帧
-      final List<Map<String, dynamic>> samples = await _db.listSegmentSamples(sid);
-      try { await FlutterLogger.nativeDebug('Context', 'segment#$sid samples=${samples.length}'); } catch (_) {}
-      // 选图：如 remainingImages == 0 表示无限制
-      final int limit = (maxImagesTotal != null && maxImagesTotal > 0)
-          ? (remainingImages > 0 ? remainingImages : maxImagesTotal)
-          : 0; // 0 -> 无上限
-      final List<EvidenceImageAttachment> images = _pickKeyImages(samples, limit: limit);
-      if (maxImagesTotal != null && maxImagesTotal > 0) {
-        remainingImages = max(0, remainingImages - images.length);
+      List<EvidenceImageAttachment> images = const <EvidenceImageAttachment>[];
+      if (includeImages) {
+        final bool hasBudget = (maxImagesTotal <= 0) || (remainingImages > 0);
+        if (!hasBudget) {
+          images = const <EvidenceImageAttachment>[];
+        } else {
+          final List<Map<String, dynamic>> samples = await _db
+              .listSegmentSamples(sid);
+          try {
+            await FlutterLogger.nativeDebug(
+              'Context',
+              'segment#$sid samples=${samples.length}',
+            );
+          } catch (_) {}
+
+          // 选图：优先按“每段上限”取样，并受“全局上限”约束；在有全局预算时，尽量在段落间均匀分配，避免前段耗尽预算导致后段无图。
+          int perLimit = maxImagesPerEvent;
+          if (perLimit < 0) perLimit = 0;
+          int limit = perLimit;
+          if (maxImagesTotal > 0) {
+            // 有全局预算时：每段最多取 min(maxImagesPerEvent, remainingImages, ceil(remainingImages / segmentsLeft))。
+            // maxImagesPerEvent=0 表示不限制（此时按“均分预算”决定每段最多取多少）。
+            if (remainingImages <= 0) {
+              limit = 0;
+            } else {
+              final int segmentsLeft = max(1, segList.length - segIndex);
+              final int fairShare = (remainingImages / segmentsLeft).ceil();
+              if (perLimit <= 0) {
+                limit = min(remainingImages, fairShare);
+              } else {
+                limit = min(perLimit, min(remainingImages, fairShare));
+              }
+            }
+          }
+
+          // 注意：_pickKeyImages 的 limit<=0 语义为“无上限”，这里必须显式避免预算耗尽时传 0。
+          if (maxImagesTotal > 0 && remainingImages <= 0) {
+            images = const <EvidenceImageAttachment>[];
+          } else {
+            images = _pickKeyImages(samples, limit: limit);
+          }
+
+          if (maxImagesTotal > 0) {
+            remainingImages = max(0, remainingImages - images.length);
+          }
+        }
       }
 
-      events.add(ContextEventEntry(
-        segmentId: sid,
-        window: window,
-        summary: summary,
-        structuredJson: (sjRaw != null && sjRaw.toLowerCase() != 'null' && sjRaw.isNotEmpty) ? sjRaw : null,
-        outputText: (otRaw != null && otRaw.toLowerCase() != 'null' && otRaw.isNotEmpty) ? otRaw : null,
-        apps: apps,
-        keyImages: images,
-      ));
+      events.add(
+        ContextEventEntry(
+          segmentId: sid,
+          window: window,
+          summary: summary,
+          structuredJson:
+              (sjRaw != null &&
+                  sjRaw.toLowerCase() != 'null' &&
+                  sjRaw.isNotEmpty)
+              ? sjRaw
+              : null,
+          outputText:
+              (otRaw != null &&
+                  otRaw.toLowerCase() != 'null' &&
+                  otRaw.isNotEmpty)
+              ? otRaw
+              : null,
+          apps: apps,
+          keyImages: images,
+        ),
+      );
 
-      if (maxImagesTotal != null && maxImagesTotal > 0 && remainingImages <= 0) break;
+      // 图片预算耗尽时不提前终止事件拼装：后续事件仍然需要进入上下文，只是没有预选图。
     }
 
-    final pack = QueryContextPack(startMs: startMs, endMs: endMs, events: events);
-    try { await FlutterLogger.nativeInfo('Context', 'buildContext done events=${events.length} images=${events.fold<int>(0, (a, b) => a + b.keyImages.length)}'); } catch (_) {}
+    final pack = QueryContextPack(
+      startMs: startMs,
+      endMs: endMs,
+      events: events,
+    );
+    try {
+      await FlutterLogger.nativeInfo(
+        'Context',
+        'buildContext done events=${events.length} images=${events.fold<int>(0, (a, b) => a + b.keyImages.length)}',
+      );
+    } catch (_) {}
     return pack;
   }
 
@@ -155,7 +263,8 @@ class QueryContextService {
     final ds = DateTime.fromMillisecondsSinceEpoch(startMs);
     final de = DateTime.fromMillisecondsSinceEpoch(endMs);
     String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
-    final bool sameDay = (ds.year == de.year && ds.month == de.month && ds.day == de.day);
+    final bool sameDay =
+        (ds.year == de.year && ds.month == de.month && ds.day == de.day);
     if (sameDay) {
       return '[${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}:${two(ds.second)}–${two(de.hour)}:${two(de.minute)}:${two(de.second)}]';
     }
@@ -174,16 +283,25 @@ class QueryContextService {
       } catch (_) {}
     }
     final txt = (seg['output_text'] as String?)?.trim() ?? '';
-    if (txt.isNotEmpty && txt.toLowerCase() != 'null') return clip ? _clip(txt, 800) : txt;
+    if (txt.isNotEmpty && txt.toLowerCase() != 'null')
+      return clip ? _clip(txt, 800) : txt;
     return '';
   }
 
-  String _clip(String s, int maxLen) => s.length > maxLen ? (s.substring(0, maxLen) + '…') : s;
+  String _clip(String s, int maxLen) =>
+      s.length > maxLen ? (s.substring(0, maxLen) + '…') : s;
 
-  List<EvidenceImageAttachment> _pickKeyImages(List<Map<String, dynamic>> samples, {int limit = 0}) {
+  List<EvidenceImageAttachment> _pickKeyImages(
+    List<Map<String, dynamic>> samples, {
+    int limit = 0,
+  }) {
     if (samples.isEmpty) return const <EvidenceImageAttachment>[];
-    final List<Map<String, dynamic>> sorted = List<Map<String, dynamic>>.from(samples)
-      ..sort((a, b) => ((a['position_index'] as int?) ?? 0).compareTo((b['position_index'] as int?) ?? 0));
+    final List<Map<String, dynamic>> sorted =
+        List<Map<String, dynamic>>.from(samples)..sort(
+          (a, b) => ((a['position_index'] as int?) ?? 0).compareTo(
+            (b['position_index'] as int?) ?? 0,
+          ),
+        );
 
     final picks = <EvidenceImageAttachment>[];
 
@@ -194,7 +312,10 @@ class QueryContextService {
         if (path.isEmpty || !File(path).existsSync()) continue;
         final int ts = (m['capture_time'] as int?) ?? 0;
         final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-        final label = DateFormat('HH:mm:ss').format(dt) + ' ' + ((m['app_name'] as String?) ?? '').trim();
+        final label =
+            DateFormat('HH:mm:ss').format(dt) +
+            ' ' +
+            ((m['app_name'] as String?) ?? '').trim();
         picks.add(EvidenceImageAttachment(path: path, label: label.trim()));
       }
       return picks;
@@ -208,8 +329,39 @@ class QueryContextService {
         if (path.isEmpty || !File(path).existsSync()) continue;
         final int ts = (m['capture_time'] as int?) ?? 0;
         final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-        final label = DateFormat('HH:mm:ss').format(dt) + ' ' + ((m['app_name'] as String?) ?? '').trim();
+        final label =
+            DateFormat('HH:mm:ss').format(dt) +
+            ' ' +
+            ((m['app_name'] as String?) ?? '').trim();
         picks.add(EvidenceImageAttachment(path: path, label: label.trim()));
+      }
+      return picks;
+    }
+
+    // 特判：limit==1 时避免 (limit-1)=0 导致 step=Infinity
+    if (limit == 1) {
+      // 优先取中间帧作为代表；若文件缺失，则向两侧扩散寻找可用图片
+      final int mid = n ~/ 2;
+      final List<int> candidates = <int>[
+        mid,
+        0,
+        n - 1,
+        // 向外扩散
+        for (int d = 1; d <= mid; d++) ...<int>[mid - d, mid + d],
+      ];
+      for (final idx0 in candidates) {
+        if (idx0 < 0 || idx0 >= n) continue;
+        final m = sorted[idx0];
+        final path = (m['file_path'] as String?) ?? '';
+        if (path.isEmpty || !File(path).existsSync()) continue;
+        final int ts = (m['capture_time'] as int?) ?? 0;
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        final label =
+            DateFormat('HH:mm:ss').format(dt) +
+            ' ' +
+            ((m['app_name'] as String?) ?? '').trim();
+        picks.add(EvidenceImageAttachment(path: path, label: label.trim()));
+        break;
       }
       return picks;
     }
@@ -226,11 +378,12 @@ class QueryContextService {
       if (path.isEmpty || !File(path).existsSync()) continue;
       final int ts = (m['capture_time'] as int?) ?? 0;
       final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-      final label = DateFormat('HH:mm:ss').format(dt) + ' ' + ((m['app_name'] as String?) ?? '').trim();
+      final label =
+          DateFormat('HH:mm:ss').format(dt) +
+          ' ' +
+          ((m['app_name'] as String?) ?? '').trim();
       picks.add(EvidenceImageAttachment(path: path, label: label.trim()));
     }
     return picks;
   }
 }
-
-

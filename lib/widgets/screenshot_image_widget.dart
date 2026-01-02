@@ -20,6 +20,9 @@ class ScreenshotImageWidget extends StatelessWidget {
   
   /// 是否启用隐私模式
   final bool privacyMode;
+
+  /// 额外的 NSFW 遮罩（例如来自 AI 的 nsfw tag）
+  final bool extraNsfwMask;
   
   /// 页面链接（用于判断是否为 NSFW）- 已废弃，使用 screenshot 参数
   final String? pageUrl;
@@ -61,6 +64,7 @@ class ScreenshotImageWidget extends StatelessWidget {
     super.key,
     required this.file,
     this.privacyMode = true,
+    this.extraNsfwMask = false,
     this.pageUrl,
     this.screenshot,
     this.width,
@@ -80,9 +84,10 @@ class ScreenshotImageWidget extends StatelessWidget {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     // 优先使用 screenshot 参数进行准确判断，否则回退到旧的 URL 判断方式
     final bool nsfwMasked = privacyMode &&
-        (screenshot != null
-            ? NsfwPreferenceService.instance.shouldMaskCached(screenshot!)
-            : NsfwDetector.isNsfwUrl(pageUrl));
+        (extraNsfwMask ||
+            (screenshot != null
+                ? NsfwPreferenceService.instance.shouldMaskCached(screenshot!)
+                : NsfwDetector.isNsfwUrl(pageUrl)));
     
     Widget base = _buildImage(context, isDark);
 

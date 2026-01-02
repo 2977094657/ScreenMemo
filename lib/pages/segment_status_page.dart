@@ -22,6 +22,7 @@ import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import '../utils/merged_event_summary.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../widgets/ui_components.dart';
@@ -411,6 +412,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   Future<void> _refresh() async {
     setState(() { _loading = true; });
     try {
+      // 先触发一次原生端推进/补救：用于“删空某日后重建日期 Tab”等场景
+      // ignore: unawaited_futures
+      _db.triggerSegmentTick();
       final active = await _db.getActiveSegment();
       List<Map<String, dynamic>> segments;
 
@@ -482,7 +486,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
   /// 从当前已加载的 segments 向前再拉取一批“更早日期”的事件
   /// - 仅在默认模式下生效（_onlyNoSummary=false）
-  /// - 按 start_time 的日期向前扩展一个固定窗口（_appendDayTabs 天）
+  /// - 以当前最早事件所在日的前一刻作为上界，从 DB 拉取更早事件
+  ///   （不设固定下界，允许跨越“空档期”继续向前翻到更早历史）
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
     if (_onlyNoSummary || _isLoadingMoreDays || _noMoreOlderSegments) return;
     if (_segments.isEmpty) return;
@@ -510,17 +515,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         oldestDate.month,
         oldestDate.day,
       ).subtract(const Duration(milliseconds: 1));
-      final DateTime startDay = endDay.subtract(
-        const Duration(days: _appendDayTabs - 1),
-      );
-      final int startMs = startDay.millisecondsSinceEpoch;
       final int endMs = endDay.millisecondsSinceEpoch;
 
       const int extraLimit = 800;
       final List<Map<String, dynamic>> more = await _db.listSegmentsEx(
         limit: extraLimit,
         onlyNoSummary: false,
-        startMillis: startMs,
         endMillis: endMs,
       );
       if (more.isEmpty) {
@@ -616,6 +616,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   Future<void> _openImageGallery(List<Map<String, dynamic>> samples, int initialIndex) async {
     if (!mounted) return;
     try {
+      // 尝试为查看器补充本段 AI 结构化结果（用于图片标签/描述等增强信息）
+      String? aiStructuredJson;
+      try {
+        final int segId = samples.isNotEmpty ? ((samples.first['segment_id'] as int?) ?? 0) : 0;
+        if (segId > 0) {
+          final Map<String, dynamic>? result = await _db.getSegmentResult(segId);
+          final String raw = (result?['structured_json'] as String?)?.toString() ?? '';
+          if (raw.trim().isNotEmpty) aiStructuredJson = raw;
+        }
+      } catch (_) {}
+
       // 将样本映射为 ScreenshotRecord 列表；优先从数据库补全原始记录（含 id / page_url 等）
       final List<Future<ScreenshotRecord>> futures = <Future<ScreenshotRecord>>[];
       for (final Map<String, dynamic> m in samples) {
@@ -674,6 +685,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           'appName': app.appName,
           'appInfo': app,
           'multiApp': true,
+          if (aiStructuredJson != null) 'aiStructuredJson': aiStructuredJson,
         },
       );
     } catch (_) {
@@ -684,7 +696,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     }
   }
 
-  Widget _buildSamplesGrid(List<Map<String, dynamic>> samples) {
+  Widget _buildSamplesGrid(List<Map<String, dynamic>> samples, {Set<String> aiNsfwFiles = const <String>{}}) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -710,9 +722,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           );
         }
         
+        final String fileName = path.replaceAll('\\', '/').split('/').last;
+        final bool aiNsfw = aiNsfwFiles.contains(fileName);
+
         return ScreenshotImageWidget(
           file: File(path),
           privacyMode: _privacyMode,
+          extraNsfwMask: aiNsfw,
           pageUrl: pageUrl.isNotEmpty ? pageUrl : null,
           fit: BoxFit.cover,
           borderRadius: BorderRadius.circular(8),
@@ -728,6 +744,51 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     final id = (seg['id'] as int?) ?? 0;
     final samples = await _db.listSegmentSamples(id);
     final result = await _db.getSegmentResult(id);
+    final Set<String> aiNsfwFiles = <String>{};
+    try {
+      final String raw = (result?['structured_json'] as String?)?.toString() ?? '';
+      if (raw.trim().isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final rawTags = decoded['image_tags'];
+          if (rawTags is List) {
+            bool containsExactNsfw(dynamic tags) {
+              if (tags == null) return false;
+              if (tags is List) {
+                return tags.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+              }
+              if (tags is String) {
+                final String tt = tags.trim();
+                if (tt.isEmpty) return false;
+                try {
+                  final dynamic v = jsonDecode(tt);
+                  if (v is List) {
+                    return v.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+                  }
+                  if (v is String) {
+                    return v
+                        .split(RegExp(r'[，,;；\s]+'))
+                        .any((e) => e.trim().toLowerCase() == 'nsfw');
+                  }
+                } catch (_) {}
+                return tt
+                    .split(RegExp(r'[，,;；\s]+'))
+                    .any((e) => e.trim().toLowerCase() == 'nsfw');
+              }
+              return false;
+            }
+
+            for (final e in rawTags) {
+              if (e is! Map) continue;
+              final String file = (e['file'] ?? '').toString().trim();
+              if (file.isEmpty) continue;
+              final String fileName = file.replaceAll('\\', '/').split('/').last;
+              if (containsExactNsfw(e['tags'])) aiNsfwFiles.add(fileName);
+            }
+          }
+        }
+      }
+    } catch (_) {}
     if (!mounted) return;
     await showModalBottomSheet(
       context: context,
@@ -764,7 +825,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                   const SizedBox(height: 8),
                   Text(AppLocalizations.of(context).samplesTitle(samples.length)),
                   const SizedBox(height: 6),
-                  _buildSamplesGrid(samples),
+                  _buildSamplesGrid(samples, aiNsfwFiles: aiNsfwFiles),
                   const Divider(height: 20),
                   Row(
                     children: [
@@ -864,6 +925,54 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                             ],
                           );
                         } else {
+                          final Map<String, List<String>> tagsByFile = <String, List<String>>{};
+                          final List<Map<String, String>> descGroups = <Map<String, String>>[];
+
+                          try {
+                            final rawTags = sj?['image_tags'];
+                            if (rawTags is List) {
+                              for (final e in rawTags) {
+                                if (e is! Map) continue;
+                                final Map<dynamic, dynamic> m = e;
+                                final String file = (m['file'] ?? '').toString().trim();
+                                if (file.isEmpty) continue;
+                                final raw = m['tags'];
+                                final List<String> tags = <String>[];
+                                if (raw is List) {
+                                  for (final t in raw) {
+                                    final v = t.toString().trim();
+                                    if (v.isNotEmpty) tags.add(v);
+                                  }
+                                } else if (raw is String) {
+                                  tags.addAll(
+                                    raw
+                                        .split(RegExp(r'[，,;；\s]+'))
+                                        .map((e) => e.trim())
+                                        .where((e) => e.isNotEmpty),
+                                  );
+                                }
+                                if (tags.isNotEmpty) tagsByFile[file] = tags;
+                              }
+                            }
+                          } catch (_) {}
+
+                          try {
+                            final rawDescs = sj?['image_descriptions'];
+                            if (rawDescs is List) {
+                              for (final e in rawDescs) {
+                                if (e is! Map) continue;
+                                final Map<dynamic, dynamic> m = e;
+                                final String from = (m['from_file'] ?? m['from'] ?? m['start'] ?? '').toString().trim();
+                                final String to = (m['to_file'] ?? m['to'] ?? m['end'] ?? '').toString().trim();
+                                final String desc = (m['description'] ?? m['desc'] ?? '').toString().trim();
+                                if ((from.isEmpty && to.isEmpty) || desc.isEmpty) continue;
+                                final String a = from.isNotEmpty ? from : to;
+                                final String b = to.isNotEmpty ? to : from;
+                                descGroups.add(<String, String>{'from': a, 'to': b, 'description': desc});
+                              }
+                            }
+                          } catch (_) {}
+
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -883,6 +992,39 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                                 },
                               ),
                               const SizedBox(height: 10),
+                              if (tagsByFile.isNotEmpty) ...[
+                                Text(
+                                  AppLocalizations.of(context).aiImageTagsTitle,
+                                  style: Theme.of(c).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 6),
+                                ...tagsByFile.entries.map((e) {
+                                  final String tags = e.value.join(' · ');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: SelectableText('${e.key}: $tags', style: Theme.of(c).textTheme.bodySmall),
+                                  );
+                                }),
+                                const SizedBox(height: 10),
+                              ],
+                              if (descGroups.isNotEmpty) ...[
+                                Text(
+                                  AppLocalizations.of(context).aiImageDescriptionsTitle,
+                                  style: Theme.of(c).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 6),
+                                ...descGroups.map((g) {
+                                  final String from = g['from'] ?? '';
+                                  final String to = g['to'] ?? '';
+                                  final String label = (from.isNotEmpty && to.isNotEmpty && from != to) ? '$from-$to' : (from.isNotEmpty ? from : to);
+                                  final String desc = g['description'] ?? '';
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: SelectableText('$label:\n$desc', style: Theme.of(c).textTheme.bodySmall),
+                                  );
+                                }),
+                                const SizedBox(height: 10),
+                              ],
                               if (rawJson.isNotEmpty)
                                 SelectableText(rawJson),
                             ],
@@ -1344,6 +1486,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   static const double _tagGridMainAxisExtent = 32;
   static const double _tagGridMainAxisSpacing = 6;
   static const double _tagGridCrossAxisSpacing = 6;
+  static const int _thumbGridCrossAxisCount = 3;
+  static const double _thumbGridSpacing = 2;
+  static const double _thumbVirtualGridMaxHeight = 360;
   static const String _summaryGeneratingPlaceholder = '模型正在思考，请稍候…';
 
   bool _expanded = false;
@@ -1422,6 +1567,45 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       'output_text': _segmentData['output_text'],
     };
     final Map<String, dynamic>? structured = _tryParseJson(_segmentData['structured_json'] as String?);
+    final Set<String> aiNsfwFiles = <String>{};
+    try {
+      final rawTags = structured?['image_tags'];
+      if (rawTags is List) {
+        bool containsExactNsfw(dynamic tags) {
+          if (tags == null) return false;
+          if (tags is List) {
+            return tags.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+          }
+          if (tags is String) {
+            final String tt = tags.trim();
+            if (tt.isEmpty) return false;
+            try {
+              final dynamic v = jsonDecode(tt);
+              if (v is List) {
+                return v.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+              }
+              if (v is String) {
+                return v
+                    .split(RegExp(r'[，,;；\s]+'))
+                    .any((e) => e.trim().toLowerCase() == 'nsfw');
+              }
+            } catch (_) {}
+            return tt
+                .split(RegExp(r'[，,;；\s]+'))
+                .any((e) => e.trim().toLowerCase() == 'nsfw');
+          }
+          return false;
+        }
+
+        for (final e in rawTags) {
+          if (e is! Map) continue;
+          final String file = (e['file'] ?? '').toString().trim();
+          if (file.isEmpty) continue;
+          final String fileName = file.replaceAll('\\', '/').split('/').last;
+          if (containsExactNsfw(e['tags'])) aiNsfwFiles.add(fileName);
+        }
+      }
+    } catch (_) {}
     final String? keyAction = _extractKeyActionDetail(structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
     final String computedSummary = _extractOverallSummary(resultMeta, structured);
@@ -1538,12 +1722,20 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             // 根据是否超出行数动态决定是否显示“展开/收起”
             LayoutBuilder(
               builder: (context, constraints) {
+                final List<String> mergedParts =
+                    merged ? splitMergedEventSummaryParts(summary) : const <String>[];
+                final String displaySummary =
+                    mergedParts.isNotEmpty ? mergedParts.first : summary;
+                final List<String> originalSummaries = mergedParts.length > 1
+                    ? mergedParts.sublist(1)
+                    : const <String>[];
+
                 final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
                 // 仅在收起状态下检测是否溢出
                 bool overflow = false;
                 if (!_summaryExpanded && textStyle != null) {
                   final tp = TextPainter(
-                    text: TextSpan(text: summary, style: textStyle),
+                    text: TextSpan(text: displaySummary, style: textStyle),
                     maxLines: 7,
                     ellipsis: '…',
                     textDirection: Directionality.of(context),
@@ -1555,19 +1747,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                 final double lineHeight = (textStyle?.height ?? 1.2) * (textStyle?.fontSize ?? 14.0);
                 final double collapsedHeight = lineHeight * 7.0 + 2.0;
 
-                final md = MarkdownBody(
-                  data: summary,
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                    p: textStyle,
-                  ),
-                  onTapLink: (text, href, title) async {
-                    if (href == null) return;
-                    final uri = Uri.tryParse(href);
-                    if (uri != null) {
-                      try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
-                    }
-                  },
-                );
+                final md = _buildMarkdownBody(context, displaySummary, textStyle);
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1582,7 +1762,16 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                           onPressed: () => setState(() => _summaryExpanded = !_summaryExpanded),
                           child: Text(_summaryExpanded ? AppLocalizations.of(context).collapse : AppLocalizations.of(context).expandMore),
                         ),
+                       ),
+                    if (merged && originalSummaries.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _buildMergedOriginalEventsSection(
+                        context,
+                        segmentId: id,
+                        originals: originalSummaries,
+                        textStyle: textStyle,
                       ),
+                    ],
                   ],
                 );
               },
@@ -1658,7 +1847,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                     height: 60,
                     child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
                   )
-                : (_samples.isNotEmpty ? _buildThumbGrid(context, _samples) : const SizedBox.shrink())),
+                : (_samples.isNotEmpty ? _buildThumbGrid(context, _samples, aiNsfwFiles: aiNsfwFiles) : const SizedBox.shrink())),
           if (!widget.isLast) ...[
             const SizedBox(height: AppTheme.spacing3),
             _buildSeparator(context),
@@ -1754,6 +1943,91 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     );
   }
 
+  MarkdownBody _buildMarkdownBody(
+    BuildContext context,
+    String data,
+    TextStyle? textStyle,
+  ) {
+    return MarkdownBody(
+      data: data,
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(p: textStyle),
+      onTapLink: (text, href, title) async {
+        if (href == null) return;
+        final uri = Uri.tryParse(href);
+        if (uri != null) {
+          try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+        }
+      },
+    );
+  }
+
+  Widget _buildMergedOriginalEventsSection(
+    BuildContext context, {
+    required int segmentId,
+    required List<String> originals,
+    TextStyle? textStyle,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color bg = cs.surfaceContainerHighest.withOpacity(0.28);
+    final Color border = cs.outline.withOpacity(0.22);
+    final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        );
+    final TextStyle? itemTitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppTheme.mutedForeground,
+          fontWeight: FontWeight.w600,
+        );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: border),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: PageStorageKey<String>('seg:$segmentId:mergedOriginals'),
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: AppTheme.spacing3,
+            vertical: 0,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppTheme.spacing3,
+            0,
+            AppTheme.spacing3,
+            AppTheme.spacing3,
+          ),
+          title: Text(l10n.mergedOriginalEventsTitle(originals.length), style: titleStyle),
+          children: originals.asMap().entries.map((entry) {
+            final int index = entry.key;
+            final String part = entry.value;
+            return Container(
+              margin: EdgeInsets.only(top: index == 0 ? 0 : AppTheme.spacing2),
+              padding: const EdgeInsets.all(AppTheme.spacing3),
+              decoration: BoxDecoration(
+                color: cs.surface.withOpacity(0.45),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                border: Border(
+                  left: BorderSide(color: cs.outline.withOpacity(0.45), width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(l10n.mergedOriginalEventTitle(index + 1), style: itemTitleStyle),
+                  const SizedBox(height: 6),
+                  _buildMarkdownBody(context, part, textStyle),
+                ],
+              ),
+            );
+          }).toList(growable: false),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategorySection(BuildContext context, List<String> categories, bool merged) {
     final int total = categories.length + (merged ? 1 : 0);
     if (total == 0) return const SizedBox.shrink();
@@ -1833,41 +2107,82 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     );
   }
 
-  Widget _buildThumbGrid(BuildContext context, List<Map<String, dynamic>> samples) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: samples.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 2,
-        mainAxisSpacing: 2,
-        childAspectRatio: 9 / 16,
-      ),
-      itemBuilder: (ctx, i) {
-        final s = samples[i];
-        final path = (s['file_path'] as String?) ?? '';
-        final pageUrl = (s['page_url'] as String?) ?? '';
-        
-        if (path.isEmpty) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+  Widget _buildThumbGrid(BuildContext context, List<Map<String, dynamic>> samples, {Set<String> aiNsfwFiles = const <String>{}}) {
+    if (samples.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final double cellWidth =
+            (availableWidth - _thumbGridSpacing * (_thumbGridCrossAxisCount - 1)) /
+                _thumbGridCrossAxisCount;
+        // childAspectRatio = width / height => height = width / ratio
+        const double childAspectRatio = 9 / 16;
+        final double cellHeight = cellWidth / childAspectRatio;
+
+        final int rows = (samples.length / _thumbGridCrossAxisCount).ceil();
+        final double naturalHeight = rows * cellHeight +
+            math.max(0, rows - 1) * _thumbGridSpacing;
+        final double maxHeight = math.min(
+          _thumbVirtualGridMaxHeight,
+          MediaQuery.of(context).size.height * 0.55,
+        );
+        final double viewportHeight = math.min(naturalHeight, maxHeight);
+
+        final double dpr = MediaQuery.of(context).devicePixelRatio;
+        final int targetWidthPx = (cellWidth * dpr).round().clamp(96, 1024);
+
+        return SizedBox(
+          height: viewportHeight,
+          child: Scrollbar(
+            thumbVisibility: naturalHeight > viewportHeight,
+            child: GridView.builder(
+              primary: false,
+              padding: EdgeInsets.zero,
+              itemCount: samples.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _thumbGridCrossAxisCount,
+                crossAxisSpacing: _thumbGridSpacing,
+                mainAxisSpacing: _thumbGridSpacing,
+                childAspectRatio: childAspectRatio,
+              ),
+              itemBuilder: (ctx, i) {
+                final s = samples[i];
+                final path = (s['file_path'] as String?) ?? '';
+                final pageUrl = (s['page_url'] as String?) ?? '';
+
+                if (path.isEmpty) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.image_not_supported_outlined),
+                    ),
+                  );
+                }
+
+                final String fileName = path.replaceAll('\\', '/').split('/').last;
+                final bool aiNsfw = aiNsfwFiles.contains(fileName);
+
+                return ScreenshotImageWidget(
+                  file: File(path),
+                  privacyMode: widget.privacyMode,
+                  extraNsfwMask: aiNsfw,
+                  pageUrl: pageUrl.isNotEmpty ? pageUrl : null,
+                  targetWidth: targetWidthPx,
+                  fit: BoxFit.cover,
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => widget.openGallery(samples, i),
+                  showNsfwButton: true,
+                  errorText: 'Image Error',
+                );
+              },
             ),
-            child: const Center(child: Icon(Icons.image_not_supported_outlined)),
-          );
-        }
-        
-        return ScreenshotImageWidget(
-          file: File(path),
-          privacyMode: widget.privacyMode,
-          pageUrl: pageUrl.isNotEmpty ? pageUrl : null,
-          fit: BoxFit.cover,
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => widget.openGallery(samples, i),
-          showNsfwButton: true,
-          errorText: 'Image Error',
+          ),
         );
       },
     );
@@ -2126,5 +2441,3 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
 
   // （已移除）关键图片卡片相关 UI 代码
 }
-
-

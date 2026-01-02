@@ -57,8 +57,16 @@ object SegmentDatabaseHelper {
         val appName: String
     )
 
+    private data class AiImageMeta(
+        var tagsJson: String? = null,
+        var nsfw: Int? = null,
+        var description: String? = null,
+        var descriptionRange: String? = null
+    )
+
     private fun Cursor.getStringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
     private fun Cursor.getLongOrNull(index: Int): Long? = if (isNull(index)) null else getLong(index)
+    private fun Cursor.getDoubleOrNull(index: Int): Double? = if (isNull(index)) null else getDouble(index)
 
     // =============== 基础 ===============
 
@@ -72,6 +80,9 @@ object SegmentDatabaseHelper {
             try { context.getDatabasePath(MASTER_DB_FILE_NAME).absolutePath } catch (_: Exception) { null }
         }
     }
+
+    // Debug/diagnostic helper: expose resolved master DB path for Flutter.
+    fun debugResolveMasterDbPath(context: Context): String? = resolveMasterDbPath(context)
 
     /** 按ID读取段落 */
     fun getSegmentById(context: Context, id: Long): Segment? {
@@ -113,7 +124,7 @@ object SegmentDatabaseHelper {
             ensureSchema(db)
             db
         } catch (e: Exception) {
-            FileLogger.w(TAG, "openMasterDb failed: ${e.message}")
+            FileLogger.w(TAG, "打开主库失败：${e.message}")
             null
         }
     }
@@ -129,21 +140,27 @@ object SegmentDatabaseHelper {
                   duration_sec INTEGER NOT NULL,
                   sample_interval_sec INTEGER NOT NULL,
                   status TEXT NOT NULL,
+                  segment_kind TEXT NOT NULL DEFAULT 'global',
                   app_packages TEXT,
                   merge_attempted INTEGER NOT NULL DEFAULT 0,
                   merged_flag INTEGER NOT NULL DEFAULT 0,
+                  merged_into_id INTEGER,
                   created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
                   updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
                 )
                 """.trimIndent()
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)")
-            // 强一致性：每个时间窗口仅允许一个段落
-            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uniq_segments_window ON segments(start_time, end_time)")
             // 幂等增加新列
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN segment_kind TEXT NOT NULL DEFAULT 'global'") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_attempted INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE segments ADD COLUMN merged_flag INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
-
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merged_into_id INTEGER") } catch (_: Exception) {}
+            try { db.execSQL("CREATE INDEX IF NOT EXISTS idx_segments_merged_into ON segments(merged_into_id)") } catch (_: Exception) {}
+            // 兼容：旧版本曾创建“全局唯一窗口”索引，会阻止单应用段落与全局段落时间窗重叠。
+            // 这里改为按 segment_kind 的部分唯一约束。
+            try { db.execSQL("DROP INDEX IF EXISTS uniq_segments_window") } catch (_: Exception) {}
+            try { db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uniq_segments_window_global ON segments(start_time, end_time) WHERE segment_kind = 'global'") } catch (_: Exception) {}
             db.execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS segment_samples (
@@ -160,6 +177,7 @@ object SegmentDatabaseHelper {
                 """.trimIndent()
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_segment_samples_app_seg ON segment_samples(app_package_name, segment_id)")
 
             db.execSQL(
                 """
@@ -174,6 +192,25 @@ object SegmentDatabaseHelper {
                 )
                 """.trimIndent()
             )
+
+            // AI 图片元数据表：按 file_path 存储标签/自然语言描述（可跨页面复用）
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS ai_image_meta (
+                  file_path TEXT PRIMARY KEY,
+                  tags_json TEXT,
+                  description TEXT,
+                  description_range TEXT,
+                  nsfw INTEGER NOT NULL DEFAULT 0,
+                  segment_id INTEGER,
+                  capture_time INTEGER,
+                  lang TEXT,
+                  updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+                )
+                """.trimIndent()
+            )
+            try { db.execSQL("CREATE INDEX IF NOT EXISTS idx_ai_image_meta_nsfw ON ai_image_meta(nsfw, updated_at DESC)") } catch (_: Exception) {}
+            try { db.execSQL("CREATE INDEX IF NOT EXISTS idx_ai_image_meta_updated ON ai_image_meta(updated_at DESC)") } catch (_: Exception) {}
         } catch (_: Exception) {}
     }
 
@@ -200,12 +237,14 @@ object SegmentDatabaseHelper {
                 put("duration_sec", durationSec)
                 put("sample_interval_sec", sampleIntervalSec)
                 put("status", status)
+                // 兼容：segment_kind 默认 global，但这里显式写入便于旧库/回填一致
+                put("segment_kind", "global")
             }
             // 唯一索引下的安全插入：冲突时忽略并回查 ID
             val rowId = db.insertWithOnConflict("segments", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
             if (rowId > 0) rowId else findSegmentIdByWindow(context, startMillis, endMillis)
         } catch (e: Exception) {
-            FileLogger.w(TAG, "createSegment failed: ${e.message}")
+            FileLogger.w(TAG, "创建段落失败：${e.message}")
             -1
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
@@ -232,7 +271,7 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status","app_packages","created_at","updated_at"),
-                "status = ?",
+                "status = ? AND (segment_kind IS NULL OR segment_kind = 'global')",
                 arrayOf("collecting"),
                 null, null,
                 "id DESC",
@@ -259,6 +298,36 @@ object SegmentDatabaseHelper {
         }
     }
 
+    /**
+     * 将最新的采样间隔同步到所有 collecting 段落，确保在设置里修改后无需等待“下一段落创建”即可生效。
+     *
+     * @return 受影响的段落数量
+     */
+    fun updateCollectingSegmentsSampleInterval(context: Context, sampleIntervalSec: Int): Int {
+        val v = if (sampleIntervalSec < 5) 5 else sampleIntervalSec
+        var db: SQLiteDatabase? = null
+        return try {
+            db = openMasterDb(context, writable = true) ?: return 0
+            val cv = ContentValues().apply {
+                put("sample_interval_sec", v)
+                put("updated_at", System.currentTimeMillis())
+            }
+            val n = db.update(
+                "segments",
+                cv,
+                "status = ? AND (segment_kind IS NULL OR segment_kind = 'global')",
+                arrayOf("collecting")
+            )
+            try { FileLogger.i(TAG, "更新采样间隔：间隔=${v}秒，更新行数=${n}") } catch (_: Exception) {}
+            n
+        } catch (e: Exception) {
+            try { FileLogger.w(TAG, "更新采样间隔失败：${e.message}") } catch (_: Exception) {}
+            0
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
     fun listSegmentsAscending(context: Context, limit: Int, offset: Int): List<Segment> {
         val segments = ArrayList<Segment>()
         var db: SQLiteDatabase? = null
@@ -279,7 +348,7 @@ object SegmentDatabaseHelper {
                     "created_at",
                     "updated_at"
                 ),
-                null,
+                "(segment_kind IS NULL OR segment_kind = 'global')",
                 null,
                 null,
                 null,
@@ -451,6 +520,179 @@ object SegmentDatabaseHelper {
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
+    /**
+     * 将段落 AI 的图片标签/描述写入主库，供全局页面复用（按 file_path 作为唯一键）。
+     *
+     * - structuredJson 来自 segment_results.structured_json（JSON 字符串）
+     * - samples 必须与本次送入模型的图片一致（filename 基于 File(filePath).name）
+     */
+    fun upsertAiImageMetaFromStructuredJson(
+        context: Context,
+        segmentId: Long,
+        samples: List<Sample>,
+        structuredJson: String?,
+        lang: String? = null
+    ) {
+        val sj = structuredJson?.trim()
+        if (sj.isNullOrEmpty() || sj.equals("null", ignoreCase = true)) return
+        if (samples.isEmpty()) return
+
+        val ordered = samples.sortedBy { it.captureTime }
+        val files = ArrayList<String>(ordered.size)
+        val indexByFile = HashMap<String, Int>(ordered.size * 2)
+        val sampleByFile = HashMap<String, Sample>(ordered.size * 2)
+        for ((i, s) in ordered.withIndex()) {
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            if (name.isEmpty()) continue
+            files.add(name)
+            indexByFile.putIfAbsent(name, i)
+            sampleByFile.putIfAbsent(name, s)
+        }
+        if (files.isEmpty()) return
+
+        val metaByFile = HashMap<String, AiImageMeta>(files.size * 2)
+        fun meta(file: String): AiImageMeta = metaByFile.getOrPut(file) { AiImageMeta() }
+
+        try {
+            val root = JSONObject(sj)
+
+            // 1) image_tags[]
+            val tagArr = root.optJSONArray("image_tags")
+            if (tagArr != null) {
+                for (i in 0 until tagArr.length()) {
+                    val obj = tagArr.optJSONObject(i) ?: continue
+                    val file = obj.optString("file", "").trim()
+                    if (file.isEmpty()) continue
+                    val raw = obj.opt("tags")
+                    val tags = ArrayList<String>()
+                    when (raw) {
+                        is JSONArray -> {
+                            for (j in 0 until raw.length()) {
+                                val t = raw.optString(j, "").trim()
+                                if (t.isNotEmpty()) tags.add(t)
+                            }
+                        }
+                        is String -> {
+                            raw.split(Regex("[，,;；\\s]+"))
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                                .forEach { tags.add(it) }
+                        }
+                    }
+                    if (tags.isEmpty()) continue
+                    val nsfw = tags.any { it.trim().equals("nsfw", ignoreCase = true) }
+                    val tagsJson = JSONArray().apply { tags.forEach { put(it) } }.toString()
+                    val m = meta(file)
+                    m.tagsJson = tagsJson
+                    m.nsfw = if (nsfw) 1 else 0
+                }
+            }
+
+            // 2) image_descriptions[]（range 合并）
+            val descArr = root.optJSONArray("image_descriptions")
+            if (descArr != null) {
+                for (i in 0 until descArr.length()) {
+                    val obj = descArr.optJSONObject(i) ?: continue
+                    val from = obj.optString("from_file", obj.optString("from", obj.optString("start", ""))).trim()
+                    val to = obj.optString("to_file", obj.optString("to", obj.optString("end", ""))).trim()
+                    val desc = obj.optString("description", obj.optString("desc", "")).trim()
+                    if (desc.isEmpty()) continue
+                    val a = if (from.isNotEmpty()) from else to
+                    val b = if (to.isNotEmpty()) to else from
+                    if (a.isEmpty() || b.isEmpty()) continue
+                    val ia = indexByFile[a]
+                    val ib = indexByFile[b]
+                    if (ia == null || ib == null) continue
+
+                    var start = ia
+                    var end = ib
+                    if (start > end) {
+                        val tmp = start
+                        start = end
+                        end = tmp
+                    }
+                    val rangeLabel = if (a != b) "${a}-${b}" else a
+                    for (k in start..end) {
+                        if (k < 0 || k >= files.size) continue
+                        val f = files[k]
+                        val m = meta(f)
+                        m.description = desc
+                        m.descriptionRange = rangeLabel
+                    }
+                }
+            }
+
+            // 3) described_images[]（单图描述兜底：历史版本仅输出 described_images）
+            val describedArr = root.optJSONArray("described_images")
+            if (describedArr != null) {
+                for (i in 0 until describedArr.length()) {
+                    val obj = describedArr.optJSONObject(i) ?: continue
+                    val file = obj.optString("file", "").trim()
+                    if (file.isEmpty()) continue
+                    val desc = obj.optString(
+                        "summary",
+                        obj.optString("summary_md", obj.optString("desc", ""))
+                    ).trim()
+                    if (desc.isEmpty()) continue
+                    if (!indexByFile.containsKey(file)) continue
+                    val m = meta(file)
+                    if (m.description.isNullOrBlank()) {
+                        m.description = desc
+                        m.descriptionRange = file
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            return
+        }
+
+        if (metaByFile.isEmpty()) return
+
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            db.beginTransaction()
+            try {
+                val now = System.currentTimeMillis()
+                for ((file, m) in metaByFile) {
+                    val sample = sampleByFile[file] ?: continue
+                    val filePath = sample.filePath
+                    if (filePath.isBlank()) continue
+
+                    // 先确保行存在（避免 update 0 行）
+                    val insertCv = ContentValues().apply {
+                        put("file_path", filePath)
+                        put("updated_at", now)
+                        put("segment_id", segmentId)
+                        put("capture_time", sample.captureTime)
+                        if (!lang.isNullOrBlank()) put("lang", lang)
+                    }
+                    db.insertWithOnConflict("ai_image_meta", null, insertCv, SQLiteDatabase.CONFLICT_IGNORE)
+
+                    val updateCv = ContentValues().apply {
+                        put("updated_at", now)
+                        put("segment_id", segmentId)
+                        put("capture_time", sample.captureTime)
+                        if (!lang.isNullOrBlank()) put("lang", lang)
+                        if (!m.tagsJson.isNullOrBlank()) {
+                            put("tags_json", m.tagsJson)
+                            if (m.nsfw != null) put("nsfw", m.nsfw)
+                        }
+                        if (!m.description.isNullOrBlank()) {
+                            put("description", m.description)
+                            if (!m.descriptionRange.isNullOrBlank()) {
+                                put("description_range", m.descriptionRange)
+                            }
+                        }
+                    }
+                    db.update("ai_image_meta", updateCv, "file_path = ?", arrayOf(filePath))
+                }
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
     // =============== 查询截图（跨分库月表） ===============
 
     /**
@@ -523,6 +765,174 @@ object SegmentDatabaseHelper {
     }
 
     /**
+     * 查询指定时间范围内某个应用的所有截图（按时间升序）。
+     * - 仅扫描该 app 的 shard 库，避免全量遍历所有包。
+     */
+    fun listShotsBetweenForApp(
+        context: Context,
+        appPackageName: String,
+        startMillis: Long,
+        endMillis: Long,
+        perTableLimit: Int? = 2000
+    ): List<ShotInfo> {
+        val pkg = appPackageName.trim()
+        if (pkg.isEmpty()) return emptyList()
+        val result = ArrayList<ShotInfo>()
+        var master: SQLiteDatabase? = null
+        try {
+            master = openMasterDb(context, writable = false) ?: return emptyList()
+            var appName = pkg
+            try {
+                val c = master.query(
+                    "app_registry",
+                    arrayOf("app_name"),
+                    "app_package_name = ?",
+                    arrayOf(pkg),
+                    null,
+                    null,
+                    null,
+                    "1"
+                )
+                c.use { cur ->
+                    if (cur.moveToFirst()) {
+                        val name = cur.getStringOrNull(0)
+                        if (!name.isNullOrBlank()) appName = name
+                    }
+                }
+            } catch (_: Exception) {}
+
+            val sy = java.util.Calendar.getInstance().apply { timeInMillis = startMillis }
+                .get(java.util.Calendar.YEAR)
+            val ey = java.util.Calendar.getInstance().apply { timeInMillis = endMillis }
+                .get(java.util.Calendar.YEAR)
+
+            val shards = master.query(
+                "shard_registry",
+                arrayOf("year", "db_path"),
+                "app_package_name = ?",
+                arrayOf(pkg),
+                null,
+                null,
+                "year DESC"
+            )
+            shards.use { cur ->
+                while (cur.moveToNext()) {
+                    val year = cur.getInt(0)
+                    val dbPath = cur.getString(1)
+                    if (year < sy || year > ey) continue
+
+                    var shard: SQLiteDatabase? = null
+                    try {
+                        shard = SQLiteDatabase.openDatabase(
+                            dbPath,
+                            null,
+                            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY
+                        )
+                        for (m in 1..12) {
+                            val table = monthTableName(year, m)
+                            if (!tableExists(shard, table)) continue
+                            try {
+                                val limitStr = perTableLimit?.takeIf { it > 0 }?.toString()
+                                val rows = shard.query(
+                                    table,
+                                    arrayOf("file_path", "capture_time"),
+                                    "capture_time >= ? AND capture_time <= ? AND is_deleted = 0",
+                                    arrayOf(startMillis.toString(), endMillis.toString()),
+                                    null,
+                                    null,
+                                    "capture_time ASC",
+                                    limitStr
+                                )
+                                rows.use { rc ->
+                                    while (rc.moveToNext()) {
+                                        val path = rc.getString(0)
+                                        val ts = rc.getLong(1)
+                                        result.add(ShotInfo(path, ts, pkg, appName))
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        try { shard?.close() } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { master?.close() } catch (_: Exception) {}
+        }
+        result.sortBy { it.captureTime }
+        return result
+    }
+
+    /**
+     * 获取某个应用在分库截图中的最早一张截图时间（capture_time）。
+     * - 用于“全历史回填单应用段落”时确定起点
+     * - 只扫描该 app 的 shard 库
+     */
+    fun getEarliestShotTimeForApp(context: Context, appPackageName: String): Long? {
+        val pkg = appPackageName.trim()
+        if (pkg.isEmpty()) return null
+        var master: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            master = openMasterDb(context, writable = false) ?: return null
+            cursor = master.query(
+                "shard_registry",
+                arrayOf("year", "db_path"),
+                "app_package_name = ?",
+                arrayOf(pkg),
+                null,
+                null,
+                "year ASC"
+            )
+            cursor.use { cur ->
+                while (cur.moveToNext()) {
+                    val year = cur.getInt(0)
+                    val dbPath = cur.getString(1)
+                    var shard: SQLiteDatabase? = null
+                    try {
+                        shard = SQLiteDatabase.openDatabase(
+                            dbPath,
+                            null,
+                            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY
+                        )
+                        var yearMin: Long? = null
+                        for (m in 1..12) {
+                            val table = monthTableName(year, m)
+                            if (!tableExists(shard, table)) continue
+                            try {
+                                val c = shard.rawQuery(
+                                    "SELECT MIN(capture_time) FROM $table WHERE is_deleted = 0",
+                                    null
+                                )
+                                c.use { rc ->
+                                    if (!rc.moveToFirst()) return@use
+                                    val v = rc.getLongOrNull(0)
+                                    if (v != null && v > 0L) {
+                                        yearMin = if (yearMin == null) v else kotlin.math.min(yearMin!!, v)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        if (yearMin != null) return yearMin
+                    } catch (_: Exception) {
+                    } finally {
+                        try { shard?.close() } catch (_: Exception) {}
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { master?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
      * 统计指定时间范围内的截图总数（全局，包含边界）。
      * - 为性能考虑提供 hardLimit，计数超过该值时提前返回（用于合并上限判断）。
      */
@@ -582,7 +992,7 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("end_time"),
-                "start_time >= ? AND start_time <= ?",
+                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time >= ? AND start_time <= ?",
                 arrayOf(startMillis.toString(), endMillis.toString()),
                 null, null,
                 "end_time DESC",
@@ -598,6 +1008,43 @@ object SegmentDatabaseHelper {
     }
 
     /**
+     * 查询某时间范围内所有“全局段落”的 start_time（按时间升序）。
+     * 用于快速对比“有截图的日期”与“已生成动态的日期”，从而发现被删空的日期并触发重建。
+     */
+    fun listGlobalSegmentStartTimesBetween(
+        context: Context,
+        startMillis: Long,
+        endMillis: Long,
+        limit: Int? = null,
+    ): List<Long> {
+        val out = ArrayList<Long>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            val lim = if (limit != null && limit > 0) limit.toString() else null
+            cursor = db.query(
+                "segments",
+                arrayOf("start_time"),
+                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time >= ? AND start_time <= ?",
+                arrayOf(startMillis.toString(), endMillis.toString()),
+                null,
+                null,
+                "start_time ASC",
+                lim,
+            )
+            while (cursor.moveToNext()) {
+                out.add(cursor.getLong(0))
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return out
+    }
+
+    /**
      * 判断是否已存在起止时间完全一致的段落，避免重复创建。
      */
     fun hasSegmentExact(context: Context, startMillis: Long, endMillis: Long): Boolean {
@@ -608,7 +1055,7 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("id"),
-                "start_time = ? AND end_time = ?",
+                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time = ? AND end_time = ?",
                 arrayOf(startMillis.toString(), endMillis.toString()),
                 null, null,
                 null,
@@ -635,7 +1082,7 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("id","start_time","end_time","duration_sec","sample_interval_sec","status"),
-                "status = ?",
+                "status = ? AND (segment_kind IS NULL OR segment_kind = 'global')",
                 arrayOf("collecting"),
                 null, null,
                 "end_time ASC",
@@ -674,7 +1121,8 @@ object SegmentDatabaseHelper {
                 SELECT 1
                 FROM segments s
                 JOIN segment_results r ON r.segment_id = s.id
-                WHERE s.start_time = ? AND s.end_time = ?
+                WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
+                  AND s.start_time = ? AND s.end_time = ?
                   AND (
                     (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
                     OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
@@ -728,7 +1176,7 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("id"),
-                "start_time = ? AND end_time = ?",
+                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time = ? AND end_time = ?",
                 arrayOf(startMillis.toString(), endMillis.toString()),
                 null, null,
                 "id DESC",
@@ -781,20 +1229,22 @@ object SegmentDatabaseHelper {
         var cursor: Cursor? = null
         try {
             db = openMasterDb(context, writable = false) ?: return emptyList()
+            val effLimit = limit.coerceAtLeast(1)
             val order = if (ascending) "end_time ASC" else "end_time DESC"
             cursor = db.rawQuery(
                 """
                 SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
                 FROM segments s
                 JOIN segment_results r ON r.segment_id = s.id
-                WHERE s.status = 'completed' AND (
+                WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
+                  AND s.status = 'completed' AND (s.merged_into_id IS NULL) AND (
                   (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
                   OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
                 )
                 ORDER BY $order
-                LIMIT ${'$'}limit
+                LIMIT ?
                 """.trimIndent(),
-                emptyArray()
+                arrayOf(effLimit.toString())
             )
             while (cursor.moveToNext()) {
                 list.add(
@@ -844,6 +1294,39 @@ object SegmentDatabaseHelper {
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
+    /**
+     * 将某段落标记为“已被合并到 mergedIntoId”，并扁平化其所有已合并子段，避免产生链式引用。
+     *
+     * - segments.merged_into_id: 被合并段指向“当前根段落”的 id
+     * - 同时将 merged_into_id = segmentId 的所有行更新为 mergedIntoId（扁平化）
+     */
+    fun markMergedInto(context: Context, segmentId: Long, mergedIntoId: Long) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            val now = System.currentTimeMillis()
+            db.beginTransaction()
+            try {
+                // 1) 标记自身
+                val cv = ContentValues().apply {
+                    put("merged_into_id", mergedIntoId)
+                    put("updated_at", now)
+                }
+                db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
+
+                // 2) 扁平化：所有已合并到 segmentId 的子段，直接指向 mergedIntoId
+                val cv2 = ContentValues().apply {
+                    put("merged_into_id", mergedIntoId)
+                    put("updated_at", now)
+                }
+                db.update("segments", cv2, "merged_into_id = ?", arrayOf(segmentId.toString()))
+
+                db.setTransactionSuccessful()
+            } finally { try { db.endTransaction() } catch (_: Exception) {} }
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
     fun isMergeAttempted(context: Context, segmentId: Long): Boolean {
         var db: SQLiteDatabase? = null
         var c: Cursor? = null
@@ -861,14 +1344,17 @@ object SegmentDatabaseHelper {
         var cursor: Cursor? = null
         try {
             db = openMasterDb(context, writable = false) ?: return emptyList()
+            val effLimit = limit.coerceAtLeast(1)
             cursor = db.rawQuery(
                 """
                 SELECT id, start_time, end_time, duration_sec, sample_interval_sec, status
                 FROM segments
-                WHERE status = 'completed' AND start_time >= ? AND merge_attempted = 0
+                WHERE (segment_kind IS NULL OR segment_kind = 'global')
+                  AND status = 'completed' AND (merged_into_id IS NULL) AND start_time >= ? AND merge_attempted = 0
                 ORDER BY end_time ASC
-                LIMIT ${'$'}limit
-                """.trimIndent(), arrayOf(sinceMillis.toString())
+                LIMIT ?
+                """.trimIndent(),
+                arrayOf(sinceMillis.toString(), effLimit.toString())
             )
             while (cursor.moveToNext()) {
                 list.add(
@@ -900,7 +1386,8 @@ object SegmentDatabaseHelper {
                 SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
                 FROM segments s
                 JOIN segment_results r ON r.segment_id = s.id
-                WHERE s.end_time <= ? AND s.status = 'completed' AND (
+                WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
+                  AND s.end_time <= ? AND (s.merged_into_id IS NULL) AND s.status = 'completed' AND (
                   (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
                   OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
                 )
@@ -924,7 +1411,7 @@ object SegmentDatabaseHelper {
             try { db?.close() } catch (_: Exception) {}
         }
     }
-
+ 
     /** 读取某段落的样本列表（按 position_index 升序） */
     fun getSamplesForSegment(context: Context, segmentId: Long): List<Sample> {
         var db: SQLiteDatabase? = null
@@ -999,6 +1486,7 @@ object SegmentDatabaseHelper {
             val sql = """
                 SELECT start_time, end_time, COUNT(*) as c
                 FROM segments
+                WHERE (segment_kind IS NULL OR segment_kind = 'global')
                 GROUP BY start_time, end_time
                 HAVING c > 1
                 ORDER BY start_time DESC
@@ -1020,7 +1508,8 @@ object SegmentDatabaseHelper {
                                      ) THEN 1 ELSE 0 END AS has_result
                         FROM segments s
                         LEFT JOIN segment_results r ON r.segment_id = s.id
-                        WHERE s.start_time = ? AND s.end_time = ?
+                        WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
+                          AND s.start_time = ? AND s.end_time = ?
                         ORDER BY has_result DESC, s.id ASC
                         """.trimIndent(),
                         arrayOf(s.toString(), e.toString())
@@ -1064,22 +1553,24 @@ object SegmentDatabaseHelper {
         var cursor: Cursor? = null
         try {
             db = openMasterDb(context, writable = false) ?: return emptyList()
+            val effLimit = limit.coerceAtLeast(1)
             val where = StringBuilder(
-                "s.status = 'completed' AND (r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('', 'null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('', 'null'))))"
+                "(s.segment_kind IS NULL OR s.segment_kind = 'global') AND s.status = 'completed' AND (r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('', 'null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('', 'null'))))"
             )
             val args = ArrayList<String>()
             if (sinceMillis != null) {
                 where.append(" AND s.start_time >= ?")
                 args.add(sinceMillis.toString())
             }
+            args.add(effLimit.toString())
             cursor = db.rawQuery(
                 """
                 SELECT s.id, s.start_time, s.end_time, s.duration_sec, s.sample_interval_sec, s.status
                 FROM segments s
                 LEFT JOIN segment_results r ON r.segment_id = s.id
-                WHERE ${'$'}{where.toString()}
-                ORDER BY s.id DESC
-                LIMIT ${'$'}limit
+                WHERE ${where.toString()}
+                ORDER BY s.start_time ASC, s.id ASC
+                LIMIT ?
                 """.trimIndent(),
                 args.toTypedArray()
             )
@@ -1117,5 +1608,3 @@ object SegmentDatabaseHelper {
         return "shots_${year}${mm}"
     }
 }
-
-

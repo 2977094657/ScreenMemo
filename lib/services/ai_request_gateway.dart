@@ -25,14 +25,38 @@ class AIGatewayResult {
   const AIGatewayResult({
     required this.content,
     required this.modelUsed,
+    this.toolCalls = const <AIToolCall>[],
     this.reasoning,
     this.reasoningDuration,
   });
 
   final String content;
   final String modelUsed;
+  final List<AIToolCall> toolCalls;
   final String? reasoning;
   final Duration? reasoningDuration;
+}
+
+/// OpenAI function-calling tool call (Chat Completions compatible)
+class AIToolCall {
+  const AIToolCall({
+    required this.id,
+    required this.name,
+    required this.argumentsJson,
+  });
+
+  final String id;
+  final String name;
+  final String argumentsJson;
+
+  Map<String, dynamic> toOpenAIToolCallJson() => <String, dynamic>{
+        'id': id,
+        'type': 'function',
+        'function': <String, dynamic>{
+          'name': name,
+          'arguments': argumentsJson,
+        },
+      };
 }
 
 /// 网关流式会话，包含事件流与最终结果
@@ -54,6 +78,8 @@ class AIRequestGateway {
   static final AIRequestGateway instance = AIRequestGateway._();
 
   static const double _defaultTemperature = 0.2;
+  int _fallbackToolCallSeq = 0;
+  String _newFallbackToolCallId() => 'toolu_fallback_${++_fallbackToolCallSeq}';
 
   Future<AIGatewayResult> complete({
     required List<AIEndpoint> endpoints,
@@ -62,6 +88,8 @@ class AIRequestGateway {
     Duration? timeout,
     bool preferStreaming = true,
     String? logContext,
+    List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
+    Object? toolChoice,
   }) async {
     if (endpoints.isEmpty) {
       throw Exception('No AI endpoints configured');
@@ -73,6 +101,8 @@ class AIRequestGateway {
           endpoint: endpoint,
           messages: messages,
           stream: preferStreaming,
+          tools: tools,
+          toolChoice: toolChoice,
         );
         if (preferStreaming && _supportsStreaming(prepared)) {
           try {
@@ -84,6 +114,7 @@ class AIRequestGateway {
             );
             return AIGatewayResult(
               content: aggregate.content,
+              toolCalls: aggregate.toolCalls,
               reasoning: aggregate.reasoning,
               reasoningDuration: aggregate.reasoningDuration,
               modelUsed: endpoint.model,
@@ -93,7 +124,7 @@ class AIRequestGateway {
             try {
               await FlutterLogger.nativeWarn(
                 'AI',
-                '[Gateway] stream fallback (${endpoint.baseUrl}): $e',
+                '[网关] 流式回退（${endpoint.baseUrl}）：$e',
               );
             } catch (_) {}
           }
@@ -103,6 +134,8 @@ class AIRequestGateway {
           endpoint: endpoint,
           messages: messages,
           stream: false,
+          tools: tools,
+          toolChoice: toolChoice,
         );
         final _GatewayAggregate aggregate = await _performNonStreaming(
           prepared: fallback,
@@ -112,6 +145,7 @@ class AIRequestGateway {
         );
         return AIGatewayResult(
           content: aggregate.content,
+          toolCalls: aggregate.toolCalls,
           reasoning: aggregate.reasoning,
           reasoningDuration: aggregate.reasoningDuration,
           modelUsed: endpoint.model,
@@ -130,6 +164,8 @@ class AIRequestGateway {
     required String responseStartMarker,
     Duration? timeout,
     String? logContext,
+    List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
+    Object? toolChoice,
   }) {
     if (endpoints.isEmpty) {
       final StreamController<AIGatewayEvent> empty = StreamController<AIGatewayEvent>();
@@ -153,12 +189,16 @@ class AIRequestGateway {
             endpoint: endpoint,
             messages: messages,
             stream: true,
+            tools: tools,
+            toolChoice: toolChoice,
           );
           if (!_supportsStreaming(prepared)) {
             final _PreparedRequest fallback = _prepareRequest(
               endpoint: endpoint,
               messages: messages,
               stream: false,
+              tools: tools,
+              toolChoice: toolChoice,
             );
             final _GatewayAggregate aggregate = await _performNonStreaming(
               prepared: fallback,
@@ -171,6 +211,7 @@ class AIRequestGateway {
               completer.complete(
                 AIGatewayResult(
                   content: aggregate.content,
+                  toolCalls: aggregate.toolCalls,
                   reasoning: aggregate.reasoning,
                   reasoningDuration: aggregate.reasoningDuration,
                   modelUsed: endpoint.model,
@@ -192,6 +233,7 @@ class AIRequestGateway {
             completer.complete(
               AIGatewayResult(
                 content: aggregate.content,
+                toolCalls: aggregate.toolCalls,
                 reasoning: aggregate.reasoning,
                 reasoningDuration: aggregate.reasoningDuration,
                 modelUsed: endpoint.model,
@@ -205,7 +247,7 @@ class AIRequestGateway {
           try {
             await FlutterLogger.nativeWarn(
               'AI',
-              '[Gateway] stream error (${endpoint.baseUrl}): $e',
+              '[网关] 流式错误（${endpoint.baseUrl}）：$e',
             );
           } catch (_) {}
         }
@@ -228,13 +270,17 @@ class AIRequestGateway {
   }
 
   bool _supportsStreaming(_PreparedRequest prepared) {
-    return !prepared.isGoogle;
+    // 工具调用下优先非流式：不同兼容端点对 tool_calls 流式增量格式差异很大，
+    // 非流式更稳定且便于解析。
+    return !prepared.isGoogle && !prepared.hasTools;
   }
 
   _PreparedRequest _prepareRequest({
     required AIEndpoint endpoint,
     required List<AIMessage> messages,
     required bool stream,
+    List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
+    Object? toolChoice,
   }) {
     final String trimmedBase = endpoint.baseUrl.trim();
     final Uri baseUri = _resolveBaseUri(trimmedBase);
@@ -258,6 +304,7 @@ class AIRequestGateway {
         headers: headers,
         body: jsonEncode(payload),
         isGoogle: true,
+        hasTools: false,
       );
     }
 
@@ -268,6 +315,12 @@ class AIRequestGateway {
       'temperature': _defaultTemperature,
       'stream': stream,
     };
+    if (tools.isNotEmpty) {
+      payload['tools'] = tools;
+      if (toolChoice != null) {
+        payload['tool_choice'] = toolChoice;
+      }
+    }
     final Map<String, String> headers = <String, String>{
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $apiKey',
@@ -277,6 +330,7 @@ class AIRequestGateway {
       headers: headers,
       body: jsonEncode(payload),
       isGoogle: false,
+      hasTools: tools.isNotEmpty,
     );
   }
 
@@ -322,7 +376,7 @@ class AIRequestGateway {
     try {
       await FlutterLogger.nativeDebug(
         'AI',
-        '[Gateway] HTTP POST ${prepared.uri} (log=$logContext) bodyLen=${prepared.body.length}',
+        '[网关] HTTP POST ${prepared.uri} (log=$logContext) 请求体长度=${prepared.body.length}',
       );
     } catch (_) {}
 
@@ -341,7 +395,7 @@ class AIRequestGateway {
     try {
       await FlutterLogger.nativeDebug(
         'AI',
-        '[Gateway] HTTP RESP ${response.statusCode} (log=$logContext) bodyLen=${response.body.length}',
+        '[网关] HTTP 响应 ${response.statusCode} (log=$logContext) 响应体长度=${response.body.length}',
       );
     } catch (_) {}
 
@@ -369,10 +423,13 @@ class AIRequestGateway {
     }
 
     final _OpenAIResponse parsed = _parseOpenAIResponse(response.body);
-    final String sanitized = _stripResponseStart(
-      responseStartMarker,
-      parsed.content,
-    );
+    final bool hasToolCalls = parsed.toolCalls.isNotEmpty;
+    final String sanitized = hasToolCalls
+        ? _trimLeadingIgnorable(parsed.content)
+        : _stripResponseStart(
+            responseStartMarker,
+            parsed.content,
+          );
     if (parsed.reasoning != null && parsed.reasoning!.isNotEmpty) {
       controller?.add(AIGatewayEvent(
         AIGatewayEventKind.reasoning,
@@ -385,6 +442,7 @@ class AIRequestGateway {
     ));
     return _GatewayAggregate(
       content: sanitized,
+      toolCalls: parsed.toolCalls,
       reasoning: parsed.reasoning,
       reasoningDuration: null,
     );
@@ -411,7 +469,7 @@ class AIRequestGateway {
       try {
         await FlutterLogger.nativeDebug(
           'AI',
-          '[Gateway] HTTP STREAM POST ${prepared.uri} (log=$logContext) bodyLen=${prepared.body.length}',
+          '[网关] HTTP 流式 POST ${prepared.uri} (log=$logContext) 请求体长度=${prepared.body.length}',
         );
       } catch (_) {}
       final Future<http.StreamedResponse> sendFuture = client.send(request);
@@ -426,7 +484,11 @@ class AIRequestGateway {
       }
 
       String buffer = '';
-      await for (final String chunk in streamed.stream.transform(utf8.decoder)) {
+      bool done = false;
+      final Stream<String> decoded = timeout == null
+          ? streamed.stream.transform(utf8.decoder)
+          : streamed.stream.transform(utf8.decoder).timeout(timeout);
+      await for (final String chunk in decoded) {
         buffer += chunk;
         while (true) {
           final int idx = buffer.indexOf('\n');
@@ -437,6 +499,7 @@ class AIRequestGateway {
           if (!line.startsWith('data:')) continue;
           final String data = line.substring(5).trim();
           if (data == '[DONE]') {
+            done = true;
             buffer = '';
             break;
           }
@@ -448,6 +511,10 @@ class AIRequestGateway {
           }
           final dynamic type = json['type'];
           if (type is String) {
+            if (type == 'response.completed') {
+              done = true;
+              continue;
+            }
             if (type == 'response.reasoning_summary_text.delta') {
               final dynamic delta = json['delta'];
               if (delta is String && delta.isNotEmpty) {
@@ -489,6 +556,10 @@ class AIRequestGateway {
           if (choices is List && choices.isNotEmpty) {
             final dynamic first = choices.first;
             if (first is Map<String, dynamic>) {
+              final dynamic finishReason = first['finish_reason'];
+              if (finishReason is String && finishReason.isNotEmpty && finishReason != 'null') {
+                done = true;
+              }
               final dynamic delta = first['delta'];
               if (delta is Map<String, dynamic>) {
                 final dynamic reasoningPart = delta['reasoning_content'] ??
@@ -527,7 +598,12 @@ class AIRequestGateway {
               }
             }
           }
+          if (done) {
+            buffer = '';
+            break;
+          }
         }
+        if (done) break;
       }
 
       final String trailing = thinkFilter.finalize();
@@ -548,6 +624,7 @@ class AIRequestGateway {
           reasoningText.isEmpty ? null : DateTime.now().difference(reasoningStart);
       return _GatewayAggregate(
         content: cleanedContent,
+        toolCalls: const <AIToolCall>[],
         reasoning: reasoningText.isEmpty ? null : reasoningText,
         reasoningDuration: reasoningDuration,
       );
@@ -562,6 +639,7 @@ class AIRequestGateway {
       final List<dynamic> outs = (data['output'] as List).cast<dynamic>();
       final StringBuffer cbuf = StringBuffer();
       final StringBuffer rbuf = StringBuffer();
+      final List<AIToolCall> toolCalls = <AIToolCall>[];
       for (final dynamic it in outs) {
         if (it is! Map<String, dynamic>) continue;
         final dynamic type = it['type'];
@@ -577,6 +655,20 @@ class AIRequestGateway {
                 }
               }
             }
+          }
+        } else if (type == 'tool_call' || type == 'function_call') {
+          final String id = (it['id'] as String?) ?? '';
+          final Map<String, dynamic>? fn = it['function'] is Map
+              ? (it['function'] as Map).cast<String, dynamic>()
+              : null;
+          final String name = fn?['name']?.toString() ?? (it['name']?.toString() ?? '');
+          final String args = fn?['arguments']?.toString() ?? (it['arguments']?.toString() ?? '');
+          if (name.trim().isNotEmpty) {
+            toolCalls.add(AIToolCall(
+              id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
+              name: name.trim(),
+              argumentsJson: args,
+            ));
           }
         } else if (type == 'message') {
           final dynamic cont = it['content'];
@@ -594,6 +686,7 @@ class AIRequestGateway {
       final String reasoning = rbuf.toString();
       return _OpenAIResponse(
         content: content,
+        toolCalls: toolCalls,
         reasoning: reasoning.isEmpty ? null : reasoning,
       );
     }
@@ -609,12 +702,47 @@ class AIRequestGateway {
       throw Exception('Invalid response');
     }
     final String content = (message['content'] as String?) ?? '';
+    final List<AIToolCall> toolCalls = <AIToolCall>[];
+    final dynamic toolCallsRaw = message['tool_calls'];
+    if (toolCallsRaw is List) {
+      for (final dynamic tc in toolCallsRaw) {
+        if (tc is! Map) continue;
+        final map = Map<String, dynamic>.from(tc as Map);
+        final String id = (map['id'] as String?) ?? '';
+        final Map<String, dynamic>? fn = map['function'] is Map
+            ? Map<String, dynamic>.from(map['function'] as Map)
+            : null;
+        final String name = (fn?['name'] as String?) ?? '';
+        final String args = (fn?['arguments'] as String?) ?? '';
+        if (name.trim().isEmpty) continue;
+        toolCalls.add(AIToolCall(
+          id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
+          name: name.trim(),
+          argumentsJson: args,
+        ));
+      }
+    } else {
+      final dynamic fc = message['function_call'];
+      if (fc is Map) {
+        final Map<String, dynamic> fn = Map<String, dynamic>.from(fc as Map);
+        final String name = (fn['name'] as String?) ?? '';
+        final String args = (fn['arguments'] as String?) ?? '';
+        if (name.trim().isNotEmpty) {
+          toolCalls.add(AIToolCall(
+            id: 'function_call',
+            name: name.trim(),
+            argumentsJson: args,
+          ));
+        }
+      }
+    }
     final String? reasoning = ((message['reasoning_content'] as String?) ??
             (message['reasoning'] as String?) ??
             (message['thinking'] as String?))
         ?.trim();
     return _OpenAIResponse(
       content: content,
+      toolCalls: toolCalls,
       reasoning: reasoning?.isEmpty == true ? null : reasoning,
     );
   }
@@ -690,10 +818,16 @@ class AIRequestGateway {
 
   String _stripResponseStart(String marker, String text) {
     final String sanitized = _trimLeadingIgnorable(text);
-    if (!sanitized.startsWith(marker)) {
-      throw InvalidResponseStartException(marker, sanitized);
-    }
-    String remainder = sanitized.substring(marker.length);
+
+    // Marker is a best-effort protocol hint. Some models/endpoints may ignore it
+    // (e.g. returning fenced JSON). In those cases, fall back to returning the
+    // raw sanitized content instead of hard-failing the whole chat flow.
+    if (marker.trim().isEmpty) return sanitized;
+
+    int idx = sanitized.indexOf(marker);
+    if (idx < 0) return sanitized;
+
+    String remainder = sanitized.substring(idx + marker.length);
     if (remainder.startsWith('\r\n')) {
       remainder = remainder.substring(2);
     } else if (remainder.startsWith('\n')) {
@@ -730,11 +864,13 @@ class InvalidEndpointConfigurationException implements Exception {
 class _GatewayAggregate {
   const _GatewayAggregate({
     required this.content,
+    this.toolCalls = const <AIToolCall>[],
     this.reasoning,
     this.reasoningDuration,
   });
 
   final String content;
+  final List<AIToolCall> toolCalls;
   final String? reasoning;
   final Duration? reasoningDuration;
 }
@@ -742,10 +878,12 @@ class _GatewayAggregate {
 class _OpenAIResponse {
   const _OpenAIResponse({
     required this.content,
+    this.toolCalls = const <AIToolCall>[],
     this.reasoning,
   });
 
   final String content;
+  final List<AIToolCall> toolCalls;
   final String? reasoning;
 }
 
@@ -765,12 +903,14 @@ class _PreparedRequest {
     required this.headers,
     required this.body,
     required this.isGoogle,
+    required this.hasTools,
   });
 
   final Uri uri;
   final Map<String, String> headers;
   final String body;
   final bool isGoogle;
+  final bool hasTools;
 }
 
 class _ThinkStreamFilterResult {
@@ -839,6 +979,7 @@ class _ResponseStartFilter {
   bool _awaiting = true;
 
   String? process(String chunk) {
+    if (marker.trim().isEmpty) return chunk;
     if (!_awaiting) return chunk;
     if (chunk.isEmpty) return '';
     int index = 0;
@@ -851,8 +992,9 @@ class _ResponseStartFilter {
       _buffer += char;
       if (!marker.startsWith(_buffer)) {
         _awaiting = false;
-        final String invalid = _buffer + chunk.substring(index + 1);
-        throw InvalidResponseStartException(marker, invalid);
+        final String passthrough = _buffer + chunk.substring(index + 1);
+        _buffer = '';
+        return passthrough;
       }
       index++;
       if (_buffer.length == marker.length) {
@@ -871,9 +1013,8 @@ class _ResponseStartFilter {
   }
 
   void ensureCompleted() {
-    if (_awaiting) {
-      throw InvalidResponseStartException(marker, _buffer);
-    }
+    // Best-effort: if the marker never appears, do not fail the entire stream.
+    _awaiting = false;
   }
 }
 
