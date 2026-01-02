@@ -804,6 +804,12 @@ abstract class AppLocalizations {
   /// **'Permissions'**
   String get permissionsSectionTitle;
 
+  /// No description provided for @permissionsSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage, notifications, accessibility, keep-alive'**
+  String get permissionsSectionDesc;
+
   /// No description provided for @displayAndSortSectionTitle.
   ///
   /// In en, this message translates to:
@@ -816,17 +822,35 @@ abstract class AppLocalizations {
   /// **'Capture settings'**
   String get screenshotSectionTitle;
 
+  /// No description provided for @screenshotSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Interval, quality, expiration'**
+  String get screenshotSectionDesc;
+
   /// No description provided for @segmentSummarySectionTitle.
   ///
   /// In en, this message translates to:
   /// **'Segment summary'**
   String get segmentSummarySectionTitle;
 
+  /// No description provided for @segmentSummarySectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Sampling, duration, AI throttle'**
+  String get segmentSummarySectionDesc;
+
   /// No description provided for @dailyReminderSectionTitle.
   ///
   /// In en, this message translates to:
   /// **'Daily summary reminder'**
   String get dailyReminderSectionTitle;
+
+  /// No description provided for @dailyReminderSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Time, banner permission, test'**
+  String get dailyReminderSectionDesc;
 
   /// No description provided for @aiAssistantSectionTitle.
   ///
@@ -839,6 +863,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Data & backup'**
   String get dataBackupSectionTitle;
+
+  /// No description provided for @dataBackupSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage, import/export, recalc stats'**
+  String get dataBackupSectionDesc;
+
+  /// No description provided for @advancedSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get advancedSectionTitle;
+
+  /// No description provided for @advancedSectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Logs and performance options'**
+  String get advancedSectionDesc;
 
   /// No description provided for @storageAnalysisEntryTitle.
   ///
@@ -2400,6 +2442,18 @@ abstract class AppLocalizations {
   /// **'Merged'**
   String get mergedEventTag;
 
+  /// Title for the expandable section that contains original events merged into the current event.
+  ///
+  /// In en, this message translates to:
+  /// **'Original events ({count})'**
+  String mergedOriginalEventsTitle(Object count);
+
+  /// Header title for each original event entry inside a merged event.
+  ///
+  /// In en, this message translates to:
+  /// **'Original event {index}'**
+  String mergedOriginalEventTitle(Object index);
+
   /// No description provided for @collapse.
   ///
   /// In en, this message translates to:
@@ -3143,6 +3197,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'days'**
   String get days;
+
+  /// No description provided for @aiImageTagsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Image tags'**
+  String get aiImageTagsTitle;
+
+  /// No description provided for @aiVisibleTextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Visible text'**
+  String get aiVisibleTextTitle;
+
+  /// No description provided for @aiImageDescriptionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Image descriptions'**
+  String get aiImageDescriptionsTitle;
 
   /// No description provided for @justNow.
   ///
@@ -4420,6 +4492,12 @@ abstract class AppLocalizations {
   /// **'Display'**
   String get displaySectionTitle;
 
+  /// No description provided for @displaySectionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme, privacy mode, NSFW'**
+  String get displaySectionDesc;
+
   /// No description provided for @streamRenderImagesTitle.
   ///
   /// In en, this message translates to:
@@ -5001,6 +5079,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Packing merged results into ZIP file...'**
   String get desktopMergerPackingHint;
+
+  /// No description provided for @unknownTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get unknownTitle;
+
+  /// No description provided for @unknownTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown time'**
+  String get unknownTime;
+
+  /// No description provided for @empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get empty;
+
+  /// No description provided for @evidenceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Evidence'**
+  String get evidenceTitle;
 }
 
 class _AppLocalizationsDelegate

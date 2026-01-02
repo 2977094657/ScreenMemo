@@ -388,22 +388,43 @@ class AppLocalizationsKo extends AppLocalizations {
   String get permissionsSectionTitle => '권한';
 
   @override
+  String get permissionsSectionDesc => '저장소/알림/접근성/상주';
+
+  @override
   String get displayAndSortSectionTitle => '디스플레이 및 정렬';
 
   @override
   String get screenshotSectionTitle => '캡처 설정';
 
   @override
+  String get screenshotSectionDesc => '간격/품질/만료 정리';
+
+  @override
   String get segmentSummarySectionTitle => '세그먼트 요약';
 
   @override
+  String get segmentSummarySectionDesc => '샘플링/길이/AI 간격';
+
+  @override
   String get dailyReminderSectionTitle => '일일 요약 알림';
+
+  @override
+  String get dailyReminderSectionDesc => '시간/배너 권한/테스트';
 
   @override
   String get aiAssistantSectionTitle => 'AI 어시스턴트';
 
   @override
   String get dataBackupSectionTitle => '데이터 및 백업';
+
+  @override
+  String get dataBackupSectionDesc => '저장소/가져오기/내보내기/재계산';
+
+  @override
+  String get advancedSectionTitle => '고급';
+
+  @override
+  String get advancedSectionDesc => '로그 및 성능 옵션';
 
   @override
   String get storageAnalysisEntryTitle => '저장소 분석';
@@ -1291,6 +1312,16 @@ class AppLocalizationsKo extends AppLocalizations {
   String get mergedEventTag => '병합됨';
 
   @override
+  String mergedOriginalEventsTitle(Object count) {
+    return '원본 이벤트($count)';
+  }
+
+  @override
+  String mergedOriginalEventTitle(Object index) {
+    return '원본 이벤트 $index';
+  }
+
+  @override
   String get collapse => '접기';
 
   @override
@@ -1715,6 +1746,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get days => '날';
+
+  @override
+  String get aiImageTagsTitle => '이미지 태그';
+
+  @override
+  String get aiVisibleTextTitle => '표시된 텍스트';
+
+  @override
+  String get aiImageDescriptionsTitle => '이미지 설명';
 
   @override
   String get justNow => '방금';
@@ -2459,6 +2499,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get displaySectionTitle => '디스플레이';
 
   @override
+  String get displaySectionDesc => '테마/개인정보/NSFW';
+
+  @override
   String get streamRenderImagesTitle => '스트리밍 중 이미지 렌더링';
 
   @override
@@ -2781,4 +2824,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get desktopMergerPackingHint => '병합된 결과를 ZIP 파일로 압축 중...';
+
+  @override
+  String get unknownTitle => '알 수 없음';
+
+  @override
+  String get unknownTime => '알 수 없는 시간';
+
+  @override
+  String get empty => '비어 있음';
+
+  @override
+  String get evidenceTitle => '증거';
 }

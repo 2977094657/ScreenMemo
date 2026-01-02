@@ -389,22 +389,43 @@ class AppLocalizationsJa extends AppLocalizations {
   String get permissionsSectionTitle => '権限';
 
   @override
+  String get permissionsSectionDesc => 'ストレージ/通知/ユーザー補助/常駐';
+
+  @override
   String get displayAndSortSectionTitle => '表示と並べ替え';
 
   @override
   String get screenshotSectionTitle => 'キャプチャ設定';
 
   @override
+  String get screenshotSectionDesc => '間隔/品質/期限削除';
+
+  @override
   String get segmentSummarySectionTitle => 'セグメントの概要';
 
   @override
+  String get segmentSummarySectionDesc => 'サンプリング/長さ/AI間隔';
+
+  @override
   String get dailyReminderSectionTitle => '毎日の概要リマインダー';
+
+  @override
+  String get dailyReminderSectionDesc => '時刻/バナー権限/テスト';
 
   @override
   String get aiAssistantSectionTitle => 'AIアシスタント';
 
   @override
   String get dataBackupSectionTitle => 'データとバックアップ';
+
+  @override
+  String get dataBackupSectionDesc => 'ストレージ/インポート/エクスポート/再集計';
+
+  @override
+  String get advancedSectionTitle => '高度な設定';
+
+  @override
+  String get advancedSectionDesc => 'ログとパフォーマンス';
 
   @override
   String get storageAnalysisEntryTitle => 'ストレージ分析';
@@ -1295,6 +1316,16 @@ class AppLocalizationsJa extends AppLocalizations {
   String get mergedEventTag => '合併しました';
 
   @override
+  String mergedOriginalEventsTitle(Object count) {
+    return '元のイベント（$count）';
+  }
+
+  @override
+  String mergedOriginalEventTitle(Object index) {
+    return '元のイベント $index';
+  }
+
+  @override
   String get collapse => '折りたたむ';
 
   @override
@@ -1719,6 +1750,15 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get days => '日';
+
+  @override
+  String get aiImageTagsTitle => '画像タグ';
+
+  @override
+  String get aiVisibleTextTitle => '表示テキスト';
+
+  @override
+  String get aiImageDescriptionsTitle => '画像説明';
 
   @override
   String get justNow => 'ちょうど今';
@@ -2462,6 +2502,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get displaySectionTitle => '表示';
 
   @override
+  String get displaySectionDesc => 'テーマ/プライバシー/NSFW';
+
+  @override
   String get streamRenderImagesTitle => 'ストリーミング中に画像を描画';
 
   @override
@@ -2784,4 +2827,16 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get desktopMergerPackingHint => '統合結果をZIPファイルにパッキング中...';
+
+  @override
+  String get unknownTitle => '不明';
+
+  @override
+  String get unknownTime => '不明な時間';
+
+  @override
+  String get empty => '空';
+
+  @override
+  String get evidenceTitle => '証拠';
 }

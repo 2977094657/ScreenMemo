@@ -167,12 +167,19 @@
   "serviceNotRunningDetail": "服务未正常运行\n请尝试重新启动应用",
   "androidVersionNotSupportedDetail": "系统版本不支持\n需要Android 11.0或以上版本",
   "permissionsSectionTitle": "权限设置",
+  "permissionsSectionDesc": "存储/通知/无障碍/使用统计/保活",
   "displayAndSortSectionTitle": "显示与排序",
   "screenshotSectionTitle": "截屏设置",
+  "screenshotSectionDesc": "间隔/质量/过期清理",
   "segmentSummarySectionTitle": "时间段总结",
+  "segmentSummarySectionDesc": "采样/时长/AI 请求间隔",
   "dailyReminderSectionTitle": "每日总结提醒",
+  "dailyReminderSectionDesc": "提醒时间/横幅权限/测试触发",
   "aiAssistantSectionTitle": "AI 助手",
   "dataBackupSectionTitle": "数据与备份",
+  "dataBackupSectionDesc": "存储分析/导入导出/重新统计",
+  "advancedSectionTitle": "高级",
+  "advancedSectionDesc": "日志/性能相关选项",
   "storageAnalysisEntryTitle": "存储分析",
   "storageAnalysisEntryDesc": "查看应用内部存储占用及分类详情",
   "actionSet": "设置",
@@ -995,6 +1002,16 @@
   "weeklySummaryViewDetail": "查看详情",
   "viewOrGenerateForDay": "查看或生成该日总结",
   "mergedEventTag": "合并事件",
+  "mergedOriginalEventsTitle": "原始事件（{count}）",
+  "@mergedOriginalEventsTitle": {
+    "description": "合并事件中可展开的“原始事件”区域标题",
+    "placeholders": { "count": {} }
+  },
+  "mergedOriginalEventTitle": "原始事件 {index}",
+  "@mergedOriginalEventTitle": {
+    "description": "合并事件中每条原始事件的标题",
+    "placeholders": { "index": {} }
+  },
   "collapse": "收起内容",
   "expandMore": "展开更多",
   "viewImagesCount": "查看图片 ({count})",
@@ -1151,6 +1168,10 @@
 "apps": "应用",
 "images": "图片",
 "days": "天",
+
+"aiImageTagsTitle": "图片标签",
+"aiVisibleTextTitle": "可见文字",
+"aiImageDescriptionsTitle": "图片描述",
 
 "justNow": "刚刚",
 
@@ -1317,6 +1338,7 @@
   "conversationsSectionTitle": "对话"
   ,
   "displaySectionTitle": "显示",
+  "displaySectionDesc": "主题颜色/隐私模式/NSFW",
   "streamRenderImagesTitle": "流式期间实时渲染图片",
   "streamRenderImagesDesc": "可能影响滚动流畅度",
   "themeColorTitle": "主题颜色",
@@ -1491,5 +1513,10 @@
   "desktopMergerCopyingHint": "正在复制截图文件，跳过已存在的图片...",
   "desktopMergerMergingHint": "正在合并数据库记录，智能去重处理中...",
   "desktopMergerMemoryHint": "正在合并记忆档案数据...",
-  "desktopMergerPackingHint": "正在将合并结果打包为 ZIP 文件..."
+  "desktopMergerPackingHint": "正在将合并结果打包为 ZIP 文件...",
+
+  "unknownTitle": "未知",
+  "unknownTime": "时间未知",
+  "empty": "空",
+  "evidenceTitle": "证据"
 }

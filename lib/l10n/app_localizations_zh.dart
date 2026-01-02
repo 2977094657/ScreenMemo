@@ -379,22 +379,43 @@ class AppLocalizationsZh extends AppLocalizations {
   String get permissionsSectionTitle => '权限设置';
 
   @override
+  String get permissionsSectionDesc => '存储/通知/无障碍/使用统计/保活';
+
+  @override
   String get displayAndSortSectionTitle => '显示与排序';
 
   @override
   String get screenshotSectionTitle => '截屏设置';
 
   @override
+  String get screenshotSectionDesc => '间隔/质量/过期清理';
+
+  @override
   String get segmentSummarySectionTitle => '时间段总结';
 
   @override
+  String get segmentSummarySectionDesc => '采样/时长/AI 请求间隔';
+
+  @override
   String get dailyReminderSectionTitle => '每日总结提醒';
+
+  @override
+  String get dailyReminderSectionDesc => '提醒时间/横幅权限/测试触发';
 
   @override
   String get aiAssistantSectionTitle => 'AI 助手';
 
   @override
   String get dataBackupSectionTitle => '数据与备份';
+
+  @override
+  String get dataBackupSectionDesc => '存储分析/导入导出/重新统计';
+
+  @override
+  String get advancedSectionTitle => '高级';
+
+  @override
+  String get advancedSectionDesc => '日志/性能相关选项';
 
   @override
   String get storageAnalysisEntryTitle => '存储分析';
@@ -1280,6 +1301,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mergedEventTag => '合并事件';
 
   @override
+  String mergedOriginalEventsTitle(Object count) {
+    return '原始事件（$count）';
+  }
+
+  @override
+  String mergedOriginalEventTitle(Object index) {
+    return '原始事件 $index';
+  }
+
+  @override
   String get collapse => '收起内容';
 
   @override
@@ -1701,6 +1732,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get days => '天';
+
+  @override
+  String get aiImageTagsTitle => '图片标签';
+
+  @override
+  String get aiVisibleTextTitle => '可见文字';
+
+  @override
+  String get aiImageDescriptionsTitle => '图片描述';
 
   @override
   String get justNow => '刚刚';
@@ -2440,6 +2480,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get displaySectionTitle => '显示';
 
   @override
+  String get displaySectionDesc => '主题颜色/隐私模式/NSFW';
+
+  @override
   String get streamRenderImagesTitle => '流式期间实时渲染图片';
 
   @override
@@ -2760,4 +2803,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get desktopMergerPackingHint => '正在将合并结果打包为 ZIP 文件...';
+
+  @override
+  String get unknownTitle => '未知';
+
+  @override
+  String get unknownTime => '时间未知';
+
+  @override
+  String get empty => '空';
+
+  @override
+  String get evidenceTitle => '证据';
 }

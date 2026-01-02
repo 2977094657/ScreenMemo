@@ -165,12 +165,19 @@
   "serviceNotRunningDetail": "サービスが正しく実行されていません\\nアプリを再起動してください",
   "androidVersionNotSupportedDetail": "Android バージョンはサポートされていません\\nAndroid 11.0 以降が必要です",
   "permissionsSectionTitle": "権限",
+  "permissionsSectionDesc": "ストレージ/通知/ユーザー補助/常駐",
   "displayAndSortSectionTitle": "表示と並べ替え",
   "screenshotSectionTitle": "キャプチャ設定",
+  "screenshotSectionDesc": "間隔/品質/期限削除",
   "segmentSummarySectionTitle": "セグメントの概要",
+  "segmentSummarySectionDesc": "サンプリング/長さ/AI間隔",
   "dailyReminderSectionTitle": "毎日の概要リマインダー",
+  "dailyReminderSectionDesc": "時刻/バナー権限/テスト",
   "aiAssistantSectionTitle": "AIアシスタント",
   "dataBackupSectionTitle": "データとバックアップ",
+  "dataBackupSectionDesc": "ストレージ/インポート/エクスポート/再集計",
+  "advancedSectionTitle": "高度な設定",
+  "advancedSectionDesc": "ログとパフォーマンス",
   "storageAnalysisEntryTitle": "ストレージ分析",
   "storageAnalysisEntryDesc": "アプリのストレージ使用状況を詳しく確認します",
   "actionSet": "セット",
@@ -714,6 +721,16 @@
   "weeklySummaryViewDetail": "詳細を見る",
   "viewOrGenerateForDay": "その日の概要を表示または生成する",
   "mergedEventTag": "合併しました",
+  "mergedOriginalEventsTitle": "元のイベント（{count}）",
+  "@mergedOriginalEventsTitle": {
+    "description": "結合されたイベントに含まれる元イベント一覧のセクションタイトル",
+    "placeholders": { "count": {} }
+  },
+  "mergedOriginalEventTitle": "元のイベント {index}",
+  "@mergedOriginalEventTitle": {
+    "description": "結合されたイベント内の各元イベント項目のタイトル",
+    "placeholders": { "index": {} }
+  },
   "collapse": "折りたたむ",
   "expandMore": "さらに表示",
   "viewImagesCount": "画像を表示 ({count})",
@@ -944,6 +961,9 @@
   "apps": "アプリ",
   "images": "画像",
   "days": "日",
+  "aiImageTagsTitle": "画像タグ",
+  "aiVisibleTextTitle": "表示テキスト",
+  "aiImageDescriptionsTitle": "画像説明",
   "justNow": "ちょうど今",
   "minutesAgo": "{minutes} 分前",
   "@minutesAgo": {
@@ -1391,6 +1411,7 @@
   "memoryEvidenceUserEditedBadge": "ユーザー編集済み",
   "conversationsSectionTitle": "会話",
   "displaySectionTitle": "表示",
+  "displaySectionDesc": "テーマ/プライバシー/NSFW",
   "streamRenderImagesTitle": "ストリーミング中に画像を描画",
   "streamRenderImagesDesc": "スクロールに影響する場合があります",
   "themeColorTitle": "テーマカラー",
@@ -1567,5 +1588,10 @@
   "desktopMergerCopyingHint": "スクリーンショットファイルをコピー中、既存の画像はスキップ...",
   "desktopMergerMergingHint": "データベースレコードを統合中、スマート重複排除処理中...",
   "desktopMergerMemoryHint": "メモリアーカイブデータを統合中...",
-  "desktopMergerPackingHint": "統合結果をZIPファイルにパッキング中..."
+  "desktopMergerPackingHint": "統合結果をZIPファイルにパッキング中...",
+
+  "unknownTitle": "不明",
+  "unknownTime": "不明な時間",
+  "empty": "空",
+  "evidenceTitle": "証拠"
 }

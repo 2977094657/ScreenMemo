@@ -167,12 +167,19 @@
   "serviceNotRunningDetail": "Service not running properly\\nPlease try restarting the app",
   "androidVersionNotSupportedDetail": "Android version not supported\\nRequires Android 11.0 or higher",
   "permissionsSectionTitle": "Permissions",
+  "permissionsSectionDesc": "Storage, notifications, accessibility, keep-alive",
   "displayAndSortSectionTitle": "Display & Sorting",
   "screenshotSectionTitle": "Capture settings",
+  "screenshotSectionDesc": "Interval, quality, expiration",
   "segmentSummarySectionTitle": "Segment summary",
+  "segmentSummarySectionDesc": "Sampling, duration, AI throttle",
   "dailyReminderSectionTitle": "Daily summary reminder",
+  "dailyReminderSectionDesc": "Time, banner permission, test",
   "aiAssistantSectionTitle": "AI Assistant",
   "dataBackupSectionTitle": "Data & backup",
+  "dataBackupSectionDesc": "Storage, import/export, recalc stats",
+  "advancedSectionTitle": "Advanced",
+  "advancedSectionDesc": "Logs and performance options",
   "storageAnalysisEntryTitle": "Storage analysis",
   "storageAnalysisEntryDesc": "Inspect detailed storage usage for this app",
   "actionSet": "Set",
@@ -750,6 +757,16 @@
   "weeklySummaryViewDetail": "View details",
   "viewOrGenerateForDay": "View or generate the day's summary",
   "mergedEventTag": "Merged",
+  "mergedOriginalEventsTitle": "Original events ({count})",
+  "@mergedOriginalEventsTitle": {
+    "description": "Title for the expandable section that contains original events merged into the current event.",
+    "placeholders": { "count": {} }
+  },
+  "mergedOriginalEventTitle": "Original event {index}",
+  "@mergedOriginalEventTitle": {
+    "description": "Header title for each original event entry inside a merged event.",
+    "placeholders": { "index": {} }
+  },
   "collapse": "Collapse",
   "expandMore": "Expand more",
   "viewImagesCount": "View images ({count})",
@@ -912,6 +929,10 @@
   "apps": "apps",
   "images": "images",
   "days": "days",
+
+  "aiImageTagsTitle": "Image tags",
+  "aiVisibleTextTitle": "Visible text",
+  "aiImageDescriptionsTitle": "Image descriptions",
 
   "justNow": "Just now",
 
@@ -1213,6 +1234,7 @@
   "conversationsSectionTitle": "Conversations"
   ,
   "displaySectionTitle": "Display",
+  "displaySectionDesc": "Theme, privacy mode, NSFW",
   "streamRenderImagesTitle": "Render images during streaming",
   "streamRenderImagesDesc": "May affect scrolling",
   "themeColorTitle": "Theme color",
@@ -1386,5 +1408,10 @@
   "desktopMergerCopyingHint": "Copying screenshot files, skipping existing images...",
   "desktopMergerMergingHint": "Merging database records with smart deduplication...",
   "desktopMergerMemoryHint": "Merging memory archive data...",
-  "desktopMergerPackingHint": "Packing merged results into ZIP file..."
+  "desktopMergerPackingHint": "Packing merged results into ZIP file...",
+
+  "unknownTitle": "Unknown",
+  "unknownTime": "Unknown time",
+  "empty": "Empty",
+  "evidenceTitle": "Evidence"
 }

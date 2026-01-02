@@ -404,22 +404,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get permissionsSectionTitle => 'Permissions';
 
   @override
+  String get permissionsSectionDesc =>
+      'Storage, notifications, accessibility, keep-alive';
+
+  @override
   String get displayAndSortSectionTitle => 'Display & Sorting';
 
   @override
   String get screenshotSectionTitle => 'Capture settings';
 
   @override
+  String get screenshotSectionDesc => 'Interval, quality, expiration';
+
+  @override
   String get segmentSummarySectionTitle => 'Segment summary';
 
   @override
+  String get segmentSummarySectionDesc => 'Sampling, duration, AI throttle';
+
+  @override
   String get dailyReminderSectionTitle => 'Daily summary reminder';
+
+  @override
+  String get dailyReminderSectionDesc => 'Time, banner permission, test';
 
   @override
   String get aiAssistantSectionTitle => 'AI Assistant';
 
   @override
   String get dataBackupSectionTitle => 'Data & backup';
+
+  @override
+  String get dataBackupSectionDesc => 'Storage, import/export, recalc stats';
+
+  @override
+  String get advancedSectionTitle => 'Advanced';
+
+  @override
+  String get advancedSectionDesc => 'Logs and performance options';
 
   @override
   String get storageAnalysisEntryTitle => 'Storage analysis';
@@ -1329,6 +1351,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mergedEventTag => 'Merged';
 
   @override
+  String mergedOriginalEventsTitle(Object count) {
+    return 'Original events ($count)';
+  }
+
+  @override
+  String mergedOriginalEventTitle(Object index) {
+    return 'Original event $index';
+  }
+
+  @override
   String get collapse => 'Collapse';
 
   @override
@@ -1759,6 +1791,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get days => 'days';
+
+  @override
+  String get aiImageTagsTitle => 'Image tags';
+
+  @override
+  String get aiVisibleTextTitle => 'Visible text';
+
+  @override
+  String get aiImageDescriptionsTitle => 'Image descriptions';
 
   @override
   String get justNow => 'Just now';
@@ -2515,6 +2556,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get displaySectionTitle => 'Display';
 
   @override
+  String get displaySectionDesc => 'Theme, privacy mode, NSFW';
+
+  @override
   String get streamRenderImagesTitle => 'Render images during streaming';
 
   @override
@@ -2850,4 +2894,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get desktopMergerPackingHint =>
       'Packing merged results into ZIP file...';
+
+  @override
+  String get unknownTitle => 'Unknown';
+
+  @override
+  String get unknownTime => 'Unknown time';
+
+  @override
+  String get empty => 'Empty';
+
+  @override
+  String get evidenceTitle => 'Evidence';
 }
