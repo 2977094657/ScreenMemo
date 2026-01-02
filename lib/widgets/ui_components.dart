@@ -894,6 +894,56 @@ class UISeparator extends StatelessWidget {
   }
 }
 
+/// 语言选择弹窗同款：圆角 + surface 背景 + 顶部拖动指示条
+class UISheetSurface extends StatelessWidget {
+  const UISheetSurface({
+    super.key,
+    required this.child,
+    this.safeAreaTop = false,
+    this.safeAreaBottom = true,
+  });
+
+  final Widget child;
+  final bool safeAreaTop;
+  final bool safeAreaBottom;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(AppTheme.radiusLg),
+        topRight: Radius.circular(AppTheme.radiusLg),
+      ),
+      child: ColoredBox(
+        color: cs.surface,
+        child: SafeArea(
+          top: safeAreaTop,
+          bottom: safeAreaBottom,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class UISheetHandle extends StatelessWidget {
+  const UISheetHandle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: 40,
+      height: 4,
+      decoration: BoxDecoration(
+        color: cs.onSurfaceVariant.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+}
+
 /// 矩形开关组件：小圆角轨道 + 矩形滑块（用于替代默认圆形拇指）
 class UIRectSwitch extends StatelessWidget {
   final bool value;

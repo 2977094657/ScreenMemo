@@ -25,14 +25,15 @@ import 'dart:math';
 /// 主应用界面
 class HomePage extends StatefulWidget {
   final ThemeService themeService;
-  
+
   const HomePage({super.key, required this.themeService});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+class _HomePageState extends State<HomePage>
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final AppSelectionService _appService = AppSelectionService.instance;
 
   List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
@@ -71,9 +72,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   @override
   void initState() {
     super.initState();
-    _refreshController = EasyRefreshController(
-      controlFinishRefresh: true,
-    );
+    _refreshController = EasyRefreshController(controlFinishRefresh: true);
     WidgetsBinding.instance.addObserver(this);
     StartupProfiler.begin('HomePage.initState+loadData');
     // 将数据加载与权限检查延后到首帧之后，避免阻塞首帧
@@ -147,10 +146,13 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   Future<void> _loadStats() async {
     StartupProfiler.begin('HomePage._loadStats');
     // 首页允许首帧走统计缓存
-    final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
+    final stats = await ScreenshotService.instance
+        .getScreenshotStatsCachedFirst();
     // 日志：记录缓存签名与缓存来源
     // ignore: unawaited_futures
-    FlutterLogger.log('home.loadStats 缓存优先 -> 总数=${stats['totalScreenshots']}，今日=${stats['todayScreenshots']}');
+    FlutterLogger.log(
+      'home.loadStats 缓存优先 -> 总数=${stats['totalScreenshots']}，今日=${stats['todayScreenshots']}',
+    );
     if (mounted) {
       setState(() {
         _screenshotStats = stats;
@@ -204,14 +206,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     ScreenshotService.instance
         .getAvailableDayCountCachedFirst(forceRefresh: forceRefresh)
         .then((count) {
-      if (!mounted) return;
-      setState(() {
-        _totals = Map<String, dynamic>.from(_totals)
-          ..['day_count'] = count;
-      });
-    }).catchError((_) {
-      // 忽略缓存更新失败，保持现有值
-    });
+          if (!mounted) return;
+          setState(() {
+            _totals = Map<String, dynamic>.from(_totals)..['day_count'] = count;
+          });
+        })
+        .catchError((_) {
+          // 忽略缓存更新失败，保持现有值
+        });
   }
 
   /// 计算当前统计数据的签名，用于快速判断是否需要刷新UI
@@ -219,7 +221,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final int total = (stats['totalScreenshots'] as int?) ?? 0;
     final int today = (stats['todayScreenshots'] as int?) ?? 0;
     final int lastTs = (stats['lastScreenshotTime'] as int?) ?? 0;
-    final appStats = stats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
+    final appStats =
+        stats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
 
     int appsCount = appStats.length;
     int sumCount = 0;
@@ -336,7 +339,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   }
 
   void _sortApps() {
-    final appStats = _screenshotStats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
+    final appStats =
+        _screenshotStats['appStatistics']
+            as Map<String, Map<String, dynamic>>? ??
+        {};
 
     // 兼容旧排序键
     String mode = _sortMode;
@@ -348,7 +354,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     final List<AppInfo> appsWithoutShots = [];
     for (final app in _selectedApps) {
       final stat = appStats[app.packageName];
-      final hasAny = (stat != null) && (((stat['totalCount'] as int?) ?? 0) > 0);
+      final hasAny =
+          (stat != null) && (((stat['totalCount'] as int?) ?? 0) > 0);
       if (hasAny) {
         appsWithShots.add(app);
       } else {
@@ -410,7 +417,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         appsWithShots.sort((a, b) => compareByTime(a, b, desc: true));
         break;
       case 'count':
-        appsWithShots.sort((a, b) => compareByCount(a, b, desc: !_sortOrderAsc));
+        appsWithShots.sort(
+          (a, b) => compareByCount(a, b, desc: !_sortOrderAsc),
+        );
         break;
       case 'countAsc':
         appsWithShots.sort((a, b) => compareByCount(a, b, desc: false));
@@ -435,10 +444,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     // 无截图应用按应用名升序，固定排在后面
     appsWithoutShots.sort((a, b) => a.appName.compareTo(b.appName));
 
-    _selectedApps = [
-      ...appsWithShots,
-      ...appsWithoutShots,
-    ];
+    _selectedApps = [...appsWithShots, ...appsWithoutShots];
   }
 
   void _onSelectSort(String mode) async {
@@ -476,7 +482,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     if (newValue) {
       // 显示启动提示
       if (mounted) {
-        UINotifier.info(context, AppLocalizations.of(context).startingScreenshotServiceInfo);
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).startingScreenshotServiceInfo,
+        );
       }
 
       // 启动定时截屏
@@ -488,17 +497,24 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             _screenshotInterval = persistedInterval;
           });
         }
-        final success = await screenshotService.startScreenshotService(persistedInterval);
+        final success = await screenshotService.startScreenshotService(
+          persistedInterval,
+        );
         if (!success) {
           if (mounted) {
-            UINotifier.error(context, AppLocalizations.of(context).startServiceFailedCheckPermissions, duration: const Duration(seconds: 3));
+            UINotifier.error(
+              context,
+              AppLocalizations.of(context).startServiceFailedCheckPermissions,
+              duration: const Duration(seconds: 3),
+            );
           }
           return;
         }
 
         // 成功开启后，主动刷新一次统计并更新缓存，稳定列表排序
         try {
-          final stats = await ScreenshotService.instance.getScreenshotStatsFresh();
+          final stats = await ScreenshotService.instance
+              .getScreenshotStatsFresh();
           await ScreenshotService.instance.updateStatsCache(stats);
           if (mounted) {
             setState(() {
@@ -509,16 +525,22 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         } catch (_) {}
       } catch (e) {
         String errorMessage = AppLocalizations.of(context).startFailedUnknown;
-        
+
         // 根据错误类型提供更具体的提示
         if (e.toString().contains('无障碍服务未启用')) {
-          errorMessage = AppLocalizations.of(context).accessibilityNotEnabledDetail;
+          errorMessage = AppLocalizations.of(
+            context,
+          ).accessibilityNotEnabledDetail;
         } else if (e.toString().contains('存储权限未授予')) {
-          errorMessage = AppLocalizations.of(context).storagePermissionNotGrantedDetail;
+          errorMessage = AppLocalizations.of(
+            context,
+          ).storagePermissionNotGrantedDetail;
         } else if (e.toString().contains('服务未运行')) {
           errorMessage = AppLocalizations.of(context).serviceNotRunningDetail;
         } else if (e.toString().contains('Android版本')) {
-          errorMessage = AppLocalizations.of(context).androidVersionNotSupportedDetail;
+          errorMessage = AppLocalizations.of(
+            context,
+          ).androidVersionNotSupportedDetail;
         } else {
           errorMessage = e.toString();
         }
@@ -546,17 +568,12 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                   ),
                   child: Text(
                     AppLocalizations.of(context).tipIfProblemPersists,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.info,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppTheme.info),
                   ),
                 ),
               ],
             ),
-            actions: const [
-              UIDialogAction(text: '确定'),
-            ],
+            actions: const [UIDialogAction(text: '确定')],
           );
         }
         return;
@@ -575,9 +592,15 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         _screenshotEnabled = newValue;
       });
       if (newValue) {
-        UINotifier.success(context, AppLocalizations.of(context).screenshotEnabledToast);
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).screenshotEnabledToast,
+        );
       } else {
-        UINotifier.info(context, AppLocalizations.of(context).screenshotDisabledToast);
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).screenshotDisabledToast,
+        );
       }
     }
   }
@@ -644,10 +667,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             ),
             child: Text(
               AppLocalizations.of(context).intervalRangeNote,
-              style: TextStyle(
-                fontSize: 12,
-                color: AppTheme.info,
-              ),
+              style: TextStyle(fontSize: 12, color: AppTheme.info),
             ),
           ),
         ],
@@ -662,13 +682,19 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             final input = controller.text.trim();
             final interval = int.tryParse(input);
             if (interval == null || interval < 5 || interval > 60) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidInput);
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidInput,
+              );
               return;
             }
             await _updateScreenshotInterval(interval);
             if (ctx.mounted) {
               Navigator.of(ctx).pop();
-              UINotifier.success(ctx, AppLocalizations.of(ctx).intervalSavedToast(interval));
+              UINotifier.success(
+                ctx,
+                AppLocalizations.of(ctx).intervalSavedToast(interval),
+              );
             }
           },
         ),
@@ -681,12 +707,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     // 在导航之前，统一取消焦点，避免其他标签页的 TextField 焦点残留
     FocusManager.instance.primaryFocus?.unfocus();
     await Navigator.pushNamed(
-      context, 
+      context,
       '/screenshot_gallery',
-      arguments: {
-        'appInfo': app,
-        'packageName': app.packageName,
-      },
+      arguments: {'appInfo': app, 'packageName': app.packageName},
     );
     // 返回后强制获取最新统计（不走缓存，不受节流影响）
     await _loadStatsFresh();
@@ -694,7 +717,6 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     // ignore: unawaited_futures
     _loadPerAppCustomFlags();
   }
-
 
   /// 检查是否有权限缺失
   Future<void> _checkPermissionIssues() async {
@@ -708,7 +730,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       final accessibilityEnabled = permissions['accessibility'] ?? false;
       final usageStatsGranted = permissions['usage_stats'] ?? false;
 
-      final hasIssues = !storageGranted || !notificationGranted || !accessibilityEnabled || !usageStatsGranted;
+      final hasIssues =
+          !storageGranted ||
+          !notificationGranted ||
+          !accessibilityEnabled ||
+          !usageStatsGranted;
 
       if (mounted) {
         setState(() {
@@ -740,7 +766,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       final accessibilityEnabled = permissions['accessibility'] ?? false;
       final usageStatsGranted = permissions['usage_stats'] ?? false;
 
-      final hasPermissionIssues = !storageGranted || !notificationGranted || !accessibilityEnabled || !usageStatsGranted;
+      final hasPermissionIssues =
+          !storageGranted ||
+          !notificationGranted ||
+          !accessibilityEnabled ||
+          !usageStatsGranted;
 
       // 如果有权限问题，自动关闭截屏开关
       if (hasPermissionIssues) {
@@ -750,7 +780,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             _screenshotEnabled = false;
           });
 
-          UINotifier.info(context, AppLocalizations.of(context).autoDisabledDueToPermissions, duration: const Duration(seconds: 3));
+          UINotifier.info(
+            context,
+            AppLocalizations.of(context).autoDisabledDueToPermissions,
+            duration: const Duration(seconds: 3),
+          );
         }
       }
     } catch (e) {
@@ -766,7 +800,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
   Future<void> _preloadMorningInsights() async {
     try {
-      final insights = await _dailySummaryService.loadMorningInsights(_todayKey);
+      final insights = await _dailySummaryService.loadMorningInsights(
+        _todayKey,
+      );
       if (!mounted) return;
       if (insights != null && insights.tips.isNotEmpty) {
         setState(() {
@@ -830,7 +866,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           });
           MorningInsights? generated;
           try {
-            generated = await _dailySummaryService.generateMorningInsights(_todayKey);
+            generated = await _dailySummaryService.generateMorningInsights(
+              _todayKey,
+            );
             if (!mounted) return;
             if (generated == null || generated.tips.isEmpty) {
               setState(() {
@@ -863,7 +901,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         }
       }
 
-      insights ??= await _dailySummaryService.fetchOrGenerateMorningInsights(_todayKey);
+      insights ??= await _dailySummaryService.fetchOrGenerateMorningInsights(
+        _todayKey,
+      );
       if (!mounted) return;
       if (insights == null || insights.tips.isEmpty) {
         setState(() {
@@ -985,8 +1025,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       return;
     }
 
-    _morningRefreshHistory
-        .removeWhere((ts) => now.difference(ts) > _morningRefreshWindow);
+    _morningRefreshHistory.removeWhere(
+      (ts) => now.difference(ts) > _morningRefreshWindow,
+    );
     if (_morningRefreshHistory.length >= _morningMaxRefreshInWindow) {
       setState(() {
         _morningCooldownUntil = now.add(_morningCooldownDuration);
@@ -1021,7 +1062,11 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
       // 显示加载提示
       if (mounted) {
-        UINotifier.info(context, AppLocalizations.of(context).refreshingPermissionsInfo, duration: const Duration(seconds: 1));
+        UINotifier.info(
+          context,
+          AppLocalizations.of(context).refreshingPermissionsInfo,
+          duration: const Duration(seconds: 1),
+        );
       }
 
       // 强制刷新权限状态
@@ -1036,11 +1081,18 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       await _checkPermissionIssues();
 
       if (mounted) {
-        UINotifier.success(context, AppLocalizations.of(context).permissionsRefreshed, duration: const Duration(seconds: 1));
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).permissionsRefreshed,
+          duration: const Duration(seconds: 1),
+        );
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, AppLocalizations.of(context).refreshPermissionsFailed('$e'));
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).refreshPermissionsFailed('$e'),
+        );
       }
     }
   }
@@ -1060,15 +1112,34 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPermissionStatusItem(AppLocalizations.of(context).storagePermissionTitle, permissions['storage'] ?? false),
-              _buildPermissionStatusItem(AppLocalizations.of(context).notificationPermissionTitle, permissions['notification'] ?? false),
-              _buildPermissionStatusItem(AppLocalizations.of(context).accessibilityPermissionTitle, permissions['accessibility'] ?? false),
-              _buildPermissionStatusItem(AppLocalizations.of(context).screenRecordingPermissionTitle, true),
+              _buildPermissionStatusItem(
+                AppLocalizations.of(context).storagePermissionTitle,
+                permissions['storage'] ?? false,
+              ),
+              _buildPermissionStatusItem(
+                AppLocalizations.of(context).notificationPermissionTitle,
+                permissions['notification'] ?? false,
+              ),
+              _buildPermissionStatusItem(
+                AppLocalizations.of(context).accessibilityPermissionTitle,
+                permissions['accessibility'] ?? false,
+              ),
+              _buildPermissionStatusItem(
+                AppLocalizations.of(context).screenRecordingPermissionTitle,
+                true,
+              ),
             ],
           ),
           actions: [
-            UIDialogAction<String>(text: AppLocalizations.of(context).goToSettings, result: 'go_settings'),
-            UIDialogAction<String>(text: AppLocalizations.of(context).dialogOk, style: UIDialogActionStyle.primary, result: 'ok'),
+            UIDialogAction<String>(
+              text: AppLocalizations.of(context).goToSettings,
+              result: 'go_settings',
+            ),
+            UIDialogAction<String>(
+              text: AppLocalizations.of(context).dialogOk,
+              style: UIDialogActionStyle.primary,
+              result: 'ok',
+            ),
           ],
         );
         if (!mounted) return;
@@ -1083,7 +1154,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       }
     } catch (e) {
       if (mounted) {
-        UINotifier.error(context, AppLocalizations.of(context).checkPermissionStatusFailed('$e'));
+        UINotifier.error(
+          context,
+          AppLocalizations.of(context).checkPermissionStatusFailed('$e'),
+        );
       }
     }
   }
@@ -1107,21 +1181,19 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                     color: AppTheme.successForeground,
                   ),
                 )
-              : const Icon(
-                  Icons.cancel,
-                  color: AppTheme.destructive,
-                  size: 20,
-                ),
+              : const Icon(Icons.cancel, color: AppTheme.destructive, size: 20),
           const SizedBox(width: 8),
           Text(name),
           const Spacer(),
           Text(
-            granted ? AppLocalizations.of(context).grantedLabel : AppLocalizations.of(context).notGrantedLabel,
+            granted
+                ? AppLocalizations.of(context).grantedLabel
+                : AppLocalizations.of(context).notGrantedLabel,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: granted
-                      ? Theme.of(context).colorScheme.onSurfaceVariant
-                      : AppTheme.destructive,
-                ),
+              color: granted
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : AppTheme.destructive,
+            ),
           ),
         ],
       ),
@@ -1176,173 +1248,292 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         titleSpacing: 0,
         actions: appBarActions,
         title: _selectionMode
-          ? Padding(
-              padding: const EdgeInsets.only(left: AppTheme.spacing4),
-              child: Text(
-                AppLocalizations.of(context).selectedItemsCount(_selectedPackages.length),
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            )
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-              child: Row(
-              children: [
-                // 左侧:语言切换图标
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  icon: const Icon(Icons.language, size: 20, weight: 300),
-                  tooltip: AppLocalizations.of(context).languageSettingTitle,
-                  onPressed: _showLanguageBottomSheet,
+            ? Padding(
+                padding: const EdgeInsets.only(left: AppTheme.spacing4),
+                child: Text(
+                  AppLocalizations.of(
+                    context,
+                  ).selectedItemsCount(_selectedPackages.length),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                
-                // 加号按钮
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  icon: const Icon(Icons.add, size: 20, weight: 300),
-                  tooltip: AppLocalizations.of(context).navSelectApps,
-                  onPressed: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => Scaffold(
-                          appBar: AppBar(
-                            title: Text(AppLocalizations.of(context).navSelectApps),
-                            actions: [
-                              IconButton(
-                                tooltip: AppLocalizations.of(context).whySomeAppsHidden,
-                                icon: const Icon(Icons.help_outline),
-                                onPressed: () async {
-                                  // 收集已启用输入法及默认输入法
-                                  final imeList = await ImeExclusionService.getEnabledImeList();
-                                  final defaultIme = await ImeExclusionService.getDefaultImeInfo();
-
-                                  final lines = <Widget>[];
-                                  lines.add(Text(
-                                    AppLocalizations.of(context).excludedAppsIntro,
-                                    style: Theme.of(context).textTheme.bodyMedium,
-                                  ));
-                                  lines.add(const SizedBox(height: 8));
-                                  // 本应用
-                                  lines.add(Text(AppLocalizations.of(context).excludedThisApp));
-                                  lines.add(Text(AppLocalizations.of(context).excludedAutomationApps));
-                                  // 输入法应用
-                                  if (imeList.isNotEmpty) {
-                                    lines.add(const SizedBox(height: 8));
-                                    lines.add(Text(AppLocalizations.of(context).excludedImeApps));
-                                    for (final m in imeList) {
-                                      final name = m['appName'] ?? '';
-                                      final pkg = m['packageName'] ?? '';
-                                      lines.add(Text('  - ${name.isNotEmpty ? name : AppLocalizations.of(context).unknownIme}'));
-                                    }
-                                  } else {
-                                    lines.add(const SizedBox(height: 8));
-                                    lines.add(Text(AppLocalizations.of(context).excludedImeAppsFiltered));
-                                  }
-                                  if (defaultIme != null && (defaultIme['packageName']?.isNotEmpty ?? false)) {
-                                    lines.add(const SizedBox(height: 8));
-                                    lines.add(Text(AppLocalizations.of(context).currentDefaultIme((defaultIme['appName'] ?? '') as String, (defaultIme['packageName'] ?? '') as String)));
-                                  }
-                                  lines.add(const SizedBox(height: 12));
-                                  lines.add(Text(
-                                    AppLocalizations.of(context).imeExplainText,
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ));
-
-                                  await showUIDialog<void>(
-                                    context: context,
-                                    title: AppLocalizations.of(context).excludedAppsTitle,
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: lines,
-                                    ),
-                                    actions: [UIDialogAction(text: AppLocalizations.of(context).gotIt)],
-                                  );
-                                },
-                              ),
-                              TextButton(
-                                onPressed: () async {
-                                  await _appService.saveSelectedApps(_selectedApps);
-                                  if (mounted) Navigator.of(context).pop();
-                                  await _loadData(soft: true);
-                                },
-                                child: Text(AppLocalizations.of(context).dialogDone),
-                              ),
-                            ],
-                          ),
-                          body: AppSelectionWidget(
-                            displayAsList: true,
-                            onSelectionChanged: (apps) {
-                              _selectedApps = apps;
-                            },
-                          ),
-                        ),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing4,
+                ),
+                child: Row(
+                  children: [
+                    // 左侧:语言切换图标
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 36,
                       ),
-                    );
-                  },
-                ),
-                // 首页不再显示排序图标，排序在设置页调整
+                      visualDensity: const VisualDensity(
+                        horizontal: -4,
+                        vertical: -4,
+                      ),
+                      icon: const Icon(Icons.language, size: 20, weight: 300),
+                      tooltip: AppLocalizations.of(
+                        context,
+                      ).languageSettingTitle,
+                      onPressed: _showLanguageBottomSheet,
+                    ),
 
-                const SizedBox(width: 2),
-                
-                // 搜索框 - 大幅增加flex权重
-                Expanded(flex: 7, child: _buildSearchBar(context)),
-                
-                const SizedBox(width: 2),
-                
-                // 搜索框右侧：权限提示 或 开关
-                _hasPermissionIssues
-                    ? IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-                        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                        icon: const Icon(
-                          Icons.warning,
-                          size: 20,
-                          weight: 300,
-                          color: AppTheme.destructive,
-                        ),
-                        onPressed: _showPermissionStatus,
-                        tooltip: AppLocalizations.of(context).permissionMissing,
-                      )
-                   : IconButton(
-                       padding: EdgeInsets.zero,
-                       constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-                       visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                       tooltip: _screenshotEnabled ? AppLocalizations.of(context).stopScreenshot : AppLocalizations.of(context).startScreenshot,
-                       iconSize: 22,
-                       onPressed: _toggleScreenshotEnabled,
-                       icon: _screenshotEnabled
-                           ? const Icon(
-                               Icons.camera_alt_outlined,
-                               size: 22,
-                               weight: 300,
-                             )
-                           : const Icon(
-                               Icons.no_photography_outlined,
-                               size: 22,
-                               weight: 300,
-                               color: AppTheme.destructive,
-                             ),
-                     ),
-               
-                // 右侧:主题切换图标
-               IconButton(
-                 padding: EdgeInsets.zero,
-                 constraints: const BoxConstraints.tightFor(width: 24, height: 36),
-                 visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                 icon: Icon(widget.themeService.themeModeIcon, size: 20, weight: 300),
-                 tooltip: _themeModeTooltip(context),
-                 onPressed: () async {
-                   await widget.themeService.toggleTheme();
-                 },
-               ),
-              ],
-            ),
-          ),
+                    // 加号按钮
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 36,
+                      ),
+                      visualDensity: const VisualDensity(
+                        horizontal: -4,
+                        vertical: -4,
+                      ),
+                      icon: const Icon(Icons.add, size: 20, weight: 300),
+                      tooltip: AppLocalizations.of(context).navSelectApps,
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => Scaffold(
+                              appBar: AppBar(
+                                title: Text(
+                                  AppLocalizations.of(context).navSelectApps,
+                                ),
+                                actions: [
+                                  IconButton(
+                                    tooltip: AppLocalizations.of(
+                                      context,
+                                    ).whySomeAppsHidden,
+                                    icon: const Icon(Icons.help_outline),
+                                    onPressed: () async {
+                                      // 收集已启用输入法及默认输入法
+                                      final imeList =
+                                          await ImeExclusionService.getEnabledImeList();
+                                      final defaultIme =
+                                          await ImeExclusionService.getDefaultImeInfo();
+
+                                      final lines = <Widget>[];
+                                      lines.add(
+                                        Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).excludedAppsIntro,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      );
+                                      lines.add(const SizedBox(height: 8));
+                                      // 本应用
+                                      lines.add(
+                                        Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).excludedThisApp,
+                                        ),
+                                      );
+                                      lines.add(
+                                        Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).excludedAutomationApps,
+                                        ),
+                                      );
+                                      // 输入法应用
+                                      if (imeList.isNotEmpty) {
+                                        lines.add(const SizedBox(height: 8));
+                                        lines.add(
+                                          Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).excludedImeApps,
+                                          ),
+                                        );
+                                        for (final m in imeList) {
+                                          final name = m['appName'] ?? '';
+                                          final pkg = m['packageName'] ?? '';
+                                          lines.add(
+                                            Text(
+                                              '  - ${name.isNotEmpty ? name : AppLocalizations.of(context).unknownIme}',
+                                            ),
+                                          );
+                                        }
+                                      } else {
+                                        lines.add(const SizedBox(height: 8));
+                                        lines.add(
+                                          Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).excludedImeAppsFiltered,
+                                          ),
+                                        );
+                                      }
+                                      if (defaultIme != null &&
+                                          (defaultIme['packageName']
+                                                  ?.isNotEmpty ??
+                                              false)) {
+                                        lines.add(const SizedBox(height: 8));
+                                        lines.add(
+                                          Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).currentDefaultIme(
+                                              (defaultIme['appName'] ?? '')
+                                                  as String,
+                                              (defaultIme['packageName'] ?? '')
+                                                  as String,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      lines.add(const SizedBox(height: 12));
+                                      lines.add(
+                                        Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).imeExplainText,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      );
+
+                                      await showUIDialog<void>(
+                                        context: context,
+                                        title: AppLocalizations.of(
+                                          context,
+                                        ).excludedAppsTitle,
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: lines,
+                                        ),
+                                        actions: [
+                                          UIDialogAction(
+                                            text: AppLocalizations.of(
+                                              context,
+                                            ).gotIt,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      await _appService.saveSelectedApps(
+                                        _selectedApps,
+                                      );
+                                      if (mounted) Navigator.of(context).pop();
+                                      await _loadData(soft: true);
+                                    },
+                                    child: Text(
+                                      AppLocalizations.of(context).dialogDone,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              body: AppSelectionWidget(
+                                displayAsList: true,
+                                onSelectionChanged: (apps) {
+                                  _selectedApps = apps;
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // 首页不再显示排序图标，排序在设置页调整
+                    const SizedBox(width: 2),
+
+                    // 搜索框 - 大幅增加flex权重
+                    Expanded(flex: 7, child: _buildSearchBar(context)),
+
+                    const SizedBox(width: 2),
+
+                    // 搜索框右侧：权限提示 或 开关
+                    _hasPermissionIssues
+                        ? IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 36,
+                            ),
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            icon: const Icon(
+                              Icons.warning,
+                              size: 20,
+                              weight: 300,
+                              color: AppTheme.destructive,
+                            ),
+                            onPressed: _showPermissionStatus,
+                            tooltip: AppLocalizations.of(
+                              context,
+                            ).permissionMissing,
+                          )
+                        : IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 36,
+                            ),
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            tooltip: _screenshotEnabled
+                                ? AppLocalizations.of(context).stopScreenshot
+                                : AppLocalizations.of(context).startScreenshot,
+                            iconSize: 22,
+                            onPressed: _toggleScreenshotEnabled,
+                            icon: _screenshotEnabled
+                                ? const Icon(
+                                    Icons.camera_alt_outlined,
+                                    size: 22,
+                                    weight: 300,
+                                  )
+                                : const Icon(
+                                    Icons.no_photography_outlined,
+                                    size: 22,
+                                    weight: 300,
+                                    color: AppTheme.destructive,
+                                  ),
+                          ),
+
+                    // 右侧:主题切换图标
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 36,
+                      ),
+                      visualDensity: const VisualDensity(
+                        horizontal: -4,
+                        vertical: -4,
+                      ),
+                      icon: Icon(
+                        widget.themeService.themeModeIcon,
+                        size: 20,
+                        weight: 300,
+                      ),
+                      tooltip: _themeModeTooltip(context),
+                      onPressed: () async {
+                        await widget.themeService.toggleTheme();
+                      },
+                    ),
+                  ],
+                ),
+              ),
       ),
       body: Column(
         children: [
@@ -1360,6 +1551,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       ),
     );
   }
+
   String _themeModeTooltip(BuildContext context) {
     final mode = widget.themeService.themeMode;
     final t = AppLocalizations.of(context);
@@ -1383,14 +1575,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
 
     return Container(
       height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6, vertical: AppTheme.spacing2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing6,
+        vertical: AppTheme.spacing2,
+      ),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 0.5),
         ),
       ),
       child: Row(
@@ -1538,21 +1730,16 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
               vertical: AppTheme.spacing1,
             ),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final app = _selectedApps[index];
-                  return _buildAppListItem(app);
-                },
-                childCount: _selectedApps.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final app = _selectedApps[index];
+                return _buildAppListItem(app);
+              }, childCount: _selectedApps.length),
             ),
           )
         else
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _buildEmptyState(),
-          ),
-        if (hasApps) SliverToBoxAdapter(child: SizedBox(height: AppTheme.spacing4)),
+          SliverFillRemaining(hasScrollBody: false, child: _buildEmptyState()),
+        if (hasApps)
+          SliverToBoxAdapter(child: SizedBox(height: AppTheme.spacing4)),
       ],
     );
   }
@@ -1570,16 +1757,16 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         Text(
           AppLocalizations.of(context).homeEmptyTitle,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppTheme.spacing2),
         Text(
           AppLocalizations.of(context).homeEmptySubtitle,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           textAlign: TextAlign.center,
         ),
       ],
@@ -1596,11 +1783,16 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         _morningCooldownUntil = null;
       }
     }
-    final MorningInsightEntry? tip = _currentMorningTip ??
-        ((_morningInsights?.tips.isNotEmpty ?? false) ? _morningInsights!.tips.first : null);
+    final MorningInsightEntry? tip =
+        _currentMorningTip ??
+        ((_morningInsights?.tips.isNotEmpty ?? false)
+            ? _morningInsights!.tips.first
+            : null);
     if (tip == null) {
       final bool hasInsights = _morningInsights?.tips.isNotEmpty ?? false;
-      return hasInsights ? l10n.homeMorningTipsPullHint : l10n.homeMorningTipsEmpty;
+      return hasInsights
+          ? l10n.homeMorningTipsPullHint
+          : l10n.homeMorningTipsEmpty;
     }
     if (tip.hasSummary) return tip.summary!;
     if (tip.actions.isNotEmpty) return tip.actions.first;
@@ -1629,7 +1821,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       builder: (context, state) {
         double visibleHeight = state.offset.clamp(0.0, _morningRevealMaxHeight);
         final bool isProcessing =
-            state.mode == IndicatorMode.processing || state.mode == IndicatorMode.ready;
+            state.mode == IndicatorMode.processing ||
+            state.mode == IndicatorMode.ready;
         if (isProcessing) {
           visibleHeight = _morningRevealMaxHeight;
         }
@@ -1637,10 +1830,14 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           return const SizedBox.shrink();
         }
 
-        final double progress = (visibleHeight / _morningRevealMaxHeight).clamp(0.0, 1.0);
+        final double progress = (visibleHeight / _morningRevealMaxHeight).clamp(
+          0.0,
+          1.0,
+        );
         final bool readyToRelease = state.mode == IndicatorMode.armed;
         final colorScheme = theme.colorScheme;
-        final bool inCooldown = _morningCooldownUntil != null &&
+        final bool inCooldown =
+            _morningCooldownUntil != null &&
             DateTime.now().isBefore(_morningCooldownUntil!);
         final bool suppressHint = !_isMorningInsightsAvailable(DateTime.now());
 
@@ -1671,10 +1868,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
         final String hint = readyToRelease
             ? l10n.homeMorningTipsReleaseHint
             : (inCooldown
-                ? l10n.homeMorningTipsCooldownHint
-                : (isProcessing
-                    ? l10n.homeMorningTipsLoading
-                    : l10n.homeMorningTipsPullHint));
+                  ? l10n.homeMorningTipsCooldownHint
+                  : (isProcessing
+                        ? l10n.homeMorningTipsLoading
+                        : l10n.homeMorningTipsPullHint));
 
         final String message = _resolveMorningTipText(l10n);
 
@@ -1701,7 +1898,9 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
                       const SizedBox(height: AppTheme.spacing1),
                     ],
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                      ),
                       child: Text(
                         message,
                         textAlign: TextAlign.center,
@@ -1723,7 +1922,8 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   }
 
   Widget _buildAppListItem(AppInfo app) {
-    final bool isSelected = _selectionMode && _selectedPackages.contains(app.packageName);
+    final bool isSelected =
+        _selectionMode && _selectedPackages.contains(app.packageName);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1748,105 +1948,115 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
           ),
           child: Row(
             children: [
-            // 应用图标 + 自定义标记徽章
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: app.icon != null
-                        ? Image.memory(
-                            app.icon!,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.contain,
-                  )
-                        : Icon(
-                            Icons.android,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            size: 32,
-                          ),
-                  ),
-                  if (_customEnabledPackages.contains(app.packageName))
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: Tooltip(
-                        message: AppLocalizations.of(context).customLabel,
-                        child: Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.secondaryContainer,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.surface,
-                              width: 1,
+              // 应用图标 + 自定义标记徽章
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(
+                      child: app.icon != null
+                          ? Image.memory(
+                              app.icon!,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.contain,
+                            )
+                          : Icon(
+                              Icons.android,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              size: 32,
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            Icons.tune,
-                            size: 10,
-                            color: Theme.of(context).colorScheme.onSecondaryContainer,
+                    ),
+                    if (_customEnabledPackages.contains(app.packageName))
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Tooltip(
+                          message: AppLocalizations.of(context).customLabel,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.secondaryContainer,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.surface,
+                                width: 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.tune,
+                              size: 10,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSecondaryContainer,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
-            const SizedBox(width: AppTheme.spacing3),
+              const SizedBox(width: AppTheme.spacing3),
 
-            // 应用信息
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    app.appName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    _getAppStatText(app.packageName),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+              // 应用信息
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      app.appName,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  ),
-                ],
+                    Text(
+                      _getAppStatText(app.packageName),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-            if (!_selectionMode)
-              Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              )
-            else
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.surfaceVariant,
-                  borderRadius: const BorderRadius.all(Radius.circular(4.0)),
-                  border: Border.all(
+              if (!_selectionMode)
+                Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                )
+              else
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
                     color: isSelected
                         ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.outline,
-                    width: isSelected ? 1.6 : 1.2,
+                        : Theme.of(context).colorScheme.surfaceVariant,
+                    borderRadius: const BorderRadius.all(Radius.circular(4.0)),
+                    border: Border.all(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.outline,
+                      width: isSelected ? 1.6 : 1.2,
+                    ),
                   ),
+                  alignment: Alignment.center,
+                  child: isSelected
+                      ? Icon(
+                          Icons.check,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        )
+                      : null,
                 ),
-                alignment: Alignment.center,
-                child: isSelected
-                    ? Icon(Icons.check, size: 14, color: Theme.of(context).colorScheme.onPrimary)
-                    : null,
-              ),
-          ],
+            ],
           ),
         ),
       ),
@@ -1856,7 +2066,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
   /// 获取应用统计文本
   String _getAppStatText(String packageName) {
     final l10n = AppLocalizations.of(context);
-    final appStats = _screenshotStats['appStatistics'] as Map<String, Map<String, dynamic>>? ?? {};
+    final appStats =
+        _screenshotStats['appStatistics']
+            as Map<String, Map<String, dynamic>>? ??
+        {};
     final stat = appStats[packageName];
 
     if (stat == null) {
@@ -1944,14 +2157,23 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       title: AppLocalizations.of(context).removeMonitoring,
       message: AppLocalizations.of(context).removeMonitoringMessage,
       actions: [
-        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
-        UIDialogAction<bool>(text: AppLocalizations.of(context).remove, style: UIDialogActionStyle.destructive, result: true),
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).dialogCancel,
+          result: false,
+        ),
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).remove,
+          style: UIDialogActionStyle.destructive,
+          result: true,
+        ),
       ],
       barrierDismissible: false,
     );
     if (confirmed != true) return;
 
-    final remaining = _selectedApps.where((a) => !_selectedPackages.contains(a.packageName)).toList();
+    final remaining = _selectedApps
+        .where((a) => !_selectedPackages.contains(a.packageName))
+        .toList();
     await _appService.saveSelectedApps(remaining);
     if (!mounted) return;
     setState(() {
@@ -1959,129 +2181,108 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
       _selectionMode = false;
       _selectedPackages.clear();
     });
-    UINotifier.info(context, AppLocalizations.of(context).removedMonitoringToast(count));
+    UINotifier.info(
+      context,
+      AppLocalizations.of(context).removedMonitoringToast(count),
+    );
   }
 
   /// 显示语言选择底部弹窗
   void _showLanguageBottomSheet() {
     final t = AppLocalizations.of(context);
     final currentOption = LocaleService.instance.option;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(AppTheme.radiusLg),
-            topRight: Radius.circular(AppTheme.radiusLg),
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 顶部指示器
-              Container(
-                margin: const EdgeInsets.only(top: AppTheme.spacing3),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      builder: (context) => UISheetSurface(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: AppTheme.spacing3),
+            const UISheetHandle(),
+            // 标题
+            Padding(
+              padding: const EdgeInsets.all(AppTheme.spacing4),
+              child: Text(
+                t.languageSettingTitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
-              
-              // 标题
-              Padding(
-                padding: const EdgeInsets.all(AppTheme.spacing4),
-                child: Text(
-                  t.languageSettingTitle,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              
-              // 语言选项列表
-              _buildLanguageOption(
-                context: context,
-                title: t.languageSystem,
-                value: 'system',
-                currentValue: currentOption,
-                onTap: () async {
-                  await _handleLanguageSelection(
-                    sheetContext: context,
-                    option: 'system',
-                    toastLanguageName: t.languageSystem,
-                  );
-                },
-              ),
-              
-              _buildLanguageOption(
-                context: context,
-                title: '中文',
-                value: 'zh',
-                currentValue: currentOption,
-                onTap: () async {
-                  await _handleLanguageSelection(
-                    sheetContext: context,
-                    option: 'zh',
-                    toastLocale: const Locale('zh'),
-                    toastLanguageName: '中文',
-                  );
-                },
-              ),
-              
-              _buildLanguageOption(
-                context: context,
-                title: 'English',
-                value: 'en',
-                currentValue: currentOption,
-                onTap: () async {
-                  await _handleLanguageSelection(
-                    sheetContext: context,
-                    option: 'en',
-                    toastLocale: const Locale('en'),
-                    toastLanguageName: 'English',
-                  );
-                },
-              ),
-
-              _buildLanguageOption(
-                context: context,
-                title: '日本語',
-                value: 'ja',
-                currentValue: currentOption,
-                onTap: () async {
-                  await _handleLanguageSelection(
-                    sheetContext: context,
-                    option: 'ja',
-                    toastLocale: const Locale('ja'),
-                    toastLanguageName: '日本語',
-                  );
-                },
-              ),
-
-              _buildLanguageOption(
-                context: context,
-                title: '한국어',
-                value: 'ko',
-                currentValue: currentOption,
-                onTap: () async {
-                  await _handleLanguageSelection(
-                    sheetContext: context,
-                    option: 'ko',
-                    toastLocale: const Locale('ko'),
-                    toastLanguageName: '한국어',
-                  );
-                },
-              ),
-              
-              const SizedBox(height: AppTheme.spacing4),
-            ],
-          ),
+            ),
+            // 语言选项列表
+            _buildLanguageOption(
+              context: context,
+              title: t.languageSystem,
+              value: 'system',
+              currentValue: currentOption,
+              onTap: () async {
+                await _handleLanguageSelection(
+                  sheetContext: context,
+                  option: 'system',
+                  toastLanguageName: t.languageSystem,
+                );
+              },
+            ),
+            _buildLanguageOption(
+              context: context,
+              title: '中文',
+              value: 'zh',
+              currentValue: currentOption,
+              onTap: () async {
+                await _handleLanguageSelection(
+                  sheetContext: context,
+                  option: 'zh',
+                  toastLocale: const Locale('zh'),
+                  toastLanguageName: '中文',
+                );
+              },
+            ),
+            _buildLanguageOption(
+              context: context,
+              title: 'English',
+              value: 'en',
+              currentValue: currentOption,
+              onTap: () async {
+                await _handleLanguageSelection(
+                  sheetContext: context,
+                  option: 'en',
+                  toastLocale: const Locale('en'),
+                  toastLanguageName: 'English',
+                );
+              },
+            ),
+            _buildLanguageOption(
+              context: context,
+              title: '日本語',
+              value: 'ja',
+              currentValue: currentOption,
+              onTap: () async {
+                await _handleLanguageSelection(
+                  sheetContext: context,
+                  option: 'ja',
+                  toastLocale: const Locale('ja'),
+                  toastLanguageName: '日本語',
+                );
+              },
+            ),
+            _buildLanguageOption(
+              context: context,
+              title: '한국어',
+              value: 'ko',
+              currentValue: currentOption,
+              onTap: () async {
+                await _handleLanguageSelection(
+                  sheetContext: context,
+                  option: 'ko',
+                  toastLocale: const Locale('ko'),
+                  toastLanguageName: '한국어',
+                );
+              },
+            ),
+            const SizedBox(height: AppTheme.spacing4),
+          ],
         ),
       ),
     );
@@ -2099,7 +2300,10 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     Navigator.of(sheetContext).pop();
     final localization = await _loadToastLocalization(toastLocale);
     if (!mounted || localization == null) return;
-    UINotifier.success(context, localization.languageChangedToast(toastLanguageName));
+    UINotifier.success(
+      context,
+      localization.languageChangedToast(toastLanguageName),
+    );
   }
 
   Future<AppLocalizations?> _loadToastLocalization(Locale? locale) async {
@@ -2122,7 +2326,7 @@ class _HomePageState extends State<HomePage> with AutomaticKeepAliveClientMixin,
     required VoidCallback onTap,
   }) {
     final isSelected = value == currentValue;
-    
+
     return InkWell(
       onTap: onTap,
       child: Container(

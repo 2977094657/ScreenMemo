@@ -11,6 +11,7 @@ import '../l10n/app_localizations.dart';
 import '../services/weekly_summary_service.dart';
 import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_components.dart';
 
 class WeeklySummaryPage extends StatefulWidget {
   const WeeklySummaryPage({super.key, this.weekStart});
@@ -372,153 +373,147 @@ class _WeeklySummaryPageState extends State<WeeklySummaryPage> {
               currentWeekIndex = weekOptions.isEmpty ? 0 : weekOptions.length - 1;
             }
 
-            return Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusLg),
-                  topRight: Radius.circular(AppTheme.radiusLg),
-                ),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: AppTheme.spacing3, bottom: AppTheme.spacing2),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(2),
+            return UISheetSurface(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: AppTheme.spacing3),
+                  const UISheetHandle(),
+                  const SizedBox(height: AppTheme.spacing2),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                    child: Text(
+                      l10n.weeklySummarySelectWeek,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
-                      child: Text(
-                        l10n.weeklySummarySelectWeek,
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 220,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: CupertinoPicker(
-                              scrollController: yearController,
-                              itemExtent: 36,
-                              magnification: 1.12,
-                              squeeze: 1.08,
-                              useMagnifier: true,
-                              onSelectedItemChanged: (int index) {
-                                final List<_WeekOption> nextOptions = grouped[years[index]]!;
-                                setModalState(() {
-                                  currentYearIndex = index;
-                                  currentWeekIndex = 0;
-                                });
-                                Future.microtask(() {
-                                  if (nextOptions.isNotEmpty) {
-                                    try {
-                                      weekController.jumpToItem(0);
-                                    } catch (_) {}
-                                  }
-                                });
-                              },
-                              children: [
-                                for (final int year in years)
-                                  Center(
-                                    child: Text(
-                                      year.toString(),
-                                      style: theme.textTheme.titleMedium,
-                                    ),
+                  ),
+                  SizedBox(
+                    height: 220,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoPicker(
+                            scrollController: yearController,
+                            itemExtent: 36,
+                            magnification: 1.12,
+                            squeeze: 1.08,
+                            useMagnifier: true,
+                            onSelectedItemChanged: (int index) {
+                              final List<_WeekOption> nextOptions =
+                                  grouped[years[index]]!;
+                              setModalState(() {
+                                currentYearIndex = index;
+                                currentWeekIndex = 0;
+                              });
+                              Future.microtask(() {
+                                if (nextOptions.isNotEmpty) {
+                                  try {
+                                    weekController.jumpToItem(0);
+                                  } catch (_) {}
+                                }
+                              });
+                            },
+                            children: [
+                              for (final int year in years)
+                                Center(
+                                  child: Text(
+                                    year.toString(),
+                                    style: theme.textTheme.titleMedium,
                                   ),
-                              ],
-                            ),
+                                ),
+                            ],
                           ),
-                          Expanded(
-                            child: CupertinoPicker(
-                              scrollController: weekController,
-                              itemExtent: 36,
-                              magnification: 1.12,
-                              squeeze: 1.05,
-                              useMagnifier: true,
-                              onSelectedItemChanged: (int index) {
-                                setModalState(() {
-                                  currentWeekIndex = index;
-                                });
-                              },
-                              children: weekOptions.isEmpty
-                                  ? [
-                                      Center(
+                        ),
+                        Expanded(
+                          child: CupertinoPicker(
+                            scrollController: weekController,
+                            itemExtent: 36,
+                            magnification: 1.12,
+                            squeeze: 1.05,
+                            useMagnifier: true,
+                            onSelectedItemChanged: (int index) {
+                              setModalState(() {
+                                currentWeekIndex = index;
+                              });
+                            },
+                            children: weekOptions.isEmpty
+                                ? [
+                                    Center(
+                                      child: Text(
+                                        l10n.weeklySummaryEmpty,
+                                        style: theme.textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                  ]
+                                : weekOptions
+                                    .map(
+                                      (option) => Center(
                                         child: Text(
-                                          l10n.weeklySummaryEmpty,
+                                          option.label,
                                           style: theme.textTheme.bodyMedium,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ]
-                                  : weekOptions
-                                      .map(
-                                        (option) => Center(
-                                          child: Text(
-                                            option.label,
-                                            style: theme.textTheme.bodyMedium,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                            ),
+                                    )
+                                    .toList(),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTheme.spacing4,
-                        AppTheme.spacing3,
-                        AppTheme.spacing4,
-                        AppTheme.spacing4,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(ctx).pop(),
-                              style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                                ),
-                              ),
-                              child: Text(l10n.dialogCancel),
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.spacing3),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: weekOptions.isEmpty
-                                  ? null
-                                  : () {
-                                      final _WeekOption option = weekOptions[currentWeekIndex.clamp(0, weekOptions.length - 1)];
-                                      Navigator.of(ctx).pop();
-                                      if (mounted && option.startKey.isNotEmpty) {
-                                        _loadDetail(option.startKey);
-                                      }
-                                    },
-                              style: FilledButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                                ),
-                              ),
-                              child: Text(l10n.dialogDone),
-                            ),
-                          ),
-                        ],
-                      ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing3,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
                     ),
-                  ],
-                ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppTheme.radiusMd),
+                              ),
+                            ),
+                            child: Text(l10n.dialogCancel),
+                          ),
+                        ),
+                        const SizedBox(width: AppTheme.spacing3),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: weekOptions.isEmpty
+                                ? null
+                                : () {
+                                    final _WeekOption option = weekOptions[
+                                        currentWeekIndex.clamp(
+                                          0,
+                                          weekOptions.length - 1,
+                                        )];
+                                    Navigator.of(ctx).pop();
+                                    if (mounted &&
+                                        option.startKey.isNotEmpty) {
+                                      _loadDetail(option.startKey);
+                                    }
+                                  },
+                            style: FilledButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AppTheme.radiusMd),
+                              ),
+                            ),
+                            child: Text(l10n.dialogDone),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -750,4 +745,3 @@ class _WeekOption {
   final String endKey;
   final String label;
 }
-

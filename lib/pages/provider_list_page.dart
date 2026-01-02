@@ -150,7 +150,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final models = p.models;
         final active = _activeModelOf(p);
@@ -176,10 +176,13 @@ class _ProviderListPageState extends State<ProviderListPage> {
                   filtered.insert(0, sel);
                 }
 
-                return SafeArea(
+                return UISheetSurface(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const Center(child: UISheetHandle()),
+                      const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                         child: Text(

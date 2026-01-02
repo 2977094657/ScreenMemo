@@ -209,7 +209,7 @@ class _EventHomePageState extends State<EventHomePage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final currentId = _ctxProvider?.id ?? -1;
         // 将控制器移到 StatefulBuilder 外部，并使用持久化文本初始化
@@ -236,9 +236,12 @@ class _EventHomePageState extends State<EventHomePage> {
                   final sel = filtered.removeAt(selIdx);
                   filtered.insert(0, sel);
                 }
-                return SafeArea(
+                return UISheetSurface(
                   child: Column(
                     children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: TextField(
@@ -323,7 +326,7 @@ class _EventHomePageState extends State<EventHomePage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final active = (_ctxModel ?? '').trim();
         // 将控制器移到 StatefulBuilder 外部，并使用持久化文本初始化
@@ -349,9 +352,12 @@ class _EventHomePageState extends State<EventHomePage> {
                     filtered.insert(0, sel);
                   }
                 }
-                return SafeArea(
+                return UISheetSurface(
                   child: Column(
                     children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: TextField(

@@ -716,82 +716,86 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: cs.surface,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         return FractionallySizedBox(
           heightFactor: 0.85,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.spacing4,
-                  AppTheme.spacing4,
-                  AppTheme.spacing2,
-                  AppTheme.spacing2,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            label,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
+          child: UISheetSurface(
+            child: Column(
+              children: [
+                const SizedBox(height: AppTheme.spacing3),
+                const UISheetHandle(),
+                const SizedBox(height: AppTheme.spacing3),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTheme.spacing4,
+                    0,
+                    AppTheme.spacing2,
+                    AppTheme.spacing2,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: AppTheme.spacing1),
-                          Text(
-                            formatBytes(node.bytes),
+                            const SizedBox(height: AppTheme.spacing1),
+                            Text(
+                              formatBytes(node.bytes),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (node.path != null)
+                        IconButton(
+                          tooltip: l10n.actionCopyPath,
+                          icon: const Icon(Icons.copy_rounded, size: 18),
+                          onPressed: () => _copyPath(context, l10n, node.path!),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(ctx).maybePop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(AppTheme.spacing3),
+                    children: [
+                      if (node.children.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(AppTheme.spacing2),
+                          child: Text(
+                            node.path ?? '',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: cs.onSurfaceVariant,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    if (node.path != null)
-                      IconButton(
-                        tooltip: l10n.actionCopyPath,
-                        icon: const Icon(Icons.copy_rounded, size: 18),
-                        onPressed: () => _copyPath(context, l10n, node.path!),
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.of(ctx).maybePop(),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(AppTheme.spacing3),
-                  children: [
-                    if (node.children.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(AppTheme.spacing2),
-                        child: Text(
-                          node.path ?? '',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
+                        )
+                      else
+                        ...node.children.map(
+                          (child) => StorageNodeTile(
+                            node: child,
+                            totalBytes: max(node.bytes, 1),
+                            depth: 0,
                           ),
                         ),
-                      )
-                    else
-                      ...node.children.map(
-                        (child) => StorageNodeTile(
-                          node: child,
-                          totalBytes: max(node.bytes, 1),
-                          depth: 0,
-                        ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

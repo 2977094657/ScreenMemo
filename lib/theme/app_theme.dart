@@ -22,26 +22,26 @@ class AppTheme {
   static const Color cardForeground = Color(0xFF09090B);
   static const Color popover = Color(0xFFFFFFFF);
   static const Color popoverForeground = Color(0xFF09090B);
-  
+
   // 成功色
   static const Color success = Color(0xFF22C55E);
   static const Color successForeground = Color(0xFFFFFFFF);
-  
+
   // 警告色
   static const Color warning = Color(0xFFF59E0B);
   static const Color warningForeground = Color(0xFFFFFFFF);
-  
+
   // 信息色
   static const Color info = Color(0xFF3B82F6);
   static const Color infoForeground = Color(0xFFFFFFFF);
-  
+
   // 边框半径
   static const double radiusXs = 2.0;
   static const double radiusSm = 4.0;
   static const double radiusMd = 6.0;
   static const double radiusLg = 8.0;
   static const double radiusXl = 12.0;
-  
+
   // 间距
   static const double spacing1 = 4.0;
   static const double spacing2 = 8.0;
@@ -68,10 +68,11 @@ class AppTheme {
       return darkSelectedAccent;
     }
   }
+
   static const double spacing12 = 48.0;
   static const double spacing16 = 64.0;
   static const double spacing20 = 80.0;
-  
+
   // 字体大小
   static const double fontSizeXs = 12.0;
   static const double fontSizeSm = 14.0;
@@ -81,10 +82,10 @@ class AppTheme {
   static const double fontSize2xl = 24.0;
   static const double fontSize3xl = 30.0;
   static const double fontSize4xl = 36.0;
-  
+
   // 阴影（shadcn/ui风格不使用阴影，但保留定义以备需要）
   static const List<BoxShadow> shadowNone = [];
-  
+
   // 黑夜模式颜色配置（自定义要求）
   // 背景: #232427（稍深但非纯黑），文本/图标: #A9B7C6
   static const Color darkPrimary = Color(0xFFA9B7C6);
@@ -106,11 +107,11 @@ class AppTheme {
   static const Color darkCardForeground = Color(0xFFA9B7C6);
   static const Color darkPopover = Color(0xFF2A2D30);
   static const Color darkPopoverForeground = Color(0xFFA9B7C6);
-  
+
   // 暗色模式下用于“选中高亮”的强调色（与灰系区分更明显）
   // 选用 Blue 400：#60A5FA，在深背景上具有良好可读性与克制的纯度
   static const Color darkSelectedAccent = Color(0xFF60A5FA);
-  
+
   /// 获取主题数据
   static ThemeData get lightTheme {
     const ColorScheme cs = ColorScheme.light(
@@ -142,11 +143,23 @@ class AppTheme {
         unselectedItemColor: cs.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
         selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
-        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+        unselectedIconTheme: IconThemeData(
+          color: cs.onSurfaceVariant,
+          size: 18,
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
         dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+        elevation: 0,
+        modalElevation: 0,
+        backgroundColor: cs.surface,
+        modalBackgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radiusLg)),
+        ),
+        clipBehavior: Clip.hardEdge,
       ),
       scaffoldBackgroundColor: background,
       cardTheme: const CardThemeData(
@@ -272,18 +285,9 @@ class AppTheme {
           fontWeight: FontWeight.w500,
           color: foreground,
         ),
-        bodyLarge: TextStyle(
-          fontSize: fontSizeBase,
-          color: foreground,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
-          color: foreground,
-        ),
-        bodySmall: TextStyle(
-          fontSize: fontSizeXs,
-          color: mutedForeground,
-        ),
+        bodyLarge: TextStyle(fontSize: fontSizeBase, color: foreground),
+        bodyMedium: TextStyle(fontSize: fontSizeSm, color: foreground),
+        bodySmall: TextStyle(fontSize: fontSizeXs, color: mutedForeground),
         labelLarge: TextStyle(
           fontSize: fontSizeSm,
           fontWeight: FontWeight.w500,
@@ -302,7 +306,7 @@ class AppTheme {
       ),
     );
   }
-  
+
   /// 获取黑夜模式主题数据
   static ThemeData get darkTheme {
     const ColorScheme cs = ColorScheme.dark(
@@ -334,11 +338,23 @@ class AppTheme {
         unselectedItemColor: cs.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
         selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
-        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+        unselectedIconTheme: IconThemeData(
+          color: cs.onSurfaceVariant,
+          size: 18,
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         // 统一底部菜单拖动条颜色，与首页语言底部菜单一致
         dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+        elevation: 0,
+        modalElevation: 0,
+        backgroundColor: cs.surface,
+        modalBackgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radiusLg)),
+        ),
+        clipBehavior: Clip.hardEdge,
       ),
       scaffoldBackgroundColor: darkBackground,
       iconTheme: const IconThemeData(color: darkForeground),
@@ -396,18 +412,9 @@ class AppTheme {
           fontWeight: FontWeight.w500,
           color: darkForeground,
         ),
-        bodyLarge: TextStyle(
-          fontSize: fontSizeBase,
-          color: darkForeground,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
-          color: darkForeground,
-        ),
-        bodySmall: TextStyle(
-          fontSize: fontSizeXs,
-          color: darkMutedForeground,
-        ),
+        bodyLarge: TextStyle(fontSize: fontSizeBase, color: darkForeground),
+        bodyMedium: TextStyle(fontSize: fontSizeSm, color: darkForeground),
+        bodySmall: TextStyle(fontSize: fontSizeXs, color: darkMutedForeground),
         labelLarge: TextStyle(
           fontSize: fontSizeSm,
           fontWeight: FontWeight.w500,
@@ -498,17 +505,18 @@ class AppTheme {
 
   /// 基于 seed color 构建浅色主题（仅影响 ColorScheme 与关键控件的强调色）
   static ThemeData lightThemeFor(Color seed) {
-    final ColorScheme cs = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.light,
-    ).copyWith(
-      primary: seed,
-      // 与现有设计保持一致的表面与分隔语义
-      surface: background,
-      onSurface: foreground,
-      outline: border,
-      surfaceVariant: muted,
-    );
+    final ColorScheme cs =
+        ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: seed,
+          // 与现有设计保持一致的表面与分隔语义
+          surface: background,
+          onSurface: foreground,
+          outline: border,
+          surfaceVariant: muted,
+        );
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
@@ -518,11 +526,13 @@ class AppTheme {
           return cs.surfaceVariant; // 关闭态使用浅灰拇指，避免出现黑色视觉
         }),
         trackColor: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);
+          if (states.contains(MaterialState.selected))
+            return cs.primary.withOpacity(0.85);
           return cs.surface;
         }),
         trackOutlineColor: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.6);
+          if (states.contains(MaterialState.selected))
+            return cs.primary.withOpacity(0.6);
           return cs.outline; // 关闭态显示外边界以增强可见性
         }),
       ),
@@ -540,10 +550,22 @@ class AppTheme {
         unselectedItemColor: cs.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
         selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
-        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+        unselectedIconTheme: IconThemeData(
+          color: cs.onSurfaceVariant,
+          size: 18,
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+        elevation: 0,
+        modalElevation: 0,
+        backgroundColor: cs.surface,
+        modalBackgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radiusLg)),
+        ),
+        clipBehavior: Clip.hardEdge,
       ),
       scaffoldBackgroundColor: background,
       cardTheme: const CardThemeData(
@@ -669,18 +691,9 @@ class AppTheme {
           fontWeight: FontWeight.w500,
           color: foreground,
         ),
-        bodyLarge: TextStyle(
-          fontSize: fontSizeBase,
-          color: foreground,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
-          color: foreground,
-        ),
-        bodySmall: TextStyle(
-          fontSize: fontSizeXs,
-          color: mutedForeground,
-        ),
+        bodyLarge: TextStyle(fontSize: fontSizeBase, color: foreground),
+        bodyMedium: TextStyle(fontSize: fontSizeSm, color: foreground),
+        bodySmall: TextStyle(fontSize: fontSizeXs, color: mutedForeground),
         labelLarge: TextStyle(
           fontSize: fontSizeSm,
           fontWeight: FontWeight.w500,
@@ -703,16 +716,17 @@ class AppTheme {
   /// 基于 seed color 构建暗色主题（仅影响 ColorScheme 与关键控件的强调色）
   static ThemeData darkThemeFor(Color seed) {
     final Color darkSeed = _effectiveSeedForDark(seed);
-    final ColorScheme cs = ColorScheme.fromSeed(
-      seedColor: darkSeed,
-      brightness: Brightness.dark,
-    ).copyWith(
-      primary: darkSeed,
-      surface: darkCard,
-      onSurface: darkForeground,
-      outline: darkBorder,
-      surfaceVariant: darkInput,
-    );
+    final ColorScheme cs =
+        ColorScheme.fromSeed(
+          seedColor: darkSeed,
+          brightness: Brightness.dark,
+        ).copyWith(
+          primary: darkSeed,
+          surface: darkCard,
+          onSurface: darkForeground,
+          outline: darkBorder,
+          surfaceVariant: darkInput,
+        );
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
@@ -722,11 +736,13 @@ class AppTheme {
           return cs.onSurfaceVariant; // 深色模式下关闭态保持与界面一致的中性颜色
         }),
         trackColor: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.85);
+          if (states.contains(MaterialState.selected))
+            return cs.primary.withOpacity(0.85);
           return cs.surface;
         }),
         trackOutlineColor: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) return cs.primary.withOpacity(0.6);
+          if (states.contains(MaterialState.selected))
+            return cs.primary.withOpacity(0.6);
           return cs.outline;
         }),
       ),
@@ -744,10 +760,22 @@ class AppTheme {
         unselectedItemColor: cs.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
         selectedIconTheme: IconThemeData(color: cs.primary, size: 20),
-        unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 18),
+        unselectedIconTheme: IconThemeData(
+          color: cs.onSurfaceVariant,
+          size: 18,
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         dragHandleColor: cs.onSurfaceVariant.withOpacity(0.4),
+        elevation: 0,
+        modalElevation: 0,
+        backgroundColor: cs.surface,
+        modalBackgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radiusLg)),
+        ),
+        clipBehavior: Clip.hardEdge,
       ),
       scaffoldBackgroundColor: darkBackground,
       iconTheme: const IconThemeData(color: darkForeground),
@@ -805,18 +833,9 @@ class AppTheme {
           fontWeight: FontWeight.w500,
           color: darkForeground,
         ),
-        bodyLarge: TextStyle(
-          fontSize: fontSizeBase,
-          color: darkForeground,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: fontSizeSm,
-          color: darkForeground,
-        ),
-        bodySmall: TextStyle(
-          fontSize: fontSizeXs,
-          color: darkMutedForeground,
-        ),
+        bodyLarge: TextStyle(fontSize: fontSizeBase, color: darkForeground),
+        bodyMedium: TextStyle(fontSize: fontSizeSm, color: darkForeground),
+        bodySmall: TextStyle(fontSize: fontSizeXs, color: darkMutedForeground),
         labelLarge: TextStyle(
           fontSize: fontSizeSm,
           fontWeight: FontWeight.w500,

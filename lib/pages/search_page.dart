@@ -18,6 +18,7 @@ import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
 import 'daily_summary_page.dart';
@@ -263,10 +264,7 @@ class _SearchPageState extends State<SearchPage>
       final String? pkg = d['app_package_name'] as String?;
       if (gid == null || gid <= 0) continue;
       if (pkg == null || pkg.trim().isEmpty) continue;
-      final rec = await ScreenshotDatabase.instance.getScreenshotById(
-        gid,
-        pkg,
-      );
+      final rec = await ScreenshotDatabase.instance.getScreenshotById(gid, pkg);
       if (rec == null) continue;
 
       // 由于索引里无法直接存 capture_time，这里按真实截图时间做一次过滤
@@ -1077,10 +1075,13 @@ class _SearchPageState extends State<SearchPage>
       _filteredSemanticResults = List<ScreenshotRecord>.from(_semanticResults);
       return;
     }
-    _filteredSemanticResults = _semanticResults.where((s) {
-      final Set<String> tags = _semanticTagsByPath[s.filePath] ?? const <String>{};
-      return _semanticSelectedTags.every((t) => tags.contains(t));
-    }).toList(growable: false);
+    _filteredSemanticResults = _semanticResults
+        .where((s) {
+          final Set<String> tags =
+              _semanticTagsByPath[s.filePath] ?? const <String>{};
+          return _semanticSelectedTags.every((t) => tags.contains(t));
+        })
+        .toList(growable: false);
   }
 
   Future<void> _searchSemantic(String query) async {
@@ -1251,8 +1252,10 @@ class _SearchPageState extends State<SearchPage>
           _semanticOffset += moreShots.length;
           _semanticHasMore = rows.length >= _pageSize;
           if (newlyAvailableTags.isNotEmpty) {
-            _semanticAvailableTags =
-                {..._semanticAvailableTags, ...newlyAvailableTags};
+            _semanticAvailableTags = {
+              ..._semanticAvailableTags,
+              ...newlyAvailableTags,
+            };
           }
           _semanticTotalCount = _semanticResults.length;
           _applySemanticTagFilter();
@@ -1311,7 +1314,9 @@ class _SearchPageState extends State<SearchPage>
       final range = _currentTimeRange();
 
       // 同步/追赶索引（兜底：兼容原生端写入）
-      await ScreenshotDatabase.instance.syncSearchIndex(sources: _docIndexSources);
+      await ScreenshotDatabase.instance.syncSearchIndex(
+        sources: _docIndexSources,
+      );
       if (!mounted || token != _searchToken) return;
 
       final results = await ScreenshotDatabase.instance.searchSearchDocsByText(
@@ -1538,6 +1543,7 @@ class _SearchPageState extends State<SearchPage>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => _FilterSheet(
         timeFilter: _timeFilter,
         sizeFilter: _sizeFilter,
@@ -1607,9 +1613,11 @@ class _SearchPageState extends State<SearchPage>
     final List<ScreenshotRecord> sameApp = pkg.isEmpty
         ? pool
         : pool.where((r) => r.appPackageName.trim() == pkg).toList();
-    final int initialIndex =
-        sameApp.indexWhere((r) => r.filePath == record.filePath);
-    final appInfo = _appInfoByPackage[pkg] ??
+    final int initialIndex = sameApp.indexWhere(
+      (r) => r.filePath == record.filePath,
+    );
+    final appInfo =
+        _appInfoByPackage[pkg] ??
         AppInfo(
           packageName: pkg.isNotEmpty ? pkg : record.appPackageName,
           appName: record.appName,
@@ -1659,85 +1667,68 @@ class _SearchPageState extends State<SearchPage>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(ctx).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusMd),
-                  topRight: Radius.circular(AppTheme.radiusMd),
+            return UISheetSurface(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.spacing4,
+                  0,
+                  AppTheme.spacing4,
+                  AppTheme.spacing4,
                 ),
-              ),
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppTheme.spacing4),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 顶部指示器
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.only(
-                            bottom: AppTheme.spacing3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              ctx,
-                            ).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const Center(child: UISheetHandle()),
+                    const SizedBox(height: AppTheme.spacing3),
+                    Text(
+                      l10n.filterByTime,
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.spacing3),
+                    // 时间选项（与筛选 Chip 一致的紧凑间距）
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        _buildTimeChip(
+                          ctx,
+                          'all',
+                          l10n.filterTimeAll,
+                          setSheetState,
                         ),
-                      ),
-                      Text(
-                        l10n.filterByTime,
-                        style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                        _buildTimeChip(
+                          ctx,
+                          'today',
+                          l10n.filterTimeToday,
+                          setSheetState,
                         ),
-                      ),
-                      const SizedBox(height: AppTheme.spacing3),
-                      // 时间选项（与筛选 Chip 一致的紧凑间距）
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: [
-                          _buildTimeChip(
-                            ctx,
-                            'all',
-                            l10n.filterTimeAll,
-                            setSheetState,
-                          ),
-                          _buildTimeChip(
-                            ctx,
-                            'today',
-                            l10n.filterTimeToday,
-                            setSheetState,
-                          ),
-                          _buildTimeChip(
-                            ctx,
-                            'yesterday',
-                            l10n.filterTimeYesterday,
-                            setSheetState,
-                          ),
-                          _buildTimeChip(
-                            ctx,
-                            'last7days',
-                            l10n.filterTimeLast7Days,
-                            setSheetState,
-                          ),
-                          _buildTimeChip(
-                            ctx,
-                            'last30days',
-                            l10n.filterTimeLast30Days,
-                            setSheetState,
-                          ),
-                          _buildCustomDaysChip(ctx, l10n, setSheetState),
-                        ],
-                      ),
-                      const SizedBox(height: AppTheme.spacing2),
-                    ],
-                  ),
+                        _buildTimeChip(
+                          ctx,
+                          'yesterday',
+                          l10n.filterTimeYesterday,
+                          setSheetState,
+                        ),
+                        _buildTimeChip(
+                          ctx,
+                          'last7days',
+                          l10n.filterTimeLast7Days,
+                          setSheetState,
+                        ),
+                        _buildTimeChip(
+                          ctx,
+                          'last30days',
+                          l10n.filterTimeLast30Days,
+                          setSheetState,
+                        ),
+                        _buildCustomDaysChip(ctx, l10n, setSheetState),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                  ],
                 ),
               ),
             );
@@ -2067,14 +2058,12 @@ class _SearchPageState extends State<SearchPage>
               unselectedLabelColor:
                   Theme.of(context).textTheme.bodySmall?.color ??
                   AppTheme.mutedForeground,
-              labelStyle: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
-              unselectedLabelStyle: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(fontWeight: FontWeight.w500),
+              labelStyle: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+              unselectedLabelStyle: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
               dividerColor: Colors.transparent,
               indicatorSize: TabBarIndicatorSize.label,
               indicatorPadding: EdgeInsets.zero,
@@ -2088,27 +2077,29 @@ class _SearchPageState extends State<SearchPage>
                 insets: const EdgeInsets.symmetric(horizontal: 4.0),
               ),
               tabs: [
-                Tab(text: '截图 (${_countingTotal ? '...' : _totalResultsCount})'),
+                Tab(
+                  text: '截图 (${_countingTotal ? '...' : _totalResultsCount})',
+                ),
                 Tab(
                   text: _semanticSearching
                       ? '语义 (...)'
                       : (_semanticSearchFinished
-                          ? '语义 (${_semanticCountingTotal ? '...' : _filteredSemanticCount})'
-                          : '语义'),
+                            ? '语义 (${_semanticCountingTotal ? '...' : _filteredSemanticCount})'
+                            : '语义'),
                 ),
                 Tab(
                   text: _segmentSearching
                       ? '动态 (...)'
                       : (_segmentSearchFinished
-                          ? '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'
-                          : '动态'),
+                            ? '动态 (${_segmentCountingTotal ? '...' : _filteredSegmentCount})'
+                            : '动态'),
                 ),
                 Tab(
                   text: _docSearching
                       ? '更多 (...)'
                       : (_docSearchFinished
-                          ? '更多 (${_docCountingTotal ? '...' : _docTotalCount})'
-                          : '更多'),
+                            ? '更多 (${_docCountingTotal ? '...' : _docTotalCount})'
+                            : '更多'),
                 ),
               ],
             ),
@@ -2280,119 +2271,121 @@ class _SearchPageState extends State<SearchPage>
                         });
                       }
                       // 接近底部时预取下一页
-                      if (n.metrics.pixels >=
-                          n.metrics.maxScrollExtent - 300) {
+                      if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
                         _onScroll();
                       }
                       return false;
                     },
                     child: GridView.builder(
-                    key: _gridKey,
-                    controller: _scrollController,
-                    cacheExtent: MediaQuery.of(context).size.height,
-                    addAutomaticKeepAlives: false,
-                    physics: const ClampingScrollPhysics(),
-                    padding: EdgeInsets.only(
-                      bottom:
-                          MediaQuery.of(context).padding.bottom +
-                          AppTheme.spacing6,
-                    ),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: AppTheme.spacing1,
-                          mainAxisSpacing: AppTheme.spacing1,
-                          childAspectRatio: 0.45,
-                        ),
-                    itemCount: _filteredResults.length + (_loadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (_loadingMore && index == _filteredResults.length) {
-                        return const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                      key: _gridKey,
+                      controller: _scrollController,
+                      cacheExtent: MediaQuery.of(context).size.height,
+                      addAutomaticKeepAlives: false,
+                      physics: const ClampingScrollPhysics(),
+                      padding: EdgeInsets.only(
+                        bottom:
+                            MediaQuery.of(context).padding.bottom +
+                            AppTheme.spacing6,
+                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: AppTheme.spacing1,
+                            mainAxisSpacing: AppTheme.spacing1,
+                            childAspectRatio: 0.45,
                           ),
-                        );
-                      }
-                      final s = _filteredResults[index];
-
-                      // 构建 OCR 标注叠加层（仅可见附近范围才请求与绘制）
-                      Widget? ocrOverlay;
-                      if (!_scrollActive && _shouldLoadBoxesForIndex(index)) {
-                        if (_boxesFutureCache.length > 40) {
-                          _boxesFutureCache.remove(
-                            _boxesFutureCache.keys.first,
+                      itemCount:
+                          _filteredResults.length + (_loadingMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (_loadingMore && index == _filteredResults.length) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                           );
                         }
-                        ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
-                          future: _ensureBoxes(s.filePath),
-                          builder: (context, snapshot) {
-                            final data = snapshot.data;
-                            if (data == null) return const SizedBox.shrink();
-                            final int srcW = (data['width'] as int?) ?? 0;
-                            final int srcH = (data['height'] as int?) ?? 0;
-                            final List<dynamic> raw =
-                                (data['boxes'] as List?) ?? const [];
-                            if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
-                              return const SizedBox.shrink();
-                            }
-                            final List<Rect> rects = <Rect>[];
-                            for (final item in raw) {
-                              if (item is Map) {
-                                final m = Map<String, dynamic>.from(item);
-                                final l = (m['left'] as num?)?.toDouble() ?? 0;
-                                final t = (m['top'] as num?)?.toDouble() ?? 0;
-                                final r = (m['right'] as num?)?.toDouble() ?? 0;
-                                final b =
-                                    (m['bottom'] as num?)?.toDouble() ?? 0;
-                                rects.add(Rect.fromLTRB(l, t, r, b));
+                        final s = _filteredResults[index];
+
+                        // 构建 OCR 标注叠加层（仅可见附近范围才请求与绘制）
+                        Widget? ocrOverlay;
+                        if (!_scrollActive && _shouldLoadBoxesForIndex(index)) {
+                          if (_boxesFutureCache.length > 40) {
+                            _boxesFutureCache.remove(
+                              _boxesFutureCache.keys.first,
+                            );
+                          }
+                          ocrOverlay = FutureBuilder<Map<String, dynamic>?>(
+                            future: _ensureBoxes(s.filePath),
+                            builder: (context, snapshot) {
+                              final data = snapshot.data;
+                              if (data == null) return const SizedBox.shrink();
+                              final int srcW = (data['width'] as int?) ?? 0;
+                              final int srcH = (data['height'] as int?) ?? 0;
+                              final List<dynamic> raw =
+                                  (data['boxes'] as List?) ?? const [];
+                              if (srcW <= 0 || srcH <= 0 || raw.isEmpty) {
+                                return const SizedBox.shrink();
                               }
-                            }
-                            if (rects.isEmpty) return const SizedBox.shrink();
-                            return Positioned.fill(
-                              child: IgnorePointer(
-                                ignoring: true,
-                                child: CustomPaint(
-                                  painter: _OcrBoxesPainter(
-                                    originalWidth: srcW.toDouble(),
-                                    originalHeight: srcH.toDouble(),
-                                    boxes: rects,
+                              final List<Rect> rects = <Rect>[];
+                              for (final item in raw) {
+                                if (item is Map) {
+                                  final m = Map<String, dynamic>.from(item);
+                                  final l =
+                                      (m['left'] as num?)?.toDouble() ?? 0;
+                                  final t = (m['top'] as num?)?.toDouble() ?? 0;
+                                  final r =
+                                      (m['right'] as num?)?.toDouble() ?? 0;
+                                  final b =
+                                      (m['bottom'] as num?)?.toDouble() ?? 0;
+                                  rects.add(Rect.fromLTRB(l, t, r, b));
+                                }
+                              }
+                              if (rects.isEmpty) return const SizedBox.shrink();
+                              return Positioned.fill(
+                                child: IgnorePointer(
+                                  ignoring: true,
+                                  child: CustomPaint(
+                                    painter: _OcrBoxesPainter(
+                                      originalWidth: srcW.toDouble(),
+                                      originalHeight: srcH.toDouble(),
+                                      boxes: rects,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          );
+                        }
+
+                        final bool isNsfw = NsfwPreferenceService.instance
+                            .shouldMaskCached(s);
+
+                        final GlobalKey itemKey = _itemKeys.putIfAbsent(
+                          index,
+                          () => GlobalKey(),
                         );
-                      }
-
-                      final bool isNsfw =
-                          NsfwPreferenceService.instance.shouldMaskCached(s);
-
-                      final GlobalKey itemKey = _itemKeys.putIfAbsent(
-                        index,
-                        () => GlobalKey(),
-                      );
-                      return KeyedSubtree(
-                        key: itemKey,
-                        child: RepaintBoundary(
-                          child: ScreenshotItemWidget(
-                            screenshot: s,
-                            baseDir: _baseDir,
-                            appInfoMap: _appInfoByPackage,
-                            privacyMode: _privacyMode,
-                            showNsfwButton: false,
-                            isNsfwFlagged: isNsfw,
-                            onTap: () => _openViewer(s, index),
-                            showTimelineJumpButton: true,
-                            customOverlay: ocrOverlay,
+                        return KeyedSubtree(
+                          key: itemKey,
+                          child: RepaintBoundary(
+                            child: ScreenshotItemWidget(
+                              screenshot: s,
+                              baseDir: _baseDir,
+                              appInfoMap: _appInfoByPackage,
+                              privacyMode: _privacyMode,
+                              showNsfwButton: false,
+                              isNsfwFlagged: isNsfw,
+                              onTap: () => _openViewer(s, index),
+                              showTimelineJumpButton: true,
+                              customOverlay: ocrOverlay,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
         ),
       ],
     );
@@ -2413,17 +2406,17 @@ class _SearchPageState extends State<SearchPage>
             children: [
               Text(
                 '语义搜索未开始',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppTheme.spacing2),
               Text(
                 '这里会搜索图片的 AI 描述/关键词/标签。为避免输入时卡顿，需要手动触发搜索。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppTheme.mutedForeground,
-                    ),
+                  color: AppTheme.mutedForeground,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppTheme.spacing3),
@@ -2449,10 +2442,9 @@ class _SearchPageState extends State<SearchPage>
       grid = Center(
         child: Text(
           l10n.noResultsForFilters,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: AppTheme.mutedForeground),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     } else {
@@ -2471,8 +2463,7 @@ class _SearchPageState extends State<SearchPage>
             addAutomaticKeepAlives: false,
             physics: const ClampingScrollPhysics(),
             padding: EdgeInsets.only(
-              bottom:
-                  MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
+              bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing6,
             ),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
@@ -2492,8 +2483,8 @@ class _SearchPageState extends State<SearchPage>
                 );
               }
               final s = data[index];
-              final bool isNsfw =
-                  NsfwPreferenceService.instance.shouldMaskCached(s);
+              final bool isNsfw = NsfwPreferenceService.instance
+                  .shouldMaskCached(s);
 
               return RepaintBoundary(
                 child: ScreenshotItemWidget(
@@ -2535,11 +2526,10 @@ class _SearchPageState extends State<SearchPage>
                     Expanded(
                       child: Text(
                         '找到 ${_semanticCountingTotal ? '...' : _filteredSemanticCount} 张图片',
-                        style:
-                            Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: AppTheme.mutedForeground,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -2624,9 +2614,9 @@ class _SearchPageState extends State<SearchPage>
             children: [
               Text(
                 '动态搜索未开始',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppTheme.spacing2),
@@ -2812,9 +2802,9 @@ class _SearchPageState extends State<SearchPage>
             children: [
               Text(
                 '更多搜索未开始',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppTheme.spacing2),
@@ -2840,8 +2830,9 @@ class _SearchPageState extends State<SearchPage>
       );
     }
 
-    final Set<String> activeTypes =
-        _docSelectedTypes.isEmpty ? _docTabTypes : _docSelectedTypes;
+    final Set<String> activeTypes = _docSelectedTypes.isEmpty
+        ? _docTabTypes
+        : _docSelectedTypes;
     final bool hasTypeFilter = activeTypes.length != _docTabTypes.length;
 
     Widget body;
@@ -2849,10 +2840,9 @@ class _SearchPageState extends State<SearchPage>
       body = Center(
         child: Text(
           l10n.noResultsForFilters,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: AppTheme.mutedForeground),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppTheme.mutedForeground),
         ),
       );
     } else {
@@ -2912,11 +2902,10 @@ class _SearchPageState extends State<SearchPage>
                     Expanded(
                       child: Text(
                         '找到 ${_docCountingTotal ? '...' : _docTotalCount} 条内容',
-                        style:
-                            Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: AppTheme.mutedForeground,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.mutedForeground,
+                          fontWeight: FontWeight.w500,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -3031,9 +3020,9 @@ class _SearchPageState extends State<SearchPage>
                 title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               if (tags.trim().isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -3175,8 +3164,9 @@ class _SearchPageState extends State<SearchPage>
       List<String> actions = const <String>[];
 
       if (item is Map) {
-        final Map<String, dynamic> m =
-            item.map((k, v) => MapEntry(k.toString(), v));
+        final Map<String, dynamic> m = item.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
         title = (m['title'] ?? '').toString().trim();
         summary = (m['summary'] ?? m['desc'] ?? m['description'] ?? '')
             .toString()
@@ -3281,7 +3271,7 @@ class _SearchPageState extends State<SearchPage>
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         return DraggableScrollableSheet(
           initialChildSize: 0.86,
@@ -3289,137 +3279,148 @@ class _SearchPageState extends State<SearchPage>
           maxChildSize: 0.95,
           expand: false,
           builder: (_, ctrl) {
-            return SafeArea(
-              child: ListView(
-                controller: ctrl,
-                padding: const EdgeInsets.fromLTRB(
-                  AppTheme.spacing4,
-                  AppTheme.spacing2,
-                  AppTheme.spacing4,
-                  AppTheme.spacing6,
-                ),
+            return UISheetSurface(
+              child: Column(
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                  const SizedBox(height: AppTheme.spacing3),
+                  const UISheetHandle(),
+                  const SizedBox(height: AppTheme.spacing3),
+                  Expanded(
+                    child: ListView(
+                      controller: ctrl,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing6,
+                      ),
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: Theme.of(ctx).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: '复制',
+                              onPressed: content.trim().isEmpty
+                                  ? null
+                                  : () async {
+                                      final String copyText =
+                                          title.trim().isEmpty
+                                          ? content
+                                          : '${title.trim()}\n\n$content';
+                                      await Clipboard.setData(
+                                        ClipboardData(text: copyText),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        const SnackBar(content: Text('已复制')),
+                                      );
+                                    },
+                              icon: const Icon(Icons.copy_rounded),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _buildDocTypeChip(ctx, _docTypeLabel(docType)),
+                            const Spacer(),
+                            if (dateKey.isNotEmpty)
+                              Text(
+                                dateKey,
+                                style: Theme.of(ctx).textTheme.bodySmall
+                                    ?.copyWith(color: AppTheme.mutedForeground),
+                              ),
+                          ],
+                        ),
+                        if (tags.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            tags,
+                            style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: AppTheme.mutedForeground,
+                            ),
                           ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '复制',
-                        onPressed: content.trim().isEmpty
-                            ? null
-                            : () async {
-                                final String copyText = title.trim().isEmpty
-                                    ? content
-                                    : '${title.trim()}\n\n$content';
-                                await Clipboard.setData(
-                                  ClipboardData(text: copyText),
-                                );
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  const SnackBar(content: Text('已复制')),
-                                );
-                              },
-                        icon: const Icon(Icons.copy_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _buildDocTypeChip(ctx, _docTypeLabel(docType)),
-                      const Spacer(),
-                      if (dateKey.isNotEmpty)
-                        Text(
-                          dateKey,
-                          style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.mutedForeground,
+                        ],
+                        const SizedBox(height: 12),
+                        if (content.isNotEmpty)
+                          _buildHighlightedMarkdown(
+                            context: ctx,
+                            text: content,
+                            style: Theme.of(ctx).textTheme.bodyMedium,
+                          )
+                        else
+                          Text(
+                            '（无内容）',
+                            style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                              color: AppTheme.mutedForeground,
+                            ),
                           ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (docType == kSearchDocTypeDailySummary ||
+                                docType == kSearchDocTypeMorningInsights)
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => DailySummaryPage(
+                                        dateKey: dateKey.isNotEmpty
+                                            ? dateKey
+                                            : _todayKey(),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.open_in_new, size: 18),
+                                label: const Text('打开每日总结'),
+                              ),
+                            if (docType == kSearchDocTypeWeeklySummary)
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => WeeklySummaryPage(
+                                        weekStart: dateKey.isNotEmpty
+                                            ? dateKey
+                                            : null,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.open_in_new, size: 18),
+                                label: const Text('打开周总结'),
+                              ),
+                            if (docType == kSearchDocTypePersonaArticle)
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  final style = _parsePersonaStyleFromDoc(doc);
+                                  Navigator.of(ctx).pop();
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          PersonaArticlePage(style: style),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.open_in_new, size: 18),
+                                label: const Text('打开画像文章'),
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
-                  if (tags.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      tags,
-                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.mutedForeground,
-                      ),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  if (content.isNotEmpty)
-                    _buildHighlightedMarkdown(
-                      context: ctx,
-                      text: content,
-                      style: Theme.of(ctx).textTheme.bodyMedium,
-                    )
-                  else
-                    Text(
-                      '（无内容）',
-                      style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.mutedForeground,
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (docType == kSearchDocTypeDailySummary ||
-                          docType == kSearchDocTypeMorningInsights)
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(ctx).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => DailySummaryPage(
-                                  dateKey: dateKey.isNotEmpty
-                                      ? dateKey
-                                      : _todayKey(),
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.open_in_new, size: 18),
-                          label: const Text('打开每日总结'),
-                        ),
-                      if (docType == kSearchDocTypeWeeklySummary)
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(ctx).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => WeeklySummaryPage(
-                                  weekStart: dateKey.isNotEmpty ? dateKey : null,
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.open_in_new, size: 18),
-                          label: const Text('打开周总结'),
-                        ),
-                      if (docType == kSearchDocTypePersonaArticle)
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            final style = _parsePersonaStyleFromDoc(doc);
-                            Navigator.of(ctx).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PersonaArticlePage(style: style),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.open_in_new, size: 18),
-                          label: const Text('打开画像文章'),
-                        ),
-                    ],
                   ),
                 ],
               ),
@@ -3446,163 +3447,146 @@ class _SearchPageState extends State<SearchPage>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return Container(
+            return ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.7,
               ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusMd),
-                  topRight: Radius.circular(AppTheme.radiusMd),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 顶部拖拽指示器
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacing3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  // 标题栏
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '标签筛选',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const Spacer(),
-                        if (_selectedTags.isNotEmpty)
-                          TextButton(
-                            onPressed: () {
-                              setSheetState(() {
-                                _selectedTags.clear();
-                              });
-                              setState(() {});
-                            },
-                            child: const Text('清除全部'),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing2),
-                  // 标签列表
-                  Flexible(
-                    child: SingleChildScrollView(
+              child: UISheetSurface(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const Center(child: UISheetHandle()),
+                    const SizedBox(height: AppTheme.spacing3),
+                    // 标题栏
+                    Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.spacing4,
                       ),
-                      child: Builder(
-                        builder: (context) {
-                          final List<String> tags =
-                              _availableTags
-                                  .map((t) => _cleanTagText(t))
-                                  .where((t) => _isValidTag(t))
-                                  .toList()
-                                ..sort((a, b) => a.compareTo(b));
-
-                          return Wrap(
-                            spacing: 4,
-                            runSpacing: 4,
-                            children: tags.map((tag) {
-                              final selected = _selectedTags.contains(tag);
-                              return FilterChip(
-                                label: Text(
-                                  tag,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: selected
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
-                                    fontWeight: selected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                selected: selected,
-                                showCheckmark: false,
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.surface,
-                                selectedColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.15),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 3,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppTheme.radiusSm,
-                                  ),
-                                ),
-                                side: selected
-                                    ? BorderSide.none
-                                    : BorderSide(
-                                        color: Colors.grey.withOpacity(0.2),
-                                        width: 1,
-                                      ),
-                                onSelected: (value) {
-                                  setSheetState(() {
-                                    if (value) {
-                                      _selectedTags.add(tag);
-                                    } else {
-                                      _selectedTags.remove(tag);
-                                    }
-                                  });
-                                  setState(() {});
-                                },
-                              );
-                            }).toList(),
-                          );
-                        },
+                      child: Row(
+                        children: [
+                          Text(
+                            '标签筛选',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          if (_selectedTags.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setSheetState(() {
+                                  _selectedTags.clear();
+                                });
+                                setState(() {});
+                              },
+                              child: const Text('清除全部'),
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing4),
-                  // 确认按钮
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: AppTheme.spacing4,
-                      right: AppTheme.spacing4,
-                      bottom:
-                          MediaQuery.of(context).padding.bottom +
-                          AppTheme.spacing4,
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text(
-                          '确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})',
+                    const SizedBox(height: AppTheme.spacing2),
+                    // 标签列表
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        child: Builder(
+                          builder: (context) {
+                            final List<String> tags =
+                                _availableTags
+                                    .map((t) => _cleanTagText(t))
+                                    .where((t) => _isValidTag(t))
+                                    .toList()
+                                  ..sort((a, b) => a.compareTo(b));
+
+                            return Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: tags.map((tag) {
+                                final selected = _selectedTags.contains(tag);
+                                return FilterChip(
+                                  label: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: selected
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                      fontWeight: selected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  selected: selected,
+                                  showCheckmark: false,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surface,
+                                  selectedColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.15),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 3,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      AppTheme.radiusSm,
+                                    ),
+                                  ),
+                                  side: selected
+                                      ? BorderSide.none
+                                      : BorderSide(
+                                          color: Colors.grey.withOpacity(0.2),
+                                          width: 1,
+                                        ),
+                                  onSelected: (value) {
+                                    setSheetState(() {
+                                      if (value) {
+                                        _selectedTags.add(tag);
+                                      } else {
+                                        _selectedTags.remove(tag);
+                                      }
+                                    });
+                                    setState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            );
+                          },
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: AppTheme.spacing4),
+                    // 确认按钮
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing4,
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: Text(
+                            '确定 (${_selectedTags.isEmpty ? "全部" : "已选${_selectedTags.length}个"})',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -3613,9 +3597,9 @@ class _SearchPageState extends State<SearchPage>
 
   void _showSemanticTagFilterSheet() {
     if (_semanticAvailableTags.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可用标签')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('暂无可用标签')));
       return;
     }
 
@@ -3629,152 +3613,144 @@ class _SearchPageState extends State<SearchPage>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return Container(
+            return ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.7,
               ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusMd),
-                  topRight: Radius.circular(AppTheme.radiusMd),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacing3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant
-                            .withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '标签筛选',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        const Spacer(),
-                        if (_semanticSelectedTags.isNotEmpty)
-                          TextButton(
-                            onPressed: () {
-                              setSheetState(() => _semanticSelectedTags.clear());
-                              setState(() {
-                                _semanticSelectedTags.clear();
-                                _applySemanticTagFilter();
-                              });
-                            },
-                            child: const Text('清除'),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing2),
-                  Expanded(
-                    child: SingleChildScrollView(
+              child: UISheetSurface(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const Center(child: UISheetHandle()),
+                    const SizedBox(height: AppTheme.spacing3),
+                    Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.spacing4,
                       ),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: ordered.map((tag) {
-                          final bool selected = _semanticSelectedTags.contains(tag);
-                          return FilterChip(
-                            label: Text(
-                              tag,
-                              style: TextStyle(
-                                color: selected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.onSurface,
-                                fontWeight:
-                                    selected ? FontWeight.w600 : FontWeight.normal,
-                              ),
+                      child: Row(
+                        children: [
+                          Text(
+                            '标签筛选',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const Spacer(),
+                          if (_semanticSelectedTags.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setSheetState(
+                                  () => _semanticSelectedTags.clear(),
+                                );
+                                setState(() {
+                                  _semanticSelectedTags.clear();
+                                  _applySemanticTagFilter();
+                                });
+                              },
+                              child: const Text('清除'),
                             ),
-                            selected: selected,
-                            showCheckmark: false,
-                            backgroundColor:
-                                Theme.of(context).colorScheme.surface,
-                            selectedColor: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.15),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 3,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(AppTheme.radiusSm),
-                            ),
-                            side: selected
-                                ? BorderSide.none
-                                : BorderSide(
-                                    color: Colors.grey.withOpacity(0.2),
-                                    width: 1,
-                                  ),
-                            onSelected: (value) {
-                              setSheetState(() {
-                                if (value) {
-                                  _semanticSelectedTags.add(tag);
-                                } else {
-                                  _semanticSelectedTags.remove(tag);
-                                }
-                              });
-                              setState(() {
-                                if (value) {
-                                  _semanticSelectedTags.add(tag);
-                                } else {
-                                  _semanticSelectedTags.remove(tag);
-                                }
-                                _applySemanticTagFilter();
-                              });
-                            },
-                          );
-                        }).toList(growable: false),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing4),
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: AppTheme.spacing4,
-                      right: AppTheme.spacing4,
-                      bottom: MediaQuery.of(context).padding.bottom +
-                          AppTheme.spacing4,
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text(
-                          '确定 (${_semanticSelectedTags.isEmpty ? "全部" : "已选${_semanticSelectedTags.length}个"})',
+                    const SizedBox(height: AppTheme.spacing2),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: ordered
+                              .map((tag) {
+                                final bool selected = _semanticSelectedTags
+                                    .contains(tag);
+                                return FilterChip(
+                                  label: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                      fontWeight: selected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  selected: selected,
+                                  showCheckmark: false,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surface,
+                                  selectedColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.15),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 3,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      AppTheme.radiusSm,
+                                    ),
+                                  ),
+                                  side: selected
+                                      ? BorderSide.none
+                                      : BorderSide(
+                                          color: Colors.grey.withOpacity(0.2),
+                                          width: 1,
+                                        ),
+                                  onSelected: (value) {
+                                    setSheetState(() {
+                                      if (value) {
+                                        _semanticSelectedTags.add(tag);
+                                      } else {
+                                        _semanticSelectedTags.remove(tag);
+                                      }
+                                    });
+                                    setState(() {
+                                      if (value) {
+                                        _semanticSelectedTags.add(tag);
+                                      } else {
+                                        _semanticSelectedTags.remove(tag);
+                                      }
+                                      _applySemanticTagFilter();
+                                    });
+                                  },
+                                );
+                              })
+                              .toList(growable: false),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: AppTheme.spacing4),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing4,
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: Text(
+                            '确定 (${_semanticSelectedTags.isEmpty ? "全部" : "已选${_semanticSelectedTags.length}个"})',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -3792,9 +3768,10 @@ class _SearchPageState extends State<SearchPage>
       kSearchDocTypeFavoriteNote,
     ];
     final Set<String> active =
-        (_docSelectedTypes.isEmpty || _docSelectedTypes.length == _docTabTypes.length)
-            ? <String>{}
-            : Set<String>.from(_docSelectedTypes);
+        (_docSelectedTypes.isEmpty ||
+            _docSelectedTypes.length == _docTabTypes.length)
+        ? <String>{}
+        : Set<String>.from(_docSelectedTypes);
     final Set<String> temp = Set<String>.from(active);
 
     showModalBottomSheet(
@@ -3804,172 +3781,161 @@ class _SearchPageState extends State<SearchPage>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return Container(
+            return ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.7,
               ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusMd),
-                  topRight: Radius.circular(AppTheme.radiusMd),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacing3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant
-                            .withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '类型筛选',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        const Spacer(),
-                        if (temp.isNotEmpty)
-                          TextButton(
-                            onPressed: () {
-                              setSheetState(() => temp.clear());
-                            },
-                            child: const Text('清除筛选'),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing2),
-                  Flexible(
-                    child: SingleChildScrollView(
+              child: UISheetSurface(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const Center(child: UISheetHandle()),
+                    const SizedBox(height: AppTheme.spacing3),
+                    Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.spacing4,
                       ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: ordered.map((type) {
-                            final String label = _docTypeLabel(type);
-                            final bool selected = temp.contains(type);
-                            return FilterChip(
-                              label: Text(
-                                label,
-                                style: TextStyle(
-                                  color: selected
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.onSurface,
-                                  fontWeight:
-                                      selected ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              ),
-                              selected: selected,
-                              showCheckmark: false,
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.surface,
-                              selectedColor: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withOpacity(0.15),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 3,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppTheme.radiusSm),
-                              ),
-                              side: selected
-                                  ? BorderSide.none
-                                  : BorderSide(
-                                      color: Colors.grey.withOpacity(0.2),
-                                      width: 1,
-                                    ),
-                              onSelected: (value) {
-                                setSheetState(() {
-                                  if (value) {
-                                    temp.add(type);
-                                  } else {
-                                    temp.remove(type);
-                                  }
-                                });
+                      child: Row(
+                        children: [
+                          Text(
+                            '类型筛选',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          if (temp.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setSheetState(() => temp.clear());
                               },
-                            );
-                          }).toList(growable: false),
+                              child: const Text('清除筛选'),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: ordered
+                                .map((type) {
+                                  final String label = _docTypeLabel(type);
+                                  final bool selected = temp.contains(type);
+                                  return FilterChip(
+                                    label: Text(
+                                      label,
+                                      style: TextStyle(
+                                        color: selected
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface,
+                                        fontWeight: selected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                    selected: selected,
+                                    showCheckmark: false,
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.surface,
+                                    selectedColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary.withOpacity(0.15),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radiusSm,
+                                      ),
+                                    ),
+                                    side: selected
+                                        ? BorderSide.none
+                                        : BorderSide(
+                                            color: Colors.grey.withOpacity(0.2),
+                                            width: 1,
+                                          ),
+                                    onSelected: (value) {
+                                      setSheetState(() {
+                                        if (value) {
+                                          temp.add(type);
+                                        } else {
+                                          temp.remove(type);
+                                        }
+                                      });
+                                    },
+                                  );
+                                })
+                                .toList(growable: false),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing4),
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: AppTheme.spacing4,
-                      right: AppTheme.spacing4,
-                      bottom: MediaQuery.of(context).padding.bottom +
-                          AppTheme.spacing4,
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final Set<String> nextRaw = Set<String>.from(temp);
-                          final Set<String> next =
-                              (nextRaw.isEmpty ||
-                                      nextRaw.length == _docTabTypes.length)
-                                  ? <String>{}
-                                  : nextRaw;
+                    const SizedBox(height: AppTheme.spacing4),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing4,
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            final Set<String> nextRaw = Set<String>.from(temp);
+                            final Set<String> next =
+                                (nextRaw.isEmpty ||
+                                    nextRaw.length == _docTabTypes.length)
+                                ? <String>{}
+                                : nextRaw;
 
-                          bool equals(Set<String> a, Set<String> b) {
-                            if (a.length != b.length) return false;
-                            for (final v in a) {
-                              if (!b.contains(v)) return false;
+                            bool equals(Set<String> a, Set<String> b) {
+                              if (a.length != b.length) return false;
+                              for (final v in a) {
+                                if (!b.contains(v)) return false;
+                              }
+                              return true;
                             }
-                            return true;
-                          }
 
-                          final bool changed = !equals(next, active);
-                          Navigator.of(context).pop();
-                          if (!changed) return;
-                          setState(() {
-                            _docSelectedTypes = next;
-                          });
-                          if (_docSearchFinished &&
-                              _lastQuery.trim().isNotEmpty &&
-                              _tabController.index == 3) {
-                            // ignore: unawaited_futures
-                            _searchDocs(_lastQuery);
-                          }
-                        },
-                        child: Text(
-                          '确定 (${(temp.isEmpty || temp.length == _docTabTypes.length) ? "全部" : "已选${temp.length}类"})',
+                            final bool changed = !equals(next, active);
+                            Navigator.of(context).pop();
+                            if (!changed) return;
+                            setState(() {
+                              _docSelectedTypes = next;
+                            });
+                            if (_docSearchFinished &&
+                                _lastQuery.trim().isNotEmpty &&
+                                _tabController.index == 3) {
+                              // ignore: unawaited_futures
+                              _searchDocs(_lastQuery);
+                            }
+                          },
+                          child: Text(
+                            '确定 (${(temp.isEmpty || temp.length == _docTabTypes.length) ? "全部" : "已选${temp.length}类"})',
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -4130,9 +4096,12 @@ class _SearchPageState extends State<SearchPage>
       'output_text': outputText,
     };
     final String summaryAll = _extractOverallSummary(resultMeta, sj);
-    final List<String> mergedParts =
-        merged ? splitMergedEventSummaryParts(summaryAll) : const <String>[];
-    final String summary = mergedParts.isNotEmpty ? mergedParts.first : summaryAll;
+    final List<String> mergedParts = merged
+        ? splitMergedEventSummaryParts(summaryAll)
+        : const <String>[];
+    final String summary = mergedParts.isNotEmpty
+        ? mergedParts.first
+        : summaryAll;
     final List<String> tags = _extractCategories(resultMeta, sj);
 
     // 解析应用包名
@@ -4291,9 +4260,12 @@ class _SearchPageState extends State<SearchPage>
       'output_text': outputText,
     };
     final String summaryAll = _extractOverallSummary(resultMeta, sj);
-    final List<String> mergedParts =
-        merged ? splitMergedEventSummaryParts(summaryAll) : const <String>[];
-    final String summary = mergedParts.isNotEmpty ? mergedParts.first : summaryAll;
+    final List<String> mergedParts = merged
+        ? splitMergedEventSummaryParts(summaryAll)
+        : const <String>[];
+    final String summary = mergedParts.isNotEmpty
+        ? mergedParts.first
+        : summaryAll;
     final List<String> originalSummaries = mergedParts.length > 1
         ? mergedParts.sublist(1)
         : const <String>[];
@@ -4348,37 +4320,21 @@ class _SearchPageState extends State<SearchPage>
           maxChildSize: 0.95,
           expand: false,
           builder: (_, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(ctx).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusMd),
-                  topRight: Radius.circular(AppTheme.radiusMd),
-                ),
-              ),
+            return UISheetSurface(
               child: Column(
                 children: [
-                  // 顶部拖拽指示器
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacing3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          ctx,
-                        ).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  // 内容
+                  const SizedBox(height: AppTheme.spacing3),
+                  const UISheetHandle(),
+                  const SizedBox(height: AppTheme.spacing3),
                   Expanded(
                     child: ListView(
                       controller: scrollController,
-                      padding: const EdgeInsets.all(AppTheme.spacing4),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing6,
+                      ),
                       children: [
                         // 时间
                         Text(
@@ -4457,19 +4413,19 @@ class _SearchPageState extends State<SearchPage>
                                   .colorScheme
                                   .surfaceContainerHighest
                                   .withOpacity(0.28),
-                              borderRadius:
-                                  BorderRadius.circular(AppTheme.radiusSm),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
                               border: Border.all(
-                                color: Theme.of(ctx)
-                                    .colorScheme
-                                    .outline
-                                    .withOpacity(0.22),
+                                color: Theme.of(
+                                  ctx,
+                                ).colorScheme.outline.withOpacity(0.22),
                               ),
                             ),
                             child: Theme(
-                              data: Theme.of(ctx).copyWith(
-                                dividerColor: Colors.transparent,
-                              ),
+                              data: Theme.of(
+                                ctx,
+                              ).copyWith(dividerColor: Colors.transparent),
                               child: ExpansionTile(
                                 key: PageStorageKey<String>(
                                   'seg:$segmentId:mergedOriginalsDetail',
@@ -4484,78 +4440,79 @@ class _SearchPageState extends State<SearchPage>
                                   AppTheme.spacing3,
                                 ),
                                 title: Text(
-                                  AppLocalizations.of(ctx)
-                                      .mergedOriginalEventsTitle(
-                                        originalSummaries.length,
-                                      ),
-                                  style: Theme.of(ctx)
-                                      .textTheme
-                                      .bodyMedium
+                                  AppLocalizations.of(
+                                    ctx,
+                                  ).mergedOriginalEventsTitle(
+                                    originalSummaries.length,
+                                  ),
+                                  style: Theme.of(ctx).textTheme.bodyMedium
                                       ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                                 children: originalSummaries
                                     .asMap()
                                     .entries
                                     .map((entry) {
-                                  final int index = entry.key;
-                                  final String part = entry.value;
-                                  return Container(
-                                    margin: EdgeInsets.only(
-                                      top: index == 0
-                                          ? 0
-                                          : AppTheme.spacing2,
-                                    ),
-                                    padding: const EdgeInsets.all(
-                                      AppTheme.spacing3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx)
-                                          .colorScheme
-                                          .surface
-                                          .withOpacity(0.45),
-                                      borderRadius: BorderRadius.circular(
-                                        AppTheme.radiusSm,
-                                      ),
-                                      border: Border(
-                                        left: BorderSide(
+                                      final int index = entry.key;
+                                      final String part = entry.value;
+                                      return Container(
+                                        margin: EdgeInsets.only(
+                                          top: index == 0
+                                              ? 0
+                                              : AppTheme.spacing2,
+                                        ),
+                                        padding: const EdgeInsets.all(
+                                          AppTheme.spacing3,
+                                        ),
+                                        decoration: BoxDecoration(
                                           color: Theme.of(ctx)
                                               .colorScheme
-                                              .outline
+                                              .surface
                                               .withOpacity(0.45),
-                                          width: 2,
+                                          borderRadius: BorderRadius.circular(
+                                            AppTheme.radiusSm,
+                                          ),
+                                          border: Border(
+                                            left: BorderSide(
+                                              color: Theme.of(ctx)
+                                                  .colorScheme
+                                                  .outline
+                                                  .withOpacity(0.45),
+                                              width: 2,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        Text(
-                                          AppLocalizations.of(ctx)
-                                              .mergedOriginalEventTitle(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            Text(
+                                              AppLocalizations.of(
+                                                ctx,
+                                              ).mergedOriginalEventTitle(
                                                 index + 1,
                                               ),
-                                          style: Theme.of(ctx)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color:
-                                                    AppTheme.mutedForeground,
-                                                fontWeight: FontWeight.w600,
-                                              ),
+                                              style: Theme.of(ctx)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: AppTheme
+                                                        .mutedForeground,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            _buildHighlightedMarkdown(
+                                              context: ctx,
+                                              text: part,
+                                              style: Theme.of(
+                                                ctx,
+                                              ).textTheme.bodyMedium,
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(height: 6),
-                                        _buildHighlightedMarkdown(
-                                          context: ctx,
-                                          text: part,
-                                          style: Theme.of(ctx)
-                                              .textTheme
-                                              .bodyMedium,
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(growable: false),
+                                      );
+                                    })
+                                    .toList(growable: false),
                               ),
                             ),
                           ),
@@ -4583,10 +4540,8 @@ class _SearchPageState extends State<SearchPage>
                             itemCount: sampleRecords.length,
                             itemBuilder: (c, i) {
                               final rec = sampleRecords[i];
-                              final bool isNsfw =
-                                  NsfwPreferenceService.instance.shouldMaskCached(
-                                    rec,
-                                  );
+                              final bool isNsfw = NsfwPreferenceService.instance
+                                  .shouldMaskCached(rec);
                               return ClipRRect(
                                 borderRadius: BorderRadius.circular(
                                   AppTheme.radiusSm,
@@ -4781,133 +4736,132 @@ class _FilterSheetState extends State<_FilterSheet> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Container(
-      padding: EdgeInsets.only(
-        left: AppTheme.spacing3,
-        right: AppTheme.spacing3,
-        top: AppTheme.spacing3,
-        bottom: MediaQuery.of(context).padding.bottom + AppTheme.spacing3,
-      ),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppTheme.radiusMd),
+    return UISheetSurface(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTheme.spacing3,
+          0,
+          AppTheme.spacing3,
+          AppTheme.spacing3,
         ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 标题栏
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                l10n.searchFiltersTitle,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: AppTheme.spacing3),
+            const Center(child: UISheetHandle()),
+            const SizedBox(height: AppTheme.spacing3),
+            // 标题栏
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  l10n.searchFiltersTitle,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 大小筛选
-          Text(
-            l10n.filterBySize,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              _buildFilterChip(
-                l10n.filterSizeAll,
-                'all',
-                _sizeFilter,
-                (v) => setState(() => _sizeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterSizeSmall,
-                'small',
-                _sizeFilter,
-                (v) => setState(() => _sizeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterSizeMedium,
-                'medium',
-                _sizeFilter,
-                (v) => setState(() => _sizeFilter = v),
-              ),
-              _buildFilterChip(
-                l10n.filterSizeLarge,
-                'large',
-                _sizeFilter,
-                (v) => setState(() => _sizeFilter = v),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-          // 按钮栏
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    widget.onReset();
-                    Navigator.pop(context);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    side: BorderSide(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.5),
-                      width: 1,
+            // 大小筛选
+            Text(
+              l10n.filterBySize,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                _buildFilterChip(
+                  l10n.filterSizeAll,
+                  'all',
+                  _sizeFilter,
+                  (v) => setState(() => _sizeFilter = v),
+                ),
+                _buildFilterChip(
+                  l10n.filterSizeSmall,
+                  'small',
+                  _sizeFilter,
+                  (v) => setState(() => _sizeFilter = v),
+                ),
+                _buildFilterChip(
+                  l10n.filterSizeMedium,
+                  'medium',
+                  _sizeFilter,
+                  (v) => setState(() => _sizeFilter = v),
+                ),
+                _buildFilterChip(
+                  l10n.filterSizeLarge,
+                  'large',
+                  _sizeFilter,
+                  (v) => setState(() => _sizeFilter = v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 按钮栏
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      widget.onReset();
+                      Navigator.pop(context);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      side: BorderSide(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.5),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      l10n.resetFilters,
+                      style: const TextStyle(fontSize: 13),
                     ),
                   ),
-                  child: Text(
-                    l10n.resetFilters,
-                    style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      widget.onApply(
+                        _timeFilter,
+                        _sizeFilter,
+                        _customStartDate,
+                        _customEndDate,
+                      );
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: Text(
+                      l10n.applyFilters,
+                      style: const TextStyle(fontSize: 13),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    widget.onApply(
-                      _timeFilter,
-                      _sizeFilter,
-                      _customStartDate,
-                      _customEndDate,
-                    );
-                    Navigator.pop(context);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                  child: Text(
-                    l10n.applyFilters,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

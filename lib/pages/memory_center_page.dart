@@ -96,12 +96,14 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     if (!mounted) return;
     final MemoryProgressState cachedProgress = _service.latestProgress;
     final bool progressRunning = cachedProgress is MemoryProgressRunning;
-    final bool waitingFlag =
-        progressRunning ? _service.waitingForInitialProgress : false;
-    final String? stageLabel =
-        progressRunning ? _service.pendingStageLabel : null;
-    final PersonaArticleCache? cachedArticle =
-        await _articleService.loadCachedArticle();
+    final bool waitingFlag = progressRunning
+        ? _service.waitingForInitialProgress
+        : false;
+    final String? stageLabel = progressRunning
+        ? _service.pendingStageLabel
+        : null;
+    final PersonaArticleCache? cachedArticle = await _articleService
+        .loadCachedArticle();
     setState(() {
       _snapshot =
           _service.latestSnapshot ??
@@ -213,8 +215,9 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         return;
       }
 
-      final Map<String, dynamic>? ctxRow =
-          await _settings.getAIContextRow('memory');
+      final Map<String, dynamic>? ctxRow = await _settings.getAIContextRow(
+        'memory',
+      );
       AIProvider? provider;
       String model = '';
       bool needPersist = false;
@@ -247,10 +250,11 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
 
       provider ??= providers.first;
       if (model.isEmpty) {
-        model = ((provider.extra['active_model'] as String?) ??
-                provider.defaultModel)
-            .toString()
-            .trim();
+        model =
+            ((provider.extra['active_model'] as String?) ??
+                    provider.defaultModel)
+                .toString()
+                .trim();
       }
       final List<String> available = provider.models;
       if (model.isEmpty && available.isNotEmpty) {
@@ -279,10 +283,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         _memoryModel = model;
         _memoryCtxLoading = false;
       });
-      await _service.setExtractionContext(
-        provider: provider,
-        model: model,
-      );
+      await _service.setExtractionContext(provider: provider, model: model);
       if (needPersist && provider.id != null && model.trim().isNotEmpty) {
         await _settings.setAIContextSelection(
           context: 'memory',
@@ -316,12 +317,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
       color: theme.colorScheme.onSurface,
     );
-    final String providerName =
-        (_memoryProvider?.name ?? '').trim().isNotEmpty
-            ? _memoryProvider!.name
-            : '—';
-    final String modelName =
-        (_memoryModel ?? '').trim().isNotEmpty ? _memoryModel!.trim() : '—';
+    final String providerName = (_memoryProvider?.name ?? '').trim().isNotEmpty
+        ? _memoryProvider!.name
+        : '—';
+    final String modelName = (_memoryModel ?? '').trim().isNotEmpty
+        ? _memoryModel!.trim()
+        : '—';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -379,81 +380,97 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext sheetContext) {
         final double maxHeight = MediaQuery.of(context).size.height * 0.7;
-        return SafeArea(
+        return UISheetSurface(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxHeight),
-            child: ListView.separated(
-              itemCount: providers.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (BuildContext itemContext, int index) {
-                final AIProvider provider = providers[index];
-                final bool selected =
-                    (provider.id ?? -1) == activeId && activeId != -1;
-                return ListTile(
-                  leading: SvgPicture.asset(
-                    ModelIconUtils.getProviderIconPath(provider.type),
-                    width: 20,
-                    height: 20,
+            child: Column(
+              children: [
+                const SizedBox(height: AppTheme.spacing3),
+                const UISheetHandle(),
+                const SizedBox(height: AppTheme.spacing3),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: providers.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (BuildContext itemContext, int index) {
+                      final AIProvider provider = providers[index];
+                      final bool selected =
+                          (provider.id ?? -1) == activeId && activeId != -1;
+                      return ListTile(
+                        leading: SvgPicture.asset(
+                          ModelIconUtils.getProviderIconPath(provider.type),
+                          width: 20,
+                          height: 20,
+                        ),
+                        title: Text(provider.name),
+                        subtitle:
+                            (provider.baseUrl != null &&
+                                provider.baseUrl!.trim().isNotEmpty)
+                            ? Text(
+                                provider.baseUrl!.trim(),
+                                style: Theme.of(
+                                  itemContext,
+                                ).textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : null,
+                        trailing: selected
+                            ? Icon(
+                                Icons.check_circle,
+                                color: Theme.of(
+                                  itemContext,
+                                ).colorScheme.primary,
+                              )
+                            : null,
+                        onTap: provider.id == null
+                            ? null
+                            : () async {
+                                String nextModel = (_memoryModel ?? '').trim();
+                                final List<String> available = provider.models;
+                                if (nextModel.isEmpty ||
+                                    (available.isNotEmpty &&
+                                        !available.contains(nextModel))) {
+                                  String fallback =
+                                      ((provider.extra['active_model']
+                                                  as String?) ??
+                                              provider.defaultModel)
+                                          .toString()
+                                          .trim();
+                                  if (fallback.isEmpty &&
+                                      available.isNotEmpty) {
+                                    fallback = available.first;
+                                  }
+                                  nextModel = fallback;
+                                }
+                                await _settings.setAIContextSelection(
+                                  context: 'memory',
+                                  providerId: provider.id!,
+                                  model: nextModel.trim(),
+                                );
+                                if (!mounted) return;
+                                setState(() {
+                                  _memoryProvider = provider;
+                                  _memoryModel = nextModel;
+                                });
+                                await _service.setExtractionContext(
+                                  provider: provider,
+                                  model: nextModel,
+                                );
+                                Navigator.of(sheetContext).pop();
+                                UINotifier.success(
+                                  context,
+                                  t.providerSelectedToast(provider.name),
+                                );
+                              },
+                      );
+                    },
                   ),
-                  title: Text(provider.name),
-                  subtitle: (provider.baseUrl != null &&
-                          provider.baseUrl!.trim().isNotEmpty)
-                      ? Text(
-                          provider.baseUrl!.trim(),
-                          style: Theme.of(itemContext).textTheme.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      : null,
-                  trailing: selected
-                      ? Icon(
-                          Icons.check_circle,
-                          color: Theme.of(itemContext).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: provider.id == null
-                      ? null
-                      : () async {
-                          String nextModel = (_memoryModel ?? '').trim();
-                          final List<String> available = provider.models;
-                          if (nextModel.isEmpty ||
-                              (available.isNotEmpty &&
-                                  !available.contains(nextModel))) {
-                            String fallback =
-                                ((provider.extra['active_model'] as String?) ??
-                                        provider.defaultModel)
-                                    .toString()
-                                    .trim();
-                            if (fallback.isEmpty && available.isNotEmpty) {
-                              fallback = available.first;
-                            }
-                            nextModel = fallback;
-                          }
-                          await _settings.setAIContextSelection(
-                            context: 'memory',
-                            providerId: provider.id!,
-                            model: nextModel.trim(),
-                          );
-                          if (!mounted) return;
-                          setState(() {
-                            _memoryProvider = provider;
-                            _memoryModel = nextModel;
-                          });
-                          await _service.setExtractionContext(
-                            provider: provider,
-                            model: nextModel,
-                          );
-                          Navigator.of(sheetContext).pop();
-                          UINotifier.success(
-                            context,
-                            t.providerSelectedToast(provider.name),
-                          );
-                        },
-                );
-              },
+                ),
+              ],
             ),
           ),
         );
@@ -477,51 +494,62 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext sheetContext) {
         final double maxHeight = MediaQuery.of(context).size.height * 0.7;
-        return SafeArea(
+        return UISheetSurface(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxHeight),
-            child: ListView.separated(
-              itemCount: models.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (BuildContext itemContext, int index) {
-                final String model = models[index];
-                final bool selected = model == active;
-                return ListTile(
-                  leading: SvgPicture.asset(
-                    ModelIconUtils.getIconPath(model),
-                    width: 20,
-                    height: 20,
+            child: Column(
+              children: [
+                const SizedBox(height: AppTheme.spacing3),
+                const UISheetHandle(),
+                const SizedBox(height: AppTheme.spacing3),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: models.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (BuildContext itemContext, int index) {
+                      final String model = models[index];
+                      final bool selected = model == active;
+                      return ListTile(
+                        leading: SvgPicture.asset(
+                          ModelIconUtils.getIconPath(model),
+                          width: 20,
+                          height: 20,
+                        ),
+                        title: Text(model),
+                        trailing: selected
+                            ? Icon(
+                                Icons.check_circle,
+                                color: Theme.of(
+                                  itemContext,
+                                ).colorScheme.primary,
+                              )
+                            : null,
+                        onTap: () async {
+                          await _settings.setAIContextSelection(
+                            context: 'memory',
+                            providerId: provider.id!,
+                            model: model,
+                          );
+                          if (!mounted) return;
+                          setState(() => _memoryModel = model);
+                          await _service.setExtractionContext(
+                            provider: provider,
+                            model: model,
+                          );
+                          Navigator.of(sheetContext).pop();
+                          UINotifier.success(
+                            context,
+                            t.modelSwitchedToast(model),
+                          );
+                        },
+                      );
+                    },
                   ),
-                  title: Text(model),
-                  trailing: selected
-                      ? Icon(
-                          Icons.check_circle,
-                          color: Theme.of(itemContext).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () async {
-                    await _settings.setAIContextSelection(
-                      context: 'memory',
-                      providerId: provider.id!,
-                      model: model,
-                    );
-                    if (!mounted) return;
-                    setState(() => _memoryModel = model);
-                    await _service.setExtractionContext(
-                      provider: provider,
-                      model: model,
-                    );
-                    Navigator.of(sheetContext).pop();
-                    UINotifier.success(
-                      context,
-                      t.modelSwitchedToast(model),
-                    );
-                  },
-                );
-              },
+                ),
+              ],
             ),
           ),
         );
@@ -665,9 +693,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     try {
       final MemoryTag? updated = await _service.confirmTag(tag.id);
       if (!mounted) return;
-      _logInfo(
-        '确认标签成功 tagId=${tag.id} 状态=${(updated ?? tag).status}',
-      );
+      _logInfo('确认标签成功 tagId=${tag.id} 状态=${(updated ?? tag).status}');
       UINotifier.success(
         context,
         AppLocalizations.of(
@@ -746,9 +772,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     required bool forceReprocess,
   }) async {
     if (_initializingHistory) {
-      _logInfo(
-        '跳过历史处理（忙碌中）强制=$forceReprocess',
-      );
+      _logInfo('跳过历史处理（忙碌中）强制=$forceReprocess');
       return;
     }
     _logInfo('发起历史处理请求 强制=$forceReprocess');
@@ -775,9 +799,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     );
     try {
       final int segmentSynced = await _service.syncSegmentsToMemory();
-      _logInfo(
-        '历史处理：动态同步导入=$segmentSynced',
-      );
+      _logInfo('历史处理：动态同步导入=$segmentSynced');
       if (mounted) {
         setState(() => _preparingStageLabel = t.memoryProgressStageSyncChats);
         _service.updatePreparationStage(_preparingStageLabel);
@@ -1255,12 +1277,8 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         Expanded(child: processed),
         const SizedBox(width: AppTheme.spacing2),
         Text(
-          t.memoryProgressNewTagsDetail(
-            progress.newlyDiscoveredTags.length,
-          ),
-          style: bodyStyle.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          t.memoryProgressNewTagsDetail(progress.newlyDiscoveredTags.length),
+          style: bodyStyle.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ],
     );
@@ -1270,10 +1288,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       children: [
         headerRow,
         const SizedBox(height: AppTheme.spacing1),
-        _buildDiscoveredTagList(
-          context,
-          progress.newlyDiscoveredTags,
-        ),
+        _buildDiscoveredTagList(context, progress.newlyDiscoveredTags),
       ],
     );
   }
@@ -1828,10 +1843,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       backgroundColor: Colors.transparent,
       builder: (BuildContext sheetContext) {
         return StatefulBuilder(
-          builder: (
-            BuildContext contentContext,
-            StateSetter sheetSetState,
-          ) {
+          builder: (BuildContext contentContext, StateSetter sheetSetState) {
             _tagSheetStateSetter = sheetSetState;
             final AppLocalizations t = AppLocalizations.of(contentContext);
             final ThemeData sheetTheme = Theme.of(contentContext);
@@ -1841,106 +1853,88 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
             final Color unselectedColor =
                 sheetTheme.textTheme.bodySmall?.color ??
                 AppTheme.mutedForeground;
-            return Container(
-              decoration: BoxDecoration(
-                color: sheetTheme.colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusLg),
-                  topRight: Radius.circular(AppTheme.radiusLg),
-                ),
-              ),
-              child: SafeArea(
-                top: false,
-                child: FractionallySizedBox(
-                  heightFactor: 0.9,
-                  child: DefaultTabController(
-                    length: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(
-                            top: AppTheme.spacing3,
-                            bottom: AppTheme.spacing2,
+
+            return UISheetSurface(
+              child: FractionallySizedBox(
+                heightFactor: 0.9,
+                child: DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const Align(
+                        alignment: Alignment.center,
+                        child: UISheetHandle(),
+                      ),
+                      const SizedBox(height: AppTheme.spacing2),
+                      SizedBox(
+                        height: 40,
+                        child: TabBar(
+                          isScrollable: false,
+                          tabAlignment: TabAlignment.fill,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.spacing4,
                           ),
-                          alignment: Alignment.center,
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: sheetTheme.colorScheme.onSurfaceVariant
-                                  .withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(2),
+                          labelPadding: EdgeInsets.zero,
+                          labelColor: selectedColor,
+                          unselectedLabelColor: unselectedColor,
+                          labelStyle: sheetTheme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          unselectedLabelStyle: sheetTheme.textTheme.bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w500),
+                          dividerColor: Colors.transparent,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          indicatorPadding: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.spacing2,
+                          ),
+                          indicator: UnderlineTabIndicator(
+                            borderSide: BorderSide(
+                              width: 2,
+                              color: selectedColor,
                             ),
                           ),
+                          tabs: [
+                            Tab(text: t.memoryPendingSectionTitle),
+                            Tab(text: t.memoryConfirmedSectionTitle),
+                          ],
                         ),
-                        SizedBox(
-                          height: 40,
-                          child: TabBar(
-                            isScrollable: false,
-                            tabAlignment: TabAlignment.fill,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.spacing4,
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          physics: const ClampingScrollPhysics(),
+                          children: [
+                            _buildTagSheetTab(
+                              contentContext,
+                              title: t.memoryPendingSectionTitle,
+                              emptyText: t.memoryNoPending,
+                              tags: _pendingTags,
+                              showConfirmAction: true,
+                              totalCount: _pendingTotal,
+                              visibleCount: _pendingVisible,
+                              onLoadMore: _pendingVisible < _pendingTotal
+                                  ? _loadMorePending
+                                  : null,
+                              storagePrefix: 'pending',
                             ),
-                            labelPadding: EdgeInsets.zero,
-                            labelColor: selectedColor,
-                            unselectedLabelColor: unselectedColor,
-                            labelStyle: sheetTheme.textTheme.bodySmall
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                            unselectedLabelStyle: sheetTheme.textTheme.bodySmall
-                                ?.copyWith(fontWeight: FontWeight.w500),
-                            dividerColor: Colors.transparent,
-                            indicatorSize: TabBarIndicatorSize.tab,
-                            indicatorPadding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.spacing2,
+                            _buildTagSheetTab(
+                              contentContext,
+                              title: t.memoryConfirmedSectionTitle,
+                              emptyText: t.memoryNoConfirmed,
+                              tags: _confirmedTags,
+                              showConfirmAction: false,
+                              totalCount: _confirmedTotal,
+                              visibleCount: _confirmedVisible,
+                              onLoadMore: _confirmedVisible < _confirmedTotal
+                                  ? _loadMoreConfirmed
+                                  : null,
+                              storagePrefix: 'confirmed',
                             ),
-                            indicator: UnderlineTabIndicator(
-                              borderSide: BorderSide(
-                                width: 2,
-                                color: selectedColor,
-                              ),
-                            ),
-                            tabs: [
-                              Tab(text: t.memoryPendingSectionTitle),
-                              Tab(text: t.memoryConfirmedSectionTitle),
-                            ],
-                          ),
+                          ],
                         ),
-                        Expanded(
-                          child: TabBarView(
-                            physics: const ClampingScrollPhysics(),
-                            children: [
-                              _buildTagSheetTab(
-                                contentContext,
-                                title: t.memoryPendingSectionTitle,
-                                emptyText: t.memoryNoPending,
-                                tags: _pendingTags,
-                                showConfirmAction: true,
-                                totalCount: _pendingTotal,
-                                visibleCount: _pendingVisible,
-                                onLoadMore: _pendingVisible < _pendingTotal
-                                    ? _loadMorePending
-                                    : null,
-                                storagePrefix: 'pending',
-                              ),
-                              _buildTagSheetTab(
-                                contentContext,
-                                title: t.memoryConfirmedSectionTitle,
-                                emptyText: t.memoryNoConfirmed,
-                                tags: _confirmedTags,
-                                showConfirmAction: false,
-                                totalCount: _confirmedTotal,
-                                visibleCount: _confirmedVisible,
-                                onLoadMore: _confirmedVisible < _confirmedTotal
-                                    ? _loadMoreConfirmed
-                                    : null,
-                                storagePrefix: 'confirmed',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),

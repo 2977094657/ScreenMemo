@@ -29,7 +29,9 @@ class ScreenshotViewerPage extends StatefulWidget {
 }
 
 class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
-  static const MethodChannel _platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+  static const MethodChannel _platform = MethodChannel(
+    'com.fqyw.screen_memo/accessibility',
+  );
   late List<ScreenshotRecord> _screenshots;
   late int _currentIndex;
   late String _appName;
@@ -63,8 +65,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     }
   }
 
-  
-
   Future<void> _openCurrentLink() async {
     if (_screenshots.isEmpty) return;
     final url = _screenshots[_currentIndex].pageUrl;
@@ -72,9 +72,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     try {
       // 记录点击打开链接的日志（Flutter 与原生）
       // ignore: unawaited_futures
-      FlutterLogger.info('UI.查看器-打开链接 链接='+url);
+      FlutterLogger.info('UI.查看器-打开链接 链接=' + url);
       // ignore: unawaited_futures
-      FlutterLogger.nativeInfo('UI', '查看器打开链接：'+url);
+      FlutterLogger.nativeInfo('UI', '查看器打开链接：' + url);
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -108,9 +108,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               }
             } catch (e) {
               // ignore: unawaited_futures
-              FlutterLogger.error('UI.查看器-复制链接 失败: '+e.toString());
+              FlutterLogger.error('UI.查看器-复制链接 失败: ' + e.toString());
               // ignore: unawaited_futures
-              FlutterLogger.nativeError('UI', '查看器复制链接失败：'+e.toString());
+              FlutterLogger.nativeError('UI', '查看器复制链接失败：' + e.toString());
               if (mounted) {
                 UINotifier.error(context, 'Copy failed');
               }
@@ -141,7 +141,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     if (_initialized) return;
 
     // 获取路由参数（仅初始化一次，避免后续依赖变化导致索引重置）
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       final List<dynamic>? rawPaths = args['paths'] as List<dynamic>?;
       if (rawPaths != null && rawPaths.isNotEmpty) {
@@ -152,7 +153,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         _singleMode = (args['singleMode'] as bool?) ?? true;
         if (_singleMode) {
           // 仅保留当前索引对应的那一张
-          final String currentPath = paths[(_currentIndex >= 0 && _currentIndex < paths.length) ? _currentIndex : 0];
+          final String currentPath =
+              paths[(_currentIndex >= 0 && _currentIndex < paths.length)
+                  ? _currentIndex
+                  : 0];
           _screenshots = [
             ScreenshotRecord(
               id: null,
@@ -161,27 +165,38 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               filePath: currentPath,
               captureTime: DateTime.now(),
               fileSize: 0,
-            )
+            ),
           ];
           _currentIndex = 0;
         } else {
           _screenshots = paths
-              .map((p) => ScreenshotRecord(
-                    id: null,
-                    appPackageName: 'unknown',
-                    appName: 'Unknown',
-                    filePath: p,
-                    captureTime: DateTime.now(),
-                    fileSize: 0,
-                  ))
+              .map(
+                (p) => ScreenshotRecord(
+                  id: null,
+                  appPackageName: 'unknown',
+                  appName: 'Unknown',
+                  filePath: p,
+                  captureTime: DateTime.now(),
+                  fileSize: 0,
+                ),
+              )
               .toList();
         }
         _appName = (args['appName'] as String?) ?? 'Unknown';
-        _appInfo = (args['appInfo'] as AppInfo?) ??
-            AppInfo(packageName: 'unknown', appName: 'Unknown', icon: null, version: '', isSystemApp: false);
+        _appInfo =
+            (args['appInfo'] as AppInfo?) ??
+            AppInfo(
+              packageName: 'unknown',
+              appName: 'Unknown',
+              icon: null,
+              version: '',
+              isSystemApp: false,
+            );
         // 后台补全元数据（不阻塞UI）
         // ignore: unawaited_futures
-        _hydrateRecordsAndAppInfo(_singleMode ? [_screenshots[0].filePath] : paths);
+        _hydrateRecordsAndAppInfo(
+          _singleMode ? [_screenshots[0].filePath] : paths,
+        );
       } else {
         _screenshots = args['screenshots'] as List<ScreenshotRecord>;
         _currentIndex = args['initialIndex'] as int;
@@ -200,7 +215,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       // 预加载 NSFW 规则与手动标记（不阻塞UI）
       // ignore: unawaited_futures
       NsfwPreferenceService.instance.ensureRulesLoaded();
-      final ids = _screenshots.where((s) => s.id != null).map((s) => s.id!).toList();
+      final ids = _screenshots
+          .where((s) => s.id != null)
+          .map((s) => s.id!)
+          .toList();
       if (ids.isNotEmpty) {
         // ignore: unawaited_futures
         NsfwPreferenceService.instance.preloadManualFlags(
@@ -216,7 +234,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         // ignore: unawaited_futures
         NsfwPreferenceService.instance.preloadAiNsfwFlags(filePaths: paths);
         // ignore: unawaited_futures
-        NsfwPreferenceService.instance.preloadSegmentNsfwFlags(filePaths: paths);
+        NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+          filePaths: paths,
+        );
       }
       // 同步隐私模式
       // ignore: unawaited_futures
@@ -305,9 +325,15 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         for (final e in rawDescs) {
           if (e is! Map) continue;
           final m = Map<String, dynamic>.from(e as Map);
-          final String from = (m['from_file'] ?? m['from'] ?? m['start'] ?? '').toString().trim();
-          final String to = (m['to_file'] ?? m['to'] ?? m['end'] ?? '').toString().trim();
-          final String desc = (m['description'] ?? m['desc'] ?? '').toString().trim();
+          final String from = (m['from_file'] ?? m['from'] ?? m['start'] ?? '')
+              .toString()
+              .trim();
+          final String to = (m['to_file'] ?? m['to'] ?? m['end'] ?? '')
+              .toString()
+              .trim();
+          final String desc = (m['description'] ?? m['desc'] ?? '')
+              .toString()
+              .trim();
           if (desc.isEmpty) continue;
 
           final String a = from.isNotEmpty ? from : to;
@@ -346,7 +372,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           final String rawFile = (m['file'] ?? '').toString().trim();
           if (rawFile.isEmpty) continue;
           final String file = _basename(rawFile);
-          final String desc = (m['summary'] ?? m['summary_md'] ?? m['desc'] ?? '').toString().trim();
+          final String desc =
+              (m['summary'] ?? m['summary_md'] ?? m['desc'] ?? '')
+                  .toString()
+                  .trim();
           if (desc.isEmpty) continue;
           if ((_aiDescByFile[file] ?? '').trim().isNotEmpty) continue;
           _aiDescByFile[file] = desc;
@@ -366,7 +395,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           .toList(growable: false);
       if (paths.isEmpty) return;
 
-      final map = await ScreenshotDatabase.instance.getAiImageMetaByFilePaths(paths);
+      final map = await ScreenshotDatabase.instance.getAiImageMetaByFilePaths(
+        paths,
+      );
       if (!mounted || map.isEmpty) return;
 
       bool changed = false;
@@ -377,7 +408,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         if (row == null) continue;
 
         // 1) tags_json -> tags[]
-        if (!_aiTagsByFile.containsKey(fileName) || (_aiTagsByFile[fileName]?.isEmpty ?? true)) {
+        if (!_aiTagsByFile.containsKey(fileName) ||
+            (_aiTagsByFile[fileName]?.isEmpty ?? true)) {
           final raw = (row['tags_json'] as String?)?.trim();
           if (raw != null && raw.isNotEmpty) {
             final List<String> tags = <String>[];
@@ -417,8 +449,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           if (desc.isNotEmpty) {
             _aiDescByFile[fileName] = desc;
             final range = (row['description_range'] as String?)?.trim();
-            _aiDescRangeByFile[fileName] =
-                (range != null && range.isNotEmpty) ? range : fileName;
+            _aiDescRangeByFile[fileName] = (range != null && range.isNotEmpty)
+                ? range
+                : fileName;
             changed = true;
           }
         }
@@ -490,7 +523,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  const Icon(Icons.chevron_right, size: 18, color: Colors.white70),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Colors.white70,
+                  ),
                 ],
               ),
             ),
@@ -549,7 +586,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final l10n = AppLocalizations.of(ctx);
         String buildCopyText() {
@@ -559,14 +596,18 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           if (descGroups.isNotEmpty) {
             parts.add(l10n.aiImageDescriptionsTitle);
             parts.add(
-              descGroups.map((g) => '${g.label}:\n${g.description}').join('\n\n'),
+              descGroups
+                  .map((g) => '${g.label}:\n${g.description}')
+                  .join('\n\n'),
             );
           }
 
           if (tagLines.isNotEmpty) {
             parts.add(l10n.aiImageTagsTitle);
             parts.add(
-              tagLines.map((t) => '${t.file}: ${t.tags.join(' · ')}').join('\n'),
+              tagLines
+                  .map((t) => '${t.file}: ${t.tags.join(' · ')}')
+                  .join('\n'),
             );
           }
 
@@ -579,97 +620,112 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           maxChildSize: 0.95,
           expand: false,
           builder: (_, ctrl) {
-            return ListView(
-              controller: ctrl,
-              padding: const EdgeInsets.fromLTRB(
-                AppTheme.spacing4,
-                AppTheme.spacing2,
-                AppTheme.spacing4,
-                AppTheme.spacing6,
-              ),
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'AI',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+            return UISheetSurface(
+              child: Column(
+                children: [
+                  const SizedBox(height: AppTheme.spacing3),
+                  const UISheetHandle(),
+                  const SizedBox(height: AppTheme.spacing3),
+                  Expanded(
+                    child: ListView(
+                      controller: ctrl,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing6,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${descGroups.length} ${l10n.aiImageDescriptionsTitle} · ${tagLines.length} ${l10n.aiImageTagsTitle}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.mutedForeground,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'AI',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${descGroups.length} ${l10n.aiImageDescriptionsTitle} · ${tagLines.length} ${l10n.aiImageTagsTitle}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(ctx).textTheme.bodySmall
+                                    ?.copyWith(color: AppTheme.mutedForeground),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: l10n.copyResultsTooltip,
+                              icon: const Icon(
+                                Icons.copy_all_outlined,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () async {
+                                final String text = buildCopyText();
+                                if (text.trim().isEmpty) return;
+                                try {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: text),
+                                  );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(l10n.copySuccess)),
+                                  );
+                                } catch (_) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(l10n.copyFailed)),
+                                  );
+                                }
+                              },
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: l10n.copyResultsTooltip,
-                      icon: const Icon(Icons.copy_all_outlined, size: 18),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () async {
-                        final String text = buildCopyText();
-                        if (text.trim().isEmpty) return;
-                        try {
-                          await Clipboard.setData(ClipboardData(text: text));
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l10n.copySuccess)),
-                          );
-                        } catch (_) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l10n.copyFailed)),
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                if (descGroups.isNotEmpty) ...[
-                  Text(
-                    l10n.aiImageDescriptionsTitle,
-                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...descGroups.map(
-                    (g) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: SelectableText(
-                        '${g.label}:\n${g.description}',
-                        style: Theme.of(ctx).textTheme.bodyMedium,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (tagLines.isNotEmpty) ...[
-                  Text(
-                    l10n.aiImageTagsTitle,
-                    style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...tagLines.map(
-                    (t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: SelectableText(
-                        '${t.file}: ${t.tags.join(' · ')}',
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
+                        const SizedBox(height: 14),
+                        if (descGroups.isNotEmpty) ...[
+                          Text(
+                            l10n.aiImageDescriptionsTitle,
+                            style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...descGroups.map(
+                            (g) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: SelectableText(
+                                '${g.label}:\n${g.description}',
+                                style: Theme.of(ctx).textTheme.bodyMedium,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        if (tagLines.isNotEmpty) ...[
+                          Text(
+                            l10n.aiImageTagsTitle,
+                            style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...tagLines.map(
+                            (t) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: SelectableText(
+                                '${t.file}: ${t.tags.join(' · ')}',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             );
           },
         );
@@ -697,10 +753,18 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   Future<void> _hydrateRecordsAndAppInfo(List<String> paths) async {
     try {
       // ignore: unawaited_futures
-      FlutterLogger.info('UI.Viewer：初始化开始 数量='+paths.length.toString());
-      final recs = await Future.wait(paths.map((p) => ScreenshotDatabase.instance.getScreenshotByPath(p).catchError((_) => null)));
+      FlutterLogger.info('UI.Viewer：初始化开始 数量=' + paths.length.toString());
+      final recs = await Future.wait(
+        paths.map(
+          (p) => ScreenshotDatabase.instance
+              .getScreenshotByPath(p)
+              .catchError((_) => null),
+        ),
+      );
       bool changed = false;
-      final List<ScreenshotRecord> hydrated = List<ScreenshotRecord>.from(_screenshots);
+      final List<ScreenshotRecord> hydrated = List<ScreenshotRecord>.from(
+        _screenshots,
+      );
       for (int i = 0; i < hydrated.length && i < recs.length; i++) {
         final r = recs[i];
         if (r != null) {
@@ -711,10 +775,22 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       // 尝试基于当前项更新 AppInfo
       AppInfo? app;
       try {
-        final head = hydrated[(_currentIndex >= 0 && _currentIndex < hydrated.length) ? _currentIndex : 0];
+        final head =
+            hydrated[(_currentIndex >= 0 && _currentIndex < hydrated.length)
+                ? _currentIndex
+                : 0];
         final pkg = head.appPackageName;
         final apps = await AppSelectionService.instance.getAllInstalledApps();
-        app = apps.firstWhere((a) => a.packageName == pkg, orElse: () => AppInfo(packageName: pkg, appName: head.appName, icon: null, version: '', isSystemApp: false));
+        app = apps.firstWhere(
+          (a) => a.packageName == pkg,
+          orElse: () => AppInfo(
+            packageName: pkg,
+            appName: head.appName,
+            icon: null,
+            version: '',
+            isSystemApp: false,
+          ),
+        );
       } catch (_) {}
       if (!mounted) return;
       setState(() {
@@ -725,38 +801,45 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         }
       });
       // ignore: unawaited_futures
-      FlutterLogger.info('UI.Viewer：初始化完成 有变化='+(changed ? '1' : '0'));
+      FlutterLogger.info('UI.Viewer：初始化完成 有变化=' + (changed ? '1' : '0'));
     } catch (_) {}
   }
 
   /// 预热当前与相邻图片
   Future<void> _precacheAround(int index) async {
     if (!mounted || _screenshots.isEmpty) return;
-    final List<int> candidates = <int>{index, index - 1, index + 1}
-        .where((i) => i >= 0 && i < _screenshots.length)
-        .toList();
+    final List<int> candidates = <int>{
+      index,
+      index - 1,
+      index + 1,
+    }.where((i) => i >= 0 && i < _screenshots.length).toList();
     for (final i in candidates) {
       final f = File(_screenshots[i].filePath);
       try {
         // ignore: unawaited_futures
-        FlutterLogger.debug('UI.Viewer：预缓存 索引='+i.toString());
+        FlutterLogger.debug('UI.Viewer：预缓存 索引=' + i.toString());
         await precacheImage(FileImage(f), context);
       } catch (_) {}
     }
   }
 
-
-
   Future<void> _deleteCurrentImage() async {
     final screenshot = _screenshots[_currentIndex];
-    
+
     final confirmed = await showUIDialog<bool>(
       context: context,
       title: AppLocalizations.of(context).confirmDeleteTitle,
       message: AppLocalizations.of(context).confirmDeleteMessage,
       actions: [
-        UIDialogAction<bool>(text: AppLocalizations.of(context).dialogCancel, result: false),
-        UIDialogAction<bool>(text: AppLocalizations.of(context).actionDelete, style: UIDialogActionStyle.destructive, result: true),
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).dialogCancel,
+          result: false,
+        ),
+        UIDialogAction<bool>(
+          text: AppLocalizations.of(context).actionDelete,
+          style: UIDialogActionStyle.destructive,
+          result: true,
+        ),
       ],
       barrierDismissible: false,
     );
@@ -764,11 +847,16 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     if (confirmed == true && screenshot.id != null) {
       // 记录UI删除操作日志
       // ignore: unawaited_futures
-      FlutterLogger.info('UI.查看器-删除当前-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}');
+      FlutterLogger.info(
+        'UI.查看器-删除当前-发起 id=${screenshot.id} 包=${_appInfo.packageName} 路径=${screenshot.filePath}',
+      );
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo('UI', '查看器删除开始 id=${screenshot.id}');
       try {
-        final success = await ScreenshotService.instance.deleteScreenshot(screenshot.id!, _appInfo.packageName);
+        final success = await ScreenshotService.instance.deleteScreenshot(
+          screenshot.id!,
+          _appInfo.packageName,
+        );
         if (success) {
           // ignore: unawaited_futures
           FlutterLogger.info('UI.查看器-删除当前-成功 id=${screenshot.id}');
@@ -776,7 +864,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           FlutterLogger.nativeInfo('UI', '查看器删除成功 id=${screenshot.id}');
           setState(() {
             _screenshots.removeAt(_currentIndex);
-            
+
             // 调整当前索引
             if (_screenshots.isEmpty) {
               Navigator.of(context).pop(); // 没有图片了，返回上一页
@@ -785,9 +873,12 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               _currentIndex = _screenshots.length - 1;
             }
           });
-          
+
           if (mounted) {
-            UINotifier.success(context, AppLocalizations.of(context).screenshotDeletedToast);
+            UINotifier.success(
+              context,
+              AppLocalizations.of(context).screenshotDeletedToast,
+            );
           }
         } else {
           // ignore: unawaited_futures
@@ -795,7 +886,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           // ignore: unawaited_futures
           FlutterLogger.nativeWarn('UI', '查看器删除失败 id=${screenshot.id}');
           if (mounted) {
-            UINotifier.error(context, AppLocalizations.of(context).deleteFailed);
+            UINotifier.error(
+              context,
+              AppLocalizations.of(context).deleteFailed,
+            );
           }
         }
       } catch (e) {
@@ -804,7 +898,10 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         // ignore: unawaited_futures
         FlutterLogger.nativeError('UI', '查看器删除异常: $e');
         if (mounted) {
-          UINotifier.error(context, AppLocalizations.of(context).deleteFailedWithError(e.toString()));
+          UINotifier.error(
+            context,
+            AppLocalizations.of(context).deleteFailedWithError(e.toString()),
+          );
         }
       }
     }
@@ -821,13 +918,28 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow(AppLocalizations.of(context).labelAppName, screenshot.appName),
-          _buildInfoRow(AppLocalizations.of(context).labelCaptureTime, _formatDateTime(screenshot.captureTime)),
-          _buildInfoRow(AppLocalizations.of(context).labelFilePath, screenshot.filePath),
+          _buildInfoRow(
+            AppLocalizations.of(context).labelAppName,
+            screenshot.appName,
+          ),
+          _buildInfoRow(
+            AppLocalizations.of(context).labelCaptureTime,
+            _formatDateTime(screenshot.captureTime),
+          ),
+          _buildInfoRow(
+            AppLocalizations.of(context).labelFilePath,
+            screenshot.filePath,
+          ),
           if (screenshot.pageUrl != null && screenshot.pageUrl!.isNotEmpty)
-            _buildInfoRow(AppLocalizations.of(context).labelPageLink, screenshot.pageUrl!),
+            _buildInfoRow(
+              AppLocalizations.of(context).labelPageLink,
+              screenshot.pageUrl!,
+            ),
           if (screenshot.fileSize > 0)
-            _buildInfoRow(AppLocalizations.of(context).labelFileSize, _formatFileSize(screenshot.fileSize)),
+            _buildInfoRow(
+              AppLocalizations.of(context).labelFileSize,
+              _formatFileSize(screenshot.fileSize),
+            ),
         ],
       ),
       actions: [UIDialogAction(text: AppLocalizations.of(context).dialogOk)],
@@ -848,17 +960,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             width: 80,
             child: Text(
               '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: labelColor,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w500, color: labelColor),
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: TextStyle(color: valueColor),
-            ),
+            child: Text(value, style: TextStyle(color: valueColor)),
           ),
         ],
       ),
@@ -875,7 +981,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       appBar: _showAppBar
           ? AppBar(
               backgroundColor: Theme.of(context).brightness == Brightness.dark
-                  ? Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85)
+                  ? Theme.of(
+                      context,
+                    ).scaffoldBackgroundColor.withValues(alpha: 0.85)
                   : Colors.black.withValues(alpha: 0.7),
               elevation: 0,
               title: Row(
@@ -935,7 +1043,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   IconButton(
                     icon: const Icon(Icons.auto_awesome_outlined),
                     onPressed: _showAiMetaOverview,
-                    tooltip: AppLocalizations.of(context).aiImageDescriptionsTitle,
+                    tooltip: AppLocalizations.of(
+                      context,
+                    ).aiImageDescriptionsTitle,
                   ),
                 if (_screenshots.isNotEmpty &&
                     _screenshots[_currentIndex].pageUrl != null &&
@@ -1003,7 +1113,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               onPageChanged: _singleMode
                   ? null
                   : (index) {
-                      setState(() { _currentIndex = index; });
+                      setState(() {
+                        _currentIndex = index;
+                      });
                       _precacheAround(index);
                     },
             ),
@@ -1016,11 +1128,16 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   final id = s.id;
                   final fileName = _basename(s.filePath);
                   final aiTags = _aiTagsByFile[fileName] ?? const <String>[];
-                  final bool aiNsfw = aiTags.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
-                  final bool revealed = (id != null && _revealedIds.contains(id)) ||
+                  final bool aiNsfw = aiTags.any(
+                    (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                  );
+                  final bool revealed =
+                      (id != null && _revealedIds.contains(id)) ||
                       (id == null && _revealedPaths.contains(s.filePath));
-                  final masked = _privacyMode &&
-                      (aiNsfw || NsfwPreferenceService.instance.shouldMaskCached(s)) &&
+                  final masked =
+                      _privacyMode &&
+                      (aiNsfw ||
+                          NsfwPreferenceService.instance.shouldMaskCached(s)) &&
                       !revealed;
                   if (!masked) return const SizedBox.shrink();
                   return Stack(
@@ -1031,7 +1148,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           ignoring: true,
                           child: BackdropFilter(
                             filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                            child: Container(color: Colors.black.withValues(alpha: 0.35)),
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.35),
+                            ),
                           ),
                         ),
                       ),
@@ -1041,17 +1160,29 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.visibility_off_rounded, color: Colors.white70, size: 28),
+                              const Icon(
+                                Icons.visibility_off_rounded,
+                                color: Colors.white70,
+                                size: 28,
+                              ),
                               const SizedBox(height: 8),
                               Text(
                                 AppLocalizations.of(context).nsfwWarningTitle,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                AppLocalizations.of(context).nsfwWarningSubtitle,
-                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                AppLocalizations.of(
+                                  context,
+                                ).nsfwWarningSubtitle,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 16),
@@ -1069,16 +1200,24 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                                     });
                                   },
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white.withValues(alpha: 0.9),
+                                    backgroundColor: Colors.white.withValues(
+                                      alpha: 0.9,
+                                    ),
                                     foregroundColor: Colors.black87,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radiusMd,
+                                      ),
                                     ),
                                     padding: EdgeInsets.zero,
                                     elevation: 0,
-                                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                                    textStyle: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                  child: Text(AppLocalizations.of(context).show),
+                                  child: Text(
+                                    AppLocalizations.of(context).show,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1097,9 +1236,7 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
             // 按需求：大图查看页不显示顶部链接遮罩，仅保留右上角链接图标
             if (Theme.of(context).brightness == Brightness.dark)
               IgnorePointer(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.5),
-                ),
+                child: Container(color: Colors.black.withValues(alpha: 0.5)),
               ),
           ],
         ),
@@ -1139,9 +1276,12 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
 
   Future<void> _loadPrivacyMode() async {
     try {
-      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
+      final enabled = await AppSelectionService.instance
+          .getPrivacyModeEnabled();
       if (mounted) {
-        setState(() { _privacyMode = enabled; });
+        setState(() {
+          _privacyMode = enabled;
+        });
       }
     } catch (_) {}
   }
@@ -1159,16 +1299,26 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     final actionMark = !isFlagged;
     final result = await showModalBottomSheet<String>(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return SafeArea(
+        return UISheetSurface(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: AppTheme.spacing3),
+              const UISheetHandle(),
+              const SizedBox(height: AppTheme.spacing2),
               ListTile(
-                leading: Icon(actionMark ? Icons.visibility_off : Icons.visibility),
-                title: Text(actionMark ? l10n.manualMarkNsfw : l10n.manualUnmarkNsfw),
-                onTap: () => Navigator.of(ctx).pop(actionMark ? 'mark' : 'unmark'),
+                leading: Icon(
+                  actionMark ? Icons.visibility_off : Icons.visibility,
+                ),
+                title: Text(
+                  actionMark ? l10n.manualMarkNsfw : l10n.manualUnmarkNsfw,
+                ),
+                onTap: () =>
+                    Navigator.of(ctx).pop(actionMark ? 'mark' : 'unmark'),
               ),
+              const SizedBox(height: AppTheme.spacing2),
             ],
           ),
         );
@@ -1189,13 +1339,14 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
           _revealedIds.remove(id);
         }
       });
-      UINotifier.success(context, result == 'mark' ? l10n.manualMarkSuccess : l10n.manualUnmarkSuccess);
+      UINotifier.success(
+        context,
+        result == 'mark' ? l10n.manualMarkSuccess : l10n.manualUnmarkSuccess,
+      );
     } else {
       UINotifier.error(context, l10n.manualMarkFailed);
     }
   }
-
-
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.year}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.day.toString().padLeft(2, '0')} '

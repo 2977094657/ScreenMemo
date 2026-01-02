@@ -3902,7 +3902,7 @@ class _AISettingsPageState extends State<AISettingsPage>
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final currentId = _ctxChatProvider?.id ?? -1;
         // 控制器与文本持久化，避免键盘折叠时内容丢失
@@ -3930,9 +3930,12 @@ class _AISettingsPageState extends State<AISettingsPage>
             }
             return FractionallySizedBox(
               heightFactor: 0.9,
-              child: SafeArea(
+              child: UISheetSurface(
                 child: Column(
                   children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const UISheetHandle(),
+                    const SizedBox(height: AppTheme.spacing3),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: TextField(
@@ -4136,7 +4139,7 @@ class _AISettingsPageState extends State<AISettingsPage>
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final active = (_ctxChatModel ?? '').trim();
         // 控制器与文本持久化，避免键盘折叠时内容丢失
@@ -4155,9 +4158,12 @@ class _AISettingsPageState extends State<AISettingsPage>
             }
             return FractionallySizedBox(
               heightFactor: 0.9,
-              child: SafeArea(
+              child: UISheetSurface(
                 child: Column(
                   children: [
+                    const SizedBox(height: AppTheme.spacing3),
+                    const UISheetHandle(),
+                    const SizedBox(height: AppTheme.spacing3),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: TextField(
