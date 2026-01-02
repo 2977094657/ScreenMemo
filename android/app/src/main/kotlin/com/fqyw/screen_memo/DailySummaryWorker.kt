@@ -64,12 +64,12 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             FileLogger.init(applicationContext)
         } catch (_: Exception) {}
         val dateKey = inputData.getString(KEY_DATE) ?: todayKey()
-        try { FileLogger.i(TAG, "doWork: date=$dateKey") } catch (_: Exception) {}
+        try { FileLogger.i(TAG, "doWork：日期=$dateKey") } catch (_: Exception) {}
         return try {
             val ok = generateForDate(applicationContext, dateKey)
             if (ok) Result.success() else Result.retry()
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "daily worker failed: ${e.message}", e) } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "每日总结 Worker 执行失败：${e.message}", e) } catch (_: Exception) {}
             Result.retry()
         }
     }
@@ -93,7 +93,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .build()
                 WorkManager.getInstance(ctx).enqueue(req)
-                try { FileLogger.i(TAG, "enqueueOnce: date=$dateKey enqueued") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "enqueueOnce：date=$dateKey 已入队") } catch (_: Exception) {}
             } catch (_: Exception) {}
         }
 
@@ -121,7 +121,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 val path = resolveMasterDbPath(context) ?: return null
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
             } catch (e: Exception) {
-                FileLogger.w(TAG, "openDbRW failed: ${e.message}")
+                FileLogger.w(TAG, "打开数据库(RW)失败：${e.message}")
                 null
             }
         }
@@ -140,7 +140,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     """.trimIndent()
                 )
             } catch (e: Exception) {
-                try { FileLogger.w(TAG, "ensureMorningInsightsTable failed: ${e.message}") } catch (_: Exception) {}
+                try { FileLogger.w(TAG, "创建 morning_insights 表失败：${e.message}") } catch (_: Exception) {}
             }
         }
 
@@ -160,7 +160,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 if (tips.isEmpty()) return null
                 MorningInsightsRecord(dateKey, sourceDate, tips, tipsJson, raw, createdAt)
             } catch (e: Exception) {
-                try { FileLogger.w(TAG, "fetchMorningInsights failed: ${e.message}") } catch (_: Exception) {}
+                try { FileLogger.w(TAG, "读取 morning_insights 失败：${e.message}") } catch (_: Exception) {}
                 null
             } finally {
                 cursor?.close()
@@ -177,7 +177,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                     arrayOf(record.dateKey, record.sourceDateKey, record.payloadJson, record.raw, record.createdAt)
                 )
             } catch (e: Exception) {
-                try { FileLogger.e(TAG, "saveMorningInsights failed: ${e.message}", e) } catch (_: Exception) {}
+                try { FileLogger.e(TAG, "保存 morning_insights 失败：${e.message}", e) } catch (_: Exception) {}
             }
         }
 
@@ -403,11 +403,11 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 try {
                     val sp = ctx.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
                     sp.edit().putString("daily_brief_$dateKey", brief).apply()
-                    try { FileLogger.i(TAG, "brief saved: len=${brief.length}") } catch (_: Exception) {}
+                    try { FileLogger.i(TAG, "通知简报已保存：长度=${brief.length}") } catch (_: Exception) {}
                 } catch (_: Exception) {}
                 true
             } catch (e: Exception) {
-                try { FileLogger.e(TAG, "generateForDate failed: ${e.message}", e) } catch (_: Exception) {}
+                try { FileLogger.e(TAG, "生成每日总结失败：${e.message}", e) } catch (_: Exception) {}
                 false
             } finally { try { db?.close() } catch (_: Exception) {} }
         }
@@ -517,7 +517,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
 
         private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
             val cfg = AISettingsNative.readConfig(ctx)
-            val client = OkHttpClient.Builder()
+            val client = OkHttpClientFactory.newBuilder(ctx)
                 .connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .writeTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -548,7 +548,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 if (!resp.isSuccessful) {
                     val lower = respText.lowercase()
                     if (lower.contains("user location is not supported")) {
-                        try { FileLogger.e(TAG, "Gemini request blocked by region policy: ${respText.take(800)}") } catch (_: Exception) {}
+                        try { FileLogger.e(TAG, "Gemini 请求因地区策略被阻止：${respText.take(800)}") } catch (_: Exception) {}
                     }
                     throw IllegalStateException("Request failed: ${resp.code} ${respText}")
                 }
@@ -877,16 +877,16 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 val addon = morningAddon(ctx, effectiveLang)
                 val prompt = buildMorningPrompt(languagePolicy, defaultTemplate, addon, displayDateKey, sourceDateKey, contexts, effectiveLang)
 
-                try { FileLogger.i(TAG, "MorningInsights: context=${contexts.size} source=$sourceDateKey lang=$effectiveLang") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "MorningInsights：上下文=${contexts.size} 来源=$sourceDateKey 语言=$effectiveLang") } catch (_: Exception) {}
                 try {
-                    FileLogger.d(TAG, "MorningInsights prompt preview: ${prompt.take(800)}")
+                    FileLogger.d(TAG, "MorningInsights 提示词预览：${prompt.take(800)}")
                 } catch (_: Exception) {}
 
                 val (model, content) = callTextModel(ctx, prompt, effectiveLang)
                 val stripped = stripFences(content.trim())
                 val parsed = parseMorningTips(stripped)
                 if (parsed == null || parsed.displayTexts.isEmpty()) {
-                    try { FileLogger.w(TAG, "MorningInsights parse failed, tips empty") } catch (_: Exception) {}
+                    try { FileLogger.w(TAG, "MorningInsights 解析失败：提示为空") } catch (_: Exception) {}
                     return null
                 }
 
@@ -901,7 +901,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 saveMorningInsights(db!!, record)
                 record
             } catch (e: Exception) {
-                try { FileLogger.e(TAG, "generateMorningInsights failed: ${e.message}", e) } catch (_: Exception) {}
+                try { FileLogger.e(TAG, "生成 MorningInsights 失败：${e.message}", e) } catch (_: Exception) {}
                 null
             } finally {
                 cursor?.close()
@@ -1312,5 +1312,3 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
         }
     }
 }
-
-

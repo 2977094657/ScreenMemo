@@ -13,7 +13,7 @@ import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
 import '../pages/weekly_summary_page.dart';
-import '../pages/embedding_debug_page.dart';
+import '../pages/log_console_page.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
 class AppSideDrawer extends StatelessWidget {
@@ -71,14 +71,28 @@ class AppSideDrawer extends StatelessWidget {
             ),
             _buildMenuItem(
               context: context,
-              icon: Icons.image_search_outlined,
-              title: 'Embedding 调试',
+              icon: Icons.receipt_long_outlined,
+              title: '日志面板',
               isFirst: false,
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const EmbeddingDebugPage()),
+                  MaterialPageRoute(builder: (_) => const LogConsolePage()),
                 );
+              },
+            ),
+            _buildMenuItem(
+              context: context,
+              icon: Icons.wifi_tethering_outlined,
+              title: '网络抓包',
+              isFirst: false,
+              onTap: () async {
+                final ok = await FlutterLogger.openChucker();
+                if (!context.mounted) return;
+                if (!ok) {
+                  UINotifier.error(context, 'Chucker 不可用（仅 Android Debug 可用）');
+                }
+                Navigator.of(context).pop();
               },
             ),
             // 提供商
@@ -291,13 +305,13 @@ class AppSideDrawer extends StatelessWidget {
                     (context as Element).markNeedsBuild();
                     final ok = await AISettingsService.instance.deleteConversation(cid);
                     sw.stop();
-                    try { await FlutterLogger.nativeInfo('UI', 'SideDrawer.deleteConversation total ms='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                    try { await FlutterLogger.nativeInfo('UI', 'SideDrawer 删除对话总耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
                     // 记录“完全清空”耗时：从删除返回到FutureBuilder下一次完成的时间
                     final sw2 = Stopwatch()..start();
                     // 触发一次 rebuild 后，在下一帧读取列表为空的时刻打印
                     WidgetsBinding.instance.addPostFrameCallback((_) async {
                       sw2.stop();
-                      try { await FlutterLogger.nativeInfo('UI', 'SideDrawer cleared first-frame ms='+sw2.elapsedMilliseconds.toString()); } catch (_) {}
+                      try { await FlutterLogger.nativeInfo('UI', 'SideDrawer 清空后首帧耗时(毫秒)='+sw2.elapsedMilliseconds.toString()); } catch (_) {}
                     });
                     if (!ok) {
                       UINotifier.error(context, t.deleteFailed);

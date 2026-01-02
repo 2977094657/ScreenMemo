@@ -2,12 +2,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'package:talker_flutter/talker_flutter.dart' as talker_pkg;
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 enum LogLevel { debug, info, warn, error }
 
 /// Flutter 侧日志封装：统一通过原生 FileLogger -> OutputFileLogger 落盘到
 /// output/logs/YYYY/MM/DD/{DD}_info.log / {DD}_error.log。
 class FlutterLogger {
+  static final talker_pkg.Talker talker = talker_pkg.TalkerFlutter.init(
+    settings: talker_pkg.TalkerSettings(
+      // Talker 主要用于应用内可视化页面；控制台输出交给原生 FileLogger/XLog。
+      useConsoleLogs: false,
+    ),
+  );
+
   // Release 构建：仅 error；Debug 构建：debug
   static LogLevel minLevel = kReleaseMode ? LogLevel.error : LogLevel.debug;
   static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
@@ -26,6 +35,10 @@ class FlutterLogger {
       // 默认开启
       final enabled = saved ?? true;
       await setEnabled(enabled, persist: false);
+      try {
+        // Talker 内部也跟随开关，避免日志页无限增长
+        talker.settings.enabled = enabled;
+      } catch (_) {}
       // 同步原生文件落盘与级别（确保 Release 下也能写文件）
       try {
         await _channel.invokeMethod('setFileLoggingEnabled', {
@@ -41,6 +54,9 @@ class FlutterLogger {
   /// 设置是否启用日志打印（默认持久化）
   static Future<void> setEnabled(bool value, {bool persist = true}) async {
     _enabled = value;
+    try {
+      talker.settings.enabled = value;
+    } catch (_) {}
     // 开启时打印所有级别；关闭时虽然 minLevel 仍为 error，但下面 _write/native 会短路
     minLevel = LogLevel.debug;
     // 立刻同步原生落盘与级别
@@ -70,6 +86,16 @@ class FlutterLogger {
     }
   }
 
+  /// 打开 Android 原生网络抓包面板（Chucker）。非 Android/Release/no-op 时可能返回 false。
+  static Future<bool> openChucker() async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('openChucker');
+      return ok == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // 兼容旧接口
   static Future<void> log(String message) async => _write(LogLevel.info, message);
 
@@ -81,6 +107,7 @@ class FlutterLogger {
   // 直接写入原生日志
   static Future<void> native(String level, String tag, String message) async {
     if (!enabled) return;
+    _logToTalkerString(level, tag, message);
     try {
       await _channel.invokeMethod('nativeLog', {
         'level': level,
@@ -94,6 +121,31 @@ class FlutterLogger {
   static Future<void> nativeInfo(String tag, String message) => native('info', tag, message);
   static Future<void> nativeWarn(String tag, String message) => native('warn', tag, message);
   static Future<void> nativeError(String tag, String message) => native('error', tag, message);
+
+  /// 记录异常/崩溃（Talker 聚合 + 原生落盘）。
+  static Future<void> handle(Object error, StackTrace stack, {String tag = 'Flutter', String? message}) async {
+    if (!enabled) return;
+    final msg = message ?? error.toString();
+    try {
+      talker.handle(error, stack, '[$tag] $msg');
+    } catch (_) {}
+    try {
+      await Sentry.captureException(
+        error,
+        stackTrace: stack,
+        withScope: (scope) {
+          scope.setTag('source', tag);
+        },
+      );
+    } catch (_) {}
+    try {
+      await _channel.invokeMethod('nativeLog', {
+        'level': 'error',
+        'tag': tag,
+        'message': '$msg\n$stack',
+      });
+    } catch (_) {}
+  }
 
   // ===== 友盟（Umeng）日志/错误上报桥接（已移除 SDK，方法保持为空实现以兼容旧调用） =====
   static Future<void> umengSetUserId(String userId) async {
@@ -113,6 +165,7 @@ class FlutterLogger {
   static Future<void> _write(LogLevel level, String message) async {
     if (!enabled) return;
     if (!_shouldLog(level)) return;
+    _logToTalker(level, 'Flutter', message);
     try {
       final levelStr = () {
         switch (level) {
@@ -137,6 +190,7 @@ class FlutterLogger {
   /// 处理 Zone 拦截的 `print` 输出
   static Future<void> handlePrint(String line) async {
     if (!enabled) return;
+    _logToTalker(LogLevel.info, 'print', line);
     try {
       await _channel.invokeMethod('nativeLog', {
         'level': 'info',
@@ -185,5 +239,40 @@ class FlutterLogger {
       return false;
     }
   }
-}
 
+  static void _logToTalkerString(String level, String tag, String message) {
+    final lv = () {
+      switch (level.toLowerCase()) {
+        case 'debug':
+          return LogLevel.debug;
+        case 'warn':
+          return LogLevel.warn;
+        case 'error':
+          return LogLevel.error;
+        default:
+          return LogLevel.info;
+      }
+    }();
+    _logToTalker(lv, tag, message);
+  }
+
+  static void _logToTalker(LogLevel level, String tag, String message) {
+    final text = tag.isNotEmpty ? '[$tag] $message' : message;
+    try {
+      switch (level) {
+        case LogLevel.debug:
+          talker.debug(text);
+          break;
+        case LogLevel.info:
+          talker.info(text);
+          break;
+        case LogLevel.warn:
+          talker.warning(text);
+          break;
+        case LogLevel.error:
+          talker.error(text);
+          break;
+      }
+    } catch (_) {}
+  }
+}

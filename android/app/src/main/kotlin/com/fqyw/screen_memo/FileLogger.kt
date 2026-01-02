@@ -59,7 +59,7 @@ object FileLogger {
         isInitialized = true
         ensureXLogInitialized()
         try {
-            OutputFileLogger.info(context, TAG, "FileLogger initialized")
+            OutputFileLogger.info(context, TAG, "FileLogger 已初始化")
         } catch (_: Exception) {}
     }
 
@@ -193,11 +193,11 @@ object FileLogger {
             listOf("${day}_info.log", "${day}_error.log").forEach { name ->
                 try { File(dir, name).delete() } catch (_: Exception) {}
             }
-            OutputFileLogger.info(ctx, TAG, "logs cleared for today")
+            OutputFileLogger.info(ctx, TAG, "已清理今日日志")
         } catch (e: Exception) {
             try {
                 ensureXLogInitialized()
-                XLog.tag(TAG).e("clearLog failed: ${e.message}\n${e.stackTraceToString()}")
+                XLog.tag(TAG).e("clearLog 失败: ${e.message}\n${e.stackTraceToString()}")
             } catch (_: Exception) {}
         }
     }
@@ -232,4 +232,3 @@ object FileLogger {
         } catch (_: Exception) {}
     }
 }
-

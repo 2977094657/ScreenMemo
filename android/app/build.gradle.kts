@@ -66,6 +66,10 @@ dependencies {
     // OkHttp：用于每日总结/分段上传等 HTTP 调用
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Chucker：OkHttp 抓包（Debug 可视化，Release no-op）
+    debugImplementation("com.github.chuckerteam.chucker:library:4.0.0")
+    releaseImplementation("com.github.chuckerteam.chucker:library-no-op:4.0.0")
+
     // ML Kit: 中文文本识别（离线模型随 APK 打包）
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
 
@@ -86,6 +90,12 @@ dependencies {
     // Lifecycle：为服务和 Application 提供协程生命周期支持
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-service:2.8.4")
+
+    // Unit tests
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("io.mockk:mockk:1.13.12")
+    // Use JVM org.json to avoid "not mocked" stubs in local unit tests
+    testImplementation("org.json:json:20231013")
 }
 
 kapt {

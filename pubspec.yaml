@@ -81,6 +81,7 @@ dependencies:
   scroll_to_index: ^3.0.1
   talker: ^5.0.2
   talker_flutter: ^5.0.2
+  sentry_flutter: ^8.14.2
 
 
 

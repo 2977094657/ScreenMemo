@@ -124,11 +124,11 @@ object OutputFileLogger {
                 val now = System.currentTimeMillis()
                 if (now - lastDropWarnAt >= 5000) {
                     lastDropWarnAt = now
-                    Log.w(TAG, "log queue is full, dropping incoming logs")
+                    Log.w(TAG, "日志队列已满，丢弃新日志")
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "enqueue failed", e)
+            Log.w(TAG, "入队失败", e)
         }
     }
 
@@ -141,11 +141,11 @@ object OutputFileLogger {
                 val now = System.currentTimeMillis()
                 if (now - lastDropWarnAt >= 5000) {
                     lastDropWarnAt = now
-                    Log.w(TAG, "log queue is full, dropping incoming logs")
+                    Log.w(TAG, "日志队列已满，丢弃新日志")
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "enqueueForce failed", e)
+            Log.w(TAG, "强制入队失败", e)
         }
     }
 
@@ -177,7 +177,7 @@ object OutputFileLogger {
                 // 保持为守护线程，忽略中断持续工作
                 Thread.currentThread().interrupt()
             } catch (e: Exception) {
-                Log.w(TAG, "writer loop error", e)
+                Log.w(TAG, "写入线程异常", e)
             }
         }
     }
@@ -194,7 +194,7 @@ object OutputFileLogger {
                 try { filePrinter.println(level, item.tag, item.message) } catch (_: Exception) {}
             }
         } catch (e: Exception) {
-            Log.w(TAG, "write batch failed", e)
+            Log.w(TAG, "批量写入失败", e)
         }
     }
 
@@ -234,4 +234,3 @@ object OutputFileLogger {
         return printer
     }
 }
-

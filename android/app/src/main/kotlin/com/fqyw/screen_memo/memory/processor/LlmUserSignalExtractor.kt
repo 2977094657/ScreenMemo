@@ -1,6 +1,7 @@
 package com.fqyw.screen_memo.memory.processor
 
 import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.OkHttpClientFactory
 import com.fqyw.screen_memo.memory.model.PersonaProfile
 import com.fqyw.screen_memo.memory.model.PersonaProfilePatch
 import com.fqyw.screen_memo.memory.model.TagCategory
@@ -23,7 +24,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 class LlmUserSignalExtractor(
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+    private val okHttpClient: OkHttpClient = OkHttpClientFactory.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)
         .writeTimeout(0, TimeUnit.SECONDS)
@@ -46,7 +47,7 @@ class LlmUserSignalExtractor(
                 callOpenAiStyleEndpoint(event, context, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
             }
         } catch (t: Throwable) {
-            FileLogger.w(TAG, "LLM extraction failed: ${t.message}")
+            FileLogger.w(TAG, "LLM 提取失败：${t.message}")
             throw t
         }
     }
@@ -86,9 +87,9 @@ class LlmUserSignalExtractor(
                     currentPersonaProfile = currentPersonaProfile
                 )
             } catch (e: StreamingNotSupportedException) {
-                FileLogger.w(TAG, "Streaming not supported: ${e.message}")
+                FileLogger.w(TAG, "不支持流式：${e.message}")
             } catch (e: Throwable) {
-                FileLogger.w(TAG, "Streaming failed, fallback to non-streaming: ${e.message}")
+                FileLogger.w(TAG, "流式失败，回退到非流式：${e.message}")
             }
         }
         return callOpenAiStyleEndpointBlocking(
@@ -124,15 +125,15 @@ class LlmUserSignalExtractor(
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        FileLogger.i(TAG, "LLM(OpenAI-style) request url=$url model=${context.model}")
-        FileLogger.d(TAG, "LLM(OpenAI-style) payload=$payload")
+        FileLogger.i(TAG, "LLM(OpenAI风格) 请求：url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(OpenAI风格) 请求体=$payload")
 
         okHttpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
-            FileLogger.d(TAG, "LLM(OpenAI-style) response code=${resp.code} body=$body")
+            FileLogger.d(TAG, "LLM(OpenAI风格) 响应：code=${resp.code} body=$body")
             if (!resp.isSuccessful) {
                 val snippet = body.take(MAX_ERROR_BODY_CHARS)
-                FileLogger.w(TAG, "LLM request failed: code=${resp.code} body=${snippet}")
+                FileLogger.w(TAG, "LLM 请求失败：code=${resp.code} body=${snippet}")
                 throw LlmHttpException(resp.code, snippet, event.externalId)
             }
             val text = extractContent(body, context)
@@ -165,14 +166,14 @@ class LlmUserSignalExtractor(
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        FileLogger.i(TAG, "LLM(OpenAI-stream) request url=$url model=${context.model}")
-        FileLogger.d(TAG, "LLM(OpenAI-stream) payload=$payload")
+        FileLogger.i(TAG, "LLM(OpenAI流式) 请求：url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(OpenAI流式) 请求体=$payload")
 
         okHttpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) {
                 val body = resp.body?.string().orEmpty()
                 val snippet = body.take(MAX_ERROR_BODY_CHARS)
-                FileLogger.w(TAG, "Streaming request failed: code=${resp.code} body=$snippet")
+                FileLogger.w(TAG, "流式请求失败：code=${resp.code} body=$snippet")
                 throw StreamingNotSupportedException("HTTP ${resp.code}")
             }
             val responseBody = resp.body ?: throw StreamingNotSupportedException("Empty response body")
@@ -229,13 +230,13 @@ class LlmUserSignalExtractor(
                 }
             }
             if (!sawData) {
-                FileLogger.w(TAG, "Streaming yielded no data; raw=${rawEvents.take(MAX_ERROR_BODY_CHARS)}")
+                FileLogger.w(TAG, "流式返回无数据；raw=${rawEvents.take(MAX_ERROR_BODY_CHARS)}")
                 throw StreamingNotSupportedException("No data received")
             }
             val finalText = aggregated.toString().ifBlank {
                 rawEvents.toString()
             }
-            FileLogger.d(TAG, "LLM(OpenAI-stream) aggregated length=${finalText.length}")
+            FileLogger.d(TAG, "LLM(OpenAI流式) 聚合长度=${finalText.length}")
             parseCandidates(finalText, event, context)
         }
     }
@@ -433,7 +434,7 @@ class LlmUserSignalExtractor(
         return try {
             val root = JSONObject(payload.jsonText)
             if (root.optString("error").isNotBlank()) {
-                FileLogger.w(TAG, "LLM reported error: ${root.optString("error")}")
+                FileLogger.w(TAG, "LLM 报告错误：${root.optString("error")}")
                 val persona = personaSegment.sanitized
                 val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
                 UserSignalExtractionResult(emptyList(), patch, persona, payload.rawResponse, false)
@@ -491,7 +492,7 @@ class LlmUserSignalExtractor(
                 UserSignalExtractionResult(list, patch, persona, payload.rawResponse, false)
             }
         } catch (t: Throwable) {
-            FileLogger.w(TAG, "Failed to parse LLM JSON: ${t.message}")
+            FileLogger.w(TAG, "解析 LLM JSON 失败：${t.message}")
             val persona = personaSegment.sanitized
             UserSignalExtractionResult(emptyList(), null, persona, payload.rawResponse, false)
         }
@@ -537,15 +538,15 @@ class LlmUserSignalExtractor(
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
-        FileLogger.i(TAG, "LLM(Gemini) request url=$url model=${context.model}")
-        FileLogger.d(TAG, "LLM(Gemini) payload=$payload")
+        FileLogger.i(TAG, "LLM(Gemini) 请求：url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(Gemini) 请求体=$payload")
 
         okHttpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
-            FileLogger.d(TAG, "LLM(Gemini) response code=${resp.code} body=$body")
+            FileLogger.d(TAG, "LLM(Gemini) 响应：code=${resp.code} body=$body")
             if (!resp.isSuccessful) {
                 val snippet = body.take(MAX_ERROR_BODY_CHARS)
-                FileLogger.w(TAG, "Gemini request failed: code=${resp.code} body=${snippet}")
+                FileLogger.w(TAG, "Gemini 请求失败：code=${resp.code} body=${snippet}")
                 throw LlmHttpException(resp.code, snippet, event.externalId)
             }
             val text = extractContent(body, context)
@@ -798,4 +799,3 @@ class LlmEndpointConfigurationException(
     message: String,
     val eventExternalId: String?
 ) : Exception(message)
-

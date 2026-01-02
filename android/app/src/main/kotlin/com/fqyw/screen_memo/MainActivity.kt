@@ -111,7 +111,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         // 仅做必要初始化，避免阻塞首帧
-        FileLogger.d(TAG, "configureFlutterEngine: minimal init start")
+        FileLogger.d(TAG, "configureFlutterEngine：最小初始化开始")
 
         // 初始化媒体投影管理器
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -224,6 +224,14 @@ class MainActivity : FlutterActivity() {
                     val dir = OutputFileLogger.getTodayDir(this)
                     result.success(dir?.absolutePath)
                 }
+                "openChucker" -> {
+                    try {
+                        val ok = ChuckerBridge.open(this)
+                        result.success(ok)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
                 "getSegmentsAIConfig" -> {
                     try {
                         val cfg = AISettingsNative.readConfig(this)
@@ -241,6 +249,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         val sample = (call.argument<Int>("sampleIntervalSec") ?: 20).coerceAtLeast(5)
                         val duration = (call.argument<Int>("segmentDurationSec") ?: 300).coerceAtLeast(60)
+                        try { FileLogger.i(TAG, "设置段落参数(call)：sampleIntervalSec=${sample} segmentDurationSec=${duration}") } catch (_: Exception) {}
                         UserSettingsStorage.putInt(
                             this,
                             UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC,
@@ -251,6 +260,22 @@ class MainActivity : FlutterActivity() {
                             UserSettingsKeysNative.SEGMENT_DURATION_SEC,
                             duration
                         )
+                        try {
+                            val n = SegmentDatabaseHelper.updateCollectingSegmentsSampleInterval(this, sample)
+                            val cur = try { SegmentDatabaseHelper.getCollectingSegment(this) } catch (_: Exception) { null }
+                            val persistedSample = try {
+                                UserSettingsStorage.getInt(this, UserSettingsKeysNative.SEGMENT_SAMPLE_INTERVAL_SEC, 20)
+                            } catch (_: Exception) { -1 }
+                            val persistedDuration = try {
+                                UserSettingsStorage.getInt(this, UserSettingsKeysNative.SEGMENT_DURATION_SEC, 300)
+                            } catch (_: Exception) { -1 }
+                            try {
+                                FileLogger.i(
+                                    TAG,
+                                    "setSegmentSettings(persisted): sample=${persistedSample}, duration=${persistedDuration}, updatedCollecting=${n}, collectingId=${cur?.id}, collectingInterval=${cur?.sampleIntervalSec}"
+                                )
+                            } catch (_: Exception) {}
+                        } catch (_: Exception) {}
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("invalid_args", e.message, null)
@@ -268,6 +293,7 @@ class MainActivity : FlutterActivity() {
                             UserSettingsKeysNative.SEGMENT_DURATION_SEC,
                             300
                         ).coerceAtLeast(60)
+                        try { FileLogger.i(TAG, "获取段落参数：sampleIntervalSec=${sample} segmentDurationSec=${duration}") } catch (_: Exception) {}
                         result.success(
                             mapOf(
                                 "sampleIntervalSec" to sample,
@@ -323,13 +349,13 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "startScreenCapture" -> {
-                    FileLogger.e(TAG, "=== 收到startScreenCapture请求 ===")
+                    FileLogger.e(TAG, "=== 收到开始屏幕捕获请求 ===")
                     val success = startScreenCapture()
-                    FileLogger.e(TAG, "=== startScreenCapture结果: $success ===")
+                    FileLogger.e(TAG, "=== 开始屏幕捕获结果: $success ===")
                     result.success(success)
                 }
                 "stopScreenCapture" -> {
-                    FileLogger.e(TAG, "=== 收到stopScreenCapture请求 ===")
+                    FileLogger.e(TAG, "=== 收到停止屏幕捕获请求 ===")
                     stopScreenCapture()
                     result.success(null)
                 }
@@ -345,20 +371,20 @@ class MainActivity : FlutterActivity() {
                         stored
                     } catch (_: Exception) { 5 }
                     val interval = call.argument<Int>("interval") ?: intervalPersisted
-                    FileLogger.e(TAG, "=== 收到startTimedScreenshot请求，间隔: ${interval}秒 ===")
+                    FileLogger.e(TAG, "=== 收到开始定时截屏请求，间隔: ${interval}秒 ===")
                     val success = startTimedScreenshot(interval)
-                    FileLogger.e(TAG, "=== startTimedScreenshot结果: $success ===")
+                    FileLogger.e(TAG, "=== 定时截屏启动结果: $success ===")
                     result.success(success)
                 }
                 "stopTimedScreenshot" -> {
-                    FileLogger.e(TAG, "=== 收到stopTimedScreenshot请求 ===")
+                    FileLogger.e(TAG, "=== 收到停止定时截屏请求 ===")
                     stopTimedScreenshot()
                     result.success(null)
                 }
                 "captureScreen" -> {
-                    FileLogger.e(TAG, "=== 收到captureScreen请求 ===")
+                    FileLogger.e(TAG, "=== 收到立即截屏请求 ===")
                     val filePath = captureScreen()
-                    FileLogger.e(TAG, "=== captureScreen结果: $filePath ===")
+                    FileLogger.e(TAG, "=== 立即截屏结果: $filePath ===")
                     result.success(filePath)
                 }
                 "checkPermissionGuideNeeded" -> {
@@ -559,7 +585,7 @@ class MainActivity : FlutterActivity() {
                             val data = StorageAnalyzer.collect(applicationContext)
                             runOnUiThread { pendingResult.success(data) }
                         } catch (e: Exception) {
-                            FileLogger.e(TAG, "getDetailedStorageStats failed", e)
+                            FileLogger.e(TAG, "获取详细存储统计失败", e)
                             runOnUiThread {
                                 pendingResult.error("storage_stats_failed", e.message, null)
                             }
@@ -712,11 +738,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "triggerSegmentTick" -> {
                     try {
+                        try { FileLogger.i(TAG, "triggerSegmentTick 调用") } catch (_: Exception) {}
                         Thread {
                             try {
+                                try { FileLogger.i(TAG, "triggerSegmentTick 线程开始") } catch (_: Exception) {}
                                 SegmentSummaryManager.tick(this)
+                                try { FileLogger.i(TAG, "triggerSegmentTick 线程结束") } catch (_: Exception) {}
                             } catch (e: Exception) {
-                                FileLogger.w(TAG, "manual tick failed: ${e.message}")
+                                FileLogger.w(TAG, "手动 tick 失败：${e.message}")
                             }
                         }.start()
                         result.success(true)
@@ -728,7 +757,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         val ids = (call.argument<List<Int>>("ids") ?: emptyList()).map { it.toLong() }
                         val force = call.argument<Boolean>("force") ?: false
-                        try { FileLogger.i(TAG, "retrySegments: ids=${ids} force=${force}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "retrySegments：ids=${ids} force=${force}") } catch (_: Exception) {}
                         Thread {
                             try {
                                 val n = SegmentSummaryManager.retrySegmentsByIds(this, ids, force)
@@ -745,7 +774,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         val title = call.argument<String>("title") ?: "Daily Summary"
                         val message = call.argument<String>("message") ?: ""
-                        try { FileLogger.i(TAG, "showSimpleNotification: title=${title}, len=${message.length}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "显示简单通知：标题=${title} 长度=${message.length}") } catch (_: Exception) {}
                         val ok = DailySummaryNotifier.showSimple(this, title, message)
                         result.success(ok)
                     } catch (e: Exception) {
@@ -756,7 +785,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         val title = call.argument<String>("title") ?: "Daily Summary"
                         val message = call.argument<String>("message") ?: ""
-                        try { FileLogger.i(TAG, "showNotification(bigText): title=${title}, len=${message.length}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "显示大文本通知：标题=${title} 长度=${message.length}") } catch (_: Exception) {}
                         val ok = DailySummaryNotifier.showBigText(this, title, message)
                         result.success(ok)
                     } catch (e: Exception) {
@@ -773,7 +802,7 @@ class MainActivity : FlutterActivity() {
                         } else {
                             DailySummaryScheduler.cancel(this)
                         }
-                        try { FileLogger.i(TAG, "scheduleDailySummaryNotification: enabled=${enabled} hour=${hour} minute=${minute} result=${ok}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "调度每日总结通知：启用=${enabled} 小时=${hour} 分钟=${minute} 结果=${ok}") } catch (_: Exception) {}
                         result.success(ok)
                     } catch (e: Exception) {
                         result.error("schedule_failed", e.message, null)
@@ -867,7 +896,7 @@ class MainActivity : FlutterActivity() {
                             .putString("daily_brief_$dateKey", brief)
                             .putString("daily_brief_last", brief)
                             .apply()
-                        try { FileLogger.i(TAG, "setDailyBrief: dateKey=$dateKey len=${brief.length}") } catch (_: Exception) {}
+                        try { FileLogger.i(TAG, "设置通知简报：dateKey=$dateKey 长度=${brief.length}") } catch (_: Exception) {}
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("set_brief_failed", e.message, null)
@@ -894,7 +923,7 @@ class MainActivity : FlutterActivity() {
         memoryBridge = MemoryBridge(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
 
         // 其余重任务延迟到首帧后执行
-        FileLogger.d(TAG, "configureFlutterEngine: minimal init done, waiting first frame")
+        FileLogger.d(TAG, "configureFlutterEngine：最小初始化完成，等待首帧")
 
         // 保留兼容：若是仅检查服务的启动，立即结束，避免叠加界面
         if (intent?.getBooleanExtra("check_service_only", false) == true) {
@@ -903,7 +932,7 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        FileLogger.d(TAG, "configureFlutterEngine: completed")
+        FileLogger.d(TAG, "configureFlutterEngine：完成")
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? {
@@ -923,7 +952,7 @@ class MainActivity : FlutterActivity() {
         if (didRunPostFirstFrameInit) return
         didRunPostFirstFrameInit = true
         val delta = System.currentTimeMillis() - activityCreateTs
-        FileLogger.d(TAG, "onFlutterUiDisplayed: first frame delta since onCreate = ${delta}ms; runPostFirstFrameInit start")
+        FileLogger.d(TAG, "onFlutterUiDisplayed：首帧耗时(自onCreate)=${delta}毫秒；开始 runPostFirstFrameInit")
         try { FileLogger.e(TAG, "首帧耗时(自onCreate): ${delta}ms") } catch (_: Exception) {}
         // 已不再显示开屏对话框，无需关闭
         // dismissSplashDialog()
@@ -946,32 +975,32 @@ class MainActivity : FlutterActivity() {
             val t1 = System.currentTimeMillis()
             FileLogger.init(this)
             FileLogger.writeSystemInfo(this)
-            FileLogger.e(TAG, "步骤: FileLogger.init + writeSystemInfo -> ${System.currentTimeMillis() - t1}ms")
+            FileLogger.e(TAG, "步骤：FileLogger.init + writeSystemInfo -> ${System.currentTimeMillis() - t1}毫秒")
 
             // 设置无障碍权限监听
             val t2 = System.currentTimeMillis()
             setupAccessibilityObserver()
-            FileLogger.e(TAG, "步骤: setupAccessibilityObserver -> ${System.currentTimeMillis() - t2}ms")
+            FileLogger.e(TAG, "步骤：setupAccessibilityObserver -> ${System.currentTimeMillis() - t2}毫秒")
 
             // 设置广播接收器
             val t3 = System.currentTimeMillis()
             setupMediaProjectionRequestReceiver()
-            FileLogger.e(TAG, "步骤: setupMediaProjectionRequestReceiver -> ${System.currentTimeMillis() - t3}ms")
+            FileLogger.e(TAG, "步骤：setupMediaProjectionRequestReceiver -> ${System.currentTimeMillis() - t3}毫秒")
             val t4 = System.currentTimeMillis()
             setupScreenshotSavedReceiver()
-            FileLogger.e(TAG, "步骤: setupScreenshotSavedReceiver -> ${System.currentTimeMillis() - t4}ms")
+            FileLogger.e(TAG, "步骤：setupScreenshotSavedReceiver -> ${System.currentTimeMillis() - t4}毫秒")
 
             // 启动辅助功能状态监听
             val t5 = System.currentTimeMillis()
             accessibilityStateMonitor = AccessibilityStateMonitor(this)
             accessibilityStateMonitor?.startMonitoring()
-            FileLogger.e(TAG, "步骤: AccessibilityStateMonitor.startMonitoring -> ${System.currentTimeMillis() - t5}ms")
+            FileLogger.e(TAG, "步骤：AccessibilityStateMonitor.startMonitoring -> ${System.currentTimeMillis() - t5}毫秒")
 
             // 调试监控与状态检查
             try {
                 val t6 = System.currentTimeMillis()
                 ServiceDebugHelper.performFullStatusCheck(this)
-                FileLogger.e(TAG, "步骤: ServiceDebugHelper.performFullStatusCheck -> ${System.currentTimeMillis() - t6}ms")
+                FileLogger.e(TAG, "步骤：ServiceDebugHelper.performFullStatusCheck -> ${System.currentTimeMillis() - t6}毫秒")
             } catch (e: Exception) {
                 FileLogger.e(TAG, "调试监控执行失败", e)
             }
@@ -979,7 +1008,7 @@ class MainActivity : FlutterActivity() {
             // 调度JobService保活
             val t7 = System.currentTimeMillis()
             scheduleKeepAliveJob()
-            FileLogger.e(TAG, "步骤: scheduleKeepAliveJob -> ${System.currentTimeMillis() - t7}ms")
+            FileLogger.e(TAG, "步骤：scheduleKeepAliveJob -> ${System.currentTimeMillis() - t7}毫秒")
 
             // 已取消：守护服务前台通知会造成重复提示，仅保留前台截图服务通知
             // val t8 = System.currentTimeMillis()
@@ -989,9 +1018,9 @@ class MainActivity : FlutterActivity() {
             // 绑定AccessibilityService
             val t9 = System.currentTimeMillis()
             bindAccessibilityService()
-            FileLogger.e(TAG, "步骤: bindAccessibilityService -> ${System.currentTimeMillis() - t9}ms")
+            FileLogger.e(TAG, "步骤：bindAccessibilityService -> ${System.currentTimeMillis() - t9}毫秒")
 
-            FileLogger.e(TAG, "=== PostFirstFrame 初始化完成，耗时: ${System.currentTimeMillis() - startMs}ms ===")
+            FileLogger.e(TAG, "=== PostFirstFrame 初始化完成，耗时: ${System.currentTimeMillis() - startMs}毫秒 ===")
         } catch (e: Exception) {
             FileLogger.e(TAG, "PostFirstFrame 初始化失败", e)
             try { FileLogger.e(TAG, "PostFirstFrame 初始化失败", e) } catch (_: Exception) {}
@@ -1004,11 +1033,11 @@ class MainActivity : FlutterActivity() {
             val from = it.getBooleanExtra("from_daily_summary_notification", false)
             if (!from) return
             val dateKey = it.getStringExtra("daily_summary_date_key") ?: ""
-            try { FileLogger.i(TAG, "handleLaunchFromNotification: from=true dateKey=$dateKey") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "通知启动：from=true dateKey=$dateKey") } catch (_: Exception) {}
             try {
                 methodChannel.invokeMethod("onDailySummaryNotificationTap", mapOf("dateKey" to dateKey))
             } catch (e: Exception) {
-                try { FileLogger.w(TAG, "invoke onDailySummaryNotificationTap failed: ${e.message}") } catch (_: Exception) {}
+                try { FileLogger.w(TAG, "调用 onDailySummaryNotificationTap 失败：${e.message}") } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
     }
@@ -1471,9 +1500,9 @@ class MainActivity : FlutterActivity() {
                 }
                 
                 if (waitedService != null) {
-                    FileLogger.e(TAG, "调用AccessibilityService.startTimedScreenshot")
+                    FileLogger.e(TAG, "调用无障碍服务开始定时截屏")
                     val result = waitedService.startTimedScreenshot(intervalSeconds)
-                    FileLogger.e(TAG, "AccessibilityService.startTimedScreenshot返回: $result")
+                    FileLogger.e(TAG, "无障碍服务开始定时截屏返回: $result")
                     return result
                 } else {
                     FileLogger.e(TAG, "等待超时，服务实例仍不可用")
@@ -1482,9 +1511,9 @@ class MainActivity : FlutterActivity() {
             }
 
             if (service != null) {
-                FileLogger.e(TAG, "调用AccessibilityService.startTimedScreenshot")
+                FileLogger.e(TAG, "调用无障碍服务开始定时截屏")
                 val result = service.startTimedScreenshot(intervalSeconds)
-                FileLogger.e(TAG, "AccessibilityService.startTimedScreenshot返回: $result")
+                FileLogger.e(TAG, "无障碍服务开始定时截屏返回: $result")
                 return result
             } else {
                 FileLogger.e(TAG, "无障碍服务未运行")
@@ -1699,7 +1728,7 @@ class MainActivity : FlutterActivity() {
                 "format" to spec.extension,
             )
         } catch (e: Exception) {
-            FileLogger.e(TAG, "compressScreenshotFileInternal failed", e)
+            FileLogger.e(TAG, "压缩截图文件失败", e)
             mapOf(
                 "success" to false,
                 "error" to (e.message ?: "unknown"),
@@ -1973,7 +2002,7 @@ class MainActivity : FlutterActivity() {
             bm.compress(format, quality.coerceIn(1, 100), baos)
             baos.toByteArray()
         } catch (e: Exception) {
-            FileLogger.e(TAG, "compressOnce failed", e)
+            FileLogger.e(TAG, "压缩一次失败", e)
             null
         }
     }
@@ -2335,7 +2364,7 @@ class MainActivity : FlutterActivity() {
     private fun importZipToOutputAsync(zipPath: String, overwrite: Boolean, result: MethodChannel.Result) {
         Thread {
             try {
-                FileLogger.i(TAG, "IMPORT_NATIVE: begin importZipToOutput, path=$zipPath overwrite=$overwrite")
+                FileLogger.i(TAG, "原生导入：开始 importZipToOutput，path=$zipPath overwrite=$overwrite")
                 val base = filesDir
                 val outputDir = File(base, "output")
                 if (overwrite && outputDir.exists()) {
@@ -2363,7 +2392,7 @@ class MainActivity : FlutterActivity() {
                         }
                         val relLower = normalized.lowercase()
                         if (shouldSkipOutputCache(relLower)) {
-                            FileLogger.i(TAG, "IMPORT_NATIVE: skip cache entry $normalized")
+                            FileLogger.i(TAG, "原生导入：跳过缓存条目 $normalized")
                             zis.closeEntry()
                             continue
                         }
@@ -2394,15 +2423,15 @@ class MainActivity : FlutterActivity() {
                 try {
                     clearOutputCacheDirsNative(outputDir)
                 } catch (e: Exception) {
-                    FileLogger.e(TAG, "IMPORT_NATIVE: clear cache dirs failed", e)
+                    FileLogger.e(TAG, "原生导入：清理缓存目录失败", e)
                 }
 
                 deleteImportZipIfCached(zipPath)
 
-                FileLogger.i(TAG, "IMPORT_NATIVE: importZipToOutput finished, outputDir=${outputDir.absolutePath}")
+                FileLogger.i(TAG, "原生导入：importZipToOutput 完成，outputDir=${outputDir.absolutePath}")
                 runOnUiThread { result.success(true) }
             } catch (e: Exception) {
-                FileLogger.e(TAG, "IMPORT_NATIVE: importZipToOutput failed", e)
+                FileLogger.e(TAG, "原生导入：importZipToOutput 失败", e)
                 runOnUiThread { result.error("import_failed", e.message, null) }
             }
         }.start()
@@ -2414,7 +2443,7 @@ class MainActivity : FlutterActivity() {
     private fun importFromExtractedOutputDirAsync(srcRoot: String, overwrite: Boolean, result: MethodChannel.Result) {
         Thread {
             try {
-                FileLogger.i(TAG, "IMPORT_NATIVE: begin importFromExtractedOutputDir, srcRoot=$srcRoot overwrite=$overwrite")
+                FileLogger.i(TAG, "原生导入：开始 importFromExtractedOutputDir，srcRoot=$srcRoot overwrite=$overwrite")
                 val base = filesDir
                 val targetOutput = File(base, "output")
                 // 支持两种选择方式：
@@ -2426,7 +2455,7 @@ class MainActivity : FlutterActivity() {
                     if (direct.exists() && direct.isDirectory && direct.name == "output") {
                         srcOutput = direct
                     } else {
-                        FileLogger.e(TAG, "IMPORT_NATIVE: src output dir not found: ${srcOutput.absolutePath}")
+                        FileLogger.e(TAG, "原生导入：源 output 目录不存在：${srcOutput.absolutePath}")
                         runOnUiThread {
                             result.error("import_src_not_found", "src output dir not found", srcOutput.absolutePath)
                         }
@@ -2445,10 +2474,10 @@ class MainActivity : FlutterActivity() {
 
                 clearOutputCacheDirsNative(targetOutput)
 
-                FileLogger.i(TAG, "IMPORT_NATIVE: importFromExtractedOutputDir finished, target=${targetOutput.absolutePath}")
+                FileLogger.i(TAG, "原生导入：importFromExtractedOutputDir 完成，target=${targetOutput.absolutePath}")
                 runOnUiThread { result.success(true) }
             } catch (e: Exception) {
-                FileLogger.e(TAG, "IMPORT_NATIVE: importFromExtractedOutputDir failed", e)
+                FileLogger.e(TAG, "原生导入：importFromExtractedOutputDir 失败", e)
                 runOnUiThread { result.error("import_failed", e.message, null) }
             }
         }.start()
@@ -2469,7 +2498,7 @@ class MainActivity : FlutterActivity() {
         val relative = computeRelativePath(root, source)
         val relLower = relative.lowercase()
         if (relative.isNotEmpty() && shouldSkipOutputCache(relLower)) {
-            FileLogger.i(TAG, "IMPORT_NATIVE: skip cache entry $relative")
+            FileLogger.i(TAG, "原生导入：跳过缓存条目 $relative")
             return
         }
         if (source.isDirectory) {
@@ -2538,9 +2567,9 @@ class MainActivity : FlutterActivity() {
             val relLower = childRel.lowercase()
             if (child.isDirectory && shouldSkipOutputCache(relLower)) {
                 if (child.deleteRecursively()) {
-                    FileLogger.i(TAG, "IMPORT_NATIVE: cleared cache dir $childRel")
+                    FileLogger.i(TAG, "原生导入：已清理缓存目录 $childRel")
                 } else {
-                    FileLogger.e(TAG, "IMPORT_NATIVE: failed to delete cache dir $childRel")
+                    FileLogger.e(TAG, "原生导入：删除缓存目录失败 $childRel")
                 }
                 continue
             }
@@ -2565,9 +2594,9 @@ class MainActivity : FlutterActivity() {
                 parent.delete()
                 parent = parent.parentFile
             }
-            FileLogger.i(TAG, "IMPORT_NATIVE: deleted cached import zip: $path")
+            FileLogger.i(TAG, "原生导入：已删除缓存导入 zip：$path")
         } catch (e: Exception) {
-            FileLogger.e(TAG, "IMPORT_NATIVE: delete cached zip failed path=$path", e)
+            FileLogger.e(TAG, "原生导入：删除缓存 zip 失败 path=$path", e)
         }
     }
 
@@ -2636,7 +2665,7 @@ class MainActivity : FlutterActivity() {
                     state,
                     android.content.pm.PackageManager.DONT_KILL_APP
                 )
-                try { FileLogger.i(TAG, "Launcher alias state updated lang=$code enabled=${component == target}") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "Launcher 别名状态已更新：lang=$code 启用=${component == target}") } catch (_: Exception) {}
             }
             true
         } catch (e: Exception) {

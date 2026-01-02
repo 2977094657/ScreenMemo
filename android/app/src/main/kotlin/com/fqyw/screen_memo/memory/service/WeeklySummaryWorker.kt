@@ -15,6 +15,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.fqyw.screen_memo.AISettingsNative
 import com.fqyw.screen_memo.FileLogger
+import com.fqyw.screen_memo.OkHttpClientFactory
 import com.fqyw.screen_memo.OutputFileLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -43,17 +44,17 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
         val zone = ZoneId.systemDefault()
         val weekStartKey = inputData.getString(KEY_WEEK_START)
             ?: run {
-                try { OutputFileLogger.errorForce(applicationContext, TAG, "doWork missing input weekStartKey") } catch (_: Exception) {}
+                try { OutputFileLogger.errorForce(applicationContext, TAG, "doWork 缺少输入参数 weekStartKey") } catch (_: Exception) {}
                 return Result.failure()
             }
 
-        try { OutputFileLogger.infoForce(applicationContext, TAG, "doWork begin weekStartKey=$weekStartKey") } catch (_: Exception) {}
+        try { OutputFileLogger.infoForce(applicationContext, TAG, "doWork 开始 weekStartKey=$weekStartKey") } catch (_: Exception) {}
 
         val weekStart = try {
             LocalDate.parse(weekStartKey, DATE_FMT)
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "Invalid weekStartKey=$weekStartKey") } catch (_: Exception) {}
-            try { OutputFileLogger.errorForce(applicationContext, TAG, "Invalid weekStartKey=$weekStartKey") } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "weekStartKey 无效：$weekStartKey") } catch (_: Exception) {}
+            try { OutputFileLogger.errorForce(applicationContext, TAG, "weekStartKey 无效：$weekStartKey") } catch (_: Exception) {}
             return Result.failure()
         }
         val weekEnd = weekStart.plusDays(6)
@@ -64,15 +65,15 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
         try {
             db = openMasterDb(applicationContext, writable = true)
             if (db == null) {
-                try { OutputFileLogger.errorForce(applicationContext, TAG, "openMasterDb returned null; will retry") } catch (_: Exception) {}
+                try { OutputFileLogger.errorForce(applicationContext, TAG, "打开主库返回 null；将重试") } catch (_: Exception) {}
                 return Result.retry()
             }
 
             // 若已存在则直接成功
             if (hasWeeklySummary(db, weekStartKey)) {
-                try { FileLogger.i(TAG, "Weekly summary already exists: $weekStartKey") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "周总结已存在：$weekStartKey") } catch (_: Exception) {}
                 try { setLastGeneratedWeek(applicationContext, weekStartKey) } catch (_: Exception) {}
-                try { OutputFileLogger.infoForce(applicationContext, TAG, "Weekly summary already exists: $weekStartKey") } catch (_: Exception) {}
+                try { OutputFileLogger.infoForce(applicationContext, TAG, "周总结已存在：$weekStartKey") } catch (_: Exception) {}
                 return Result.success()
             }
 
@@ -96,12 +97,12 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
 
             try { setLastGeneratedWeek(applicationContext, weekStartKey) } catch (_: Exception) {}
 
-            try { FileLogger.i(TAG, "Weekly summary generated for $weekStartKey by $model, len=${outputText.length}") } catch (_: Exception) {}
-            try { OutputFileLogger.infoForce(applicationContext, TAG, "Weekly summary generated for $weekStartKey by $model, len=${outputText.length}") } catch (_: Exception) {}
+            try { FileLogger.i(TAG, "周总结已生成：weekStartKey=$weekStartKey 模型=$model 长度=${outputText.length}") } catch (_: Exception) {}
+            try { OutputFileLogger.infoForce(applicationContext, TAG, "周总结已生成：weekStartKey=$weekStartKey 模型=$model 长度=${outputText.length}") } catch (_: Exception) {}
             return Result.success()
         } catch (e: Exception) {
-            try { FileLogger.e(TAG, "Weekly worker failed: ${e.message}", e) } catch (_: Exception) {}
-            try { OutputFileLogger.errorForce(applicationContext, TAG, "Weekly worker failed: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+            try { FileLogger.e(TAG, "周总结 Worker 执行失败：${e.message}", e) } catch (_: Exception) {}
+            try { OutputFileLogger.errorForce(applicationContext, TAG, "周总结 Worker 执行失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             return Result.retry()
         } finally {
             try { db?.close() } catch (_: Exception) {}
@@ -210,7 +211,7 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
 
     private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
         val cfg = AISettingsNative.readConfig(ctx)
-        val client = OkHttpClient.Builder()
+        val client = OkHttpClientFactory.newBuilder(ctx)
             .connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .writeTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -356,7 +357,7 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
             }
         } catch (e: Exception) {
-            try { FileLogger.w(TAG, "openMasterDb failed: ${e.message}") } catch (_: Exception) {}
+            try { FileLogger.w(TAG, "打开主库失败：${e.message}") } catch (_: Exception) {}
             null
         }
     }
@@ -436,11 +437,11 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
                     .build()
                 val uniqueName = "weekly_summary_$weekStartKey"
                 WorkManager.getInstance(ctx).enqueueUniqueWork(uniqueName, ExistingWorkPolicy.KEEP, req)
-                try { FileLogger.i(TAG, "enqueue weekly summary for $weekStartKey") } catch (_: Exception) {}
-                try { OutputFileLogger.infoForce(ctx, TAG, "enqueueUniqueWork name=$uniqueName") } catch (_: Exception) {}
+                try { FileLogger.i(TAG, "周总结已入队：$weekStartKey") } catch (_: Exception) {}
+                try { OutputFileLogger.infoForce(ctx, TAG, "提交唯一任务：name=$uniqueName") } catch (_: Exception) {}
             } catch (e: Exception) {
-                try { FileLogger.e(TAG, "enqueue failed: ${e.message}", e) } catch (_: Exception) {}
-                try { OutputFileLogger.errorForce(ctx, TAG, "enqueue failed: ${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
+                try { FileLogger.e(TAG, "入队失败：${e.message}", e) } catch (_: Exception) {}
+                try { OutputFileLogger.errorForce(ctx, TAG, "入队失败：${e.message}\n${e.stackTraceToString()}") } catch (_: Exception) {}
             }
         }
     }
