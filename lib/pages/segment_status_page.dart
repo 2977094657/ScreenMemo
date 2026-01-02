@@ -59,7 +59,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
   // 隐私模式状态
   bool _privacyMode = true; // 默认开启，初始化时从偏好读取
- 
+
   // 自动轮询：每秒检测"暂无总结"并自动刷新，直到清空
   Timer? _autoTimer;
   bool _autoWatching = false;
@@ -92,7 +92,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
-      setState(() { _privacyMode = enabled; });
+      setState(() {
+        _privacyMode = enabled;
+      });
     });
   }
 
@@ -111,7 +113,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         }
         return;
       }
-      final ctxRow = await AISettingsService.instance.getAIContextRow('segments');
+      final ctxRow = await AISettingsService.instance.getAIContextRow(
+        'segments',
+      );
       AIProvider? sel;
       if (ctxRow != null && ctxRow['provider_id'] is int) {
         sel = await svc.getProvider(ctxRow['provider_id'] as int);
@@ -119,9 +123,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       sel ??= await svc.getDefaultProvider();
       sel ??= providers.first;
 
-      String model = (ctxRow != null && (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
+      String model =
+          (ctxRow != null &&
+              (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
           ? (ctxRow['model'] as String).trim()
-          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel).toString();
+          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
+                .toString();
       if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
 
       if (mounted) {
@@ -143,11 +150,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final currentId = _ctxSegProvider?.id ?? -1;
         // 使用持久化查询文本，避免键盘开合/重建导致输入被清空
-        final TextEditingController queryCtrl = TextEditingController(text: _segProviderQueryText);
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _segProviderQueryText,
+        );
         return StatefulBuilder(
           builder: (c, setModalState) {
             return DraggableScrollableSheet(
@@ -162,7 +171,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                   final name = p.name.toLowerCase();
                   final type = p.type.toLowerCase();
                   final base = (p.baseUrl ?? '').toString().toLowerCase();
-                  return name.contains(q) || type.contains(q) || base.contains(q);
+                  return name.contains(q) ||
+                      type.contains(q) ||
+                      base.contains(q);
                 }).toList();
                 // 将当前选中的提供商置顶，便于观察
                 final selIdx = filtered.indexWhere((e) => e.id == currentId);
@@ -170,9 +181,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                   final sel = filtered.removeAt(selIdx);
                   filtered.insert(0, sel);
                 }
-                return SafeArea(
+                return UISheetSurface(
                   child: Column(
                     children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: TextField(
@@ -184,9 +198,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchProviderPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchProviderPlaceholder,
                             isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
@@ -196,7 +214,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
                           ),
                           itemBuilder: (c, i) {
                             final p = filtered[i];
@@ -204,24 +224,48 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                             return ListTile(
                               leading: SvgPicture.asset(
                                 ModelIconUtils.getProviderIconPath(p.type),
-                                width: 20, height: 20,
+                                width: 20,
+                                height: 20,
                               ),
-                              title: Text(p.name, style: Theme.of(c).textTheme.bodyMedium),
-                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.onSurface) : null,
+                              title: Text(
+                                p.name,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.onSurface,
+                                    )
+                                  : null,
                               onTap: () async {
                                 String model = (_ctxSegModel ?? '').trim();
                                 if (model.isEmpty) {
-                                  model = (p.extra['active_model'] as String? ?? p.defaultModel).toString().trim();
+                                  model =
+                                      (p.extra['active_model'] as String? ??
+                                              p.defaultModel)
+                                          .toString()
+                                          .trim();
                                 }
-                                if (model.isEmpty && p.models.isNotEmpty) model = p.models.first;
-                                await AISettingsService.instance.setAIContextSelection(context: 'segments', providerId: p.id!, model: model);
+                                if (model.isEmpty && p.models.isNotEmpty)
+                                  model = p.models.first;
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'segments',
+                                      providerId: p.id!,
+                                      model: model,
+                                    );
                                 if (mounted) {
                                   setState(() {
                                     _ctxSegProvider = p;
                                     _ctxSegModel = model;
                                   });
                                   Navigator.of(ctx).pop();
-                                  UINotifier.success(context, AppLocalizations.of(context).providerSelectedToast(p.name));
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).providerSelectedToast(p.name),
+                                  );
                                 }
                               },
                             );
@@ -242,23 +286,31 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   Future<void> _showModelSheetSegments() async {
     final p = _ctxSegProvider;
     if (p == null) {
-      UINotifier.info(context, AppLocalizations.of(context).pleaseSelectProviderFirst);
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).pleaseSelectProviderFirst,
+      );
       return;
     }
     final models = p.models;
     if (models.isEmpty) {
-      UINotifier.info(context, AppLocalizations.of(context).noModelsForProviderHint);
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).noModelsForProviderHint,
+      );
       return;
     }
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final active = (_ctxSegModel ?? '').trim();
         // 使用持久化查询文本，避免失焦时文本被清空
-        final TextEditingController queryCtrl = TextEditingController(text: _segModelQueryText);
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _segModelQueryText,
+        );
         return StatefulBuilder(
           builder: (c, setModalState) {
             return DraggableScrollableSheet(
@@ -280,9 +332,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                     filtered.insert(0, sel);
                   }
                 }
-                return SafeArea(
+                return UISheetSurface(
                   child: Column(
                     children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: TextField(
@@ -294,9 +349,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchModelPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchModelPlaceholder,
                             isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
@@ -306,7 +365,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
                           ),
                           itemBuilder: (c, i) {
                             final m = filtered[i];
@@ -314,16 +375,35 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                             return ListTile(
                               leading: SvgPicture.asset(
                                 ModelIconUtils.getIconPath(m),
-                                width: 20, height: 20,
+                                width: 20,
+                                height: 20,
                               ),
-                              title: Text(m, style: Theme.of(c).textTheme.bodyMedium),
-                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              title: Text(
+                                m,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.primary,
+                                    )
+                                  : null,
                               onTap: () async {
-                                await AISettingsService.instance.setAIContextSelection(context: 'segments', providerId: p.id!, model: m);
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'segments',
+                                      providerId: p.id!,
+                                      model: m,
+                                    );
                                 if (mounted) {
                                   setState(() => _ctxSegModel = m);
                                   Navigator.of(ctx).pop();
-                                  UINotifier.success(context, AppLocalizations.of(context).modelSwitchedToast(m));
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).modelSwitchedToast(m),
+                                  );
                                 }
                               },
                             );
@@ -389,11 +469,14 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     );
   }
 
-
   Future<void> _loadPrivacyMode() async {
     try {
-      final enabled = await AppSelectionService.instance.getPrivacyModeEnabled();
-      if (mounted) setState(() { _privacyMode = enabled; });
+      final enabled = await AppSelectionService.instance
+          .getPrivacyModeEnabled();
+      if (mounted)
+        setState(() {
+          _privacyMode = enabled;
+        });
     } catch (_) {}
   }
 
@@ -410,7 +493,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   }
 
   Future<void> _refresh() async {
-    setState(() { _loading = true; });
+    setState(() {
+      _loading = true;
+    });
     try {
       // 先触发一次原生端推进/补救：用于“删空某日后重建日期 Tab”等场景
       // ignore: unawaited_futures
@@ -472,7 +557,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       });
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
       if (_onlyNoSummary) {
-        final hasPending = segments.any((e) => (e['has_summary'] as int? ?? 0) == 0);
+        final hasPending = segments.any(
+          (e) => (e['has_summary'] as int? ?? 0) == 0,
+        );
         if (hasPending) {
           _maybeStartAutoWatch();
         } else {
@@ -480,7 +567,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         }
       }
     } finally {
-      if (mounted) setState(() { _loading = false; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+        });
     }
   }
 
@@ -570,7 +660,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     if (!mounted) return;
 
     // 基于当前 _segments 统计所有日期 key
-    final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
+    final Map<String, List<Map<String, dynamic>>> grouped =
+        <String, List<Map<String, dynamic>>>{};
     for (final seg in _segments) {
       final int ms = (seg['start_time'] as int?) ?? 0;
       if (ms <= 0) continue;
@@ -583,7 +674,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     // 还有未展示的日期，只扩展可见窗口，不访问数据库
     if (_maxVisibleDayTabs < totalDays) {
       setState(() {
-        _maxVisibleDayTabs = math.min(totalDays, _maxVisibleDayTabs + _appendDayTabs);
+        _maxVisibleDayTabs = math.min(
+          totalDays,
+          _maxVisibleDayTabs + _appendDayTabs,
+        );
       });
       return;
     }
@@ -594,7 +688,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
   String _fmtTime(int ms) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}:${dt.second.toString().padLeft(2,'0')}';
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
   }
 
   Widget _buildActiveCard() {
@@ -607,28 +701,39 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     return Card(
       child: ListTile(
         title: Text(AppLocalizations.of(context).activeSegmentTitle),
-        subtitle: Text('${_fmtTime(start)} - ${_fmtTime(end)}  ·  ${dur}s  ·  ${AppLocalizations.of(context).sampleEverySeconds(interval)}'),
+        subtitle: Text(
+          '${_fmtTime(start)} - ${_fmtTime(end)}  ·  ${dur}s  ·  ${AppLocalizations.of(context).sampleEverySeconds(interval)}',
+        ),
         trailing: const Icon(Icons.timelapse),
       ),
     );
   }
 
-  Future<void> _openImageGallery(List<Map<String, dynamic>> samples, int initialIndex) async {
+  Future<void> _openImageGallery(
+    List<Map<String, dynamic>> samples,
+    int initialIndex,
+  ) async {
     if (!mounted) return;
     try {
       // 尝试为查看器补充本段 AI 结构化结果（用于图片标签/描述等增强信息）
       String? aiStructuredJson;
       try {
-        final int segId = samples.isNotEmpty ? ((samples.first['segment_id'] as int?) ?? 0) : 0;
+        final int segId = samples.isNotEmpty
+            ? ((samples.first['segment_id'] as int?) ?? 0)
+            : 0;
         if (segId > 0) {
-          final Map<String, dynamic>? result = await _db.getSegmentResult(segId);
-          final String raw = (result?['structured_json'] as String?)?.toString() ?? '';
+          final Map<String, dynamic>? result = await _db.getSegmentResult(
+            segId,
+          );
+          final String raw =
+              (result?['structured_json'] as String?)?.toString() ?? '';
           if (raw.trim().isNotEmpty) aiStructuredJson = raw;
         }
       } catch (_) {}
 
       // 将样本映射为 ScreenshotRecord 列表；优先从数据库补全原始记录（含 id / page_url 等）
-      final List<Future<ScreenshotRecord>> futures = <Future<ScreenshotRecord>>[];
+      final List<Future<ScreenshotRecord>> futures =
+          <Future<ScreenshotRecord>>[];
       for (final Map<String, dynamic> m in samples) {
         futures.add(() async {
           final String filePath = (m['file_path'] as String?) ?? '';
@@ -643,7 +748,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
             );
           }
           try {
-            final rec = await ScreenshotDatabase.instance.getScreenshotByPath(filePath);
+            final rec = await ScreenshotDatabase.instance.getScreenshotByPath(
+              filePath,
+            );
             if (rec != null) return rec;
           } catch (_) {}
           // 回退：使用样本字段快速构造
@@ -655,7 +762,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
             appPackageName: pkg,
             appName: appName,
             filePath: filePath,
-            captureTime: ct > 0 ? DateTime.fromMillisecondsSinceEpoch(ct) : DateTime.now(),
+            captureTime: ct > 0
+                ? DateTime.fromMillisecondsSinceEpoch(ct)
+                : DateTime.now(),
             fileSize: 0,
             pageUrl: (m['page_url'] as String?)?.toString(),
             ocrText: (m['ocr_text'] as String?)?.toString(),
@@ -670,10 +779,20 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           ? 0
           : (initialIndex >= shots.length ? shots.length - 1 : initialIndex);
       final Map<String, dynamic> cur = samples[safeIndex];
-      final String curPkg = (cur['app_package_name'] as String?) ?? shots[safeIndex].appPackageName;
-      final String curAppName = (cur['app_name'] as String?) ?? shots[safeIndex].appName;
-      final AppInfo app = _appInfoByPackage[curPkg]
-          ?? AppInfo(packageName: curPkg, appName: curAppName, icon: null, version: '', isSystemApp: false);
+      final String curPkg =
+          (cur['app_package_name'] as String?) ??
+          shots[safeIndex].appPackageName;
+      final String curAppName =
+          (cur['app_name'] as String?) ?? shots[safeIndex].appName;
+      final AppInfo app =
+          _appInfoByPackage[curPkg] ??
+          AppInfo(
+            packageName: curPkg,
+            appName: curAppName,
+            icon: null,
+            version: '',
+            isSystemApp: false,
+          );
 
       if (!mounted) return;
       Navigator.pushNamed(
@@ -696,7 +815,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     }
   }
 
-  Widget _buildSamplesGrid(List<Map<String, dynamic>> samples, {Set<String> aiNsfwFiles = const <String>{}}) {
+  Widget _buildSamplesGrid(
+    List<Map<String, dynamic>> samples, {
+    Set<String> aiNsfwFiles = const <String>{},
+  }) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -711,17 +833,19 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         final s = samples[i];
         final path = (s['file_path'] as String?) ?? '';
         final pageUrl = (s['page_url'] as String?) ?? '';
-        
+
         if (path.isEmpty) {
           return Container(
             decoration: BoxDecoration(
               color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Center(child: Icon(Icons.image_not_supported_outlined)),
+            child: const Center(
+              child: Icon(Icons.image_not_supported_outlined),
+            ),
           );
         }
-        
+
         final String fileName = path.replaceAll('\\', '/').split('/').last;
         final bool aiNsfw = aiNsfwFiles.contains(fileName);
 
@@ -746,7 +870,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     final result = await _db.getSegmentResult(id);
     final Set<String> aiNsfwFiles = <String>{};
     try {
-      final String raw = (result?['structured_json'] as String?)?.toString() ?? '';
+      final String raw =
+          (result?['structured_json'] as String?)?.toString() ?? '';
       if (raw.trim().isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is Map) {
@@ -755,7 +880,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
             bool containsExactNsfw(dynamic tags) {
               if (tags == null) return false;
               if (tags is List) {
-                return tags.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+                return tags.any(
+                  (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                );
               }
               if (tags is String) {
                 final String tt = tags.trim();
@@ -763,7 +890,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                 try {
                   final dynamic v = jsonDecode(tt);
                   if (v is List) {
-                    return v.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+                    return v.any(
+                      (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                    );
                   }
                   if (v is String) {
                     return v
@@ -782,7 +911,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
               if (e is! Map) continue;
               final String file = (e['file'] ?? '').toString().trim();
               if (file.isEmpty) continue;
-              final String fileName = file.replaceAll('\\', '/').split('/').last;
+              final String fileName = file
+                  .replaceAll('\\', '/')
+                  .split('/')
+                  .last;
               if (containsExactNsfw(e['tags'])) aiNsfwFiles.add(fileName);
             }
           }
@@ -793,252 +925,444 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
         return DraggableScrollableSheet(
           expand: false,
-          builder: (_, ctrl) {
-            return Container(
-              padding: const EdgeInsets.all(12),
-              child: ListView(
-                controller: ctrl,
-                children: [
-                  Text(AppLocalizations.of(context).timeRangeLabel('${_fmtTime((seg['start_time'] as int?) ?? 0)} - ${_fmtTime((seg['end_time'] as int?) ?? 0)}')),
-                  const SizedBox(height: 8),
-                  Row(
+          builder: (sheetCtx, ctrl) {
+            final cs = Theme.of(sheetCtx).colorScheme;
+            return ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(AppTheme.radiusLg),
+                topRight: Radius.circular(AppTheme.radiusLg),
+              ),
+              child: ColoredBox(
+                color: cs.surface,
+                child: SafeArea(
+                  top: false,
+                  child: Column(
                     children: [
-                      Text(AppLocalizations.of(context).statusLabel((seg['status'] as String?) ?? '')),
-                      const SizedBox(width: 8),
-                      if ((seg['merged_flag'] as int?) == 1)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            AppLocalizations.of(context).mergedEventTag,
-                            style: const TextStyle(fontSize: 12, color: Colors.orange),
-                          ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: cs.onSurfaceVariant.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(AppLocalizations.of(context).samplesTitle(samples.length)),
-                  const SizedBox(height: 6),
-                  _buildSamplesGrid(samples, aiNsfwFiles: aiNsfwFiles),
-                  const Divider(height: 20),
-                  Row(
-                    children: [
-                      Text(AppLocalizations.of(context).aiResultTitle),
-                      const Spacer(),
-                      if (result != null)
-                        IconButton(
-                          tooltip: AppLocalizations.of(context).copyResultsTooltip,
-                          icon: const Icon(Icons.copy_all_outlined, size: 18),
-                          onPressed: () async {
-                            final text = ((result['structured_json'] as String?) ?? (result['output_text'] as String?) ?? '').toString();
-                            if (text.isEmpty) return;
-                            await Clipboard.setData(ClipboardData(text: text));
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(AppLocalizations.of(context).copySuccess)),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (result == null) Text(AppLocalizations.of(context).none),
-                  if (result != null) ...[
-                    Builder(
-                      builder: (c) {
-                        final String rawText = (result['output_text'] as String?) ?? '';
-                        final String rawJson = (result['structured_json'] as String?) ?? '';
-                        Map<String, dynamic>? sj;
-                        try {
-                          final d = jsonDecode(rawJson);
-                          if (d is Map<String, dynamic>) sj = d;
-                        } catch (_) {}
-                        String? err;
-                        try {
-                          final e = sj?['error'];
-                          if (e is Map) {
-                            final m = (e['message'] ?? e['msg'] ?? '').toString();
-                            if (m.trim().isNotEmpty) {
-                              err = m;
-                            } else {
-                              err = e.toString();
-                            }
-                          } else if (e is String && e.trim().isNotEmpty) {
-                            err = e;
-                          }
-                        } catch (_) {}
-                        if (err == null && rawText.trim().startsWith('{')) {
-                          try {
-                            final d2 = jsonDecode(rawText);
-                            if (d2 is Map && d2['error'] != null) {
-                              final e2 = d2['error'];
-                              if (e2 is Map && (e2['message'] is String)) {
-                                err = e2['message'] as String;
-                              } else {
-                                err = e2.toString();
-                              }
-                            }
-                          } catch (_) {}
-                        }
-                        if (err == null) {
-                          final low = rawText.toLowerCase();
-                          if (low.contains('server_error') ||
-                              low.contains('request failed') ||
-                              low.contains('no candidates returned')) {
-                            err = rawText;
-                          }
-                        }
-                        if (err != null) {
-                          final cs = Theme.of(c).colorScheme;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: cs.errorContainer,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: cs.error.withOpacity(0.6), width: 1),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Expanded(
+                        child: ListView(
+                          controller: ctrl,
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.spacing4,
+                            0,
+                            AppTheme.spacing4,
+                            AppTheme.spacing6,
+                          ),
+                          children: [
+                            Text(
+                              AppLocalizations.of(context).timeRangeLabel(
+                                '${_fmtTime((seg['start_time'] as int?) ?? 0)} - ${_fmtTime((seg['end_time'] as int?) ?? 0)}',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Text(
+                                  AppLocalizations.of(context).statusLabel(
+                                    (seg['status'] as String?) ?? '',
+                                  ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.error_outline, size: 16, color: cs.onErrorContainer),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: SelectableText(
-                                        err!,
-                                        style: Theme.of(c).textTheme.bodyMedium?.copyWith(color: cs.onErrorContainer),
+                                const SizedBox(width: 8),
+                                if ((seg['merged_flag'] as int?) == 1)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      AppLocalizations.of(
+                                        context,
+                                      ).mergedEventTag,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.orange,
                                       ),
                                     ),
-                                  ],
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              AppLocalizations.of(
+                                context,
+                              ).samplesTitle(samples.length),
+                            ),
+                            const SizedBox(height: 6),
+                            _buildSamplesGrid(
+                              samples,
+                              aiNsfwFiles: aiNsfwFiles,
+                            ),
+                            const Divider(height: 20),
+                            Row(
+                              children: [
+                                Text(
+                                  AppLocalizations.of(context).aiResultTitle,
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              if (rawJson.isNotEmpty)
-                                SelectableText(rawJson, style: Theme.of(c).textTheme.bodySmall),
-                            ],
-                          );
-                        } else {
-                          final Map<String, List<String>> tagsByFile = <String, List<String>>{};
-                          final List<Map<String, String>> descGroups = <Map<String, String>>[];
-
-                          try {
-                            final rawTags = sj?['image_tags'];
-                            if (rawTags is List) {
-                              for (final e in rawTags) {
-                                if (e is! Map) continue;
-                                final Map<dynamic, dynamic> m = e;
-                                final String file = (m['file'] ?? '').toString().trim();
-                                if (file.isEmpty) continue;
-                                final raw = m['tags'];
-                                final List<String> tags = <String>[];
-                                if (raw is List) {
-                                  for (final t in raw) {
-                                    final v = t.toString().trim();
-                                    if (v.isNotEmpty) tags.add(v);
+                                const Spacer(),
+                                if (result != null)
+                                  IconButton(
+                                    tooltip: AppLocalizations.of(
+                                      context,
+                                    ).copyResultsTooltip,
+                                    icon: const Icon(
+                                      Icons.copy_all_outlined,
+                                      size: 18,
+                                    ),
+                                    onPressed: () async {
+                                      final text =
+                                          ((result['structured_json']
+                                                      as String?) ??
+                                                  (result['output_text']
+                                                      as String?) ??
+                                                  '')
+                                              .toString();
+                                      if (text.isEmpty) return;
+                                      await Clipboard.setData(
+                                        ClipboardData(text: text),
+                                      );
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).copySuccess,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            if (result == null)
+                              Text(AppLocalizations.of(context).none),
+                            if (result != null) ...[
+                              Builder(
+                                builder: (c) {
+                                  final String rawText =
+                                      (result['output_text'] as String?) ?? '';
+                                  final String rawJson =
+                                      (result['structured_json'] as String?) ??
+                                      '';
+                                  Map<String, dynamic>? sj;
+                                  try {
+                                    final d = jsonDecode(rawJson);
+                                    if (d is Map<String, dynamic>) sj = d;
+                                  } catch (_) {}
+                                  String? err;
+                                  try {
+                                    final e = sj?['error'];
+                                    if (e is Map) {
+                                      final m = (e['message'] ?? e['msg'] ?? '')
+                                          .toString();
+                                      if (m.trim().isNotEmpty) {
+                                        err = m;
+                                      } else {
+                                        err = e.toString();
+                                      }
+                                    } else if (e is String &&
+                                        e.trim().isNotEmpty) {
+                                      err = e;
+                                    }
+                                  } catch (_) {}
+                                  if (err == null &&
+                                      rawText.trim().startsWith('{')) {
+                                    try {
+                                      final d2 = jsonDecode(rawText);
+                                      if (d2 is Map && d2['error'] != null) {
+                                        final e2 = d2['error'];
+                                        if (e2 is Map &&
+                                            (e2['message'] is String)) {
+                                          err = e2['message'] as String;
+                                        } else {
+                                          err = e2.toString();
+                                        }
+                                      }
+                                    } catch (_) {}
                                   }
-                                } else if (raw is String) {
-                                  tags.addAll(
-                                    raw
-                                        .split(RegExp(r'[，,;；\s]+'))
-                                        .map((e) => e.trim())
-                                        .where((e) => e.isNotEmpty),
-                                  );
-                                }
-                                if (tags.isNotEmpty) tagsByFile[file] = tags;
-                              }
-                            }
-                          } catch (_) {}
+                                  if (err == null) {
+                                    final low = rawText.toLowerCase();
+                                    if (low.contains('server_error') ||
+                                        low.contains('request failed') ||
+                                        low.contains(
+                                          'no candidates returned',
+                                        )) {
+                                      err = rawText;
+                                    }
+                                  }
+                                  if (err != null) {
+                                    final cs = Theme.of(c).colorScheme;
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: cs.errorContainer,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: cs.error.withOpacity(0.6),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.error_outline,
+                                                size: 16,
+                                                color: cs.onErrorContainer,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: SelectableText(
+                                                  err!,
+                                                  style: Theme.of(c)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color:
+                                                            cs.onErrorContainer,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        if (rawJson.isNotEmpty)
+                                          SelectableText(
+                                            rawJson,
+                                            style: Theme.of(
+                                              c,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                      ],
+                                    );
+                                  } else {
+                                    final Map<String, List<String>> tagsByFile =
+                                        <String, List<String>>{};
+                                    final List<Map<String, String>> descGroups =
+                                        <Map<String, String>>[];
 
-                          try {
-                            final rawDescs = sj?['image_descriptions'];
-                            if (rawDescs is List) {
-                              for (final e in rawDescs) {
-                                if (e is! Map) continue;
-                                final Map<dynamic, dynamic> m = e;
-                                final String from = (m['from_file'] ?? m['from'] ?? m['start'] ?? '').toString().trim();
-                                final String to = (m['to_file'] ?? m['to'] ?? m['end'] ?? '').toString().trim();
-                                final String desc = (m['description'] ?? m['desc'] ?? '').toString().trim();
-                                if ((from.isEmpty && to.isEmpty) || desc.isEmpty) continue;
-                                final String a = from.isNotEmpty ? from : to;
-                                final String b = to.isNotEmpty ? to : from;
-                                descGroups.add(<String, String>{'from': a, 'to': b, 'description': desc});
-                              }
-                            }
-                          } catch (_) {}
+                                    try {
+                                      final rawTags = sj?['image_tags'];
+                                      if (rawTags is List) {
+                                        for (final e in rawTags) {
+                                          if (e is! Map) continue;
+                                          final Map<dynamic, dynamic> m = e;
+                                          final String file = (m['file'] ?? '')
+                                              .toString()
+                                              .trim();
+                                          if (file.isEmpty) continue;
+                                          final raw = m['tags'];
+                                          final List<String> tags = <String>[];
+                                          if (raw is List) {
+                                            for (final t in raw) {
+                                              final v = t.toString().trim();
+                                              if (v.isNotEmpty) tags.add(v);
+                                            }
+                                          } else if (raw is String) {
+                                            tags.addAll(
+                                              raw
+                                                  .split(RegExp(r'[，,;；\s]+'))
+                                                  .map((e) => e.trim())
+                                                  .where((e) => e.isNotEmpty),
+                                            );
+                                          }
+                                          if (tags.isNotEmpty)
+                                            tagsByFile[file] = tags;
+                                        }
+                                      }
+                                    } catch (_) {}
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(AppLocalizations.of(context).modelValueLabel((result['ai_model'] ?? '').toString())),
-                              const SizedBox(height: 6),
-                              MarkdownBody(
-                                data: rawText,
-                                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(c)).copyWith(
-                                  p: Theme.of(c).textTheme.bodyMedium,
-                                ),
-                                onTapLink: (text, href, title) async {
-                                  if (href == null) return;
-                                  final uri = Uri.tryParse(href);
-                                  if (uri != null) {
-                                    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+                                    try {
+                                      final rawDescs =
+                                          sj?['image_descriptions'];
+                                      if (rawDescs is List) {
+                                        for (final e in rawDescs) {
+                                          if (e is! Map) continue;
+                                          final Map<dynamic, dynamic> m = e;
+                                          final String from =
+                                              (m['from_file'] ??
+                                                      m['from'] ??
+                                                      m['start'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          final String to =
+                                              (m['to_file'] ??
+                                                      m['to'] ??
+                                                      m['end'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          final String desc =
+                                              (m['description'] ??
+                                                      m['desc'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if ((from.isEmpty && to.isEmpty) ||
+                                              desc.isEmpty)
+                                            continue;
+                                          final String a = from.isNotEmpty
+                                              ? from
+                                              : to;
+                                          final String b = to.isNotEmpty
+                                              ? to
+                                              : from;
+                                          descGroups.add(<String, String>{
+                                            'from': a,
+                                            'to': b,
+                                            'description': desc,
+                                          });
+                                        }
+                                      }
+                                    } catch (_) {}
+
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          AppLocalizations.of(
+                                            context,
+                                          ).modelValueLabel(
+                                            (result['ai_model'] ?? '')
+                                                .toString(),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        MarkdownBody(
+                                          data: rawText,
+                                          styleSheet:
+                                              MarkdownStyleSheet.fromTheme(
+                                                Theme.of(c),
+                                              ).copyWith(
+                                                p: Theme.of(
+                                                  c,
+                                                ).textTheme.bodyMedium,
+                                              ),
+                                          onTapLink: (text, href, title) async {
+                                            if (href == null) return;
+                                            final uri = Uri.tryParse(href);
+                                            if (uri != null) {
+                                              try {
+                                                await launchUrl(
+                                                  uri,
+                                                  mode: LaunchMode
+                                                      .externalApplication,
+                                                );
+                                              } catch (_) {}
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(height: 10),
+                                        if (tagsByFile.isNotEmpty) ...[
+                                          Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).aiImageTagsTitle,
+                                            style: Theme.of(
+                                              c,
+                                            ).textTheme.titleSmall,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          ...tagsByFile.entries.map((e) {
+                                            final String tags = e.value.join(
+                                              ' · ',
+                                            );
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 6,
+                                              ),
+                                              child: SelectableText(
+                                                '${e.key}: $tags',
+                                                style: Theme.of(
+                                                  c,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            );
+                                          }),
+                                          const SizedBox(height: 10),
+                                        ],
+                                        if (descGroups.isNotEmpty) ...[
+                                          Text(
+                                            AppLocalizations.of(
+                                              context,
+                                            ).aiImageDescriptionsTitle,
+                                            style: Theme.of(
+                                              c,
+                                            ).textTheme.titleSmall,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          ...descGroups.map((g) {
+                                            final String from = g['from'] ?? '';
+                                            final String to = g['to'] ?? '';
+                                            final String label =
+                                                (from.isNotEmpty &&
+                                                    to.isNotEmpty &&
+                                                    from != to)
+                                                ? '$from-$to'
+                                                : (from.isNotEmpty ? from : to);
+                                            final String desc =
+                                                g['description'] ?? '';
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 10,
+                                              ),
+                                              child: SelectableText(
+                                                '$label:\n$desc',
+                                                style: Theme.of(
+                                                  c,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            );
+                                          }),
+                                          const SizedBox(height: 10),
+                                        ],
+                                        if (rawJson.isNotEmpty)
+                                          SelectableText(rawJson),
+                                      ],
+                                    );
                                   }
                                 },
                               ),
-                              const SizedBox(height: 10),
-                              if (tagsByFile.isNotEmpty) ...[
-                                Text(
-                                  AppLocalizations.of(context).aiImageTagsTitle,
-                                  style: Theme.of(c).textTheme.titleSmall,
-                                ),
-                                const SizedBox(height: 6),
-                                ...tagsByFile.entries.map((e) {
-                                  final String tags = e.value.join(' · ');
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 6),
-                                    child: SelectableText('${e.key}: $tags', style: Theme.of(c).textTheme.bodySmall),
-                                  );
-                                }),
-                                const SizedBox(height: 10),
-                              ],
-                              if (descGroups.isNotEmpty) ...[
-                                Text(
-                                  AppLocalizations.of(context).aiImageDescriptionsTitle,
-                                  style: Theme.of(c).textTheme.titleSmall,
-                                ),
-                                const SizedBox(height: 6),
-                                ...descGroups.map((g) {
-                                  final String from = g['from'] ?? '';
-                                  final String to = g['to'] ?? '';
-                                  final String label = (from.isNotEmpty && to.isNotEmpty && from != to) ? '$from-$to' : (from.isNotEmpty ? from : to);
-                                  final String desc = g['description'] ?? '';
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: SelectableText('$label:\n$desc', style: Theme.of(c).textTheme.bodySmall),
-                                  );
-                                }),
-                                const SizedBox(height: 10),
-                              ],
-                              if (rawJson.isNotEmpty)
-                                SelectableText(rawJson),
                             ],
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             );
           },
         );
-      }
+      },
     );
   }
 
@@ -1048,39 +1372,48 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     _autoTickCount = 0;
     // 先触发一次原生扫描，确保后续能尽快进入工作状态
     () async {
-      try { await _db.triggerSegmentTick(); } catch (_) {}
+      try {
+        await _db.triggerSegmentTick();
+      } catch (_) {}
     }();
     _autoTimer?.cancel();
     _autoTimer = Timer.periodic(const Duration(seconds: 1), (_) => _autoPoll());
   }
- 
+
   void _stopAutoWatch() {
     _autoTimer?.cancel();
     _autoTimer = null;
     _autoWatching = false;
   }
- 
+
   Future<void> _autoPoll() async {
-    if (!_onlyNoSummary || !mounted) { _stopAutoWatch(); return; }
+    if (!_onlyNoSummary || !mounted) {
+      _stopAutoWatch();
+      return;
+    }
     if (_loading) return;
     _autoTickCount++;
     try {
       // 每次只做轻量查询；原生端 1s 心跳已持续推进/补救
       final segments = await _db.listSegmentsEx(limit: 50, onlyNoSummary: true);
       if (!mounted) return;
-      setState(() { _segments = segments; });
+      setState(() {
+        _segments = segments;
+      });
       // 若已无“暂无总结”，停止自动检测
-      final hasPending = segments.any((e) => (e['has_summary'] as int? ?? 0) == 0);
+      final hasPending = segments.any(
+        (e) => (e['has_summary'] as int? ?? 0) == 0,
+      );
       if (!hasPending) _stopAutoWatch();
     } catch (_) {}
   }
- 
+
   @override
   void dispose() {
     _stopAutoWatch();
     super.dispose();
   }
- 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1170,7 +1503,8 @@ class _SegmentTimelineTabView extends StatefulWidget {
   });
 
   @override
-  State<_SegmentTimelineTabView> createState() => _SegmentTimelineTabViewState();
+  State<_SegmentTimelineTabView> createState() =>
+      _SegmentTimelineTabViewState();
 }
 
 class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
@@ -1191,7 +1525,10 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       return CustomScrollView(
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.spacing4,
+              vertical: AppTheme.spacing1,
+            ),
             sliver: SliverToBoxAdapter(
               child: Column(
                 children: [
@@ -1200,7 +1537,13 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                   if (widget.onlyNoSummary && widget.autoWatching)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(AppLocalizations.of(context).autoWatchingHint, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                      child: Text(
+                        AppLocalizations.of(context).autoWatchingHint,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.blueGrey,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -1210,15 +1553,17 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
             hasScrollBody: false,
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing6,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                            Icon(
-                              Icons.event_note_outlined,
-                              size: 64,
-                              color: AppTheme.mutedForeground.withOpacity(0.5),
-                            ),
+                    Icon(
+                      Icons.event_note_outlined,
+                      size: 64,
+                      color: AppTheme.mutedForeground.withOpacity(0.5),
+                    ),
                     const SizedBox(height: AppTheme.spacing4),
                     Text(
                       AppLocalizations.of(context).noEvents,
@@ -1252,11 +1597,15 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       final k = _dateKeyFromMillis((seg['start_time'] as int?) ?? 0);
       grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
     }
-    final List<String> keys = grouped.keys.toList()..sort((a, b) => a.compareTo(b));
+    final List<String> keys = grouped.keys.toList()
+      ..sort((a, b) => a.compareTo(b));
     final List<String> orderedAll = keys.reversed.toList();
 
     // 仅展示“最近 maxVisibleDayTabs 个日期”，其余日期在用户滑动到末尾后再增量展示
-    final int visibleCount = math.min(widget.maxVisibleDayTabs, orderedAll.length);
+    final int visibleCount = math.min(
+      widget.maxVisibleDayTabs,
+      orderedAll.length,
+    );
     final List<String> ordered = orderedAll.take(visibleCount).toList();
 
     // 根据当前可见日期数量维护 TabController，尽量保留用户当前选中的索引
@@ -1278,16 +1627,21 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       children: [
         Builder(
           builder: (context) {
-            final Color selectedColor = Theme.of(context).brightness == Brightness.dark
+            final Color selectedColor =
+                Theme.of(context).brightness == Brightness.dark
                 ? AppTheme.darkForeground
                 : AppTheme.foreground;
             final Color unselectedColor =
-                Theme.of(context).textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-            final bool hasHiddenTabs = widget.maxVisibleDayTabs < orderedAll.length;
-            final bool canLoadMoreFromDb = !widget.onlyNoSummary &&
+                Theme.of(context).textTheme.bodySmall?.color ??
+                AppTheme.mutedForeground;
+            final bool hasHiddenTabs =
+                widget.maxVisibleDayTabs < orderedAll.length;
+            final bool canLoadMoreFromDb =
+                !widget.onlyNoSummary &&
                 widget.onLastDayTabReached != null &&
                 !widget.noMoreOlderSegments;
-            final bool showLoadMoreButton = widget.onLastDayTabReached != null &&
+            final bool showLoadMoreButton =
+                widget.onLastDayTabReached != null &&
                 (hasHiddenTabs || canLoadMoreFromDb);
             final bool isLoadingMore = widget.isLoadingMoreDays;
             return SizedBox(
@@ -1304,15 +1658,17 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                         // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
                         padding: const EdgeInsets.only(left: AppTheme.spacing2),
                         // 与截图列表一致：标签水平留白适中
-                        labelPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
                         labelColor: selectedColor,
                         unselectedLabelColor: unselectedColor,
-                        labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        unselectedLabelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
+                        labelStyle: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                        unselectedLabelStyle: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w500),
                         // 与截图列表一致：去掉底部分割线
                         dividerColor: Colors.transparent,
                         indicatorSize: TabBarIndicatorSize.label,
@@ -1320,42 +1676,47 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                         indicatorPadding: EdgeInsets.zero,
                         // 与截图列表一致：细下划线，较小的左右 insets
                         indicator: UnderlineTabIndicator(
-                          borderSide: BorderSide(width: 2.0, color: selectedColor),
+                          borderSide: BorderSide(
+                            width: 2.0,
+                            color: selectedColor,
+                          ),
                           insets: const EdgeInsets.symmetric(horizontal: 4.0),
                         ),
                         tabs: [
                           for (final k in ordered)
                             Tab(
                               text: (() {
-                            final parts = k.split('-');
-                            if (parts.length == 3) {
-                              final y = int.tryParse(parts[0]) ?? 1970;
-                              final m = int.tryParse(parts[1]) ?? 1;
-                              final d = int.tryParse(parts[2]) ?? 1;
-                              final dt = DateTime(y, m, d);
-                              final now = DateTime.now();
-                              bool sameDay(DateTime a, DateTime b) =>
-                                  a.year == b.year &&
-                                  a.month == b.month &&
-                                  a.day == b.day;
-                              final int c =
-                                  (grouped[k] ?? const <Map<String, dynamic>>[])
-                                      .length;
-                              final l10n = AppLocalizations.of(context);
-                              if (sameDay(dt, now)) return l10n.dayTabToday(c);
-                              if (sameDay(
-                                dt,
-                                now.subtract(const Duration(days: 1)),
-                              )) {
-                                return l10n.dayTabYesterday(c);
-                              }
-                              return l10n.dayTabMonthDayCount(
-                                dt.month,
-                                dt.day,
-                                c,
-                              );
-                            }
-                            return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
+                                final parts = k.split('-');
+                                if (parts.length == 3) {
+                                  final y = int.tryParse(parts[0]) ?? 1970;
+                                  final m = int.tryParse(parts[1]) ?? 1;
+                                  final d = int.tryParse(parts[2]) ?? 1;
+                                  final dt = DateTime(y, m, d);
+                                  final now = DateTime.now();
+                                  bool sameDay(DateTime a, DateTime b) =>
+                                      a.year == b.year &&
+                                      a.month == b.month &&
+                                      a.day == b.day;
+                                  final int c =
+                                      (grouped[k] ??
+                                              const <Map<String, dynamic>>[])
+                                          .length;
+                                  final l10n = AppLocalizations.of(context);
+                                  if (sameDay(dt, now))
+                                    return l10n.dayTabToday(c);
+                                  if (sameDay(
+                                    dt,
+                                    now.subtract(const Duration(days: 1)),
+                                  )) {
+                                    return l10n.dayTabYesterday(c);
+                                  }
+                                  return l10n.dayTabMonthDayCount(
+                                    dt.month,
+                                    dt.day,
+                                    c,
+                                  );
+                                }
+                                return '$k ${(grouped[k] ?? const <Map<String, dynamic>>[]).length}';
                               })(),
                             ),
                         ],
@@ -1366,10 +1727,14 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                         padding: const EdgeInsets.only(left: AppTheme.spacing2),
                         child: TextButton.icon(
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTheme.spacing2,
+                            ),
                             visualDensity: VisualDensity.compact,
                           ),
-                          onPressed: (widget.onLastDayTabReached == null || isLoadingMore)
+                          onPressed:
+                              (widget.onLastDayTabReached == null ||
+                                  isLoadingMore)
                               ? null
                               : () {
                                   widget.onLastDayTabReached!.call();
@@ -1378,10 +1743,14 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.more_horiz, size: 18),
-                          label: Text(AppLocalizations.of(context).memoryLoadMore),
+                          label: Text(
+                            AppLocalizations.of(context).memoryLoadMore,
+                          ),
                         ),
                       ),
                   ],
@@ -1396,7 +1765,10 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
             children: [
               for (final k in ordered)
                 ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing4,
+                    vertical: AppTheme.spacing1,
+                  ),
                   children: [
                     widget.activeHeader,
                     const SizedBox(height: 8),
@@ -1435,14 +1807,14 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       child: ListTile(
         leading: const Icon(Icons.event_note_outlined),
         title: Text(AppLocalizations.of(context).dailySummaryShort),
-        subtitle: Text(
-          AppLocalizations.of(context).viewOrGenerateForDay,
-        ),
+        subtitle: Text(AppLocalizations.of(context).viewOrGenerateForDay),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           // 这里仍然使用 dateKey（YYYY-MM-DD）作为每日总结的键，与 DailySummaryPage 保持一致
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dateKey)),
+            MaterialPageRoute(
+              builder: (_) => DailySummaryPage(dateKey: dateKey),
+            ),
           );
         },
       ),
@@ -1500,12 +1872,16 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   bool _summaryExpanded = false;
   // 重新生成操作状态
   bool _retrying = false;
+  // 强制合并操作状态
+  bool _forcingMerge = false;
   // 结果轮询器：点击“重新生成”后，直到拿到结果为止持续旋转提示
   Timer? _resultWatchTimer;
+  Timer? _mergeWatchTimer;
   Timer? _summaryStreamTimer;
   Map<String, dynamic> _segmentData = <String, dynamic>{};
   Map<String, dynamic> _latestExternalSegment = <String, dynamic>{};
   int? _lastResultCreatedAt;
+  int? _lastMergeResultCreatedAt;
   bool _summaryStreaming = false;
   String _summaryStreamingText = '';
 
@@ -1529,6 +1905,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   @override
   void dispose() {
     _resultWatchTimer?.cancel();
+    _mergeWatchTimer?.cancel();
     _summaryStreamTimer?.cancel();
     super.dispose();
   }
@@ -1542,7 +1919,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     return next;
   }
 
-  Map<String, dynamic> _mergeResultIntoSegment(Map<String, dynamic> base, Map<String, dynamic> result) {
+  Map<String, dynamic> _mergeResultIntoSegment(
+    Map<String, dynamic> base,
+    Map<String, dynamic> result,
+  ) {
     final next = Map<String, dynamic>.from(base);
     next['output_text'] = result['output_text'];
     next['structured_json'] = result['structured_json'];
@@ -1558,15 +1938,23 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final int sampleCount = (_segmentData['sample_count'] as int?) ?? 0;
     final int start = (_segmentData['start_time'] as int?) ?? 0;
     final int end = (_segmentData['end_time'] as int?) ?? 0;
-    final String timeLabel = '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
+    final String timeLabel =
+        '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
     final bool merged = (_segmentData['merged_flag'] as int?) == 1;
     final String status = (_segmentData['status'] as String?) ?? '';
+    final bool mergeAttempted = (_segmentData['merge_attempted'] as int?) == 1;
+    final bool mergeForced = (_segmentData['merge_forced'] as int?) == 1;
+    final int mergePrevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
+    final String mergeReason =
+        (_segmentData['merge_decision_reason'] as String?)?.trim() ?? '';
 
     final Map<String, dynamic> resultMeta = {
       'categories': _segmentData['categories'],
       'output_text': _segmentData['output_text'],
     };
-    final Map<String, dynamic>? structured = _tryParseJson(_segmentData['structured_json'] as String?);
+    final Map<String, dynamic>? structured = _tryParseJson(
+      _segmentData['structured_json'] as String?,
+    );
     final Set<String> aiNsfwFiles = <String>{};
     try {
       final rawTags = structured?['image_tags'];
@@ -1582,7 +1970,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             try {
               final dynamic v = jsonDecode(tt);
               if (v is List) {
-                return v.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+                return v.any(
+                  (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                );
               }
               if (v is String) {
                 return v
@@ -1608,14 +1998,29 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     } catch (_) {}
     final String? keyAction = _extractKeyActionDetail(structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
-    final String computedSummary = _extractOverallSummary(resultMeta, structured);
+    final String computedSummary = _extractOverallSummary(
+      resultMeta,
+      structured,
+    );
     final String summary = _summaryStreaming
-        ? (_summaryStreamingText.isEmpty ? _summaryGeneratingPlaceholder : _summaryStreamingText)
+        ? (_summaryStreamingText.isEmpty
+              ? _summaryGeneratingPlaceholder
+              : _summaryStreamingText)
         : computedSummary;
+    final List<String> mergedParts = merged
+        ? splitMergedEventSummaryParts(summary)
+        : const <String>[];
+    final String displaySummary = mergedParts.isNotEmpty
+        ? mergedParts.first
+        : summary;
+    final List<String> originalSummaries = mergedParts.length > 1
+        ? mergedParts.sublist(1)
+        : const <String>[];
 
     // 错误检测：从 structured_json.error / output_text(JSON) / 关键字启发式 识别错误
     String? errorText;
-    final String outputRaw = (resultMeta['output_text'] as String?)?.toString() ?? '';
+    final String outputRaw =
+        (resultMeta['output_text'] as String?)?.toString() ?? '';
 
     // 1) structured_json.error
     try {
@@ -1633,7 +2038,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     } catch (_) {}
 
     // 2) output_text 若为 JSON 且含 error
-    if (errorText == null && outputRaw.isNotEmpty && outputRaw.trim().startsWith('{')) {
+    if (errorText == null &&
+        outputRaw.isNotEmpty &&
+        outputRaw.trim().startsWith('{')) {
       try {
         final decoded = jsonDecode(outputRaw);
         if (decoded is Map && decoded['error'] != null) {
@@ -1673,10 +2080,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             Expanded(
               child: Text(
                 text,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: cs.onErrorContainer),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: cs.onErrorContainer),
               ),
             ),
           ],
@@ -1684,19 +2090,27 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       );
     }
 
-        // 包名：优先使用后端汇总的 app_packages_display，其次 app_packages（保证首屏就能显示 Logo）
-        List<String> packages = <String>[];
-        final String? appPkgsDisplay = _segmentData['app_packages_display'] as String?;
-        final String? appPkgsRaw = _segmentData['app_packages'] as String?;
-        final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
-            ? appPkgsDisplay
-            : appPkgsRaw;
-        if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
-          packages = pkgSrc.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty).toList();
-        }
+    // 包名：优先使用后端汇总的 app_packages_display，其次 app_packages（保证首屏就能显示 Logo）
+    List<String> packages = <String>[];
+    final String? appPkgsDisplay =
+        _segmentData['app_packages_display'] as String?;
+    final String? appPkgsRaw = _segmentData['app_packages'] as String?;
+    final String? pkgSrc =
+        (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+        ? appPkgsDisplay
+        : appPkgsRaw;
+    if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
+      packages = pkgSrc
+          .split(RegExp(r'[,\s]+'))
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
+    }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing3,
+        vertical: AppTheme.spacing1,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1708,7 +2122,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
+                children: packages
+                    .map((pkg) => _buildAppIcon(context, pkg))
+                    .toList(),
               ),
               const SizedBox(height: 8),
               _buildCategorySection(context, categories, merged),
@@ -1722,15 +2138,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             // 根据是否超出行数动态决定是否显示“展开/收起”
             LayoutBuilder(
               builder: (context, constraints) {
-                final List<String> mergedParts =
-                    merged ? splitMergedEventSummaryParts(summary) : const <String>[];
-                final String displaySummary =
-                    mergedParts.isNotEmpty ? mergedParts.first : summary;
-                final List<String> originalSummaries = mergedParts.length > 1
-                    ? mergedParts.sublist(1)
-                    : const <String>[];
-
-                final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
+                final TextStyle? textStyle = Theme.of(
+                  context,
+                ).textTheme.bodyMedium;
                 // 仅在收起状态下检测是否溢出
                 bool overflow = false;
                 if (!_summaryExpanded && textStyle != null) {
@@ -1744,35 +2154,88 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                 }
 
                 // 预估 7 行高度用于折叠时裁切
-                final double lineHeight = (textStyle?.height ?? 1.2) * (textStyle?.fontSize ?? 14.0);
+                final double lineHeight =
+                    (textStyle?.height ?? 1.2) * (textStyle?.fontSize ?? 14.0);
                 final double collapsedHeight = lineHeight * 7.0 + 2.0;
 
-                final md = _buildMarkdownBody(context, displaySummary, textStyle);
+                final md = _buildMarkdownBody(
+                  context,
+                  displaySummary,
+                  textStyle,
+                );
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _summaryExpanded
                         ? md
-                        : ConstrainedBox(constraints: BoxConstraints(maxHeight: collapsedHeight), child: ClipRect(child: md)),
+                        : ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: collapsedHeight,
+                            ),
+                            child: ClipRect(child: md),
+                          ),
                     if (overflow || _summaryExpanded)
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () => setState(() => _summaryExpanded = !_summaryExpanded),
-                          child: Text(_summaryExpanded ? AppLocalizations.of(context).collapse : AppLocalizations.of(context).expandMore),
+                          onPressed: () => setState(
+                            () => _summaryExpanded = !_summaryExpanded,
+                          ),
+                          child: Text(
+                            _summaryExpanded
+                                ? AppLocalizations.of(context).collapse
+                                : AppLocalizations.of(context).expandMore,
+                          ),
                         ),
-                       ),
-                    if (merged && originalSummaries.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _buildMergedOriginalEventsSection(
-                        context,
-                        segmentId: id,
-                        originals: originalSummaries,
-                        textStyle: textStyle,
                       ),
-                    ],
                   ],
+                );
+              },
+            ),
+          ],
+          if (status == 'completed' &&
+              (mergeAttempted ||
+                  mergeForced ||
+                  mergeReason.isNotEmpty ||
+                  _forcingMerge ||
+                  merged)) ...[
+            const SizedBox(height: 6),
+            Builder(
+              builder: (context) {
+                final cs = Theme.of(context).colorScheme;
+                final TextStyle? titleStyle = Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
+                final TextStyle? reasonStyle = Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+
+                final String state = _forcingMerge
+                    ? '强制合并中…'
+                    : (merged
+                          ? '已合并'
+                          : (mergeForced
+                                ? (mergeAttempted ? '强制合并失败' : '已请求强制合并')
+                                : (mergeAttempted ? '未合并' : '待判定')));
+                final String reasonText = mergeReason.isNotEmpty
+                    ? mergeReason
+                    : (_forcingMerge ? '正在合并，请稍候…' : '');
+                final bool canForce =
+                    !_forcingMerge &&
+                    !merged &&
+                    mergeAttempted &&
+                    mergePrevId > 0;
+
+                return _buildMergeStatusDropdown(
+                  context,
+                  segmentId: id,
+                  state: state,
+                  reasonText: reasonText,
+                  titleStyle: titleStyle,
+                  reasonStyle: reasonStyle,
+                  canForce: canForce,
+                  originalSummaries: originalSummaries,
                 );
               },
             ),
@@ -1781,32 +2244,50 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           Row(
             children: [
               TextButton.icon(
-                onPressed: sampleCount <= 0 ? null : () async {
-                  setState(() => _expanded = !_expanded);
-                  if (_expanded && !_samplesLoaded && !_samplesLoading) {
-                    setState(() => _samplesLoading = true);
-                    try {
-                      final loaded = await widget.loadSamples(id);
-                      setState(() {
-                        _samples = loaded;
-                        _samplesLoaded = true;
-                      });
-                    } catch (_) {} finally {
-                      if (mounted) setState(() => _samplesLoading = false);
-                    }
-                  }
-                },
+                onPressed: sampleCount <= 0
+                    ? null
+                    : () async {
+                        setState(() => _expanded = !_expanded);
+                        if (_expanded && !_samplesLoaded && !_samplesLoading) {
+                          setState(() => _samplesLoading = true);
+                          try {
+                            final loaded = await widget.loadSamples(id);
+                            setState(() {
+                              _samples = loaded;
+                              _samplesLoaded = true;
+                            });
+                          } catch (_) {
+                          } finally {
+                            if (mounted)
+                              setState(() => _samplesLoading = false);
+                          }
+                        }
+                      },
                 icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-                label: Text(_expanded ? AppLocalizations.of(context).hideImagesCount(sampleCount) : AppLocalizations.of(context).viewImagesCount(sampleCount)),
+                label: Text(
+                  _expanded
+                      ? AppLocalizations.of(
+                          context,
+                        ).hideImagesCount(sampleCount)
+                      : AppLocalizations.of(
+                          context,
+                        ).viewImagesCount(sampleCount),
+                ),
               ),
               const Spacer(),
               IconButton(
                 tooltip: AppLocalizations.of(context).actionRegenerate,
-                onPressed: _retrying ? null : () async {
-                  await _retry();
-                },
+                onPressed: _retrying
+                    ? null
+                    : () async {
+                        await _retry();
+                      },
                 icon: _retrying
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(Icons.refresh_outlined, size: 18),
               ),
               const SizedBox(width: 8),
@@ -1819,15 +2300,21 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                     ..writeln(l10n.timeRangeLabel(timeLabel))
                     ..writeln(l10n.statusLabel(status));
                   if (merged) buffer.writeln(l10n.tagMergedCopy);
-                  if (categories.isNotEmpty) buffer.writeln(l10n.categoriesLabel(categories.join(', ')));
+                  if (categories.isNotEmpty)
+                    buffer.writeln(l10n.categoriesLabel(categories.join(', ')));
                   if (errorText != null && errorText!.trim().isNotEmpty) {
                     buffer.writeln(l10n.errorLabel(errorText!));
                   } else if (summary.trim().isNotEmpty) {
                     buffer.writeln(l10n.summaryLabel(summary));
                   }
-                  await Clipboard.setData(ClipboardData(text: buffer.toString()));
+                  await Clipboard.setData(
+                    ClipboardData(text: buffer.toString()),
+                  );
                   if (!mounted) return;
-                  UINotifier.success(context, AppLocalizations.of(context).copySuccess);
+                  UINotifier.success(
+                    context,
+                    AppLocalizations.of(context).copySuccess,
+                  );
                 },
               ),
               const SizedBox(width: 8),
@@ -1845,9 +2332,21 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             (_samplesLoading
                 ? const SizedBox(
                     height: 60,
-                    child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+                    child: Center(
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
                   )
-                : (_samples.isNotEmpty ? _buildThumbGrid(context, _samples, aiNsfwFiles: aiNsfwFiles) : const SizedBox.shrink())),
+                : (_samples.isNotEmpty
+                      ? _buildThumbGrid(
+                          context,
+                          _samples,
+                          aiNsfwFiles: aiNsfwFiles,
+                        )
+                      : const SizedBox.shrink())),
           if (!widget.isLast) ...[
             const SizedBox(height: AppTheme.spacing3),
             _buildSeparator(context),
@@ -1858,39 +2357,130 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     );
   }
 
-            // 时间居中 + 下一行展示关键动作（不使用分割线）
-            Widget _timeSeparator(BuildContext context, {required String label, String? keyActionDetail}) {
-              final Color actionColor = AppTheme.warning; // 使用更醒目的警告色
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    height: 22,
-                    child: Center(
-                      child: Text(
-                        label,
-                        style: DefaultTextStyle.of(context).style,
-                      ),
-                    ),
-                  ),
-                  if (keyActionDetail != null && keyActionDetail.trim().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Center(
-                        child: Text(
-                          keyActionDetail,
-                          style: DefaultTextStyle.of(context).style.copyWith(color: actionColor),
+  // 时间居中 + 下一行展示关键动作（不使用分割线）
+  Widget _timeSeparator(
+    BuildContext context, {
+    required String label,
+    String? keyActionDetail,
+  }) {
+    final Color actionColor = AppTheme.warning; // 使用更醒目的警告色
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 22,
+          child: Center(
+            child: Text(label, style: DefaultTextStyle.of(context).style),
+          ),
+        ),
+        if (keyActionDetail != null && keyActionDetail.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Center(
+              child: Text(
+                keyActionDetail,
+                style: DefaultTextStyle.of(
+                  context,
+                ).style.copyWith(color: actionColor),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openMergedOriginalEventsDrawer(
+    BuildContext context, {
+    required List<String> originals,
+  }) async {
+    if (originals.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        final TextStyle? bodyStyle = Theme.of(ctx).textTheme.bodyMedium;
+        final cs = Theme.of(ctx).colorScheme;
+
+        return ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(AppTheme.radiusLg),
+            topRight: Radius.circular(AppTheme.radiusLg),
+          ),
+          child: ColoredBox(
+            color: cs.surface,
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.78,
+                child: DefaultTabController(
+                  length: originals.length,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: cs.onSurfaceVariant.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              );
-            }
+                      const SizedBox(height: AppTheme.spacing3),
+                      TabBar(
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing3,
+                        ),
+                        tabs: [
+                          for (int i = 0; i < originals.length; i++)
+                            Tab(text: l10n.mergedOriginalEventTitle(i + 1)),
+                        ],
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Expanded(
+                        child: TabBarView(
+                          children: originals
+                              .map((part) {
+                                return SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    AppTheme.spacing4,
+                                    0,
+                                    AppTheme.spacing4,
+                                    AppTheme.spacing6,
+                                  ),
+                                  child: _buildMarkdownBody(
+                                    ctx,
+                                    part,
+                                    bodyStyle,
+                                  ),
+                                );
+                              })
+                              .toList(growable: false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildSeparator(BuildContext context) {
-    final Color base = DefaultTextStyle.of(context).style.color
-        ?? Theme.of(context).textTheme.bodyMedium?.color
-        ?? Theme.of(context).colorScheme.onSurface;
+    final Color base =
+        DefaultTextStyle.of(context).style.color ??
+        Theme.of(context).textTheme.bodyMedium?.color ??
+        Theme.of(context).colorScheme.onSurface;
     return Container(
       width: double.infinity,
       height: 1,
@@ -1903,7 +2493,12 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     if (app != null && app.icon != null && app.icon!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Image.memory(app.icon!, width: 20, height: 20, fit: BoxFit.cover),
+        child: Image.memory(
+          app.icon!,
+          width: 20,
+          height: 20,
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Container(
@@ -1922,7 +2517,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
     // 关键：不设置 alignment，不用 ConstrainedBox 包裹宽度；仅设置最小高度，宽度随文本自适应
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
         color: fg.withOpacity(0.10),
@@ -1950,34 +2548,40 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   ) {
     return MarkdownBody(
       data: data,
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(p: textStyle),
+      styleSheet: MarkdownStyleSheet.fromTheme(
+        Theme.of(context),
+      ).copyWith(p: textStyle),
       onTapLink: (text, href, title) async {
         if (href == null) return;
         final uri = Uri.tryParse(href);
         if (uri != null) {
-          try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+          try {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } catch (_) {}
         }
       },
     );
   }
 
-  Widget _buildMergedOriginalEventsSection(
+  Widget _buildMergeStatusDropdown(
     BuildContext context, {
     required int segmentId,
-    required List<String> originals,
-    TextStyle? textStyle,
+    required String state,
+    required String reasonText,
+    required TextStyle? titleStyle,
+    required TextStyle? reasonStyle,
+    required bool canForce,
+    required List<String> originalSummaries,
   }) {
     final l10n = AppLocalizations.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color bg = cs.surfaceContainerHighest.withOpacity(0.28);
     final Color border = cs.outline.withOpacity(0.22);
-    final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        );
-    final TextStyle? itemTitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: AppTheme.mutedForeground,
-          fontWeight: FontWeight.w600,
-        );
+
+    final bool canOpenOriginals = originalSummaries.isNotEmpty;
+    final TextStyle titleLinkStyle = (titleStyle ?? const TextStyle()).copyWith(
+      color: cs.primary,
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -1988,7 +2592,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          key: PageStorageKey<String>('seg:$segmentId:mergedOriginals'),
+          key: PageStorageKey<String>('seg:$segmentId:mergeStatus'),
           tilePadding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing3,
             vertical: 0,
@@ -1999,36 +2603,81 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             AppTheme.spacing3,
             AppTheme.spacing3,
           ),
-          title: Text(l10n.mergedOriginalEventsTitle(originals.length), style: titleStyle),
-          children: originals.asMap().entries.map((entry) {
-            final int index = entry.key;
-            final String part = entry.value;
-            return Container(
-              margin: EdgeInsets.only(top: index == 0 ? 0 : AppTheme.spacing2),
-              padding: const EdgeInsets.all(AppTheme.spacing3),
-              decoration: BoxDecoration(
-                color: cs.surface.withOpacity(0.45),
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                border: Border(
-                  left: BorderSide(color: cs.outline.withOpacity(0.45), width: 2),
+          leading: Icon(Icons.merge_type, size: 16, color: cs.onSurfaceVariant),
+          title: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: canOpenOriginals
+                      ? () async => _openMergedOriginalEventsDrawer(
+                          context,
+                          originals: originalSummaries,
+                        )
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: state),
+                          if (canOpenOriginals) const TextSpan(text: ' · '),
+                          if (canOpenOriginals)
+                            TextSpan(
+                              text: l10n.mergedOriginalEventsTitle(
+                                originalSummaries.length,
+                              ),
+                            ),
+                        ],
+                      ),
+                      style: canOpenOriginals ? titleLinkStyle : titleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(l10n.mergedOriginalEventTitle(index + 1), style: itemTitleStyle),
-                  const SizedBox(height: 6),
-                  _buildMarkdownBody(context, part, textStyle),
-                ],
-              ),
-            );
-          }).toList(growable: false),
+              if (_forcingMerge)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              if (canForce)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () async => _forceMerge(),
+                  child: const Text('强制合并'),
+                ),
+            ],
+          ),
+          children: [
+            if (reasonText.trim().isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(reasonText, style: reasonStyle),
+            ],
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildCategorySection(BuildContext context, List<String> categories, bool merged) {
+  Widget _buildCategorySection(
+    BuildContext context,
+    List<String> categories,
+    bool merged,
+  ) {
     final int total = categories.length + (merged ? 1 : 0);
     if (total == 0) return const SizedBox.shrink();
 
@@ -2049,12 +2698,22 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         final double availableWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.of(context).size.width;
-        final double columnExtent = math.min(_tagGridMaxCrossAxisExtent, availableWidth);
-        final int columns = math.max(1, (availableWidth / columnExtent).floor());
+        final double columnExtent = math.min(
+          _tagGridMaxCrossAxisExtent,
+          availableWidth,
+        );
+        final int columns = math.max(
+          1,
+          (availableWidth / columnExtent).floor(),
+        );
         final int rows = (total / columns).ceil();
-        final double naturalHeight = rows * _tagGridMainAxisExtent +
+        final double naturalHeight =
+            rows * _tagGridMainAxisExtent +
             math.max(0, rows - 1) * _tagGridMainAxisSpacing;
-        final double viewportHeight = math.min(_tagVirtualListMaxHeight, naturalHeight);
+        final double viewportHeight = math.min(
+          _tagVirtualListMaxHeight,
+          naturalHeight,
+        );
 
         return SizedBox(
           height: viewportHeight,
@@ -2086,7 +2745,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
 
   Widget _buildMergedTagChip(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
         color: AppTheme.warning.withOpacity(0.12),
@@ -2107,7 +2769,11 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     );
   }
 
-  Widget _buildThumbGrid(BuildContext context, List<Map<String, dynamic>> samples, {Set<String> aiNsfwFiles = const <String>{}}) {
+  Widget _buildThumbGrid(
+    BuildContext context,
+    List<Map<String, dynamic>> samples, {
+    Set<String> aiNsfwFiles = const <String>{},
+  }) {
     if (samples.isEmpty) return const SizedBox.shrink();
 
     return LayoutBuilder(
@@ -2116,15 +2782,16 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             ? constraints.maxWidth
             : MediaQuery.of(context).size.width;
         final double cellWidth =
-            (availableWidth - _thumbGridSpacing * (_thumbGridCrossAxisCount - 1)) /
-                _thumbGridCrossAxisCount;
+            (availableWidth -
+                _thumbGridSpacing * (_thumbGridCrossAxisCount - 1)) /
+            _thumbGridCrossAxisCount;
         // childAspectRatio = width / height => height = width / ratio
         const double childAspectRatio = 9 / 16;
         final double cellHeight = cellWidth / childAspectRatio;
 
         final int rows = (samples.length / _thumbGridCrossAxisCount).ceil();
-        final double naturalHeight = rows * cellHeight +
-            math.max(0, rows - 1) * _thumbGridSpacing;
+        final double naturalHeight =
+            rows * cellHeight + math.max(0, rows - 1) * _thumbGridSpacing;
         final double maxHeight = math.min(
           _thumbVirtualGridMaxHeight,
           MediaQuery.of(context).size.height * 0.55,
@@ -2165,7 +2832,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   );
                 }
 
-                final String fileName = path.replaceAll('\\', '/').split('/').last;
+                final String fileName = path
+                    .replaceAll('\\', '/')
+                    .split('/')
+                    .last;
                 final bool aiNsfw = aiNsfwFiles.contains(fileName);
 
                 return ScreenshotImageWidget(
@@ -2211,11 +2881,19 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     });
     try {
       // 手动重试不受时间/已有结果限制：强制重跑
-      final n = await ScreenshotDatabase.instance.retrySegments([id], force: true);
+      final n = await ScreenshotDatabase.instance.retrySegments([
+        id,
+      ], force: true);
       if (!mounted) return;
       final ok = n > 0;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? AppLocalizations.of(context).regenerationQueued : AppLocalizations.of(context).alreadyQueuedOrFailed)),
+        SnackBar(
+          content: Text(
+            ok
+                ? AppLocalizations.of(context).regenerationQueued
+                : AppLocalizations.of(context).alreadyQueuedOrFailed,
+          ),
+        ),
       );
       // 开启轮询直到拿到结果为止；若原本就有结果，可能立即返回
       if (ok) _startResultWatch(id);
@@ -2244,35 +2922,116 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
   }
 
+  Future<void> _forceMerge() async {
+    final int id = (_segmentData['id'] as int?) ?? 0;
+    if (id <= 0 || _forcingMerge) return;
+    final int prevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
+    if (prevId <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可合并的上一事件')));
+      return;
+    }
+
+    final bool confirmed =
+        await showUIDialog<bool>(
+          context: context,
+          title: '强制合并',
+          message: '将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？',
+          actions: [
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).dialogCancel,
+              style: UIDialogActionStyle.normal,
+              result: false,
+            ),
+            const UIDialogAction<bool>(
+              text: '强制合并',
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
+          ],
+          barrierDismissible: true,
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    int? previousCreatedAt = _lastMergeResultCreatedAt;
+    try {
+      final prevRes = await widget.loadResult(id);
+      final loaded = (prevRes?['created_at'] as int?) ?? 0;
+      if (loaded > 0) previousCreatedAt = loaded;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _forcingMerge = true;
+      _segmentData = Map<String, dynamic>.from(_segmentData)
+        ..['merge_forced'] = 1
+        ..['merge_decision_reason'] = '已请求强制合并（排队中）';
+      _lastMergeResultCreatedAt = previousCreatedAt;
+    });
+
+    try {
+      final ok = await ScreenshotDatabase.instance.forceMergeSegment(
+        id,
+        prevId: prevId,
+      );
+      if (!mounted) return;
+      if (!ok) {
+        setState(() => _forcingMerge = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('强制合并入队失败')));
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('强制合并已入队')));
+      _startMergeWatch(id, previousCreatedAt);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _forcingMerge = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('强制合并失败')));
+    }
+  }
+
   Future<void> _confirmAndDelete() async {
     final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0) return;
 
-    final bool confirmed = await showUIDialog<bool>(
-      context: context,
-      title: AppLocalizations.of(context).deleteEventTooltip,
-      message: AppLocalizations.of(context).confirmDeleteEventMessage,
-      actions: [
-        UIDialogAction<bool>(
-          text: AppLocalizations.of(context).dialogCancel,
-          style: UIDialogActionStyle.normal,
-          result: false,
-        ),
-        UIDialogAction<bool>(
-          text: AppLocalizations.of(context).actionDelete,
-          style: UIDialogActionStyle.destructive,
-          result: true,
-        ),
-      ],
-      barrierDismissible: true,
-    ) ?? false;
+    final bool confirmed =
+        await showUIDialog<bool>(
+          context: context,
+          title: AppLocalizations.of(context).deleteEventTooltip,
+          message: AppLocalizations.of(context).confirmDeleteEventMessage,
+          actions: [
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).dialogCancel,
+              style: UIDialogActionStyle.normal,
+              result: false,
+            ),
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).actionDelete,
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
+          ],
+          barrierDismissible: true,
+        ) ??
+        false;
 
     if (!confirmed) return;
     try {
       final ok = await ScreenshotDatabase.instance.deleteSegmentOnly(id);
       if (!mounted) return;
       if (ok) {
-        UINotifier.success(context, AppLocalizations.of(context).eventDeletedToast);
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).eventDeletedToast,
+        );
         await widget.onRefreshRequested();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2296,28 +3055,31 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         if (!mounted) return;
         if (res != null) {
           final int newCreatedAt = (res['created_at'] as int?) ?? 0;
-          if (_lastResultCreatedAt != null && newCreatedAt > 0 && newCreatedAt <= _lastResultCreatedAt!) {
+          if (_lastResultCreatedAt != null &&
+              newCreatedAt > 0 &&
+              newCreatedAt <= _lastResultCreatedAt!) {
             return;
           }
           t.cancel();
           final merged = _mergeResultIntoSegment(_segmentData, res);
-          final String finalSummary = _extractOverallSummary(
-            {
-              'output_text': merged['output_text'],
-              'categories': merged['categories'],
-            },
-            _tryParseJson(merged['structured_json'] as String?),
-          );
+          final String finalSummary = _extractOverallSummary({
+            'output_text': merged['output_text'],
+            'categories': merged['categories'],
+          }, _tryParseJson(merged['structured_json'] as String?));
           setState(() {
             _retrying = false;
             _segmentData = merged;
-            _lastResultCreatedAt = newCreatedAt > 0 ? newCreatedAt : _lastResultCreatedAt;
+            _lastResultCreatedAt = newCreatedAt > 0
+                ? newCreatedAt
+                : _lastResultCreatedAt;
             _summaryStreaming = true;
             _summaryStreamingText = '';
           });
           _latestExternalSegment = Map<String, dynamic>.from(merged);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).generateSuccess),
+            ),
           );
           _beginSummaryStreaming(finalSummary);
           try {
@@ -2327,6 +3089,47 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       } catch (_) {
         // 读取失败不影响轮询，继续尝试
       }
+    });
+  }
+
+  void _startMergeWatch(int id, int? previousCreatedAt) {
+    _mergeWatchTimer?.cancel();
+    _mergeWatchTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      try {
+        final res = await widget.loadResult(id);
+        if (!mounted) return;
+        if (res == null) return;
+        final int newCreatedAt = (res['created_at'] as int?) ?? 0;
+        if (previousCreatedAt != null &&
+            newCreatedAt > 0 &&
+            newCreatedAt <= previousCreatedAt) {
+          return;
+        }
+        t.cancel();
+        final mergedSeg = _mergeResultIntoSegment(_segmentData, res);
+        final String finalSummary = _extractOverallSummary({
+          'output_text': mergedSeg['output_text'],
+          'categories': mergedSeg['categories'],
+        }, _tryParseJson(mergedSeg['structured_json'] as String?));
+        setState(() {
+          _forcingMerge = false;
+          _segmentData = mergedSeg;
+          _lastMergeResultCreatedAt = newCreatedAt > 0
+              ? newCreatedAt
+              : _lastMergeResultCreatedAt;
+          _summaryStreaming = true;
+          _summaryStreamingText = '';
+        });
+        _latestExternalSegment = Map<String, dynamic>.from(mergedSeg);
+        _beginSummaryStreaming(finalSummary);
+        try {
+          await widget.onRefreshRequested();
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('合并完成')));
+      } catch (_) {}
     });
   }
 
@@ -2346,7 +3149,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     });
     const int chunkSize = 24;
     int idx = 0;
-    _summaryStreamTimer = Timer.periodic(const Duration(milliseconds: 35), (timer) {
+    _summaryStreamTimer = Timer.periodic(const Duration(milliseconds: 35), (
+      timer,
+    ) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -2379,7 +3184,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final ka = sj['key_actions'];
     if (ka is List && ka.isNotEmpty) {
       final first = ka.first;
-      if (first is Map && first['detail'] is String) return (first['detail'] as String);
+      if (first is Map && first['detail'] is String)
+        return (first['detail'] as String);
       if (first is String) return first;
     } else if (ka is Map && ka['detail'] is String) {
       return ka['detail'] as String;
@@ -2389,7 +3195,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     return null;
   }
 
-  List<String> _extractCategories(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  List<String> _extractCategories(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final List<String> out = <String>[];
     // 1) result.categories 可能是 JSON 或逗号分隔
     final raw = result?['categories'];
@@ -2399,10 +3208,14 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         if (obj is List) {
           out.addAll(obj.map((e) => e.toString()));
         } else {
-          out.addAll(raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty));
+          out.addAll(
+            raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty),
+          );
         }
       } catch (_) {
-        out.addAll(raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty));
+        out.addAll(
+          raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty),
+        );
       }
     }
     // 2) structured_json.categories
@@ -2423,7 +3236,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     return res;
   }
 
-  String _extractOverallSummary(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  String _extractOverallSummary(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final v = sj?['overall_summary'];
     if (v is String && v.trim().isNotEmpty) return v.trim();
     final out = (result?['output_text'] as String?)?.trim() ?? '';

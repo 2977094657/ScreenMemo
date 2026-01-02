@@ -104,6 +104,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         merge_attempted INTEGER NOT NULL DEFAULT 0,
         merged_flag INTEGER NOT NULL DEFAULT 0,
         merged_into_id INTEGER,
+        merge_prev_id INTEGER,
+        merge_decision_json TEXT,
+        merge_decision_reason TEXT,
+        merge_forced INTEGER NOT NULL DEFAULT 0,
+        merge_decision_at INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
@@ -1073,6 +1078,20 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       return 0;
     } catch (_) {
       return 0;
+    }
+  }
+
+  /// 强制将某个事件与其上一事件合并（跳过 same_event 判定，直接执行合并总结）
+  /// - prevId 可选：指定要合并的上一事件ID（否则由原生侧自动选择）
+  Future<bool> forceMergeSegment(int id, {int? prevId}) async {
+    try {
+      final res = await ScreenshotDatabase._channel.invokeMethod(
+        'forceMergeSegment',
+        {'id': id, if (prevId != null && prevId > 0) 'prev_id': prevId},
+      );
+      return res == true;
+    } catch (_) {
+      return false;
     }
   }
 

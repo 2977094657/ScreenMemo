@@ -145,6 +145,11 @@ object SegmentDatabaseHelper {
                   merge_attempted INTEGER NOT NULL DEFAULT 0,
                   merged_flag INTEGER NOT NULL DEFAULT 0,
                   merged_into_id INTEGER,
+                  merge_prev_id INTEGER,
+                  merge_decision_json TEXT,
+                  merge_decision_reason TEXT,
+                  merge_forced INTEGER NOT NULL DEFAULT 0,
+                  merge_decision_at INTEGER,
                   created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
                   updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
                 )
@@ -156,6 +161,11 @@ object SegmentDatabaseHelper {
             try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_attempted INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE segments ADD COLUMN merged_flag INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE segments ADD COLUMN merged_into_id INTEGER") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_prev_id INTEGER") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_decision_json TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_decision_reason TEXT") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_forced INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+            try { db.execSQL("ALTER TABLE segments ADD COLUMN merge_decision_at INTEGER") } catch (_: Exception) {}
             try { db.execSQL("CREATE INDEX IF NOT EXISTS idx_segments_merged_into ON segments(merged_into_id)") } catch (_: Exception) {}
             // 兼容：旧版本曾创建“全局唯一窗口”索引，会阻止单应用段落与全局段落时间窗重叠。
             // 这里改为按 segment_kind 的部分唯一约束。
@@ -1288,6 +1298,52 @@ object SegmentDatabaseHelper {
             val cv = ContentValues().apply {
                 put("merged_flag", if (merged) 1 else 0)
                 put("updated_at", System.currentTimeMillis())
+            }
+            db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    /**
+     * 记录最近一次“向后合并判定/合并尝试”的信息，供前端展示。
+     *
+     * - merge_prev_id: 本次尝试的上一事件ID（可为空）
+     * - merge_decision_json: AI 判定 JSON（或系统生成的 JSON / 为空）
+     * - merge_decision_reason: 展示用原因（AI reason / 系统原因）
+     * - merge_forced: 是否为用户强制合并
+     * - merge_decision_at: 记录时间戳（ms）
+     */
+    fun updateMergeDecisionInfo(
+        context: Context,
+        segmentId: Long,
+        prevSegmentId: Long? = null,
+        decisionJson: String? = null,
+        reason: String? = null,
+        forced: Boolean = false
+    ) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            val now = System.currentTimeMillis()
+            val cv = ContentValues().apply {
+                if (prevSegmentId != null && prevSegmentId > 0) {
+                    put("merge_prev_id", prevSegmentId)
+                } else {
+                    putNull("merge_prev_id")
+                }
+                if (!decisionJson.isNullOrBlank()) {
+                    put("merge_decision_json", decisionJson)
+                } else {
+                    putNull("merge_decision_json")
+                }
+                if (!reason.isNullOrBlank()) {
+                    put("merge_decision_reason", reason)
+                } else {
+                    putNull("merge_decision_reason")
+                }
+                put("merge_forced", if (forced) 1 else 0)
+                put("merge_decision_at", now)
+                put("updated_at", now)
             }
             db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
         } catch (_: Exception) {

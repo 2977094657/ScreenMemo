@@ -770,6 +770,23 @@ class MainActivity : FlutterActivity() {
                         result.error("invalid_args", e.message, null)
                     }
                 }
+                "forceMergeSegment" -> {
+                    try {
+                        val id = (call.argument<Int>("id") ?: 0).toLong()
+                        val prevId = call.argument<Int>("prev_id")?.toLong()
+                        try { FileLogger.i(TAG, "forceMergeSegment：id=${id} prev_id=${prevId}") } catch (_: Exception) {}
+                        Thread {
+                            try {
+                                val ok = SegmentSummaryManager.forceMergeSegmentById(this, id, prevId)
+                                runOnUiThread { result.success(ok) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("force_merge_failed", e.message, null) }
+                            }
+                        }.start()
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
+                    }
+                }
                 "showSimpleNotification" -> {
                     try {
                         val title = call.argument<String>("title") ?: "Daily Summary"

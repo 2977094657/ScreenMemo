@@ -12,10 +12,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_info.dart';
 import '../pages/daily_summary_page.dart';
+import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import 'screenshot_image_widget.dart';
 import 'ui_components.dart';
+import 'ui_dialog.dart';
 
 String _dateKeyFromMillis(int ms) {
   final dt = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -120,8 +122,9 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
             hasScrollBody: false,
             child: Center(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing6,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -145,8 +148,7 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                       constraints: const BoxConstraints(maxWidth: 300),
                       child: Text(
                         AppLocalizations.of(context).noEventsSubtitle,
-                        style:
-                            const TextStyle(color: AppTheme.mutedForeground),
+                        style: const TextStyle(color: AppTheme.mutedForeground),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -168,8 +170,10 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
       ..sort((a, b) => a.compareTo(b));
     final List<String> orderedAll = keys.reversed.toList();
 
-    final int visibleCount =
-        math.min(widget.maxVisibleDayTabs, orderedAll.length);
+    final int visibleCount = math.min(
+      widget.maxVisibleDayTabs,
+      orderedAll.length,
+    );
     final List<String> ordered = orderedAll.take(visibleCount).toList();
 
     if (_tabController == null || _tabController!.length != ordered.length) {
@@ -193,17 +197,19 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
             final l10n = AppLocalizations.of(context);
             final Color selectedColor =
                 Theme.of(context).brightness == Brightness.dark
-                    ? AppTheme.darkForeground
-                    : AppTheme.foreground;
+                ? AppTheme.darkForeground
+                : AppTheme.foreground;
             final Color unselectedColor =
                 Theme.of(context).textTheme.bodySmall?.color ??
-                    AppTheme.mutedForeground;
+                AppTheme.mutedForeground;
             final bool hasHiddenTabs =
                 widget.maxVisibleDayTabs < orderedAll.length;
-            final bool canLoadMoreFromDb = !widget.onlyNoSummary &&
+            final bool canLoadMoreFromDb =
+                !widget.onlyNoSummary &&
                 widget.onLastDayTabReached != null &&
                 !widget.noMoreOlderSegments;
-            final bool showLoadMoreButton = widget.onLastDayTabReached != null &&
+            final bool showLoadMoreButton =
+                widget.onLastDayTabReached != null &&
                 (hasHiddenTabs || canLoadMoreFromDb);
             final bool isLoadingMore = widget.isLoadingMoreDays;
 
@@ -218,27 +224,26 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                         controller: _tabController,
                         isScrollable: true,
                         tabAlignment: TabAlignment.start,
-                        padding:
-                            const EdgeInsets.only(left: AppTheme.spacing2),
+                        padding: const EdgeInsets.only(left: AppTheme.spacing2),
                         labelPadding: const EdgeInsets.symmetric(
                           horizontal: AppTheme.spacing4,
                         ),
                         labelColor: selectedColor,
                         unselectedLabelColor: unselectedColor,
-                        labelStyle:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                        unselectedLabelStyle:
-                            Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
+                        labelStyle: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                        unselectedLabelStyle: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w500),
                         dividerColor: Colors.transparent,
                         indicatorSize: TabBarIndicatorSize.label,
                         indicatorPadding: EdgeInsets.zero,
                         indicator: UnderlineTabIndicator(
-                          borderSide:
-                              BorderSide(width: 2.0, color: selectedColor),
+                          borderSide: BorderSide(
+                            width: 2.0,
+                            color: selectedColor,
+                          ),
                           insets: const EdgeInsets.symmetric(horizontal: 4.0),
                         ),
                         tabs: [
@@ -256,9 +261,10 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                                       a.year == b.year &&
                                       a.month == b.month &&
                                       a.day == b.day;
-                                  final int c = (grouped[k] ??
-                                          const <Map<String, dynamic>>[])
-                                      .length;
+                                  final int c =
+                                      (grouped[k] ??
+                                              const <Map<String, dynamic>>[])
+                                          .length;
                                   if (sameDay(dt, now)) {
                                     return l10n.dayTabToday(c);
                                   }
@@ -290,7 +296,8 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                             ),
                             visualDensity: VisualDensity.compact,
                           ),
-                          onPressed: (widget.onLastDayTabReached == null ||
+                          onPressed:
+                              (widget.onLastDayTabReached == null ||
                                   isLoadingMore)
                               ? null
                               : () {
@@ -327,7 +334,8 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                   children: [
                     if (widget.showHeader) widget.header,
                     if (widget.showHeader) const SizedBox(height: 8),
-                    if (widget.showDailySummaryCard) _DailySummaryEntryCard(dateKey: k),
+                    if (widget.showDailySummaryCard)
+                      _DailySummaryEntryCard(dateKey: k),
                     if (widget.showDailySummaryCard)
                       const SizedBox(height: AppTheme.spacing2),
                     ...List.generate(
@@ -372,7 +380,9 @@ class _DailySummaryEntryCard extends StatelessWidget {
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dateKey)),
+            MaterialPageRoute(
+              builder: (_) => DailySummaryPage(dateKey: dateKey),
+            ),
           );
         },
       ),
@@ -425,11 +435,14 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   List<Map<String, dynamic>> _samples = const <Map<String, dynamic>>[];
   bool _summaryExpanded = false;
   bool _retrying = false;
+  bool _forcingMerge = false;
   Timer? _resultWatchTimer;
+  Timer? _mergeWatchTimer;
   Timer? _summaryStreamTimer;
   Map<String, dynamic> _segmentData = <String, dynamic>{};
   Map<String, dynamic> _latestExternalSegment = <String, dynamic>{};
   int? _lastResultCreatedAt;
+  int? _lastMergeResultCreatedAt;
   bool _summaryStreaming = false;
   String _summaryStreamingText = '';
 
@@ -453,6 +466,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   @override
   void dispose() {
     _resultWatchTimer?.cancel();
+    _mergeWatchTimer?.cancel();
     _summaryStreamTimer?.cancel();
     super.dispose();
   }
@@ -484,16 +498,23 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     final int sampleCount = (_segmentData['sample_count'] as int?) ?? 0;
     final int start = (_segmentData['start_time'] as int?) ?? 0;
     final int end = (_segmentData['end_time'] as int?) ?? 0;
-    final String timeLabel = '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
+    final String timeLabel =
+        '${widget.fmtTime(start)} - ${widget.fmtTime(end)}';
     final bool merged = (_segmentData['merged_flag'] as int?) == 1;
     final String status = (_segmentData['status'] as String?) ?? '';
+    final bool mergeAttempted = (_segmentData['merge_attempted'] as int?) == 1;
+    final bool mergeForced = (_segmentData['merge_forced'] as int?) == 1;
+    final int mergePrevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
+    final String mergeReason =
+        (_segmentData['merge_decision_reason'] as String?)?.trim() ?? '';
 
     final Map<String, dynamic> resultMeta = {
       'categories': _segmentData['categories'],
       'output_text': _segmentData['output_text'],
     };
-    final Map<String, dynamic>? structured =
-        _tryParseJson(_segmentData['structured_json'] as String?);
+    final Map<String, dynamic>? structured = _tryParseJson(
+      _segmentData['structured_json'] as String?,
+    );
 
     final Set<String> aiNsfwFiles = <String>{};
     try {
@@ -510,7 +531,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
             try {
               final dynamic v = jsonDecode(tt);
               if (v is List) {
-                return v.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
+                return v.any(
+                  (t) => t.toString().trim().toLowerCase() == 'nsfw',
+                );
               }
               if (v is String) {
                 return v
@@ -537,15 +560,28 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
 
     final String? keyAction = _extractKeyActionDetail(structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
-    final String computedSummary = _extractOverallSummary(resultMeta, structured);
+    final String computedSummary = _extractOverallSummary(
+      resultMeta,
+      structured,
+    );
     final String summary = _summaryStreaming
         ? (_summaryStreamingText.isEmpty
-            ? _summaryGeneratingPlaceholder
-            : _summaryStreamingText)
+              ? _summaryGeneratingPlaceholder
+              : _summaryStreamingText)
         : computedSummary;
+    final List<String> mergedParts = merged
+        ? splitMergedEventSummaryParts(summary)
+        : const <String>[];
+    final String displaySummary = mergedParts.isNotEmpty
+        ? mergedParts.first
+        : summary;
+    final List<String> originalSummaries = mergedParts.length > 1
+        ? mergedParts.sublist(1)
+        : const <String>[];
 
     String? errorText;
-    final String outputRaw = (resultMeta['output_text'] as String?)?.toString() ?? '';
+    final String outputRaw =
+        (resultMeta['output_text'] as String?)?.toString() ?? '';
     try {
       final err = structured?['error'];
       if (err is Map) {
@@ -559,7 +595,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         errorText = err;
       }
     } catch (_) {}
-    if (errorText == null && outputRaw.isNotEmpty && outputRaw.trim().startsWith('{')) {
+    if (errorText == null &&
+        outputRaw.isNotEmpty &&
+        outputRaw.trim().startsWith('{')) {
       try {
         final decoded = jsonDecode(outputRaw);
         if (decoded is Map && decoded['error'] != null) {
@@ -597,10 +635,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
             Expanded(
               child: Text(
                 text,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: cs.onErrorContainer),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: cs.onErrorContainer),
               ),
             ),
           ],
@@ -609,9 +646,11 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     }
 
     List<String> packages = <String>[];
-    final String? appPkgsDisplay = _segmentData['app_packages_display'] as String?;
+    final String? appPkgsDisplay =
+        _segmentData['app_packages_display'] as String?;
     final String? appPkgsRaw = _segmentData['app_packages'] as String?;
-    final String? pkgSrc = (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
+    final String? pkgSrc =
+        (appPkgsDisplay != null && appPkgsDisplay.trim().isNotEmpty)
         ? appPkgsDisplay
         : appPkgsRaw;
     if (pkgSrc != null && pkgSrc.trim().isNotEmpty) {
@@ -631,7 +670,11 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _timeSeparator(context, label: timeLabel, keyActionDetail: keyAction),
+            _timeSeparator(
+              context,
+              label: timeLabel,
+              keyActionDetail: keyAction,
+            ),
             const SizedBox(height: 4),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -639,7 +682,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
-                  children: packages.map((pkg) => _buildAppIcon(context, pkg)).toList(),
+                  children: packages
+                      .map((pkg) => _buildAppIcon(context, pkg))
+                      .toList(),
                 ),
                 const SizedBox(height: 8),
                 _buildCategorySection(context, categories, merged),
@@ -652,15 +697,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
               const SizedBox(height: 6),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final List<String> mergedParts =
-                      merged ? splitMergedEventSummaryParts(summary) : const <String>[];
-                  final String displaySummary =
-                      mergedParts.isNotEmpty ? mergedParts.first : summary;
-                  final List<String> originalSummaries = mergedParts.length > 1
-                      ? mergedParts.sublist(1)
-                      : const <String>[];
-
-                  final TextStyle? textStyle = Theme.of(context).textTheme.bodyMedium;
+                  final TextStyle? textStyle = Theme.of(
+                    context,
+                  ).textTheme.bodyMedium;
                   bool overflow = false;
                   if (!_summaryExpanded && textStyle != null) {
                     final tp = TextPainter(
@@ -673,10 +712,15 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                   }
 
                   final double lineHeight =
-                      (textStyle?.height ?? 1.2) * (textStyle?.fontSize ?? 14.0);
+                      (textStyle?.height ?? 1.2) *
+                      (textStyle?.fontSize ?? 14.0);
                   final double collapsedHeight = lineHeight * 7.0 + 2.0;
 
-                  final md = _buildMarkdownBody(context, displaySummary, textStyle);
+                  final md = _buildMarkdownBody(
+                    context,
+                    displaySummary,
+                    textStyle,
+                  );
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -684,14 +728,18 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                       _summaryExpanded
                           ? md
                           : ConstrainedBox(
-                              constraints: BoxConstraints(maxHeight: collapsedHeight),
+                              constraints: BoxConstraints(
+                                maxHeight: collapsedHeight,
+                              ),
                               child: ClipRect(child: md),
                             ),
                       if (overflow || _summaryExpanded)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () => setState(() => _summaryExpanded = !_summaryExpanded),
+                            onPressed: () => setState(
+                              () => _summaryExpanded = !_summaryExpanded,
+                            ),
                             child: Text(
                               _summaryExpanded
                                   ? AppLocalizations.of(context).collapse
@@ -699,16 +747,53 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                             ),
                           ),
                         ),
-                      if (merged && originalSummaries.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _buildMergedOriginalEventsSection(
-                          context,
-                          segmentId: id,
-                          originals: originalSummaries,
-                          textStyle: textStyle,
-                        ),
-                      ],
                     ],
+                  );
+                },
+              ),
+            ],
+            if (status == 'completed' &&
+                (mergeAttempted ||
+                    mergeForced ||
+                    mergeReason.isNotEmpty ||
+                    _forcingMerge ||
+                    merged)) ...[
+              const SizedBox(height: 6),
+              Builder(
+                builder: (context) {
+                  final cs = Theme.of(context).colorScheme;
+                  final TextStyle? titleStyle = Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
+                  final TextStyle? reasonStyle = Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+
+                  final String state = _forcingMerge
+                      ? '强制合并中…'
+                      : (merged
+                            ? '已合并'
+                            : (mergeForced
+                                  ? (mergeAttempted ? '强制合并失败' : '已请求强制合并')
+                                  : (mergeAttempted ? '未合并' : '待判定')));
+                  final String reasonText = mergeReason.isNotEmpty
+                      ? mergeReason
+                      : (_forcingMerge ? '正在合并，请稍候…' : '');
+                  final bool canForce =
+                      !_forcingMerge &&
+                      !merged &&
+                      mergeAttempted &&
+                      mergePrevId > 0;
+
+                  return _buildMergeStatusDropdown(
+                    context,
+                    segmentId: id,
+                    state: state,
+                    reasonText: reasonText,
+                    titleStyle: titleStyle,
+                    reasonStyle: reasonStyle,
+                    canForce: canForce,
+                    originalSummaries: originalSummaries,
                   );
                 },
               ),
@@ -721,7 +806,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                       ? null
                       : () async {
                           setState(() => _expanded = !_expanded);
-                          if (_expanded && !_samplesLoaded && !_samplesLoading) {
+                          if (_expanded &&
+                              !_samplesLoaded &&
+                              !_samplesLoading) {
                             setState(() => _samplesLoading = true);
                             try {
                               final loaded = await widget.loadSamples(id);
@@ -729,16 +816,22 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                                 _samples = loaded;
                                 _samplesLoaded = true;
                               });
-                            } catch (_) {} finally {
-                              if (mounted) setState(() => _samplesLoading = false);
+                            } catch (_) {
+                            } finally {
+                              if (mounted)
+                                setState(() => _samplesLoading = false);
                             }
                           }
                         },
                   icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
                   label: Text(
                     _expanded
-                        ? AppLocalizations.of(context).hideImagesCount(sampleCount)
-                        : AppLocalizations.of(context).viewImagesCount(sampleCount),
+                        ? AppLocalizations.of(
+                            context,
+                          ).hideImagesCount(sampleCount)
+                        : AppLocalizations.of(
+                            context,
+                          ).viewImagesCount(sampleCount),
                   ),
                 ),
                 const Spacer(),
@@ -765,15 +858,23 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                       ..writeln(l10n.timeRangeLabel(timeLabel))
                       ..writeln(l10n.statusLabel(status));
                     if (merged) buffer.writeln(l10n.tagMergedCopy);
-                    if (categories.isNotEmpty) buffer.writeln(l10n.categoriesLabel(categories.join(', ')));
+                    if (categories.isNotEmpty)
+                      buffer.writeln(
+                        l10n.categoriesLabel(categories.join(', ')),
+                      );
                     if (errorText != null && errorText.trim().isNotEmpty) {
                       buffer.writeln(l10n.errorLabel(errorText));
                     } else if (summary.trim().isNotEmpty) {
                       buffer.writeln(l10n.summaryLabel(summary));
                     }
-                    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+                    await Clipboard.setData(
+                      ClipboardData(text: buffer.toString()),
+                    );
                     if (!mounted) return;
-                    UINotifier.success(context, AppLocalizations.of(context).copySuccess);
+                    UINotifier.success(
+                      context,
+                      AppLocalizations.of(context).copySuccess,
+                    );
                   },
                 ),
               ],
@@ -791,8 +892,12 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                       ),
                     )
                   : (_samples.isNotEmpty
-                      ? _buildThumbGrid(context, _samples, aiNsfwFiles: aiNsfwFiles)
-                      : const SizedBox.shrink())),
+                        ? _buildThumbGrid(
+                            context,
+                            _samples,
+                            aiNsfwFiles: aiNsfwFiles,
+                          )
+                        : const SizedBox.shrink())),
             if (!widget.isLast) ...[
               const SizedBox(height: AppTheme.spacing3),
               _buildSeparator(context),
@@ -801,6 +906,93 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _openMergedOriginalEventsDrawer(
+    BuildContext context, {
+    required List<String> originals,
+  }) async {
+    if (originals.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        final TextStyle? bodyStyle = Theme.of(ctx).textTheme.bodyMedium;
+        final cs = Theme.of(ctx).colorScheme;
+
+        return ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(AppTheme.radiusLg),
+            topRight: Radius.circular(AppTheme.radiusLg),
+          ),
+          child: ColoredBox(
+            color: cs.surface,
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.78,
+                child: DefaultTabController(
+                  length: originals.length,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: cs.onSurfaceVariant.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      TabBar(
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing3,
+                        ),
+                        tabs: [
+                          for (int i = 0; i < originals.length; i++)
+                            Tab(text: l10n.mergedOriginalEventTitle(i + 1)),
+                        ],
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Expanded(
+                        child: TabBarView(
+                          children: originals
+                              .map((part) {
+                                return SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    AppTheme.spacing4,
+                                    0,
+                                    AppTheme.spacing4,
+                                    AppTheme.spacing6,
+                                  ),
+                                  child: _buildMarkdownBody(
+                                    ctx,
+                                    part,
+                                    bodyStyle,
+                                  ),
+                                );
+                              })
+                              .toList(growable: false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -825,7 +1017,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
             child: Center(
               child: Text(
                 keyActionDetail,
-                style: DefaultTextStyle.of(context).style.copyWith(color: actionColor),
+                style: DefaultTextStyle.of(
+                  context,
+                ).style.copyWith(color: actionColor),
               ),
             ),
           ),
@@ -834,7 +1028,8 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   }
 
   Widget _buildSeparator(BuildContext context) {
-    final Color base = DefaultTextStyle.of(context).style.color ??
+    final Color base =
+        DefaultTextStyle.of(context).style.color ??
         Theme.of(context).textTheme.bodyMedium?.color ??
         Theme.of(context).colorScheme.onSurface;
     return Container(
@@ -849,7 +1044,12 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     if (app != null && app.icon != null && app.icon!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Image.memory(app.icon!, width: 20, height: 20, fit: BoxFit.cover),
+        child: Image.memory(
+          app.icon!,
+          width: 20,
+          height: 20,
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Container(
@@ -867,7 +1067,10 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
         color: fg.withOpacity(0.10),
@@ -895,7 +1098,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
   ) {
     return MarkdownBody(
       data: data,
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(p: textStyle),
+      styleSheet: MarkdownStyleSheet.fromTheme(
+        Theme.of(context),
+      ).copyWith(p: textStyle),
       onTapLink: (text, href, title) async {
         if (href == null) return;
         final uri = Uri.tryParse(href);
@@ -908,23 +1113,25 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     );
   }
 
-  Widget _buildMergedOriginalEventsSection(
+  Widget _buildMergeStatusDropdown(
     BuildContext context, {
     required int segmentId,
-    required List<String> originals,
-    TextStyle? textStyle,
+    required String state,
+    required String reasonText,
+    required TextStyle? titleStyle,
+    required TextStyle? reasonStyle,
+    required bool canForce,
+    required List<String> originalSummaries,
   }) {
     final l10n = AppLocalizations.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color bg = cs.surfaceContainerHighest.withOpacity(0.28);
     final Color border = cs.outline.withOpacity(0.22);
-    final TextStyle? titleStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        );
-    final TextStyle? itemTitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: AppTheme.mutedForeground,
-          fontWeight: FontWeight.w600,
-        );
+
+    final bool canOpenOriginals = originalSummaries.isNotEmpty;
+    final TextStyle titleLinkStyle = (titleStyle ?? const TextStyle()).copyWith(
+      color: cs.primary,
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -935,7 +1142,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          key: PageStorageKey<String>('seg:$segmentId:mergedOriginals'),
+          key: PageStorageKey<String>('seg:$segmentId:mergeStatus'),
           tilePadding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing3,
             vertical: 0,
@@ -946,30 +1153,71 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
             AppTheme.spacing3,
             AppTheme.spacing3,
           ),
-          title: Text(l10n.mergedOriginalEventsTitle(originals.length), style: titleStyle),
-          children: originals.asMap().entries.map((entry) {
-            final int index = entry.key;
-            final String part = entry.value;
-            return Container(
-              margin: EdgeInsets.only(top: index == 0 ? 0 : AppTheme.spacing2),
-              padding: const EdgeInsets.all(AppTheme.spacing3),
-              decoration: BoxDecoration(
-                color: cs.surface.withOpacity(0.45),
-                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                border: Border(
-                  left: BorderSide(color: cs.outline.withOpacity(0.45), width: 2),
+          leading: Icon(Icons.merge_type, size: 16, color: cs.onSurfaceVariant),
+          title: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: canOpenOriginals
+                      ? () async => _openMergedOriginalEventsDrawer(
+                          context,
+                          originals: originalSummaries,
+                        )
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: state),
+                          if (canOpenOriginals) const TextSpan(text: ' · '),
+                          if (canOpenOriginals)
+                            TextSpan(
+                              text: l10n.mergedOriginalEventsTitle(
+                                originalSummaries.length,
+                              ),
+                            ),
+                        ],
+                      ),
+                      style: canOpenOriginals ? titleLinkStyle : titleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(l10n.mergedOriginalEventTitle(index + 1), style: itemTitleStyle),
-                  const SizedBox(height: 6),
-                  _buildMarkdownBody(context, part, textStyle),
-                ],
-              ),
-            );
-          }).toList(growable: false),
+              if (_forcingMerge)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              if (canForce)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () async => _forceMerge(),
+                  child: const Text('强制合并'),
+                ),
+            ],
+          ),
+          children: [
+            if (reasonText.trim().isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(reasonText, style: reasonStyle),
+            ],
+          ],
         ),
       ),
     );
@@ -977,7 +1225,10 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
 
   Widget _buildMergedTagChip(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: 2,
+      ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
         color: AppTheme.warning.withOpacity(0.12),
@@ -998,7 +1249,11 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     );
   }
 
-  Widget _buildCategorySection(BuildContext context, List<String> categories, bool merged) {
+  Widget _buildCategorySection(
+    BuildContext context,
+    List<String> categories,
+    bool merged,
+  ) {
     if (categories.isEmpty && !merged) return const SizedBox.shrink();
     return Wrap(
       spacing: 6,
@@ -1011,15 +1266,22 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     );
   }
 
-  Widget _buildThumbGrid(BuildContext context, List<Map<String, dynamic>> samples, {Set<String> aiNsfwFiles = const <String>{}}) {
+  Widget _buildThumbGrid(
+    BuildContext context,
+    List<Map<String, dynamic>> samples, {
+    Set<String> aiNsfwFiles = const <String>{},
+  }) {
     if (samples.isEmpty) return const SizedBox.shrink();
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double availableWidth =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : MediaQuery.of(context).size.width;
+        final double availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
         final double cellWidth =
-            (availableWidth - _thumbGridSpacing * (_thumbGridCrossAxisCount - 1)) / _thumbGridCrossAxisCount;
+            (availableWidth -
+                _thumbGridSpacing * (_thumbGridCrossAxisCount - 1)) /
+            _thumbGridCrossAxisCount;
         const double childAspectRatio = 9 / 16;
         final double cellHeight = cellWidth / childAspectRatio;
 
@@ -1060,11 +1322,16 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                       color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Center(child: Icon(Icons.image_not_supported_outlined)),
+                    child: const Center(
+                      child: Icon(Icons.image_not_supported_outlined),
+                    ),
                   );
                 }
 
-                final String fileName = path.replaceAll('\\', '/').split('/').last;
+                final String fileName = path
+                    .replaceAll('\\', '/')
+                    .split('/')
+                    .last;
                 final bool aiNsfw = aiNsfwFiles.contains(fileName);
 
                 return ScreenshotImageWidget(
@@ -1112,7 +1379,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ok ? AppLocalizations.of(context).regenerationQueued : AppLocalizations.of(context).alreadyQueuedOrFailed,
+            ok
+                ? AppLocalizations.of(context).regenerationQueued
+                : AppLocalizations.of(context).alreadyQueuedOrFailed,
           ),
         ),
       );
@@ -1121,7 +1390,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
           final res = await widget.loadResult(id);
           final int newCreatedAt = (res?['created_at'] as int?) ?? 0;
           if (res != null &&
-              (_lastResultCreatedAt == null || newCreatedAt <= 0 || newCreatedAt > _lastResultCreatedAt!)) {
+              (_lastResultCreatedAt == null ||
+                  newCreatedAt <= 0 ||
+                  newCreatedAt > _lastResultCreatedAt!)) {
             _applyNewResult(res, newCreatedAt > 0 ? newCreatedAt : null);
             await widget.onRefreshRequested();
             return;
@@ -1152,6 +1423,82 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     }
   }
 
+  Future<void> _forceMerge() async {
+    final int id = (_segmentData['id'] as int?) ?? 0;
+    if (id <= 0 || _forcingMerge) return;
+    final int prevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
+    if (prevId <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可合并的上一事件')));
+      return;
+    }
+
+    final bool confirmed =
+        await showUIDialog<bool>(
+          context: context,
+          title: '强制合并',
+          message: '将与上一事件强制合并，并覆盖当前事件总结，同时删除上一事件。此操作无法撤销，是否继续？',
+          actions: [
+            UIDialogAction<bool>(
+              text: AppLocalizations.of(context).dialogCancel,
+              style: UIDialogActionStyle.normal,
+              result: false,
+            ),
+            const UIDialogAction<bool>(
+              text: '强制合并',
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
+          ],
+          barrierDismissible: true,
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    int? previousCreatedAt = _lastMergeResultCreatedAt;
+    try {
+      final prevRes = await widget.loadResult(id);
+      final loaded = (prevRes?['created_at'] as int?) ?? 0;
+      if (loaded > 0) previousCreatedAt = loaded;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _forcingMerge = true;
+      _segmentData = Map<String, dynamic>.from(_segmentData)
+        ..['merge_forced'] = 1
+        ..['merge_decision_reason'] = '已请求强制合并（排队中）';
+      _lastMergeResultCreatedAt = previousCreatedAt;
+    });
+
+    try {
+      final ok = await ScreenshotDatabase.instance.forceMergeSegment(
+        id,
+        prevId: prevId,
+      );
+      if (!mounted) return;
+      if (!ok) {
+        setState(() => _forcingMerge = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('强制合并入队失败')));
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('强制合并已入队')));
+      _startMergeWatch(id, previousCreatedAt);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _forcingMerge = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('强制合并失败')));
+    }
+  }
+
   void _startResultWatch(int id) {
     _resultWatchTimer?.cancel();
     _resultWatchTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
@@ -1160,13 +1507,17 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         if (!mounted) return;
         if (res != null) {
           final int newCreatedAt = (res['created_at'] as int?) ?? 0;
-          if (_lastResultCreatedAt != null && newCreatedAt > 0 && newCreatedAt <= _lastResultCreatedAt!) {
+          if (_lastResultCreatedAt != null &&
+              newCreatedAt > 0 &&
+              newCreatedAt <= _lastResultCreatedAt!) {
             return;
           }
           t.cancel();
           _applyNewResult(res, newCreatedAt > 0 ? newCreatedAt : null);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context).generateSuccess)),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).generateSuccess),
+            ),
           );
           try {
             await widget.onRefreshRequested();
@@ -1176,15 +1527,39 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     });
   }
 
+  void _startMergeWatch(int id, int? previousCreatedAt) {
+    _mergeWatchTimer?.cancel();
+    _mergeWatchTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      try {
+        final res = await widget.loadResult(id);
+        if (!mounted) return;
+        if (res == null) return;
+        final int newCreatedAt = (res['created_at'] as int?) ?? 0;
+        if (previousCreatedAt != null &&
+            newCreatedAt > 0 &&
+            newCreatedAt <= previousCreatedAt) {
+          return;
+        }
+        t.cancel();
+        setState(() => _forcingMerge = false);
+        _applyNewResult(res, newCreatedAt > 0 ? newCreatedAt : null);
+        try {
+          await widget.onRefreshRequested();
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('合并完成')));
+      } catch (_) {}
+    });
+  }
+
   void _applyNewResult(Map<String, dynamic> res, int? createdAt) {
     final merged = _mergeResultIntoSegment(_segmentData, res);
-    final String finalSummary = _extractOverallSummary(
-      {
-        'output_text': merged['output_text'],
-        'categories': merged['categories'],
-      },
-      _tryParseJson(merged['structured_json'] as String?),
-    );
+    final String finalSummary = _extractOverallSummary({
+      'output_text': merged['output_text'],
+      'categories': merged['categories'],
+    }, _tryParseJson(merged['structured_json'] as String?));
     setState(() {
       _retrying = false;
       _segmentData = merged;
@@ -1212,7 +1587,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     });
     const int chunkSize = 24;
     int idx = 0;
-    _summaryStreamTimer = Timer.periodic(const Duration(milliseconds: 35), (timer) {
+    _summaryStreamTimer = Timer.periodic(const Duration(milliseconds: 35), (
+      timer,
+    ) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -1245,7 +1622,8 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     final ka = sj['key_actions'];
     if (ka is List && ka.isNotEmpty) {
       final first = ka.first;
-      if (first is Map && first['detail'] is String) return (first['detail'] as String);
+      if (first is Map && first['detail'] is String)
+        return (first['detail'] as String);
       if (first is String) return first;
     } else if (ka is Map && ka['detail'] is String) {
       return ka['detail'] as String;
@@ -1255,7 +1633,10 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     return null;
   }
 
-  List<String> _extractCategories(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  List<String> _extractCategories(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final List<String> out = <String>[];
     final raw = result?['categories'];
     if (raw is String && raw.trim().isNotEmpty) {
@@ -1264,10 +1645,14 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
         if (obj is List) {
           out.addAll(obj.map((e) => e.toString()));
         } else {
-          out.addAll(raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty));
+          out.addAll(
+            raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty),
+          );
         }
       } catch (_) {
-        out.addAll(raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty));
+        out.addAll(
+          raw.split(RegExp(r'[,\s]+')).where((e) => e.trim().isNotEmpty),
+        );
       }
     }
     final sc = sj?['categories'];
@@ -1286,7 +1671,10 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     return res;
   }
 
-  String _extractOverallSummary(Map<String, dynamic>? result, Map<String, dynamic>? sj) {
+  String _extractOverallSummary(
+    Map<String, dynamic>? result,
+    Map<String, dynamic>? sj,
+  ) {
     final v = sj?['overall_summary'];
     if (v is String && v.trim().isNotEmpty) return v.trim();
     final out = (result?['output_text'] as String?)?.trim() ?? '';

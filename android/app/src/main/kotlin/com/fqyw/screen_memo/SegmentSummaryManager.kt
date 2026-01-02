@@ -34,8 +34,8 @@ object SegmentSummaryManager {
 
     private const val TAG = "SegmentSummaryManager"
     // 事件级图片上限（用于送入多模态模型），作为最终兜底
-    // 需求：每个事件最多 15 张；若 ≤15 则全部送入
-    private const val PROVIDER_IMAGE_HARD_LIMIT = 15
+    // 需求：每个事件最多 16 张；若 ≤16 则全部送入
+    private const val PROVIDER_IMAGE_HARD_LIMIT = 16
 
     // 读写设置（SharedPreferences）
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
@@ -171,6 +171,8 @@ object SegmentSummaryManager {
     private val finishingSegments: MutableSet<Long> = Collections.synchronizedSet(HashSet())
     // 窗口级完成去重：同一 (start,end) 仅允许一次 finish 流程
     private val finishingWindows: MutableSet<String> = Collections.synchronizedSet(HashSet())
+    // 并发合并去重：避免同一 segment 被并发触发“向后合并链路”（含手动强制合并）
+    private val mergingSegments: MutableSet<Long> = Collections.synchronizedSet(HashSet())
 
     // 最近窗口默认回看天数（用于日期修复、缺失结果补救等；避免全量扫描带来开销）。
     private const val RECENT_LOOKBACK_DAYS = 14
@@ -993,12 +995,11 @@ object SegmentSummaryManager {
         val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
         val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
 
-        // 统一图片限额（默认：floor(duration/interval)，并受提供方硬上限保护；可由调用方覆写）
+        // 统一图片限额（默认：floor(duration/interval)，并受提供方硬上限保护；调用方可指定更小的 cap，但不可突破硬上限）
         val capBySeg = (seg.durationSec / seg.sampleIntervalSec).coerceAtLeast(1)
-        val effectiveCap = when {
-            maxImagesOverride != null && maxImagesOverride > 0 -> maxImagesOverride
-            else -> kotlin.math.min(capBySeg, PROVIDER_IMAGE_HARD_LIMIT)
-        }.coerceAtLeast(1)
+        val requestedCap = maxImagesOverride?.takeIf { it > 0 } ?: capBySeg
+        val effectiveCap =
+            kotlin.math.min(requestedCap, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
         val samplesOrdered = samples.sortedBy { it.captureTime }
         val effSamples = if (samplesOrdered.size > effectiveCap) evenPick(samplesOrdered, effectiveCap) else samplesOrdered
 
@@ -1516,15 +1517,50 @@ object SegmentSummaryManager {
         cur: SegmentDatabaseHelper.Segment,
         curSamples: List<SegmentDatabaseHelper.Sample>,
         curOutputText: String,
-        curStructured: String?
+        curStructured: String?,
+        forceMerge: Boolean = false,
+        specifiedPrevSegmentId: Long? = null,
+        lockHeld: Boolean = false
     ) {
-        try { FileLogger.i(TAG, "merge: begin compare cur=${cur.id} start=${fmt(cur.startTime)} with previous") } catch (_: Exception) {}
-        val prev = SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
-        if (prev == null) {
-            try { FileLogger.i(TAG, "merge: no previous completed-with-result segment before ${fmt(cur.startTime)}") } catch (_: Exception) {}
-            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
-            return
+        if (!lockHeld) {
+            if (!mergingSegments.add(cur.id)) {
+                try { FileLogger.i(TAG, "merge: skip because already merging seg=${cur.id}") } catch (_: Exception) {}
+                return
+            }
         }
+        try {
+            try { FileLogger.i(TAG, "merge: begin compare cur=${cur.id} start=${fmt(cur.startTime)} with previous") } catch (_: Exception) {}
+            val prev = run {
+                val specified = specifiedPrevSegmentId?.takeIf { it > 0L }
+                if (specified != null) {
+                    val s = SegmentDatabaseHelper.getSegmentById(ctx, specified)
+                    val ok = if (s != null && s.status == "completed") {
+                        val rr = SegmentDatabaseHelper.getResultForSegment(ctx, s.id)
+                        val ot = rr.first?.trim() ?: ""
+                        val sj = rr.second?.trim() ?: ""
+                        (ot.isNotEmpty() && !ot.equals("null", ignoreCase = true)) ||
+                            (sj.isNotEmpty() && !sj.equals("null", ignoreCase = true))
+                    } else false
+                    if (ok) s else SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+                } else {
+                    SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+                }
+            }
+            if (prev == null) {
+                try { FileLogger.i(TAG, "merge: no previous completed-with-result segment before ${fmt(cur.startTime)}") } catch (_: Exception) {}
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = null,
+                        decisionJson = null,
+                        reason = if (forceMerge) "强制合并失败：未找到上一事件" else "未找到上一事件，跳过合并",
+                        forced = forceMerge
+                    )
+                } catch (_: Exception) {}
+                SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                return
+            }
 
         // 读取上一个段的样本与文本（用于"已引用图片数"判断）
         val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
@@ -1536,19 +1572,46 @@ object SegmentSummaryManager {
         val referencedUnique = seenFiles.size
         val maxImagesPerMergedEvent = getMergeMaxImagesPerEvent(ctx)
         try { FileLogger.i(TAG, "merge: referenced images total=${referencedCount} unique=${referencedUnique} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
-        if (referencedUnique > maxImagesPerMergedEvent) {
+        if (!forceMerge && referencedUnique > maxImagesPerMergedEvent) {
             try { FileLogger.i(TAG, "merge: skip because referenced images would exceed limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
+            try {
+                SegmentDatabaseHelper.updateMergeDecisionInfo(
+                    ctx,
+                    segmentId = cur.id,
+                    prevSegmentId = prev.id,
+                    decisionJson = null,
+                    reason = "跳过合并：图片数量超过上限（unique=${referencedUnique}, limit=${maxImagesPerMergedEvent}）",
+                    forced = false
+                )
+            } catch (_: Exception) {}
             SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
             return
         }
 
-        val mergedUniqueSamples = mergeSamples(prevSamples, curSamples)
+        val mergedAllSamples = mergeSamples(prevSamples, curSamples)
+        val mergedUniqueSamples = if (mergedAllSamples.size > maxImagesPerMergedEvent) {
+            // 强制合并场景下：允许继续，但为保证 UI/DB 容量与提示词长度可控，将样本均匀裁剪到上限
+            evenPick(mergedAllSamples, maxImagesPerMergedEvent).mapIndexed { idx, s ->
+                s.copy(positionIndex = idx)
+            }
+        } else mergedAllSamples
 
         val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
         val prevOutput = prevRes.first ?: ""
 
-        // —— 合并前判定：提示词引导模型输出 same_event ——
-        run {
+        // —— 合并前判定：提示词引导模型输出 same_event ——（强制合并时跳过）
+        if (forceMerge) {
+            try {
+                SegmentDatabaseHelper.updateMergeDecisionInfo(
+                    ctx,
+                    segmentId = cur.id,
+                    prevSegmentId = prev.id,
+                    decisionJson = null,
+                    reason = "用户强制合并：跳过判定，直接执行合并",
+                    forced = true
+                )
+            } catch (_: Exception) {}
+        } else run {
             val sb = StringBuilder()
             val langOpt2 = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
             val sysLang2 = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
@@ -1604,23 +1667,35 @@ object SegmentSummaryManager {
                     .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
             }
 
-            // 送入判定的图片：不再受 15 张硬上限影响，仅受“合并事件图片上限”约束（默认 50）。
-            try { FileLogger.i(TAG, "merge: decision images unique=${mergedUniqueSamples.size} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
+            // 送入判定的图片：受“合并事件图片上限”约束，并最终受提供方硬上限保护（<= PROVIDER_IMAGE_HARD_LIMIT）。
+            val decisionMaxAiImages =
+                kotlin.math.min(maxImagesPerMergedEvent, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+            try {
+                FileLogger.i(
+                    TAG,
+                    "merge: decision images unique=${mergedUniqueSamples.size} max_ai_images=${decisionMaxAiImages} merge_max=${maxImagesPerMergedEvent}"
+                )
+            } catch (_: Exception) {}
             val decide = callGeminiWithImages(
                 ctx,
                 cur,
                 mergedUniqueSamples,
                 sb.toString(),
                 injectDynamicRules = false,
-                maxImagesOverride = maxImagesPerMergedEvent
+                maxImagesOverride = decisionMaxAiImages
             )
             val decisionText = decide.second
+            var decisionJson: String? = null
+            var decisionReason: String? = null
             val same: Boolean = try {
                 val pair = extractJsonBlocks(decisionText)
                 val jsonStr = pair.first
+                decisionJson = jsonStr
                 if (jsonStr != null) {
                     try {
                         val obj = org.json.JSONObject(jsonStr)
+                        val rr = obj.optString("reason", "").trim()
+                        if (rr.isNotEmpty()) decisionReason = rr
                         obj.optBoolean("same_event", false)
                     } catch (_: Exception) {
                         Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
@@ -1631,6 +1706,20 @@ object SegmentSummaryManager {
             } catch (_: Exception) {
                 Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
             }
+            if (decisionReason.isNullOrBlank()) {
+                val t = decisionText.trim()
+                decisionReason = if (t.length <= 240) t else (t.substring(0, 240) + "…")
+            }
+            try {
+                SegmentDatabaseHelper.updateMergeDecisionInfo(
+                    ctx,
+                    segmentId = cur.id,
+                    prevSegmentId = prev.id,
+                    decisionJson = decisionJson,
+                    reason = decisionReason,
+                    forced = false
+                )
+            } catch (_: Exception) {}
             try { FileLogger.i(TAG, "merge: decision same_event=${same} textLen=${decisionText.length}") } catch (_: Exception) {}
             try {
                 val preview = truncateForLog(decisionText, 3000)
@@ -1640,17 +1729,56 @@ object SegmentSummaryManager {
         }
 
         // 合并后生成新的总结：基于合并后的样本重新调用 AI
-        val mergedAiSamples = mergedUniqueSamples
-        val mergePrompt = buildMergePrompt(ctx, prev, cur, mergedAiSamples)
-        try { FileLogger.i(TAG, "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} samples=${mergedAiSamples.size} (limit=${maxImagesPerMergedEvent}) using merge prompt") } catch (_: Exception) {}
-        val merged = callGeminiWithImages(
+        val maxAiImages =
+            kotlin.math.min(maxImagesPerMergedEvent, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+        val mergePlan = planMergeAiInput(
+            allSamples = mergedUniqueSamples,
+            prevStructuredJson = prevRes.second,
+            prevSamples = prevSamples,
+            curStructuredJson = curStructured,
+            curSamples = curSamples,
+            maxAiImages = maxAiImages
+        )
+        val mergedAiSamples = mergePlan.aiSamples
+        val mergePrompt = buildMergePrompt(
             ctx,
+            prev,
             cur,
             mergedAiSamples,
-            mergePrompt,
-            isMerge = true,
-            maxImagesOverride = maxImagesPerMergedEvent
+            textOnlyDescriptions = mergePlan.textOnlyDescriptions,
+            totalImages = mergedUniqueSamples.size,
+            maxAttachedImages = maxAiImages,
+            forced = forceMerge
         )
+        try {
+            FileLogger.i(
+                TAG,
+                "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} images=${mergedAiSamples.size}/${mergedUniqueSamples.size} (max_ai_images=${maxAiImages}, merge_max=${maxImagesPerMergedEvent}) using merge prompt"
+            )
+        } catch (_: Exception) {}
+        val merged = try {
+            callGeminiWithImages(
+                ctx,
+                cur,
+                mergedAiSamples,
+                mergePrompt,
+                isMerge = true,
+                maxImagesOverride = maxAiImages
+            )
+        } catch (e: Exception) {
+            try {
+                SegmentDatabaseHelper.updateMergeDecisionInfo(
+                    ctx,
+                    segmentId = cur.id,
+                    prevSegmentId = prev.id,
+                    decisionJson = null,
+                    reason = "合并失败：" + (e.message ?: e.toString()),
+                    forced = forceMerge
+                )
+            } catch (_: Exception) {}
+            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+            return
+        }
         try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
         // 将"合并后的 AI 输出"落盘
         try {
@@ -1813,9 +1941,9 @@ object SegmentSummaryManager {
         // 更新当前段时间窗口到合并范围
         SegmentDatabaseHelper.updateSegmentWindow(ctx, cur.id, prev.startTime, cur.endTime)
         // 合并后必须写回 samples：否则删除 prev 后，其样本将永久丢失（导致图片标签/描述/引用图片缺失）。
-        var mergedSamplesForUi: List<SegmentDatabaseHelper.Sample> = mergedAiSamples
+        var mergedSamplesForUi: List<SegmentDatabaseHelper.Sample> = mergedUniqueSamples
         try {
-            try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedAiSamples) } catch (_: Exception) {}
+            try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
             val curAfter = SegmentDatabaseHelper.getSegmentById(ctx, cur.id)
             if (curAfter != null) {
                 val rebuilt = buildSamplesForSegment(ctx, curAfter)
@@ -1830,7 +1958,7 @@ object SegmentSummaryManager {
                             if (seen.add(s.filePath)) out.add(s)
                         }
                     }
-                    addIfRoom(mergedAiSamples.sortedBy { it.captureTime })
+                    addIfRoom(mergedUniqueSamples.sortedBy { it.captureTime })
                     addIfRoom(rebuilt.sortedBy { it.captureTime })
                     mergedSamplesForUi = out.sortedBy { it.captureTime }.mapIndexed { idx, s -> s.copy(positionIndex = idx) }
                     try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
@@ -1877,7 +2005,20 @@ object SegmentSummaryManager {
         // 递归向前继续尝试合并
         try { FileLogger.i(TAG, "merge: continue backward compare from new start=${fmt(prev.startTime)}") } catch (_: Exception) {}
         SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
-        tryCompareAndMergeBackward(ctx, cur.copy(startTime = prev.startTime), mergedSamplesForUi, mergedOutputTextForSave, mergedStructuredWithImages)
+        tryCompareAndMergeBackward(
+            ctx,
+            cur.copy(startTime = prev.startTime),
+            mergedSamplesForUi,
+            mergedOutputTextForSave,
+            mergedStructuredWithImages,
+            forceMerge = false,
+            lockHeld = true
+        )
+        } finally {
+            if (!lockHeld) {
+                mergingSegments.remove(cur.id)
+            }
+        }
     }
 
     private data class TextFirstMergedResult(
@@ -2186,6 +2327,162 @@ object SegmentSummaryManager {
         }
     }
 
+    private data class MergeAiInputPlan(
+        val aiSamples: List<SegmentDatabaseHelper.Sample>,
+        val textOnlyDescriptions: List<ImageDescEntry>
+    )
+
+    private fun buildDescByFileFromStructuredJson(
+        structuredJson: String?,
+        samples: List<SegmentDatabaseHelper.Sample>
+    ): Map<String, String> {
+        if (samples.isEmpty()) return emptyMap()
+        val list = extractImageDescriptions(structuredJson)
+        if (list.isEmpty()) return emptyMap()
+
+        val ordered = samples.sortedBy { it.captureTime }
+        val files = ArrayList<String>(ordered.size)
+        val indexByFile = HashMap<String, Int>(ordered.size * 2)
+        for ((i, s) in ordered.withIndex()) {
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            if (name.isEmpty()) continue
+            files.add(name)
+            indexByFile.putIfAbsent(name, i)
+        }
+        if (files.isEmpty()) return emptyMap()
+
+        val descByFile = HashMap<String, String>(files.size * 2)
+        for (e in list) {
+            val ia = indexByFile[e.from] ?: continue
+            val ib = indexByFile[e.to] ?: continue
+            var start = ia
+            var end = ib
+            if (start > end) {
+                val tmp = start
+                start = end
+                end = tmp
+            }
+            for (k in start..end) {
+                if (k < 0 || k >= files.size) continue
+                val f = files[k]
+                if (!descByFile.containsKey(f)) {
+                    descByFile[f] = e.description
+                }
+            }
+        }
+        return descByFile
+    }
+
+    private fun buildTextOnlyDescriptionRanges(
+        orderedFiles: List<String>,
+        descByFile: Map<String, String>,
+        excludedFiles: Set<String>
+    ): List<ImageDescEntry> {
+        if (orderedFiles.isEmpty() || descByFile.isEmpty()) return emptyList()
+        val out = ArrayList<ImageDescEntry>()
+        var rangeStartFile: String? = null
+        var rangeEndFile: String? = null
+        var currentDesc: String? = null
+
+        fun flush() {
+            val a = rangeStartFile
+            val b = rangeEndFile
+            val d = currentDesc
+            if (!a.isNullOrBlank() && !b.isNullOrBlank() && !d.isNullOrBlank()) {
+                out.add(ImageDescEntry(from = a, to = b, description = d))
+            }
+            rangeStartFile = null
+            rangeEndFile = null
+            currentDesc = null
+        }
+
+        for (f in orderedFiles) {
+            if (excludedFiles.contains(f)) {
+                flush()
+                continue
+            }
+            val d = (descByFile[f] ?: "").trim()
+            if (d.isEmpty()) {
+                flush()
+                continue
+            }
+            if (currentDesc == null) {
+                rangeStartFile = f
+                rangeEndFile = f
+                currentDesc = d
+                continue
+            }
+            if (d == currentDesc) {
+                rangeEndFile = f
+            } else {
+                flush()
+                rangeStartFile = f
+                rangeEndFile = f
+                currentDesc = d
+            }
+        }
+        flush()
+
+        return out
+    }
+
+    private fun planMergeAiInput(
+        allSamples: List<SegmentDatabaseHelper.Sample>,
+        prevStructuredJson: String?,
+        prevSamples: List<SegmentDatabaseHelper.Sample>,
+        curStructuredJson: String?,
+        curSamples: List<SegmentDatabaseHelper.Sample>,
+        maxAiImages: Int
+    ): MergeAiInputPlan {
+        val cap = maxAiImages.coerceAtLeast(1)
+        if (allSamples.isEmpty()) return MergeAiInputPlan(aiSamples = emptyList(), textOnlyDescriptions = emptyList())
+
+        val prevDesc = buildDescByFileFromStructuredJson(prevStructuredJson, prevSamples)
+        val curDesc = buildDescByFileFromStructuredJson(curStructuredJson, curSamples)
+        val descByFile = HashMap<String, String>(prevDesc.size + curDesc.size + 8)
+        descByFile.putAll(prevDesc)
+        descByFile.putAll(curDesc)
+
+        val ordered = allSamples.sortedBy { it.captureTime }
+        val withDesc = ArrayList<SegmentDatabaseHelper.Sample>(ordered.size)
+        val withoutDesc = ArrayList<SegmentDatabaseHelper.Sample>(ordered.size)
+        for (s in ordered) {
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            val d = (descByFile[name] ?: "").trim()
+            if (d.isEmpty()) withoutDesc.add(s) else withDesc.add(s)
+        }
+
+        val chosenUndescribed =
+            if (withoutDesc.size > cap) evenPick(withoutDesc, cap) else withoutDesc
+        val remaining = cap - chosenUndescribed.size
+        val chosenDescribed = when {
+            remaining <= 0 -> emptyList()
+            withDesc.size > remaining -> evenPick(withDesc, remaining)
+            else -> withDesc
+        }
+
+        val aiSamples = (chosenUndescribed + chosenDescribed)
+            .sortedBy { it.captureTime }
+            .mapIndexed { idx, s -> s.copy(positionIndex = idx) }
+
+        val excludedFiles = HashSet<String>(aiSamples.size * 2)
+        for (s in aiSamples) {
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            if (name.isNotEmpty()) excludedFiles.add(name)
+        }
+        val orderedFiles = ordered.mapNotNull { s ->
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            name.takeIf { it.isNotEmpty() }
+        }
+        val textOnlyRanges = buildTextOnlyDescriptionRanges(
+            orderedFiles = orderedFiles,
+            descByFile = descByFile,
+            excludedFiles = excludedFiles
+        )
+
+        return MergeAiInputPlan(aiSamples = aiSamples, textOnlyDescriptions = textOnlyRanges)
+    }
+
     private data class ImageTagEntry(
         val file: String,
         val refTime: String?,
@@ -2419,7 +2716,11 @@ object SegmentSummaryManager {
         ctx: Context,
         a: SegmentDatabaseHelper.Segment,
         b: SegmentDatabaseHelper.Segment,
-        samples: List<SegmentDatabaseHelper.Sample>
+        samples: List<SegmentDatabaseHelper.Sample>,
+        textOnlyDescriptions: List<ImageDescEntry> = emptyList(),
+        totalImages: Int? = null,
+        maxAttachedImages: Int? = null,
+        forced: Boolean = false
     ): String {
         val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
         for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
@@ -2520,12 +2821,41 @@ object SegmentSummaryManager {
         sb.append(titleLabel).append('\n')
             .append(timeRangeLabel).append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
             .append(header).append('\n')
+        run {
+            val provided = samples.size
+            val total = totalImages ?: provided
+            val cap = (maxAttachedImages ?: PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+            val note = when (effectiveLang) {
+                "zh" ->
+                    "注意：受模型图片数量限制，本次仅附带 $provided 张图片（上限 $cap）。本事件共涉及 $total 张图片；未附带的图片若已有历史描述，将在末尾以文字形式提供，供合并总结时参考。对“仅文字描述”的部分，请不要凭空补全画面细节。"
+                else ->
+                    "Note: due to the model image limit, this request attaches only $provided images (max $cap). This merged event contains $total images; for the rest, existing descriptions (if any) are provided below as text-only context. For text-only descriptions, do not invent extra visual details."
+            }
+            sb.append(note).append('\n').append('\n')
+            if (forced) {
+                val forcedNote = when (effectiveLang) {
+                    "zh" -> "用户已确认需要强制合并：请直接生成合并后的总结，不需要判断是否属于同一事件。"
+                    else -> "User confirmed a forced merge: directly produce the merged summary; do not judge whether they are the same event."
+                }
+                sb.append(forcedNote).append('\n').append('\n')
+            }
+        }
         for ((pkg, list) in byApp) {
             list.sortBy { it.captureTime }
             val name = list.firstOrNull()?.appName ?: pkg
             sb.append(appLabel).append(name).append(" (").append(pkg).append(")\n")
             for (s in list) {
                 sb.append(shotLabel).append(fmt(s.captureTime)).append(fileLabel).append(File(s.filePath).name).append('\n')
+            }
+        }
+        if (textOnlyDescriptions.isNotEmpty()) {
+            val label = when (effectiveLang) {
+                "zh" -> "以下图片不发送原图，仅提供已有描述（请将描述视为事实，不要自行扩写）："
+                else -> "The following images are NOT attached; only existing descriptions are provided (treat as facts; do not expand/hallucinate):"
+            }
+            sb.append('\n').append(label).append('\n')
+            for (e in textOnlyDescriptions) {
+                sb.append("- ").append(e.from).append(" - ").append(e.to).append(": ").append(e.description).append('\n')
             }
         }
         return sb.toString()
@@ -2614,6 +2944,72 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
         }
         return retried
+    }
+
+    /**
+     * 公开方法：用户手动强制合并某段落与其上一段落（跳过 same_event 判定，直接走合并总结）。
+     *
+     * - prevSegmentId 可选：若提供则优先与该段落合并（必须为 completed 且有结果）
+     * - 返回 true 表示已入队（异步执行）；false 表示参数/状态不满足（未入队）
+     */
+    fun forceMergeSegmentById(ctx: Context, segmentId: Long, prevSegmentId: Long? = null): Boolean {
+        if (segmentId <= 0L) return false
+        val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        val seg = SegmentDatabaseHelper.getSegmentById(appCtx, segmentId) ?: return false
+        if (seg.status != "completed") return false
+
+        val resultPair = SegmentDatabaseHelper.getResultForSegment(appCtx, segmentId)
+        val out = (resultPair.first ?: "").trim()
+        if (out.isEmpty() || out.equals("null", ignoreCase = true)) return false
+
+        var samples = SegmentDatabaseHelper.getSamplesForSegment(appCtx, segmentId)
+        if (samples.isEmpty()) {
+            samples = buildSamplesForSegment(appCtx, seg)
+            if (samples.isNotEmpty()) {
+                try { SegmentDatabaseHelper.saveSamples(appCtx, seg.id, samples) } catch (_: Exception) {}
+            }
+        }
+        if (samples.isEmpty()) return false
+
+        val prevIdToRecord = prevSegmentId?.takeIf { it > 0L }
+            ?: try { SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(appCtx, seg.startTime)?.id } catch (_: Exception) { null }
+        try {
+            SegmentDatabaseHelper.updateMergeDecisionInfo(
+                appCtx,
+                segmentId = segmentId,
+                prevSegmentId = prevIdToRecord,
+                decisionJson = null,
+                reason = "已请求强制合并（排队中）",
+                forced = true
+            )
+        } catch (_: Exception) {}
+
+        postOnWorker("forceMerge") {
+            try {
+                tryCompareAndMergeBackward(
+                    appCtx,
+                    seg,
+                    samples,
+                    out,
+                    resultPair.second,
+                    forceMerge = true,
+                    specifiedPrevSegmentId = prevSegmentId
+                )
+            } catch (e: Exception) {
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        appCtx,
+                        segmentId = segmentId,
+                        prevSegmentId = prevIdToRecord,
+                        decisionJson = null,
+                        reason = "强制合并异常：" + (e.message ?: e.toString()),
+                        forced = true
+                    )
+                } catch (_: Exception) {}
+                try { SegmentDatabaseHelper.setMergeAttempted(appCtx, segmentId, true) } catch (_: Exception) {}
+            }
+        }
+        return true
     }
 
     private fun getStringByLang(

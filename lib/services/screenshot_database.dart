@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 22,
+          version: 23,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 22,
+          version: 23,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 22,
+          version: 23,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 22,
+        version: 23,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -735,6 +735,26 @@ class ScreenshotDatabase {
         await db.execute(
           "CREATE UNIQUE INDEX IF NOT EXISTS uniq_segments_window_global ON segments(start_time, end_time) WHERE segment_kind = 'global'",
         );
+      } catch (_) {}
+    }
+    // v23: segments 增加合并判定信息字段（用于展示合并原因/强制合并）
+    if (oldVersion < 23) {
+      try {
+        await db.execute('ALTER TABLE segments ADD COLUMN merge_prev_id INTEGER');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_json TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_reason TEXT');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_forced INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_at INTEGER');
       } catch (_) {}
     }
   }
