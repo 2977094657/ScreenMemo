@@ -1150,6 +1150,14 @@ class _AISettingsPageState extends State<AISettingsPage>
     return false;
   }
 
+  bool _intentAllowsNoTimeRange(IntentResult intent) {
+    final String v = intent.intent.trim().toLowerCase();
+    if (v == 'other' || v == 'chat' || v == 'general') return true;
+    final String ec = (intent.errorCode ?? '').trim().toUpperCase();
+    if (ec == 'UNSUPPORTED') return true;
+    return false;
+  }
+
   String _fmtWindowShort(int startMs, int endMs) {
     if (startMs <= 0 || endMs <= 0) return '';
     final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMs);
@@ -1979,7 +1987,10 @@ class _AISettingsPageState extends State<AISettingsPage>
           }
 
           // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则进入温和澄清
-          if (!localOnlyResponse && intent != null && !intent!.hasValidRange) {
+          if (!localOnlyResponse &&
+              intent != null &&
+              !intent!.hasValidRange &&
+              !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
                   ? '未解析到有效时间窗：尝试复用上一轮或进入澄清…'
@@ -2201,94 +2212,141 @@ class _AISettingsPageState extends State<AISettingsPage>
             _stopDots();
             session = null;
           } else {
-            // 已收集到足够线索：进入正常检索与回答流程
+            final IntentResult resolvedIntent = intent!;
+            final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
+
+            // 清理澄清状态，避免污染下一轮
             if (_clarifyState != null &&
-                intent != null &&
-                intent!.hasValidRange) {
-              // 清理澄清状态，避免污染下一轮
+                (noContext || resolvedIntent.hasValidRange)) {
+              if (noContext) {
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '检测到非检索问题：退出澄清流程'
+                      : 'Non-retrieval intent: exiting clarification flow',
+                );
+              }
               _clarifyState = null;
             }
 
-            final IntentResult resolvedIntent = intent!;
-            await FlutterLogger.nativeInfo(
-              'ChatFlow',
-              'phase1 intent ok range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}] summary=${resolvedIntent.intentSummary} apps=${resolvedIntent.apps.length}',
-            );
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '意图已确认：${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]'
-                  : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
-            );
-
-            // 显示意图摘要与时间窗
-            setState(() {
-              final lastIdx = _messages.length - 1;
-              final last = _messages[lastIdx];
-              if (last.role == 'assistant') {
-                final start = DateTime.fromMillisecondsSinceEpoch(
-                  resolvedIntent.startMs,
-                );
-                final end = DateTime.fromMillisecondsSinceEpoch(
-                  resolvedIntent.endMs,
-                );
-                String two(int v) => v.toString().padLeft(2, '0');
-                String ymd(DateTime d) =>
-                    '${d.year}-${two(d.month)}-${two(d.day)}';
-                final String dateLine =
-                    (start.year == end.year &&
-                        start.month == end.month &&
-                        start.day == end.day)
-                    ? '日期: ' + ymd(start)
-                    : '日期: ' + ymd(start) + ' → ' + ymd(end);
-                final String range =
-                    '${two(start.hour)}:${two(start.minute)}-${two(end.hour)}:${two(end.minute)}';
-                final updated =
-                    '1/4 意图: ${resolvedIntent.intentSummary}\n' +
-                    dateLine +
-                    '\n时间: ' +
-                    range +
-                    ' (' +
-                    resolvedIntent.timezone +
-                    ')\n\n2/4 查找上下文…';
-                _messages[lastIdx] = AIMessage(
-                  role: 'assistant',
-                  content: updated,
-                  createdAt: last.createdAt,
-                );
-              }
-            });
-
-            // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
-            await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
-            _appendAgentLog(
-              _isZhLocale() ? '阶段 2/4：查找上下文' : 'Phase 2/4: building context',
-              bullet: false,
-            );
-            final String ctxAction = (resolvedIntent.contextAction)
-                .trim()
-                .toLowerCase();
-            reuse =
-                resolvedIntent.skipContext &&
-                ctxAction == 'reuse' &&
-                (_lastCtxPack != null ||
-                    QueryContextService.instance.lastPack != null);
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '复用上一轮上下文：' + (reuse ? '是' : '否')
-                  : 'Reuse previous context: ' + (reuse ? 'yes' : 'no'),
-            );
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '上下文策略：' + ctxAction
-                  : 'Context action: ' + ctxAction,
-            );
-            if (resolvedIntent.skipContext && !reuse) {
+            if (noContext) {
+              await FlutterLogger.nativeInfo(
+                'ChatFlow',
+                'phase1 intent ok (no-context) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
+              );
               _appendAgentLog(
                 _isZhLocale()
-                    ? '意图模型建议不复用缓存上下文，将重新检索/翻页以获取更多证据。'
-                    : 'Intent model suggests not reusing cached context; will refresh/page for more evidence.',
+                    ? '意图已确认：${resolvedIntent.intentSummary}（无需时间窗/上下文检索）'
+                    : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
               );
-            }
+              setState(() {
+                final lastIdx = _messages.length - 1;
+                final last = _messages[lastIdx];
+                if (last.role == 'assistant') {
+                  _messages[lastIdx] = AIMessage(
+                    role: 'assistant',
+                    content: _isZhLocale()
+                        ? '1/4 意图: ${resolvedIntent.intentSummary}\n\n2/4 无需上下文\n\n3/4 生成回答…'
+                        : '1/4 Intent: ${resolvedIntent.intentSummary}\n\n2/4 No context needed\n\n3/4 Generating answer…',
+                    createdAt: last.createdAt,
+                  );
+                }
+              });
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '阶段 3/4：生成回答'
+                    : 'Phase 3/4: generating answer',
+                bullet: false,
+              );
+              _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
+              session = await _chat.sendMessageStreamedV2WithDisplayOverride(
+                text,
+                text,
+                includeHistory: true,
+                tools: AIChatService.defaultMemoryTools(),
+                toolChoice: 'auto',
+              );
+            } else {
+              await FlutterLogger.nativeInfo(
+                'ChatFlow',
+                'phase1 intent ok range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}] summary=${resolvedIntent.intentSummary} apps=${resolvedIntent.apps.length}',
+              );
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '意图已确认：${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]'
+                    : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
+              );
+
+              // 显示意图摘要与时间窗
+              setState(() {
+                final lastIdx = _messages.length - 1;
+                final last = _messages[lastIdx];
+                if (last.role == 'assistant') {
+                  final start = DateTime.fromMillisecondsSinceEpoch(
+                    resolvedIntent.startMs,
+                  );
+                  final end = DateTime.fromMillisecondsSinceEpoch(
+                    resolvedIntent.endMs,
+                  );
+                  String two(int v) => v.toString().padLeft(2, '0');
+                  String ymd(DateTime d) =>
+                      '${d.year}-${two(d.month)}-${two(d.day)}';
+                  final String dateLine =
+                      (start.year == end.year &&
+                          start.month == end.month &&
+                          start.day == end.day)
+                      ? '日期: ' + ymd(start)
+                      : '日期: ' + ymd(start) + ' → ' + ymd(end);
+                  final String range =
+                      '${two(start.hour)}:${two(start.minute)}-${two(end.hour)}:${two(end.minute)}';
+                  final updated =
+                      '1/4 意图: ${resolvedIntent.intentSummary}\n' +
+                      dateLine +
+                      '\n时间: ' +
+                      range +
+                      ' (' +
+                      resolvedIntent.timezone +
+                      ')\n\n2/4 查找上下文…';
+                  _messages[lastIdx] = AIMessage(
+                    role: 'assistant',
+                    content: updated,
+                    createdAt: last.createdAt,
+                  );
+                }
+              });
+
+              // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
+              await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '阶段 2/4：查找上下文'
+                    : 'Phase 2/4: building context',
+                bullet: false,
+              );
+              final String ctxAction = (resolvedIntent.contextAction)
+                  .trim()
+                  .toLowerCase();
+              reuse =
+                  resolvedIntent.skipContext &&
+                  ctxAction == 'reuse' &&
+                  (_lastCtxPack != null ||
+                      QueryContextService.instance.lastPack != null);
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '复用上一轮上下文：' + (reuse ? '是' : '否')
+                    : 'Reuse previous context: ' + (reuse ? 'yes' : 'no'),
+              );
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '上下文策略：' + ctxAction
+                    : 'Context action: ' + ctxAction,
+              );
+              if (resolvedIntent.skipContext && !reuse) {
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '意图模型建议不复用缓存上下文，将重新检索/翻页以获取更多证据。'
+                      : 'Intent model suggests not reusing cached context; will refresh/page for more evidence.',
+                );
+              }
 
             // 不限制上下文事件数量；预加载少量证据图片“文件名/路径”（不预加载像素）。
             // 目的：让模型可以直接引用 filename（而不是臆造），从而在 UI 中稳定渲染图片证据。
@@ -2492,6 +2550,7 @@ class _AISettingsPageState extends State<AISettingsPage>
               toolEndMs: resolvedIntent.endMs,
               forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
             );
+            }
           }
 
           if (session != null) {
@@ -2541,8 +2600,12 @@ class _AISettingsPageState extends State<AISettingsPage>
             }
             await session!.completed;
             // 成功路径：更新"上一轮"缓存
-            _lastCtxPack = ctxPack;
-            _lastIntent = intent;
+            if (ctxPackForRewrite != null &&
+                intent != null &&
+                intent!.hasValidRange) {
+              _lastCtxPack = ctxPackForRewrite;
+              _lastIntent = intent;
+            }
           }
         } catch (e) {
           try {
@@ -2858,7 +2921,10 @@ class _AISettingsPageState extends State<AISettingsPage>
           }
 
           // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则进入温和澄清
-          if (!localOnlyResponse && intent != null && !intent!.hasValidRange) {
+          if (!localOnlyResponse &&
+              intent != null &&
+              !intent!.hasValidRange &&
+              !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
                   ? '未解析到有效时间窗：尝试复用上一轮或进入澄清…'
@@ -3092,13 +3158,94 @@ class _AISettingsPageState extends State<AISettingsPage>
             return;
           }
 
-          if (_clarifyState != null &&
-              intent != null &&
-              intent!.hasValidRange) {
+          final IntentResult resolvedIntent = intent!;
+          final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
+
+          // 清理澄清状态，避免污染下一轮
+          if (_clarifyState != null && (noContext || resolvedIntent.hasValidRange)) {
+            if (noContext) {
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '检测到非检索问题：退出澄清流程'
+                    : 'Non-retrieval intent: exiting clarification flow',
+                assistantIndex: assistantIdx,
+              );
+            }
             _clarifyState = null;
           }
 
-          final IntentResult resolvedIntent = intent!;
+          if (noContext) {
+            await FlutterLogger.nativeInfo(
+              'ChatFlow',
+              'phase1 intent ok (no-context, non-stream) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
+            );
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '意图已确认：${resolvedIntent.intentSummary}（无需时间窗/上下文检索）'
+                  : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
+              assistantIndex: assistantIdx,
+            );
+            setState(() {
+              final lastIdx = _messages.length - 1;
+              final last = _messages[lastIdx];
+              _messages[lastIdx] = AIMessage(
+                role: 'assistant',
+                content: _isZhLocale()
+                    ? '1/4 意图: ${resolvedIntent.intentSummary}\n\n2/4 无需上下文\n\n3/4 生成回答…'
+                    : '1/4 Intent: ${resolvedIntent.intentSummary}\n\n2/4 No context needed\n\n3/4 Generating answer…',
+                createdAt: last.createdAt,
+              );
+            });
+            _appendAgentLog(
+              _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
+              assistantIndex: assistantIdx,
+              bullet: false,
+            );
+            final Stopwatch swAnswer = Stopwatch()..start();
+            final assistant = await _chat.sendMessageWithDisplayOverride(
+              text,
+              text,
+              includeHistory: true,
+              tools: AIChatService.defaultMemoryTools(),
+              toolChoice: 'auto',
+              emitEvent: (evt) {
+                if (!mounted) return;
+                if (evt.kind != 'reasoning') return;
+                setState(() {
+                  _thinkingText += evt.data;
+                  _reasoningByIndex[assistantIdx] =
+                      (_reasoningByIndex[assistantIdx] ?? '') + evt.data;
+                });
+                _scheduleAutoScroll();
+                _scheduleReasoningPreviewScroll();
+              },
+            );
+            swAnswer.stop();
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '模型已响应（${swAnswer.elapsedMilliseconds}ms）'
+                  : 'Model responded (${swAnswer.elapsedMilliseconds}ms)',
+              assistantIndex: assistantIdx,
+            );
+            if (!mounted) return;
+            setState(() {
+              final lastIdx = _messages.length - 1;
+              _messages[lastIdx] = AIMessage(
+                role: 'assistant',
+                content: assistant.content,
+                createdAt: _messages[lastIdx].createdAt,
+              );
+            });
+            _scheduleAutoScroll();
+            try {
+              final List<AIMessage> toSave = _mergeReasoningForPersistence(
+                List<AIMessage>.from(_messages),
+              );
+              await _settings.saveChatHistoryActive(toSave);
+            } catch (_) {}
+            return;
+          }
+
           await FlutterLogger.nativeInfo(
             'ChatFlow',
             'phase1 intent ok range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}] summary=${resolvedIntent.intentSummary}',
