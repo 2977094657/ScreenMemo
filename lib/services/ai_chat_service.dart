@@ -10,6 +10,7 @@ import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
+import 'memory_bridge_service.dart';
 import 'screenshot_database.dart';
 
 export 'ai_request_gateway.dart'
@@ -43,26 +44,81 @@ class AIChatService {
   // Marker protocol is disabled. We accept plain text/JSON and parse as needed.
   static const String responseStartMarker = '';
 
-  // To keep prompts/tool results bounded, time-range tools return at most 7 days per call.
+  // To keep tool results bounded and avoid expensive scans:
+  // - OCR-heavy time-range tools are capped to 7 days per call.
+  // - Semantic-index tools (segments AI results / ai_image_meta) can search a much wider window.
   static const int maxToolTimeSpanMs = 7 * 24 * 60 * 60 * 1000;
+  static const int maxSemanticToolTimeSpanMs = 365 * 24 * 60 * 60 * 1000;
 
-  static const String _toolUsageInstruction =
-      'Tool calling is enabled. You MAY call tools when needed; do NOT fabricate tool results.\n'
-      'Available tools:\n'
-      '- search_segments(query?, start_ms?, end_ms?, app_package_name?, mode?, only_no_summary?, limit?, offset?, per_segment_samples?): list/filter segments (动态) by optional keyword + time range (+ optional app filter). mode: auto|ai|ocr.\n'
-      '- get_segment_result(segment_id, max_chars?): fetch full AI result for a segment.\n'
-      '- get_segment_samples(segment_id, limit?): list screenshot basenames for that segment (use to pick images).\n'
-      '- search_screenshots_ocr(query, start_ms?, end_ms?, app_package_name?, limit?, offset?): search screenshots by OCR text and get filenames (+ optional app filter).\n'
-      '- search_ai_image_meta(query, start_ms?, end_ms?, app_package_name?, include_nsfw?, limit?, offset?): search AI-generated per-image tags/descriptions and get filenames.\n'
-      '- get_images(filenames[], reason?): attach original images by basename so you can visually inspect them.\n'
-      'Rules:\n'
-      '- For lookup tasks (find/identify a person/video/app/action in the user history), prefer calling search_segments/search_screenshots_ocr first. Do not guess.\n'
-      '- If OCR search yields nothing (or OCR is missing), try search_ai_image_meta.\n'
-      '- If the overall time range spans multiple weeks, page week-by-week using paging.prev/paging.next until you have enough evidence.\n'
-      '- If a search tool returns count=0, do NOT immediately conclude “not found”. Confirm the user’s assumption/keywords/time range and try additional searches (different keywords/tools + paging) before answering.\n'
-      '- Prefer text tools first; call get_images ONLY when pixel-level confirmation is necessary.\n'
-      '- Time-range tools return at most 7 days per call. If you request >7 days, the app will clamp to 7 days and include warnings + paging (prev/next) so you can page by week.\n'
-      '- get_images limits: at most 15 images per call, total image payload <= 10MB.';
+  String _buildToolUsageInstruction(List<Map<String, dynamic>> tools) {
+    final Set<String> names = _extractToolNames(tools);
+    final StringBuffer sb = StringBuffer();
+    sb.writeln(
+      _loc(
+        '已启用工具调用。需要时可调用工具；不要编造工具结果。',
+        'Tool calling is enabled. You MAY call tools when needed; do NOT fabricate tool results.',
+      ),
+    );
+    sb.writeln(_loc('可用工具：', 'Available tools:'));
+    for (final t in tools) {
+      final fn = t['function'];
+      if (fn is! Map) continue;
+      final String name = (fn['name'] as String?)?.trim() ?? '';
+      if (name.isEmpty) continue;
+      final String desc = (fn['description'] as String?)?.trim() ?? '';
+      sb.writeln(desc.isEmpty ? '- $name' : '- $name: $desc');
+    }
+    sb.writeln(_loc('规则：', 'Rules:'));
+    final bool hasRetrievalTools =
+        names.contains('search_segments') ||
+        names.contains('search_screenshots_ocr') ||
+        names.contains('search_ai_image_meta');
+    if (hasRetrievalTools) {
+      sb.writeln(
+        _loc(
+          '- 对于“查找/定位用户历史记录”的问题，优先调用检索类工具，不要猜。',
+          '- For lookup tasks (find/identify something in the user history), prefer calling retrieval tools first. Do not guess.',
+        ),
+      );
+      if (names.contains('search_ai_image_meta')) {
+        sb.writeln(
+          _loc(
+            '- 若 OCR 检索为空或缺失，可尝试使用 search_ai_image_meta。',
+            '- If OCR search yields nothing (or OCR is missing), try search_ai_image_meta.',
+          ),
+        );
+      }
+      sb.writeln(
+        _loc(
+          '- 若检索工具返回 count=0，不要立刻下“未找到”的结论；请更换关键词/工具或使用 paging 继续检索。',
+          '- If a search tool returns count=0, do NOT immediately conclude “not found”. Try more searches (different keywords/tools + paging) before answering.',
+        ),
+      );
+    }
+    if (names.contains('search_memory_graph')) {
+      sb.writeln(
+        _loc(
+          '- 若问题需要“长期记忆/用户画像/关系链”类信息，可调用 search_memory_graph 再回答。',
+          '- For questions about long-term memory / user profile / relationship chains, consider calling search_memory_graph before answering.',
+        ),
+      );
+    }
+    if (names.contains('get_images')) {
+      sb.writeln(
+        _loc(
+          '- 优先使用文本工具；只有确实需要像素级确认时才调用 get_images。',
+          '- Prefer text tools first; call get_images ONLY when pixel-level confirmation is necessary.',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- get_images 限制：单次最多 15 张，总 payload <= 10MB。',
+          '- get_images limits: at most 15 images per call, total image payload <= 10MB.',
+        ),
+      );
+    }
+    return sb.toString().trim();
+  }
 
   bool _isZhLocale() =>
       _effectivePromptLocale().languageCode.toLowerCase().startsWith('zh');
@@ -494,10 +550,10 @@ class AIChatService {
   Map<String, dynamic> _buildWeeklyPagingHint({
     required int servedStartMs,
     required int servedEndMs,
+    int maxSpanMs = AIChatService.maxToolTimeSpanMs,
     int? guardStartMs,
     int? guardEndMs,
   }) {
-    final int maxSpanMs = AIChatService.maxToolTimeSpanMs;
     final int? gs = (guardStartMs != null && guardStartMs > 0)
         ? guardStartMs
         : null;
@@ -531,10 +587,14 @@ class AIChatService {
     return out;
   }
 
-  bool _shouldOfferWeeklyPagingHint({int? guardStartMs, int? guardEndMs}) {
+  bool _shouldOfferWeeklyPagingHint({
+    int? guardStartMs,
+    int? guardEndMs,
+    int maxSpanMs = AIChatService.maxToolTimeSpanMs,
+  }) {
     if (guardStartMs == null || guardEndMs == null) return false;
     if (guardStartMs <= 0 || guardEndMs <= 0) return false;
-    return (guardEndMs - guardStartMs).abs() > AIChatService.maxToolTimeSpanMs;
+    return (guardEndMs - guardStartMs).abs() > maxSpanMs;
   }
 
   String _summarizeToolMessages(List<AIMessage> toolMsgs) {
@@ -602,7 +662,7 @@ class AIChatService {
       'function': <String, dynamic>{
         'name': 'search_segments',
         'description':
-            'List/search local segments (动态) by time range and optional keyword (+ optional app filter) (max 7 days per call; larger windows will be clamped). When query is omitted, returns segments in range; when query is provided, searches segment AI results and/or OCR matches (mode=auto|ai|ocr).',
+            'List/search local segments (动态) by time range and optional keyword (+ optional app filter). List mode and OCR mode are capped to 7 days per call; AI mode is capped to 365 days per call (larger windows will be clamped with paging hints). When query is omitted, returns segments in range; when query is provided, searches segment AI results and/or OCR matches (mode=auto|ai|ocr).',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -741,7 +801,7 @@ class AIChatService {
       'function': <String, dynamic>{
         'name': 'search_ai_image_meta',
         'description':
-            'Search AI-generated per-image tags/descriptions (ai_image_meta) within a time range (max 7 days per call). Useful when OCR is missing or insufficient.',
+            'Search AI-generated per-image tags/descriptions (ai_image_meta) within a time range (max 365 days per call; larger windows will be clamped with paging hints). Useful when OCR is missing or insufficient.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -779,7 +839,50 @@ class AIChatService {
         },
       },
     },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'search_memory_graph',
+        'description':
+            'Search local temporal memory graph (entities/edges/evidence). Use this to answer relationship-chain questions like “who did I work with at which company” or “how is this project related to that meeting”.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'query': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Natural language query or an entity key (e.g., person:user).',
+            },
+            'depth': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Neighborhood expansion depth (1-4).',
+            },
+            'limit': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Max edges to return (10-200).',
+            },
+            'include_history': <String, dynamic>{
+              'type': 'boolean',
+              'description': 'Whether to include historical (ended) edges.',
+            },
+          },
+          'required': <String>['query'],
+        },
+      },
+    },
   ];
+
+  static List<Map<String, dynamic>> defaultMemoryTools() {
+    final List<Map<String, dynamic>> all = defaultChatTools();
+    return all.where((t) {
+      final fn = t['function'];
+      if (fn is Map) {
+        final String name = (fn['name'] as String?)?.trim() ?? '';
+        return name == 'search_memory_graph';
+      }
+      return false;
+    }).toList(growable: false);
+  }
 
   String _detectImageMimeByExt(String path) {
     final String p = path.toLowerCase();
@@ -1034,8 +1137,8 @@ class AIChatService {
     if (requestedTooWide && range.clampedToMaxSpan) {
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请按周分页再次调用（见 paging.prev / paging.next）。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Page by week and call again (see paging.prev / paging.next).',
+          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -1137,16 +1240,21 @@ class AIChatService {
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
     final int? reqStartMs = _toInt(args['start_ms']);
     final int? reqEndMs = _toInt(args['end_ms']);
+
+    String mode = (args['mode'] as String?)?.trim().toLowerCase() ?? '';
+    if (mode.isEmpty) mode = 'auto';
+    if (mode != 'auto' && mode != 'ai' && mode != 'ocr') mode = 'auto';
+
+    final int maxSpanMs =
+        (query.isEmpty || mode == 'ocr')
+            ? AIChatService.maxToolTimeSpanMs
+            : AIChatService.maxSemanticToolTimeSpanMs;
     final bool requestedTooWide =
         (reqStartMs != null &&
         reqEndMs != null &&
         reqStartMs > 0 &&
         reqEndMs > 0 &&
-        (reqEndMs - reqStartMs).abs() > AIChatService.maxToolTimeSpanMs);
-
-    String mode = (args['mode'] as String?)?.trim().toLowerCase() ?? '';
-    if (mode.isEmpty) mode = 'auto';
-    if (mode != 'auto' && mode != 'ai' && mode != 'ocr') mode = 'auto';
+        (reqEndMs - reqStartMs).abs() > maxSpanMs);
 
     // If query is omitted, behave like "list segments in time range".
     if (query.isEmpty) {
@@ -1197,9 +1305,9 @@ class AIChatService {
     int offset = (_toInt(args['offset']) ?? 0);
     if (offset < 0) offset = 0;
 
-    // Default: last 30 days when no window is provided (avoid scanning too broadly).
+    // For semantic segment search, default to a much wider window.
     final int now = DateTime.now().millisecondsSinceEpoch;
-    final int defaultStart = now - const Duration(days: 30).inMilliseconds;
+    final int defaultStart = now - const Duration(days: 365).inMilliseconds;
     final range = _resolveToolTimeRange(
       defaultStartMs: defaultStart,
       defaultEndMs: now,
@@ -1207,28 +1315,50 @@ class AIChatService {
       endMs: reqEndMs,
       guardStartMs: toolStartMs,
       guardEndMs: toolEndMs,
+      maxSpanMs: maxSpanMs,
     );
     final int s = range.startMs;
     final int e = range.endMs;
     final List<String> warnings = <String>[];
     if (requestedTooWide && range.clampedToMaxSpan) {
+      final int maxSpanDays =
+          (maxSpanMs / const Duration(days: 1).inMilliseconds).round();
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请按周分页再次调用（见 paging.prev / paging.next）。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Page by week and call again (see paging.prev / paging.next).',
+          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
 
-    final List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
+    final String requestedAppPackageName = appPackageName;
+    String effectiveAppPackageName = appPackageName;
+    bool appFilterRelaxed = false;
+    List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
         .searchSegmentsByText(
           query,
           limit: limit,
           offset: offset,
           startMillis: s,
           endMillis: e,
-          appPackageName: appPackageName,
+          appPackageName: effectiveAppPackageName.isEmpty
+              ? null
+              : effectiveAppPackageName,
         );
+    if (rows.isEmpty && requestedAppPackageName.isNotEmpty) {
+      rows = await ScreenshotDatabase.instance.searchSegmentsByText(
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: s,
+        endMillis: e,
+        appPackageName: null,
+      );
+      if (rows.isNotEmpty) {
+        appFilterRelaxed = true;
+        effectiveAppPackageName = '';
+      }
+    }
 
     final List<Map<String, dynamic>> results = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -1267,8 +1397,10 @@ class AIChatService {
       });
     }
 
-    // auto: fallback to OCR when AI-result search yields nothing.
-    if (mode == 'auto' && results.isEmpty) {
+    // auto: fallback to OCR when AI-result search yields nothing (only when the served window is small enough).
+    final bool canOcrFallback =
+        (e - s).abs() <= AIChatService.maxToolTimeSpanMs;
+    if (mode == 'auto' && results.isEmpty && canOcrFallback) {
       final List<AIMessage> msgs = await _executeSearchSegmentsOcrTool(
         call,
         toolStartMs: toolStartMs,
@@ -1288,6 +1420,14 @@ class AIChatService {
         ),
       ];
     }
+    if (mode == 'auto' && results.isEmpty && !canOcrFallback) {
+      warnings.add(
+        _loc(
+          '提示：本次 AI 段落检索未命中；由于时间窗口较大，已跳过 OCR 回退（成本较高）。如需 OCR 检索，请缩小时间范围或使用 paging.prev / paging.next 分页，再设置 mode=ocr 调用。',
+          'Note: AI segment search returned no results; OCR fallback was skipped due to a large time window (expensive). To use OCR, narrow the time range or page with paging.prev/paging.next, then call again with mode=ocr.',
+        ),
+      );
+    }
 
     return <AIMessage>[
       AIMessage(
@@ -1296,11 +1436,15 @@ class AIChatService {
           'tool': 'search_segments',
           'mode': mode == 'ai' ? 'ai' : 'auto_ai',
           'query': query,
-          if (appPackageName.isNotEmpty) 'app_package_name': appPackageName,
+          if (effectiveAppPackageName.isNotEmpty)
+            'app_package_name': effectiveAppPackageName,
+          if (appFilterRelaxed)
+            'requested_app_package_name': requestedAppPackageName,
+          if (appFilterRelaxed) 'app_filter_relaxed': true,
           'start_ms': s,
           'end_ms': e,
           'time_span_limit': <String, dynamic>{
-            'max_span_ms': AIChatService.maxToolTimeSpanMs,
+            'max_span_ms': maxSpanMs,
             'clamped': range.clampedToMaxSpan,
           },
           if (requestedTooWide)
@@ -1312,10 +1456,12 @@ class AIChatService {
               _shouldOfferWeeklyPagingHint(
                 guardStartMs: toolStartMs,
                 guardEndMs: toolEndMs,
+                maxSpanMs: maxSpanMs,
               ))
             'paging': _buildWeeklyPagingHint(
               servedStartMs: s,
               servedEndMs: e,
+              maxSpanMs: maxSpanMs,
               guardStartMs: toolStartMs,
               guardEndMs: toolEndMs,
             ),
@@ -1358,6 +1504,9 @@ class AIChatService {
     }
     final String appPackageName =
         (args['app_package_name'] as String?)?.trim() ?? '';
+    final String requestedAppPackageName = appPackageName;
+    String effectiveAppPackageName = appPackageName;
+    bool appFilterRelaxed = false;
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
     final int? reqStartMs = _toInt(args['start_ms']);
     final int? reqEndMs = _toInt(args['end_ms']);
@@ -1384,8 +1533,8 @@ class AIChatService {
     if (requestedTooWide && range0.clampedToMaxSpan) {
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请按周分页再次调用（见 paging.prev / paging.next）。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Page by week and call again (see paging.prev / paging.next).',
+          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -1409,11 +1558,11 @@ class AIChatService {
     final int desiredSegs = offset + limit;
     final int shotFetch = (desiredSegs * 30).clamp(120, 600);
 
-    final List<ScreenshotRecord> shots;
+    List<ScreenshotRecord> shots;
     try {
-      shots = appPackageName.isNotEmpty
+      shots = effectiveAppPackageName.isNotEmpty
           ? await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
-              appPackageName,
+              effectiveAppPackageName,
               query,
               limit: shotFetch,
               offset: 0,
@@ -1427,6 +1576,21 @@ class AIChatService {
               startMillis: s,
               endMillis: e,
             );
+      if (shots.isEmpty && requestedAppPackageName.isNotEmpty) {
+        final List<ScreenshotRecord> fallbackShots = await ScreenshotDatabase
+            .instance.searchScreenshotsByOcr(
+          query,
+          limit: shotFetch,
+          offset: 0,
+          startMillis: s,
+          endMillis: e,
+        );
+        if (fallbackShots.isNotEmpty) {
+          shots = fallbackShots;
+          appFilterRelaxed = true;
+          effectiveAppPackageName = '';
+        }
+      }
     } catch (err) {
       return <AIMessage>[
         AIMessage(
@@ -1434,7 +1598,8 @@ class AIChatService {
           content: jsonEncode(<String, dynamic>{
             'tool': 'search_segments_ocr',
             'query': query,
-            if (appPackageName.isNotEmpty) 'app_package_name': appPackageName,
+            if (requestedAppPackageName.isNotEmpty)
+              'app_package_name': requestedAppPackageName,
             'start_ms': s,
             'end_ms': e,
             'time_span_limit': <String, dynamic>{
@@ -1667,7 +1832,11 @@ class AIChatService {
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_segments_ocr',
           'query': query,
-          if (appPackageName.isNotEmpty) 'app_package_name': appPackageName,
+          if (effectiveAppPackageName.isNotEmpty)
+            'app_package_name': effectiveAppPackageName,
+          if (appFilterRelaxed)
+            'requested_app_package_name': requestedAppPackageName,
+          if (appFilterRelaxed) 'app_filter_relaxed': true,
           'start_ms': s,
           'end_ms': e,
           'time_span_limit': <String, dynamic>{
@@ -1871,8 +2040,8 @@ class AIChatService {
     if (requestedTooWide && range0.clampedToMaxSpan) {
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请按周分页再次调用（见 paging.prev / paging.next）。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Page by week and call again (see paging.prev / paging.next).',
+          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -1891,9 +2060,12 @@ class AIChatService {
     }
     if (s > e) s = e;
 
-    final List<ScreenshotRecord> rows = appPackageName.isNotEmpty
+    final String requestedAppPackageName = appPackageName;
+    String effectiveAppPackageName = appPackageName;
+    bool appFilterRelaxed = false;
+    List<ScreenshotRecord> rows = effectiveAppPackageName.isNotEmpty
         ? await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
-            appPackageName,
+            effectiveAppPackageName,
             query,
             limit: limit,
             offset: offset,
@@ -1907,6 +2079,19 @@ class AIChatService {
             startMillis: s,
             endMillis: e,
           );
+    if (rows.isEmpty && requestedAppPackageName.isNotEmpty) {
+      rows = await ScreenshotDatabase.instance.searchScreenshotsByOcr(
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: s,
+        endMillis: e,
+      );
+      if (rows.isNotEmpty) {
+        appFilterRelaxed = true;
+        effectiveAppPackageName = '';
+      }
+    }
 
     final List<Map<String, dynamic>> results = rows.map((r) {
       final String fp = r.filePath;
@@ -1926,7 +2111,11 @@ class AIChatService {
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_screenshots_ocr',
           'query': query,
-          if (appPackageName.isNotEmpty) 'app_package_name': appPackageName,
+          if (effectiveAppPackageName.isNotEmpty)
+            'app_package_name': effectiveAppPackageName,
+          if (appFilterRelaxed)
+            'requested_app_package_name': requestedAppPackageName,
+          if (appFilterRelaxed) 'app_filter_relaxed': true,
           'start_ms': s,
           'end_ms': e,
           'time_span_limit': <String, dynamic>{
@@ -1992,15 +2181,16 @@ class AIChatService {
 
     final int? reqStartMs = _toInt(args['start_ms']);
     final int? reqEndMs = _toInt(args['end_ms']);
+    final int maxSpanMs = AIChatService.maxSemanticToolTimeSpanMs;
     final bool requestedTooWide =
         (reqStartMs != null &&
         reqEndMs != null &&
         reqStartMs > 0 &&
         reqEndMs > 0 &&
-        (reqEndMs - reqStartMs).abs() > AIChatService.maxToolTimeSpanMs);
+        (reqEndMs - reqStartMs).abs() > maxSpanMs);
 
     final int now = DateTime.now().millisecondsSinceEpoch;
-    final int defaultStart = now - const Duration(days: 30).inMilliseconds;
+    final int defaultStart = now - const Duration(days: 365).inMilliseconds;
     final range0 = _resolveToolTimeRange(
       defaultStartMs: defaultStart,
       defaultEndMs: now,
@@ -2008,15 +2198,18 @@ class AIChatService {
       endMs: reqEndMs,
       guardStartMs: toolStartMs,
       guardEndMs: toolEndMs,
+      maxSpanMs: maxSpanMs,
     );
     final int s = range0.startMs;
     final int e = range0.endMs;
     final List<String> warnings = <String>[];
     if (requestedTooWide && range0.clampedToMaxSpan) {
+      final int maxSpanDays =
+          (maxSpanMs / const Duration(days: 1).inMilliseconds).round();
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请按周分页再次调用（见 paging.prev / paging.next）。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Page by week and call again (see paging.prev / paging.next).',
+          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -2025,7 +2218,10 @@ class AIChatService {
     int offset = (_toInt(args['offset']) ?? 0);
     if (offset < 0) offset = 0;
 
-    final List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
+    final String requestedAppPackageName = appPackageName;
+    String effectiveAppPackageName = appPackageName;
+    bool appFilterRelaxed = false;
+    List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
         .searchAiImageMetaByText(
           query,
           limit: limit,
@@ -2033,8 +2229,25 @@ class AIChatService {
           startMillis: s,
           endMillis: e,
           includeNsfw: includeNsfw,
-          appPackageName: appPackageName.isEmpty ? null : appPackageName,
+          appPackageName: effectiveAppPackageName.isEmpty
+              ? null
+              : effectiveAppPackageName,
         );
+    if (rows.isEmpty && requestedAppPackageName.isNotEmpty) {
+      rows = await ScreenshotDatabase.instance.searchAiImageMetaByText(
+        query,
+        limit: limit,
+        offset: offset,
+        startMillis: s,
+        endMillis: e,
+        includeNsfw: includeNsfw,
+        appPackageName: null,
+      );
+      if (rows.isNotEmpty) {
+        appFilterRelaxed = true;
+        effectiveAppPackageName = '';
+      }
+    }
 
     List<String> parseTags(Object? raw) {
       if (raw == null) return <String>[];
@@ -2083,12 +2296,16 @@ class AIChatService {
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_ai_image_meta',
           'query': query,
-          'app_package_name': appPackageName,
+          if (effectiveAppPackageName.isNotEmpty)
+            'app_package_name': effectiveAppPackageName,
+          if (appFilterRelaxed)
+            'requested_app_package_name': requestedAppPackageName,
+          if (appFilterRelaxed) 'app_filter_relaxed': true,
           'include_nsfw': includeNsfw,
           'start_ms': s,
           'end_ms': e,
           'time_span_limit': <String, dynamic>{
-            'max_span_ms': AIChatService.maxToolTimeSpanMs,
+            'max_span_ms': maxSpanMs,
             'clamped': range0.clampedToMaxSpan,
           },
           if (requestedTooWide)
@@ -2100,10 +2317,12 @@ class AIChatService {
               _shouldOfferWeeklyPagingHint(
                 guardStartMs: toolStartMs,
                 guardEndMs: toolEndMs,
+                maxSpanMs: maxSpanMs,
               ))
             'paging': _buildWeeklyPagingHint(
               servedStartMs: s,
               servedEndMs: e,
+              maxSpanMs: maxSpanMs,
               guardStartMs: toolStartMs,
               guardEndMs: toolEndMs,
             ),
@@ -2122,6 +2341,63 @@ class AIChatService {
         toolCallId: call.id,
       ),
     ];
+  }
+
+  Future<List<AIMessage>> _executeSearchMemoryGraphTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String query = (args['query'] as String?)?.trim() ?? '';
+    if (query.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'search_memory_graph',
+            'error': 'missing_query',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    int depth = _toInt(args['depth']) ?? 2;
+    if (depth < 1) depth = 1;
+    if (depth > 4) depth = 4;
+    int limit = _toInt(args['limit']) ?? 80;
+    if (limit < 10) limit = 10;
+    if (limit > 200) limit = 200;
+    final Object? includeRaw = args.containsKey('include_history')
+        ? args['include_history']
+        : (args.containsKey('includeHistory') ? args['includeHistory'] : null);
+    final bool includeHistory = includeRaw == null ? true : _toBool(includeRaw);
+
+    try {
+      final Map<String, dynamic> payload =
+          await MemoryBridgeService.instance.searchMemoryGraph(
+        query: query,
+        depth: depth,
+        limit: limit,
+        includeHistory: includeHistory,
+      );
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(payload),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (err) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'search_memory_graph',
+            'error': 'graph_search_failed',
+            'message': err.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
   }
 
   Future<List<AIMessage>> _executeToolCall(
@@ -2154,6 +2430,8 @@ class AIChatService {
           toolStartMs: toolStartMs,
           toolEndMs: toolEndMs,
         );
+      case 'search_memory_graph':
+        return _executeSearchMemoryGraphTool(call);
       default:
         return <AIMessage>[
           AIMessage(
@@ -2462,7 +2740,7 @@ class AIChatService {
         : const <AIMessage>[];
     final String systemPrompt = _systemPromptForLocale();
     final List<String> effectiveExtras = tools.isNotEmpty
-        ? <String>[_toolUsageInstruction, ...extraSystemMessages]
+        ? <String>[_buildToolUsageInstruction(tools), ...extraSystemMessages]
         : extraSystemMessages;
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
@@ -2471,6 +2749,11 @@ class AIChatService {
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistory,
     );
+    final Set<String> toolNames = _extractToolNames(tools);
+    final bool hasRetrievalTools =
+        toolNames.contains('search_segments') ||
+        toolNames.contains('search_screenshots_ocr') ||
+        toolNames.contains('search_ai_image_meta');
 
     // === Tool loop (non-stream) ===
     if (tools.isNotEmpty) {
@@ -2559,6 +2842,7 @@ class AIChatService {
     // retry to avoid premature/hallucinated answers.
     final bool shouldForceRetrievalRetry =
         tools.isNotEmpty &&
+        hasRetrievalTools &&
         result.toolCalls.isEmpty &&
         (forceToolFirstIfNoToolCalls ||
             _contentLooksLikeItReferencesEvidence(result.content));
@@ -2789,6 +3073,7 @@ class AIChatService {
 
       final bool shouldForceContinueSearch =
           tools.isNotEmpty &&
+          hasRetrievalTools &&
           !forcedEmptySearchRetry &&
           forceToolFirstIfNoToolCalls &&
           !hadAnyRetrievalHit &&
@@ -3004,13 +3289,27 @@ class AIChatService {
   }) async {
     if (!persistHistory) return;
 
+    final AIMessage user = AIMessage(role: 'user', content: userMessage);
     final List<AIMessage> newHistory = <AIMessage>[
       ...history,
-      AIMessage(role: 'user', content: userMessage),
+      user,
       assistant,
     ];
     await _settings.saveChatHistoryActive(newHistory);
     await _updateConversationModel(modelUsed);
+
+    // Best-effort: ingest user chat into local memory backend (async, non-blocking).
+    try {
+      final String cid = await _settings.getActiveConversationCid();
+      unawaited(
+        MemoryBridgeService.instance.ingestChatMessage(
+          conversationId: cid,
+          role: 'user',
+          content: userMessage,
+          createdAt: user.createdAt,
+        ),
+      );
+    } catch (_) {}
 
     if (history.isEmpty) {
       await _renameConversation(conversationTitle ?? userMessage);

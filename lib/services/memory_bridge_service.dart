@@ -263,6 +263,32 @@ class MemoryBridgeService {
     );
   }
 
+  Future<Map<String, dynamic>> searchMemoryGraph({
+    required String query,
+    int depth = 2,
+    int limit = 80,
+    bool includeHistory = true,
+  }) async {
+    await ensureInitialized();
+    final dynamic result = await _methodChannel.invokeMethod(
+      'memory#graphSearch',
+      <String, dynamic>{
+        'query': query,
+        'depth': depth,
+        'limit': limit,
+        'includeHistory': includeHistory,
+      },
+    );
+    if (result is Map) {
+      return _toStringMap(result);
+    }
+    return <String, dynamic>{
+      'error': 'invalid_payload',
+      'query': query,
+      'raw_type': result.runtimeType.toString(),
+    };
+  }
+
   Future<MemorySnapshot?> fetchSnapshot() async {
     await ensureInitialized();
     _logInfo('fetchSnapshot 调用 memory#getSnapshot');
