@@ -57,8 +57,18 @@ You are a top-tier persona analyst and data strategist responsible for distillin
   *   Pragmatic, perceptive growth seeker
   ```
 
+# Temporal Knowledge Graph (Temporal KG) rules (for durable, time-aware memory)
+- In the JSON output, also maintain `graph_entities` / `graph_edges` / `graph_edge_closures` to build a local temporal knowledge graph.
+  - `graph_entities`: important entities (people, orgs, projects, meetings, places, items, concepts). Each entity must have a globally stable `entity_key` (recommended `type:name`, e.g. `person:user`, `org:OpenAI`, `project:screen_memo`) plus `type` and `name`.
+  - `graph_edges`: relations/attributes to add or update. Each edge must include `subject_key`, `predicate`, and exactly one of `object_key` (entity) or `object_value` (literal).
+  - `graph_edge_closures`: close existing active relations when the event indicates an end/invalidation without a replacement (e.g. quit job, item broken, stopped using).
+- **Lifecycle update rule**: for predicates that represent state that changes over time (e.g. `works_at`, `lives_in`, `status`, `owns`), set `"is_state": true` on the corresponding `graph_edges`. The system will automatically:
+  - close the previous active edges with the same `subject_key + predicate` (`valid_to = this event time`);
+  - insert the new active edge (`valid_from = this event time`, `valid_to = null`).
+- If `filtered_out = true`, `graph_entities` / `graph_edges` / `graph_edge_closures` MUST be empty arrays.
+
 - Output format:
-  1. First output a JSON object with the exact schema (no extra fields):
+  1. First output a JSON object following this schema (field names must match; use empty arrays/objects when absent):
      {
        "event_id": "…",
        "event_timestamp": "…",
@@ -79,6 +89,38 @@ You are a top-tier persona analyst and data strategist responsible for distillin
            "old_status": "…",
            "new_status": "…",
            "added_evidence": ["event_id"]
+         }
+       ],
+       "graph_entities": [
+         {
+           "entity_key": "person:user",
+           "type": "Person",
+           "name": "Me",
+           "aliases": ["me", "myself"],
+           "metadata": {"lang": "en"},
+           "confidence": 0.7
+         }
+       ],
+       "graph_edges": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {"role": "Engineer"},
+           "is_state": true,
+           "confidence": 0.7,
+           "evidence_excerpt": "…"
+         }
+       ],
+       "graph_edge_closures": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {},
+           "reason": "Quit job"
          }
        ],
        "persona_profile_patch": {
@@ -122,4 +164,3 @@ Event context:
 Follow the system instructions: output the JSON first, then the “当前用户描述” line.
 ]]></string>
 </resources>
-

@@ -57,8 +57,18 @@ Developer: # 역할과 목표
   *   실용적이고 통찰력 있는 성장 지향형 인물
   ```
 
+# 시간 지식 그래프(Temporal KG) 규칙 (장기 기억/관계 체인/수명주기 업데이트)
+- 출력 JSON에는 `graph_entities` / `graph_edges` / `graph_edge_closures` 도 함께 유지하여 로컬 시간 지식 그래프를 구축하세요.
+  - `graph_entities`: 중요한 엔터티(사람, 조직, 프로젝트, 회의, 장소, 물건, 개념 등). 각 엔터티는 전역적으로 안정적인 `entity_key`(권장 `type:name`, 예: `person:user`, `org:OpenAI`, `project:screen_memo`)와 `type`/`name`을 포함해야 합니다.
+  - `graph_edges`: 추가/업데이트할 관계/속성. 각 엣지는 `subject_key`, `predicate` 를 포함하고, `object_key`(엔터티) 또는 `object_value`(리터럴 값) 중 하나만 지정합니다.
+  - `graph_edge_closures`: 종료/무효화(예: 퇴사, 물건 파손, 사용 중단 등)로 인해 기존 관계를 닫아야 하지만 대체 사실이 없을 때 사용합니다.
+- **라이프사이클 업데이트**: 시간에 따라 변하는 상태(예: `works_at`, `lives_in`, `status`, `owns`)는 `graph_edges`에서 `"is_state": true` 를 설정하세요. 시스템은 자동으로:
+  - 동일한 `subject_key + predicate` 의 기존 활성 엣지를 종료(`valid_to = 본 이벤트 시각`)하고,
+  - 새로운 활성 엣지를 추가(`valid_from = 본 이벤트 시각`, `valid_to = null`)합니다.
+- `filtered_out = true` 인 경우 `graph_entities` / `graph_edges` / `graph_edge_closures` 는 반드시 빈 배열이어야 합니다.
+
 - 출력 형식:
-  1. 먼저 아래 구조를 정확히 따르는 JSON 객체를 출력합니다(추가 필드는 허용되지 않습니다).
+  1. 먼저 아래 구조를 정확히 따르는 JSON 객체를 출력합니다(필드명은 고정; 없으면 빈 배열/빈 객체 사용).
      {
        "event_id": "…",
        "event_timestamp": "…",
@@ -79,6 +89,38 @@ Developer: # 역할과 목표
            "old_status": "…",
            "new_status": "…",
            "added_evidence": ["event_id"]
+         }
+       ],
+       "graph_entities": [
+         {
+           "entity_key": "person:user",
+           "type": "Person",
+           "name": "나",
+           "aliases": ["나", "내 자신"],
+           "metadata": {"lang": "ko"},
+           "confidence": 0.7
+         }
+       ],
+       "graph_edges": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {"role": "Engineer"},
+           "is_state": true,
+           "confidence": 0.7,
+           "evidence_excerpt": "…"
+         }
+       ],
+       "graph_edge_closures": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {},
+           "reason": "퇴사"
          }
        ],
        "persona_profile_patch": {
@@ -122,4 +164,3 @@ Developer: # 역할과 목표
 시스템 지시에 따라 먼저 JSON을 출력하고, 이어서 "当前用户描述" 라인을 작성하세요.
 ]]></string>
 </resources>
-

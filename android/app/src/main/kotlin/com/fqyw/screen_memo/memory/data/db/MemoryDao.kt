@@ -221,6 +221,131 @@ interface MemoryDao {
     @Query("DELETE FROM memory_events")
     suspend fun clearEvents()
 
+    // ========== Temporal Knowledge Graph (Entities / Edges / Evidence) ==========
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEntity(entity: MemoryEntityEntity): Long
+
+    @Update
+    suspend fun updateEntity(entity: MemoryEntityEntity)
+
+    @Query("SELECT * FROM memory_entities WHERE entity_key = :entityKey LIMIT 1")
+    suspend fun findEntityByKey(entityKey: String): MemoryEntityEntity?
+
+    @Query("SELECT * FROM memory_entities WHERE id = :id LIMIT 1")
+    suspend fun getEntityById(id: Long): MemoryEntityEntity?
+
+    @Query("SELECT * FROM memory_entities WHERE id IN (:ids)")
+    suspend fun loadEntitiesByIds(ids: List<Long>): List<MemoryEntityEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_entities
+            WHERE entity_key LIKE '%' || :query || '%'
+               OR name LIKE '%' || :query || '%'
+               OR aliases LIKE '%' || :query || '%'
+            ORDER BY last_modified_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEntities(query: String, limit: Int): List<MemoryEntityEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEdge(entity: MemoryEdgeEntity): Long
+
+    @Update
+    suspend fun updateEdge(entity: MemoryEdgeEntity)
+
+    @Query(
+        """
+            SELECT * FROM memory_edges
+            WHERE subject_entity_id = :subjectEntityId
+              AND predicate = :predicate
+              AND valid_to IS NULL
+        """
+    )
+    suspend fun findActiveEdgesBySubjectPredicate(subjectEntityId: Long, predicate: String): List<MemoryEdgeEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_edges
+            WHERE subject_entity_id = :subjectEntityId
+              AND predicate = :predicate
+              AND (
+                (:objectEntityId IS NOT NULL AND object_entity_id = :objectEntityId)
+                OR (:objectEntityId IS NULL AND :objectValue IS NOT NULL AND object_value = :objectValue)
+              )
+              AND valid_to IS NULL
+            ORDER BY valid_from DESC
+            LIMIT 1
+        """
+    )
+    suspend fun findActiveEdge(
+        subjectEntityId: Long,
+        predicate: String,
+        objectEntityId: Long?,
+        objectValue: String?
+    ): MemoryEdgeEntity?
+
+    @Query(
+        """
+            UPDATE memory_edges
+            SET valid_to = :validTo,
+                last_modified_at = :validTo
+            WHERE id IN (:edgeIds)
+        """
+    )
+    suspend fun closeEdges(edgeIds: List<Long>, validTo: Long)
+
+    @Query(
+        """
+            SELECT * FROM memory_edges
+            WHERE (subject_entity_id IN (:entityIds) OR object_entity_id IN (:entityIds))
+            ORDER BY valid_from DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun loadEdgesConnectedToEntities(entityIds: List<Long>, limit: Int): List<MemoryEdgeEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_edges
+            WHERE (subject_entity_id IN (:entityIds) OR object_entity_id IN (:entityIds))
+              AND valid_to IS NULL
+            ORDER BY valid_from DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun loadActiveEdgesConnectedToEntities(entityIds: List<Long>, limit: Int): List<MemoryEdgeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEdgeEvidence(entity: MemoryEdgeEvidenceEntity): Long
+
+    @Update
+    suspend fun updateEdgeEvidence(entity: MemoryEdgeEvidenceEntity)
+
+    @Query("SELECT * FROM memory_edge_evidence WHERE edge_id = :edgeId AND event_id = :eventId LIMIT 1")
+    suspend fun findEdgeEvidenceByEdgeAndEvent(edgeId: Long, eventId: Long): MemoryEdgeEvidenceEntity?
+
+    @Query(
+        """
+            SELECT * FROM memory_edge_evidence
+            WHERE edge_id = :edgeId
+            ORDER BY last_modified_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun loadEdgeEvidence(edgeId: Long, limit: Int): List<MemoryEdgeEvidenceEntity>
+
+    @Query("DELETE FROM memory_edge_evidence")
+    suspend fun clearEdgeEvidence()
+
+    @Query("DELETE FROM memory_edges")
+    suspend fun clearEdges()
+
+    @Query("DELETE FROM memory_entities")
+    suspend fun clearEntities()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMetadata(entity: MemoryMetadataEntity)
 
@@ -235,10 +360,12 @@ interface MemoryDao {
 
     @Transaction
     suspend fun clearMemoryData() {
+        clearEdgeEvidence()
+        clearEdges()
+        clearEntities()
         clearTagEvidence()
         clearTags()
         clearEvents()
         clearMetadata()
     }
 }
-

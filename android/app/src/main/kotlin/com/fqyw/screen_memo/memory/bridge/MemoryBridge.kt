@@ -52,6 +52,7 @@ class MemoryBridge(
             "memory#loadTags" -> handleLoadTags(call, result)
             "memory#loadRecentEvents" -> handleLoadRecentEvents(call, result)
             "memory#ingestEvent" -> handleIngestEvent(call, result)
+            "memory#graphSearch" -> handleGraphSearch(call, result)
             "memory#confirmTag" -> handleConfirmTag(call, result)
             "memory#updateEvidence" -> handleUpdateEvidence(call, result)
             "memory#deleteTag" -> handleDeleteTag(call, result)
@@ -169,6 +170,29 @@ class MemoryBridge(
             } catch (t: Throwable) {
                 FileLogger.e(TAG, "ingestEvent 失败", t)
                 result.error("ingest_failed", t.message, null)
+            }
+        }
+    }
+
+    private fun handleGraphSearch(call: MethodCall, result: MethodChannel.Result) {
+        val query = call.argument<String>("query") ?: ""
+        val depth = (call.argument<Number>("depth") ?: 2).toInt().coerceIn(1, 4)
+        val limit = (call.argument<Number>("limit") ?: 80).toInt().coerceIn(10, 200)
+        val includeHistory = call.argument<Boolean>("includeHistory")
+            ?: call.argument<Boolean>("include_history")
+            ?: true
+        scope.launch {
+            try {
+                val payload = memoryEngine.searchGraph(
+                    query = query,
+                    depth = depth,
+                    limit = limit,
+                    includeHistory = includeHistory
+                )
+                result.success(payload)
+            } catch (t: Throwable) {
+                FileLogger.e(TAG, "graphSearch 失败 query=$query", t)
+                result.error("graph_search_failed", t.message, null)
             }
         }
     }

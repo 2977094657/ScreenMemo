@@ -68,8 +68,16 @@ Developer: # 角色与目标
   *   善于用产品化思维落地科研成果
   ```
 
+# 记忆图谱（Temporal KG）规则（用于可追溯、可随时间更新的长期记忆）
+- 你需要在输出 JSON 中同时维护 `graph_entities` / `graph_edges` / `graph_edge_closures` 三个字段，用于构建本地“时间知识图谱”。
+  - `graph_entities`：重要实体（人、公司/组织、项目、会议、地点、物品、概念等）。每个实体必须有全局稳定的 `entity_key`（推荐 `type:name`，如 `person:user`、`org:OpenAI`）。
+  - `graph_edges`：本事件新增/更新的关系或属性边。每条边必须包含 `subject_key`、`predicate`，并在 `object_key`（实体）与 `object_value`（字面值）二选一。
+  - `graph_edge_closures`：用于“结束/失效”的关系关闭（例如离职、物品被打碎、停止使用等），当事件只说明结束而没有新替代事实时使用。
+- **生命周期更新规则**：当某关系/状态会随时间变化（例如 `works_at`、`lives_in`、`status`、`owns` 等），请在对应的 `graph_edges` 里设置 `"is_state": true`。系统会在落库时自动关闭旧边并写入新边。
+- 若 `filtered_out = true`，则 `graph_entities` / `graph_edges` / `graph_edge_closures` 必须为空数组。
+
 - 输出格式：
-  1. 先输出一个严格遵守下列结构的 JSON 对象（不得增加字段）：
+  1. 先输出一个严格遵守下列结构的 JSON 对象（字段名必须一致；未发生的部分用空数组/空对象表示）：
      {
        "event_id": "…",
        "event_timestamp": "…",
@@ -90,6 +98,38 @@ Developer: # 角色与目标
            "old_status": "…",
            "new_status": "…",
            "added_evidence": ["event_id"]
+         }
+       ],
+       "graph_entities": [
+         {
+           "entity_key": "person:user",
+           "type": "Person",
+           "name": "我",
+           "aliases": ["我", "自己"],
+           "metadata": {"lang": "zh"},
+           "confidence": 0.7
+         }
+       ],
+       "graph_edges": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {"role": "工程师"},
+           "is_state": true,
+           "confidence": 0.7,
+           "evidence_excerpt": "…"
+         }
+       ],
+       "graph_edge_closures": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {},
+           "reason": "离职"
          }
        ],
        "persona_profile_patch": {
@@ -169,4 +209,3 @@ Developer: # 角色与目标
         )
     }
 }
-

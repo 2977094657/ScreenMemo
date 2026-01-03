@@ -57,8 +57,18 @@ Developer: # 役割と目標
   *   現実的で洞察力のある成長志向の人物
   ```
 
+# 時系列知識グラフ（Temporal KG）ルール（長期記憶・関係チェーン・更新可能なライフサイクルのため）
+- 出力 JSON では `graph_entities` / `graph_edges` / `graph_edge_closures` も併せて維持し、ローカルの時系列知識グラフを構築します。
+  - `graph_entities`：重要な実体（人物、組織、プロジェクト、会議、場所、物品、概念など）。各実体はグローバルに安定した `entity_key`（推奨 `type:name`。例：`person:user`、`org:OpenAI`、`project:screen_memo`）と `type` / `name` を必須とします。
+  - `graph_edges`：追加/更新する関係・属性。各エッジは `subject_key`、`predicate` を必須とし、`object_key`（実体）と `object_value`（リテラル値）のどちらか一方を指定します。
+  - `graph_edge_closures`：終了/失効を表す関係のクローズ（例：退職、物が壊れた、使用をやめた等）。置き換えとなる新しい事実がない場合に使用します。
+- **ライフサイクル更新**：時間とともに変化する状態（例：`works_at`、`lives_in`、`status`、`owns`）は `graph_edges` 側で `"is_state": true` を設定します。システムは自動で：
+  - 同一 `subject_key + predicate` の既存の有効エッジをクローズ（`valid_to = 本イベント時刻`）し、
+  - 新しい有効エッジを追加（`valid_from = 本イベント時刻`、`valid_to = null`）します。
+- `filtered_out = true` の場合、`graph_entities` / `graph_edges` / `graph_edge_closures` は必ず空配列にしてください。
+
 - 出力形式：
-  1. 以下の構造に厳密に従った JSON オブジェクトを出力します（追加フィールドは禁止）。
+  1. 以下の構造に厳密に従った JSON オブジェクトを出力します（フィールド名は固定；未発生の部分は空配列/空オブジェクト）。
      {
        "event_id": "…",
        "event_timestamp": "…",
@@ -79,6 +89,38 @@ Developer: # 役割と目標
            "old_status": "…",
            "new_status": "…",
            "added_evidence": ["event_id"]
+         }
+       ],
+       "graph_entities": [
+         {
+           "entity_key": "person:user",
+           "type": "Person",
+           "name": "私",
+           "aliases": ["私", "自分"],
+           "metadata": {"lang": "ja"},
+           "confidence": 0.7
+         }
+       ],
+       "graph_edges": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {"role": "Engineer"},
+           "is_state": true,
+           "confidence": 0.7,
+           "evidence_excerpt": "…"
+         }
+       ],
+       "graph_edge_closures": [
+         {
+           "subject_key": "person:user",
+           "predicate": "works_at",
+           "object_key": "org:OpenAI",
+           "object_value": null,
+           "qualifiers": {},
+           "reason": "退職"
          }
        ],
        "persona_profile_patch": {
@@ -122,4 +164,3 @@ Developer: # 役割と目標
 システム指示に従い、まず JSON を出力し、その後「当前用户描述」の行を続けてください。
 ]]></string>
 </resources>
-

@@ -10,7 +10,9 @@ data class UserSignalExtractionResult(
     val personaProfilePatch: PersonaProfilePatch?,
     val personaSummaryFallback: String?,
     val rawResponse: String? = null,
-    val isMalformed: Boolean = false
+    val isMalformed: Boolean = false,
+    val graphEntities: List<GraphEntityCandidate> = emptyList(),
+    val graphEdges: List<GraphEdgeCandidate> = emptyList(),
+    val graphEdgeClosures: List<GraphEdgeClosureCandidate> = emptyList()
 )
-
 

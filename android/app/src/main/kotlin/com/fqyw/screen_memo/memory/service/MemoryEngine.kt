@@ -265,10 +265,6 @@ class MemoryEngine private constructor(
             val entity = repository.upsertEvent(event)
             val extraction = extractWithLlm(event)
             applyPersonaUpdateFromLlm(extraction.personaProfilePatch, extraction.personaSummaryFallback)
-            if (extraction.candidates.isEmpty()) {
-                repository.markEventProcessed(entity.id, containsUserContext = false)
-                return@withContext
-            }
 
             val tagEvents = mutableListOf<TagUpdateEvent>()
             extraction.candidates.forEach { candidate ->
@@ -280,7 +276,21 @@ class MemoryEngine private constructor(
                 tagEvents += result.toUpdateEvent()
             }
 
-            repository.markEventProcessed(entity.id, containsUserContext = true)
+            repository.applyGraphUpdates(
+                eventId = entity.id,
+                eventTimestamp = event.occurredAt,
+                eventContent = event.content,
+                graphEntities = extraction.graphEntities,
+                graphEdges = extraction.graphEdges,
+                graphEdgeClosures = extraction.graphEdgeClosures
+            )
+
+            val containsContext = extraction.candidates.isNotEmpty() ||
+                extraction.graphEntities.isNotEmpty() ||
+                extraction.graphEdges.isNotEmpty() ||
+                extraction.graphEdgeClosures.isNotEmpty()
+
+            repository.markEventProcessed(entity.id, containsUserContext = containsContext)
 
             // 发出标签更新事件
             tagEvents.forEach { update -> _tagUpdateEvents.emit(update) }
@@ -462,6 +472,15 @@ class MemoryEngine private constructor(
 
     suspend fun getEventSummary(eventId: Long) = repository.getEventSummary(eventId)
 
+    suspend fun searchGraph(
+        query: String,
+        depth: Int = 2,
+        limit: Int = 80,
+        includeHistory: Boolean = true
+    ): Map<String, Any?> = withContext(scope.coroutineContext) {
+        repository.searchGraph(query, depth, limit, includeHistory)
+    }
+
     suspend fun deleteTag(tagId: Long): Boolean = withContext(scope.coroutineContext) {
         val removed = repository.deleteTag(tagId)
         if (removed) {
@@ -578,7 +597,20 @@ class MemoryEngine private constructor(
             tagUpdates += result.toUpdateEvent()
         }
 
-        val containsContext = extraction.candidates.isNotEmpty()
+        val graphTimestamp = baseEvents.lastOrNull()?.occurredAt ?: aggregateEntity.occurredAt
+        repository.applyGraphUpdates(
+            eventId = aggregateEntity.id,
+            eventTimestamp = graphTimestamp,
+            eventContent = userEvent.content,
+            graphEntities = extraction.graphEntities,
+            graphEdges = extraction.graphEdges,
+            graphEdgeClosures = extraction.graphEdgeClosures
+        )
+
+        val containsContext = extraction.candidates.isNotEmpty() ||
+            extraction.graphEntities.isNotEmpty() ||
+            extraction.graphEdges.isNotEmpty() ||
+            extraction.graphEdgeClosures.isNotEmpty()
         repository.markEventProcessed(aggregateEntity.id, containsUserContext = containsContext)
         baseEvents.forEach { repository.markEventProcessed(it.id, containsUserContext = containsContext) }
         tagUpdates.forEach { _tagUpdateEvents.emit(it) }

@@ -402,7 +402,9 @@ class LlmUserSignalExtractor(
                 } else null
 
                 val nestedText = segment.optJSONObject("text")?.optString("value")
-                val valueField = segment.optString("value", null)
+                val valueField = if (segment.has("value") && segment.opt("value") is String) {
+                    segment.optString("value")
+                } else null
                 val contentField = if (segment.opt("content") is String) {
                     segment.optString("content")
                 } else null
@@ -437,8 +439,29 @@ class LlmUserSignalExtractor(
                 FileLogger.w(TAG, "LLM 报告错误：${root.optString("error")}")
                 val persona = personaSegment.sanitized
                 val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
-                UserSignalExtractionResult(emptyList(), patch, persona, payload.rawResponse, false)
+                UserSignalExtractionResult(
+                    candidates = emptyList(),
+                    personaProfilePatch = patch,
+                    personaSummaryFallback = persona,
+                    rawResponse = payload.rawResponse,
+                    isMalformed = false
+                )
             } else {
+                val filteredOut = root.optBoolean("filtered_out", false)
+                if (filteredOut) {
+                    val persona = personaSegment.sanitized
+                    val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
+                    return UserSignalExtractionResult(
+                        candidates = emptyList(),
+                        personaProfilePatch = patch,
+                        personaSummaryFallback = persona,
+                        rawResponse = payload.rawResponse,
+                        isMalformed = false,
+                        graphEntities = emptyList(),
+                        graphEdges = emptyList(),
+                        graphEdgeClosures = emptyList()
+                    )
+                }
                 val confirmedTags = collectConfirmedTags(root.optJSONArray("update_tags"))
                 val clues = root.optJSONArray("extracted_user_related_clues") ?: JSONArray()
                 val list = mutableListOf<TagCandidate>()
@@ -489,13 +512,132 @@ class LlmUserSignalExtractor(
                 }
                 val persona = personaSegment.sanitized
                 val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
-                UserSignalExtractionResult(list, patch, persona, payload.rawResponse, false)
+                val graphEntities = parseGraphEntities(root.optJSONArray("graph_entities"))
+                val graphEdges = parseGraphEdges(root.optJSONArray("graph_edges"))
+                val graphClosures = parseGraphEdgeClosures(root.optJSONArray("graph_edge_closures"))
+                UserSignalExtractionResult(
+                    candidates = list,
+                    personaProfilePatch = patch,
+                    personaSummaryFallback = persona,
+                    rawResponse = payload.rawResponse,
+                    isMalformed = false,
+                    graphEntities = graphEntities,
+                    graphEdges = graphEdges,
+                    graphEdgeClosures = graphClosures
+                )
             }
         } catch (t: Throwable) {
             FileLogger.w(TAG, "解析 LLM JSON 失败：${t.message}")
             val persona = personaSegment.sanitized
             UserSignalExtractionResult(emptyList(), null, persona, payload.rawResponse, false)
         }
+    }
+
+    private fun parseGraphEntities(array: JSONArray?): List<GraphEntityCandidate> {
+        if (array == null || array.length() == 0) return emptyList()
+        val out = mutableListOf<GraphEntityCandidate>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val key = obj.optString("entity_key").trim()
+            if (key.isBlank()) continue
+            val type = obj.optString("type").trim().ifBlank { key.substringBefore(':', missingDelimiterValue = "Unknown") }
+            val name = obj.optString("name").trim().ifBlank { key.substringAfter(':', missingDelimiterValue = key) }
+            val aliases = parseStringList(obj.optJSONArray("aliases"))
+            val metadata = parseStringMap(obj.optJSONObject("metadata"))
+            val confidence = obj.optDouble("confidence", 0.6).coerceIn(0.0, 1.0)
+            out += GraphEntityCandidate(
+                entityKey = key,
+                type = type,
+                name = name,
+                aliases = aliases,
+                metadata = metadata,
+                confidence = confidence
+            )
+        }
+        return out
+    }
+
+    private fun parseGraphEdges(array: JSONArray?): List<GraphEdgeCandidate> {
+        if (array == null || array.length() == 0) return emptyList()
+        val out = mutableListOf<GraphEdgeCandidate>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val subjectKey = obj.optString("subject_key").trim()
+            val predicate = obj.optString("predicate").trim()
+            if (subjectKey.isBlank() || predicate.isBlank()) continue
+            val objectKey = obj.optString("object_key").trim().ifBlank { null }
+            val objectValue = obj.optString("object_value").trim().ifBlank { null }
+            if (objectKey == null && objectValue == null) continue
+            val qualifiers = parseStringMap(obj.optJSONObject("qualifiers"))
+            val isState: Boolean? = when {
+                obj.has("is_state") -> obj.optBoolean("is_state")
+                obj.has("stateful") -> obj.optBoolean("stateful")
+                obj.has("is_stateful") -> obj.optBoolean("is_stateful")
+                else -> null
+            }
+            val confidence = obj.optDouble("confidence", 0.6).coerceIn(0.0, 1.0)
+            val excerpt = obj.optString("evidence_excerpt").trim().ifBlank { null }
+            out += GraphEdgeCandidate(
+                subjectKey = subjectKey,
+                predicate = predicate,
+                objectKey = objectKey,
+                objectValue = objectValue,
+                qualifiers = qualifiers,
+                isState = isState,
+                confidence = confidence,
+                evidenceExcerpt = excerpt
+            )
+        }
+        return out
+    }
+
+    private fun parseGraphEdgeClosures(array: JSONArray?): List<GraphEdgeClosureCandidate> {
+        if (array == null || array.length() == 0) return emptyList()
+        val out = mutableListOf<GraphEdgeClosureCandidate>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val subjectKey = obj.optString("subject_key").trim()
+            val predicate = obj.optString("predicate").trim()
+            if (subjectKey.isBlank() || predicate.isBlank()) continue
+            val objectKey = obj.optString("object_key").trim().ifBlank { null }
+            val objectValue = obj.optString("object_value").trim().ifBlank { null }
+            val qualifiers = parseStringMap(obj.optJSONObject("qualifiers"))
+            val reason = obj.optString("reason").trim().ifBlank { null }
+            out += GraphEdgeClosureCandidate(
+                subjectKey = subjectKey,
+                predicate = predicate,
+                objectKey = objectKey,
+                objectValue = objectValue,
+                qualifiers = qualifiers,
+                reason = reason
+            )
+        }
+        return out
+    }
+
+    private fun parseStringList(array: JSONArray?): List<String> {
+        if (array == null || array.length() == 0) return emptyList()
+        val out = mutableListOf<String>()
+        for (i in 0 until array.length()) {
+            val v = array.optString(i).trim()
+            if (v.isNotEmpty()) out += v
+        }
+        return out
+    }
+
+    private fun parseStringMap(obj: JSONObject?): Map<String, String> {
+        if (obj == null || obj.length() == 0) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next().trim()
+            if (key.isEmpty()) continue
+            val value = obj.optString(key).trim()
+            if (value.isNotEmpty()) {
+                out[key] = value
+            }
+        }
+        return out
     }
 
     private fun extractJsonPayload(text: String): JsonPayload {
