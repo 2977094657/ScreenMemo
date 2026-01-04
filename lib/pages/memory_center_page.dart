@@ -18,6 +18,7 @@ import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/app_side_drawer.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/tag_hierarchy_tree.dart';
 import '../widgets/ui_dialog.dart';
@@ -1846,13 +1847,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           builder: (BuildContext contentContext, StateSetter sheetSetState) {
             _tagSheetStateSetter = sheetSetState;
             final AppLocalizations t = AppLocalizations.of(contentContext);
-            final ThemeData sheetTheme = Theme.of(contentContext);
-            final Color selectedColor = sheetTheme.brightness == Brightness.dark
-                ? AppTheme.darkForeground
-                : AppTheme.foreground;
-            final Color unselectedColor =
-                sheetTheme.textTheme.bodySmall?.color ??
-                AppTheme.mutedForeground;
 
             return UISheetSurface(
               child: FractionallySizedBox(
@@ -1868,38 +1862,20 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
                         child: UISheetHandle(),
                       ),
                       const SizedBox(height: AppTheme.spacing2),
-                      SizedBox(
+                      ScreenshotStyleTabBar(
                         height: 40,
-                        child: TabBar(
-                          isScrollable: false,
-                          tabAlignment: TabAlignment.fill,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.spacing4,
-                          ),
-                          labelPadding: EdgeInsets.zero,
-                          labelColor: selectedColor,
-                          unselectedLabelColor: unselectedColor,
-                          labelStyle: sheetTheme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                          unselectedLabelStyle: sheetTheme.textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w500),
-                          dividerColor: Colors.transparent,
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          indicatorPadding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.spacing2,
-                          ),
-                          indicator: UnderlineTabIndicator(
-                            borderSide: BorderSide(
-                              width: 2,
-                              color: selectedColor,
-                            ),
-                          ),
-                          tabs: [
-                            Tab(text: t.memoryPendingSectionTitle),
-                            Tab(text: t.memoryConfirmedSectionTitle),
-                          ],
+                        isScrollable: false,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
                         ),
+                        indicatorPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing2,
+                        ),
+                        indicatorInsets: EdgeInsets.zero,
+                        tabs: [
+                          Tab(text: t.memoryPendingSectionTitle),
+                          Tab(text: t.memoryConfirmedSectionTitle),
+                        ],
                       ),
                       Expanded(
                         child: TabBarView(

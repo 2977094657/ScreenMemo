@@ -17,6 +17,7 @@ import '../services/timeline_jump_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 
 /// 全局时间线页面（骨架）
 /// 后续将加载按日期的全局截图时间线与应用图标
@@ -504,13 +505,6 @@ class _TimelinePageState extends State<TimelinePage>
                     if (_dayTabs.isEmpty || _tabController == null) {
                       return const SizedBox(height: 32);
                     }
-                    final Color selectedColor =
-                        Theme.of(context).brightness == Brightness.dark
-                        ? AppTheme.darkForeground
-                        : AppTheme.foreground;
-                    final Color unselectedColor =
-                        Theme.of(context).textTheme.bodySmall?.color ??
-                        AppTheme.mutedForeground;
                     final bool hasMoreTabs =
                         _dayTabs.length < _allDayTabs.length;
                     return SizedBox(
@@ -520,10 +514,8 @@ class _TimelinePageState extends State<TimelinePage>
                         child: Row(
                           children: [
                             Expanded(
-                              child: TabBar(
+                              child: ScreenshotStyleTabBar(
                                 controller: _tabController,
-                                isScrollable: true,
-                                tabAlignment: TabAlignment.start,
                                 // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
                                 padding: const EdgeInsets.only(
                                   left: AppTheme.spacing2,
@@ -532,30 +524,8 @@ class _TimelinePageState extends State<TimelinePage>
                                 labelPadding: const EdgeInsets.symmetric(
                                   horizontal: AppTheme.spacing4,
                                 ),
-                                labelColor: selectedColor,
-                                unselectedLabelColor: unselectedColor,
-                                labelStyle: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                                unselectedLabelStyle: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(fontWeight: FontWeight.w500),
-                                // 与截图列表一致：去掉底部分割线
-                                dividerColor: Colors.transparent,
-                                indicatorSize: TabBarIndicatorSize.label,
-                                // 减少上下空隙
-                                indicatorPadding: EdgeInsets.zero,
-                                // 与截图列表一致：细下划线，较小的左右 insets
-                                indicator: UnderlineTabIndicator(
-                                  borderSide: BorderSide(
-                                    width: 2.0,
-                                    color: selectedColor,
-                                  ),
-                                  insets: const EdgeInsets.symmetric(
-                                    horizontal: 4.0,
-                                  ),
+                                indicatorInsets: const EdgeInsets.symmetric(
+                                  horizontal: 4.0,
                                 ),
                                 tabs: _dayTabs.map((t) {
                                   final l10n = AppLocalizations.of(context);

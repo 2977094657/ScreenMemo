@@ -302,7 +302,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
             child: Text(
               formatBytes(totalBytes),
               style: theme.textTheme.displayMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -583,7 +583,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
                     child: Text(
                       l10n.storageAnalysisBreakdownTitle,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -742,7 +742,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
                             Text(
                               label,
                               style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(height: AppTheme.spacing1),
@@ -1067,7 +1067,7 @@ class _StorageCategoryCard extends StatelessWidget {
                   child: Text(
                     title,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -1088,7 +1088,7 @@ class _StorageCategoryCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       ),
                       textStyle: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     child: actionLoading
@@ -1108,7 +1108,7 @@ class _StorageCategoryCard extends StatelessWidget {
             Text(
               formatBytes(bytes),
               style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w600,
               ),
             ),
             if (detailText != null) ...[

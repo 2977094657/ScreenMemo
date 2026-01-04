@@ -18,6 +18,7 @@ import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
@@ -2044,38 +2045,10 @@ class _SearchPageState extends State<SearchPage>
           padding: const EdgeInsets.only(left: 0, right: AppTheme.spacing1),
           child: SizedBox(
             height: 32,
-            child: TabBar(
+            child: ScreenshotStyleTabBar(
               controller: _tabController,
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              padding: const EdgeInsets.only(left: AppTheme.spacing4),
-              labelPadding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing4,
-              ),
-              labelColor: Theme.of(context).brightness == Brightness.dark
-                  ? AppTheme.darkForeground
-                  : AppTheme.foreground,
-              unselectedLabelColor:
-                  Theme.of(context).textTheme.bodySmall?.color ??
-                  AppTheme.mutedForeground,
-              labelStyle: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-              unselectedLabelStyle: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-              dividerColor: Colors.transparent,
-              indicatorSize: TabBarIndicatorSize.label,
-              indicatorPadding: EdgeInsets.zero,
-              indicator: UnderlineTabIndicator(
-                borderSide: BorderSide(
-                  width: 2.0,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppTheme.darkForeground
-                      : AppTheme.foreground,
-                ),
-                insets: const EdgeInsets.symmetric(horizontal: 4.0),
-              ),
+              isScrollable: false,
+              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
               tabs: [
                 Tab(
                   text: '截图 (${_countingTotal ? '...' : _totalResultsCount})',
@@ -4407,114 +4380,60 @@ class _SearchPageState extends State<SearchPage>
                           const SizedBox(height: AppTheme.spacing3),
                         ],
                         if (merged && originalSummaries.isNotEmpty) ...[
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withOpacity(0.28),
-                              borderRadius: BorderRadius.circular(
-                                AppTheme.radiusSm,
-                              ),
-                              border: Border.all(
-                                color: Theme.of(
-                                  ctx,
-                                ).colorScheme.outline.withOpacity(0.22),
-                              ),
-                            ),
-                            child: Theme(
-                              data: Theme.of(
-                                ctx,
-                              ).copyWith(dividerColor: Colors.transparent),
-                              child: ExpansionTile(
-                                key: PageStorageKey<String>(
-                                  'seg:$segmentId:mergedOriginalsDetail',
-                                ),
-                                tilePadding: const EdgeInsets.symmetric(
-                                  horizontal: AppTheme.spacing3,
-                                ),
-                                childrenPadding: const EdgeInsets.fromLTRB(
-                                  AppTheme.spacing3,
-                                  0,
-                                  AppTheme.spacing3,
-                                  AppTheme.spacing3,
-                                ),
-                                title: Text(
-                                  AppLocalizations.of(
-                                    ctx,
-                                  ).mergedOriginalEventsTitle(
-                                    originalSummaries.length,
+                          Builder(
+                            builder: (context) {
+                              final cs = Theme.of(context).colorScheme;
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest.withOpacity(
+                                    0.28,
                                   ),
-                                  style: Theme.of(ctx).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.radiusSm,
+                                  ),
+                                  border: Border.all(
+                                    color: cs.outline.withOpacity(0.22),
+                                  ),
                                 ),
-                                children: originalSummaries
-                                    .asMap()
-                                    .entries
-                                    .map((entry) {
-                                      final int index = entry.key;
-                                      final String part = entry.value;
-                                      return Container(
-                                        margin: EdgeInsets.only(
-                                          top: index == 0
-                                              ? 0
-                                              : AppTheme.spacing2,
+                                child: ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.spacing3,
+                                  ),
+                                  leading: Icon(
+                                    Icons.view_carousel_outlined,
+                                    size: 18,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                  title: Text(
+                                    AppLocalizations.of(
+                                      context,
+                                    ).mergedOriginalEventsTitle(
+                                      originalSummaries.length,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: cs.primary,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                        padding: const EdgeInsets.all(
-                                          AppTheme.spacing3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(ctx)
-                                              .colorScheme
-                                              .surface
-                                              .withOpacity(0.45),
-                                          borderRadius: BorderRadius.circular(
-                                            AppTheme.radiusSm,
-                                          ),
-                                          border: Border(
-                                            left: BorderSide(
-                                              color: Theme.of(ctx)
-                                                  .colorScheme
-                                                  .outline
-                                                  .withOpacity(0.45),
-                                              width: 2,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
-                                          children: [
-                                            Text(
-                                              AppLocalizations.of(
-                                                ctx,
-                                              ).mergedOriginalEventTitle(
-                                                index + 1,
-                                              ),
-                                              style: Theme.of(ctx)
-                                                  .textTheme
-                                                  .bodySmall
-                                                  ?.copyWith(
-                                                    color: AppTheme
-                                                        .mutedForeground,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            _buildHighlightedMarkdown(
-                                              context: ctx,
-                                              text: part,
-                                              style: Theme.of(
-                                                ctx,
-                                              ).textTheme.bodyMedium,
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    })
-                                    .toList(growable: false),
-                              ),
-                            ),
+                                  ),
+                                  trailing: Icon(
+                                    Icons.chevron_right,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                  onTap: () async {
+                                    await _openMergedOriginalEventsDrawer(
+                                      context,
+                                      originals: originalSummaries,
+                                    );
+                                  },
+                                ),
+                              );
+                            },
                           ),
                           const SizedBox(height: AppTheme.spacing3),
                         ],
@@ -4571,6 +4490,95 @@ class _SearchPageState extends State<SearchPage>
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Future<void> _openMergedOriginalEventsDrawer(
+    BuildContext context, {
+    required List<String> originals,
+  }) async {
+    if (originals.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        final TextStyle? bodyStyle = Theme.of(ctx).textTheme.bodyMedium;
+        final cs = Theme.of(ctx).colorScheme;
+
+        return ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(AppTheme.radiusLg),
+            topRight: Radius.circular(AppTheme.radiusLg),
+          ),
+          child: ColoredBox(
+            color: cs.surface,
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.78,
+                child: DefaultTabController(
+                  length: originals.length,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: cs.onSurfaceVariant.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      ScreenshotStyleTabBar(
+                        height: kTextTabBarHeight,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing3,
+                        ),
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        tabs: [
+                          for (int i = 0; i < originals.length; i++)
+                            Tab(text: l10n.mergedOriginalEventTitle(i + 1)),
+                        ],
+                      ),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Expanded(
+                        child: TabBarView(
+                          children: originals
+                              .map((part) {
+                                return SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    AppTheme.spacing4,
+                                    0,
+                                    AppTheme.spacing4,
+                                    AppTheme.spacing6,
+                                  ),
+                                  child: _buildHighlightedMarkdown(
+                                    context: ctx,
+                                    text: part,
+                                    style: bodyStyle,
+                                  ),
+                                );
+                              })
+                              .toList(growable: false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         );
       },
     );

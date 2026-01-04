@@ -17,6 +17,7 @@ import '../models/screenshot_record.dart';
 import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 import '../services/app_selection_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
@@ -1349,13 +1350,6 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
 
   /// 构建顶部日期Tab栏 + 下方网格
   Widget _buildTabsAndGrid() {
-    final Color selectedColor = Theme.of(context).brightness == Brightness.dark
-        ? AppTheme.darkForeground
-        : AppTheme.foreground;
-    final Color unselectedColor =
-        Theme.of(context).textTheme.bodySmall?.color ??
-        AppTheme.mutedForeground;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1369,32 +1363,13 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   child: Row(
                     children: [
                       Expanded(
-                        child: TabBar(
+                        child: ScreenshotStyleTabBar(
                           controller: _tabController,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.start,
                           padding: const EdgeInsets.only(
                             left: AppTheme.spacing4,
                           ),
                           labelPadding: const EdgeInsets.only(
                             right: AppTheme.spacing6,
-                          ),
-                          labelColor: selectedColor,
-                          unselectedLabelColor: unselectedColor,
-                          labelStyle: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                          unselectedLabelStyle: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w500),
-                          dividerColor: Colors.transparent,
-                          indicatorSize: TabBarIndicatorSize.label,
-                          indicator: UnderlineTabIndicator(
-                            borderSide: BorderSide(
-                              width: 2.0,
-                              color: selectedColor,
-                            ),
-                            insets: const EdgeInsets.symmetric(horizontal: 8.0),
                           ),
                           tabs: _dayTabs
                               .map(

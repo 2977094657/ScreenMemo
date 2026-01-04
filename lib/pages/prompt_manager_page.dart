@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/ai_settings_service.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
 import '../theme/app_theme.dart';
 
@@ -103,10 +104,7 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       child: Scaffold(
         appBar: AppBar(
           title: Text(t.promptManagerTitle),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(33),
-            child: _buildStyledTabBar(tabs),
-          ),
+          bottom: ScreenshotStyleTabBar(tabs: tabs),
         ),
         body: TabBarView(
           children: [
@@ -171,36 +169,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
               saving: _savingMorning,
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  // 截图列表风格 TabBar（下划线指示器）
-  Widget _buildStyledTabBar(List<Tab> tabs) {
-    final theme = Theme.of(context);
-    final Color selectedColor = theme.brightness == Brightness.dark
-        ? AppTheme.darkForeground
-        : AppTheme.foreground;
-    final Color unselectedColor = theme.textTheme.bodySmall?.color ?? AppTheme.mutedForeground;
-    
-    return SizedBox(
-      height: 32,
-      child: TabBar(
-        tabs: tabs,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        padding: const EdgeInsets.only(left: AppTheme.spacing4),
-        labelPadding: const EdgeInsets.only(right: AppTheme.spacing6),
-        labelColor: selectedColor,
-        unselectedLabelColor: unselectedColor,
-        labelStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-        unselectedLabelStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-        dividerColor: Colors.transparent,
-        indicatorSize: TabBarIndicatorSize.label,
-        indicator: UnderlineTabIndicator(
-          borderSide: BorderSide(width: 2.0, color: selectedColor),
-          insets: const EdgeInsets.symmetric(horizontal: 8.0),
         ),
       ),
     );

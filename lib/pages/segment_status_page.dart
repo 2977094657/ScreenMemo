@@ -25,6 +25,7 @@ import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/screenshot_image_widget.dart';
+import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
@@ -1627,13 +1628,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       children: [
         Builder(
           builder: (context) {
-            final Color selectedColor =
-                Theme.of(context).brightness == Brightness.dark
-                ? AppTheme.darkForeground
-                : AppTheme.foreground;
-            final Color unselectedColor =
-                Theme.of(context).textTheme.bodySmall?.color ??
-                AppTheme.mutedForeground;
             final bool hasHiddenTabs =
                 widget.maxVisibleDayTabs < orderedAll.length;
             final bool canLoadMoreFromDb =
@@ -1651,36 +1645,16 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                 child: Row(
                   children: [
                     Expanded(
-                      child: TabBar(
+                      child: ScreenshotStyleTabBar(
                         controller: _tabController,
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
                         // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
                         padding: const EdgeInsets.only(left: AppTheme.spacing2),
                         // 与截图列表一致：标签水平留白适中
                         labelPadding: const EdgeInsets.symmetric(
                           horizontal: AppTheme.spacing4,
                         ),
-                        labelColor: selectedColor,
-                        unselectedLabelColor: unselectedColor,
-                        labelStyle: Theme.of(context).textTheme.bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                        unselectedLabelStyle: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w500),
-                        // 与截图列表一致：去掉底部分割线
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.label,
-                        // 减少上下空隙
-                        indicatorPadding: EdgeInsets.zero,
-                        // 与截图列表一致：细下划线，较小的左右 insets
-                        indicator: UnderlineTabIndicator(
-                          borderSide: BorderSide(
-                            width: 2.0,
-                            color: selectedColor,
-                          ),
-                          insets: const EdgeInsets.symmetric(horizontal: 4.0),
+                        indicatorInsets: const EdgeInsets.symmetric(
+                          horizontal: 4.0,
                         ),
                         tabs: [
                           for (final k in ordered)
@@ -2432,11 +2406,13 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                         ),
                       ),
                       const SizedBox(height: AppTheme.spacing3),
-                      TabBar(
-                        isScrollable: true,
-                        tabAlignment: TabAlignment.start,
+                      ScreenshotStyleTabBar(
+                        height: kTextTabBarHeight,
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppTheme.spacing3,
+                        ),
+                        labelPadding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
                         ),
                         tabs: [
                           for (int i = 0; i < originals.length; i++)
