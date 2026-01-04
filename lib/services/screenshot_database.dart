@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 23,
+          version: 24,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 23,
+          version: 24,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 23,
+          version: 24,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 23,
+        version: 24,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -756,6 +756,23 @@ class ScreenshotDatabase {
       try {
         await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_at INTEGER');
       } catch (_) {}
+    }
+    // v24: 动态全文索引纳入 structured_json，支持搜索合并后的“原始事件”内容
+    if (oldVersion < 24) {
+      try {
+        await db.execute('DROP TRIGGER IF EXISTS segment_results_ai');
+      } catch (_) {}
+      try {
+        await db.execute('DROP TRIGGER IF EXISTS segment_results_ad');
+      } catch (_) {}
+      try {
+        await db.execute('DROP TRIGGER IF EXISTS segment_results_au');
+      } catch (_) {}
+      try {
+        await db.execute('DROP TABLE IF EXISTS segment_results_fts');
+      } catch (_) {}
+      await _createSegmentResultsFts(db);
+      await _backfillSegmentResultsFts(db);
     }
   }
 
