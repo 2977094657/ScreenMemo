@@ -1570,31 +1570,10 @@ object SegmentSummaryManager {
         for (s in curSamples) { seenFiles.add(s.filePath) }
         val referencedCount = prevSamples.size + curSamples.size
         val referencedUnique = seenFiles.size
-        val maxImagesPerMergedEvent = getMergeMaxImagesPerEvent(ctx)
-        try { FileLogger.i(TAG, "merge: referenced images total=${referencedCount} unique=${referencedUnique} limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
-        if (!forceMerge && referencedUnique > maxImagesPerMergedEvent) {
-            try { FileLogger.i(TAG, "merge: skip because referenced images would exceed limit=${maxImagesPerMergedEvent}") } catch (_: Exception) {}
-            try {
-                SegmentDatabaseHelper.updateMergeDecisionInfo(
-                    ctx,
-                    segmentId = cur.id,
-                    prevSegmentId = prev.id,
-                    decisionJson = null,
-                    reason = "跳过合并：图片数量超过上限（unique=${referencedUnique}, limit=${maxImagesPerMergedEvent}）",
-                    forced = false
-                )
-            } catch (_: Exception) {}
-            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
-            return
-        }
+        try { FileLogger.i(TAG, "merge: referenced images total=${referencedCount} unique=${referencedUnique}") } catch (_: Exception) {}
 
         val mergedAllSamples = mergeSamples(prevSamples, curSamples)
-        val mergedUniqueSamples = if (mergedAllSamples.size > maxImagesPerMergedEvent) {
-            // 强制合并场景下：允许继续，但为保证 UI/DB 容量与提示词长度可控，将样本均匀裁剪到上限
-            evenPick(mergedAllSamples, maxImagesPerMergedEvent).mapIndexed { idx, s ->
-                s.copy(positionIndex = idx)
-            }
-        } else mergedAllSamples
+        val mergedUniqueSamples = mergedAllSamples
 
         val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
         val prevOutput = prevRes.first ?: ""
@@ -1667,13 +1646,12 @@ object SegmentSummaryManager {
                     .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
             }
 
-            // 送入判定的图片：受“合并事件图片上限”约束，并最终受提供方硬上限保护（<= PROVIDER_IMAGE_HARD_LIMIT）。
-            val decisionMaxAiImages =
-                kotlin.math.min(maxImagesPerMergedEvent, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+            // 送入判定的图片：最终受提供方硬上限保护（<= PROVIDER_IMAGE_HARD_LIMIT）。
+            val decisionMaxAiImages = PROVIDER_IMAGE_HARD_LIMIT.coerceAtLeast(1)
             try {
                 FileLogger.i(
                     TAG,
-                    "merge: decision images unique=${mergedUniqueSamples.size} max_ai_images=${decisionMaxAiImages} merge_max=${maxImagesPerMergedEvent}"
+                    "merge: decision images unique=${mergedUniqueSamples.size} max_ai_images=${decisionMaxAiImages}"
                 )
             } catch (_: Exception) {}
             val decide = callGeminiWithImages(
@@ -1729,8 +1707,7 @@ object SegmentSummaryManager {
         }
 
         // 合并后生成新的总结：基于合并后的样本重新调用 AI
-        val maxAiImages =
-            kotlin.math.min(maxImagesPerMergedEvent, PROVIDER_IMAGE_HARD_LIMIT).coerceAtLeast(1)
+        val maxAiImages = PROVIDER_IMAGE_HARD_LIMIT.coerceAtLeast(1)
         val mergePlan = planMergeAiInput(
             allSamples = mergedUniqueSamples,
             prevStructuredJson = prevRes.second,
@@ -1753,7 +1730,7 @@ object SegmentSummaryManager {
         try {
             FileLogger.i(
                 TAG,
-                "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} images=${mergedAiSamples.size}/${mergedUniqueSamples.size} (max_ai_images=${maxAiImages}, merge_max=${maxImagesPerMergedEvent}) using merge prompt"
+                "merge: merging window ${fmt(prev.startTime)}..${fmt(cur.endTime)} images=${mergedAiSamples.size}/${mergedUniqueSamples.size} (max_ai_images=${maxAiImages}) using merge prompt"
             )
         } catch (_: Exception) {}
         val merged = try {
@@ -1943,27 +1920,14 @@ object SegmentSummaryManager {
         // 合并后必须写回 samples：否则删除 prev 后，其样本将永久丢失（导致图片标签/描述/引用图片缺失）。
         var mergedSamplesForUi: List<SegmentDatabaseHelper.Sample> = mergedUniqueSamples
         try {
-            try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
             val curAfter = SegmentDatabaseHelper.getSegmentById(ctx, cur.id)
             if (curAfter != null) {
                 val rebuilt = buildSamplesForSegment(ctx, curAfter)
                 if (rebuilt.isNotEmpty()) {
-                    // 兼容：保留送入模型的图片（mergedAiSamples），并在容量允许时补充重建样本，避免合并后“图片描述/标签”对应不上。
-                    val cap = kotlin.math.max(1, maxImagesPerMergedEvent)
-                    val out = ArrayList<SegmentDatabaseHelper.Sample>(cap)
-                    val seen = HashSet<String>()
-                    fun addIfRoom(list: List<SegmentDatabaseHelper.Sample>) {
-                        for (s in list) {
-                            if (out.size >= cap) break
-                            if (seen.add(s.filePath)) out.add(s)
-                        }
-                    }
-                    addIfRoom(mergedUniqueSamples.sortedBy { it.captureTime })
-                    addIfRoom(rebuilt.sortedBy { it.captureTime })
-                    mergedSamplesForUi = out.sortedBy { it.captureTime }.mapIndexed { idx, s -> s.copy(positionIndex = idx) }
-                    try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
+                    mergedSamplesForUi = mergeSamples(mergedUniqueSamples, rebuilt)
                 }
             }
+            try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
         } catch (_: Exception) {}
         // 合并结果默认不一定包含 image_descriptions/image_tags：尽量从原始事件结果中补齐，避免合并后“图片描述/NSFW 标签”缺失
         val mergedStructuredWithImages = mergeImageDescriptionsIntoStructuredJson(
