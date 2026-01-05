@@ -1826,16 +1826,18 @@ class _SegmentEntryCard extends StatefulWidget {
 }
 
 class _SegmentEntryCardState extends State<_SegmentEntryCard> {
-  static const int _tagWrapThreshold = 18;
-  static const double _tagVirtualListMaxHeight = 168;
-  static const double _tagGridMaxCrossAxisExtent = 220;
-  static const double _tagGridMainAxisExtent = 32;
+  static const int _tagMaxVisibleRows = 2;
+  static const double _tagChipMinHeight = 20;
+  static const double _tagChipVerticalPadding = 2;
+  static const double _tagOverflowHintHeight = 18;
   static const double _tagGridMainAxisSpacing = 6;
   static const double _tagGridCrossAxisSpacing = 6;
   static const int _thumbGridCrossAxisCount = 3;
   static const double _thumbGridSpacing = 2;
   static const double _thumbVirtualGridMaxHeight = 360;
   static const String _summaryGeneratingPlaceholder = '模型正在思考，请稍候…';
+
+  final ScrollController _tagScrollController = ScrollController();
 
   bool _expanded = false;
   // 懒加载样本的本地状态，避免每项滚动时触发异步查询导致跳动
@@ -1881,6 +1883,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     _resultWatchTimer?.cancel();
     _mergeWatchTimer?.cancel();
     _summaryStreamTimer?.cancel();
+    _tagScrollController.dispose();
     super.dispose();
   }
 
@@ -2657,62 +2660,131 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     final int total = categories.length + (merged ? 1 : 0);
     if (total == 0) return const SizedBox.shrink();
 
-    if (total <= _tagWrapThreshold) {
-      return Wrap(
-        spacing: _tagGridCrossAxisSpacing,
-        runSpacing: _tagGridMainAxisSpacing,
-        alignment: WrapAlignment.start,
-        children: [
-          if (merged) _buildMergedTagChip(context),
-          ...categories.map((c) => _buildChip(context, c)),
-        ],
-      );
+    final List<Widget> chips = <Widget>[
+      if (merged) _buildMergedTagChip(context),
+      ...categories.map((c) => _buildChip(context, c)),
+    ];
+
+    final TextStyle measureStyle = const TextStyle(
+      fontSize: 12,
+      height: 1.0,
+      fontWeight: FontWeight.w500,
+    );
+    final TextScaler textScaler = MediaQuery.textScalerOf(context);
+
+    double estimateChipHeight() {
+      final tp = TextPainter(
+        text: TextSpan(text: '测试', style: measureStyle),
+        maxLines: 1,
+        textDirection: Directionality.of(context),
+        textScaler: textScaler,
+      )..layout();
+      final double contentHeight = tp.height + _tagChipVerticalPadding * 2;
+      return math.max(_tagChipMinHeight, contentHeight).ceilToDouble();
+    }
+
+    double estimateChipWidth(String label, double maxWidth) {
+      final double horizontalPadding = AppTheme.spacing2;
+      final double maxTextWidth = math.max(0, maxWidth - horizontalPadding * 2);
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: measureStyle),
+        maxLines: 1,
+        ellipsis: '…',
+        textDirection: Directionality.of(context),
+        textScaler: textScaler,
+      )..layout(maxWidth: maxTextWidth);
+      final double w = tp.width + horizontalPadding * 2;
+      return w.clamp(0, maxWidth);
+    }
+
+    int estimateRows(List<String> labels, double maxWidth) {
+      if (labels.isEmpty) return 0;
+      final double spacing = _tagGridCrossAxisSpacing;
+      int rows = 1;
+      double rowWidth = 0;
+      for (final label in labels) {
+        final double w = estimateChipWidth(label, maxWidth);
+        if (rowWidth == 0) {
+          rowWidth = w;
+          continue;
+        }
+        if (rowWidth + spacing + w <= maxWidth) {
+          rowWidth += spacing + w;
+        } else {
+          rows += 1;
+          rowWidth = w;
+        }
+      }
+      return rows;
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double availableWidth = constraints.maxWidth.isFinite
+        final double maxWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.of(context).size.width;
-        final double columnExtent = math.min(
-          _tagGridMaxCrossAxisExtent,
-          availableWidth,
-        );
-        final int columns = math.max(
-          1,
-          (availableWidth / columnExtent).floor(),
-        );
-        final int rows = (total / columns).ceil();
-        final double naturalHeight =
-            rows * _tagGridMainAxisExtent +
-            math.max(0, rows - 1) * _tagGridMainAxisSpacing;
-        final double viewportHeight = math.min(
-          _tagVirtualListMaxHeight,
-          naturalHeight,
-        );
+        final List<String> labels = <String>[
+          if (merged) AppLocalizations.of(context).mergedEventTag,
+          ...categories,
+        ];
+        final int rows = estimateRows(labels, maxWidth);
 
+        if (rows <= _tagMaxVisibleRows) {
+          return Wrap(
+            spacing: _tagGridCrossAxisSpacing,
+            runSpacing: _tagGridMainAxisSpacing,
+            alignment: WrapAlignment.start,
+            children: chips,
+          );
+        }
+
+        final double chipHeight = estimateChipHeight();
+        final double viewportHeight =
+            chipHeight * _tagMaxVisibleRows +
+            _tagGridMainAxisSpacing * (_tagMaxVisibleRows - 1);
+        final theme = Theme.of(context);
+        final Color hintColor =
+            theme.colorScheme.onSurfaceVariant.withOpacity(0.45);
+
+        // 最多显示两行，超过则在内部滚动（不撑爆卡片布局）。
         return SizedBox(
-          height: viewportHeight,
-          child: Scrollbar(
-            thumbVisibility: naturalHeight > viewportHeight,
-            child: GridView.builder(
-              primary: false,
-              padding: EdgeInsets.zero,
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _tagGridMaxCrossAxisExtent,
-                mainAxisExtent: _tagGridMainAxisExtent,
-                mainAxisSpacing: _tagGridMainAxisSpacing,
-                crossAxisSpacing: _tagGridCrossAxisSpacing,
+          height: viewportHeight + _tagOverflowHintHeight,
+          child: Column(
+            children: [
+              SizedBox(
+                height: viewportHeight,
+                child: Scrollbar(
+                controller: _tagScrollController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                thickness: 3,
+                radius: const Radius.circular(3),
+                child: SingleChildScrollView(
+                  controller: _tagScrollController,
+                  primary: false,
+                  padding: EdgeInsets.zero,
+                  physics: const ClampingScrollPhysics(),
+                  child: Wrap(
+                    spacing: _tagGridCrossAxisSpacing,
+                    runSpacing: _tagGridMainAxisSpacing,
+                    alignment: WrapAlignment.start,
+                    children: chips,
+                  ),
+                ),
+                ),
               ),
-              itemCount: total,
-              itemBuilder: (context, index) {
-                if (merged) {
-                  if (index == 0) return _buildMergedTagChip(context);
-                  return _buildChip(context, categories[index - 1]);
-                }
-                return _buildChip(context, categories[index]);
-              },
-            ),
+              IgnorePointer(
+                child: Container(
+                  height: _tagOverflowHintHeight,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 16,
+                    color: hintColor,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
