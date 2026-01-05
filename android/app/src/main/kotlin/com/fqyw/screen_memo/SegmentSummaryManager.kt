@@ -740,6 +740,22 @@ object SegmentSummaryManager {
             val ctx = appCtx
             var mergeOutputText: String? = null
             var mergeStructuredJson: String? = null
+            val preservedOriginalSummaries: List<String> = run {
+                if (!force) return@run emptyList()
+                val isMerged = try { SegmentDatabaseHelper.isMergedSegment(ctx, seg.id) } catch (_: Exception) { false }
+                if (!isMerged) return@run emptyList()
+                return@run try {
+                    val existing = SegmentDatabaseHelper.getResultForSegment(ctx, seg.id)
+                    val overall = extractOverallSummaryFromStructuredOrText(
+                        parseStructuredJsonObject(existing.second),
+                        existing.first
+                    )
+                    val parts = splitMergedEventSummaryParts(overall)
+                    if (parts.size > 1) parts.drop(1) else emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
             try {
                 try { FileLogger.i(TAG, "finish：开始 segment=${seg.id} samples=${samples.size} force=${force}") } catch (_: Exception) {}
                 // 兜底：无样本则不进行AI
@@ -904,15 +920,27 @@ object SegmentSummaryManager {
                     FileLogger.i(TAG, "AI响应预览: ${preview}")
                 } catch (_: Exception) {}
                 // 将合并需要的摘要提前缓存；合并任务放到 finally 之后异步执行，避免阻塞完成清理。
-                mergeOutputText = result.second
-                mergeStructuredJson = result.third
+                var outputToSave = result.second
+                var structuredToSave = result.third
+                if (preservedOriginalSummaries.isNotEmpty()) {
+                    val patched = attachOriginalSummariesToMergedResult(
+                        mergedOutputText = outputToSave,
+                        mergedStructuredJson = structuredToSave,
+                        prevOriginals = emptyList(),
+                        curOriginals = preservedOriginalSummaries
+                    )
+                    outputToSave = patched.first
+                    structuredToSave = patched.second
+                }
+                mergeOutputText = outputToSave
+                mergeStructuredJson = structuredToSave
                 SegmentDatabaseHelper.saveResult(
                     ctx,
                     seg.id,
                     provider = "gemini",
                     model = result.first,
-                    outputText = result.second,
-                    structuredJson = result.third,
+                    outputText = outputToSave,
+                    structuredJson = structuredToSave,
                     categories = result.fourth
                 )
                 // 将图片标签/描述写入全局可复用表（按 file_path）
@@ -921,7 +949,7 @@ object SegmentSummaryManager {
                         ctx,
                         segmentId = seg.id,
                         samples = effSamples,
-                        structuredJson = result.third,
+                        structuredJson = structuredToSave,
                         lang = effectiveLang
                     )
                 } catch (_: Exception) {}
@@ -944,13 +972,25 @@ object SegmentSummaryManager {
                         val cfg = AISettingsNative.readConfig(ctx)
                         if (cfg.model.isNotBlank()) modelName = cfg.model
                     } catch (_: Exception) {}
+                    var outText = previewLine
+                    var outStructured: String? = null
+                    if (preservedOriginalSummaries.isNotEmpty()) {
+                        val patched = attachOriginalSummariesToMergedResult(
+                            mergedOutputText = outText,
+                            mergedStructuredJson = outStructured,
+                            prevOriginals = emptyList(),
+                            curOriginals = preservedOriginalSummaries
+                        )
+                        outText = patched.first
+                        outStructured = patched.second
+                    }
                     SegmentDatabaseHelper.saveResult(
                         ctx,
                         seg.id,
                         provider = "gemini",
                         model = modelName,
-                        outputText = previewLine,
-                        structuredJson = null,
+                        outputText = outText,
+                        structuredJson = outStructured,
                         categories = null
                     )
                 } catch (_: Exception) {}

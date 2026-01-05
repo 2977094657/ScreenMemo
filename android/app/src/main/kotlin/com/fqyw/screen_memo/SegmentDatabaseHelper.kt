@@ -1304,6 +1304,32 @@ object SegmentDatabaseHelper {
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
+    /** 查询：某段落是否为“合并事件”（merged_flag=1） */
+    fun isMergedSegment(context: Context, segmentId: Long): Boolean {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return false
+            cursor = db.query(
+                "segments",
+                arrayOf("merged_flag"),
+                "id = ?",
+                arrayOf(segmentId.toString()),
+                null,
+                null,
+                null,
+                "1"
+            )
+            if (!cursor.moveToFirst()) return false
+            cursor.getInt(0) == 1
+        } catch (_: Exception) {
+            false
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
     /**
      * 记录最近一次“向后合并判定/合并尝试”的信息，供前端展示。
      *
