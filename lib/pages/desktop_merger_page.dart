@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
@@ -60,7 +61,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         toolbarHeight: 40,
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing3,
+          vertical: AppTheme.spacing2,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -87,7 +91,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             const SizedBox(width: AppTheme.spacing3),
             // 右侧：进度和结果区域
             Expanded(
-              child: (_isMerging || _results.isNotEmpty || _errorMessage != null)
+              child:
+                  (_isMerging || _results.isNotEmpty || _errorMessage != null)
                   ? SingleChildScrollView(child: _buildProgressArea(context))
                   : _buildEmptyState(context),
             ),
@@ -104,11 +109,17 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.merge_type, size: 48, color: theme.colorScheme.primary.withOpacity(0.5)),
+          Icon(
+            Icons.merge_type,
+            size: 48,
+            color: theme.colorScheme.primary.withOpacity(0.5),
+          ),
           const SizedBox(height: AppTheme.spacing2),
           Text(
             t.desktopMergerDescription,
-            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -122,7 +133,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing2,
+          vertical: AppTheme.spacing1,
+        ),
         child: Row(
           children: [
             Icon(Icons.folder, color: theme.colorScheme.primary, size: 20),
@@ -132,7 +146,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                 _outputDirectory ?? t.desktopMergerSelectOutputDir,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface,
-                  fontWeight: _outputDirectory != null ? FontWeight.w500 : FontWeight.normal,
+                  fontWeight: _outputDirectory != null
+                      ? FontWeight.w500
+                      : FontWeight.normal,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -140,7 +156,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             ),
             TextButton(
               onPressed: _isMerging ? null : _selectOutputDirectory,
-              child: Text(t.desktopMergerBrowse, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+              child: Text(
+                t.desktopMergerBrowse,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
             ),
           ],
         ),
@@ -154,7 +176,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing2,
+          vertical: AppTheme.spacing1,
+        ),
         child: Row(
           children: [
             Icon(Icons.archive, color: Colors.orange.shade700, size: 20),
@@ -170,7 +195,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             ),
             TextButton(
               onPressed: _isMerging ? null : _selectZipFiles,
-              child: Text(t.desktopMergerAddFiles, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary)),
+              child: Text(
+                t.desktopMergerAddFiles,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
             ),
           ],
         ),
@@ -190,7 +221,12 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             children: [
               Icon(Icons.upload_file, size: 32, color: Colors.orange.shade700),
               const SizedBox(height: AppTheme.spacing2),
-              Text(t.desktopMergerNoFiles, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                t.desktopMergerNoFiles,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -216,15 +252,32 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(fileName, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(fileSize, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      Text(
+                        fileName,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        fileSize,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 if (!_isMerging)
                   InkWell(
-                    onTap: () => setState(() => _selectedZipFiles.removeAt(index)),
-                    child: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
+                    onTap: () =>
+                        setState(() => _selectedZipFiles.removeAt(index)),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: theme.colorScheme.error,
+                    ),
                   ),
               ],
             ),
@@ -269,7 +322,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            t.desktopMergerPackingProgress((_packingProgress * 100).toInt()),
+                            t.desktopMergerPackingProgress(
+                              (_packingProgress * 100).toInt(),
+                            ),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -317,7 +372,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          if (_currentEntry != null && _currentEntry != _currentFileName)
+                          if (_currentEntry != null &&
+                              _currentEntry != _currentFileName)
                             Text(
                               _currentEntry!,
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -342,43 +398,53 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                 ],
               ),
               const SizedBox(height: AppTheme.spacing2),
-              LinearProgressIndicator(value: _isPacking ? _packingProgress : _progress),
+              LinearProgressIndicator(
+                value: _isPacking ? _packingProgress : _progress,
+              ),
 
               // 阶段提示信息
-              Builder(builder: (context) {
-                final hint = _getStageHint(_isPacking ? 'packing' : _currentStage, t);
-                if (hint != null) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: AppTheme.spacing2),
-                    child: Container(
-                      padding: const EdgeInsets.all(AppTheme.spacing2),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 16,
-                            color: theme.colorScheme.onSurfaceVariant,
+              Builder(
+                builder: (context) {
+                  final hint = _getStageHint(
+                    _isPacking ? 'packing' : _currentStage,
+                    t,
+                  );
+                  if (hint != null) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: AppTheme.spacing2),
+                      child: Container(
+                        padding: const EdgeInsets.all(AppTheme.spacing2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSm,
                           ),
-                          const SizedBox(width: AppTheme.spacing2),
-                          Expanded(
-                            child: Text(
-                              hint,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: AppTheme.spacing2),
+                            Expanded(
+                              child: Text(
+                                hint,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              }),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               const SizedBox(height: AppTheme.spacing3),
 
               // 实时统计面板（打包时不显示，只有有数据时才显示）
@@ -393,15 +459,41 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                   color: theme.colorScheme.errorContainer.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.error_outline, color: theme.colorScheme.error),
-                    const SizedBox(width: AppTheme.spacing2),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
                           color: theme.colorScheme.error,
+                        ),
+                        const SizedBox(width: AppTheme.spacing2),
+                        Expanded(
+                          child: Text(
+                            t.desktopMergerFileFailed,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: t.copyResultsTooltip,
+                          icon: const Icon(Icons.copy, size: 18),
+                          onPressed: () => _copyToClipboard(_errorMessage!),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          _errorMessage!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
                         ),
                       ),
                     ),
@@ -460,10 +552,19 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     );
   }
 
-  Widget _buildStatChip(BuildContext context, String label, int value, IconData icon, Color color) {
+  Widget _buildStatChip(
+    BuildContext context,
+    String label,
+    int value,
+    IconData icon,
+    Color color,
+  ) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing2, vertical: AppTheme.spacing1),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: AppTheme.spacing1,
+      ),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
@@ -476,11 +577,16 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           const SizedBox(width: 4),
           Text(
             '$label: ',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           Text(
             value.toString(),
-            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold, color: color),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),
@@ -500,11 +606,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         // 汇总标题
         Row(
           children: [
-            Icon(
-              Icons.summarize,
-              color: theme.colorScheme.primary,
-              size: 20,
-            ),
+            Icon(Icons.summarize, color: theme.colorScheme.primary, size: 20),
             const SizedBox(width: AppTheme.spacing2),
             Text(
               t.desktopMergerSummaryTitle,
@@ -515,9 +617,23 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             const Spacer(),
             TextButton.icon(
               onPressed: () => setState(() => _showDetails = !_showDetails),
-              icon: Icon(_showDetails ? Icons.expand_less : Icons.expand_more, size: 18),
-              label: Text(_showDetails ? t.desktopMergerCollapseAll : t.desktopMergerExpandAll),
+              icon: Icon(
+                _showDetails ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+              ),
+              label: Text(
+                _showDetails
+                    ? t.desktopMergerCollapseAll
+                    : t.desktopMergerExpandAll,
+              ),
             ),
+            if (failedCount > 0)
+              IconButton(
+                tooltip: t.copyResultsTooltip,
+                icon: const Icon(Icons.copy, size: 18),
+                onPressed: () =>
+                    _copyToClipboard(_buildAllFailedErrorDetails()),
+              ),
           ],
         ),
         const SizedBox(height: AppTheme.spacing2),
@@ -538,7 +654,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                 Expanded(
                   child: Text(
                     _outputZipPath!,
-                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -547,7 +665,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                 TextButton.icon(
                   onPressed: _openOutputFolder,
                   icon: const Icon(Icons.folder_open, size: 16),
-                  label: Text(t.desktopMergerOpenFolder, style: const TextStyle(fontSize: 12)),
+                  label: Text(
+                    t.desktopMergerOpenFolder,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -565,11 +686,35 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildSimpleStat(context, '${_results.length}', t.desktopMergerSummaryTotal(_results.length).split(' ').last, Icons.folder_zip, theme.colorScheme.primary),
-              _buildSimpleStat(context, '$_totalScreenshots', t.desktopMergerStatScreenshots, Icons.photo_library, Colors.green),
-              _buildSimpleStat(context, '$_totalSkipped', t.desktopMergerStatSkipped, Icons.skip_next, theme.colorScheme.secondary),
+              _buildSimpleStat(
+                context,
+                '${_results.length}',
+                t.desktopMergerSummaryTotal(_results.length).split(' ').last,
+                Icons.folder_zip,
+                theme.colorScheme.primary,
+              ),
+              _buildSimpleStat(
+                context,
+                '$_totalScreenshots',
+                t.desktopMergerStatScreenshots,
+                Icons.photo_library,
+                Colors.green,
+              ),
+              _buildSimpleStat(
+                context,
+                '$_totalSkipped',
+                t.desktopMergerStatSkipped,
+                Icons.skip_next,
+                theme.colorScheme.secondary,
+              ),
               if (failedCount > 0)
-                _buildSimpleStat(context, '$failedCount', t.desktopMergerFileFailed, Icons.error, theme.colorScheme.error),
+                _buildSimpleStat(
+                  context,
+                  '$failedCount',
+                  t.desktopMergerFileFailed,
+                  Icons.error,
+                  theme.colorScheme.error,
+                ),
             ],
           ),
         ),
@@ -577,7 +722,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     );
   }
 
-  Widget _buildSimpleStat(BuildContext context, String value, String label, IconData icon, Color color) {
+  Widget _buildSimpleStat(
+    BuildContext context,
+    String value,
+    String label,
+    IconData icon,
+    Color color,
+  ) {
     final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -587,10 +738,21 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           children: [
             Icon(icon, color: color, size: 16),
             const SizedBox(width: 4),
-            Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: color)),
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
           ],
         ),
-        Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }
@@ -608,25 +770,26 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       leading: const Icon(Icons.warning_amber, color: Colors.orange),
       initiallyExpanded: false,
       children: [
-        ..._allWarnings.take(10).map((w) => Padding(
-          padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('• ', style: TextStyle(color: Colors.orange)),
-              Expanded(
-                child: Text(
-                  w,
-                  style: theme.textTheme.bodySmall,
+        ..._allWarnings
+            .take(10)
+            .map(
+              (w) => Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(color: Colors.orange)),
+                    Expanded(child: Text(w, style: theme.textTheme.bodySmall)),
+                  ],
                 ),
               ),
-            ],
-          ),
-        )),
+            ),
         if (_allWarnings.length > 10)
           Text(
             '... +${_allWarnings.length - 10} more',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
       ],
     );
@@ -639,10 +802,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          t.desktopMergerDetailTitle,
-          style: theme.textTheme.titleSmall,
-        ),
+        Text(t.desktopMergerDetailTitle, style: theme.textTheme.titleSmall),
         const SizedBox(height: AppTheme.spacing2),
         ..._results.map((r) => _buildFileResultCard(context, r)),
       ],
@@ -670,11 +830,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         subtitle: Text(
           result.success
               ? (report != null && report.insertedScreenshots > 0
-                  ? t.desktopMergerInsertedCount(report.insertedScreenshots)
-                  : t.desktopMergerNoData)
-              : t.desktopMergerFileFailed,
+                    ? t.desktopMergerInsertedCount(report.insertedScreenshots)
+                    : t.desktopMergerNoData)
+              : (result.errorMessage ?? t.desktopMergerFileFailed),
           style: theme.textTheme.bodySmall?.copyWith(
-            color: result.success ? theme.colorScheme.primary : theme.colorScheme.error,
+            color: result.success
+                ? theme.colorScheme.primary
+                : theme.colorScheme.error,
           ),
         ),
         children: [
@@ -689,36 +851,111 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                     spacing: AppTheme.spacing3,
                     runSpacing: AppTheme.spacing1,
                     children: [
-                      _buildMiniStat(context, t.desktopMergerStatScreenshots, report.insertedScreenshots),
-                      _buildMiniStat(context, t.desktopMergerStatSkipped, report.skippedScreenshotDuplicates),
-                      _buildMiniStat(context, t.desktopMergerStatFiles, report.copiedFiles),
-                      _buildMiniStat(context, t.desktopMergerStatReused, report.reusedFiles),
-                      _buildMiniStat(context, t.desktopMergerStatEvents, report.mergedMemoryEvents),
-                      _buildMiniStat(context, t.desktopMergerStatTags, report.mergedMemoryTags),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatScreenshots,
+                        report.insertedScreenshots,
+                      ),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatSkipped,
+                        report.skippedScreenshotDuplicates,
+                      ),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatFiles,
+                        report.copiedFiles,
+                      ),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatReused,
+                        report.reusedFiles,
+                      ),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatEvents,
+                        report.mergedMemoryEvents,
+                      ),
+                      _buildMiniStat(
+                        context,
+                        t.desktopMergerStatTags,
+                        report.mergedMemoryTags,
+                      ),
                     ],
                   ),
                   // 涉及应用
                   if (report.affectedPackages.isNotEmpty) ...[
                     const SizedBox(height: AppTheme.spacing2),
                     Text(
-                      t.desktopMergerAffectedApps(report.affectedPackages.length),
-                      style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                      t.desktopMergerAffectedApps(
+                        report.affectedPackages.length,
+                      ),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      report.affectedPackages.map(_getAppDisplayName).join(', '),
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      report.affectedPackages
+                          .map(_getAppDisplayName)
+                          .join(', '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
-          if (result.errorMessage != null)
+          if (result.errorMessage != null || result.errorDetails != null)
             Padding(
               padding: const EdgeInsets.all(AppTheme.spacing3),
-              child: Text(
-                result.errorMessage!,
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          result.errorMessage ?? t.desktopMergerFileFailed,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: t.copyResultsTooltip,
+                        icon: const Icon(Icons.copy, size: 18),
+                        onPressed: () => _copyToClipboard(
+                          result.errorDetails ?? result.errorMessage ?? '',
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (result.errorDetails != null) ...[
+                    const SizedBox(height: AppTheme.spacing1),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppTheme.spacing2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer.withOpacity(
+                          0.25,
+                        ),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          result.errorDetails!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
         ],
@@ -734,7 +971,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         Text('$label: ', style: theme.textTheme.bodySmall),
         Text(
           value.toString(),
-          style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ],
     );
@@ -763,7 +1002,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
               t.desktopMergerMinFilesHint,
-              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.tertiary),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.tertiary,
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -773,14 +1014,19 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   onPressed: () => setState(() {
                     _selectedZipFiles.clear();
                     _results.clear();
                     _errorMessage = null;
                   }),
-                  child: Text(t.desktopMergerClear, style: const TextStyle(fontSize: 12)),
+                  child: Text(
+                    t.desktopMergerClear,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
               ),
             if (_selectedZipFiles.isNotEmpty && !_isMerging)
@@ -788,12 +1034,24 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             Expanded(
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 onPressed: _canStartMerge() ? _startMerge : null,
                 child: _isMerging
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(t.desktopMergerStart, style: const TextStyle(fontSize: 12)),
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        t.desktopMergerStart,
+                        style: const TextStyle(fontSize: 12),
+                      ),
               ),
             ),
           ],
@@ -837,7 +1095,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
   bool _canStartMerge() {
     return !_isMerging &&
-        _selectedZipFiles.length >= 2 &&  // 至少需要 2 个文件才能合并
+        _selectedZipFiles.length >= 2 && // 至少需要 2 个文件才能合并
         _outputDirectory != null;
   }
 
@@ -853,6 +1111,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
   Future<void> _startMerge() async {
     if (!_canStartMerge()) return;
+
+    final t = AppLocalizations.of(context);
 
     // 根据文件大小降序排序，确保最大的压缩包作为基准先合并
     _selectedZipFiles.sort((a, b) {
@@ -917,6 +1177,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         try {
           final report = await ScreenshotDatabase.instance.mergeDataFromZip(
             zipPath: file.path,
+            throwOnError: true,
             onProgress: (progress) {
               setState(() {
                 // 计算总体进度
@@ -928,38 +1189,67 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             },
           );
 
-          _results.add(_MergeResult(
-            fileName: fileName,
-            success: report != null,
-            report: report,
-          ));
+          if (report == null) {
+            _results.add(
+              _MergeResult(
+                fileName: fileName,
+                success: false,
+                errorMessage: 'MergeReport is null',
+                errorDetails: _buildMergeFailureDetails(
+                  fileName: fileName,
+                  zipPath: file.path,
+                  stage: _currentStage,
+                  entry: _currentEntry,
+                  error: StateError('MergeReport is null'),
+                  stackTrace: StackTrace.current,
+                  t: t,
+                ),
+              ),
+            );
+            continue;
+          }
 
           // 更新累计统计
-          if (report != null) {
-            // 第一个（最大的）压缩包作为基准，不计入“新增截图”
-            final bool isBaselineFile = i == 0;
-            final int addedScreenshots =
-                isBaselineFile ? 0 : report.insertedScreenshots;
-            totalNewScreenshots += addedScreenshots;
+          _results.add(
+            _MergeResult(fileName: fileName, success: true, report: report),
+          );
 
-            setState(() {
-              _totalScreenshots = totalNewScreenshots;
-              _totalSkipped += report.skippedScreenshotDuplicates;
-              _totalFiles += report.copiedFiles;
-              _totalReused += report.reusedFiles;
-              _totalEvents += report.mergedMemoryEvents;
-              _totalTags += report.mergedMemoryTags;
-              _totalEvidence += report.mergedMemoryEvidence;
-              _allAffectedApps.addAll(report.affectedPackages);
-              _allWarnings.addAll(report.warnings);
-            });
-          }
-        } catch (e) {
-          _results.add(_MergeResult(
-            fileName: fileName,
-            success: false,
-            errorMessage: e.toString(),
-          ));
+          // 第一个（最大的）压缩包作为基准，不计入“新增截图”
+          final bool isBaselineFile = i == 0;
+          final int addedScreenshots = isBaselineFile
+              ? 0
+              : report.insertedScreenshots;
+          totalNewScreenshots += addedScreenshots;
+
+          setState(() {
+            _totalScreenshots = totalNewScreenshots;
+            _totalSkipped += report.skippedScreenshotDuplicates;
+            _totalFiles += report.copiedFiles;
+            _totalReused += report.reusedFiles;
+            _totalEvents += report.mergedMemoryEvents;
+            _totalTags += report.mergedMemoryTags;
+            _totalEvidence += report.mergedMemoryEvidence;
+            _allAffectedApps.addAll(report.affectedPackages);
+            _allWarnings.addAll(report.warnings);
+          });
+        } catch (e, st) {
+          final errorSummary = '${e.runtimeType}: $e';
+          _results.add(
+            _MergeResult(
+              fileName: fileName,
+              success: false,
+              errorMessage: errorSummary,
+              errorDetails: _buildMergeFailureDetails(
+                fileName: fileName,
+                zipPath: file.path,
+                stage: _currentStage,
+                entry: _currentEntry,
+                error: e,
+                stackTrace: st,
+                t: t,
+              ),
+            ),
+          );
         }
       }
 
@@ -972,7 +1262,11 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       });
 
       // 生成输出 ZIP 文件名
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
       final zipFileName = 'merged_backup_$timestamp.zip';
       final mergedOutputDir = p.join(_outputDirectory!, 'output');
       _outputZipPath = p.join(_outputDirectory!, zipFileName);
@@ -1000,9 +1294,16 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         _currentStage = 'completed';
         _isPacking = false;
       });
-    } catch (e) {
+    } catch (e, st) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = _buildGlobalFailureDetails(
+          stage: _currentStage,
+          entry: _currentEntry,
+          fileName: _currentFileName,
+          error: e,
+          stackTrace: st,
+          t: AppLocalizations.of(context),
+        );
       });
     } finally {
       setState(() {
@@ -1021,9 +1322,14 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     // 收集所有文件，添加异常处理
     final files = <String>[];
     try {
-      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is! File) continue;
-        final relPath = entity.path.substring(dir.path.length + 1).replaceAll('\\', '/');
+        final relPath = entity.path
+            .substring(dir.path.length + 1)
+            .replaceAll('\\', '/');
         // 跳过系统目录、缓存目录和临时文件
         final relLower = relPath.toLowerCase();
         if (relLower.startsWith('\$') ||
@@ -1045,15 +1351,12 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
     // 使用 Isolate 进行打包避免阻塞 UI
     final receivePort = ReceivePort();
-    await Isolate.spawn(
-      _zipPackingIsolate,
-      {
-        'sendPort': receivePort.sendPort,
-        'outputDirPath': dir.path,  // 使用实际的打包目录
-        'zipPath': zipPath,
-        'files': files,
-      },
-    );
+    await Isolate.spawn(_zipPackingIsolate, {
+      'sendPort': receivePort.sendPort,
+      'outputDirPath': dir.path, // 使用实际的打包目录
+      'zipPath': zipPath,
+      'files': files,
+    });
 
     await for (final message in receivePort) {
       if (message is Map<String, dynamic>) {
@@ -1117,11 +1420,12 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       );
     } else {
       // macOS/Linux 使用 zip 命令（-0 只存储不压缩，速度更快，内存占用更低）
-      process = await Process.start(
-        'zip',
-        ['-r', '-0', zipPath, '.'],
-        workingDirectory: sourceDir,
-      );
+      process = await Process.start('zip', [
+        '-r',
+        '-0',
+        zipPath,
+        '.',
+      ], workingDirectory: sourceDir);
     }
 
     // 周期性检查目标 zip 文件大小，估算进度
@@ -1217,6 +1521,91 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
+
+  Future<void> _copyToClipboard(String text) async {
+    final t = AppLocalizations.of(context);
+    if (text.trim().isEmpty) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.copySuccess)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.copyFailed)));
+    }
+  }
+
+  String _buildMergeFailureDetails({
+    required String fileName,
+    required String zipPath,
+    required String stage,
+    required String? entry,
+    required Object error,
+    required StackTrace stackTrace,
+    required AppLocalizations t,
+  }) {
+    final stageLabel = stage.isNotEmpty
+        ? _getStageLabel(stage, t)
+        : t.desktopMergerStageProcessing;
+    final b = StringBuffer()
+      ..writeln('fileName: $fileName')
+      ..writeln('zipPath: $zipPath');
+    if (stage.isNotEmpty) {
+      b.writeln('stage: $stage ($stageLabel)');
+    }
+    if (entry != null && entry.isNotEmpty) {
+      b.writeln('entry: $entry');
+    }
+    b
+      ..writeln('error: ${error.runtimeType}: $error')
+      ..writeln('stackTrace:')
+      ..writeln(stackTrace);
+    return b.toString();
+  }
+
+  String _buildGlobalFailureDetails({
+    required String stage,
+    required String? entry,
+    required String? fileName,
+    required Object error,
+    required StackTrace stackTrace,
+    required AppLocalizations t,
+  }) {
+    final stageLabel = stage.isNotEmpty
+        ? _getStageLabel(stage, t)
+        : t.desktopMergerStageProcessing;
+    final b = StringBuffer();
+    if (fileName != null && fileName.isNotEmpty) {
+      b.writeln('fileName: $fileName');
+    }
+    if (stage.isNotEmpty) {
+      b.writeln('stage: $stage ($stageLabel)');
+    }
+    if (entry != null && entry.isNotEmpty) {
+      b.writeln('entry: $entry');
+    }
+    b
+      ..writeln('error: ${error.runtimeType}: $error')
+      ..writeln('stackTrace:')
+      ..writeln(stackTrace);
+    return b.toString();
+  }
+
+  String _buildAllFailedErrorDetails() {
+    final failed = _results.where((r) => !r.success).toList(growable: false);
+    if (failed.isEmpty) return '';
+    final b = StringBuffer();
+    for (final r in failed) {
+      b.writeln('===== ${r.fileName} =====');
+      b.writeln(r.errorDetails ?? r.errorMessage ?? 'Unknown error');
+      b.writeln();
+    }
+    return b.toString();
+  }
 }
 
 class _MergeResult {
@@ -1224,12 +1613,14 @@ class _MergeResult {
   final bool success;
   final MergeReport? report;
   final String? errorMessage;
+  final String? errorDetails;
 
   _MergeResult({
     required this.fileName,
     required this.success,
     this.report,
     this.errorMessage,
+    this.errorDetails,
   });
 }
 

@@ -1212,6 +1212,8 @@ class _SettingsPageState extends State<SettingsPage>
     final ValueNotifier<String?> stageNotifier = ValueNotifier<String?>(null);
     final ValueNotifier<String?> entryNotifier = ValueNotifier<String?>(null);
     bool overlayShown = false;
+    String? selectedFileName;
+    String? selectedFilePath;
 
     try {
       await FlutterLogger.nativeInfo('UI_IMPORT', '打开文件选择器');
@@ -1230,6 +1232,8 @@ class _SettingsPageState extends State<SettingsPage>
       final file = result.files.first;
       final Uint8List? bytes = file.bytes;
       final String? path = file.path;
+      selectedFileName = file.name;
+      selectedFilePath = path;
       await FlutterLogger.nativeInfo(
         'UI_IMPORT',
         '已选择 文件名=${file.name} 大小=${bytes?.length ?? 0} 路径=${path ?? ''}',
@@ -1268,6 +1272,7 @@ class _SettingsPageState extends State<SettingsPage>
           zipPath: path,
           zipBytes: bytes,
           onProgress: handleProgress,
+          throwOnError: true,
         );
       } else {
         // 覆盖导入优先走原生 ZIP 导入（依赖 zipPath），无法获取路径时回退到 Dart 流式实现
@@ -1375,17 +1380,57 @@ class _SettingsPageState extends State<SettingsPage>
           ],
         );
       }
-    } catch (e) {
+    } catch (e, st) {
       if (!mounted) return;
-      await FlutterLogger.nativeError('UI_IMPORT', '异常：' + e.toString());
+      await FlutterLogger.handle(e, st, tag: 'UI_IMPORT', message: '导入异常');
+
+      final l10n = AppLocalizations.of(context);
+      final detailText = StringBuffer()
+        ..writeln('fileName: ${selectedFileName ?? ''}')
+        ..writeln('path: ${selectedFilePath ?? ''}')
+        ..writeln('stage: ${stageNotifier.value ?? ''}')
+        ..writeln('entry: ${entryNotifier.value ?? ''}')
+        ..writeln('error: ${e.runtimeType}: $e')
+        ..writeln('stackTrace:')
+        ..writeln(st);
+
       await showUIDialog<void>(
         context: context,
         barrierDismissible: false,
-        title: AppLocalizations.of(context).importFailedTitle,
-        content: Text('$e'),
+        title: l10n.importFailedTitle,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 260),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              detailText.toString(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
+        ),
         actions: [
           UIDialogAction(
-            text: AppLocalizations.of(context).dialogOk,
+            text: l10n.copyResultsTooltip,
+            closeOnPress: false,
+            onPressed: (_) async {
+              final text = detailText.toString();
+              try {
+                await Clipboard.setData(ClipboardData(text: text));
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(l10n.copySuccess)));
+              } catch (_) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(l10n.copyFailed)));
+              }
+            },
+          ),
+          UIDialogAction(
+            text: l10n.dialogOk,
             style: UIDialogActionStyle.primary,
           ),
         ],

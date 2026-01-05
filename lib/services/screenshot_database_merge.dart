@@ -63,28 +63,34 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     String? zipPath,
     List<int>? zipBytes,
     void Function(ImportExportProgress progress)? onProgress,
+    bool throwOnError = false,
   }) async {
     if ((zipPath == null || zipPath.isEmpty) &&
         (zipBytes == null || zipBytes.isEmpty)) {
-      await FlutterLogger.nativeWarn(
-        'MERGE',
-        'mergeDataFromZip：未提供输入数据',
-      );
+      const msg = 'mergeDataFromZip：未提供输入数据';
+      await FlutterLogger.nativeWarn('MERGE', msg);
+      if (throwOnError) {
+        throw ArgumentError(msg);
+      }
       return null;
     }
 
     // 优先使用桌面端设置的目录，否则使用默认目录
     Directory? base;
-    if (ScreenshotDatabase._desktopBasePath != null && ScreenshotDatabase._desktopBasePath!.isNotEmpty) {
+    if (ScreenshotDatabase._desktopBasePath != null &&
+        ScreenshotDatabase._desktopBasePath!.isNotEmpty) {
       base = Directory(ScreenshotDatabase._desktopBasePath!);
     } else {
-      base = await PathService.getInternalAppDir(null) ?? await _getInternalFilesDir();
+      base =
+          await PathService.getInternalAppDir(null) ??
+          await _getInternalFilesDir();
     }
     if (base == null) {
-      await FlutterLogger.nativeError(
-        'MERGE',
-        'mergeDataFromZip：base 目录不可用',
-      );
+      const msg = 'mergeDataFromZip：base 目录不可用';
+      await FlutterLogger.nativeError('MERGE', msg);
+      if (throwOnError) {
+        throw StateError(msg);
+      }
       return null;
     }
 
@@ -95,12 +101,41 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     final Directory stagingOutput = Directory(join(stagingRoot.path, 'output'));
 
     File? tempZipFile;
+    String? localZipPath = zipPath;
+    String? lastStage;
+    String? lastEntry;
+    int lastProgressEmitMs = 0;
+    double lastProgressEmitValue = -1;
+    String? lastProgressEmitStage;
+
+    void reportProgress(ImportExportProgress progress) {
+      lastStage = progress.stage;
+      lastEntry = progress.currentEntry;
+      final cb = onProgress;
+      if (cb == null) return;
+
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final String? stage = progress.stage;
+      final bool stageChanged = stage != lastProgressEmitStage;
+      final bool isEdge = progress.value <= 0.0 || progress.value >= 1.0;
+      final bool timeOk = (now - lastProgressEmitMs) >= 150;
+      final bool valueChanged =
+          lastProgressEmitValue < 0 ||
+          (progress.value - lastProgressEmitValue).abs() >= 0.01;
+
+      if (stageChanged || isEdge || (timeOk && valueChanged)) {
+        lastProgressEmitMs = now;
+        lastProgressEmitValue = progress.value;
+        lastProgressEmitStage = stage;
+        cb(progress);
+      }
+    }
+
     try {
       if (!await stagingOutput.exists()) {
         await stagingOutput.create(recursive: true);
       }
 
-      String? localZipPath = zipPath;
       if ((localZipPath == null || localZipPath.isEmpty) &&
           zipBytes != null &&
           zipBytes.isNotEmpty) {
@@ -113,7 +148,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         outputDirPath: stagingOutput.path,
         overwrite: true,
         onProgress: (progress) {
-          onProgress?.call(
+          reportProgress(
             ImportExportProgress(
               value: progress.value * 0.3,
               stage: 'merge_extracting',
@@ -123,10 +158,12 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         },
       );
       if (extraction == null) {
-        await FlutterLogger.nativeWarn(
-          'MERGE',
-          'mergeDataFromZip：解压结果为 null',
-        );
+        final msg =
+            'mergeDataFromZip：解压结果为 null (zipPath=${zipPath ?? ''} localZipPath=$localZipPath)';
+        await FlutterLogger.nativeWarn('MERGE', msg);
+        if (throwOnError) {
+          throw StateError(msg);
+        }
         return null;
       }
 
@@ -135,7 +172,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         baseDir: base,
         stagingOutput: stagingOutput,
         ctx: ctx,
-        progress: onProgress,
+        progress: reportProgress,
       );
 
       try {
@@ -144,11 +181,18 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       } catch (_) {}
 
       return ctx.toReport();
-    } catch (e) {
-      await FlutterLogger.nativeError(
-        'MERGE',
-        'mergeDataFromZip 异常：$e',
+    } catch (e, st) {
+      final contextInfo =
+          'zipPath=${zipPath ?? ''} localZipPath=${localZipPath ?? ''} base=${base.path} stage=${lastStage ?? ''} entry=${lastEntry ?? ''}';
+      await FlutterLogger.handle(
+        e,
+        st,
+        tag: 'MERGE',
+        message: 'mergeDataFromZip 异常：$contextInfo',
       );
+      if (throwOnError) {
+        Error.throwWithStackTrace(e, st);
+      }
       return null;
     } finally {
       try {
@@ -247,7 +291,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
   }) async {
-    final Directory stagingScreen = Directory(join(stagingOutput.path, 'screen'));
+    final Directory stagingScreen = Directory(
+      join(stagingOutput.path, 'screen'),
+    );
     if (!await stagingScreen.exists()) {
       return;
     }
@@ -262,10 +308,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     for (final FileSystemEntity entity in entries) {
       processed++;
       final File src = entity as File;
-      final String rel = _relativeFromScreenPath(
-        stagingScreen.path,
-        src.path,
-      );
+      final String rel = _relativeFromScreenPath(stagingScreen.path, src.path);
       if (rel.isEmpty) continue;
 
       final String mappingKey = 'screen/$rel'.replaceAll('//', '/');
@@ -310,8 +353,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
   }) async {
-    final List<FileSystemEntity> topEntries =
-        await stagingOutput.list(followLinks: false).toList();
+    final List<FileSystemEntity> topEntries = await stagingOutput
+        .list(followLinks: false)
+        .toList();
     final List<FileSystemEntity> genericEntries = <FileSystemEntity>[];
     for (final FileSystemEntity entry in topEntries) {
       final String name = basename(entry.path);
@@ -371,8 +415,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       await destination.create(recursive: true);
     }
 
-    await for (final FileSystemEntity entity
-        in source.list(followLinks: false)) {
+    await for (final FileSystemEntity entity in source.list(
+      followLinks: false,
+    )) {
       final String childPath = join(destination.path, basename(entity.path));
       if (entity is Directory) {
         await _copyGenericDirectory(
@@ -422,15 +467,19 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
   }) async {
-    final Directory stagingDbDir =
-        Directory(join(stagingOutput.path, 'databases'));
+    final Directory stagingDbDir = Directory(
+      join(stagingOutput.path, 'databases'),
+    );
     if (!await stagingDbDir.exists()) {
-      ctx.warnings.add('Staging databases directory missing: ${stagingDbDir.path}');
+      ctx.warnings.add(
+        'Staging databases directory missing: ${stagingDbDir.path}',
+      );
       return;
     }
 
-    final File importedMaster =
-        File(join(stagingDbDir.path, 'screenshot_memo.db'));
+    final File importedMaster = File(
+      join(stagingDbDir.path, 'screenshot_memo.db'),
+    );
     if (!await importedMaster.exists()) {
       ctx.warnings.add('Imported screenshot_memo.db not found, skip DB merge.');
       return;
@@ -477,9 +526,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
         final File shardFile = File(shardPath);
         if (!await shardFile.exists()) {
-          ctx.warnings.add(
-            'Shard file missing for $pkg - $year: $shardPath',
-          );
+          ctx.warnings.add('Shard file missing for $pkg - $year: $shardPath');
           continue;
         }
 
@@ -512,39 +559,42 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
   }) async {
-    final File importedMemory =
-        File(join(stagingOutput.path, 'databases', 'memory_backend.db'));
+    final File importedMemory = File(
+      join(stagingOutput.path, 'databases', 'memory_backend.db'),
+    );
     if (!await importedMemory.exists()) {
       return;
     }
 
-    final Directory targetDbDir =
-        Directory(join(baseDir.path, 'output', 'databases'));
+    final Directory targetDbDir = Directory(
+      join(baseDir.path, 'output', 'databases'),
+    );
     if (!await targetDbDir.exists()) {
       await targetDbDir.create(recursive: true);
     }
-    final File targetMemory =
-        File(join(targetDbDir.path, 'memory_backend.db'));
+    final File targetMemory = File(join(targetDbDir.path, 'memory_backend.db'));
 
     if (!await targetMemory.exists()) {
       Database? importDb;
       try {
         importDb = await openDatabase(importedMemory.path, readOnly: true);
         ctx.mergedMemoryEvents +=
-            Sqflite.firstIntValue(await importDb.rawQuery(
-                  'SELECT COUNT(*) FROM memory_events',
-                )) ??
-                0;
+            Sqflite.firstIntValue(
+              await importDb.rawQuery('SELECT COUNT(*) FROM memory_events'),
+            ) ??
+            0;
         ctx.mergedMemoryTags +=
-            Sqflite.firstIntValue(await importDb.rawQuery(
-                  'SELECT COUNT(*) FROM memory_tags',
-                )) ??
-                0;
+            Sqflite.firstIntValue(
+              await importDb.rawQuery('SELECT COUNT(*) FROM memory_tags'),
+            ) ??
+            0;
         ctx.mergedMemoryEvidence +=
-            Sqflite.firstIntValue(await importDb.rawQuery(
-                  'SELECT COUNT(*) FROM memory_tag_evidence',
-                )) ??
-                0;
+            Sqflite.firstIntValue(
+              await importDb.rawQuery(
+                'SELECT COUNT(*) FROM memory_tag_evidence',
+              ),
+            ) ??
+            0;
       } catch (e) {
         ctx.warnings.add('读取记忆数据库失败: $e');
       } finally {
@@ -588,18 +638,27 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             'content',
           ],
         );
+        int existingEventIndex = 0;
         for (final Map<String, Object?> row in existingEvents) {
+          existingEventIndex++;
           final int id = (row['id'] as int?) ?? 0;
           final String? ext = row['external_id'] as String?;
           if (ext != null && ext.isNotEmpty) {
             externalEventMap[ext] = id;
           }
           compositeEventMap[_memoryEventKey(row)] = id;
+          if (existingEventIndex % 5000 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
 
-        final List<Map<String, Object?>> importEvents =
-            await importDb!.query('memory_events', orderBy: 'id ASC');
+        final List<Map<String, Object?>> importEvents = await importDb!.query(
+          'memory_events',
+          orderBy: 'id ASC',
+        );
+        int importEventIndex = 0;
         for (final Map<String, Object?> row in importEvents) {
+          importEventIndex++;
           final int oldId = (row['id'] as int?) ?? 0;
           if (oldId <= 0) continue;
           int? resolvedId;
@@ -612,6 +671,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
           if (resolvedId != null) {
             eventIdMap[oldId] = resolvedId;
+            if (importEventIndex % 5000 == 0) {
+              await Future<void>.delayed(Duration.zero);
+            }
             continue;
           }
 
@@ -640,6 +702,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
               }
             }
           }
+          if (importEventIndex % 5000 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
 
         final Map<int, int> tagIdMap = <int, int>{};
@@ -647,18 +712,26 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             <String, Map<String, Object?>>{};
         final Map<String, int> tagKeyToId = <String, int>{};
 
-        final List<Map<String, Object?>> existingTags =
-            await txn.query('memory_tags');
+        final List<Map<String, Object?>> existingTags = await txn.query(
+          'memory_tags',
+        );
+        int existingTagIndex = 0;
         for (final Map<String, Object?> row in existingTags) {
+          existingTagIndex++;
           final String key = (row['tag_key'] as String?) ?? '';
           if (key.isEmpty) continue;
           final int id = (row['id'] as int?) ?? 0;
           tagKeyToId[key] = id;
           existingTagRows[key] = Map<String, Object?>.from(row);
+          if (existingTagIndex % 5000 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
 
-        final List<Map<String, Object?>> importTags =
-            await importDb.query('memory_tags', orderBy: 'id ASC');
+        final List<Map<String, Object?>> importTags = await importDb.query(
+          'memory_tags',
+          orderBy: 'id ASC',
+        );
         for (final Map<String, Object?> row in importTags) {
           final int oldId = (row['id'] as int?) ?? 0;
           if (oldId <= 0) continue;
@@ -671,40 +744,45 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
               existingTagRows[tagKey] ?? <String, Object?>{},
               row,
             );
-            final Map<String, Object?> updateRow =
-                Map<String, Object?>.from(merged)..remove('id');
+            final Map<String, Object?> updateRow = Map<String, Object?>.from(
+              merged,
+            )..remove('id');
             await txn.update(
               'memory_tags',
               updateRow,
               where: 'id = ?',
               whereArgs: [existingId],
             );
-            existingTagRows[tagKey] =
-                Map<String, Object?>.from(merged)..['id'] = existingId;
+            existingTagRows[tagKey] = Map<String, Object?>.from(merged)
+              ..['id'] = existingId;
             tagIdMap[oldId] = existingId;
             continue;
           }
 
-          final Map<String, Object?> insertRow =
-              Map<String, Object?>.from(row)..remove('id');
+          final Map<String, Object?> insertRow = Map<String, Object?>.from(row)
+            ..remove('id');
           final int newTagId = await txn.insert('memory_tags', insertRow);
           if (newTagId > 0) {
             tagIdMap[oldId] = newTagId;
             tagKeyToId[tagKey] = newTagId;
-            existingTagRows[tagKey] =
-                Map<String, Object?>.from(row)..['id'] = newTagId;
+            existingTagRows[tagKey] = Map<String, Object?>.from(row)
+              ..['id'] = newTagId;
             ctx.mergedMemoryTags++;
           }
         }
 
-        final List<Map<String, Object?>> importMetadata =
-            await importDb.query('memory_metadata');
+        final List<Map<String, Object?>> importMetadata = await importDb.query(
+          'memory_metadata',
+        );
         for (final Map<String, Object?> row in importMetadata) {
           final String? key = row['key'] as String?;
           if (key == null) continue;
-          final List<Map<String, Object?>> existing =
-              await txn.query('memory_metadata',
-                  where: '`key` = ?', whereArgs: [key], limit: 1);
+          final List<Map<String, Object?>> existing = await txn.query(
+            'memory_metadata',
+            where: '`key` = ?',
+            whereArgs: [key],
+            limit: 1,
+          );
           if (existing.isEmpty) {
             await txn.insert('memory_metadata', row);
           } else {
@@ -733,8 +811,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           final int? newEventId = eventIdMap[oldEventId];
           if (newTagId == null || newEventId == null) continue;
 
-          final Map<String, Object?> insertRow =
-              Map<String, Object?>.from(row);
+          final Map<String, Object?> insertRow = Map<String, Object?>.from(row);
           insertRow.remove('id');
           insertRow['tag_id'] = newTagId;
           insertRow['event_id'] = newEventId;
@@ -794,27 +871,33 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
         await _ensureMonthTable(targetShard, year, month);
 
-        final List<Map<String, Object?>> existingRows =
-            await targetShard.query(
+        final List<Map<String, Object?>> existingRows = await targetShard.query(
           tableName,
           columns: ['id', 'file_path'],
         );
         final Map<String, int> existingPaths = <String, int>{};
         int maxId = 0;
+        int existingIndex = 0;
         for (final Map<String, Object?> row in existingRows) {
+          existingIndex++;
           final String? path = row['file_path'] as String?;
           final int id = (row['id'] as int?) ?? 0;
           if (path != null && path.isNotEmpty) {
             existingPaths[path] = id;
           }
           if (id > maxId) maxId = id;
+          if (existingIndex % 5000 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
 
         final List<Map<String, Object?>> rows = await importedShard.query(
           tableName,
         );
 
+        int rowIndex = 0;
         for (final Map<String, Object?> row in rows) {
+          rowIndex++;
           final int oldId = (row['id'] as int?) ?? 0;
           if (oldId <= 0) continue;
 
@@ -844,12 +927,14 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             final int existingGid = _encodeGid(year, month, existingId);
             final int oldGid = _encodeGid(year, month, oldId);
             ctx.gidMapping[oldGid] = existingGid;
+            if (rowIndex % 5000 == 0) {
+              await Future<void>.delayed(Duration.zero);
+            }
             continue;
           }
 
           maxId++;
-          final Map<String, Object?> insertRow =
-              Map<String, Object?>.from(row);
+          final Map<String, Object?> insertRow = Map<String, Object?>.from(row);
           insertRow['id'] = maxId;
           insertRow['file_path'] = newAbsolute;
           try {
@@ -870,12 +955,14 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           ctx.gidMapping[oldGid] = newGid;
           existingPaths[newAbsolute] = maxId;
           ctx.insertedScreenshots++;
+
+          if (rowIndex % 5000 == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
       }
     } catch (e) {
-      ctx.warnings.add(
-        'Failed to merge shard for $packageName/$year: $e',
-      );
+      ctx.warnings.add('Failed to merge shard for $packageName/$year: $e');
     } finally {
       await importedShard?.close();
     }
@@ -887,22 +974,29 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
   }) async {
-    final Directory targetDbDir =
-        Directory(join(baseDir.path, 'output', 'databases'));
+    final Directory targetDbDir = Directory(
+      join(baseDir.path, 'output', 'databases'),
+    );
     if (!await targetDbDir.exists()) {
       await targetDbDir.create(recursive: true);
     }
-    final File targetMaster =
-        File(join(targetDbDir.path, 'screenshot_memo.db'));
+    final File targetMaster = File(
+      join(targetDbDir.path, 'screenshot_memo.db'),
+    );
     if (!await targetMaster.exists()) {
-      ctx.warnings.add('Target screenshot_memo.db missing, skip metadata merge.');
+      ctx.warnings.add(
+        'Target screenshot_memo.db missing, skip metadata merge.',
+      );
       return;
     }
 
-    final File importedMaster =
-        File(join(stagingOutput.path, 'databases', 'screenshot_memo.db'));
+    final File importedMaster = File(
+      join(stagingOutput.path, 'databases', 'screenshot_memo.db'),
+    );
     if (!await importedMaster.exists()) {
-      ctx.warnings.add('Imported screenshot_memo.db missing, skip metadata merge.');
+      ctx.warnings.add(
+        'Imported screenshot_memo.db missing, skip metadata merge.',
+      );
       return;
     }
 
@@ -930,18 +1024,21 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required Directory stagingOutput,
     required _MergeContext ctx,
   }) async {
-    final Directory stagingDbDir =
-        Directory(join(stagingOutput.path, 'databases'));
+    final Directory stagingDbDir = Directory(
+      join(stagingOutput.path, 'databases'),
+    );
     if (!await stagingDbDir.exists()) return;
 
-    final Directory targetDbDir =
-        Directory(join(baseDir.path, 'output', 'databases'));
+    final Directory targetDbDir = Directory(
+      join(baseDir.path, 'output', 'databases'),
+    );
     if (!await targetDbDir.exists()) {
       await targetDbDir.create(recursive: true);
     }
 
-    final List<FileSystemEntity> entries =
-        await stagingDbDir.list(followLinks: false).toList();
+    final List<FileSystemEntity> entries = await stagingDbDir
+        .list(followLinks: false)
+        .toList();
     for (final FileSystemEntity entry in entries) {
       if (entry is! File) continue;
       final String name = basename(entry.path);
@@ -993,18 +1090,14 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       if (newId == null) continue;
 
       try {
-        await txn.insert(
-          'favorites',
-          <String, Object?>{
-            'screenshot_id': newId,
-            'app_package_name': pkg,
-            'favorite_time': row['favorite_time'],
-            'note': row['note'],
-            'created_at': row['created_at'],
-            'updated_at': row['updated_at'],
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await txn.insert('favorites', <String, Object?>{
+          'screenshot_id': newId,
+          'app_package_name': pkg,
+          'favorite_time': row['favorite_time'],
+          'note': row['note'],
+          'created_at': row['created_at'],
+          'updated_at': row['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       } catch (e) {
         ctx.warnings.add('Insert favorite failed for $pkg/$newId: $e');
       }
@@ -1051,27 +1144,20 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       final int? newId = ctx.gidMapping[oldId];
       if (newId == null) continue;
       try {
-        await txn.insert(
-          'nsfw_manual_flags',
-          <String, Object?>{
-            'screenshot_id': newId,
-            'app_package_name': pkg,
-            'flag': row['flag'],
-            'created_at': row['created_at'],
-            'updated_at': row['updated_at'],
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await txn.insert('nsfw_manual_flags', <String, Object?>{
+          'screenshot_id': newId,
+          'app_package_name': pkg,
+          'flag': row['flag'],
+          'created_at': row['created_at'],
+          'updated_at': row['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       } catch (e) {
         ctx.warnings.add('Insert NSFW flag failed for $pkg/$newId: $e');
       }
     }
   }
 
-  Future<void> _mergeUserSettings(
-    Database importedDb,
-    Transaction txn,
-  ) async {
+  Future<void> _mergeUserSettings(Database importedDb, Transaction txn) async {
     if (!await _tableExists(importedDb, 'user_settings')) {
       return;
     }
@@ -1096,15 +1182,11 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       final String? key = row['key'] as String?;
       if (key == null || existingKeys.contains(key)) continue;
       try {
-        await txn.insert(
-          'user_settings',
-          <String, Object?>{
-            'key': key,
-            'value': row['value'],
-            'updated_at': row['updated_at'],
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await txn.insert('user_settings', <String, Object?>{
+          'key': key,
+          'value': row['value'],
+          'updated_at': row['updated_at'],
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       } catch (_) {}
     }
   }
@@ -1204,8 +1286,10 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     result['level2'] = _preferString(existing['level2'], incoming['level2']);
     result['level3'] = _preferString(existing['level3'], incoming['level3']);
     result['level4'] = _preferString(existing['level4'], incoming['level4']);
-    result['full_path'] =
-        _preferString(existing['full_path'], incoming['full_path']);
+    result['full_path'] = _preferString(
+      existing['full_path'],
+      incoming['full_path'],
+    );
 
     final int existingOccurrences = _asInt(existing['occurrences']);
     final int incomingOccurrences = _asInt(incoming['occurrences']);
@@ -1301,4 +1385,3 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     return null;
   }
 }
-

@@ -16,6 +16,16 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+// Window attributes that control title bar colors (Windows 11+).
+// Redefined in case the developer's machine has an older Windows SDK.
+// See: https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_TEXT_COLOR
+#define DWMWA_TEXT_COLOR 36
+#endif
+
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
 /// Registry key for app theme preference.
@@ -277,12 +287,24 @@ void Win32Window::UpdateTheme(HWND const window) {
   DWORD light_mode_size = sizeof(light_mode);
   LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
                                kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
+                                RRF_RT_REG_DWORD, nullptr, &light_mode,
+                                &light_mode_size);
 
   if (result == ERROR_SUCCESS) {
     BOOL enable_dark_mode = light_mode == 0;
     DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
                           &enable_dark_mode, sizeof(enable_dark_mode));
+
+    // Improve title bar contrast across themes. On some setups, the caption
+    // buttons/text can end up with low contrast against the background.
+    // These attributes are best-effort and will be ignored on unsupported OSes.
+    COLORREF caption_color = enable_dark_mode ? RGB(0x23, 0x24, 0x27)
+                                             : RGB(0xFF, 0xFF, 0xFF);
+    COLORREF text_color = enable_dark_mode ? RGB(0xA9, 0xB7, 0xC6)
+                                          : RGB(0x09, 0x09, 0x0B);
+    DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR, &caption_color,
+                          sizeof(caption_color));
+    DwmSetWindowAttribute(window, DWMWA_TEXT_COLOR, &text_color,
+                          sizeof(text_color));
   }
 }

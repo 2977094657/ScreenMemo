@@ -68,8 +68,9 @@ Future<void> _exportZipIsolateEntry(Map<String, dynamic> args) async {
       followLinks: false,
     )) {
       if (entity is! File) continue;
-      final String relPath =
-          entity.path.substring(dir.path.length + 1).replaceAll('\\', '/');
+      final String relPath = entity.path
+          .substring(dir.path.length + 1)
+          .replaceAll('\\', '/');
       final String relLower = relPath.toLowerCase();
       if (ignored(relLower)) continue;
       files.add(relPath);
@@ -115,15 +116,9 @@ Future<void> _exportZipIsolateEntry(Map<String, dynamic> args) async {
     }
     encoder.close();
 
-    sendPort.send(<String, Object?>{
-      'type': 'done',
-      'zippedPath': tmpZipPath,
-    });
+    sendPort.send(<String, Object?>{'type': 'done', 'zippedPath': tmpZipPath});
   } catch (e) {
-    sendPort.send(<String, Object?>{
-      'type': 'error',
-      'error': e.toString(),
-    });
+    sendPort.send(<String, Object?>{'type': 'error', 'error': e.toString()});
   }
 }
 
@@ -144,15 +139,13 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
     final Archive archive = ZipDecoder().decodeBuffer(input);
 
     // 只统计文件项数量用于进度
-    final List<ArchiveFile> files =
-        archive.files.where((ArchiveFile f) => f.isFile).toList();
+    final List<ArchiveFile> files = archive.files
+        .where((ArchiveFile f) => f.isFile)
+        .toList();
     final int total = files.length;
     if (total == 0) {
       input.close();
-      sendPort.send(<String, Object?>{
-        'type': 'done',
-        'extracted': 0,
-      });
+      sendPort.send(<String, Object?>{'type': 'done', 'extracted': 0});
       return;
     }
 
@@ -163,6 +156,11 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
       'stage': 'extracting',
       'entry': null,
     });
+
+    const int kProgressEveryFiles = 50;
+    const int kProgressEveryMs = 150;
+    final Stopwatch progressThrottle = Stopwatch()..start();
+    int lastProgressIndex = -1;
 
     for (int i = 0; i < files.length; i++) {
       final ArchiveFile f = files[i];
@@ -198,26 +196,29 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
         }
       }
 
-      final double progress = (i + 1) / total;
-      sendPort.send(<String, Object?>{
-        'type': 'progress',
-        'progress': progress.clamp(0.0, 1.0),
-        'stage': 'extracting',
-        'entry': rel,
-      });
+      final bool isLast = i == total - 1;
+      final bool shouldSend =
+          isLast ||
+          (i - lastProgressIndex) >= kProgressEveryFiles ||
+          progressThrottle.elapsedMilliseconds >= kProgressEveryMs;
+      if (shouldSend) {
+        final double progress = (i + 1) / total;
+        sendPort.send(<String, Object?>{
+          'type': 'progress',
+          'progress': progress.clamp(0.0, 1.0),
+          'stage': 'extracting',
+          'entry': rel,
+        });
+        lastProgressIndex = i;
+        progressThrottle.reset();
+      }
     }
 
     input.close();
 
-    sendPort.send(<String, Object?>{
-      'type': 'done',
-      'extracted': extracted,
-    });
+    sendPort.send(<String, Object?>{'type': 'done', 'extracted': extracted});
   } catch (e) {
-    sendPort.send(<String, Object?>{
-      'type': 'error',
-      'error': e.toString(),
-    });
+    sendPort.send(<String, Object?>{'type': 'error', 'error': e.toString()});
   }
 }
 
@@ -353,8 +354,7 @@ Future<Map<String, dynamic>?> _runImportZipWithProgress({
         if (!completer.isCompleted) {
           FlutterLogger.nativeError(
             'IMPORT',
-            'zip isolate error: ' +
-                (message['error'] as String? ?? 'unknown'),
+            'zip isolate error: ' + (message['error'] as String? ?? 'unknown'),
           );
           completer.completeError(
             Exception(message['error'] as String? ?? 'import failed'),
@@ -1560,15 +1560,18 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           final String table = _monthTableName(year, month);
           if (!await _tableExists(shardDb, table)) continue;
 
-          final List<String> paths =
-              monthEntry.value.toList(growable: false);
+          final List<String> paths = monthEntry.value.toList(growable: false);
           if (paths.isEmpty) continue;
 
           for (int i = 0; i < paths.length; i += chunkSize) {
-            final int end =
-                (i + chunkSize) > paths.length ? paths.length : (i + chunkSize);
+            final int end = (i + chunkSize) > paths.length
+                ? paths.length
+                : (i + chunkSize);
             final List<String> chunk = paths.sublist(i, end);
-            final String placeholders = List.filled(chunk.length, '?').join(',');
+            final String placeholders = List.filled(
+              chunk.length,
+              '?',
+            ).join(',');
 
             try {
               final List<Map<String, Object?>> rows = await shardDb.query(
@@ -1632,7 +1635,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       // 这种情况下，尝试从 segment_samples 中取该段的一张“代表截图”（优先 keyframe）。
       final int? segmentId = int.tryParse(base);
       if (segmentId != null && segmentId > 0) {
-        Future<String?> pickSegmentSamplePath({required bool keyframesOnly}) async {
+        Future<String?> pickSegmentSamplePath({
+          required bool keyframesOnly,
+        }) async {
           try {
             final String where = keyframesOnly
                 ? 'segment_id = ? AND is_keyframe = 1'
@@ -1659,11 +1664,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           }
         }
 
-        final String? keyframePath =
-            await pickSegmentSamplePath(keyframesOnly: true);
-        if (keyframePath != null && keyframePath.isNotEmpty) return keyframePath;
+        final String? keyframePath = await pickSegmentSamplePath(
+          keyframesOnly: true,
+        );
+        if (keyframePath != null && keyframePath.isNotEmpty)
+          return keyframePath;
 
-        final String? anyPath = await pickSegmentSamplePath(keyframesOnly: false);
+        final String? anyPath = await pickSegmentSamplePath(
+          keyframesOnly: false,
+        );
         if (anyPath != null && anyPath.isNotEmpty) return anyPath;
 
         // 兜底：若该段没有 segment_samples（例如仅有 AI 结果、样本表为空/被清理），
@@ -1758,7 +1767,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       .toSet()
       .toList();
 
-  Future<String?> _pickRepresentativeScreenshotPathForSegment(int segmentId) async {
+  Future<String?> _pickRepresentativeScreenshotPathForSegment(
+    int segmentId,
+  ) async {
     try {
       final master = await database;
       final segRows = await master.query(
@@ -1772,11 +1783,16 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       final int startMillis = (segRows.first['start_time'] as int?) ?? 0;
       final int endMillis0 = (segRows.first['end_time'] as int?) ?? 0;
       if (startMillis <= 0 || endMillis0 <= 0) return null;
-      final int endMillis = endMillis0 >= startMillis ? endMillis0 : startMillis;
+      final int endMillis = endMillis0 >= startMillis
+          ? endMillis0
+          : startMillis;
       final int midMillis = ((startMillis + endMillis) / 2).round();
 
-      final String pkgsRaw = (segRows.first['app_packages'] as String?)?.trim() ?? '';
-      final List<String> pkgs = pkgsRaw.isEmpty ? const <String>[] : _splitCsv(pkgsRaw);
+      final String pkgsRaw =
+          (segRows.first['app_packages'] as String?)?.trim() ?? '';
+      final List<String> pkgs = pkgsRaw.isEmpty
+          ? const <String>[]
+          : _splitCsv(pkgsRaw);
 
       final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMillis);
       final DateTime de = DateTime.fromMillisecondsSinceEpoch(endMillis);
@@ -3326,10 +3342,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (await tmpZip.exists()) await tmpZip.delete();
       } catch (_) {}
 
-      await FlutterLogger.nativeInfo(
-        'EXPORT',
-        '兜底 zip 路径=' + tmpZip.path,
-      );
+      await FlutterLogger.nativeInfo('EXPORT', '兜底 zip 路径=' + tmpZip.path);
       final String outputPath = outputDir.path;
       final String tmpZipPath = tmpZip.path;
       final String? zippedPath = await _runExportZipWithProgress(
@@ -3339,17 +3352,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       );
 
       if (zippedPath == null) return null;
-      await FlutterLogger.nativeInfo(
-        'EXPORT',
-        '兜底 zip 已就绪 路径=' + zippedPath,
-      );
+      await FlutterLogger.nativeInfo('EXPORT', '兜底 zip 已就绪 路径=' + zippedPath);
 
       final dynamic result = await ScreenshotDatabase._channel
           .invokeMethod('exportFileToDownloads', <String, Object?>{
-        'sourcePath': zippedPath,
-        'displayName': 'output_export.zip',
-        'subDir': 'ScreenMemory',
-      });
+            'sourcePath': zippedPath,
+            'displayName': 'output_export.zip',
+            'subDir': 'ScreenMemory',
+          });
 
       try {
         await tmpZip.delete();
@@ -3423,10 +3433,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             }
           } catch (_) {}
           // 原生导入成功后返回与流式导入相似的结果结构
-          return <String, dynamic>{
-            'extracted': null,
-            'targetDir': outDir,
-          };
+          return <String, dynamic>{'extracted': null, 'targetDir': outDir};
         }
       } catch (_) {
         // 失败时回退到 Dart 实现
@@ -3592,10 +3599,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     try {
       final bool? ok = await channel.invokeMethod<bool>(
         'importZipToOutput',
-        <String, dynamic>{
-          'zipPath': zipPath,
-          'overwrite': overwrite,
-        },
+        <String, dynamic>{'zipPath': zipPath, 'overwrite': overwrite},
       );
       // 导入后重置数据库连接池，以便后续按新文件重新打开
       try {
@@ -3665,10 +3669,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         if (!shouldDelete) continue;
         try {
           await entity.delete(recursive: true);
-          await FlutterLogger.nativeInfo(
-            'IMPORT',
-            '已清理缓存目录：' + entity.path,
-          );
+          await FlutterLogger.nativeInfo('IMPORT', '已清理缓存目录：' + entity.path);
         } catch (e) {
           await FlutterLogger.nativeWarn(
             'IMPORT',
@@ -3678,10 +3679,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
     } catch (e) {
       try {
-        await FlutterLogger.nativeWarn(
-          'IMPORT',
-          '列举缓存目录失败：' + e.toString(),
-        );
+        await FlutterLogger.nativeWarn('IMPORT', '列举缓存目录失败：' + e.toString());
       } catch (_) {}
     }
   }
