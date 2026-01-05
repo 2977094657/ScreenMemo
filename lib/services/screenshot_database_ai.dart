@@ -1271,9 +1271,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         bool containsExactNsfw(dynamic tags) {
           if (tags == null) return false;
           if (tags is List) {
-            return tags.any(
-              (t) => t.toString().trim().toLowerCase() == 'nsfw',
-            );
+            return tags.any((t) => t.toString().trim().toLowerCase() == 'nsfw');
           }
           if (tags is String) {
             final String tt = tags.trim();
@@ -1324,7 +1322,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           : (i + chunkSize);
       final List<String> chunk = paths.sublist(i, end);
       final String placeholders = List.filled(chunk.length, '?').join(',');
-      final String sql = '''
+      final String sql =
+          '''
         SELECT file_path, segment_id
         FROM segment_samples
         WHERE file_path IN ($placeholders)
@@ -1341,7 +1340,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     if (filePathsBySegment.isEmpty) return <String>{};
 
     // 2) 批量取 segment_results.structured_json，并解析 image_tags[] 里的 nsfw 文件名
-    final List<int> segmentIds = filePathsBySegment.keys.toList(growable: false);
+    final List<int> segmentIds = filePathsBySegment.keys.toList(
+      growable: false,
+    );
     final Map<int, Set<String>> nsfwBasenamesBySegment = <int, Set<String>>{};
 
     for (int i = 0; i < segmentIds.length; i += chunkSize) {
@@ -1350,7 +1351,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           : (i + chunkSize);
       final List<int> chunk = segmentIds.sublist(i, end);
       final String placeholders = List.filled(chunk.length, '?').join(',');
-      final String sql = '''
+      final String sql =
+          '''
         SELECT segment_id, structured_json
         FROM segment_results
         WHERE segment_id IN ($placeholders)
@@ -1654,17 +1656,20 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       }
 
       Future<List<Map<String, dynamic>>> runLike() async {
-        final String likeTerm = '%$q%';
+        final parts = q
+            .split(RegExp(r'\s+'))
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
         final List<Object?> args = <Object?>[
-          likeTerm,
-          likeTerm,
-          likeTerm,
+          for (final w in limited) ...<Object?>['%$w%', '%$w%', '%$w%'],
           ...baseArgs,
           fetchLimit,
           fetchOffset,
         ];
         final List<String> filters = <String>[
-          '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
+          for (int i = 0; i < limited.length; i++)
+            '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
           ...baseFilters,
         ];
         final String sql =
@@ -1788,10 +1793,18 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       }
 
       Future<int> runLikeCount() async {
-        final String likeTerm = '%$q%';
-        final List<Object?> args = <Object?>[likeTerm, likeTerm, likeTerm, ...baseArgs];
+        final parts = q
+            .split(RegExp(r'\s+'))
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
+        final List<Object?> args = <Object?>[
+          for (final w in limited) ...<Object?>['%$w%', '%$w%', '%$w%'],
+          ...baseArgs,
+        ];
         final List<String> filters = <String>[
-          '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
+          for (int i = 0; i < limited.length; i++)
+            '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
           ...baseFilters,
         ];
         final String sql =
@@ -1883,7 +1896,10 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
                 ? paths.length
                 : (i + chunkSize);
             final List<String> chunk = paths.sublist(i, end);
-            final String placeholders = List.filled(chunk.length, '?').join(',');
+            final String placeholders = List.filled(
+              chunk.length,
+              '?',
+            ).join(',');
             try {
               await txn.delete(
                 'ai_image_meta',
