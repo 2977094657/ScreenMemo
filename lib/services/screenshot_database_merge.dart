@@ -477,80 +477,163 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       return;
     }
 
+    progress?.call(
+      const ImportExportProgress(
+        value: 0.6,
+        stage: 'merge_shard_databases',
+        currentEntry: null,
+      ),
+    );
+
     final File importedMaster = File(
       join(stagingDbDir.path, 'screenshot_memo.db'),
     );
     if (!await importedMaster.exists()) {
-      ctx.warnings.add('Imported screenshot_memo.db not found, skip DB merge.');
-      return;
+      ctx.warnings.add(
+        'Imported screenshot_memo.db not found, try infer shards from copied screen files.',
+      );
     }
+
+    List<Map<String, Object?>> shards = <Map<String, Object?>>[];
+    final Map<String, String> appNames = <String, String>{};
+    final int? currentUserVersion = await _tryReadUserVersion(await database);
+    int? importedUserVersion;
 
     Database? importedDb;
     try {
-      importedDb = await openDatabase(importedMaster.path, readOnly: true);
-      final List<Map<String, Object?>> apps = await importedDb.query(
-        'app_registry',
-        columns: ['app_package_name', 'app_name'],
-      );
-      final Map<String, String> appNames = <String, String>{};
-      for (final Map<String, Object?> row in apps) {
-        final String? pkg = row['app_package_name'] as String?;
-        if (pkg == null) continue;
-        final String? name = row['app_name'] as String?;
-        appNames[pkg] = name ?? pkg;
-      }
-
-      final List<Map<String, Object?>> shards = await importedDb.query(
-        'shard_registry',
-        columns: ['app_package_name', 'year'],
-      );
-
-      int processed = 0;
-      final int total = shards.length;
-
-      for (final Map<String, Object?> row in shards) {
-        final String? pkg = row['app_package_name'] as String?;
-        final int? year = row['year'] as int?;
-        if (pkg == null || year == null) continue;
-        processed++;
-
-        ctx.affectedPackages.add(pkg);
-        final String sanitized = _sanitizePackageName(pkg);
-        final String shardPath = join(
-          stagingDbDir.path,
-          'shards',
-          sanitized,
-          '$year',
-          'smm_${sanitized}_${year}.db',
-        );
-
-        final File shardFile = File(shardPath);
-        if (!await shardFile.exists()) {
-          ctx.warnings.add('Shard file missing for $pkg - $year: $shardPath');
-          continue;
+      if (await importedMaster.exists()) {
+        importedDb = await openDatabase(importedMaster.path, readOnly: true);
+        importedUserVersion = await _tryReadUserVersion(importedDb);
+        if (importedUserVersion != null && currentUserVersion != null) {
+          if (importedUserVersion > currentUserVersion) {
+            ctx.warnings.add(
+              'Imported screenshot_memo.db user_version=$importedUserVersion is newer than current=$currentUserVersion; consider updating the app before merging.',
+            );
+          } else if (importedUserVersion < currentUserVersion) {
+            ctx.warnings.add(
+              'Imported screenshot_memo.db user_version=$importedUserVersion (current=$currentUserVersion).',
+            );
+          }
         }
 
-        await _mergeSingleShard(
-          packageName: pkg,
-          appName: appNames[pkg] ?? pkg,
-          year: year,
-          shardFile: shardFile,
-          ctx: ctx,
-        );
-
-        if (progress != null && total > 0) {
-          progress(
-            ImportExportProgress(
-              value: 0.6 + (processed / total) * 0.25,
-              stage: 'merge_shard_databases',
-              currentEntry: '$pkg/$year',
-            ),
+        try {
+          final List<Map<String, Object?>> apps = await importedDb.query(
+            'app_registry',
+            columns: ['app_package_name', 'app_name'],
+          );
+          for (final Map<String, Object?> row in apps) {
+            final String? pkg = row['app_package_name'] as String?;
+            if (pkg == null) continue;
+            final String? name = row['app_name'] as String?;
+            appNames[pkg] = name ?? pkg;
+          }
+        } catch (e) {
+          ctx.warnings.add(
+            'Failed to read imported app_registry (will fall back to package name): $e',
           );
         }
+
+        try {
+          shards = await importedDb.query(
+            'shard_registry',
+            columns: ['app_package_name', 'year'],
+          );
+        } catch (e) {
+          ctx.warnings.add(
+            'Failed to read imported shard_registry: $e',
+          );
+          shards = <Map<String, Object?>>[];
+        }
       }
+    } catch (e) {
+      ctx.warnings.add(
+        'Failed to open/read imported screenshot_memo.db (${importedMaster.path}): $e',
+      );
     } finally {
       await importedDb?.close();
     }
+
+    if (shards.isEmpty) {
+      shards = _inferShardRegistryRowsFromCopiedScreens(ctx);
+      if (shards.isNotEmpty) {
+        ctx.warnings.add(
+          'Using inferred shard list from copied screen files (imported screenshot_memo.db unavailable).',
+        );
+      }
+    }
+
+    if (shards.isEmpty) {
+      ctx.warnings.add('No shard registry available; skip shard DB merge.');
+      return;
+    }
+
+    int processed = 0;
+    final int total = shards.length;
+
+    for (final Map<String, Object?> row in shards) {
+      final String? pkg = row['app_package_name'] as String?;
+      final int? year = row['year'] as int?;
+      if (pkg == null || year == null) continue;
+      processed++;
+
+      ctx.affectedPackages.add(pkg);
+      final String sanitized = _sanitizePackageName(pkg);
+      final String shardPath = join(
+        stagingDbDir.path,
+        'shards',
+        sanitized,
+        '$year',
+        'smm_${sanitized}_${year}.db',
+      );
+
+      final File shardFile = File(shardPath);
+      if (!await shardFile.exists()) {
+        ctx.warnings.add('Shard file missing for $pkg - $year: $shardPath');
+        continue;
+      }
+
+      await _mergeSingleShard(
+        packageName: pkg,
+        appName: appNames[pkg] ?? pkg,
+        year: year,
+        shardFile: shardFile,
+        ctx: ctx,
+      );
+
+      if (progress != null && total > 0) {
+        progress(
+          ImportExportProgress(
+            value: 0.6 + (processed / total) * 0.25,
+            stage: 'merge_shard_databases',
+            currentEntry: '$pkg/$year',
+          ),
+        );
+      }
+    }
+  }
+
+  List<Map<String, Object?>> _inferShardRegistryRowsFromCopiedScreens(
+    _MergeContext ctx,
+  ) {
+    final Set<String> seen = <String>{};
+    final List<Map<String, Object?>> result = <Map<String, Object?>>[];
+    for (final String rel in ctx.relativePathMapping.keys) {
+      final List<String> parts = rel.split('/');
+      if (parts.length < 3) continue;
+      if (parts.first != 'screen') continue;
+      final String pkg = parts[1];
+      final String ym = parts[2];
+      if (pkg.isEmpty || ym.length < 4) continue;
+      final int? year = int.tryParse(ym.substring(0, 4));
+      if (year == null) continue;
+      final String key = '$pkg|$year';
+      if (!seen.add(key)) continue;
+      result.add(<String, Object?>{
+        'app_package_name': pkg,
+        'year': year,
+      });
+    }
+    return result;
   }
 
   Future<void> _mergeMemoryDatabase({
@@ -621,23 +704,52 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     try {
       importDb = await openDatabase(importedMemory.path, readOnly: true);
       targetDb = await openDatabase(targetMemory.path);
+      final Database importDb0 = importDb;
+      final Database targetDb0 = targetDb;
 
-      await targetDb.transaction((txn) async {
+      await targetDb0.transaction((txn) async {
+        final bool hasEventsTable = await _tableExists(txn, 'memory_events');
+        final bool hasTagsTable = await _tableExists(txn, 'memory_tags');
+        if (!hasEventsTable || !hasTagsTable) {
+          ctx.warnings.add('记忆数据库缺少必要表，跳过合并');
+          return;
+        }
+
+        final Set<String> eventCols = await _tryListTableColumns(
+          txn,
+          'memory_events',
+        );
+        final Set<String> tagCols = await _tryListTableColumns(txn, 'memory_tags');
+        final bool hasMetadataTable = await _tableExists(txn, 'memory_metadata');
+        final Set<String> metaCols = hasMetadataTable
+            ? await _tryListTableColumns(txn, 'memory_metadata')
+            : <String>{};
+        final bool hasEvidenceTable =
+            await _tableExists(txn, 'memory_tag_evidence');
+        final Set<String> evidenceCols = hasEvidenceTable
+            ? await _tryListTableColumns(txn, 'memory_tag_evidence')
+            : <String>{};
+
         final Map<int, int> eventIdMap = <int, int>{};
         final Map<String, int> externalEventMap = <String, int>{};
         final Map<String, int> compositeEventMap = <String, int>{};
 
-        final List<Map<String, Object?>> existingEvents = await txn.query(
-          'memory_events',
-          columns: [
-            'id',
-            'external_id',
-            'occurred_at',
-            'source',
-            'type',
-            'content',
-          ],
-        );
+        List<Map<String, Object?>> existingEvents;
+        try {
+          existingEvents = await txn.query(
+            'memory_events',
+            columns: [
+              'id',
+              'external_id',
+              'occurred_at',
+              'source',
+              'type',
+              'content',
+            ],
+          );
+        } catch (_) {
+          existingEvents = await txn.query('memory_events');
+        }
         int existingEventIndex = 0;
         for (final Map<String, Object?> row in existingEvents) {
           existingEventIndex++;
@@ -652,7 +764,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
         }
 
-        final List<Map<String, Object?>> importEvents = await importDb!.query(
+        final List<Map<String, Object?>> importEvents = await importDb0.query(
           'memory_events',
           orderBy: 'id ASC',
         );
@@ -677,8 +789,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             continue;
           }
 
-          final Map<String, Object?> insertRow = Map<String, Object?>.from(row);
-          insertRow.remove('id');
+          final Map<String, Object?> insertRow =
+              _filterByColumns(row, eventCols)..remove('id');
           final int newId = await txn.insert('memory_events', insertRow);
           if (newId > 0) {
             eventIdMap[oldId] = newId;
@@ -728,7 +840,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
         }
 
-        final List<Map<String, Object?>> importTags = await importDb.query(
+        final List<Map<String, Object?>> importTags = await importDb0.query(
           'memory_tags',
           orderBy: 'id ASC',
         );
@@ -747,9 +859,11 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             final Map<String, Object?> updateRow = Map<String, Object?>.from(
               merged,
             )..remove('id');
+            final Map<String, Object?> filteredUpdateRow =
+                _filterByColumns(updateRow, tagCols);
             await txn.update(
               'memory_tags',
-              updateRow,
+              filteredUpdateRow,
               where: 'id = ?',
               whereArgs: [existingId],
             );
@@ -759,8 +873,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             continue;
           }
 
-          final Map<String, Object?> insertRow = Map<String, Object?>.from(row)
-            ..remove('id');
+          final Map<String, Object?> insertRow =
+              _filterByColumns(row, tagCols)..remove('id');
           final int newTagId = await txn.insert('memory_tags', insertRow);
           if (newTagId > 0) {
             tagIdMap[oldId] = newTagId;
@@ -771,57 +885,72 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
         }
 
-        final List<Map<String, Object?>> importMetadata = await importDb.query(
-          'memory_metadata',
-        );
-        for (final Map<String, Object?> row in importMetadata) {
-          final String? key = row['key'] as String?;
-          if (key == null) continue;
-          final List<Map<String, Object?>> existing = await txn.query(
+        if (hasMetadataTable &&
+            await _tableExists(importDb0, 'memory_metadata')) {
+          final List<Map<String, Object?>> importMetadata =
+              await importDb0.query(
             'memory_metadata',
-            where: '`key` = ?',
-            whereArgs: [key],
-            limit: 1,
           );
-          if (existing.isEmpty) {
-            await txn.insert('memory_metadata', row);
-          } else {
-            final String? currentValue = existing.first['value'] as String?;
-            final String? incomingValue = row['value'] as String?;
-            if ((currentValue == null || currentValue.isEmpty) &&
-                (incomingValue != null && incomingValue.isNotEmpty)) {
-              await txn.update(
-                'memory_metadata',
-                {'value': incomingValue},
-                where: '`key` = ?',
-                whereArgs: [key],
+          for (final Map<String, Object?> row in importMetadata) {
+            final String? key = row['key'] as String?;
+            if (key == null) continue;
+            final List<Map<String, Object?>> existing = await txn.query(
+              'memory_metadata',
+              where: '`key` = ?',
+              whereArgs: [key],
+              limit: 1,
+            );
+            if (existing.isEmpty) {
+              final Map<String, Object?> insertRow = _filterByColumns(
+                row,
+                metaCols,
               );
+              await txn.insert('memory_metadata', insertRow);
+            } else {
+              final String? currentValue = existing.first['value'] as String?;
+              final String? incomingValue = row['value'] as String?;
+              if ((currentValue == null || currentValue.isEmpty) &&
+                  (incomingValue != null && incomingValue.isNotEmpty)) {
+                await txn.update(
+                  'memory_metadata',
+                  {'value': incomingValue},
+                  where: '`key` = ?',
+                  whereArgs: [key],
+                );
+              }
             }
           }
         }
 
-        final List<Map<String, Object?>> importEvidence = await importDb.query(
-          'memory_tag_evidence',
-          orderBy: 'id ASC',
-        );
-        for (final Map<String, Object?> row in importEvidence) {
-          final int oldTagId = (row['tag_id'] as int?) ?? -1;
-          final int oldEventId = (row['event_id'] as int?) ?? -1;
-          final int? newTagId = tagIdMap[oldTagId];
-          final int? newEventId = eventIdMap[oldEventId];
-          if (newTagId == null || newEventId == null) continue;
-
-          final Map<String, Object?> insertRow = Map<String, Object?>.from(row);
-          insertRow.remove('id');
-          insertRow['tag_id'] = newTagId;
-          insertRow['event_id'] = newEventId;
-          final int insertedId = await txn.insert(
+        if (hasEvidenceTable &&
+            await _tableExists(importDb0, 'memory_tag_evidence')) {
+          final List<Map<String, Object?>> importEvidence = await importDb0.query(
             'memory_tag_evidence',
-            insertRow,
-            conflictAlgorithm: ConflictAlgorithm.ignore,
+            orderBy: 'id ASC',
           );
-          if (insertedId > 0) {
-            ctx.mergedMemoryEvidence++;
+          for (final Map<String, Object?> row in importEvidence) {
+            final int oldTagId = (row['tag_id'] as int?) ?? -1;
+            final int oldEventId = (row['event_id'] as int?) ?? -1;
+            final int? newTagId = tagIdMap[oldTagId];
+            final int? newEventId = eventIdMap[oldEventId];
+            if (newTagId == null || newEventId == null) continue;
+
+            final Map<String, Object?> insertRow =
+                _filterByColumns(row, evidenceCols)..remove('id');
+            if (evidenceCols.isEmpty || evidenceCols.contains('tag_id')) {
+              insertRow['tag_id'] = newTagId;
+            }
+            if (evidenceCols.isEmpty || evidenceCols.contains('event_id')) {
+              insertRow['event_id'] = newEventId;
+            }
+            final int insertedId = await txn.insert(
+              'memory_tag_evidence',
+              insertRow,
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+            if (insertedId > 0) {
+              ctx.mergedMemoryEvidence++;
+            }
           }
         }
       });
@@ -862,6 +991,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'shots_%'",
       );
 
+      final Map<String, Set<String>> targetColumnsCache =
+          <String, Set<String>>{};
+
       for (final Map<String, Object?> tableRow in tables) {
         final String? tableName = tableRow['name'] as String?;
         if (tableName == null || tableName.length < 11) continue;
@@ -870,6 +1002,10 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         if (month == null || month < 1 || month > 12) continue;
 
         await _ensureMonthTable(targetShard, year, month);
+
+        final Set<String> targetColumns =
+            targetColumnsCache[tableName] ??=
+                await _tryListTableColumns(targetShard, tableName);
 
         final List<Map<String, Object?>> existingRows = await targetShard.query(
           tableName,
@@ -934,13 +1070,22 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
 
           maxId++;
-          final Map<String, Object?> insertRow = Map<String, Object?>.from(row);
-          insertRow['id'] = maxId;
-          insertRow['file_path'] = newAbsolute;
+          final Map<String, Object?> insertRow = _filterByColumns(
+            row,
+            targetColumns,
+          );
+          if (targetColumns.contains('id')) {
+            insertRow['id'] = maxId;
+          }
+          if (targetColumns.contains('file_path')) {
+            insertRow['file_path'] = newAbsolute;
+          }
           try {
             final File f = File(newAbsolute);
             if (await f.exists()) {
-              insertRow['file_size'] = await f.length();
+              if (targetColumns.contains('file_size')) {
+                insertRow['file_size'] = await f.length();
+              }
             }
           } catch (_) {}
 
@@ -1071,16 +1216,26 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (!await _tableExists(txn, 'favorites')) {
       return;
     }
+    final Set<String> importCols = await _tryListTableColumns(
+      importedDb,
+      'favorites',
+    );
+    final Set<String> targetCols = await _tryListTableColumns(txn, 'favorites');
+    if (!importCols.contains('screenshot_id') ||
+        !importCols.contains('app_package_name')) {
+      return;
+    }
+    final List<String> selectCols = <String>[
+      'screenshot_id',
+      'app_package_name',
+      if (importCols.contains('favorite_time')) 'favorite_time',
+      if (importCols.contains('note')) 'note',
+      if (importCols.contains('created_at')) 'created_at',
+      if (importCols.contains('updated_at')) 'updated_at',
+    ];
     final List<Map<String, Object?>> rows = await importedDb.query(
       'favorites',
-      columns: [
-        'screenshot_id',
-        'app_package_name',
-        'favorite_time',
-        'note',
-        'created_at',
-        'updated_at',
-      ],
+      columns: selectCols,
     );
     for (final Map<String, Object?> row in rows) {
       final int? oldId = row['screenshot_id'] as int?;
@@ -1090,14 +1245,21 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       if (newId == null) continue;
 
       try {
-        await txn.insert('favorites', <String, Object?>{
-          'screenshot_id': newId,
-          'app_package_name': pkg,
-          'favorite_time': row['favorite_time'],
-          'note': row['note'],
-          'created_at': row['created_at'],
-          'updated_at': row['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        final Map<String, Object?> insertRow = <String, Object?>{
+          if (targetCols.contains('screenshot_id')) 'screenshot_id': newId,
+          if (targetCols.contains('app_package_name'))
+            'app_package_name': pkg,
+          if (targetCols.contains('favorite_time'))
+            'favorite_time': row['favorite_time'],
+          if (targetCols.contains('note')) 'note': row['note'],
+          if (targetCols.contains('created_at')) 'created_at': row['created_at'],
+          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+        };
+        await txn.insert(
+          'favorites',
+          insertRow,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
       } catch (e) {
         ctx.warnings.add('Insert favorite failed for $pkg/$newId: $e');
       }
@@ -1127,15 +1289,26 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (!await _tableExists(txn, 'nsfw_manual_flags')) {
       return;
     }
+    final Set<String> importCols = await _tryListTableColumns(
+      importedDb,
+      'nsfw_manual_flags',
+    );
+    final Set<String> targetCols =
+        await _tryListTableColumns(txn, 'nsfw_manual_flags');
+    if (!importCols.contains('screenshot_id') ||
+        !importCols.contains('app_package_name')) {
+      return;
+    }
+    final List<String> selectCols = <String>[
+      'screenshot_id',
+      'app_package_name',
+      if (importCols.contains('flag')) 'flag',
+      if (importCols.contains('created_at')) 'created_at',
+      if (importCols.contains('updated_at')) 'updated_at',
+    ];
     final List<Map<String, Object?>> rows = await importedDb.query(
       'nsfw_manual_flags',
-      columns: [
-        'screenshot_id',
-        'app_package_name',
-        'flag',
-        'created_at',
-        'updated_at',
-      ],
+      columns: selectCols,
     );
     for (final Map<String, Object?> row in rows) {
       final int? oldId = row['screenshot_id'] as int?;
@@ -1144,13 +1317,19 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       final int? newId = ctx.gidMapping[oldId];
       if (newId == null) continue;
       try {
-        await txn.insert('nsfw_manual_flags', <String, Object?>{
-          'screenshot_id': newId,
-          'app_package_name': pkg,
-          'flag': row['flag'],
-          'created_at': row['created_at'],
-          'updated_at': row['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        final Map<String, Object?> insertRow = <String, Object?>{
+          if (targetCols.contains('screenshot_id')) 'screenshot_id': newId,
+          if (targetCols.contains('app_package_name'))
+            'app_package_name': pkg,
+          if (targetCols.contains('flag')) 'flag': row['flag'],
+          if (targetCols.contains('created_at')) 'created_at': row['created_at'],
+          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+        };
+        await txn.insert(
+          'nsfw_manual_flags',
+          insertRow,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
       } catch (e) {
         ctx.warnings.add('Insert NSFW flag failed for $pkg/$newId: $e');
       }
@@ -1164,9 +1343,23 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (!await _tableExists(txn, 'user_settings')) {
       return;
     }
+    final Set<String> importCols = await _tryListTableColumns(
+      importedDb,
+      'user_settings',
+    );
+    final Set<String> targetCols =
+        await _tryListTableColumns(txn, 'user_settings');
+    if (!importCols.contains('key')) {
+      return;
+    }
+    final List<String> selectCols = <String>[
+      'key',
+      if (importCols.contains('value')) 'value',
+      if (importCols.contains('updated_at')) 'updated_at',
+    ];
     final List<Map<String, Object?>> rows = await importedDb.query(
       'user_settings',
-      columns: ['key', 'value', 'updated_at'],
+      columns: selectCols,
     );
 
     final List<Map<String, Object?>> existing = await txn.query(
@@ -1182,13 +1375,68 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       final String? key = row['key'] as String?;
       if (key == null || existingKeys.contains(key)) continue;
       try {
-        await txn.insert('user_settings', <String, Object?>{
-          'key': key,
-          'value': row['value'],
-          'updated_at': row['updated_at'],
-        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        final Map<String, Object?> insertRow = <String, Object?>{
+          if (targetCols.contains('key')) 'key': key,
+          if (targetCols.contains('value')) 'value': row['value'],
+          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+        };
+        await txn.insert(
+          'user_settings',
+          insertRow,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
       } catch (_) {}
     }
+  }
+
+  Future<int?> _tryReadUserVersion(DatabaseExecutor db) async {
+    try {
+      final List<Map<String, Object?>> rows =
+          await db.rawQuery('PRAGMA user_version');
+      if (rows.isEmpty) return null;
+      final Object? v = rows.first['user_version'];
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Set<String>> _tryListTableColumns(
+    DatabaseExecutor db,
+    String tableName,
+  ) async {
+    try {
+      final String safe = tableName.replaceAll("'", "''");
+      final List<Map<String, Object?>> rows =
+          await db.rawQuery("PRAGMA table_info('$safe')");
+      final Set<String> cols = <String>{};
+      for (final Map<String, Object?> row in rows) {
+        final String? name = row['name'] as String?;
+        if (name == null || name.isEmpty) continue;
+        cols.add(name);
+      }
+      return cols;
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Map<String, Object?> _filterByColumns(
+    Map<String, Object?> row,
+    Set<String> allowed,
+  ) {
+    if (allowed.isEmpty) {
+      return Map<String, Object?>.from(row);
+    }
+    final Map<String, Object?> result = <String, Object?>{};
+    for (final MapEntry<String, Object?> entry in row.entries) {
+      if (!allowed.contains(entry.key)) continue;
+      result[entry.key] = entry.value;
+    }
+    return result;
   }
 
   Future<void> _finalizeMerge(_MergeContext ctx) async {
