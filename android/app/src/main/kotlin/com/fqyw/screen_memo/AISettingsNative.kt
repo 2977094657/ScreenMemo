@@ -17,7 +17,9 @@ object AISettingsNative {
     data class AIConfig(
         val baseUrl: String,
         val apiKey: String,
-        val model: String
+        val model: String,
+        val providerType: String? = null,
+        val chatPath: String? = null
     )
 
     private fun resolveMasterDbPath(context: Context): String? {
@@ -48,22 +50,28 @@ object AISettingsNative {
         } catch (_: Exception) { null }
     }
 
-    fun readConfig(context: Context): AIConfig {
+    fun readConfig(context: Context): AIConfig = readConfig(context, "segments")
+
+    /**
+     * 读取指定 AI 上下文的配置。
+     * - aiContext: 'segments' | 'weekly' | 'memory' | ...（对应 Flutter 侧 ai_contexts.context）
+     */
+    fun readConfig(context: Context, aiContext: String): AIConfig {
         var db: SQLiteDatabase? = null
         return try {
             db = openMasterDb(context)
             if (db == null) throw IllegalStateException("AI settings database unavailable")
 
-            // 0) v6+ 新架构：优先使用 ai_contexts('segments') + ai_providers
+            // 0) v6+ 新架构：优先使用 ai_contexts(aiContext) + ai_providers
             // - provider 与 model 从 ai_contexts 读取
-            // - base_url 从 ai_providers 读取；若为空回退默认
-            // - api_key 优先读取 ai_settings.api_key_segments；再回退 ai_settings.api_key（兼容旧版）
+            // - base_url/chat_path/type/api_key 从 ai_providers 读取；必要时回退默认/旧版键
+            // - api_key 优先 ai_providers.api_key；再回退 ai_settings.api_key_{aiContext}；再回退 ai_settings.api_key（兼容旧版）
             try {
                 val ctxCursor = db!!.query(
                     "ai_contexts",
                     arrayOf("provider_id", "model"),
                     "context = ?",
-                    arrayOf("segments"),
+                    arrayOf(aiContext),
                     null, null, null, "1"
                 )
                 ctxCursor.use { cc ->
@@ -74,10 +82,13 @@ object AISettingsNative {
                         val model = if (modelIdx >= 0) (cc.getString(modelIdx)?.trim() ?: "") else ""
 
                         var baseUrl: String? = null
+                        var providerApiKey: String? = null
+                        var providerType: String? = null
+                        var chatPath: String? = null
                         try {
                             val prov = db!!.query(
                                 "ai_providers",
-                                arrayOf("base_url"),
+                                arrayOf("base_url", "api_key", "type", "chat_path"),
                                 "id = ?",
                                 arrayOf(providerId.toString()),
                                 null, null, null, "1"
@@ -86,17 +97,41 @@ object AISettingsNative {
                                 if (cp.moveToFirst()) {
                                     val bIdx = cp.getColumnIndex("base_url")
                                     baseUrl = if (bIdx >= 0) cp.getString(bIdx)?.trim() else null
+                                    val kIdx = cp.getColumnIndex("api_key")
+                                    providerApiKey = if (kIdx >= 0) cp.getString(kIdx)?.trim() else null
+                                    val tIdx = cp.getColumnIndex("type")
+                                    providerType = if (tIdx >= 0) cp.getString(tIdx)?.trim() else null
+                                    val pIdx = cp.getColumnIndex("chat_path")
+                                    chatPath = if (pIdx >= 0) cp.getString(pIdx)?.trim() else null
                                 }
                             }
                         } catch (_: Exception) { }
 
-                        val keySeg = readSetting(db!!, "api_key_segments")?.trim()
+                        val keyCtx = readSetting(db!!, "api_key_$aiContext")?.trim()
                         val keyLegacy = readSetting(db!!, "api_key")?.trim()
-                        val apiKey = if (!keySeg.isNullOrEmpty()) keySeg else keyLegacy
-                        val effectiveBase = if (baseUrl.isNullOrEmpty()) "https://api.openai.com" else baseUrl!!
+                        val apiKey = when {
+                            !providerApiKey.isNullOrEmpty() -> providerApiKey
+                            !keyCtx.isNullOrEmpty() -> keyCtx
+                            else -> keyLegacy
+                        }
+                        val typeLower = (providerType ?: "").trim().lowercase()
+                        val effectiveBase = when {
+                            !baseUrl.isNullOrEmpty() -> baseUrl!!
+                            typeLower == "gemini" -> "https://generativelanguage.googleapis.com"
+                            typeLower == "claude" -> "https://api.anthropic.com"
+                            typeLower == "azure_openai" -> throw IllegalStateException("AI base_url missing for Azure OpenAI")
+                            else -> "https://api.openai.com"
+                        }
+                        val effectiveChatPath = chatPath?.trim()?.takeIf { it.isNotEmpty() }
 
                         if (!apiKey.isNullOrEmpty() && model.isNotEmpty()) {
-                            return AIConfig(baseUrl = effectiveBase, apiKey = apiKey!!, model = model)
+                            return AIConfig(
+                                baseUrl = effectiveBase,
+                                apiKey = apiKey!!,
+                                model = model,
+                                providerType = providerType,
+                                chatPath = effectiveChatPath
+                            )
                         }
                     }
                 }
@@ -127,7 +162,11 @@ object AISettingsNative {
                             val model   = if (modelIdx>= 0) c.getString(modelIdx)?.trim() else null
 
                             if (enabledOk && !baseUrl.isNullOrEmpty() && !apiKey.isNullOrEmpty() && !model.isNullOrEmpty()) {
-                                return AIConfig(baseUrl = baseUrl!!, apiKey = apiKey!!, model = model!!)
+                                return AIConfig(
+                                    baseUrl = baseUrl!!,
+                                    apiKey = apiKey!!,
+                                    model = model!!
+                                )
                             }
                         }
                     }
@@ -156,7 +195,11 @@ object AISettingsNative {
                         val apiKey  = if (keyIdx  >= 0) c.getString(keyIdx )?.trim() else null
                         val model   = if (modelIdx>= 0) c.getString(modelIdx)?.trim() else null
                         if (!baseUrl.isNullOrEmpty() && !apiKey.isNullOrEmpty() && !model.isNullOrEmpty()) {
-                            return AIConfig(baseUrl = baseUrl!!, apiKey = apiKey!!, model = model!!)
+                            return AIConfig(
+                                baseUrl = baseUrl!!,
+                                apiKey = apiKey!!,
+                                model = model!!
+                            )
                         }
                     }
                 }

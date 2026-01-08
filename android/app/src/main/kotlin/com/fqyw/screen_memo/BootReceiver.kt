@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.fqyw.screen_memo.memory.service.MemoryProcessingScheduler
+import com.fqyw.screen_memo.memory.service.MemoryProcessingReceiver
 
 class BootReceiver : BroadcastReceiver() {
     
@@ -67,6 +68,14 @@ class BootReceiver : BroadcastReceiver() {
                     FileLogger.d(TAG, "每日记忆解析调度已设置")
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "设置每日记忆解析调度失败", e)
+                }
+
+                // 兜底：开机/更新后检查一次周总结是否到期
+                try {
+                    MemoryProcessingReceiver.enqueueWeeklySummaryIfDue(context.applicationContext)
+                    FileLogger.d(TAG, "周总结检查已触发")
+                } catch (e: Exception) {
+                    FileLogger.e(TAG, "周总结检查触发失败", e)
                 }
             }
         }

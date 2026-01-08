@@ -17,6 +17,8 @@ import com.fqyw.screen_memo.AISettingsNative
 import com.fqyw.screen_memo.FileLogger
 import com.fqyw.screen_memo.OkHttpClientFactory
 import com.fqyw.screen_memo.OutputFileLogger
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -210,19 +212,27 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
     }
 
     private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
-        val cfg = AISettingsNative.readConfig(ctx)
+        val cfg = try {
+            AISettingsNative.readConfig(ctx, "weekly")
+        } catch (_: Exception) {
+            AISettingsNative.readConfig(ctx)
+        }
         val client = OkHttpClientFactory.newBuilder(ctx)
             .connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .writeTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
             .build()
-        val base = if (cfg.baseUrl.endsWith('/')) cfg.baseUrl.dropLast(1) else cfg.baseUrl
         val systemMsg = if (lang.startsWith("zh")) ZH_SYSTEM else EN_SYSTEM
-        val isGoogle = base.contains("googleapis.com") || base.contains("generativelanguage")
+
+        val baseUrl = resolveBaseUrl(cfg.baseUrl)
+        val host = try { baseUrl.host.lowercase() } catch (_: Exception) { "" }
+        val typeLower = (cfg.providerType ?: "").trim().lowercase()
+        val isGoogle = typeLower == "gemini" || host.contains("googleapis.com") || host.contains("generativelanguage")
+        val isAzure = typeLower == "azure_openai"
 
         return if (isGoogle) {
-            val url = "$base/v1beta/models/${cfg.model}:generateContent"
+            val url = resolveEndpointUrl(baseUrl, "/v1beta/models/${cfg.model}:generateContent").toString()
             val body = JSONObject().put(
                 "contents",
                 JSONArray().put(
@@ -237,7 +247,7 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
             val reqBody = body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val req = Request.Builder()
                 .url(url)
-                .addHeader("x-goog-api-key", cfg.apiKey ?: "")
+                .addHeader("x-goog-api-key", cfg.apiKey)
                 .post(reqBody)
                 .build()
             val resp = client.newCall(req).execute()
@@ -259,22 +269,29 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
             if (content.isBlank()) throw IllegalStateException("Empty content: $respText")
             Pair(cfg.model, content)
         } else {
-            val url = "$base/v1/chat/completions"
+            val chatPath = cfg.chatPath?.trim().takeIf { !it.isNullOrEmpty() } ?: "/v1/chat/completions"
+            val url = resolveEndpointUrl(baseUrl, chatPath).toString()
             val messages = JSONArray()
                 .put(JSONObject().put("role", "system").put("content", systemMsg))
                 .put(JSONObject().put("role", "user").put("content", prompt))
             val body = JSONObject()
-                .put("model", cfg.model)
                 .put("messages", messages)
                 .put("temperature", 0.2)
                 .put("stream", false)
+            if (!isAzure) {
+                body.put("model", cfg.model)
+            }
             val reqBody = body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val req = Request.Builder()
+            val reqBuilder = Request.Builder()
                 .url(url)
                 .post(reqBody)
-                .addHeader("Authorization", "Bearer ${cfg.apiKey}")
                 .addHeader("Content-Type", "application/json")
-                .build()
+            if (isAzure) {
+                reqBuilder.addHeader("api-key", cfg.apiKey)
+            } else {
+                reqBuilder.addHeader("Authorization", "Bearer ${cfg.apiKey}")
+            }
+            val req = reqBuilder.build()
             val resp = client.newCall(req).execute()
             val respText = resp.body?.string() ?: ""
             if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} $respText")
@@ -291,6 +308,23 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
             if (content.isBlank()) throw IllegalStateException("Empty content: $respText")
             Pair(cfg.model, content)
         }
+    }
+
+    private fun resolveBaseUrl(raw: String): HttpUrl {
+        val candidate = raw.trim()
+        candidate.toHttpUrlOrNull()?.let { return it }
+        val httpsCandidate = "https://$candidate"
+        httpsCandidate.toHttpUrlOrNull()?.let { return it }
+        throw IllegalStateException("Invalid base URL: $candidate")
+    }
+
+    private fun resolveEndpointUrl(base: HttpUrl, rawPath: String): HttpUrl {
+        val candidate = rawPath.trim()
+        if (candidate.startsWith("http", ignoreCase = true)) {
+            return candidate.toHttpUrlOrNull() ?: throw IllegalStateException("Invalid endpoint URL: $candidate")
+        }
+        val normalized = if (candidate.startsWith("/")) candidate else "/$candidate"
+        return base.resolve(normalized) ?: throw IllegalStateException("Invalid endpoint path: $candidate")
     }
 
     // ---------- Persistence ----------

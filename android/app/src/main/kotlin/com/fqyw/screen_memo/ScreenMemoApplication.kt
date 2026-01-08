@@ -4,6 +4,7 @@ import android.app.Application
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import com.fqyw.screen_memo.memory.service.MemoryProcessingScheduler
+import com.fqyw.screen_memo.memory.service.MemoryProcessingReceiver
 
 class ScreenMemoApplication : Application() {
     companion object {
@@ -41,6 +42,14 @@ class ScreenMemoApplication : Application() {
             FileLogger.i(TAG, "应用启动时已准备记忆处理调度")
         } catch (e: Exception) {
             FileLogger.w(TAG, "记忆处理调度失败：${e.message}")
+        }
+
+        // 兜底：启动时检查是否有“到期”的周总结（避免仅依赖午夜闹钟导致长时间不触发）
+        try {
+            MemoryProcessingReceiver.enqueueWeeklySummaryIfDue(this)
+            FileLogger.i(TAG, "应用启动时已触发周总结检查")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "周总结检查失败：${e.message}")
         }
     }
 }
