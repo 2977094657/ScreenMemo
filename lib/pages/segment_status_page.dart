@@ -2354,9 +2354,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Center(
-              child: Text(
+              child: _buildMarkdownBody(
+                context,
                 keyActionDetail,
-                style: DefaultTextStyle.of(
+                DefaultTextStyle.of(
                   context,
                 ).style.copyWith(color: actionColor),
               ),
