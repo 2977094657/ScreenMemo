@@ -26,6 +26,23 @@ class WeeklySummaryService {
   final AIChatService _chat = AIChatService.instance;
   final AISettingsService _settings = AISettingsService.instance;
 
+  static const String _weeklyAIContext = 'weekly';
+  static const String _fallbackAIContext = 'segments';
+
+  Future<String> _resolveWeeklyAIContext() async {
+    try {
+      final Map<String, dynamic>? weekly = await _settings.getAIContextRow(
+        _weeklyAIContext,
+      );
+      if (weekly != null &&
+          weekly['provider_id'] is int &&
+          (weekly['model'] as String?)?.trim().isNotEmpty == true) {
+        return _weeklyAIContext;
+      }
+    } catch (_) {}
+    return _fallbackAIContext;
+  }
+
   Future<_WeeklySummaryGenerationContext> _prepareWeeklySummaryContext({
     required String weekStartKey,
     required String weekEndKey,
@@ -39,45 +56,48 @@ class WeeklySummaryService {
 
     String providerType = 'segments';
     late final String modelUsed;
+    final String aiContext = await _resolveWeeklyAIContext();
     final Map<String, dynamic>? ctxRow;
     try {
-      ctxRow = await _settings.getAIContextRow('segments');
+      ctxRow = await _settings.getAIContextRow(aiContext);
     } catch (e) {
-      throw StateError('Segments AI context lookup failed: $e');
+      throw StateError('WeeklySummary AI context lookup failed: $e');
     }
 
     if (ctxRow == null) {
-      throw StateError('Segments AI context not configured');
+      throw StateError('WeeklySummary AI context not configured');
     }
 
     final String? ctxModel = (ctxRow['model'] as String?)?.trim();
     if (ctxModel == null || ctxModel.isEmpty) {
-      throw StateError('Segments AI context model missing');
+      throw StateError('WeeklySummary AI context model missing');
     }
     modelUsed = ctxModel;
 
     final int? providerId = ctxRow['provider_id'] as int?;
     if (providerId == null) {
-      throw StateError('Segments AI context provider missing');
+      throw StateError('WeeklySummary AI context provider missing');
     }
 
     try {
-      final provider = await AIProvidersService.instance.getProvider(providerId);
+      final provider = await AIProvidersService.instance.getProvider(
+        providerId,
+      );
       if (provider == null) {
-        throw StateError('Segments AI provider unavailable');
+        throw StateError('WeeklySummary AI provider unavailable');
       }
       final String type = provider.type.trim();
       if (type.isNotEmpty) {
         providerType = type;
       }
     } catch (e) {
-      throw StateError('Segments AI provider fetch failed: $e');
+      throw StateError('WeeklySummary AI provider fetch failed: $e');
     }
 
     try {
       await FlutterLogger.nativeInfo(
         'WeeklySummary',
-        'prepare week $weekStartKey-$weekEndKey provider=$providerType model=$modelUsed contextEntries=${context.totalEntries}',
+        'prepare week $weekStartKey-$weekEndKey ctx=$aiContext provider=$providerType model=$modelUsed contextEntries=${context.totalEntries}',
       );
     } catch (_) {}
 
@@ -85,6 +105,7 @@ class WeeklySummaryService {
       weekStartKey: weekStartKey,
       weekEndKey: weekEndKey,
       prompt: prompt,
+      aiContext: aiContext,
       providerType: providerType,
       model: modelUsed,
     );
@@ -120,20 +141,32 @@ class WeeklySummaryService {
   }
 
   /// 根据周起始日生成（或获取已缓存的）周总结
-  Future<Map<String, dynamic>?> generateForWeekStart(String weekStartDate, {bool force = false}) async {
+  Future<Map<String, dynamic>?> generateForWeekStart(
+    String weekStartDate, {
+    bool force = false,
+  }) async {
     final DateTime? weekStart = _parseDateKey(weekStartDate);
     if (weekStart == null) return null;
     return await _generateForWeek(weekStart, force: force);
   }
 
   /// 返回指定周起始日的总结（若存在）
-  Future<Map<String, dynamic>?> getWeeklySummaryByStart(String weekStartDate) async {
+  Future<Map<String, dynamic>?> getWeeklySummaryByStart(
+    String weekStartDate,
+  ) async {
     return await _db.getWeeklySummary(weekStartDate);
   }
 
   /// 列出已生成的周总结（按周起始日倒序）
-  Future<List<Map<String, dynamic>>> listWeeklySummaries({int? limit, int? offset, bool onlyCompleted = false}) async {
-    final List<Map<String, dynamic>> rows = await _db.listWeeklySummaries(limit: limit, offset: offset);
+  Future<List<Map<String, dynamic>>> listWeeklySummaries({
+    int? limit,
+    int? offset,
+    bool onlyCompleted = false,
+  }) async {
+    final List<Map<String, dynamic>> rows = await _db.listWeeklySummaries(
+      limit: limit,
+      offset: offset,
+    );
     List<Map<String, dynamic>> filtered = rows;
     if (onlyCompleted) {
       final String todayKey = _dateKey(DateTime.now());
@@ -146,7 +179,9 @@ class WeeklySummaryService {
     return sanitizeWeeklyRows(filtered);
   }
 
-  static List<Map<String, dynamic>> sanitizeWeeklyRows(List<Map<String, dynamic>> rows) {
+  static List<Map<String, dynamic>> sanitizeWeeklyRows(
+    List<Map<String, dynamic>> rows,
+  ) {
     if (rows.length <= 1) return rows;
 
     final List<Map<String, dynamic>> ascending = rows.reversed.toList();
@@ -160,7 +195,8 @@ class WeeklySummaryService {
       if (startDate == null) continue;
 
       final String endKey = (row['week_end_date'] as String? ?? '').trim();
-      final DateTime endDate = DateTime.tryParse(endKey) ?? startDate.add(const Duration(days: 6));
+      final DateTime endDate =
+          DateTime.tryParse(endKey) ?? startDate.add(const Duration(days: 6));
 
       if (lastEnd != null && !startDate.isAfter(lastEnd)) {
         continue;
@@ -175,12 +211,17 @@ class WeeklySummaryService {
     return keptAscending.reversed.toList();
   }
 
-  Future<Map<String, dynamic>?> _generateForWeek(DateTime weekStart, {bool force = false}) async {
+  Future<Map<String, dynamic>?> _generateForWeek(
+    DateTime weekStart, {
+    bool force = false,
+  }) async {
     final String weekStartKey = _dateKey(weekStart);
     final String weekEndKey = _dateKey(weekStart.add(const Duration(days: 6)));
 
     if (!force) {
-      final Map<String, dynamic>? existed = await _db.getWeeklySummary(weekStartKey);
+      final Map<String, dynamic>? existed = await _db.getWeeklySummary(
+        weekStartKey,
+      );
       if (existed != null) return existed;
     }
 
@@ -205,14 +246,14 @@ class WeeklySummaryService {
 
     final _WeeklySummaryGenerationContext ctx =
         await _prepareWeeklySummaryContext(
-      weekStartKey: weekStartKey,
-      weekEndKey: weekEndKey,
-      context: context,
-    );
+          weekStartKey: weekStartKey,
+          weekEndKey: weekEndKey,
+          context: context,
+        );
 
     final AIMessage response = await _chat.sendMessageOneShot(
       ctx.prompt,
-      context: 'segments',
+      context: ctx.aiContext,
       timeout: null,
     );
 
@@ -231,8 +272,9 @@ class WeeklySummaryService {
     }
 
     if (!force) {
-      final Map<String, dynamic>? existed =
-          await _db.getWeeklySummary(weekStartDate);
+      final Map<String, dynamic>? existed = await _db.getWeeklySummary(
+        weekStartDate,
+      );
       if (existed != null) {
         return null;
       }
@@ -240,8 +282,9 @@ class WeeklySummaryService {
 
     final WeeklyContext context = await _buildWeeklyContext(weekStart);
     if (context.totalEntries == 0) {
-      final String weekEndKey =
-          _dateKey(weekStart.add(const Duration(days: 6)));
+      final String weekEndKey = _dateKey(
+        weekStart.add(const Duration(days: 6)),
+      );
       final Map<String, dynamic> fallback = {
         'weekly_overview': '暂无足够的数据生成周总结。',
         'daily_breakdowns': const <Map<String, dynamic>>[],
@@ -259,23 +302,22 @@ class WeeklySummaryService {
       return null;
     }
 
-    final String weekEndKey =
-        _dateKey(weekStart.add(const Duration(days: 6)));
+    final String weekEndKey = _dateKey(weekStart.add(const Duration(days: 6)));
     final _WeeklySummaryGenerationContext ctx =
         await _prepareWeeklySummaryContext(
-      weekStartKey: weekStartDate,
-      weekEndKey: weekEndKey,
-      context: context,
-    );
+          weekStartKey: weekStartDate,
+          weekEndKey: weekEndKey,
+          context: context,
+        );
 
-    final AIStreamingSession baseSession =
-        await _chat.sendMessageStreamedV2WithDisplayOverride(
-      'weekly_summary_$weekStartDate',
-      ctx.prompt,
-      includeHistory: false,
-      persistHistory: false,
-      context: 'segments',
-    );
+    final AIStreamingSession baseSession = await _chat
+        .sendMessageStreamedV2WithDisplayOverride(
+          'weekly_summary_$weekStartDate',
+          ctx.prompt,
+          includeHistory: false,
+          persistHistory: false,
+          context: ctx.aiContext,
+        );
 
     final StreamController<AIStreamEvent> controller =
         StreamController<AIStreamEvent>();
@@ -295,38 +337,50 @@ class WeeklySummaryService {
       cancelOnError: false,
     );
 
-    final Future<AIMessage> completed = baseSession.completed.then(
-      (AIMessage message) async {
-        final String raw = _stripFences(message.content.trim());
-        await _persistWeeklySummary(ctx: ctx, raw: raw);
-        return message;
-      },
-    );
+    final Future<AIMessage> completed = baseSession.completed.then((
+      AIMessage message,
+    ) async {
+      final String raw = _stripFences(message.content.trim());
+      await _persistWeeklySummary(ctx: ctx, raw: raw);
+      return message;
+    });
 
-    return AIStreamingSession(
-      stream: controller.stream,
-      completed: completed,
-    );
+    return AIStreamingSession(stream: controller.stream, completed: completed);
   }
 
   Future<WeeklyContext> _buildWeeklyContext(DateTime weekStart) async {
     final DateTime weekEnd = weekStart.add(const Duration(days: 6));
-    final DateTime rangeEnd = DateTime(weekEnd.year, weekEnd.month, weekEnd.day, 23, 59, 59, 999);
-    final List<Map<String, dynamic>> segments = await _db.listSegmentsWithResultsBetween(
-      startMillis: weekStart.millisecondsSinceEpoch,
-      endMillis: rangeEnd.millisecondsSinceEpoch,
+    final DateTime rangeEnd = DateTime(
+      weekEnd.year,
+      weekEnd.month,
+      weekEnd.day,
+      23,
+      59,
+      59,
+      999,
     );
+    final List<Map<String, dynamic>> segments = await _db
+        .listSegmentsWithResultsBetween(
+          startMillis: weekStart.millisecondsSinceEpoch,
+          endMillis: rangeEnd.millisecondsSinceEpoch,
+        );
 
-    final Map<String, List<_SegmentSnippet>> grouped = <String, List<_SegmentSnippet>>{};
+    final Map<String, List<_SegmentSnippet>> grouped =
+        <String, List<_SegmentSnippet>>{};
     for (final Map<String, dynamic> seg in segments) {
       final String? summary = _extractSegmentSummary(seg);
       if (summary == null || summary.isEmpty) continue;
       final int start = (seg['start_time'] as int?) ?? 0;
       final int end = (seg['end_time'] as int?) ?? 0;
-      final DateTime dt = DateTime.fromMillisecondsSinceEpoch(start == 0 ? end : start);
+      final DateTime dt = DateTime.fromMillisecondsSinceEpoch(
+        start == 0 ? end : start,
+      );
       if (dt.isAfter(rangeEnd)) continue;
       final String dateKey = _dateKey(DateTime(dt.year, dt.month, dt.day));
-      final List<_SegmentSnippet> list = grouped.putIfAbsent(dateKey, () => <_SegmentSnippet>[]);
+      final List<_SegmentSnippet> list = grouped.putIfAbsent(
+        dateKey,
+        () => <_SegmentSnippet>[],
+      );
       if (list.length >= _maxSegmentsPerDay) continue;
       final String range = _formatRange(start, end);
       list.add(_SegmentSnippet(timeRange: range, summary: summary));
@@ -339,8 +393,10 @@ class WeeklySummaryService {
       final String key = _dateKey(day);
       final Map<String, dynamic>? daily = await _db.getDailySummary(key);
       final String? dailyText = _extractDailyOverall(daily);
-      final List<_SegmentSnippet> snippets = grouped[key] ?? <_SegmentSnippet>[];
-      totalEntries += (snippets.length + (dailyText == null || dailyText.isEmpty ? 0 : 1));
+      final List<_SegmentSnippet> snippets =
+          grouped[key] ?? <_SegmentSnippet>[];
+      totalEntries +=
+          (snippets.length + (dailyText == null || dailyText.isEmpty ? 0 : 1));
       days.add(
         _WeeklyDayContext(
           dateKey: key,
@@ -359,28 +415,36 @@ class WeeklySummaryService {
     WeeklyContext context,
   ) async {
     final Locale? currentLocale = LocaleService.instance.locale;
-    final Locale deviceLocale = WidgetsBinding.instance.platformDispatcher.locale;
-    final String lang = (currentLocale ?? deviceLocale).languageCode.toLowerCase();
+    final Locale deviceLocale =
+        WidgetsBinding.instance.platformDispatcher.locale;
+    final String lang = (currentLocale ?? deviceLocale).languageCode
+        .toLowerCase();
     final bool isZh = lang.startsWith('zh');
     final bool isJa = lang.startsWith('ja');
     final bool isKo = lang.startsWith('ko');
     final Locale promptLocale = isZh
         ? const Locale('zh')
         : (isJa
-            ? const Locale('ja')
-            : (isKo ? const Locale('ko') : const Locale('en')));
-    final String languagePolicy = lookupAppLocalizations(promptLocale).aiSystemPromptLanguagePolicy;
+              ? const Locale('ja')
+              : (isKo ? const Locale('ko') : const Locale('en')));
+    final String languagePolicy = lookupAppLocalizations(
+      promptLocale,
+    ).aiSystemPromptLanguagePolicy;
     final String defaultTemplate = isZh
         ? _defaultWeeklyPromptZh
         : (isJa
-            ? _defaultWeeklyPromptJa
-            : (isKo ? _defaultWeeklyPromptKo : _defaultWeeklyPromptEn));
+              ? _defaultWeeklyPromptJa
+              : (isKo ? _defaultWeeklyPromptKo : _defaultWeeklyPromptEn));
 
     final String? customAddon = await _settings.getPromptWeekly();
     final String? trimmedAddon = customAddon?.trim();
     final bool useZhMarkers = isZh;
-    final String beginMarker = useZhMarkers ? '【重要附加说明（开始）】' : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***';
-    final String endMarker = useZhMarkers ? '【重要附加说明（结束）】' : '***IMPORTANT EXTRA INSTRUCTIONS (END)***';
+    final String beginMarker = useZhMarkers
+        ? '【重要附加说明（开始）】'
+        : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***';
+    final String endMarker = useZhMarkers
+        ? '【重要附加说明（结束）】'
+        : '***IMPORTANT EXTRA INSTRUCTIONS (END)***';
     final String header = (trimmedAddon != null && trimmedAddon.isNotEmpty)
         ? '$languagePolicy\n\n$beginMarker\n$trimmedAddon\n\n$defaultTemplate\n\n$endMarker\n$trimmedAddon'
         : '$languagePolicy\n\n$defaultTemplate';
@@ -406,7 +470,9 @@ class WeeklySummaryService {
         sb.writeln('- [无记录] 本日未捕获到可用动态');
       } else {
         for (final _SegmentSnippet snip in day.segments) {
-          sb.writeln('- [${snip.timeRange}] ${_truncate(snip.summary, _maxSegmentLength)}');
+          sb.writeln(
+            '- [${snip.timeRange}] ${_truncate(snip.summary, _maxSegmentLength)}',
+          );
         }
       }
       sb.writeln();
@@ -432,7 +498,8 @@ class WeeklySummaryService {
       } catch (_) {}
     }
     final String? output = (seg['output_text'] as String?)?.trim();
-    if (output != null && output.isNotEmpty && output.toLowerCase() != 'null') return output;
+    if (output != null && output.isNotEmpty && output.toLowerCase() != 'null')
+      return output;
     return null;
   }
 
@@ -449,14 +516,19 @@ class WeeklySummaryService {
       } catch (_) {}
     }
     final String? output = (daily['output_text'] as String?)?.trim();
-    if (output != null && output.isNotEmpty && output.toLowerCase() != 'null') return output;
+    if (output != null && output.isNotEmpty && output.toLowerCase() != 'null')
+      return output;
     return null;
   }
 
   String _formatRange(int startMillis, int endMillis) {
     if (startMillis <= 0 && endMillis <= 0) return '--:-- - --:--';
-    final DateTime start = DateTime.fromMillisecondsSinceEpoch(startMillis > 0 ? startMillis : endMillis);
-    final DateTime end = DateTime.fromMillisecondsSinceEpoch(endMillis > 0 ? endMillis : startMillis);
+    final DateTime start = DateTime.fromMillisecondsSinceEpoch(
+      startMillis > 0 ? startMillis : endMillis,
+    );
+    final DateTime end = DateTime.fromMillisecondsSinceEpoch(
+      endMillis > 0 ? endMillis : startMillis,
+    );
     return '${_two(start.hour)}:${_two(start.minute)}-${_two(end.hour)}:${_two(end.minute)}';
   }
 
@@ -483,7 +555,9 @@ class WeeklySummaryService {
     final String trimmed = text.trim();
     if (!trimmed.startsWith('```')) return trimmed;
     final int firstLineBreak = trimmed.indexOf('\n');
-    final String rest = firstLineBreak >= 0 ? trimmed.substring(firstLineBreak + 1) : trimmed;
+    final String rest = firstLineBreak >= 0
+        ? trimmed.substring(firstLineBreak + 1)
+        : trimmed;
     final int endIndex = rest.lastIndexOf('```');
     if (endIndex >= 0) {
       return rest.substring(0, endIndex).trim();
@@ -573,6 +647,7 @@ class _WeeklySummaryGenerationContext {
     required this.weekStartKey,
     required this.weekEndKey,
     required this.prompt,
+    required this.aiContext,
     required this.providerType,
     required this.model,
   });
@@ -580,6 +655,7 @@ class _WeeklySummaryGenerationContext {
   final String weekStartKey;
   final String weekEndKey;
   final String prompt;
+  final String aiContext;
   final String providerType;
   final String model;
 }
@@ -592,7 +668,11 @@ class WeeklyContext {
 }
 
 class _WeeklyDayContext {
-  _WeeklyDayContext({required this.dateKey, required this.dailySummary, required this.segments});
+  _WeeklyDayContext({
+    required this.dateKey,
+    required this.dailySummary,
+    required this.segments,
+  });
 
   final String dateKey;
   final String? dailySummary;
@@ -605,4 +685,3 @@ class _SegmentSnippet {
   final String timeRange;
   final String summary;
 }
-
