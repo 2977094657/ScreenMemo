@@ -386,7 +386,13 @@ object SegmentSummaryManager {
         if (shots.isEmpty()) return 0
 
         var created = 0
+        // 若 0 点落在一个跨天段落窗口内，则不要从 0 点重新建段（会与跨天段落重叠）。
+        // 这里仅跳过“被覆盖的起始区间”，后续仍允许在 dayEnd 之前生成 start_time 属于本日的段落。
+        val coveredEnd = try { SegmentDatabaseHelper.getSegmentEndTimeCoveringMillis(ctx, dayStartMillis) } catch (_: Exception) { null }
         var i = 0
+        if (coveredEnd != null && coveredEnd > dayStartMillis) {
+            while (i < shots.size && shots[i].captureTime < coveredEnd) i++
+        }
         while (i < shots.size) {
             val windowStart = shots[i].captureTime
             if (windowStart <= 0L) { i++; continue }
@@ -1666,7 +1672,7 @@ object SegmentSummaryManager {
                 sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
                     .append("合并判定策略（放宽）：\n")
                     .append("- 若两段主要应用相同，或同属'视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作'等同类行为，即使内容不同也视为同一事件；\n")
-                    .append("- 若时间间隔 ≤ 3 分钟，或后段延续了前段的同类行为，倾向判定 same_event=true；\n")
+                    .append("- 时间间隔仅供参考，不设固定阈值；若后段延续了前段的同类行为或属于同一持续活动，倾向判定 same_event=true；\n")
                     .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
                     .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
             } else {
@@ -1681,7 +1687,7 @@ object SegmentSummaryManager {
                 sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
                     .append("Merge decision guidelines (relaxed):\n")
                     .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
-                    .append("- If the gap ≤ 3 minutes, or the latter continues the former activity type, prefer same_event=true.\n")
+                    .append("- The time gap is only a reference (no fixed threshold). If the latter continues the former activity type or appears to be the same continuous activity, prefer same_event=true.\n")
                     .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
                     .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
             }

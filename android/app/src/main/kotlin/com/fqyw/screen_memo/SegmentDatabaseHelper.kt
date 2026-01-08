@@ -992,6 +992,9 @@ object SegmentDatabaseHelper {
 
     /**
      * 查询某时间范围内，最新一个段落的 end_time（降序取第一）。
+     *
+     * 说明：这里以 end_time 落在区间内为准（而不是 start_time），
+     * 以便覆盖“跨天窗口”（start 在昨天、end 在今天）场景，避免 0 点后回填产生重叠段落。
      * 若不存在则返回 null。
      */
     fun getLastSegmentEndTimeInRange(context: Context, startMillis: Long, endMillis: Long): Long? {
@@ -1002,9 +1005,39 @@ object SegmentDatabaseHelper {
             cursor = db.query(
                 "segments",
                 arrayOf("end_time"),
-                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time >= ? AND start_time <= ?",
+                "(segment_kind IS NULL OR segment_kind = 'global') AND end_time >= ? AND end_time <= ?",
                 arrayOf(startMillis.toString(), endMillis.toString()),
                 null, null,
+                "end_time DESC",
+                "1"
+            )
+            if (cursor.moveToFirst()) cursor.getLong(0) else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 查询某个时间点（毫秒）是否被某个全局段落覆盖，并返回该段落的 end_time（优先取更大的 end_time）。
+     *
+     * 覆盖判定：start_time <= t < end_time
+     * 用途：修复“跨天段落覆盖了 dayStart，但缺失日期回填/补齐又从 0 点重新建段”导致的重叠问题。
+     */
+    fun getSegmentEndTimeCoveringMillis(context: Context, millis: Long): Long? {
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        return try {
+            db = openMasterDb(context, writable = false) ?: return null
+            cursor = db.query(
+                "segments",
+                arrayOf("end_time"),
+                "(segment_kind IS NULL OR segment_kind = 'global') AND start_time <= ? AND end_time > ?",
+                arrayOf(millis.toString(), millis.toString()),
+                null,
+                null,
                 "end_time DESC",
                 "1"
             )
