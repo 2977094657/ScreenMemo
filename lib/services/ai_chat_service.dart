@@ -8,9 +8,11 @@ import 'package:screen_memo/models/screenshot_record.dart';
 
 import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
+import 'chat_context_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
 import 'memory_bridge_service.dart';
+import 'prompt_budget.dart';
 import 'screenshot_database.dart';
 
 export 'ai_request_gateway.dart'
@@ -37,17 +39,33 @@ class AIChatService {
 
   static final AIChatService instance = AIChatService._internal();
 
+  // Keep chat history bounded by an approximate token budget (Codex-style).
+  // This is in addition to the DB tail limit, and prevents a few very long
+  // messages from bloating the prompt and degrading the tool loop.
+  static const int maxHistoryPromptTokens = 6000;
+  // Tool-loop prompt budget (approx tokens). Keep this conservative so the
+  // provider doesn't silently drop earlier context (which often causes loops).
+  static const int maxToolLoopPromptTokens = 24000;
+  // Per tool message cap, mainly for very large JSON payloads (e.g. segment
+  // detail). This is an approximate token budget (bytes/4).
+  static const int maxToolMessageTokens = 12000;
+
   final AISettingsService _settings = AISettingsService.instance;
   final AIRequestGateway _gateway = AIRequestGateway.instance;
+  final ChatContextService _chatContext = ChatContextService.instance;
   int _textToolCallSeq = 0;
 
   // Marker protocol is disabled. We accept plain text/JSON and parse as needed.
   static const String responseStartMarker = '';
 
-  // To keep tool results bounded and avoid expensive scans:
-  // - OCR-heavy time-range tools are capped to 7 days per call.
+  // To keep prompts bounded:
+  // - UI context preloading uses a 7-day window (see AI settings page).
+  // - OCR tools do NOT enforce a per-call time window cap; callers should constrain via
+  //   start_local/end_local when needed and use limit/offset for paging.
   // - Semantic-index tools (segments AI results / ai_image_meta) can search a much wider window.
   static const int maxToolTimeSpanMs = 7 * 24 * 60 * 60 * 1000;
+  static const int maxOcrToolTimeSpanMs =
+      0; // 0 = unlimited (do NOT cap OCR tools)
   static const int maxSemanticToolTimeSpanMs = 365 * 24 * 60 * 60 * 1000;
 
   String _buildToolUsageInstruction(List<Map<String, dynamic>> tools) {
@@ -69,6 +87,18 @@ class AIChatService {
       sb.writeln(desc.isEmpty ? '- $name' : '- $name: $desc');
     }
     sb.writeln(_loc('规则：', 'Rules:'));
+    sb.writeln(
+      _loc(
+        '- 避免重复调用：不要在同一任务中反复用“相同参数”调用同一个工具；如需更多信息，必须改变参数（关键词/分页 paging/offset/时间窗）。',
+        '- Avoid repetition: do NOT repeatedly call the same tool with the SAME arguments in the same task. If you need more information, you MUST change parameters (keywords / paging / offset / time window).',
+      ),
+    );
+    sb.writeln(
+      _loc(
+        '- 回答若涉及用户本地记录（聊天/转账/截图内容等），请在关键结论处附上证据引用 [evidence: X]（X 必须是工具返回或上下文提供的截图 filename）。禁止编造证据。',
+        '- If your answer relies on the user’s local records (chats/transfers/screenshot contents), attach evidence references [evidence: X] for key claims (X must be a screenshot filename from tool outputs or provided context). Do not fabricate evidence.',
+      ),
+    );
     final bool hasRetrievalTools =
         names.contains('search_segments') ||
         names.contains('search_screenshots_ocr') ||
@@ -78,6 +108,12 @@ class AIChatService {
         _loc(
           '- 对于“查找/定位用户历史记录”的问题，优先调用检索类工具，不要猜。',
           '- For lookup tasks (find/identify something in the user history), prefer calling retrieval tools first. Do not guess.',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- 时间字段：调用工具时使用 start_local/end_local；工具返回也会包含 *_local。请直接使用这些本地时间字符串，不要自己换算/推导 epoch 毫秒。',
+          '- Time fields: when calling tools use start_local/end_local; tool outputs include *_local. Use these local datetime strings directly; do NOT manually convert/derive epoch milliseconds.',
         ),
       );
       if (names.contains('search_ai_image_meta')) {
@@ -92,6 +128,18 @@ class AIChatService {
         _loc(
           '- 若检索工具返回 count=0，不要立刻下“未找到”的结论；请更换关键词/工具或使用 paging 继续检索。',
           '- If a search tool returns count=0, do NOT immediately conclude “not found”. Try more searches (different keywords/tools + paging) before answering.',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- 进展护栏：如果多次检索都没有带来“新信息”（反复 count=0 / 反复相同结论），请停止继续调用工具，改为基于现有结果给出最佳努力答复，并明确不确定之处（避免陷入循环）。',
+          '- Progress guard: if repeated searches are not yielding NEW information (repeated count=0 / same conclusion), STOP calling tools and answer best-effort with clear uncertainty (avoid tool-calling loops).',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- 统计/次数类问题：优先使用工具返回的 total_count/has_more（例如 search_screenshots_ocr）；不要为了“统计”而把时间窗硬拆成多次调用（除非 has_more=true 且你需要分页查看更多样例）。',
+          '- Count/how-many questions: prefer tool-provided total_count/has_more (e.g. search_screenshots_ocr). Do NOT split time windows just to count (unless has_more=true and you need to page for more examples).',
         ),
       );
     }
@@ -210,6 +258,345 @@ class AIChatService {
       }
     }
     return out;
+  }
+
+  bool _apiContentHasImageParts(Object? apiContent) {
+    if (apiContent is! List) return false;
+    for (final p in apiContent) {
+      if (p is Map) {
+        final String type = (p['type'] ?? '').toString();
+        if (type == 'image_url') return true;
+      }
+    }
+    return false;
+  }
+
+  List<Object?> _sanitizeApiContentForTokenEstimate(Object? apiContent) {
+    if (apiContent is! List) return const <Object?>[];
+    final List<Object?> out = <Object?>[];
+    for (final p in apiContent) {
+      if (p is! Map) {
+        out.add(p);
+        continue;
+      }
+      final String type = (p['type'] ?? '').toString();
+      if (type == 'image_url') {
+        out.add(<String, Object?>{
+          'type': 'image_url',
+          'image_url': const <String, Object?>{'url': '<image>'},
+        });
+        continue;
+      }
+      if (type == 'text') {
+        out.add(<String, Object?>{
+          'type': 'text',
+          'text': (p['text'] ?? '').toString(),
+        });
+        continue;
+      }
+      out.add(<String, Object?>{'type': type});
+    }
+    return out;
+  }
+
+  int _approxTokensForToolLoopMessage(AIMessage message) {
+    // Token estimation here must NOT count base64 image payloads as tokens.
+    // Otherwise the tool loop will think it is “over budget” immediately after
+    // a get_images call and start trimming / looping.
+    try {
+      final Map<String, dynamic> json = message.toJson();
+      final Object? c = json['content'];
+      if (c is List) {
+        json['content'] = _sanitizeApiContentForTokenEstimate(c);
+      }
+      return PromptBudget.approxTokensForText(jsonEncode(json));
+    } catch (_) {
+      final String fallback = message.apiContent == null
+          ? message.content
+          : (_apiContentHasImageParts(message.apiContent)
+                ? '<image parts omitted>'
+                : '<structured content>');
+      return PromptBudget.approxTokensForText('${message.role}\n$fallback');
+    }
+  }
+
+  int _approxTokensForToolLoopMessages(List<AIMessage> messages) {
+    int total = 0;
+    for (final m in messages) {
+      total += _approxTokensForToolLoopMessage(m);
+    }
+    return total;
+  }
+
+  String _imageMessagePlaceholderText(AIMessage message) {
+    final Object? api = message.apiContent;
+    if (api is! List) {
+      return _loc(
+        '（历史图片已省略，以控制上下文大小；如需再次分析请重新调用 get_images。）',
+        '(Previous images omitted to keep context small; call get_images again if needed.)',
+      );
+    }
+    final List<String> names = <String>[];
+    for (final p in api) {
+      if (p is! Map) continue;
+      if ((p['type'] ?? '').toString() != 'text') continue;
+      final String t = (p['text'] ?? '').toString();
+      if (t.startsWith('Filename: ')) {
+        final String name = t.substring('Filename: '.length).trim();
+        if (name.isNotEmpty) names.add(name);
+      }
+    }
+    if (names.isEmpty) {
+      return _loc(
+        '（历史图片已省略，以控制上下文大小；如需再次分析请重新调用 get_images。）',
+        '(Previous images omitted to keep context small; call get_images again if needed.)',
+      );
+    }
+    const int maxNames = 10;
+    final List<String> head = names.take(maxNames).toList();
+    final int more = names.length - head.length;
+    final String suffix = more > 0 ? ' +$more' : '';
+    return _loc(
+      '（已在上一轮提供图片：${head.join(", ")}$suffix；为避免重复上传，本轮起仅保留文件名。如需再次查看像素请重新调用 get_images。）',
+      '(Images were provided earlier: ${head.join(", ")}$suffix; to avoid re-upload, only filenames are kept. Call get_images again if you need pixels.)',
+    );
+  }
+
+  /// Replace (some) multimodal image messages with a compact placeholder so we
+  /// don't re-upload base64 images on every follow-up call inside the tool loop.
+  List<AIMessage> _replaceImageMessagesWithPlaceholder(
+    List<AIMessage> messages, {
+    required bool keepMostRecent,
+  }) {
+    int lastIdx = -1;
+    for (int i = messages.length - 1; i >= 0; i--) {
+      final AIMessage m = messages[i];
+      if (m.role == 'user' && _apiContentHasImageParts(m.apiContent)) {
+        lastIdx = i;
+        break;
+      }
+    }
+    if (lastIdx < 0) return messages;
+
+    bool changed = false;
+    final List<AIMessage> out = List<AIMessage>.from(messages);
+    for (int i = 0; i < out.length; i++) {
+      if (keepMostRecent && i == lastIdx) continue;
+      final AIMessage m = out[i];
+      if (m.role != 'user' || !_apiContentHasImageParts(m.apiContent)) continue;
+      changed = true;
+      out[i] = AIMessage(
+        role: 'user',
+        content: _imageMessagePlaceholderText(m),
+        createdAt: m.createdAt,
+      );
+    }
+    return changed ? out : messages;
+  }
+
+  String _compactToolContentForPrompt(String content) {
+    if (content.trim().isEmpty) return content;
+    final int maxBytes =
+        maxToolMessageTokens * PromptBudget.approxBytesPerToken;
+
+    if (PromptBudget.utf8Bytes(content) <= maxBytes) return content;
+
+    // Best-effort: keep it JSON-ish if possible by trimming large lists/strings.
+    try {
+      final dynamic root = jsonDecode(content);
+      dynamic compact(dynamic v, int depth) {
+        if (depth > 6) return '…omitted…';
+        if (v is String) {
+          const int maxStringBytes = 12 * 1024;
+          if (PromptBudget.utf8Bytes(v) <= maxStringBytes) return v;
+          return PromptBudget.truncateTextByBytes(
+            text: v,
+            maxBytes: maxStringBytes,
+            marker: '…truncated…',
+          );
+        }
+        if (v is List) {
+          const int maxList = 30;
+          if (v.length <= maxList) {
+            return v.map((e) => compact(e, depth + 1)).toList(growable: false);
+          }
+          const int head = 20;
+          const int tail = 5;
+          final int omitted = v.length - head - tail;
+          final List<dynamic> out = <dynamic>[];
+          out.addAll(
+            v.take(head).map((e) => compact(e, depth + 1)),
+          );
+          out.add('…omitted $omitted items…');
+          out.addAll(
+            v.skip(v.length - tail).map((e) => compact(e, depth + 1)),
+          );
+          return out;
+        }
+        if (v is Map) {
+          final Map<String, dynamic> out = <String, dynamic>{};
+          for (final e in v.entries) {
+            out[e.key.toString()] = compact(e.value, depth + 1);
+          }
+          return out;
+        }
+        return v;
+      }
+
+      final String encoded = jsonEncode(compact(root, 0));
+      if (PromptBudget.utf8Bytes(encoded) <= maxBytes) return encoded;
+      return PromptBudget.truncateTextByBytes(
+        text: encoded,
+        maxBytes: maxBytes,
+        marker: '…truncated…',
+      );
+    } catch (_) {
+      return PromptBudget.truncateTextByBytes(
+        text: content,
+        maxBytes: maxBytes,
+        marker: '…truncated…',
+      );
+    }
+  }
+
+  List<AIMessage> _compactToolMessagesForPrompt(List<AIMessage> toolMsgs) {
+    bool changed = false;
+    final List<AIMessage> out = <AIMessage>[];
+    for (final m in toolMsgs) {
+      if (m.role == 'tool') {
+        final String compacted = _compactToolContentForPrompt(m.content);
+        if (compacted != m.content) changed = true;
+        out.add(
+          AIMessage(
+            role: 'tool',
+            content: compacted,
+            toolCallId: m.toolCallId,
+            createdAt: m.createdAt,
+          ),
+        );
+      } else {
+        out.add(m);
+      }
+    }
+    return changed ? out : toolMsgs;
+  }
+
+  int _findToolLoopPinnedUserIndex(List<AIMessage> messages, AIMessage pinned) {
+    final int byId = messages.indexWhere((m) => identical(m, pinned));
+    if (byId >= 0) return byId;
+    // Fallback: best-effort keep the last user message as the task prompt.
+    final int idx = messages.lastIndexWhere((m) => m.role == 'user');
+    return idx >= 0 ? idx : 0;
+  }
+
+  int _findOldestToolChunkStartAfter(List<AIMessage> messages, int afterIdx) {
+    for (int i = afterIdx + 1; i < messages.length; i++) {
+      final AIMessage m = messages[i];
+      if (m.role == 'assistant' && (m.toolCalls?.isNotEmpty ?? false)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  int _findToolChunkEnd(List<AIMessage> messages, int chunkStart) {
+    for (int i = chunkStart + 1; i < messages.length; i++) {
+      if (messages[i].role == 'assistant') return i;
+    }
+    return messages.length;
+  }
+
+  /// Enforce a Codex-style prompt budget for the *tool loop transcript* (system
+  /// + task prompt + tool call/results + internal guard rails).
+  ///
+  /// This prevents provider-side truncation (which often looks like “the model
+  /// forgot tool results and keeps searching again”), while preserving tool call
+  /// protocol invariants by removing whole tool-call chunks.
+  List<AIMessage> _enforceToolLoopPromptBudget(
+    List<AIMessage> messages, {
+    required AIMessage pinnedUser,
+    required void Function(AIStreamEvent event)? emitEvent,
+  }) {
+    int totalTokens = _approxTokensForToolLoopMessages(messages);
+    if (totalTokens <= maxToolLoopPromptTokens) return messages;
+
+    final int before = totalTokens;
+    int droppedHistory = 0;
+    int droppedChunks = 0;
+
+    List<AIMessage> working = List<AIMessage>.from(messages);
+
+    while (true) {
+      totalTokens = _approxTokensForToolLoopMessages(working);
+      if (totalTokens <= maxToolLoopPromptTokens) break;
+
+      int sysEnd = 0;
+      while (sysEnd < working.length && working[sysEnd].role == 'system') {
+        sysEnd += 1;
+      }
+
+      final int pinnedIdx = _findToolLoopPinnedUserIndex(working, pinnedUser);
+
+      // 1) Drop oldest history messages first (between system prefix and pinned user).
+      if (pinnedIdx > sysEnd) {
+        working.removeAt(sysEnd);
+        droppedHistory += 1;
+        continue;
+      }
+
+      // 2) Drop the oldest completed tool-call chunk after the pinned user.
+      final int chunkStart = _findOldestToolChunkStartAfter(working, pinnedIdx);
+      if (chunkStart >= 0) {
+        final int chunkEnd = _findToolChunkEnd(working, chunkStart);
+        if (chunkEnd > chunkStart) {
+          working.removeRange(chunkStart, chunkEnd);
+          droppedChunks += 1;
+          continue;
+        }
+      }
+
+      // 3) Nothing left to drop safely.
+      break;
+    }
+
+    // As a last resort, truncate the oldest kept non-system message content.
+    totalTokens = _approxTokensForToolLoopMessages(working);
+    if (totalTokens > maxToolLoopPromptTokens) {
+      int sysEnd = 0;
+      while (sysEnd < working.length && working[sysEnd].role == 'system') {
+        sysEnd += 1;
+      }
+      if (sysEnd < working.length) {
+        final AIMessage m = working[sysEnd];
+        final int maxBytes = (maxToolLoopPromptTokens *
+                PromptBudget.approxBytesPerToken *
+                0.6)
+            .floor();
+        final String truncated = PromptBudget.truncateTextByBytes(
+          text: m.content,
+          maxBytes: maxBytes,
+          marker: '…truncated…',
+        );
+        working[sysEnd] = AIMessage(
+          role: m.role,
+          content: truncated,
+          createdAt: m.createdAt,
+          toolCalls: m.toolCalls,
+          toolCallId: m.toolCallId,
+          apiContent: m.apiContent,
+        );
+      }
+    }
+
+    final int after = _approxTokensForToolLoopMessages(working);
+    _emitProgress(
+      emitEvent,
+      _loc(
+        '上下文超出预算：已裁剪 history=$droppedHistory 组、tool_chunks=$droppedChunks 组，tokens≈$before → $after。',
+        'Context over budget: trimmed history=$droppedHistory, tool_chunks=$droppedChunks, tokens≈$before → $after.',
+      ),
+    );
+    return working;
   }
 
   AIGatewayResult _maybeCoerceToolCallsFromText(
@@ -547,6 +934,16 @@ class AIChatService {
     );
   }
 
+  String _formatLocalDateTimeForTool(int epochMs) {
+    final DateTime dt = DateTime.fromMillisecondsSinceEpoch(epochMs);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  String _formatLocalRangeForTool(int startMs, int endMs) {
+    return '${_formatLocalDateTimeForTool(startMs)}–${_formatLocalDateTimeForTool(endMs)}';
+  }
+
   Map<String, dynamic> _buildWeeklyPagingHint({
     required int servedStartMs,
     required int servedEndMs,
@@ -561,7 +958,12 @@ class AIChatService {
 
     final Map<String, dynamic> out = <String, dynamic>{
       'max_span_ms': maxSpanMs,
-      'served': <String, int>{'start_ms': servedStartMs, 'end_ms': servedEndMs},
+      'max_span_days': (maxSpanMs / const Duration(days: 1).inMilliseconds)
+          .round(),
+      'served': <String, String>{
+        'start_local': _formatLocalDateTimeForTool(servedStartMs),
+        'end_local': _formatLocalDateTimeForTool(servedEndMs),
+      },
     };
 
     // Previous week window: [servedStart-1-maxSpan, servedStart-1]
@@ -571,7 +973,10 @@ class AIChatService {
       int prevStart = prevEnd - maxSpanMs;
       if (gs != null && prevStart < gs) prevStart = gs;
       if (prevStart > prevEnd) prevStart = prevEnd;
-      out['prev'] = <String, int>{'start_ms': prevStart, 'end_ms': prevEnd};
+      out['prev'] = <String, String>{
+        'start_local': _formatLocalDateTimeForTool(prevStart),
+        'end_local': _formatLocalDateTimeForTool(prevEnd),
+      };
     }
 
     // Next week window: [servedEnd+1, servedEnd+1+maxSpan]
@@ -581,7 +986,10 @@ class AIChatService {
       int nextEnd = nextStart + maxSpanMs;
       if (ge != null && nextEnd > ge) nextEnd = ge;
       if (nextStart > nextEnd) nextStart = nextEnd;
-      out['next'] = <String, int>{'start_ms': nextStart, 'end_ms': nextEnd};
+      out['next'] = <String, String>{
+        'start_local': _formatLocalDateTimeForTool(nextStart),
+        'end_local': _formatLocalDateTimeForTool(nextEnd),
+      };
     }
 
     return out;
@@ -627,7 +1035,13 @@ class AIChatService {
       return sid > 0 ? 'segment_id=$sid count=$count' : 'count=$count';
     }
     final int count = _toInt(obj['count']) ?? -1;
-    if (count >= 0) return 'count=$count';
+    if (count >= 0) {
+      final int? total = _toInt(obj['total_count']);
+      if (total != null && total >= 0 && total != count) {
+        return 'count=$count total=$total';
+      }
+      return 'count=$count';
+    }
     return tool.isEmpty ? '' : 'ok';
   }
 
@@ -662,7 +1076,7 @@ class AIChatService {
       'function': <String, dynamic>{
         'name': 'search_segments',
         'description':
-            'List/search local segments (动态) by time range and optional keyword (+ optional app filter). List mode and OCR mode are capped to 7 days per call; AI mode is capped to 365 days per call (larger windows will be clamped with paging hints). When query is omitted, returns segments in range; when query is provided, searches segment AI results and/or OCR matches (mode=auto|ai|ocr).',
+            'List/search local segments (动态) by local date/time range and optional keyword (+ optional app filter). Use start_local/end_local as human-readable local date/time strings (YYYY-MM-DD or YYYY-MM-DD HH:mm). The app will convert them to epoch ms internally. Do NOT provide epoch milliseconds. List mode is capped to 7 days per call; AI mode is capped to 365 days per call (larger windows will be clamped with paging hints). OCR mode has no per-call time limit; use start_local/end_local to constrain when needed.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -671,15 +1085,15 @@ class AIChatService {
               'description':
                   'Optional keyword. If omitted, list segments in the time range.',
             },
-            'start_ms': <String, dynamic>{
-              'type': 'integer',
+            'start_local': <String, dynamic>{
+              'type': 'string',
               'description':
-                  'Optional epoch milliseconds start time filter (local time window).',
+                  'Optional local start datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-02" or "2025-07-02 09:30".',
             },
-            'end_ms': <String, dynamic>{
-              'type': 'integer',
+            'end_local': <String, dynamic>{
+              'type': 'string',
               'description':
-                  'Optional epoch milliseconds end time filter (local time window).',
+                  'Optional local end datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-02" or "2025-07-02 18:00".',
             },
             'app_package_name': <String, dynamic>{
               'type': 'string',
@@ -762,7 +1176,7 @@ class AIChatService {
       'function': <String, dynamic>{
         'name': 'search_screenshots_ocr',
         'description':
-            'Search screenshots by OCR text within a time range (+ optional app filter) (max 7 days per call; larger windows will be clamped). Returns screenshot file basenames + capture times + app info.',
+            'Search screenshots by OCR text within a local date/time range (+ optional app filter). Use start_local/end_local as human-readable local date/time strings (YYYY-MM-DD or YYYY-MM-DD HH:mm). The app will convert them to epoch ms internally. Do NOT provide epoch milliseconds. No per-call time limit; use start_local/end_local to constrain when needed. Returns screenshot file basenames + capture times + app info + total_count (matches in range) + has_more (for pagination).',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -770,13 +1184,15 @@ class AIChatService {
               'type': 'string',
               'description': 'OCR query.',
             },
-            'start_ms': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Optional epoch milliseconds start time filter.',
+            'start_local': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional local start datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-02".',
             },
-            'end_ms': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Optional epoch milliseconds end time filter.',
+            'end_local': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional local end datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-10".',
             },
             'app_package_name': <String, dynamic>{
               'type': 'string',
@@ -801,7 +1217,7 @@ class AIChatService {
       'function': <String, dynamic>{
         'name': 'search_ai_image_meta',
         'description':
-            'Search AI-generated per-image tags/descriptions (ai_image_meta) within a time range (max 365 days per call; larger windows will be clamped with paging hints). Useful when OCR is missing or insufficient.',
+            'Search AI-generated per-image tags/descriptions (ai_image_meta) within a local date/time range (max 365 days per call; larger windows will be clamped with paging hints). Use start_local/end_local as human-readable local date/time strings (YYYY-MM-DD or YYYY-MM-DD HH:mm). The app will convert them to epoch ms internally. Do NOT provide epoch milliseconds. Useful when OCR is missing or insufficient.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -809,13 +1225,15 @@ class AIChatService {
               'type': 'string',
               'description': 'Keyword query for tags/description.',
             },
-            'start_ms': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Optional epoch milliseconds start time filter.',
+            'start_local': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional local start datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-02".',
             },
-            'end_ms': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Optional epoch milliseconds end time filter.',
+            'end_local': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional local end datetime. Format: YYYY-MM-DD or YYYY-MM-DD HH:mm. Example: "2025-07-10".',
             },
             'app_package_name': <String, dynamic>{
               'type': 'string',
@@ -874,14 +1292,16 @@ class AIChatService {
 
   static List<Map<String, dynamic>> defaultMemoryTools() {
     final List<Map<String, dynamic>> all = defaultChatTools();
-    return all.where((t) {
-      final fn = t['function'];
-      if (fn is Map) {
-        final String name = (fn['name'] as String?)?.trim() ?? '';
-        return name == 'search_memory_graph';
-      }
-      return false;
-    }).toList(growable: false);
+    return all
+        .where((t) {
+          final fn = t['function'];
+          if (fn is Map) {
+            final String name = (fn['name'] as String?)?.trim() ?? '';
+            return name == 'search_memory_graph';
+          }
+          return false;
+        })
+        .toList(growable: false);
   }
 
   String _detectImageMimeByExt(String path) {
@@ -905,6 +1325,72 @@ class AIChatService {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString());
+  }
+
+  String? _toTrimmedStringOrNull(Object? v) {
+    if (v == null) return null;
+    final String s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  int? _parseLocalDateTimeToEpochMs(Object? raw, {required bool isEnd}) {
+    final String? t0 = _toTrimmedStringOrNull(raw);
+    if (t0 == null) return null;
+
+    // Date-only: YYYY-MM-DD (treat as start-of-day / end-of-day in local time)
+    final Match? mDate = RegExp(
+      r'^([12]\d{3})-(\d{1,2})-(\d{1,2})$',
+    ).firstMatch(t0);
+    if (mDate != null) {
+      final int year = int.tryParse(mDate.group(1) ?? '') ?? 0;
+      final int month = int.tryParse(mDate.group(2) ?? '') ?? 0;
+      final int day = int.tryParse(mDate.group(3) ?? '') ?? 0;
+      if (year <= 0 || month <= 0 || day <= 0) return null;
+      final DateTime dt = isEnd
+          ? DateTime(year, month, day, 23, 59, 59, 999, 0)
+          : DateTime(year, month, day, 0, 0, 0, 0, 0);
+      if (dt.year != year || dt.month != month || dt.day != day) return null;
+      return dt.millisecondsSinceEpoch;
+    }
+
+    // Date + time: YYYY-MM-DD HH:mm[:ss] (local time)
+    final Match? mDateTime = RegExp(
+      r'^([12]\d{3})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$',
+    ).firstMatch(t0);
+    if (mDateTime != null) {
+      final int year = int.tryParse(mDateTime.group(1) ?? '') ?? 0;
+      final int month = int.tryParse(mDateTime.group(2) ?? '') ?? 0;
+      final int day = int.tryParse(mDateTime.group(3) ?? '') ?? 0;
+      final int hour = int.tryParse(mDateTime.group(4) ?? '') ?? -1;
+      final int minute = int.tryParse(mDateTime.group(5) ?? '') ?? -1;
+      final int second = int.tryParse(mDateTime.group(6) ?? '') ?? 0;
+      if (year <= 0 || month <= 0 || day <= 0) return null;
+      if (hour < 0 || hour > 23) return null;
+      if (minute < 0 || minute > 59) return null;
+      if (second < 0 || second > 59) return null;
+      final DateTime dt = DateTime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        0,
+        0,
+      );
+      if (dt.year != year || dt.month != month || dt.day != day) return null;
+      if (dt.hour != hour || dt.minute != minute || dt.second != second) {
+        return null;
+      }
+      return dt.millisecondsSinceEpoch;
+    }
+
+    // ISO-8601 fallback: allow offsets (will be parsed into UTC), or local if no zone is provided.
+    DateTime? dt = DateTime.tryParse(t0);
+    if (dt == null && t0.contains(' ') && !t0.contains('T')) {
+      dt = DateTime.tryParse(t0.replaceFirst(' ', 'T'));
+    }
+    return dt?.millisecondsSinceEpoch;
   }
 
   bool _toBool(Object? v) {
@@ -964,6 +1450,145 @@ class AIChatService {
       if (v is Map) return Map<String, dynamic>.from(v as Map);
     } catch (_) {}
     return <String, dynamic>{};
+  }
+
+  Object? _sortJsonForSignature(Object? v) {
+    if (v is Map) {
+      final Map<dynamic, dynamic> raw = Map<dynamic, dynamic>.from(v as Map);
+      final List<String> keys = raw.keys.map((k) => k.toString()).toList()
+        ..sort();
+      final Map<String, Object?> out = <String, Object?>{};
+      for (final String k in keys) {
+        out[k] = _sortJsonForSignature(raw[k]);
+      }
+      return out;
+    }
+    if (v is List) {
+      return v.map((e) => _sortJsonForSignature(e)).toList();
+    }
+    return v;
+  }
+
+  int _normalizeStartMs(Map<String, dynamic> args) {
+    final int? ms =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    return ms ?? 0;
+  }
+
+  int _normalizeEndMs(Map<String, dynamic> args) {
+    final int? ms =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
+    return ms ?? 0;
+  }
+
+  String _toolCallSignature(AIToolCall call) {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final Map<String, dynamic> sig = <String, dynamic>{'tool': call.name};
+    int msToMin(int ms) => ms <= 0 ? 0 : (ms ~/ 60000);
+
+    switch (call.name) {
+      case 'search_screenshots_ocr':
+        sig['query'] = (args['query'] as String?)?.trim() ?? '';
+        final String app = (args['app_package_name'] as String?)?.trim() ?? '';
+        if (app.isNotEmpty) sig['app_package_name'] = app;
+        sig['start_min'] = msToMin(_normalizeStartMs(args));
+        sig['end_min'] = msToMin(_normalizeEndMs(args));
+        sig['limit'] = (_toInt(args['limit']) ?? 20).clamp(1, 50);
+        sig['offset'] = (_toInt(args['offset']) ?? 0).clamp(0, 1 << 30);
+        break;
+      case 'search_segments':
+        sig['query'] = (args['query'] as String?)?.trim() ?? '';
+        final String app = (args['app_package_name'] as String?)?.trim() ?? '';
+        if (app.isNotEmpty) sig['app_package_name'] = app;
+        String mode = (args['mode'] as String?)?.trim().toLowerCase() ?? '';
+        if (mode.isEmpty) mode = 'auto';
+        if (mode != 'auto' && mode != 'ai' && mode != 'ocr') mode = 'auto';
+        sig['mode'] = mode;
+        sig['only_no_summary'] = _toBool(args['only_no_summary']);
+        sig['start_min'] = msToMin(_normalizeStartMs(args));
+        sig['end_min'] = msToMin(_normalizeEndMs(args));
+        sig['limit'] = (_toInt(args['limit']) ?? 10).clamp(1, 50);
+        sig['offset'] = (_toInt(args['offset']) ?? 0).clamp(0, 1 << 30);
+        break;
+      case 'search_ai_image_meta':
+        sig['query'] = (args['query'] as String?)?.trim() ?? '';
+        final String app = (args['app_package_name'] as String?)?.trim() ?? '';
+        if (app.isNotEmpty) sig['app_package_name'] = app;
+        sig['include_nsfw'] = _toBool(args['include_nsfw']);
+        sig['start_min'] = msToMin(_normalizeStartMs(args));
+        sig['end_min'] = msToMin(_normalizeEndMs(args));
+        sig['limit'] = (_toInt(args['limit']) ?? 20).clamp(1, 50);
+        sig['offset'] = (_toInt(args['offset']) ?? 0).clamp(0, 1 << 30);
+        break;
+      case 'search_memory_graph':
+        sig['query'] = (args['query'] as String?)?.trim() ?? '';
+        sig['depth'] = (_toInt(args['depth']) ?? 2).clamp(1, 6);
+        sig['limit'] = (_toInt(args['limit']) ?? 80).clamp(10, 200);
+        final Object? includeRaw = args.containsKey('include_history')
+            ? args['include_history']
+            : (args.containsKey('includeHistory')
+                  ? args['includeHistory']
+                  : null);
+        sig['include_history'] = includeRaw == null
+            ? true
+            : _toBool(includeRaw);
+        break;
+      case 'get_segment_result':
+        sig['segment_id'] = _toInt(args['segment_id']) ?? 0;
+        break;
+      case 'get_segment_samples':
+        sig['segment_id'] = _toInt(args['segment_id']) ?? 0;
+        sig['limit'] = (_toInt(args['limit']) ?? 10).clamp(1, 50);
+        break;
+      case 'get_images':
+        final dynamic raw = args['filenames'];
+        final List<String> names = <String>[];
+        if (raw is List) {
+          for (final v in raw) {
+            final String n = v?.toString().trim() ?? '';
+            if (_looksLikeBasename(n)) names.add(n);
+          }
+        } else if (raw is String) {
+          final String n = raw.trim();
+          if (_looksLikeBasename(n)) names.add(n);
+        }
+        final List<String> uniq = <String>{...names}.toList()..sort();
+        sig['filenames'] = uniq;
+        break;
+      default:
+        sig['args'] = _sortJsonForSignature(args);
+        break;
+    }
+
+    return jsonEncode(_sortJsonForSignature(sig));
+  }
+
+  Map<String, dynamic> _toolPayloadDigest(Map<String, dynamic> payload) {
+    final Map<String, dynamic> out = <String, dynamic>{};
+    const List<String> keep = <String>[
+      'tool',
+      'query',
+      'mode',
+      'app_package_name',
+      'start_local',
+      'end_local',
+      'limit',
+      'offset',
+      'count',
+      'warnings',
+      'paging',
+      'segment_id',
+      'provided',
+      'missing',
+      'skipped',
+      'stats',
+    ];
+    for (final String k in keep) {
+      if (payload.containsKey(k)) out[k] = payload[k];
+    }
+    return out;
   }
 
   Future<List<AIMessage>> _executeGetImagesTool(AIToolCall call) async {
@@ -1109,8 +1734,12 @@ class AIChatService {
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
     final String appPackageName =
         (args['app_package_name'] as String?)?.trim() ?? '';
-    final int? reqStartMs = _toInt(args['start_ms']);
-    final int? reqEndMs = _toInt(args['end_ms']);
+    final int? reqStartMs =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    final int? reqEndMs =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
     final bool requestedTooWide =
         (reqStartMs != null &&
         reqEndMs != null &&
@@ -1135,10 +1764,11 @@ class AIChatService {
     final int e = range.endMs;
     final List<String> warnings = <String>[];
     if (requestedTooWide && range.clampedToMaxSpan) {
+      final String servedLocal = _formatLocalRangeForTool(s, e);
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
+          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 $servedLocal）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned $servedLocal only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -1171,10 +1801,12 @@ class AIChatService {
                 .where((e) => e.isNotEmpty)
                 .toSet()
                 .toList();
+      final String? stLocal = st > 0 ? _formatLocalDateTimeForTool(st) : null;
+      final String? etLocal = et > 0 ? _formatLocalDateTimeForTool(et) : null;
       results.add(<String, dynamic>{
         'segment_id': sid,
-        'start_ms': st,
-        'end_ms': et,
+        'start_local': stLocal,
+        'end_local': etLocal,
         'apps': apps,
         'has_summary': (row['has_summary'] as int?) ?? 0,
         'sample_count': row['sample_count'],
@@ -1188,16 +1820,20 @@ class AIChatService {
         content: jsonEncode(<String, dynamic>{
           'tool': 'list_segments',
           if (appPackageName.isNotEmpty) 'app_package_name': appPackageName,
-          'start_ms': s,
-          'end_ms': e,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
           'time_span_limit': <String, dynamic>{
             'max_span_ms': AIChatService.maxToolTimeSpanMs,
+            'max_span_days':
+                (AIChatService.maxToolTimeSpanMs /
+                        const Duration(days: 1).inMilliseconds)
+                    .round(),
             'clamped': range.clampedToMaxSpan,
           },
           if (requestedTooWide)
             'requested_range': <String, dynamic>{
-              'start_ms': reqStartMs,
-              'end_ms': reqEndMs,
+              'start_local': _formatLocalDateTimeForTool(reqStartMs),
+              'end_local': _formatLocalDateTimeForTool(reqEndMs),
             },
           if ((requestedTooWide && range.clampedToMaxSpan) ||
               _shouldOfferWeeklyPagingHint(
@@ -1213,8 +1849,8 @@ class AIChatService {
           if (warnings.isNotEmpty) 'warnings': warnings,
           if (range.guardApplied)
             'time_guard': <String, dynamic>{
-              'start_ms': toolStartMs,
-              'end_ms': toolEndMs,
+              'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+              'end_local': _formatLocalDateTimeForTool(toolEndMs!),
               'clamped': range.clampedToGuard,
             },
           'only_no_summary': onlyNoSummary,
@@ -1238,23 +1874,29 @@ class AIChatService {
     final String appPackageName =
         (args['app_package_name'] as String?)?.trim() ?? '';
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
-    final int? reqStartMs = _toInt(args['start_ms']);
-    final int? reqEndMs = _toInt(args['end_ms']);
+    final int? reqStartMs =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    final int? reqEndMs =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
 
     String mode = (args['mode'] as String?)?.trim().toLowerCase() ?? '';
     if (mode.isEmpty) mode = 'auto';
     if (mode != 'auto' && mode != 'ai' && mode != 'ocr') mode = 'auto';
 
-    final int maxSpanMs =
-        (query.isEmpty || mode == 'ocr')
-            ? AIChatService.maxToolTimeSpanMs
-            : AIChatService.maxSemanticToolTimeSpanMs;
+    final int maxSpanMs = query.isEmpty
+        ? AIChatService.maxToolTimeSpanMs
+        : (mode == 'ocr'
+              ? AIChatService.maxOcrToolTimeSpanMs
+              : AIChatService.maxSemanticToolTimeSpanMs);
     final bool requestedTooWide =
+        maxSpanMs > 0 &&
         (reqStartMs != null &&
-        reqEndMs != null &&
-        reqStartMs > 0 &&
-        reqEndMs > 0 &&
-        (reqEndMs - reqStartMs).abs() > maxSpanMs);
+            reqEndMs != null &&
+            reqStartMs > 0 &&
+            reqEndMs > 0 &&
+            (reqEndMs - reqStartMs).abs() > maxSpanMs);
 
     // If query is omitted, behave like "list segments in time range".
     if (query.isEmpty) {
@@ -1323,10 +1965,11 @@ class AIChatService {
     if (requestedTooWide && range.clampedToMaxSpan) {
       final int maxSpanDays =
           (maxSpanMs / const Duration(days: 1).inMilliseconds).round();
+      final String servedLocal = _formatLocalRangeForTool(s, e);
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
-          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
+          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 $servedLocal）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned $servedLocal only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -1384,11 +2027,13 @@ class AIChatService {
       final bool otEmpty = ot.isEmpty || ot.toLowerCase() == 'null';
       final bool sjEmpty = sj.isEmpty || sj.toLowerCase() == 'null';
       final int hasSummary = (otEmpty && sjEmpty) ? 0 : 1;
+      final String? stLocal = st > 0 ? _formatLocalDateTimeForTool(st) : null;
+      final String? etLocal = et > 0 ? _formatLocalDateTimeForTool(et) : null;
 
       results.add(<String, dynamic>{
         'segment_id': sid,
-        'start_ms': st,
-        'end_ms': et,
+        'start_local': stLocal,
+        'end_local': etLocal,
         'apps': apps,
         'has_summary': hasSummary,
         'sample_count': row['sample_count'],
@@ -1397,9 +2042,10 @@ class AIChatService {
       });
     }
 
-    // auto: fallback to OCR when AI-result search yields nothing (only when the served window is small enough).
+    // auto: fallback to OCR when AI-result search yields nothing.
     final bool canOcrFallback =
-        (e - s).abs() <= AIChatService.maxToolTimeSpanMs;
+        (AIChatService.maxOcrToolTimeSpanMs <= 0) ||
+        (e - s).abs() <= AIChatService.maxOcrToolTimeSpanMs;
     if (mode == 'auto' && results.isEmpty && canOcrFallback) {
       final List<AIMessage> msgs = await _executeSearchSegmentsOcrTool(
         call,
@@ -1420,14 +2066,6 @@ class AIChatService {
         ),
       ];
     }
-    if (mode == 'auto' && results.isEmpty && !canOcrFallback) {
-      warnings.add(
-        _loc(
-          '提示：本次 AI 段落检索未命中；由于时间窗口较大，已跳过 OCR 回退（成本较高）。如需 OCR 检索，请缩小时间范围或使用 paging.prev / paging.next 分页，再设置 mode=ocr 调用。',
-          'Note: AI segment search returned no results; OCR fallback was skipped due to a large time window (expensive). To use OCR, narrow the time range or page with paging.prev/paging.next, then call again with mode=ocr.',
-        ),
-      );
-    }
 
     return <AIMessage>[
       AIMessage(
@@ -1441,16 +2079,18 @@ class AIChatService {
           if (appFilterRelaxed)
             'requested_app_package_name': requestedAppPackageName,
           if (appFilterRelaxed) 'app_filter_relaxed': true,
-          'start_ms': s,
-          'end_ms': e,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
           'time_span_limit': <String, dynamic>{
             'max_span_ms': maxSpanMs,
+            'max_span_days':
+                (maxSpanMs / const Duration(days: 1).inMilliseconds).round(),
             'clamped': range.clampedToMaxSpan,
           },
           if (requestedTooWide)
             'requested_range': <String, dynamic>{
-              'start_ms': reqStartMs,
-              'end_ms': reqEndMs,
+              'start_local': _formatLocalDateTimeForTool(reqStartMs),
+              'end_local': _formatLocalDateTimeForTool(reqEndMs),
             },
           if ((requestedTooWide && range.clampedToMaxSpan) ||
               _shouldOfferWeeklyPagingHint(
@@ -1468,8 +2108,8 @@ class AIChatService {
           if (warnings.isNotEmpty) 'warnings': warnings,
           if (range.guardApplied)
             'time_guard': <String, dynamic>{
-              'start_ms': toolStartMs,
-              'end_ms': toolEndMs,
+              'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+              'end_local': _formatLocalDateTimeForTool(toolEndMs!),
               'clamped': range.clampedToGuard,
             },
           'only_no_summary': onlyNoSummary,
@@ -1508,14 +2148,12 @@ class AIChatService {
     String effectiveAppPackageName = appPackageName;
     bool appFilterRelaxed = false;
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
-    final int? reqStartMs = _toInt(args['start_ms']);
-    final int? reqEndMs = _toInt(args['end_ms']);
-    final bool requestedTooWide =
-        (reqStartMs != null &&
-        reqEndMs != null &&
-        reqStartMs > 0 &&
-        reqEndMs > 0 &&
-        (reqEndMs - reqStartMs).abs() > AIChatService.maxToolTimeSpanMs);
+    final int? reqStartMs =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    final int? reqEndMs =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
 
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int defaultStart = now - const Duration(days: 30).inMilliseconds;
@@ -1526,33 +2164,14 @@ class AIChatService {
       endMs: reqEndMs,
       guardStartMs: toolStartMs,
       guardEndMs: toolEndMs,
+      maxSpanMs: AIChatService.maxOcrToolTimeSpanMs,
     );
     int s = range0.startMs;
     int e = range0.endMs;
-    final List<String> warnings = <String>[];
-    if (requestedTooWide && range0.clampedToMaxSpan) {
-      warnings.add(
-        _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
-        ),
-      );
-    }
     int limit = (_toInt(args['limit']) ?? 10).clamp(1, 20);
     int offset = (_toInt(args['offset']) ?? 0);
     if (offset < 0) offset = 0;
     int perSeg = (_toInt(args['per_segment_samples']) ?? 6).clamp(1, 15);
-
-    // Hard cap: avoid huge OCR scans.
-    final int span = e - s;
-    final int maxSpan = const Duration(days: 90).inMilliseconds;
-    if (span > maxSpan) {
-      s = e - maxSpan;
-    }
-    if (range0.guardApplied && toolStartMs != null && toolStartMs > 0) {
-      if (s < toolStartMs) s = toolStartMs;
-    }
-    if (s > e) s = e;
 
     // Fetch more screenshots than segments to improve segment coverage.
     final int desiredSegs = offset + limit;
@@ -1578,13 +2197,14 @@ class AIChatService {
             );
       if (shots.isEmpty && requestedAppPackageName.isNotEmpty) {
         final List<ScreenshotRecord> fallbackShots = await ScreenshotDatabase
-            .instance.searchScreenshotsByOcr(
-          query,
-          limit: shotFetch,
-          offset: 0,
-          startMillis: s,
-          endMillis: e,
-        );
+            .instance
+            .searchScreenshotsByOcr(
+              query,
+              limit: shotFetch,
+              offset: 0,
+              startMillis: s,
+              endMillis: e,
+            );
         if (fallbackShots.isNotEmpty) {
           shots = fallbackShots;
           appFilterRelaxed = true;
@@ -1600,33 +2220,12 @@ class AIChatService {
             'query': query,
             if (requestedAppPackageName.isNotEmpty)
               'app_package_name': requestedAppPackageName,
-            'start_ms': s,
-            'end_ms': e,
-            'time_span_limit': <String, dynamic>{
-              'max_span_ms': AIChatService.maxToolTimeSpanMs,
-              'clamped': range0.clampedToMaxSpan,
-            },
-            if (requestedTooWide)
-              'requested_range': <String, dynamic>{
-                'start_ms': reqStartMs,
-                'end_ms': reqEndMs,
-              },
-            if ((requestedTooWide && range0.clampedToMaxSpan) ||
-                _shouldOfferWeeklyPagingHint(
-                  guardStartMs: toolStartMs,
-                  guardEndMs: toolEndMs,
-                ))
-              'paging': _buildWeeklyPagingHint(
-                servedStartMs: s,
-                servedEndMs: e,
-                guardStartMs: toolStartMs,
-                guardEndMs: toolEndMs,
-              ),
-            if (warnings.isNotEmpty) 'warnings': warnings,
+            'start_local': _formatLocalDateTimeForTool(s),
+            'end_local': _formatLocalDateTimeForTool(e),
             if (range0.guardApplied)
               'time_guard': <String, dynamic>{
-                'start_ms': toolStartMs,
-                'end_ms': toolEndMs,
+                'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+                'end_local': _formatLocalDateTimeForTool(toolEndMs!),
                 'clamped': range0.clampedToGuard,
               },
             'error': 'ocr_search_failed',
@@ -1679,13 +2278,21 @@ class AIChatService {
     final Map<int, List<Map<String, dynamic>>> segToMatches =
         <int, List<Map<String, dynamic>>>{};
     final List<Map<String, dynamic>> unmapped = <Map<String, dynamic>>[];
+    Map<String, dynamic> sanitizeOcrMatch(Map<String, dynamic> m) {
+      final Map<String, dynamic> out = <String, dynamic>{...m};
+      out.remove('capture_ms');
+      return out;
+    }
+
     for (final ScreenshotRecord r in normalizedShots) {
       final String fp = r.filePath.trim();
       final Map<String, dynamic>? sample = pathToSample[fp];
       final int sid = (sample?['segment_id'] as int?) ?? 0;
+      final int captureMs = r.captureTime.millisecondsSinceEpoch;
       final Map<String, dynamic> match = <String, dynamic>{
         'filename': _basename(fp),
-        'capture_time': r.captureTime.millisecondsSinceEpoch,
+        'capture_ms': captureMs,
+        'capture_local': _formatLocalDateTimeForTool(captureMs),
         'app_package_name': r.appPackageName,
         'app_name': r.appName,
         'segment_id': sid > 0 ? sid : null,
@@ -1751,7 +2358,7 @@ class AIChatService {
       final List<Map<String, dynamic>> matches = entry.value;
       int last = 0;
       for (final m in matches) {
-        final int t = (m['capture_time'] as int?) ?? 0;
+        final int t = (m['capture_ms'] as int?) ?? 0;
         if (t > last) last = t;
       }
       ranked.add(<String, dynamic>{
@@ -1807,21 +2414,23 @@ class AIChatService {
       final List<Map<String, dynamic>> matches =
           List<Map<String, dynamic>>.from(segToMatches[sid] ?? const []);
       matches.sort((a, b) {
-        final int ta = (a['capture_time'] as int?) ?? 0;
-        final int tb = (b['capture_time'] as int?) ?? 0;
+        final int ta = (a['capture_ms'] as int?) ?? 0;
+        final int tb = (b['capture_ms'] as int?) ?? 0;
         return tb.compareTo(ta);
       });
+      final String? stLocal = st > 0 ? _formatLocalDateTimeForTool(st) : null;
+      final String? etLocal = et > 0 ? _formatLocalDateTimeForTool(et) : null;
 
       results.add(<String, dynamic>{
         'segment_id': sid,
-        'start_ms': st,
-        'end_ms': et,
+        'start_local': stLocal,
+        'end_local': etLocal,
         'apps': apps,
         'has_summary': (meta?['has_summary'] as int?) ?? 0,
         'sample_count': meta?['sample_count'],
         'preview': meta == null ? '' : _extractSegmentSummary(meta),
         'match_count': matches.length,
-        'matched_samples': matches.take(perSeg).toList(),
+        'matched_samples': matches.take(perSeg).map(sanitizeOcrMatch).toList(),
         'match_sources': <String>['ocr'],
       });
     }
@@ -1837,33 +2446,12 @@ class AIChatService {
           if (appFilterRelaxed)
             'requested_app_package_name': requestedAppPackageName,
           if (appFilterRelaxed) 'app_filter_relaxed': true,
-          'start_ms': s,
-          'end_ms': e,
-          'time_span_limit': <String, dynamic>{
-            'max_span_ms': AIChatService.maxToolTimeSpanMs,
-            'clamped': range0.clampedToMaxSpan,
-          },
-          if (requestedTooWide)
-            'requested_range': <String, dynamic>{
-              'start_ms': reqStartMs,
-              'end_ms': reqEndMs,
-            },
-          if ((requestedTooWide && range0.clampedToMaxSpan) ||
-              _shouldOfferWeeklyPagingHint(
-                guardStartMs: toolStartMs,
-                guardEndMs: toolEndMs,
-              ))
-            'paging': _buildWeeklyPagingHint(
-              servedStartMs: s,
-              servedEndMs: e,
-              guardStartMs: toolStartMs,
-              guardEndMs: toolEndMs,
-            ),
-          if (warnings.isNotEmpty) 'warnings': warnings,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
           if (range0.guardApplied)
             'time_guard': <String, dynamic>{
-              'start_ms': toolStartMs,
-              'end_ms': toolEndMs,
+              'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+              'end_local': _formatLocalDateTimeForTool(toolEndMs!),
               'clamped': range0.clampedToGuard,
             },
           'limit': limit,
@@ -1876,7 +2464,10 @@ class AIChatService {
           'count': results.length,
           'results': results,
           // Keep a small list for the model to request images if needed.
-          'unmapped_samples_preview': unmapped.take(20).toList(),
+          'unmapped_samples_preview': unmapped
+              .take(20)
+              .map(sanitizeOcrMatch)
+              .toList(growable: false),
         }),
         toolCallId: call.id,
       ),
@@ -1916,12 +2507,24 @@ class AIChatService {
       }
     })();
 
+    final Map<String, dynamic>? seg = segRow == null
+        ? null
+        : <String, dynamic>{...segRow};
+    if (seg != null) {
+      final int st = (seg['start_time'] as int?) ?? 0;
+      final int et = (seg['end_time'] as int?) ?? 0;
+      seg.remove('start_time');
+      seg.remove('end_time');
+      seg['start_local'] = st > 0 ? _formatLocalDateTimeForTool(st) : null;
+      seg['end_local'] = et > 0 ? _formatLocalDateTimeForTool(et) : null;
+    }
+
     final Map<String, dynamic>? res = await ScreenshotDatabase.instance
         .getSegmentResult(sid);
     final Map<String, dynamic> out = <String, dynamic>{
       'tool': 'get_segment_result',
       'segment_id': sid,
-      'segment': segRow,
+      'segment': seg,
       'result': res == null
           ? null
           : <String, dynamic>{
@@ -1968,9 +2571,12 @@ class AIChatService {
     for (final r in rows.take(limit)) {
       final Map<String, dynamic> m = Map<String, dynamic>.from(r);
       final String fp = (m['file_path'] as String?) ?? '';
+      final int captureMs = (m['capture_time'] as int?) ?? 0;
       samples.add(<String, dynamic>{
         'sample_id': m['id'],
-        'capture_time': m['capture_time'],
+        'capture_local': captureMs > 0
+            ? _formatLocalDateTimeForTool(captureMs)
+            : null,
         'app_package_name': m['app_package_name'],
         'app_name': m['app_name'],
         'position_index': m['position_index'],
@@ -2015,14 +2621,12 @@ class AIChatService {
 
     final String appPackageName =
         (args['app_package_name'] as String?)?.trim() ?? '';
-    final int? reqStartMs = _toInt(args['start_ms']);
-    final int? reqEndMs = _toInt(args['end_ms']);
-    final bool requestedTooWide =
-        (reqStartMs != null &&
-        reqEndMs != null &&
-        reqStartMs > 0 &&
-        reqEndMs > 0 &&
-        (reqEndMs - reqStartMs).abs() > AIChatService.maxToolTimeSpanMs);
+    final int? reqStartMs =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    final int? reqEndMs =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
 
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int defaultStart = now - const Duration(days: 30).inMilliseconds;
@@ -2033,32 +2637,13 @@ class AIChatService {
       endMs: reqEndMs,
       guardStartMs: toolStartMs,
       guardEndMs: toolEndMs,
+      maxSpanMs: AIChatService.maxOcrToolTimeSpanMs,
     );
     int s = range0.startMs;
     int e = range0.endMs;
-    final List<String> warnings = <String>[];
-    if (requestedTooWide && range0.clampedToMaxSpan) {
-      warnings.add(
-        _loc(
-          '警告：本次工具调用的时间范围超过 7 天，已自动裁剪为 7 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
-          'Warning: requested time range exceeds 7 days; clamped to a 7-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
-        ),
-      );
-    }
     int limit = (_toInt(args['limit']) ?? 20).clamp(1, 50);
     int offset = (_toInt(args['offset']) ?? 0);
     if (offset < 0) offset = 0;
-
-    // Hard cap: avoid huge OCR scans.
-    final int span = e - s;
-    final int maxSpan = const Duration(days: 90).inMilliseconds;
-    if (span > maxSpan) {
-      s = e - maxSpan;
-    }
-    if (range0.guardApplied && toolStartMs != null && toolStartMs > 0) {
-      if (s < toolStartMs) s = toolStartMs;
-    }
-    if (s > e) s = e;
 
     final String requestedAppPackageName = appPackageName;
     String effectiveAppPackageName = appPackageName;
@@ -2095,15 +2680,45 @@ class AIChatService {
 
     final List<Map<String, dynamic>> results = rows.map((r) {
       final String fp = r.filePath;
+      final int captureMs = r.captureTime.millisecondsSinceEpoch;
       return <String, dynamic>{
         'id': r.id,
         'app_package_name': r.appPackageName,
         'app_name': r.appName,
-        'capture_time': r.captureTime.millisecondsSinceEpoch,
+        'capture_local': _formatLocalDateTimeForTool(captureMs),
         'filename': fp.isEmpty ? '' : _basename(fp),
         'file_size': r.fileSize,
       };
     }).toList();
+
+    int? totalCount;
+    bool hasMore = false;
+    try {
+      // Fast path: if we didn't fill the page, treat returned results as the full set.
+      // Otherwise compute the true total to support “how many …” questions without
+      // forcing the model to split time windows.
+      if (offset <= 0 && results.length < limit) {
+        totalCount = results.length;
+      } else {
+        totalCount = effectiveAppPackageName.isNotEmpty
+            ? await ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
+                effectiveAppPackageName,
+                query,
+                startMillis: s,
+                endMillis: e,
+              )
+            : await ScreenshotDatabase.instance.countScreenshotsByOcr(
+                query,
+                startMillis: s,
+                endMillis: e,
+              );
+      }
+      if (totalCount != null) {
+        hasMore = (offset + results.length) < totalCount;
+      }
+    } catch (_) {
+      // Best-effort: total_count is optional; do not fail the tool if counting fails.
+    }
 
     return <AIMessage>[
       AIMessage(
@@ -2116,38 +2731,19 @@ class AIChatService {
           if (appFilterRelaxed)
             'requested_app_package_name': requestedAppPackageName,
           if (appFilterRelaxed) 'app_filter_relaxed': true,
-          'start_ms': s,
-          'end_ms': e,
-          'time_span_limit': <String, dynamic>{
-            'max_span_ms': AIChatService.maxToolTimeSpanMs,
-            'clamped': range0.clampedToMaxSpan,
-          },
-          if (requestedTooWide)
-            'requested_range': <String, dynamic>{
-              'start_ms': reqStartMs,
-              'end_ms': reqEndMs,
-            },
-          if ((requestedTooWide && range0.clampedToMaxSpan) ||
-              _shouldOfferWeeklyPagingHint(
-                guardStartMs: toolStartMs,
-                guardEndMs: toolEndMs,
-              ))
-            'paging': _buildWeeklyPagingHint(
-              servedStartMs: s,
-              servedEndMs: e,
-              guardStartMs: toolStartMs,
-              guardEndMs: toolEndMs,
-            ),
-          if (warnings.isNotEmpty) 'warnings': warnings,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
           if (range0.guardApplied)
             'time_guard': <String, dynamic>{
-              'start_ms': toolStartMs,
-              'end_ms': toolEndMs,
+              'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+              'end_local': _formatLocalDateTimeForTool(toolEndMs!),
               'clamped': range0.clampedToGuard,
             },
           'limit': limit,
           'offset': offset,
           'count': results.length,
+          if (totalCount != null) 'total_count': totalCount,
+          if (totalCount != null) 'has_more': hasMore,
           'results': results,
         }),
         toolCallId: call.id,
@@ -2179,8 +2775,12 @@ class AIChatService {
         (args['app_package_name'] as String?)?.trim() ?? '';
     final bool includeNsfw = _toBool(args['include_nsfw']);
 
-    final int? reqStartMs = _toInt(args['start_ms']);
-    final int? reqEndMs = _toInt(args['end_ms']);
+    final int? reqStartMs =
+        _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
+        _toInt(args['start_ms']);
+    final int? reqEndMs =
+        _parseLocalDateTimeToEpochMs(args['end_local'], isEnd: true) ??
+        _toInt(args['end_ms']);
     final int maxSpanMs = AIChatService.maxSemanticToolTimeSpanMs;
     final bool requestedTooWide =
         (reqStartMs != null &&
@@ -2206,10 +2806,11 @@ class AIChatService {
     if (requestedTooWide && range0.clampedToMaxSpan) {
       final int maxSpanDays =
           (maxSpanMs / const Duration(days: 1).inMilliseconds).round();
+      final String servedLocal = _formatLocalRangeForTool(s, e);
       warnings.add(
         _loc(
-          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 [$s-$e]）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
-          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned [$s-$e] only). Use paging.prev/paging.next to page and call again.',
+          '警告：本次工具调用的时间范围超过 $maxSpanDays 天，已自动裁剪为 $maxSpanDays 天窗口（仅返回 $servedLocal）。如需继续，请使用 paging.prev / paging.next 分页再次调用。',
+          'Warning: requested time range exceeds $maxSpanDays days; clamped to a $maxSpanDays-day window (returned $servedLocal only). Use paging.prev/paging.next to page and call again.',
         ),
       );
     }
@@ -2276,9 +2877,12 @@ class AIChatService {
       final Map<String, dynamic> row = Map<String, dynamic>.from(r);
       final String fp = (row['file_path'] as String?)?.trim() ?? '';
       final String filename = fp.isEmpty ? '' : _basename(fp);
+      final int captureMs = (row['capture_time'] as int?) ?? 0;
       results.add(<String, dynamic>{
         'filename': filename,
-        'capture_time': row['capture_time'],
+        'capture_local': captureMs > 0
+            ? _formatLocalDateTimeForTool(captureMs)
+            : null,
         'segment_id': row['segment_id'],
         'app_package_name': row['app_package_name'],
         'app_name': row['app_name'],
@@ -2302,16 +2906,18 @@ class AIChatService {
             'requested_app_package_name': requestedAppPackageName,
           if (appFilterRelaxed) 'app_filter_relaxed': true,
           'include_nsfw': includeNsfw,
-          'start_ms': s,
-          'end_ms': e,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
           'time_span_limit': <String, dynamic>{
             'max_span_ms': maxSpanMs,
+            'max_span_days':
+                (maxSpanMs / const Duration(days: 1).inMilliseconds).round(),
             'clamped': range0.clampedToMaxSpan,
           },
           if (requestedTooWide)
             'requested_range': <String, dynamic>{
-              'start_ms': reqStartMs,
-              'end_ms': reqEndMs,
+              'start_local': _formatLocalDateTimeForTool(reqStartMs),
+              'end_local': _formatLocalDateTimeForTool(reqEndMs),
             },
           if ((requestedTooWide && range0.clampedToMaxSpan) ||
               _shouldOfferWeeklyPagingHint(
@@ -2329,8 +2935,8 @@ class AIChatService {
           if (warnings.isNotEmpty) 'warnings': warnings,
           if (range0.guardApplied)
             'time_guard': <String, dynamic>{
-              'start_ms': toolStartMs,
-              'end_ms': toolEndMs,
+              'start_local': _formatLocalDateTimeForTool(toolStartMs!),
+              'end_local': _formatLocalDateTimeForTool(toolEndMs!),
               'clamped': range0.clampedToGuard,
             },
           'limit': limit,
@@ -2371,13 +2977,19 @@ class AIChatService {
     final bool includeHistory = includeRaw == null ? true : _toBool(includeRaw);
 
     try {
-      final Map<String, dynamic> payload =
-          await MemoryBridgeService.instance.searchMemoryGraph(
-        query: query,
-        depth: depth,
-        limit: limit,
-        includeHistory: includeHistory,
-      );
+      final Map<String, dynamic> rawPayload = await MemoryBridgeService.instance
+          .searchMemoryGraph(
+            query: query,
+            depth: depth,
+            limit: limit,
+            includeHistory: includeHistory,
+          );
+      final Map<String, dynamic> payload = <String, dynamic>{...rawPayload};
+      payload['tool'] = 'search_memory_graph';
+      payload.putIfAbsent('query', () => query);
+      payload.putIfAbsent('depth', () => depth);
+      payload.putIfAbsent('limit', () => limit);
+      payload.putIfAbsent('include_history', () => includeHistory);
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -2458,12 +3070,44 @@ class AIChatService {
       context: 'chat',
     );
     final List<AIMessage> history = await _settings.getChatHistory();
+    final String cid = await _settings.getActiveConversationCid();
+    // Best-effort bootstrap: seed append-only transcript from existing tail.
+    try {
+      await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
+    } catch (_) {}
+
+    // Prefer using the append-only transcript for prompt history so context can
+    // exceed the UI tail limit.
+    List<AIMessage> requestHistory = history;
+    try {
+      final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
+        cid: cid,
+        maxTokens: maxHistoryPromptTokens,
+      );
+      if (full.isNotEmpty) requestHistory = full;
+    } catch (_) {}
+
     final String systemPrompt = _systemPromptForLocale();
+    final List<String> extras = <String>[];
+    try {
+      final String ctxMsg =
+          await _chatContext.buildSystemContextMessage(cid: cid);
+      if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
+    } catch (_) {}
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
-      history: history,
+      history: requestHistory,
       userMessage: userMessage,
+      extraSystemMessages: extras,
     );
+    try {
+      unawaited(
+        _chatContext.recordPromptTokens(
+          cid: cid,
+          tokensApprox: PromptBudget.approxTokensForMessagesJson(requestMessages),
+        ),
+      );
+    } catch (_) {}
 
     final AIGatewayResult result = await _gateway.complete(
       endpoints: endpoints,
@@ -2481,12 +3125,19 @@ class AIChatService {
       reasoningDuration: result.reasoningDuration,
     );
 
-    await _persistConversation(
-      history: history,
-      userMessage: userMessage,
-      assistant: assistant,
-      modelUsed: result.modelUsed,
-    );
+    // Do not block UI / streaming completion on history persistence.
+    // Persist best-effort in background to avoid "stuck at final answer" when DB is slow/locked.
+    unawaited(() async {
+      try {
+        await _persistConversation(
+          history: history,
+          userMessage: userMessage,
+          assistant: assistant,
+          modelUsed: result.modelUsed,
+          toolSignatureDigests: const <String, Map<String, dynamic>>{},
+        );
+      } catch (_) {}
+    }());
 
     return assistant;
   }
@@ -2531,20 +3182,31 @@ class AIChatService {
     String context = 'chat',
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
-    int maxToolIters = 0,
+    int maxToolIters =
+        0, // 0 = unlimited (HARD RULE: do NOT introduce a fixed cap)
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
   }) async {
     if (tools.isNotEmpty) {
-      // 工具调用采用“非流式 tool-loop”，但为了让 UI 仍能通过 stream 得到最终结果，
-      // 我们会在 tool-loop 过程中持续输出“当前在做什么”，并在 completed 完成后
-      // 向 stream 注入最终事件（reasoning/content）。
+      // 工具调用采用 tool-loop。模型侧请求支持流式增量输出（content/reasoning），
+      // 同时在 tool-loop 过程中持续输出“当前在做什么”的进度事件。
       final StreamController<AIStreamEvent> controller =
           StreamController<AIStreamEvent>();
 
+      bool sawContent = false;
+      bool sawModelReasoning = false;
       void emitSafe(AIStreamEvent evt) {
         if (controller.isClosed) return;
+        if (evt.kind == 'content' && evt.data.trim().isNotEmpty) {
+          sawContent = true;
+        }
+        if (evt.kind == 'reasoning' &&
+            evt.data.trim().isNotEmpty &&
+            !evt.data.startsWith('- ')) {
+          // _emitProgress() always prefixes "- "; treat non-prefixed chunks as model reasoning.
+          sawModelReasoning = true;
+        }
         controller.add(evt);
       }
 
@@ -2571,10 +3233,10 @@ class AIChatService {
             if (controller.isClosed) return;
             final String reasoning = (message.reasoningContent ?? '')
                 .trimRight();
-            if (reasoning.isNotEmpty) {
+            if (reasoning.isNotEmpty && !sawModelReasoning) {
               controller.add(AIStreamEvent('reasoning', reasoning));
             }
-            if (message.content.isNotEmpty) {
+            if (message.content.isNotEmpty && !sawContent) {
               controller.add(AIStreamEvent('content', message.content));
             }
             unawaited(controller.close());
@@ -2607,9 +3269,9 @@ class AIChatService {
       displayUserMessage: displayUserMessage,
       endpoints: endpoints,
       history: history,
-      requestHistory: includeHistory
-          ? history.where((msg) => msg.role != 'system').toList()
-          : const <AIMessage>[],
+      // Let _startStreamingSession decide the optimal prompt history (prefer
+      // append-only transcript). Keep this param only as an override.
+      requestHistory: null,
       timeout: timeout,
       context: context,
       includeHistory: includeHistory,
@@ -2630,17 +3292,59 @@ class AIChatService {
     bool persistHistory = true,
     List<String> extraSystemMessages = const <String>[],
   }) async {
-    final List<AIMessage> effectiveHistory = includeHistory
-        ? (requestHistory ?? history)
-        : const <AIMessage>[];
+    final String cid = await _settings.getActiveConversationCid();
+
+    // Best-effort bootstrap: seed append-only transcript from existing tail.
+    try {
+      await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
+    } catch (_) {}
+
+    List<AIMessage> effectiveHistory = const <AIMessage>[];
+    if (includeHistory) {
+      // Prefer append-only transcript for prompt history.
+      try {
+        final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
+          cid: cid,
+          maxTokens: maxHistoryPromptTokens,
+        );
+        if (full.isNotEmpty) {
+          effectiveHistory = full;
+        } else {
+          effectiveHistory = requestHistory ?? history;
+        }
+      } catch (_) {
+        effectiveHistory = requestHistory ?? history;
+      }
+    }
+
+    final List<String> effectiveExtras = <String>[];
+    if (context == 'chat' && persistHistory) {
+      try {
+        final String ctxMsg =
+            await _chatContext.buildSystemContextMessage(cid: cid);
+        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+    }
+    effectiveExtras.addAll(extraSystemMessages);
     final String systemPrompt = _systemPromptForLocale();
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: effectiveHistory,
       userMessage: userMessage,
-      extraSystemMessages: extraSystemMessages,
+      extraSystemMessages: effectiveExtras,
       includeHistory: includeHistory,
     );
+    if (context == 'chat' && persistHistory) {
+      try {
+        unawaited(
+          _chatContext.recordPromptTokens(
+            cid: cid,
+            tokensApprox:
+                PromptBudget.approxTokensForMessagesJson(requestMessages),
+          ),
+        );
+      } catch (_) {}
+    }
 
     final AIGatewayStreamingSession gatewaySession = _gateway.startStreaming(
       endpoints: endpoints,
@@ -2664,12 +3368,18 @@ class AIChatService {
       );
 
       if (persistHistory) {
-        await _persistConversation(
-          history: history,
-          userMessage: displayUserMessage,
-          assistant: assistant,
-          modelUsed: result.modelUsed,
-        );
+        // Persist best-effort without blocking completion.
+        unawaited(() async {
+          try {
+            await _persistConversation(
+              history: history,
+              userMessage: displayUserMessage,
+              assistant: assistant,
+              modelUsed: result.modelUsed,
+              toolSignatureDigests: const <String, Map<String, dynamic>>{},
+            );
+          } catch (_) {}
+        }());
       }
 
       return assistant;
@@ -2686,7 +3396,8 @@ class AIChatService {
     List<String> extraSystemMessages = const <String>[],
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
-    int maxToolIters = 0,
+    int maxToolIters =
+        0, // 0 = unlimited (HARD RULE: do NOT introduce a fixed cap)
     bool persistHistory = true,
     String context = 'chat',
     int? toolStartMs,
@@ -2720,7 +3431,8 @@ class AIChatService {
     List<String> extraSystemMessages = const <String>[],
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
-    int maxToolIters = 0,
+    int maxToolIters =
+        0, // 0 = unlimited (HARD RULE: do NOT introduce a fixed cap)
     bool persistHistory = true,
     String context = 'chat',
     int? toolStartMs,
@@ -2735,13 +3447,44 @@ class AIChatService {
       context: context,
     );
     final List<AIMessage> history = await _settings.getChatHistory();
-    final List<AIMessage> filteredHistory = includeHistory
-        ? history.where((m) => m.role != 'system').toList()
-        : const <AIMessage>[];
+    final String cid = await _settings.getActiveConversationCid();
+    // Best-effort bootstrap: seed append-only transcript from existing tail.
+    try {
+      await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
+    } catch (_) {}
+
+    List<AIMessage> filteredHistory = const <AIMessage>[];
+    if (includeHistory) {
+      // Prefer append-only transcript for prompt history.
+      try {
+        final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
+          cid: cid,
+          maxTokens: maxHistoryPromptTokens,
+        );
+        if (full.isNotEmpty) {
+          filteredHistory = full;
+        } else {
+          filteredHistory = history
+              .where((m) => m.role == 'user' || m.role == 'assistant')
+              .toList();
+        }
+      } catch (_) {
+        filteredHistory = history
+            .where((m) => m.role == 'user' || m.role == 'assistant')
+            .toList();
+      }
+    }
     final String systemPrompt = _systemPromptForLocale();
-    final List<String> effectiveExtras = tools.isNotEmpty
-        ? <String>[_buildToolUsageInstruction(tools), ...extraSystemMessages]
-        : extraSystemMessages;
+    final List<String> effectiveExtras = <String>[];
+    if (tools.isNotEmpty) effectiveExtras.add(_buildToolUsageInstruction(tools));
+    if (context == 'chat' && persistHistory) {
+      try {
+        final String ctxMsg =
+            await _chatContext.buildSystemContextMessage(cid: cid);
+        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+    }
+    effectiveExtras.addAll(extraSystemMessages);
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: filteredHistory,
@@ -2749,13 +3492,61 @@ class AIChatService {
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistory,
     );
+    if (context == 'chat' && persistHistory) {
+      try {
+        unawaited(
+          _chatContext.recordPromptTokens(
+            cid: cid,
+            tokensApprox:
+                PromptBudget.approxTokensForMessagesJson(requestMessages),
+          ),
+        );
+      } catch (_) {}
+    }
+    final AIMessage pinnedUserMessage = requestMessages.isNotEmpty
+        ? requestMessages.last
+        : AIMessage(role: 'user', content: actualUserMessage);
     final Set<String> toolNames = _extractToolNames(tools);
     final bool hasRetrievalTools =
         toolNames.contains('search_segments') ||
         toolNames.contains('search_screenshots_ocr') ||
         toolNames.contains('search_ai_image_meta');
 
-    // === Tool loop (non-stream) ===
+    Future<AIGatewayResult> callModel({
+      required List<AIMessage> messages,
+      List<Map<String, dynamic>> toolsForCall = const <Map<String, dynamic>>[],
+      Object? toolChoiceForCall,
+      bool preferStreaming = true,
+    }) async {
+      if (emitEvent != null && preferStreaming) {
+        final AIGatewayStreamingSession session = _gateway.startStreaming(
+          endpoints: endpoints,
+          messages: messages,
+          responseStartMarker: responseStartMarker,
+          timeout: timeout,
+          logContext: context,
+          tools: toolsForCall,
+          toolChoice: toolChoiceForCall,
+        );
+        final Future<AIGatewayResult> completed = session.completed;
+        await for (final AIGatewayEvent e in session.stream) {
+          emitEvent(AIStreamEvent(e.kind, e.data));
+        }
+        return await completed;
+      }
+      return await _gateway.complete(
+        endpoints: endpoints,
+        messages: messages,
+        responseStartMarker: responseStartMarker,
+        timeout: timeout,
+        preferStreaming: preferStreaming,
+        logContext: context,
+        tools: toolsForCall,
+        toolChoice: toolChoiceForCall,
+      );
+    }
+
+    // === Tool loop (supports streaming) ===
     if (tools.isNotEmpty) {
       final String iterZh = maxToolIters <= 0 ? '无限制' : '$maxToolIters 轮';
       final String iterEn = maxToolIters <= 0
@@ -2796,21 +3587,32 @@ class AIChatService {
     }
     late AIGatewayResult result;
     try {
-      result = await _gateway.complete(
-        endpoints: endpoints,
+      working = _replaceImageMessagesWithPlaceholder(
+        working,
+        keepMostRecent: true,
+      );
+      working = _enforceToolLoopPromptBudget(
+        working,
+        pinnedUser: pinnedUserMessage,
+        emitEvent: emitEvent,
+      );
+      result = await callModel(
         messages: working,
-        responseStartMarker: responseStartMarker,
-        timeout: timeout,
-        preferStreaming: tools.isEmpty,
-        logContext: context,
-        tools: tools,
-        toolChoice: toolChoice,
+        toolsForCall: tools,
+        toolChoiceForCall: toolChoice,
+        preferStreaming: true,
       );
     } finally {
       firstHeartbeatStarter?.cancel();
       firstHeartbeatTicker?.cancel();
       firstReq.stop();
     }
+    // Important: drop/replace multimodal image payloads after they have been sent
+    // once; otherwise we will re-upload base64 blobs on every follow-up call.
+    working = _replaceImageMessagesWithPlaceholder(
+      working,
+      keepMostRecent: false,
+    );
     if (tools.isNotEmpty && result.toolCalls.isEmpty) {
       final AIGatewayResult coerced = _maybeCoerceToolCallsFromText(
         result,
@@ -2855,18 +3657,17 @@ class AIChatService {
         ),
       );
 
-      final List<AIMessage>
-      retryMessages = List<AIMessage>.from(requestMessages)
+      List<AIMessage> retryMessages = List<AIMessage>.from(requestMessages)
         ..add(
           AIMessage(
             role: 'user',
             content: _loc(
               '请先至少调用一次检索类工具（search_segments 或 search_screenshots_ocr）。'
-                  '若第一次结果为空，请更换关键词并至少再检索一次；必要时按 paging.prev 逐周翻页继续检索。'
+                  '若第一次结果为空，请更换关键词并至少再检索一次；必要时调整时间范围（start_local/end_local）或 offset/limit 分页继续检索。'
                   '确认后再输出最终回答；不要在未检索前直接下结论，也不要臆造 [evidence: ...]。',
               'Call at least one retrieval tool first (search_segments or search_screenshots_ocr), '
                   'if the first result is empty, try a different query and search again; '
-                  'page by week via paging.prev if needed, then answer. '
+                  'adjust the time window (start_local/end_local) or page via offset/limit if needed, then answer. '
                   'Do not conclude (or fabricate evidence) before searching.',
             ),
           ),
@@ -2893,21 +3694,30 @@ class AIChatService {
         });
       }
       try {
-        result = await _gateway.complete(
-          endpoints: endpoints,
+        retryMessages = _replaceImageMessagesWithPlaceholder(
+          retryMessages,
+          keepMostRecent: true,
+        );
+        retryMessages = _enforceToolLoopPromptBudget(
+          retryMessages,
+          pinnedUser: pinnedUserMessage,
+          emitEvent: emitEvent,
+        );
+        result = await callModel(
           messages: retryMessages,
-          responseStartMarker: responseStartMarker,
-          timeout: timeout,
-          preferStreaming: false,
-          logContext: context,
-          tools: tools,
-          toolChoice: toolChoice,
+          toolsForCall: tools,
+          toolChoiceForCall: toolChoice,
+          preferStreaming: true,
         );
       } finally {
         retryHeartbeatStarter?.cancel();
         retryHeartbeatTicker?.cancel();
         retryReq.stop();
       }
+      retryMessages = _replaceImageMessagesWithPlaceholder(
+        retryMessages,
+        keepMostRecent: false,
+      );
       if (result.toolCalls.isEmpty) {
         result = _maybeCoerceToolCallsFromText(result, tools);
       }
@@ -2923,6 +3733,9 @@ class AIChatService {
       working = List<AIMessage>.from(retryMessages);
     }
 
+    // HARD RULE: 禁止在 maxToolIters<=0（无限制）时引入任何“固定轮次上限/安全上限”。
+    // 若担心模型陷入循环，只能使用“无进展/重复参数”的护栏（例如去重、强提示、临时禁用 tools）
+    // 来打断重复，而不是用固定轮次截断（否则会破坏跨月/跨年检索等长任务）。
     final bool unlimitedIters = maxToolIters <= 0;
     int iters = 0;
     int totalToolCalls = 0;
@@ -2930,9 +3743,17 @@ class AIChatService {
     bool hadAnyRetrievalHit = false;
     String lastRetrievalTool = '';
     int lastRetrievalCount = -1;
+    final Set<String> seenToolSignatures = <String>{};
+    final Map<String, Map<String, dynamic>> signatureDigests =
+        <String, Map<String, dynamic>>{};
+    int consecutiveDuplicateBatches = 0;
+    int consecutiveEmptyRetrievalBatches = 0;
+    bool forcedNoProgressStop = false;
+
     while (result.toolCalls.isNotEmpty &&
         (unlimitedIters || iters < maxToolIters)) {
       iters += 1;
+
       _emitProgress(
         emitEvent,
         _loc(
@@ -2945,7 +3766,7 @@ class AIChatService {
       working.add(
         AIMessage(
           role: 'assistant',
-          content: '',
+          content: result.content,
           toolCalls: result.toolCalls
               .map((e) => e.toOpenAIToolCallJson())
               .toList(),
@@ -2954,6 +3775,9 @@ class AIChatService {
 
       // Execute each tool call and append tool + follow-up user messages
       int idxInBatch = 0;
+      bool executedAnyNew = false;
+      int batchRetrievalCalls = 0;
+      int batchRetrievalHits = 0;
       for (final AIToolCall call in result.toolCalls) {
         idxInBatch += 1;
         totalToolCalls += 1;
@@ -2970,11 +3794,47 @@ class AIChatService {
             'Run tool #$totalToolCalls (batch $idxInBatch/${result.toolCalls.length}): ${call.name}$argsSuffix',
           ),
         );
+
+        final String signature = _toolCallSignature(call);
+        if (seenToolSignatures.contains(signature)) {
+          final Map<String, dynamic>? prev = signatureDigests[signature];
+          _emitProgress(
+            emitEvent,
+            _loc(
+              '检测到重复工具调用参数，已跳过执行：${call.name}',
+              'Detected duplicate tool call args; skipping: ${call.name}',
+            ),
+          );
+          working.add(
+            AIMessage(
+              role: 'tool',
+              content: jsonEncode(<String, dynamic>{
+                'tool': call.name,
+                'warning': 'duplicate_tool_call_skipped',
+                if (prev != null && prev.isNotEmpty)
+                  'previous_result_digest': prev,
+                'message': _loc(
+                  '已跳过与之前完全相同参数的工具调用；请基于已有工具结果继续推理/统计并回答。'
+                      '如需更多信息，请更换关键词、调整时间窗或使用 paging/offset 获取新的结果。',
+                  'Skipped an identical tool call; use the existing tool outputs to reason/count and answer. '
+                      'If you still need more information, change keywords, adjust time window, or use paging/offset to fetch NEW results.',
+                ),
+              }),
+              toolCallId: call.id,
+            ),
+          );
+          continue;
+        }
+        seenToolSignatures.add(signature);
+        executedAnyNew = true;
+
         final Stopwatch toolSw = Stopwatch()..start();
-        final List<AIMessage> toolMsgs = await _executeToolCall(
+        final List<AIMessage> toolMsgs = _compactToolMessagesForPrompt(
+          await _executeToolCall(
           call,
           toolStartMs: toolStartMs,
           toolEndMs: toolEndMs,
+          ),
         );
         toolSw.stop();
         working.addAll(toolMsgs);
@@ -2982,6 +3842,7 @@ class AIChatService {
           final Map<String, dynamic> obj = _safeJsonObject(
             toolMsgs.first.content,
           );
+          signatureDigests[signature] = _toolPayloadDigest(obj);
           final String tool = (obj['tool'] as String?)?.trim() ?? '';
           final int? count = _toInt(obj['count']);
           if (count != null &&
@@ -2989,6 +3850,8 @@ class AIChatService {
                   tool == 'search_segments_ocr' ||
                   tool == 'search_screenshots_ocr' ||
                   tool == 'search_ai_image_meta')) {
+            batchRetrievalCalls += 1;
+            if (count > 0) batchRetrievalHits += 1;
             lastRetrievalTool = tool;
             lastRetrievalCount = count;
             if (count > 0) hadAnyRetrievalHit = true;
@@ -3007,6 +3870,33 @@ class AIChatService {
         );
       }
 
+      if (!executedAnyNew) {
+        consecutiveDuplicateBatches += 1;
+        working.add(
+          AIMessage(
+            role: 'user',
+            content: _loc(
+              '你正在重复调用完全相同参数的工具，这不会带来新信息。\n'
+                  '请不要再重复同参数调用；请基于已返回的工具结果汇总/统计并给出最终回答。\n'
+                  '如果仍需检索：必须更换关键词，或使用 paging.prev/paging.next 翻页，或调整 offset/limit 获取“新的”结果。',
+              'You are repeating identical tool calls; this will not produce new information.\n'
+                  'Do NOT repeat the same-argument calls again; summarize/count based on the tool outputs already returned, then answer.\n'
+                  'If you still need to search: change keywords, or page via paging.prev/paging.next, or adjust offset/limit to fetch NEW results.',
+            ),
+          ),
+        );
+      } else {
+        consecutiveDuplicateBatches = 0;
+      }
+
+      if (batchRetrievalCalls > 0) {
+        if (batchRetrievalHits > 0) {
+          consecutiveEmptyRetrievalBatches = 0;
+        } else {
+          consecutiveEmptyRetrievalBatches += 1;
+        }
+      }
+
       _emitProgress(
         emitEvent,
         _loc('将工具结果回传给模型…', 'Sending tool results back to model…'),
@@ -3014,6 +3904,34 @@ class AIChatService {
       final Stopwatch followReq = Stopwatch()..start();
       Timer? followHeartbeatStarter;
       Timer? followHeartbeatTicker;
+      final bool shouldForceNoProgressStop =
+          !forcedNoProgressStop &&
+          hasRetrievalTools &&
+          !hadAnyRetrievalHit &&
+          consecutiveEmptyRetrievalBatches >= 3;
+      if (shouldForceNoProgressStop) {
+        forcedNoProgressStop = true;
+        working.add(
+          AIMessage(
+            role: 'user',
+            content: _loc(
+              '进展护栏：已连续多次检索仍无结果/无新信息（多次 count=0）。\n'
+                  '请停止继续调用工具（避免陷入循环），改为：\n'
+                  '1) 基于现有信息给出最佳努力答复，并明确哪些结论缺少证据；\n'
+                  '2) 向用户提出 2–4 个最关键的澄清问题（例如对方昵称/平台/更精确时间段/关键词/事件细节），以便下一轮检索更有针对性。\n'
+                  '禁止编造证据或臆造 [evidence: ...]。',
+              'Progress guard: repeated searches are yielding no new information (multiple count=0).\n'
+                  'Stop calling tools (avoid loops). Instead:\n'
+                  '1) Give a best-effort answer from what you have, clearly stating what lacks evidence.\n'
+                  '2) Ask the user 2–4 high-signal clarification questions (nickname/platform/time window/keywords/details) so the next search can succeed.\n'
+                  'Do not fabricate evidence or [evidence: ...].',
+            ),
+          ),
+        );
+      }
+      final bool forceNoTools = (consecutiveDuplicateBatches >= 2 ||
+              shouldForceNoProgressStop) &&
+          result.toolCalls.isNotEmpty;
       if (emitEvent != null) {
         followHeartbeatStarter = Timer(const Duration(seconds: 12), () {
           followHeartbeatTicker = Timer.periodic(const Duration(seconds: 10), (
@@ -3032,22 +3950,31 @@ class AIChatService {
         });
       }
       try {
-        result = await _gateway.complete(
-          endpoints: endpoints,
+        working = _replaceImageMessagesWithPlaceholder(
+          working,
+          keepMostRecent: true,
+        );
+        working = _enforceToolLoopPromptBudget(
+          working,
+          pinnedUser: pinnedUserMessage,
+          emitEvent: emitEvent,
+        );
+        result = await callModel(
           messages: working,
-          responseStartMarker: responseStartMarker,
-          timeout: timeout,
-          preferStreaming: false,
-          logContext: context,
-          tools: tools,
-          toolChoice: toolChoice,
+          toolsForCall: forceNoTools ? const <Map<String, dynamic>>[] : tools,
+          toolChoiceForCall: forceNoTools ? null : toolChoice,
+          preferStreaming: true,
         );
       } finally {
         followHeartbeatStarter?.cancel();
         followHeartbeatTicker?.cancel();
         followReq.stop();
       }
-      if (result.toolCalls.isEmpty) {
+      working = _replaceImageMessagesWithPlaceholder(
+        working,
+        keepMostRecent: false,
+      );
+      if (!forceNoTools && result.toolCalls.isEmpty) {
         final AIGatewayResult coerced = _maybeCoerceToolCallsFromText(
           result,
           tools,
@@ -3093,7 +4020,7 @@ class AIChatService {
           ),
         );
 
-        final List<AIMessage> retryMessages = List<AIMessage>.from(working)
+        List<AIMessage> retryMessages = List<AIMessage>.from(working)
           ..add(
             AIMessage(
               role: 'user',
@@ -3101,13 +4028,13 @@ class AIChatService {
                 '注意：上一次检索结果为空（count=0），不能据此直接断言“没有/未找到”。\n'
                     '在输出最终答复前，请按以下流程继续：\n'
                     '1) 至少再调用 2 次检索类工具（search_segments / search_screenshots_ocr / search_ai_image_meta），并更换关键词（拆词/同义词/英文）。\n'
-                    '2) 若本次查询范围跨多周，必须使用工具返回的 paging.prev / paging.next 至少翻 2 个周窗口继续查找。\n'
+                    '2) 若本次查询范围较大，请调整 start_local/end_local 覆盖不同时间段，或使用 offset/limit 分页获取更多结果；若工具返回 paging.prev/paging.next，也可使用它们继续。\n'
                     '3) 若多次检索仍为空，请不要给“很失望”的结论；先向用户确认：是否确定平台/关键词/时间范围无误，并询问可补充的线索（UP 主名/视频标题词/头像/栏目名等）。\n'
                     '确认后再给最终答复；不要臆造证据或 [evidence: ...]。',
                 'Note: the last retrieval returned count=0, so you must not conclude “not found” yet.\n'
                     'Before answering, do ALL of the following:\n'
                     '1) Make at least 2 more retrieval calls (search_segments / search_screenshots_ocr / search_ai_image_meta) with alternative keywords (split words / synonyms / English).\n'
-                    '2) If the overall range spans multiple weeks, page at least 2 week-windows using paging.prev / paging.next.\n'
+                    '2) If the overall range is large, adjust start_local/end_local to cover different windows or page via offset/limit; if the tool returns paging.prev/paging.next you may use them as well.\n'
                     '3) If results are still empty, ask the user to confirm assumptions (platform/keywords/time range) and request more clues instead of giving a flat negative conclusion.\n'
                     'Do not fabricate evidence or [evidence: ...].',
               ),
@@ -3135,21 +4062,30 @@ class AIChatService {
           });
         }
         try {
-          result = await _gateway.complete(
-            endpoints: endpoints,
+          retryMessages = _replaceImageMessagesWithPlaceholder(
+            retryMessages,
+            keepMostRecent: true,
+          );
+          retryMessages = _enforceToolLoopPromptBudget(
+            retryMessages,
+            pinnedUser: pinnedUserMessage,
+            emitEvent: emitEvent,
+          );
+          result = await callModel(
             messages: retryMessages,
-            responseStartMarker: responseStartMarker,
-            timeout: timeout,
-            preferStreaming: false,
-            logContext: context,
-            tools: tools,
-            toolChoice: toolChoice,
+            toolsForCall: tools,
+            toolChoiceForCall: toolChoice,
+            preferStreaming: true,
           );
         } finally {
           retryHeartbeatStarter?.cancel();
           retryHeartbeatTicker?.cancel();
           retryReq.stop();
         }
+        retryMessages = _replaceImageMessagesWithPlaceholder(
+          retryMessages,
+          keepMostRecent: false,
+        );
         if (result.toolCalls.isEmpty) {
           result = _maybeCoerceToolCallsFromText(result, tools);
         }
@@ -3184,6 +4120,7 @@ class AIChatService {
         ),
       );
     }
+
     final AIMessage assistant = AIMessage(
       role: 'assistant',
       content: result.content,
@@ -3192,13 +4129,19 @@ class AIChatService {
     );
 
     if (persistHistory) {
-      await _persistConversation(
-        history: history,
-        userMessage: displayUserMessage,
-        assistant: assistant,
-        modelUsed: result.modelUsed,
-        conversationTitle: displayUserMessage,
-      );
+      // Persist best-effort without blocking the tool-loop completion (stream UI depends on it).
+      unawaited(() async {
+        try {
+          await _persistConversation(
+            history: history,
+            userMessage: displayUserMessage,
+            assistant: assistant,
+            modelUsed: result.modelUsed,
+            conversationTitle: displayUserMessage,
+            toolSignatureDigests: signatureDigests,
+          );
+        } catch (_) {}
+      }());
     }
 
     return assistant;
@@ -3271,8 +4214,15 @@ class AIChatService {
           .map((msg) => AIMessage(role: 'system', content: msg.trim())),
     ];
     if (includeHistory && history.isNotEmpty) {
+      final List<AIMessage> trimmedHistory =
+          PromptBudget.keepTailUnderTokenBudget(
+            history,
+            maxTokens: maxHistoryPromptTokens,
+          );
       messages.addAll(
-        history.map((msg) => AIMessage(role: msg.role, content: msg.content)),
+        trimmedHistory.map(
+          (msg) => AIMessage(role: msg.role, content: msg.content),
+        ),
       );
     }
     messages.add(AIMessage(role: 'user', content: userMessage));
@@ -3284,23 +4234,39 @@ class AIChatService {
     required String userMessage,
     required AIMessage assistant,
     required String modelUsed,
+    required Map<String, Map<String, dynamic>> toolSignatureDigests,
     bool persistHistory = true,
     String? conversationTitle,
   }) async {
     if (!persistHistory) return;
 
     final AIMessage user = AIMessage(role: 'user', content: userMessage);
-    final List<AIMessage> newHistory = <AIMessage>[
-      ...history,
-      user,
-      assistant,
-    ];
+    final List<AIMessage> newHistory = <AIMessage>[...history, user, assistant];
     await _settings.saveChatHistoryActive(newHistory);
     await _updateConversationModel(modelUsed);
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
     try {
       final String cid = await _settings.getActiveConversationCid();
+      // Keep a separate append-only transcript + compacted memory for long chats.
+      try {
+        await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
+        await _chatContext.appendCompletedTurn(
+          cid: cid,
+          userMessage: userMessage,
+          assistantMessage: assistant.content,
+        );
+        if (toolSignatureDigests.isNotEmpty) {
+          await _chatContext.mergeToolDigests(
+            cid: cid,
+            signatureDigests: toolSignatureDigests,
+          );
+        }
+        _chatContext.scheduleAutoCompact(
+          cid: cid,
+          reason: toolSignatureDigests.isNotEmpty ? 'tool_loop' : 'turn',
+        );
+      } catch (_) {}
       unawaited(
         MemoryBridgeService.instance.ingestChatMessage(
           conversationId: cid,

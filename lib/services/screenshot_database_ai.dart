@@ -36,12 +36,51 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         model TEXT,
         pinned INTEGER NOT NULL DEFAULT 0,
         archived INTEGER NOT NULL DEFAULT 0,
+        -- Conversation context memory (Codex-style)
+        summary TEXT,
+        summary_updated_at INTEGER,
+        summary_tokens INTEGER,
+        compaction_count INTEGER NOT NULL DEFAULT 0,
+        last_compaction_reason TEXT,
+        tool_memory_json TEXT,
+        tool_memory_updated_at INTEGER,
+        last_prompt_tokens INTEGER,
+        last_prompt_at INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated ON ai_conversations(updated_at DESC, pinned DESC, id DESC)',
+    );
+
+    // Full (append-only) transcript used for context compaction and recovery.
+    // UI still reads from ai_messages tail; this table is for background context.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_messages_full (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_messages_full_conv ON ai_messages_full(conversation_id, id)',
+    );
+
+    // Context/compaction diagnostics (lightweight rollout log).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_context_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        payload_json TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_context_events_conv ON ai_context_events(conversation_id, id)',
     );
 
     // 首次升级/创建时，将 ai_messages 中的会话ID迁移为显式会话条目，并初始化激活会话
@@ -360,11 +399,36 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> clearAiConversation(String conversationId) async {
     try {
       final db = await database;
-      await db.delete(
-        'ai_messages',
-        where: 'conversation_id = ?',
-        whereArgs: [conversationId],
-      );
+      await db.transaction((txn) async {
+        try {
+          await txn.delete(
+            'ai_messages',
+            where: 'conversation_id = ?',
+            whereArgs: [conversationId],
+          );
+        } catch (_) {}
+        // Conversation context system (v25): clear compacted memory + transcript + diagnostics.
+        try {
+          await txn.execute(
+            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL WHERE cid = ?',
+            <Object?>[conversationId],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_messages_full',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[conversationId],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_context_events',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[conversationId],
+          );
+        } catch (_) {}
+      });
     } catch (_) {}
   }
 
@@ -581,6 +645,22 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           );
         } catch (_) {}
         swMsg.stop();
+        final swCtx = Stopwatch()..start();
+        try {
+          await txn.delete(
+            'ai_messages_full',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[cid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_context_events',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[cid],
+          );
+        } catch (_) {}
+        swCtx.stop();
         final swConv = Stopwatch()..start();
         await txn.delete(
           'ai_conversations',
@@ -593,6 +673,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
             'DB',
             'deleteAiConversation 事务耗时(毫秒)：msg=' +
                 swMsg.elapsedMilliseconds.toString() +
+                ' ctx=' +
+                swCtx.elapsedMilliseconds.toString() +
                 ' conv=' +
                 swConv.elapsedMilliseconds.toString(),
           );
@@ -1569,6 +1651,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? startMillis,
     int? endMillis,
     String? appPackageName,
+    bool matchAllTerms = true,
   }) async {
     final db = await database;
     try {
@@ -1591,7 +1674,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
             .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-        return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+        final String joiner = matchAllTerms ? ' AND ' : ' OR ';
+        return limited.map((w) => '${w.replaceAll('"', '')}*').join(joiner);
       }
 
       final String match = buildMatch(q);
@@ -1667,11 +1751,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           fetchLimit,
           fetchOffset,
         ];
-        final List<String> filters = <String>[
+        final List<String> tokenFilters = <String>[
           for (int i = 0; i < limited.length; i++)
             '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
-          ...baseFilters,
         ];
+        final String tokensClause = tokenFilters.isEmpty
+            ? '1 = 1'
+            : (tokenFilters.length == 1
+                  ? tokenFilters.single
+                  : '(${tokenFilters.join(matchAllTerms ? ' AND ' : ' OR ')})');
+        final List<String> filters = <String>[tokensClause, ...baseFilters];
         final String sql =
             '''
           SELECT
@@ -1729,6 +1818,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? startMillis,
     int? endMillis,
     String? appPackageName,
+    bool matchAllTerms = true,
   }) async {
     final db = await database;
     try {
@@ -1747,7 +1837,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
             .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-        return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+        final String joiner = matchAllTerms ? ' AND ' : ' OR ';
+        return limited.map((w) => '${w.replaceAll('"', '')}*').join(joiner);
       }
 
       final String match = buildMatch(q);
@@ -1802,11 +1893,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           for (final w in limited) ...<Object?>['%$w%', '%$w%', '%$w%'],
           ...baseArgs,
         ];
-        final List<String> filters = <String>[
+        final List<String> tokenFilters = <String>[
           for (int i = 0; i < limited.length; i++)
             '(r.output_text LIKE ? OR r.categories LIKE ? OR r.structured_json LIKE ?)',
-          ...baseFilters,
         ];
+        final String tokensClause = tokenFilters.isEmpty
+            ? '1 = 1'
+            : (tokenFilters.length == 1
+                  ? tokenFilters.single
+                  : '(${tokenFilters.join(matchAllTerms ? ' AND ' : ' OR ')})');
+        final List<String> filters = <String>[tokensClause, ...baseFilters];
         final String sql =
             '''
           SELECT COUNT(*) AS c

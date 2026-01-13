@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 24,
+          version: 25,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 24,
+          version: 25,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 24,
+          version: 25,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 24,
+        version: 25,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -773,6 +773,53 @@ class ScreenshotDatabase {
       } catch (_) {}
       await _createSegmentResultsFts(db);
       await _backfillSegmentResultsFts(db);
+    }
+
+    // v25: Conversation context system (summary + tool memory + rollout events).
+    if (oldVersion < 25) {
+      try {
+        await db.execute('ALTER TABLE ai_conversations ADD COLUMN summary TEXT');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN summary_updated_at INTEGER',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN summary_tokens INTEGER',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN compaction_count INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN last_compaction_reason TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN tool_memory_json TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN tool_memory_updated_at INTEGER',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN last_prompt_tokens INTEGER',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN last_prompt_at INTEGER',
+        );
+      } catch (_) {}
     }
   }
 

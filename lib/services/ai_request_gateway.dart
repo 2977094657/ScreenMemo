@@ -96,41 +96,43 @@ class AIRequestGateway {
     }
     Exception? lastError;
     for (final AIEndpoint endpoint in endpoints) {
+      // Try streaming first (when allowed), then fall back to non-streaming for
+      // providers/endpoints that don't support SSE.
+      if (preferStreaming) {
+        try {
+          final _PreparedRequest prepared = _prepareRequest(
+            endpoint: endpoint,
+            messages: messages,
+            stream: true,
+            tools: tools,
+            toolChoice: toolChoice,
+          );
+          final _GatewayAggregate aggregate = await _performStreaming(
+            prepared: prepared,
+            responseStartMarker: responseStartMarker,
+            timeout: timeout,
+            logContext: logContext,
+          );
+          return AIGatewayResult(
+            content: aggregate.content,
+            toolCalls: aggregate.toolCalls,
+            reasoning: aggregate.reasoning,
+            reasoningDuration: aggregate.reasoningDuration,
+            modelUsed: endpoint.model,
+          );
+        } catch (e) {
+          lastError = e is Exception ? e : Exception(e.toString());
+          try {
+            await FlutterLogger.nativeWarn(
+              'AI',
+              '[网关] 流式失败，回退非流式（${endpoint.baseUrl}）：$e',
+            );
+          } catch (_) {}
+        }
+      }
+
       try {
         final _PreparedRequest prepared = _prepareRequest(
-          endpoint: endpoint,
-          messages: messages,
-          stream: preferStreaming,
-          tools: tools,
-          toolChoice: toolChoice,
-        );
-        if (preferStreaming && _supportsStreaming(prepared)) {
-          try {
-            final _GatewayAggregate aggregate = await _performStreaming(
-              prepared: prepared,
-              responseStartMarker: responseStartMarker,
-              timeout: timeout,
-              logContext: logContext,
-            );
-            return AIGatewayResult(
-              content: aggregate.content,
-              toolCalls: aggregate.toolCalls,
-              reasoning: aggregate.reasoning,
-              reasoningDuration: aggregate.reasoningDuration,
-              modelUsed: endpoint.model,
-            );
-          } catch (e) {
-            lastError = e is Exception ? e : Exception(e.toString());
-            try {
-              await FlutterLogger.nativeWarn(
-                'AI',
-                '[网关] 流式回退（${endpoint.baseUrl}）：$e',
-              );
-            } catch (_) {}
-          }
-        }
-
-        final _PreparedRequest fallback = _prepareRequest(
           endpoint: endpoint,
           messages: messages,
           stream: false,
@@ -138,7 +140,7 @@ class AIRequestGateway {
           toolChoice: toolChoice,
         );
         final _GatewayAggregate aggregate = await _performNonStreaming(
-          prepared: fallback,
+          prepared: prepared,
           responseStartMarker: responseStartMarker,
           timeout: timeout,
           logContext: logContext,
@@ -184,7 +186,17 @@ class AIRequestGateway {
     () async {
       Exception? lastError;
       for (final AIEndpoint endpoint in endpoints) {
+        StreamController<AIGatewayEvent>? proxy;
+        StreamSubscription<AIGatewayEvent>? sub;
+        int emittedCount = 0;
         try {
+          proxy = StreamController<AIGatewayEvent>(sync: true);
+          sub = proxy.stream.listen((AIGatewayEvent event) {
+            emittedCount += 1;
+            if (!controller.isClosed) {
+              controller.add(event);
+            }
+          });
           final _PreparedRequest prepared = _prepareRequest(
             endpoint: endpoint,
             messages: messages,
@@ -192,42 +204,13 @@ class AIRequestGateway {
             tools: tools,
             toolChoice: toolChoice,
           );
-          if (!_supportsStreaming(prepared)) {
-            final _PreparedRequest fallback = _prepareRequest(
-              endpoint: endpoint,
-              messages: messages,
-              stream: false,
-              tools: tools,
-              toolChoice: toolChoice,
-            );
-            final _GatewayAggregate aggregate = await _performNonStreaming(
-              prepared: fallback,
-              responseStartMarker: responseStartMarker,
-              timeout: timeout,
-              logContext: logContext,
-              controller: controller,
-            );
-            if (!completer.isCompleted) {
-              completer.complete(
-                AIGatewayResult(
-                  content: aggregate.content,
-                  toolCalls: aggregate.toolCalls,
-                  reasoning: aggregate.reasoning,
-                  reasoningDuration: aggregate.reasoningDuration,
-                  modelUsed: endpoint.model,
-                ),
-              );
-            }
-            await controller.close();
-            return;
-          }
 
           final _GatewayAggregate aggregate = await _performStreaming(
             prepared: prepared,
             responseStartMarker: responseStartMarker,
             timeout: timeout,
             logContext: logContext,
-            controller: controller,
+            controller: proxy,
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -250,6 +233,63 @@ class AIRequestGateway {
               '[网关] 流式错误（${endpoint.baseUrl}）：$e',
             );
           } catch (_) {}
+
+          // If we already emitted partial tokens, do not mix outputs from a
+          // different attempt (fallback or another endpoint).
+          if (emittedCount > 0) {
+            break;
+          }
+
+          // Otherwise, try a best-effort non-streaming fallback for endpoints
+          // that don't support SSE and still surface the result via the stream
+          // as a single "content" event.
+          try {
+            await FlutterLogger.nativeWarn(
+              'AI',
+              '[网关] 尝试非流式回退（${endpoint.baseUrl}）',
+            );
+          } catch (_) {}
+          try {
+            final _PreparedRequest prepared = _prepareRequest(
+              endpoint: endpoint,
+              messages: messages,
+              stream: false,
+              tools: tools,
+              toolChoice: toolChoice,
+            );
+            final _GatewayAggregate aggregate = await _performNonStreaming(
+              prepared: prepared,
+              responseStartMarker: responseStartMarker,
+              timeout: timeout,
+              logContext: logContext,
+              controller: controller,
+            );
+            if (!completer.isCompleted) {
+              completer.complete(
+                AIGatewayResult(
+                  content: aggregate.content,
+                  toolCalls: aggregate.toolCalls,
+                  reasoning: aggregate.reasoning,
+                  reasoningDuration: aggregate.reasoningDuration,
+                  modelUsed: endpoint.model,
+                ),
+              );
+            }
+            await controller.close();
+            return;
+          } catch (fallbackErr) {
+            lastError = fallbackErr is Exception
+                ? fallbackErr
+                : Exception(fallbackErr.toString());
+            continue;
+          }
+        } finally {
+          try {
+            await sub?.cancel();
+          } catch (_) {}
+          try {
+            await proxy?.close();
+          } catch (_) {}
         }
       }
       if (!completer.isCompleted) {
@@ -270,9 +310,7 @@ class AIRequestGateway {
   }
 
   bool _supportsStreaming(_PreparedRequest prepared) {
-    // 工具调用下优先非流式：不同兼容端点对 tool_calls 流式增量格式差异很大，
-    // 非流式更稳定且便于解析。
-    return !prepared.isGoogle && !prepared.hasTools;
+    return true;
   }
 
   _PreparedRequest _prepareRequest({
@@ -291,13 +329,18 @@ class AIRequestGateway {
     }
 
     if (isGoogle) {
-      final Uri uri = baseUri.resolve(
-        '/v1beta/models/${Uri.encodeComponent(endpoint.model)}:generateContent',
+      final String method = stream ? 'streamGenerateContent' : 'generateContent';
+      Uri uri = baseUri.resolve(
+        '/v1beta/models/${Uri.encodeComponent(endpoint.model)}:$method',
       );
+      if (stream) {
+        uri = uri.replace(queryParameters: const <String, String>{'alt': 'sse'});
+      }
       final Map<String, dynamic> payload = _buildGooglePayload(messages);
       final Map<String, String> headers = <String, String>{
         'Content-Type': 'application/json',
         'x-goog-api-key': apiKey,
+        if (stream) 'Accept': 'text/event-stream',
       };
       return _PreparedRequest(
         uri: uri,
@@ -324,6 +367,7 @@ class AIRequestGateway {
     final Map<String, String> headers = <String, String>{
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $apiKey',
+      if (stream) 'Accept': 'text/event-stream',
     };
     return _PreparedRequest(
       uri: uri,
@@ -458,9 +502,11 @@ class AIRequestGateway {
     final http.Client client = http.Client();
     final _ResponseStartFilter startFilter = _ResponseStartFilter(responseStartMarker);
     final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
+    final _ToolCallAccumulator toolAccumulator = _ToolCallAccumulator(_newFallbackToolCallId);
     final StringBuffer contentBuffer = StringBuffer();
     final StringBuffer reasoningBuffer = StringBuffer();
     final DateTime reasoningStart = DateTime.now();
+    String googleLastText = '';
 
     try {
       final http.Request request = http.Request('POST', prepared.uri)
@@ -485,6 +531,7 @@ class AIRequestGateway {
 
       String buffer = '';
       bool done = false;
+      bool sawData = false;
       final Stream<String> decoded = timeout == null
           ? streamed.stream.transform(utf8.decoder)
           : streamed.stream.transform(utf8.decoder).timeout(timeout);
@@ -503,12 +550,48 @@ class AIRequestGateway {
             buffer = '';
             break;
           }
+          if (data.isNotEmpty) {
+            sawData = true;
+          }
           Map<String, dynamic> json;
           try {
             json = jsonDecode(data) as Map<String, dynamic>;
           } catch (_) {
             continue;
           }
+
+          if (prepared.isGoogle) {
+            final String chunkText = _extractGoogleStreamText(json);
+            if (chunkText.isNotEmpty) {
+              final String delta = _deltaFromPossiblyCumulative(
+                previous: googleLastText,
+                incoming: chunkText,
+              );
+              if (delta.isNotEmpty) {
+                googleLastText = _updateCumulativeProbe(previous: googleLastText, incoming: chunkText);
+                final _ThinkStreamFilterResult r = thinkFilter.process(delta);
+                if (r.visibleDelta.isNotEmpty) {
+                  final String? sanitized = startFilter.process(r.visibleDelta);
+                  if (sanitized != null && sanitized.isNotEmpty) {
+                    contentBuffer.write(sanitized);
+                    controller?.add(AIGatewayEvent(
+                      AIGatewayEventKind.content,
+                      sanitized,
+                    ));
+                  }
+                }
+                if (r.reasoningDelta.isNotEmpty) {
+                  reasoningBuffer.write(r.reasoningDelta);
+                  controller?.add(AIGatewayEvent(
+                    AIGatewayEventKind.reasoning,
+                    r.reasoningDelta,
+                  ));
+                }
+              }
+            }
+            continue;
+          }
+
           final dynamic type = json['type'];
           if (type is String) {
             if (type == 'response.completed') {
@@ -562,6 +645,7 @@ class AIRequestGateway {
               }
               final dynamic delta = first['delta'];
               if (delta is Map<String, dynamic>) {
+                toolAccumulator.ingestChatDelta(delta);
                 final dynamic reasoningPart = delta['reasoning_content'] ??
                     (delta['reasoning'] is Map
                         ? (delta['reasoning']['content'])
@@ -605,6 +689,9 @@ class AIRequestGateway {
         }
         if (done) break;
       }
+      if (!sawData) {
+        throw Exception('Streaming not supported: no SSE data received');
+      }
 
       final String trailing = thinkFilter.finalize();
       if (trailing.isNotEmpty) {
@@ -619,12 +706,13 @@ class AIRequestGateway {
       final String cleanedContent = contentBuffer
           .toString()
           .replaceAll(RegExp(r'</?think>'), '');
+      final List<AIToolCall> toolCalls = toolAccumulator.finalize();
       final String reasoningText = reasoningBuffer.toString();
       final Duration? reasoningDuration =
           reasoningText.isEmpty ? null : DateTime.now().difference(reasoningStart);
       return _GatewayAggregate(
         content: cleanedContent,
-        toolCalls: const <AIToolCall>[],
+        toolCalls: toolCalls,
         reasoning: reasoningText.isEmpty ? null : reasoningText,
         reasoningDuration: reasoningDuration,
       );
@@ -911,6 +999,146 @@ class _PreparedRequest {
   final String body;
   final bool isGoogle;
   final bool hasTools;
+}
+
+String _extractGoogleStreamText(Map<String, dynamic> json) {
+  final dynamic candidates = json['candidates'];
+  if (candidates is! List || candidates.isEmpty) return '';
+  final dynamic first = candidates.first;
+  if (first is! Map) return '';
+  final Map<String, dynamic> candidate = Map<String, dynamic>.from(first as Map);
+  final dynamic content = candidate['content'];
+  if (content is! Map) return '';
+  final Map<String, dynamic> contentMap = Map<String, dynamic>.from(content as Map);
+  final dynamic parts = contentMap['parts'];
+  if (parts is! List || parts.isEmpty) return '';
+  final StringBuffer out = StringBuffer();
+  for (final dynamic p in parts) {
+    if (p is! Map) continue;
+    final Map<String, dynamic> part = Map<String, dynamic>.from(p as Map);
+    final dynamic text = part['text'];
+    if (text is String && text.isNotEmpty) {
+      out.write(text);
+    }
+  }
+  return out.toString();
+}
+
+String _deltaFromPossiblyCumulative({
+  required String previous,
+  required String incoming,
+}) {
+  if (incoming.isEmpty) return '';
+  if (previous.isEmpty) return incoming;
+  if (incoming.startsWith(previous)) {
+    return incoming.substring(previous.length);
+  }
+  if (previous.startsWith(incoming)) {
+    return '';
+  }
+  return incoming;
+}
+
+String _updateCumulativeProbe({
+  required String previous,
+  required String incoming,
+}) {
+  if (incoming.isEmpty) return previous;
+  if (previous.isEmpty) return incoming;
+  if (incoming.startsWith(previous)) {
+    return incoming;
+  }
+  if (previous.startsWith(incoming)) {
+    return previous;
+  }
+  return previous + incoming;
+}
+
+class _ToolCallDraft {
+  _ToolCallDraft(this.index);
+
+  final int index;
+  String id = '';
+  String name = '';
+  final StringBuffer arguments = StringBuffer();
+
+  void mergeFromChunk(Map<String, dynamic> chunk) {
+    final String idPart = (chunk['id'] as String?) ?? '';
+    if (idPart.trim().isNotEmpty) {
+      id = idPart.trim();
+    }
+    final Map<String, dynamic>? fn = chunk['function'] is Map
+        ? Map<String, dynamic>.from(chunk['function'] as Map)
+        : null;
+    final String namePart = (fn?['name'] as String?) ??
+        (chunk['name'] as String?) ??
+        '';
+    if (namePart.trim().isNotEmpty) {
+      name = namePart.trim();
+    }
+    final String argsPart = (fn?['arguments'] as String?) ??
+        (chunk['arguments'] as String?) ??
+        '';
+    if (argsPart.isNotEmpty) {
+      arguments.write(argsPart);
+    }
+  }
+
+  AIToolCall? toToolCall(String Function() newId) {
+    if (name.trim().isEmpty) return null;
+    final String resolvedId = id.trim().isEmpty ? newId() : id.trim();
+    return AIToolCall(
+      id: resolvedId,
+      name: name.trim(),
+      argumentsJson: arguments.toString(),
+    );
+  }
+}
+
+class _ToolCallAccumulator {
+  _ToolCallAccumulator(this._newId);
+
+  final String Function() _newId;
+  final Map<int, _ToolCallDraft> _drafts = <int, _ToolCallDraft>{};
+
+  void ingestChatDelta(Map<String, dynamic> delta) {
+    final dynamic toolCalls = delta['tool_calls'] ?? delta['toolCalls'];
+    if (toolCalls is List) {
+      for (int i = 0; i < toolCalls.length; i += 1) {
+        final dynamic raw = toolCalls[i];
+        if (raw is! Map) continue;
+        final Map<String, dynamic> chunk = Map<String, dynamic>.from(raw as Map);
+        final dynamic idxRaw = chunk['index'];
+        final int idx = idxRaw is int ? idxRaw : i;
+        final _ToolCallDraft draft =
+            _drafts.putIfAbsent(idx, () => _ToolCallDraft(idx));
+        draft.mergeFromChunk(chunk);
+      }
+    }
+
+    final dynamic functionCall = delta['function_call'] ?? delta['functionCall'];
+    if (functionCall is Map) {
+      final Map<String, dynamic> chunk = Map<String, dynamic>.from(functionCall as Map);
+      final _ToolCallDraft draft =
+          _drafts.putIfAbsent(0, () => _ToolCallDraft(0));
+      draft.mergeFromChunk(chunk);
+    }
+  }
+
+  List<AIToolCall> finalize() {
+    if (_drafts.isEmpty) return const <AIToolCall>[];
+    final List<int> indices = _drafts.keys.toList()..sort();
+    final List<AIToolCall> out = <AIToolCall>[];
+    for (final int idx in indices) {
+      final _ToolCallDraft? draft = _drafts[idx];
+      if (draft == null) continue;
+      final AIToolCall? call = draft.toToolCall(_newId);
+      if (call != null) {
+        out.add(call);
+      }
+    }
+    return out;
+  }
 }
 
 class _ThinkStreamFilterResult {

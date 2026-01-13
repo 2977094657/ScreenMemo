@@ -23,8 +23,10 @@ import '../widgets/app_side_drawer.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../services/intent_analysis_service.dart';
 import '../services/query_context_service.dart';
+import '../services/prompt_budget.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
+import '../widgets/chat_context_sheet.dart';
 
 enum _ClarifyReason { missingTime, tooBroad }
 
@@ -308,9 +310,9 @@ class _AISettingsPageState extends State<AISettingsPage>
     _loadChatContextSelection();
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (!mounted) return;
-      if (ctx == 'chat' || ctx == 'chat:deleted') {
+      if (ctx == 'chat' || ctx == 'chat:deleted' || ctx == 'chat:cleared') {
         // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的"空白延迟"
-        if (ctx == 'chat:deleted') {
+        if (ctx == 'chat:deleted' || ctx == 'chat:cleared') {
           setState(() {
             _messages = <AIMessage>[];
             _attachmentsByIndex.clear();
@@ -1158,6 +1160,25 @@ class _AISettingsPageState extends State<AISettingsPage>
     return false;
   }
 
+  IntentResult _applyDefaultTimeRange(IntentResult intent, {int days = 30}) {
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    int startMs = nowMs - Duration(days: days).inMilliseconds;
+    if (startMs < 0) startMs = 0;
+    return IntentResult(
+      intent: intent.intent,
+      intentSummary: intent.intentSummary,
+      startMs: startMs,
+      endMs: nowMs,
+      timezone: intent.timezone,
+      apps: intent.apps,
+      keywords: intent.keywords,
+      sqlFill: intent.sqlFill,
+      skipContext: false,
+      contextAction: 'refresh',
+      userWantsProceed: true,
+    );
+  }
+
   String _fmtWindowShort(int startMs, int endMs) {
     if (startMs <= 0 || endMs <= 0) return '';
     final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMs);
@@ -1168,153 +1189,6 @@ class _AISettingsPageState extends State<AISettingsPage>
       return '${DateFormat('MM-dd HH:mm').format(ds)}–${DateFormat('HH:mm').format(de)}';
     }
     return '${DateFormat('MM-dd HH:mm').format(ds)}–${DateFormat('MM-dd HH:mm').format(de)}';
-  }
-
-  String _buildClarifyPromptFallback(_ClarifyState state) {
-    final bool zh = _isZhLocale();
-    final String q = _clipOneLine(state.originalQuestion, 40);
-    final int round = state.askRounds + 1;
-
-    if (zh) {
-      final String head = q.isEmpty
-          ? '我想帮你尽快定位到对应记录，不过目前线索还不够。'
-          : '我明白你想查「$q」，我想帮你尽快定位到对应记录，不过目前线索还不够。';
-      if (round <= 1) {
-        if (state.reason == _ClarifyReason.tooBroad) {
-          return [
-            head,
-            '这个时间范围可能有点大。你更希望我先从下面两点里补齐哪一个？',
-            '1) 更小的时间段（例如：哪一天/上午-下午-晚上/大概几点）',
-            '2) 线索关键词/场景（例如：App 名、页面标题里的词、人物/群名、一个数字）',
-            '你也可以回复「就查这段时间」，我会先给你一个候选概览再逐步缩小。',
-          ].join('\n');
-        }
-        return [
-          head,
-          '你可以补充两点线索（想到哪条说哪条就行）：',
-          '1) 大概是哪个日期/时间段？（例如：昨天晚上/上周末/10月10日/最近两三天）',
-          '2) 更可能发生在什么 App 或场景？（例如：微信/浏览器/B站/抖音/相册）',
-          '如果只能给一个模糊范围也没关系，比如「最近一周/最近一个月」。',
-        ].join('\n');
-      }
-
-      // round 2+
-      return [
-        '谢谢！我再确认其中一条就能开始查：',
-        '1) 更具体的时间范围（哪一天/大概几点/上午-下午-晚上）',
-        '2) 一个你记得的关键词或特征（标题/人名/群名/数字/页面元素）',
-        '你任选其一补充即可；如果你想直接让我先试着找候选，也可以回复「直接查」。',
-      ].join('\n');
-    }
-
-    // English fallback
-    if (round <= 1) {
-      if (state.reason == _ClarifyReason.tooBroad) {
-        return [
-          (q.isEmpty
-              ? 'I can help, but I need a bit more context.'
-              : 'I understand you want to find \"$q\". I can help, but I need a bit more context.'),
-          'This time range may be too broad. Please reply with ONE of:',
-          '1) A narrower time window (date / morning-afternoon-evening / approx. time)',
-          '2) A clue keyword or app (app name / title words / person / a number)',
-          'If you prefer, reply \"proceed\" and I will try a quick scan first.',
-        ].join('\n');
-      }
-      return [
-        (q.isEmpty
-            ? 'I can help, but I need a bit more context.'
-            : 'I understand you want to find \"$q\". I can help, but I need a bit more context.'),
-        'Please reply with any you remember:',
-        '1) Approx. time range (e.g. last night / last weekend / a specific date)',
-        '2) App or scenario (e.g. WeChat / browser / YouTube)',
-      ].join('\n');
-    }
-    return [
-      'Thanks! Just one more clue is enough:',
-      '1) A more specific time window, OR',
-      '2) A keyword / title word / person / number',
-      'You can also reply \"proceed\" to let me try a quick scan.',
-    ].join('\n');
-  }
-
-  String _composeClarifyAskLlmPrompt(_ClarifyState state) {
-    final bool zh = _isZhLocale();
-    final int round = state.askRounds + 1;
-    final String reason = state.reason == _ClarifyReason.missingTime
-        ? 'missing_time'
-        : 'too_broad';
-    final String timeHint =
-        (state.hintStartMs != null && state.hintEndMs != null)
-        ? _fmtWindowShort(state.hintStartMs!, state.hintEndMs!)
-        : '';
-    final String q = state.originalQuestion.trim();
-    final String supplements = state.supplements
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .map((s) => '- $s')
-        .join('\n');
-
-    if (zh) {
-      return [
-        '你是 Screen Memo 的对话助手，正在帮助用户在截图/屏幕记录里定位信息。',
-        '现在你需要先向用户做“澄清追问”，以便我能继续检索并给出答案。',
-        '',
-        '硬性要求：',
-        '- 只输出要发给用户的消息正文（不要标题/JSON/代码块/协议说明）',
-        '- 语气温和自然，不使用反问句，不阴阳怪气，不责备用户',
-        '- 不要使用固定模板套话，尽量结合用户提问自然表达',
-        '- 不要输出最终答案，不要编造查找结果',
-        '- 最多提出 2 个问题（可以在一句里给出多个可选项）',
-        '- 结合用户原话与已补充线索，避免重复询问用户已经回答过的信息',
-        '- 给用户一些示例帮助回忆（时间范围、App/场景、关键词/标题词/人物/数字等）',
-        '- 如果用户无法给精确时间，也允许给模糊范围（例如：最近一周/最近一个月）',
-        '- 可以给一个快捷选项：用户也可以用自然表达告诉你“先用现有线索帮我找找看/先查一下”等，表示希望你先做一次快速检索并给出候选（不要要求用户使用固定关键词）。',
-        '',
-        '上下文：',
-        '- 用户原问题：${q.isEmpty ? '（空）' : q}',
-        '- 已补充线索：${supplements.isEmpty ? '（无）' : '\n$supplements'}',
-        '- 澄清原因：$reason',
-        if (timeHint.isNotEmpty) '- 提示时间窗：$timeHint',
-        '- 当前第 $round/2 轮澄清',
-      ].join('\n');
-    }
-
-    return [
-      'You are a Screen Memo assistant helping users locate info from screenshots/records.',
-      'Generate ONE clarification message to ask the user for missing details so that you can continue retrieval.',
-      '',
-      'Hard requirements:',
-      '- Output ONLY the message text to the user (no title/JSON/code fences/protocol text).',
-      '- Keep a warm, polite tone; no rhetorical questions, no sarcasm, no blame.',
-      '- Avoid canned/template-like phrasing; make it feel specific to the user question.',
-      '- Do NOT answer the user yet; do NOT fabricate results.',
-      '- Ask at most 2 questions.',
-      '- Use the user question + collected clues; do not repeat what is already answered.',
-      '- Offer examples to help recall (time window, app/scenario, keyword/title/person/number).',
-      '- If the user cannot provide an exact time, accept a rough range (e.g., last week / last month).',
-      '- Optionally offer a shortcut: the user can reply in natural language to indicate “please proceed with a quick scan using current clues” (do NOT require an exact keyword).',
-      '',
-      'Context:',
-      '- User question: ${q.isEmpty ? '(empty)' : q}',
-      '- Collected clues: ${supplements.isEmpty ? '(none)' : '\n$supplements'}',
-      '- Reason: $reason',
-      if (timeHint.isNotEmpty) '- Hint window: $timeHint',
-      '- Clarification round: $round/2',
-    ].join('\n');
-  }
-
-  Future<String> _buildClarifyPrompt(_ClarifyState state) async {
-    try {
-      final String prompt = _composeClarifyAskLlmPrompt(state);
-      final AIMessage resp = await _chat.sendMessageOneShot(
-        prompt,
-        context: 'chat',
-        timeout: const Duration(seconds: 25),
-      );
-      final String t = resp.content.trim();
-      if (t.isNotEmpty) return t;
-    } catch (_) {}
-    return _buildClarifyPromptFallback(state);
   }
 
   String _composeClarifyIntentInput(_ClarifyState state) {
@@ -1986,15 +1860,15 @@ class _AISettingsPageState extends State<AISettingsPage>
             }
           }
 
-          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则进入温和澄清
+          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则自动补全默认范围继续检索
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.hasValidRange &&
               !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
-                  ? '未解析到有效时间窗：尝试复用上一轮或进入澄清…'
-                  : 'No valid time range: try reuse previous or ask to clarify…',
+                  ? '未解析到有效时间窗：尝试复用上一轮，否则使用默认范围继续检索…'
+                  : 'No valid time range: try reuse previous; otherwise use a default range…',
             );
             final bool hasPreviousWindow =
                 (_lastIntent != null && _lastIntent!.hasValidRange) ||
@@ -2036,6 +1910,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                   endMs: fbEnd,
                   timezone: intent!.timezone,
                   apps: intent!.apps,
+                  keywords: intent!.keywords,
                   sqlFill: intent!.sqlFill,
                   skipContext: true,
                   errorCode: intent!.errorCode,
@@ -2044,85 +1919,32 @@ class _AISettingsPageState extends State<AISettingsPage>
               } else {
                 _appendAgentLog(
                   _isZhLocale()
-                      ? '复用失败：没有可用的上一轮范围，转入澄清'
-                      : 'Reuse failed: no previous window, switching to clarification',
+                      ? '复用失败：没有可用的上一轮范围，将使用默认时间范围继续检索'
+                      : 'Reuse failed: no previous window; using a default time range',
                 );
-                localOnlyResponse = true;
-                localAssistantText = _isZhLocale()
-                    ? '我想沿用上一轮时间窗来继续查找，但没有找到可复用的上一轮范围。你可以补充一下大概的日期/时间段吗？'
-                    : 'I tried to reuse the previous time window, but none is available. Could you provide an approximate time range?';
-                _clarifyState = _ClarifyState(
-                  originalQuestion: userQuestionForFinal,
-                  reason: _ClarifyReason.missingTime,
+                intent = _applyDefaultTimeRange(intent!);
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
+                      : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
                 );
               }
             } else {
               _appendAgentLog(
                 _isZhLocale()
-                    ? '进入澄清流程：需要用户补充时间线索'
-                    : 'Entering clarification: need more time hints from user',
+                    ? '没有可复用的上一轮范围：将使用默认时间范围继续检索'
+                    : 'No reusable previous window: using a default time range',
               );
-              // 进入澄清流程：最多两轮温和追问，之后给出候选让用户选择
-              _ClarifyState st;
-              if (_clarifyState == null) {
-                st = _ClarifyState(
-                  originalQuestion: userQuestionForFinal,
-                  reason: _ClarifyReason.missingTime,
-                );
-                _clarifyState = st;
-              } else {
-                final old = _clarifyState!;
-                if (old.reason == _ClarifyReason.missingTime) {
-                  st = old;
-                } else {
-                  st = _ClarifyState(
-                    originalQuestion: old.originalQuestion,
-                    reason: _ClarifyReason.missingTime,
-                    hintStartMs: old.hintStartMs,
-                    hintEndMs: old.hintEndMs,
-                  );
-                  st
-                    ..supplements.addAll(old.supplements)
-                    ..askRounds = old.askRounds
-                    ..stage = old.stage;
-                  _clarifyState = st;
-                }
-              }
-
-              final bool userWantsProceed = intent!.userWantsProceed;
-              if (st.askRounds < 2 && !userWantsProceed) {
-                st.stage = _ClarifyStage.ask;
-                st.candidates.clear();
-                localAssistantText = await _buildClarifyPrompt(st);
-                st.askRounds += 1;
-                localOnlyResponse = true;
-              } else {
-                st.askRounds = 2;
-                final String probeQuery = intent!.keywords.isNotEmpty
-                    ? intent!.keywords.join(' ')
-                    : _composeFinalUserQuestionFromClarify(st);
-                final String probeQ = _clipOneLine(probeQuery, 80);
-                final List<_ProbeCandidate> cands = await _probeCandidates(
-                  query: probeQ.isEmpty
-                      ? _clipOneLine(userQuestionForFinal, 80)
-                      : probeQ,
-                  state: st,
-                  limit: 6,
-                );
-                st.candidates
-                  ..clear()
-                  ..addAll(cands);
-                st.stage = _ClarifyStage.pickCandidate;
-                st.lastProbeKind = cands.isNotEmpty
-                    ? cands.first.kind
-                    : _ProbeKind.none;
-                localAssistantText = await _buildProbePickMessage(st, cands);
-                localOnlyResponse = true;
-              }
+              intent = _applyDefaultTimeRange(intent!);
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
+                    : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
+              );
             }
           }
 
-          // 4) 时间范围过大且缺少线索：先温和引导缩小范围（允许用户回复“就查/直接查”跳过）
+          // 4) 时间范围过大且缺少线索：不追问，直接继续检索（必要时由模型通过工具分页/扩展范围）
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.userWantsProceed &&
@@ -2131,64 +1953,11 @@ class _AISettingsPageState extends State<AISettingsPage>
                 userQuestionForFinal,
                 clarify: _clarifyState,
               )) {
-            _ClarifyState st;
-            if (_clarifyState != null &&
-                _clarifyState!.reason == _ClarifyReason.tooBroad) {
-              st = _clarifyState!;
-            } else {
-              st = _ClarifyState(
-                originalQuestion: userQuestionForFinal,
-                reason: _ClarifyReason.tooBroad,
-                hintStartMs: intent!.startMs,
-                hintEndMs: intent!.endMs,
-              );
-              _clarifyState = st;
-            }
-
-            if (st.askRounds < 2) {
-              st.stage = _ClarifyStage.ask;
-              st.candidates.clear();
-              localAssistantText = await _buildClarifyPrompt(st);
-              st.askRounds += 1;
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '向用户追问时间范围（第 ${st.askRounds}/2 轮）'
-                    : 'Asking for time range (round ${st.askRounds}/2)',
-              );
-              localOnlyResponse = true;
-            } else {
-              st.askRounds = 2;
-              final String probeQuery = intent!.keywords.isNotEmpty
-                  ? intent!.keywords.join(' ')
-                  : _composeFinalUserQuestionFromClarify(st);
-              final String probeQ = _clipOneLine(probeQuery, 80);
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '仍无法确定时间：基于关键词/问题做探测检索，生成候选…'
-                    : 'Still ambiguous: probing candidates by keywords/question…',
-              );
-              final Stopwatch swProbe2 = Stopwatch()..start();
-              final List<_ProbeCandidate> cands = await _probeCandidates(
-                query: probeQ.isEmpty ? _clipOneLine(text, 80) : probeQ,
-                state: st,
-                limit: 6,
-              );
-              swProbe2.stop();
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '候选生成完成：${cands.length}（${swProbe2.elapsedMilliseconds}ms）'
-                    : 'Candidates ready: ${cands.length} (${swProbe2.elapsedMilliseconds}ms)',
-              );
-              st.candidates
-                ..clear()
-                ..addAll(cands);
-              st.stage = _ClarifyStage.pickCandidate;
-              st.lastProbeKind = cands.isNotEmpty
-                  ? cands.first.kind
-                  : _ProbeKind.none;
-              localAssistantText = await _buildProbePickMessage(st, cands);
-              localOnlyResponse = true;
-            }
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '时间范围较大：继续直接检索（不再向用户追问）'
+                  : 'Large time range: proceeding without clarification',
+            );
           }
 
           if (localOnlyResponse) {
@@ -2252,9 +2021,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                 }
               });
               _appendAgentLog(
-                _isZhLocale()
-                    ? '阶段 3/4：生成回答'
-                    : 'Phase 3/4: generating answer',
+                _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
                 bullet: false,
               );
               _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
@@ -2317,9 +2084,7 @@ class _AISettingsPageState extends State<AISettingsPage>
               // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
               await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
               _appendAgentLog(
-                _isZhLocale()
-                    ? '阶段 2/4：查找上下文'
-                    : 'Phase 2/4: building context',
+                _isZhLocale() ? '阶段 2/4：查找上下文' : 'Phase 2/4: building context',
                 bullet: false,
               );
               final String ctxAction = (resolvedIntent.contextAction)
@@ -2348,208 +2113,210 @@ class _AISettingsPageState extends State<AISettingsPage>
                 );
               }
 
-            // 不限制上下文事件数量；预加载少量证据图片“文件名/路径”（不预加载像素）。
-            // 目的：让模型可以直接引用 filename（而不是臆造），从而在 UI 中稳定渲染图片证据。
-            const int maxEvents = 0;
-            // 证据图片：预加载文件名/路径（不预加载像素）；段内最多 15 张，总计最多 360 张（并尽量在段落间均匀分配）。
-            const int maxImagesTotal = 360;
-            const int maxImagesPerEvent = 15;
+              // 不限制上下文事件数量；预加载少量证据图片“文件名/路径”（不预加载像素）。
+              // 目的：让模型可以直接引用 filename（而不是臆造），从而在 UI 中稳定渲染图片证据。
+              const int maxEvents = 0;
+              // 证据图片：预加载文件名/路径（不预加载像素）；段内最多 15 张，总计最多 360 张（并尽量在段落间均匀分配）。
+              const int maxImagesTotal = 360;
+              const int maxImagesPerEvent = 15;
 
-            // 当范围超过 7 天时，按周预加载（避免提示词过大导致超时/输入上限）。
-            final int fullStartMs = resolvedIntent.startMs;
-            final int fullEndMs = resolvedIntent.endMs;
-            int preloadStartMs = fullStartMs;
-            int preloadEndMs = fullEndMs;
-            final bool windowed =
-                (fullEndMs - fullStartMs) > AIChatService.maxToolTimeSpanMs;
-            if (windowed) {
-              preloadEndMs = fullEndMs;
-              preloadStartMs = fullEndMs - AIChatService.maxToolTimeSpanMs;
-              if (preloadStartMs < fullStartMs) preloadStartMs = fullStartMs;
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '时间范围较大：上下文按周分页，本次预加载 7 天窗口 range=[$preloadStartMs-$preloadEndMs]'
-                    : 'Large time range: paging context by week; preloading a 7-day window range=[$preloadStartMs-$preloadEndMs]',
-              );
-            }
+              // 当范围超过 7 天时，按周预加载（避免提示词过大导致超时/输入上限）。
+              final int fullStartMs = resolvedIntent.startMs;
+              final int fullEndMs = resolvedIntent.endMs;
+              int preloadStartMs = fullStartMs;
+              int preloadEndMs = fullEndMs;
+              final bool windowed =
+                  (fullEndMs - fullStartMs) > AIChatService.maxToolTimeSpanMs;
+              if (windowed) {
+                preloadEndMs = fullEndMs;
+                preloadStartMs = fullEndMs - AIChatService.maxToolTimeSpanMs;
+                if (preloadStartMs < fullStartMs) preloadStartMs = fullStartMs;
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '时间范围较大：上下文按周分页，本次预加载 7 天窗口 range=[$preloadStartMs-$preloadEndMs]'
+                      : 'Large time range: paging context by week; preloading a 7-day window range=[$preloadStartMs-$preloadEndMs]',
+                );
+              }
 
-            // When the intent model asks to page within a multi-week range, move the
-            // 7-day preload window accordingly instead of repeatedly using the same week.
-            if (windowed &&
-                !reuse &&
-                (ctxAction == 'page_prev' || ctxAction == 'page_next')) {
-              final QueryContextPack? prevPack =
-                  (_lastCtxPack ?? QueryContextService.instance.lastPack);
-              if (prevPack != null &&
-                  prevPack.startMs >= fullStartMs &&
-                  prevPack.endMs <= fullEndMs) {
-                if (ctxAction == 'page_prev' &&
-                    prevPack.startMs > fullStartMs) {
-                  final int prevEnd0 = prevPack.startMs - 1;
-                  int nextEndMs = prevEnd0;
-                  if (nextEndMs < fullStartMs) nextEndMs = fullStartMs;
-                  int nextStartMs = nextEndMs - AIChatService.maxToolTimeSpanMs;
-                  if (nextStartMs < fullStartMs) nextStartMs = fullStartMs;
-                  if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                  preloadStartMs = nextStartMs;
-                  preloadEndMs = nextEndMs;
-                  _appendAgentLog(
-                    _isZhLocale()
-                        ? '自动翻页：加载上一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                        : 'Auto paging: load previous week range=[$preloadStartMs-$preloadEndMs]',
-                  );
-                } else if (ctxAction == 'page_next' &&
-                    prevPack.endMs < fullEndMs) {
-                  final int nextStart0 = prevPack.endMs + 1;
-                  int nextStartMs = nextStart0;
-                  if (nextStartMs > fullEndMs) nextStartMs = fullEndMs;
-                  int nextEndMs = nextStartMs + AIChatService.maxToolTimeSpanMs;
-                  if (nextEndMs > fullEndMs) nextEndMs = fullEndMs;
-                  if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                  preloadStartMs = nextStartMs;
-                  preloadEndMs = nextEndMs;
-                  _appendAgentLog(
-                    _isZhLocale()
-                        ? '自动翻页：加载下一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                        : 'Auto paging: load next week range=[$preloadStartMs-$preloadEndMs]',
-                  );
+              // When the intent model asks to page within a multi-week range, move the
+              // 7-day preload window accordingly instead of repeatedly using the same week.
+              if (windowed &&
+                  !reuse &&
+                  (ctxAction == 'page_prev' || ctxAction == 'page_next')) {
+                final QueryContextPack? prevPack =
+                    (_lastCtxPack ?? QueryContextService.instance.lastPack);
+                if (prevPack != null &&
+                    prevPack.startMs >= fullStartMs &&
+                    prevPack.endMs <= fullEndMs) {
+                  if (ctxAction == 'page_prev' &&
+                      prevPack.startMs > fullStartMs) {
+                    final int prevEnd0 = prevPack.startMs - 1;
+                    int nextEndMs = prevEnd0;
+                    if (nextEndMs < fullStartMs) nextEndMs = fullStartMs;
+                    int nextStartMs =
+                        nextEndMs - AIChatService.maxToolTimeSpanMs;
+                    if (nextStartMs < fullStartMs) nextStartMs = fullStartMs;
+                    if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
+                    preloadStartMs = nextStartMs;
+                    preloadEndMs = nextEndMs;
+                    _appendAgentLog(
+                      _isZhLocale()
+                          ? '自动翻页：加载上一周上下文 range=[$preloadStartMs-$preloadEndMs]'
+                          : 'Auto paging: load previous week range=[$preloadStartMs-$preloadEndMs]',
+                    );
+                  } else if (ctxAction == 'page_next' &&
+                      prevPack.endMs < fullEndMs) {
+                    final int nextStart0 = prevPack.endMs + 1;
+                    int nextStartMs = nextStart0;
+                    if (nextStartMs > fullEndMs) nextStartMs = fullEndMs;
+                    int nextEndMs =
+                        nextStartMs + AIChatService.maxToolTimeSpanMs;
+                    if (nextEndMs > fullEndMs) nextEndMs = fullEndMs;
+                    if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
+                    preloadStartMs = nextStartMs;
+                    preloadEndMs = nextEndMs;
+                    _appendAgentLog(
+                      _isZhLocale()
+                          ? '自动翻页：加载下一周上下文 range=[$preloadStartMs-$preloadEndMs]'
+                          : 'Auto paging: load next week range=[$preloadStartMs-$preloadEndMs]',
+                    );
+                  } else {
+                    _appendAgentLog(
+                      _isZhLocale()
+                          ? '已到达可翻页边界（或窗口无变化），将按当前周继续检索。'
+                          : 'Reached paging boundary (or no window change); continue with current window.',
+                    );
+                  }
                 } else {
                   _appendAgentLog(
                     _isZhLocale()
-                        ? '已到达可翻页边界（或窗口无变化），将按当前周继续检索。'
-                        : 'Reached paging boundary (or no window change); continue with current window.',
+                        ? '无可用缓存窗口用于翻页，将按当前周继续检索。'
+                        : 'No cached window for paging; continue with current window.',
                   );
                 }
+              }
+
+              if (reuse) {
+                _appendAgentLog(
+                  _isZhLocale() ? '使用缓存上下文包' : 'Using cached context pack',
+                );
+                ctxPack =
+                    (_lastCtxPack ?? QueryContextService.instance.lastPack!);
+                ctxPackForRewrite = ctxPack;
               } else {
                 _appendAgentLog(
                   _isZhLocale()
-                      ? '无可用缓存窗口用于翻页，将按当前周继续检索。'
-                      : 'No cached window for paging; continue with current window.',
+                      ? '查询本地数据库并组装上下文…'
+                      : 'Querying local DB and assembling context…',
+                );
+                final Stopwatch swCtx = Stopwatch()..start();
+                ctxPack = await QueryContextService.instance.buildContext(
+                  startMs: preloadStartMs,
+                  endMs: preloadEndMs,
+                  maxEvents: maxEvents,
+                  maxImagesTotal: maxImagesTotal,
+                  maxImagesPerEvent: maxImagesPerEvent,
+                  includeImages: true,
+                );
+                ctxPackForRewrite = ctxPack;
+                swCtx.stop();
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
+                      : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
                 );
               }
-            }
-
-            if (reuse) {
-              _appendAgentLog(
-                _isZhLocale() ? '使用缓存上下文包' : 'Using cached context pack',
+              await FlutterLogger.nativeInfo(
+                'ChatFlow',
+                'phase2 context ok events=${ctxPack.events.length} reuse=${reuse ? 1 : 0}',
               );
-              ctxPack =
-                  (_lastCtxPack ?? QueryContextService.instance.lastPack!);
-              ctxPackForRewrite = ctxPack;
-            } else {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '查询本地数据库并组装上下文…'
-                    : 'Querying local DB and assembling context…',
-              );
-              final Stopwatch swCtx = Stopwatch()..start();
-              ctxPack = await QueryContextService.instance.buildContext(
-                startMs: preloadStartMs,
-                endMs: preloadEndMs,
-                maxEvents: maxEvents,
-                maxImagesTotal: maxImagesTotal,
-                maxImagesPerEvent: maxImagesPerEvent,
-                includeImages: true,
-              );
-              ctxPackForRewrite = ctxPack;
-              swCtx.stop();
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
-                    : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
-              );
-            }
-            await FlutterLogger.nativeInfo(
-              'ChatFlow',
-              'phase2 context ok events=${ctxPack.events.length} reuse=${reuse ? 1 : 0}',
-            );
-            // 缓存上下文（页面内缓存与服务级缓存），便于紧邻多轮对话复用
-            _lastCtxPack = ctxPack;
-            try {
-              QueryContextService.instance.setLastPack(ctxPack);
-            } catch (_) {}
-            // 证据图片像素不预加载；仅预加载少量文件名/路径，供 UI 渲染与模型引用。
-            final List<EvidenceImageAttachment> attachments = (() {
-              final Set<String> seen = <String>{};
-              final List<EvidenceImageAttachment> out =
-                  <EvidenceImageAttachment>[];
-              for (final ev in ctxPack.events) {
-                for (final a in ev.keyImages) {
-                  if (a.path.isEmpty) continue;
-                  if (seen.add(a.path)) out.add(a);
+              // 缓存上下文（页面内缓存与服务级缓存），便于紧邻多轮对话复用
+              _lastCtxPack = ctxPack;
+              try {
+                QueryContextService.instance.setLastPack(ctxPack);
+              } catch (_) {}
+              // 证据图片像素不预加载；仅预加载少量文件名/路径，供 UI 渲染与模型引用。
+              final List<EvidenceImageAttachment> attachments = (() {
+                final Set<String> seen = <String>{};
+                final List<EvidenceImageAttachment> out =
+                    <EvidenceImageAttachment>[];
+                for (final ev in ctxPack.events) {
+                  for (final a in ev.keyImages) {
+                    if (a.path.isEmpty) continue;
+                    if (seen.add(a.path)) out.add(a);
+                  }
                 }
-              }
-              return out;
-            })();
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '证据图片：预加载文件名/路径 ${attachments.length} 条（不预加载像素；需要看原图像素再用 get_images）'
-                  : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
-            );
-            setState(() {
-              _attachmentsByIndex[assistantIdx] = attachments;
-              final lastIdx = _messages.length - 1;
-              final last = _messages[lastIdx];
-              if (last.role == 'assistant') {
-                final updated =
-                    '2/4 查找上下文完成${reuse ? '（复用上一轮）' : ''}：事件 ${ctxPack.events.length}${windowed ? '（预加载 7 天窗口）' : ''}\n\n3/4 生成回答…';
-                _messages[lastIdx] = AIMessage(
-                  role: 'assistant',
-                  content: updated,
-                  createdAt: last.createdAt,
-                );
-              }
-            });
+                return out;
+              })();
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '证据图片：预加载文件名/路径 ${attachments.length} 条（不预加载像素；需要看原图像素再用 get_images）'
+                    : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
+              );
+              setState(() {
+                _attachmentsByIndex[assistantIdx] = attachments;
+                final lastIdx = _messages.length - 1;
+                final last = _messages[lastIdx];
+                if (last.role == 'assistant') {
+                  final updated =
+                      '2/4 查找上下文完成${reuse ? '（复用上一轮）' : ''}：事件 ${ctxPack.events.length}${windowed ? '（预加载 7 天窗口）' : ''}\n\n3/4 生成回答…';
+                  _messages[lastIdx] = AIMessage(
+                    role: 'assistant',
+                    content: updated,
+                    createdAt: last.createdAt,
+                  );
+                }
+              });
 
-            // 生成最终提示词（包含上下文包的精简文本）
-            final String finalQuery = _buildFinalQuestion(
-              userQuestionForFinal,
-              ctxPack,
-              fullStartMs: fullStartMs,
-              fullEndMs: fullEndMs,
-            );
-            await FlutterLogger.nativeDebug(
-              'ChatFlow',
-              'phase3 finalQueryLen=${finalQuery.length}',
-            );
-            _appendAgentLog(
-              _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
-              bullet: false,
-            );
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '生成最终提示词：len=${finalQuery.length}'
-                  : 'Final prompt: len=${finalQuery.length}',
-            );
-            _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
+              // 生成最终提示词（包含上下文包的精简文本）
+              final String finalQuery = _buildFinalQuestion(
+                userQuestionForFinal,
+                ctxPack,
+                fullStartMs: fullStartMs,
+                fullEndMs: fullEndMs,
+              );
+              final int finalQueryTokens = PromptBudget.approxTokensForText(
+                finalQuery,
+              );
+              await FlutterLogger.nativeDebug(
+                'ChatFlow',
+                'phase3 finalQueryLen=${finalQuery.length} approxTokens=$finalQueryTokens',
+              );
+              _appendAgentLog(
+                _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
+                bullet: false,
+              );
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '生成最终提示词：len=${finalQuery.length} tokens≈$finalQueryTokens'
+                    : 'Final prompt: len=${finalQuery.length} tokens≈$finalQueryTokens',
+              );
+              _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
 
-            // 使用"显示内容与实际发送内容分离"的新流式接口：
-            final String sysDateGuard = _buildDateGuardSystemMessage(
-              startMs: fullStartMs,
-              endMs: fullEndMs,
-            );
-            final List<Map<String, dynamic>> chatTools =
-                AIChatService.defaultChatTools();
-            final bool forceToolFirstIfNoToolCalls =
-                ctxPack.events.isEmpty ||
-                resolvedIntent.intent == 'keyword_lookup' ||
-                resolvedIntent.keywords.isNotEmpty;
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '调用模型并启用工具：tools=${chatTools.length} tool_choice=auto'
-                  : 'Calling model with tools: tools=${chatTools.length} tool_choice=auto',
-            );
-            session = await _chat.sendMessageStreamedV2WithDisplayOverride(
-              text,
-              finalQuery,
-              includeHistory: resolvedIntent.skipContext,
-              extraSystemMessages: <String>[sysDateGuard],
-              tools: chatTools,
-              toolChoice: 'auto',
-              toolStartMs: resolvedIntent.startMs,
-              toolEndMs: resolvedIntent.endMs,
-              forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
-            );
+              // 使用"显示内容与实际发送内容分离"的新流式接口：
+              final List<String> extraSystemMessages = <String>[
+                _buildNowContextSystemMessage(),
+              ];
+              final List<Map<String, dynamic>> chatTools =
+                  AIChatService.defaultChatTools();
+              final bool forceToolFirstIfNoToolCalls =
+                  ctxPack.events.isEmpty ||
+                  resolvedIntent.intent == 'keyword_lookup' ||
+                  resolvedIntent.keywords.isNotEmpty;
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '调用模型并启用工具：tools=${chatTools.length} tool_choice=auto'
+                    : 'Calling model with tools: tools=${chatTools.length} tool_choice=auto',
+              );
+              session = await _chat.sendMessageStreamedV2WithDisplayOverride(
+                text,
+                finalQuery,
+                includeHistory: resolvedIntent.skipContext,
+                extraSystemMessages: extraSystemMessages,
+                tools: chatTools,
+                toolChoice: 'auto',
+                forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
+              );
             }
           }
 
@@ -2679,10 +2446,6 @@ class _AISettingsPageState extends State<AISettingsPage>
                 m.content,
                 ctxPack: pack,
               );
-              rewritten = _forceAppendEvidenceSamplesIfMissing(
-                rewritten,
-                ctxPack: pack,
-              );
               if (rewritten != m.content) {
                 merged = List<AIMessage>.from(merged);
                 merged[assistantIdx] = AIMessage(
@@ -2713,10 +2476,6 @@ class _AISettingsPageState extends State<AISettingsPage>
                 final AIMessage m = toSave[assistantIdx];
                 String rewritten = await _rewriteNumericEvidenceTagsToFilenames(
                   m.content,
-                  ctxPack: pack,
-                );
-                rewritten = _forceAppendEvidenceSamplesIfMissing(
-                  rewritten,
                   ctxPack: pack,
                 );
                 if (rewritten != m.content) {
@@ -2920,15 +2679,15 @@ class _AISettingsPageState extends State<AISettingsPage>
             }
           }
 
-          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则进入温和澄清
+          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则自动补全默认范围继续检索
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.hasValidRange &&
               !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
-                  ? '未解析到有效时间窗：尝试复用上一轮或进入澄清…'
-                  : 'No valid time range: try reuse previous or ask to clarify…',
+                  ? '未解析到有效时间窗：尝试复用上一轮，否则使用默认范围继续检索…'
+                  : 'No valid time range: try reuse previous; otherwise use a default range…',
               assistantIndex: assistantIdx,
             );
             final bool hasPreviousWindow =
@@ -2973,6 +2732,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                   endMs: fbEnd,
                   timezone: intent!.timezone,
                   apps: intent!.apps,
+                  keywords: intent!.keywords,
                   sqlFill: intent!.sqlFill,
                   skipContext: true,
                   errorCode: intent!.errorCode,
@@ -2981,106 +2741,36 @@ class _AISettingsPageState extends State<AISettingsPage>
               } else {
                 _appendAgentLog(
                   _isZhLocale()
-                      ? '复用失败：没有可用的上一轮范围，转入澄清'
-                      : 'Reuse failed: no previous window, switching to clarification',
+                      ? '复用失败：没有可用的上一轮范围，将使用默认时间范围继续检索'
+                      : 'Reuse failed: no previous window; using a default time range',
                   assistantIndex: assistantIdx,
                 );
-                localOnlyResponse = true;
-                localAssistantText = _isZhLocale()
-                    ? '我想沿用上一轮时间窗来继续查找，但没有找到可复用的上一轮范围。你可以补充一下大概的日期/时间段吗？'
-                    : 'I tried to reuse the previous time window, but none is available. Could you provide an approximate time range?';
-                _clarifyState = _ClarifyState(
-                  originalQuestion: userQuestionForFinal,
-                  reason: _ClarifyReason.missingTime,
+                intent = _applyDefaultTimeRange(intent!);
+                _appendAgentLog(
+                  _isZhLocale()
+                      ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
+                      : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
+                  assistantIndex: assistantIdx,
                 );
               }
             } else {
               _appendAgentLog(
                 _isZhLocale()
-                    ? '进入澄清流程：需要用户补充时间线索'
-                    : 'Entering clarification: need more time hints from user',
+                    ? '没有可复用的上一轮范围：将使用默认时间范围继续检索'
+                    : 'No reusable previous window: using a default time range',
                 assistantIndex: assistantIdx,
               );
-              _ClarifyState st;
-              if (_clarifyState == null) {
-                st = _ClarifyState(
-                  originalQuestion: userQuestionForFinal,
-                  reason: _ClarifyReason.missingTime,
-                );
-                _clarifyState = st;
-              } else {
-                final old = _clarifyState!;
-                if (old.reason == _ClarifyReason.missingTime) {
-                  st = old;
-                } else {
-                  st = _ClarifyState(
-                    originalQuestion: old.originalQuestion,
-                    reason: _ClarifyReason.missingTime,
-                    hintStartMs: old.hintStartMs,
-                    hintEndMs: old.hintEndMs,
-                  );
-                  st
-                    ..supplements.addAll(old.supplements)
-                    ..askRounds = old.askRounds
-                    ..stage = old.stage;
-                  _clarifyState = st;
-                }
-              }
-
-              final bool userWantsProceed = intent!.userWantsProceed;
-              if (st.askRounds < 2 && !userWantsProceed) {
-                st.stage = _ClarifyStage.ask;
-                st.candidates.clear();
-                localAssistantText = await _buildClarifyPrompt(st);
-                st.askRounds += 1;
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '向用户追问时间范围（第 ${st.askRounds}/2 轮）'
-                      : 'Asking for time range (round ${st.askRounds}/2)',
-                  assistantIndex: assistantIdx,
-                );
-                localOnlyResponse = true;
-              } else {
-                st.askRounds = 2;
-                final String probeQuery = intent!.keywords.isNotEmpty
-                    ? intent!.keywords.join(' ')
-                    : _composeFinalUserQuestionFromClarify(st);
-                final String probeQ = _clipOneLine(probeQuery, 80);
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '仍无法确定时间：基于关键词/问题做探测检索，生成候选…'
-                      : 'Still ambiguous: probing candidates by keywords/question…',
-                  assistantIndex: assistantIdx,
-                );
-                final Stopwatch swProbe2 = Stopwatch()..start();
-                final List<_ProbeCandidate> cands = await _probeCandidates(
-                  query: probeQ.isEmpty
-                      ? _clipOneLine(userQuestionForFinal, 80)
-                      : probeQ,
-                  state: st,
-                  limit: 6,
-                );
-                swProbe2.stop();
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '候选生成完成：${cands.length}（${swProbe2.elapsedMilliseconds}ms）'
-                      : 'Candidates ready: ${cands.length} (${swProbe2.elapsedMilliseconds}ms)',
-                  assistantIndex: assistantIdx,
-                );
-                st.candidates
-                  ..clear()
-                  ..addAll(cands);
-                st.stage = _ClarifyStage.pickCandidate;
-                st.lastProbeKind = cands.isNotEmpty
-                    ? cands.first.kind
-                    : _ProbeKind.none;
-                localAssistantText = await _buildProbePickMessage(st, cands);
-                localOnlyResponse = true;
-              }
+              intent = _applyDefaultTimeRange(intent!);
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
+                    : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
+                assistantIndex: assistantIdx,
+              );
             }
           }
 
-          // 4) 时间范围过大且缺少线索：先温和引导缩小范围
+          // 4) 时间范围过大且缺少线索：不追问，直接继续检索（必要时由模型通过工具分页/扩展范围）
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.userWantsProceed &&
@@ -3089,47 +2779,12 @@ class _AISettingsPageState extends State<AISettingsPage>
                 userQuestionForFinal,
                 clarify: _clarifyState,
               )) {
-            _ClarifyState st;
-            if (_clarifyState != null &&
-                _clarifyState!.reason == _ClarifyReason.tooBroad) {
-              st = _clarifyState!;
-            } else {
-              st = _ClarifyState(
-                originalQuestion: userQuestionForFinal,
-                reason: _ClarifyReason.tooBroad,
-                hintStartMs: intent!.startMs,
-                hintEndMs: intent!.endMs,
-              );
-              _clarifyState = st;
-            }
-
-            if (st.askRounds < 2) {
-              st.stage = _ClarifyStage.ask;
-              st.candidates.clear();
-              localAssistantText = await _buildClarifyPrompt(st);
-              st.askRounds += 1;
-              localOnlyResponse = true;
-            } else {
-              st.askRounds = 2;
-              final String probeQuery = intent!.keywords.isNotEmpty
-                  ? intent!.keywords.join(' ')
-                  : _composeFinalUserQuestionFromClarify(st);
-              final String probeQ = _clipOneLine(probeQuery, 80);
-              final List<_ProbeCandidate> cands = await _probeCandidates(
-                query: probeQ.isEmpty ? _clipOneLine(text, 80) : probeQ,
-                state: st,
-                limit: 6,
-              );
-              st.candidates
-                ..clear()
-                ..addAll(cands);
-              st.stage = _ClarifyStage.pickCandidate;
-              st.lastProbeKind = cands.isNotEmpty
-                  ? cands.first.kind
-                  : _ProbeKind.none;
-              localAssistantText = await _buildProbePickMessage(st, cands);
-              localOnlyResponse = true;
-            }
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '时间范围较大：继续直接检索（不再向用户追问）'
+                  : 'Large time range: proceeding without clarification',
+              assistantIndex: assistantIdx,
+            );
           }
 
           if (localOnlyResponse) {
@@ -3162,7 +2817,8 @@ class _AISettingsPageState extends State<AISettingsPage>
           final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
 
           // 清理澄清状态，避免污染下一轮
-          if (_clarifyState != null && (noContext || resolvedIntent.hasValidRange)) {
+          if (_clarifyState != null &&
+              (noContext || resolvedIntent.hasValidRange)) {
             if (noContext) {
               _appendAgentLog(
                 _isZhLocale()
@@ -3475,9 +3131,12 @@ class _AISettingsPageState extends State<AISettingsPage>
             fullStartMs: fullStartMs,
             fullEndMs: fullEndMs,
           );
+          final int finalQueryTokens = PromptBudget.approxTokensForText(
+            finalQuery,
+          );
           await FlutterLogger.nativeDebug(
             'ChatFlow',
-            'phase3 finalQueryLen=${finalQuery.length} (non-stream)',
+            'phase3 finalQueryLen=${finalQuery.length} approxTokens=$finalQueryTokens (non-stream)',
           );
           _appendAgentLog(
             _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
@@ -3486,15 +3145,14 @@ class _AISettingsPageState extends State<AISettingsPage>
           );
           _appendAgentLog(
             _isZhLocale()
-                ? '生成最终提示词：len=${finalQuery.length}'
-                : 'Final prompt: len=${finalQuery.length}',
+                ? '生成最终提示词：len=${finalQuery.length} tokens≈$finalQueryTokens'
+                : 'Final prompt: len=${finalQuery.length} tokens≈$finalQueryTokens',
             assistantIndex: assistantIdx,
           );
           // 非流式：拿到回复后直接写入最终答案（证据图片在渲染时按 basename 解析）
-          final String sysDateGuard = _buildDateGuardSystemMessage(
-            startMs: fullStartMs,
-            endMs: fullEndMs,
-          );
+          final List<String> extraSystemMessages = <String>[
+            _buildNowContextSystemMessage(),
+          ];
           final List<Map<String, dynamic>> chatTools =
               AIChatService.defaultChatTools();
           final bool forceToolFirstIfNoToolCalls =
@@ -3512,11 +3170,9 @@ class _AISettingsPageState extends State<AISettingsPage>
             text,
             finalQuery,
             includeHistory: resolvedIntent.skipContext,
-            extraSystemMessages: <String>[sysDateGuard],
+            extraSystemMessages: extraSystemMessages,
             tools: chatTools,
             toolChoice: 'auto',
-            toolStartMs: resolvedIntent.startMs,
-            toolEndMs: resolvedIntent.endMs,
             forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
             emitEvent: (evt) {
               if (!mounted) return;
@@ -3563,10 +3219,6 @@ class _AISettingsPageState extends State<AISettingsPage>
               final AIMessage m = toSave[assistantIdx];
               String rewritten = await _rewriteNumericEvidenceTagsToFilenames(
                 m.content,
-                ctxPack: ctxPack,
-              );
-              rewritten = _forceAppendEvidenceSamplesIfMissing(
-                rewritten,
                 ctxPack: ctxPack,
               );
               if (rewritten != m.content) {
@@ -3685,8 +3337,16 @@ class _AISettingsPageState extends State<AISettingsPage>
     sb.writeln(
       '若引用 filename：必须完全匹配 evidence_samples 中的一项（含扩展名），禁止添加路径/前缀/后缀，禁止省略扩展名。',
     );
+    final int preloadDays =
+        (AIChatService.maxToolTimeSpanMs /
+                const Duration(days: 1).inMilliseconds)
+            .round();
+    final int semanticDays =
+        (AIChatService.maxSemanticToolTimeSpanMs /
+                const Duration(days: 1).inMilliseconds)
+            .round();
     sb.writeln(
-      '时间范围工具（search_segments / search_screenshots_ocr）单次最多查询 7 天；若请求超过 7 天，工具会裁剪并在返回中加入 warnings + paging（prev/next），你可以按周继续查询上一周/下一周。',
+      '工具时间窗说明：OCR 类（search_screenshots_ocr / search_segments(mode=ocr)）不限制时间范围（可直接传完整范围；结果过多时用 offset/limit 分页；search_screenshots_ocr 会返回 total_count/has_more，统计类问题优先用 total_count）；语义检索（search_segments(mode=ai) / search_ai_image_meta）单次最多 $semanticDays 天。超过会自动裁剪并返回 warnings + paging（prev/next）。',
     );
     sb.writeln('引用规范（唯一合法格式）：仅使用 [evidence: X]。');
     sb.writeln(
@@ -3705,9 +3365,15 @@ class _AISettingsPageState extends State<AISettingsPage>
     );
     sb.writeln('重要：不得将 [evidence: ...] 放入代码块或行内代码中，否则将无法识别与渲染。');
     sb.writeln(
-      '重要：只要预加载上下文中存在 evidence_samples（非空），你的最终回答就必须至少引用 1 张相关图片证据：在正文中插入 [evidence: X]（X 为对应 filename）。'
-      '若你不确定哪张最相关，请在回答末尾添加一行“相关截图：”并列出 1–5 个 [evidence: X]。',
+      '强制：只要你的回答涉及“本地记录/发生过的事情”（聊天、转账、日程、截图内容、地点/出行、消费等），就必须在对应结论/段落末尾附上截图证据引用 [evidence: X]（X 为对应 filename），以便用户一键定位。',
     );
+    sb.writeln(
+      '强制：最终回答应包含 3–8 个不同的 [evidence: X]（只挑最关键、最能定位的证据截图）；若确实找不到足够证据，允许少于 3，但必须说明“未找到更多可引用截图证据”，且禁止编造。',
+    );
+    sb.writeln(
+      '获取证据策略：优先使用预加载上下文中的 evidence_samples；如不足，必须调用检索类工具获取更多 filename（search_screenshots_ocr 或先 search_segments 再 get_segment_samples）。',
+    );
+    sb.writeln('注意：不要为了“引用证据”而调用 get_images；只有在需要像素级确认细节时才调用 get_images。');
     sb.writeln('若上下文不足以回答，请明确说明不确定之处。');
     if (AIChatService.responseStartMarker.trim().isNotEmpty) {
       sb.writeln(
@@ -3732,45 +3398,111 @@ class _AISettingsPageState extends State<AISettingsPage>
     sb.writeln(
       '时间范围: ${two(dsFull.hour)}:${two(dsFull.minute)}–${two(deFull.hour)}:${two(deFull.minute)}',
     );
-    sb.writeln('Epoch 毫秒: start_ms=$fullStartMs, end_ms=$fullEndMs');
     sb.writeln(
-      '工具约束：所有带 start_ms/end_ms 的工具调用必须落在上述范围内；单次跨度 <= ${AIChatService.maxToolTimeSpanMs}ms（7 天）。',
+      '时间窗提示：上述范围为意图解析得到的推荐范围；如需继续查找，你可以在工具调用中自行扩大/缩小 start_local/end_local。',
     );
     sb.writeln('');
     sb.writeln('【预加载上下文（摘要）】');
+    if (ctx.startMs > 0 && ctx.endMs > 0 && ctx.endMs >= ctx.startMs) {
+      final DateTime dsCtx = DateTime.fromMillisecondsSinceEpoch(ctx.startMs);
+      final DateTime deCtx = DateTime.fromMillisecondsSinceEpoch(ctx.endMs);
+      String fmt(DateTime d) => '${ymd(d)} ${two(d.hour)}:${two(d.minute)}';
+      sb.writeln(
+        '本次仅预加载窗口: ${fmt(dsCtx)}–${fmt(deCtx)}, events=${ctx.events.length}。',
+      );
+    } else {
+      sb.writeln('本次仅预加载窗口: events=${ctx.events.length}。');
+    }
     sb.writeln(
-      '本次仅预加载窗口: start_ms=${ctx.startMs}, end_ms=${ctx.endMs}, events=${ctx.events.length}。',
+      '说明：以下每条 summary 仅为“摘要”，且可能被截断（单条最多 300 字；若末尾出现“…”表示已截断）。如需完整信息，请使用检索类工具（search_segments / search_screenshots_ocr）定位证据，再用 get_segment_result / get_segment_samples 获取详情。',
     );
-    sb.writeln('注意：预加载上下文可能仅覆盖查询范围的一部分；如需其他周，请使用工具按周分页检索。');
+    final bool fullRangeWindowed =
+        (fullEndMs - fullStartMs) > AIChatService.maxToolTimeSpanMs;
+    if (fullRangeWindowed) {
+      sb.writeln(
+        '重要：查询范围跨多周，预加载上下文仅覆盖其中 $preloadDays 天。回答前请至少调用一次检索工具覆盖整个范围（可直接用 start_local/end_local 传完整范围；OCR 工具无需按周拆分，统计类问题可用 total_count）；不要只基于预加载窗口下结论。',
+      );
+    }
     sb.writeln(
-      '提示：如需更多细节或更多图片文件名，请用检索类工具（search_segments / search_screenshots_ocr），必要时再调用 get_segment_result / get_segment_samples；最终引用证据时必须使用 filename。',
+      '注意：预加载上下文可能仅覆盖查询范围的一部分；如需其他时间段，请使用工具检索并调整 start_local/end_local 或 offset/limit。',
     );
+    sb.writeln(
+      '提示：预加载的 evidence_samples 可能被截断（每条最多 3 个）；如需更多细节或更多图片文件名，请用检索类工具（search_segments / search_screenshots_ocr），必要时再调用 get_segment_result / get_segment_samples；最终引用证据时必须使用 filename。',
+    );
+    // Keep the preloaded context compact (Codex-style): include a tail subset of
+    // event summaries under an approximate token budget, instead of dumping all
+    // events into the prompt and degrading the tool loop.
     if (ctx.events.isNotEmpty) {
-      for (final ev in ctx.events) {
+      const int maxPromptTokens = 12000;
+      const int maxEventsHard = 48;
+
+      final int headerTokens = PromptBudget.approxTokensForText(sb.toString());
+      final int tailTokens = PromptBudget.approxTokensForText(
+        '\n【用户问题】\n$userText\n',
+      );
+      int remainingTokens = (maxPromptTokens - headerTokens - tailTokens).clamp(
+        0,
+        maxPromptTokens,
+      );
+
+      final List<String> blocksRev = <String>[];
+      for (final ev in ctx.events.reversed) {
+        if (blocksRev.length >= maxEventsHard) break;
+        if (remainingTokens <= 0) break;
+
         final String apps = ev.apps.isNotEmpty ? ev.apps.join('/') : '';
         final String sum = ev.summary.trim();
-        final String clipped = sum.length > 600
-            ? (sum.substring(0, 600) + '…')
+        final String clipped = sum.length > 300
+            ? (sum.substring(0, 300) + '…')
             : sum;
-        sb.writeln('- ${ev.window} ${apps.isEmpty ? '' : apps}');
+        final StringBuffer eb = StringBuffer();
+        eb.writeln('- ${ev.window} ${apps.isEmpty ? '' : apps}');
         if (clipped.isNotEmpty) {
-          sb.writeln('  summary: ' + clipped);
+          eb.writeln('  summary: ' + clipped);
         }
         if (ev.keyImages.isNotEmpty) {
-          String basename(String path) {
-            final int idx1 = path.lastIndexOf('/');
-            final int idx2 = path.lastIndexOf('\\');
-            final int i = idx1 > idx2 ? idx1 : idx2;
-            return i >= 0 ? path.substring(i + 1) : path;
-          }
-
           final List<String> names = ev.keyImages
-              .map((a) => basename(a.path).trim())
+              .map((a) => _basenameFromPath(a.path).trim())
               .where((s) => s.isNotEmpty)
               .toList();
           if (names.isNotEmpty) {
-            sb.writeln('  evidence_samples: ' + names.join(' '));
+            final List<String> clippedNames = names.take(3).toList();
+            eb.writeln('  evidence_samples: ' + clippedNames.join(' '));
           }
+        }
+        final String block = eb.toString().trimRight();
+        final int blockTokens = PromptBudget.approxTokensForText(block);
+        if (blockTokens <= remainingTokens) {
+          blocksRev.add(block);
+          remainingTokens -= blockTokens;
+          continue;
+        }
+
+        if (blocksRev.isEmpty) {
+          final String truncated = PromptBudget.truncateTextByBytes(
+            text: block,
+            maxBytes: remainingTokens * PromptBudget.approxBytesPerToken,
+            marker: '…truncated…',
+          );
+          if (truncated.trim().isNotEmpty) blocksRev.add(truncated.trimRight());
+        }
+        break;
+      }
+
+      final List<String> blocks = blocksRev.reversed.toList();
+      final int omitted = ctx.events.length - blocks.length;
+      if (blocks.isEmpty) {
+        sb.writeln(
+          '- （预加载事件 ${ctx.events.length} 条，但提示词预算不足以逐条列出；请用工具检索/翻页定位证据。）',
+        );
+      } else {
+        if (omitted > 0) {
+          sb.writeln(
+            '（为控制上下文长度：仅展示最近 ${blocks.length} 条事件摘要；省略较早的 $omitted 条。需要更早时间段请用工具检索/翻页。）',
+          );
+        }
+        for (final b in blocks) {
+          sb.writeln(b);
         }
       }
     } else {
@@ -3787,68 +3519,6 @@ class _AISettingsPageState extends State<AISettingsPage>
     final int idx2 = path.lastIndexOf('\\');
     final int i = idx1 > idx2 ? idx1 : idx2;
     return i >= 0 ? path.substring(i + 1) : path;
-  }
-
-  String _stripMarkdownCodeForEvidence(String content) {
-    final List<String> lines = content.replaceAll('\r\n', '\n').split('\n');
-    final StringBuffer sb = StringBuffer();
-    bool inFence = false;
-    for (final String line in lines) {
-      final String tl = line.trimLeft();
-      if (tl.startsWith('```')) {
-        inFence = !inFence;
-        continue;
-      }
-      if (inFence) continue;
-      sb.writeln(line);
-    }
-    return sb.toString().replaceAll(RegExp(r'`[^`\n]*`'), '');
-  }
-
-  bool _hasEvidenceTagsOutsideCode(String content) {
-    final String t = _stripMarkdownCodeForEvidence(content);
-    return RegExp(
-      r'\[\s*evidence\s*[:：]\s*[^\]\s]+\s*\]',
-      caseSensitive: false,
-    ).hasMatch(t);
-  }
-
-  List<String> _collectPreloadedEvidenceSamples(
-    QueryContextPack ctxPack, {
-    int maxCount = 6,
-  }) {
-    final List<String> out = <String>[];
-    final Set<String> seen = <String>{};
-    for (final ev in ctxPack.events) {
-      for (final a in ev.keyImages) {
-        final String name = _basenameFromPath(a.path).trim();
-        if (name.isEmpty) continue;
-        if (seen.add(name)) out.add(name);
-        if (maxCount > 0 && out.length >= maxCount) return out;
-      }
-    }
-    return out;
-  }
-
-  String _forceAppendEvidenceSamplesIfMissing(
-    String content, {
-    required QueryContextPack ctxPack,
-    int maxAppend = 6,
-  }) {
-    if (_hasEvidenceTagsOutsideCode(content)) return content;
-
-    final List<String> names = _collectPreloadedEvidenceSamples(
-      ctxPack,
-      maxCount: maxAppend,
-    );
-    if (names.isEmpty) return content;
-
-    final String label = _isZhLocale() ? '相关截图：' : 'Relevant screenshots:';
-    final String refs = names.map((n) => '[evidence: $n]').join(' ');
-
-    final String base = content.trimRight();
-    final String sep = base.isEmpty ? '' : '\n\n';
-    return base + sep + label + '\n' + refs;
   }
 
   String _evidenceMsgKey(AIMessage m) {
@@ -3954,24 +3624,19 @@ class _AISettingsPageState extends State<AISettingsPage>
     return rewritten;
   }
 
-  String _buildDateGuardSystemMessage({
-    required int startMs,
-    required int endMs,
-  }) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMs);
-    final DateTime de = DateTime.fromMillisecondsSinceEpoch(endMs);
-    String ymd(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
-    final String window =
-        (ds.year == de.year && ds.month == de.month && ds.day == de.day)
-        ? ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${two(de.hour)}:${two(de.minute)}')
-        : ('${ymd(ds)} ${two(ds.hour)}:${two(ds.minute)}–${ymd(de)} ${two(de.hour)}:${two(de.minute)}');
-    return '系统约束（必须遵守）: 仅围绕本地时区的指定日期/时间窗口回答：' +
-        window +
-        '。禁止将日期泛化为"今天/昨天/本周"等，也禁止引用当前日期。严禁回答超出该时间窗口的内容。' +
-        '若需要查找证据，请优先调用工具，并确保 start_ms/end_ms 落在该窗口内（单次跨度<=7天；可按 paging.prev/paging.next 逐周翻页）。' +
-        '若检索结果为空，不要直接下结论；应先向用户确认关键词/平台/时间范围是否可能记错，并询问是否继续扩大检索（翻页/换关键词/换工具）。' +
-        '只有在用户确认并且已尝试多组关键词+多周翻页仍为空时，才可以回答“在该时间窗口内没有找到相关记录”。';
+  String _buildNowContextSystemMessage() {
+    final DateTime now = DateTime.now();
+    final String tzName = now.timeZoneName;
+    final Duration tzOffset = now.timeZoneOffset;
+    final int offsetMinutes = tzOffset.inMinutes;
+    final String tzSign = offsetMinutes >= 0 ? '+' : '-';
+    final int absMin = offsetMinutes.abs();
+    final String tzHh = (absMin ~/ 60).toString().padLeft(2, '0');
+    final String tzMm = (absMin % 60).toString().padLeft(2, '0');
+    final String tzReadable = 'UTC$tzSign$tzHh:$tzMm';
+    return _isZhLocale()
+        ? '参考信息：当前本地时间 now=${now.toIso8601String()} 时区=$tzName($tzReadable)。用于理解“去年/昨天/最近”等相对时间；回答请尽量输出具体日期/时间。'
+        : 'Reference: current local datetime now=${now.toIso8601String()} timezone=$tzName($tzReadable). Use this to interpret relative time phrases (last year/yesterday/recent). Prefer explicit dates/times in the answer.';
   }
 
   void _cancelRequest() {
@@ -4476,6 +4141,13 @@ class _AISettingsPageState extends State<AISettingsPage>
         title: Text(AppLocalizations.of(context).aiSettingsTitle),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: _isZhLocale() ? '对话上下文' : 'Conversation context',
+            onPressed: () => ChatContextSheet.show(context),
+            icon: const Icon(Icons.memory_outlined),
+          ),
+        ],
       ),
       drawer: const AppSideDrawer(),
       drawerEnableOpenDragGesture: false, // 关闭默认边缘拖拽，改用自定义"任意位置"滑动

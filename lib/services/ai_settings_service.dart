@@ -705,19 +705,48 @@ class AISettingsService {
     final trimmed = messages.length > _maxHistoryMessages
         ? messages.sublist(messages.length - _maxHistoryMessages)
         : messages;
-    await db.clearAiConversation(conversationCid);
-    for (final m in trimmed) {
-      await db.appendAiMessage(
-        conversationCid,
-        m.role,
-        m.content,
-        createdAt: m.createdAt.millisecondsSinceEpoch,
-        reasoningContent: m.reasoningContent,
-        reasoningDurationMs: m.reasoningDuration?.inMilliseconds,
-      );
-    }
     try {
-      await db.touchAiConversation(conversationCid);
+      final storage = await db.database;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await storage.transaction((txn) async {
+        // 确保会话条目存在（若无则占位创建）
+        try {
+          await txn.execute(
+            'INSERT OR IGNORE INTO ai_conversations(cid, title, created_at, updated_at) VALUES(?, ?, ?, ?)',
+            [conversationCid, null, now, now],
+          );
+        } catch (_) {}
+
+        await txn.delete(
+          'ai_messages',
+          where: 'conversation_id = ?',
+          whereArgs: [conversationCid],
+        );
+
+        final batch = txn.batch();
+        for (final m in trimmed) {
+          batch.insert('ai_messages', {
+            'conversation_id': conversationCid,
+            'role': m.role,
+            'content': m.content,
+            if (m.reasoningContent != null) 'reasoning_content': m.reasoningContent,
+            if (m.reasoningDuration != null)
+              'reasoning_duration_ms': m.reasoningDuration!.inMilliseconds,
+            'created_at': m.createdAt.millisecondsSinceEpoch,
+          });
+        }
+        await batch.commit(noResult: true);
+
+        // 更新会话的最近更新时间
+        try {
+          await txn.update(
+            'ai_conversations',
+            {'updated_at': now},
+            where: 'cid = ?',
+            whereArgs: [conversationCid],
+          );
+        } catch (_) {}
+      });
     } catch (_) {}
   }
 
@@ -782,6 +811,9 @@ class AISettingsService {
     await db.clearAiConversation(conversationCid);
     try {
       await db.touchAiConversation(conversationCid);
+    } catch (_) {}
+    try {
+      _ctxChangedController.add('chat:cleared');
     } catch (_) {}
   }
 

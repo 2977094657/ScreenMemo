@@ -1962,6 +1962,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool matchAllTerms = true,
   }) async {
     final db = await database; // 主库
     try {
@@ -2050,7 +2051,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
               return limited
                   .map((w) => (w.replaceAll('"', '')) + '*')
-                  .join(' AND ');
+                  .join(matchAllTerms ? ' AND ' : ' OR ');
             }
 
             final String match = buildMatch(q);
@@ -2140,6 +2141,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool matchAllTerms = true,
   }) async {
     final db = await database; // 主库
     try {
@@ -2165,7 +2167,9 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             .toList();
         if (parts.isEmpty) return text;
         final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-        return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
+        return limited
+            .map((w) => (w.replaceAll('"', '')) + '*')
+            .join(matchAllTerms ? ' AND ' : ' OR ');
       }
 
       final String match = buildMatch(q);
@@ -2261,6 +2265,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool matchAllTerms = true,
   }) async {
     final db = await database; // 主库
     try {
@@ -2339,7 +2344,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
               return limited
                   .map((w) => (w.replaceAll('"', '')) + '*')
-                  .join(' AND ');
+                  .join(matchAllTerms ? ' AND ' : ' OR ');
             }
 
             final String match = buildMatch(q);

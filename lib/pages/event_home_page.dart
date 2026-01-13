@@ -16,6 +16,7 @@ import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
 import '../services/memory_bridge_service.dart';
+import '../widgets/chat_context_sheet.dart';
 
 class EventHomePage extends StatefulWidget {
   const EventHomePage({super.key});
@@ -53,8 +54,8 @@ class _EventHomePageState extends State<EventHomePage> {
     unawaited(MemoryBridgeService.instance.ensureInitialized());
    _loadChatContextSelection();
    _loadConversations();
-    _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
-     if (ctx == 'chat' && mounted) {
+   _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
+     if ((ctx == 'chat' || ctx == 'chat:cleared') && mounted) {
        _loadChatContextSelection();
        _loadConversations();
       }
@@ -509,6 +510,16 @@ class _EventHomePageState extends State<EventHomePage> {
         ),
         title: _buildChatProviderModelAppBarTitle(),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.memory_outlined),
+            tooltip: Localizations.localeOf(context)
+                    .languageCode
+                    .toLowerCase()
+                    .startsWith('zh')
+                ? '对话上下文'
+                : 'Conversation context',
+            onPressed: () => ChatContextSheet.show(context),
+          ),
           IconButton(
             icon: const Icon(Icons.add_comment_outlined),
             tooltip: '新建会话',
