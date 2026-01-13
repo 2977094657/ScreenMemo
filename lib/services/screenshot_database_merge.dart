@@ -7,8 +7,6 @@ class MergeReport {
   final int insertedScreenshots;
   final int skippedScreenshotDuplicates;
   final int mergedMemoryEvents;
-  final int mergedMemoryTags;
-  final int mergedMemoryEvidence;
   final Set<String> affectedPackages;
   final List<String> warnings;
 
@@ -18,8 +16,6 @@ class MergeReport {
     required this.insertedScreenshots,
     required this.skippedScreenshotDuplicates,
     required this.mergedMemoryEvents,
-    required this.mergedMemoryTags,
-    required this.mergedMemoryEvidence,
     required this.affectedPackages,
     required this.warnings,
   });
@@ -35,8 +31,6 @@ class _MergeContext {
   int insertedScreenshots = 0;
   int skippedScreenshotDuplicates = 0;
   int mergedMemoryEvents = 0;
-  int mergedMemoryTags = 0;
-  int mergedMemoryEvidence = 0;
 
   MergeReport toReport() {
     return MergeReport(
@@ -45,8 +39,6 @@ class _MergeContext {
       insertedScreenshots: insertedScreenshots,
       skippedScreenshotDuplicates: skippedScreenshotDuplicates,
       mergedMemoryEvents: mergedMemoryEvents,
-      mergedMemoryTags: mergedMemoryTags,
-      mergedMemoryEvidence: mergedMemoryEvidence,
       affectedPackages: affectedPackages,
       warnings: List<String>.from(warnings),
     );
@@ -666,18 +658,6 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
               await importDb.rawQuery('SELECT COUNT(*) FROM memory_events'),
             ) ??
             0;
-        ctx.mergedMemoryTags +=
-            Sqflite.firstIntValue(
-              await importDb.rawQuery('SELECT COUNT(*) FROM memory_tags'),
-            ) ??
-            0;
-        ctx.mergedMemoryEvidence +=
-            Sqflite.firstIntValue(
-              await importDb.rawQuery(
-                'SELECT COUNT(*) FROM memory_tag_evidence',
-              ),
-            ) ??
-            0;
       } catch (e) {
         ctx.warnings.add('读取记忆数据库失败: $e');
       } finally {
@@ -709,9 +689,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
       await targetDb0.transaction((txn) async {
         final bool hasEventsTable = await _tableExists(txn, 'memory_events');
-        final bool hasTagsTable = await _tableExists(txn, 'memory_tags');
-        if (!hasEventsTable || !hasTagsTable) {
-          ctx.warnings.add('记忆数据库缺少必要表，跳过合并');
+        if (!hasEventsTable) {
+          ctx.warnings.add('记忆数据库缺少 memory_events 表，跳过合并');
           return;
         }
 
@@ -719,15 +698,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           txn,
           'memory_events',
         );
-        final Set<String> tagCols = await _tryListTableColumns(txn, 'memory_tags');
         final bool hasMetadataTable = await _tableExists(txn, 'memory_metadata');
         final Set<String> metaCols = hasMetadataTable
             ? await _tryListTableColumns(txn, 'memory_metadata')
-            : <String>{};
-        final bool hasEvidenceTable =
-            await _tableExists(txn, 'memory_tag_evidence');
-        final Set<String> evidenceCols = hasEvidenceTable
-            ? await _tryListTableColumns(txn, 'memory_tag_evidence')
             : <String>{};
 
         final Map<int, int> eventIdMap = <int, int>{};
@@ -819,72 +792,6 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
           }
         }
 
-        final Map<int, int> tagIdMap = <int, int>{};
-        final Map<String, Map<String, Object?>> existingTagRows =
-            <String, Map<String, Object?>>{};
-        final Map<String, int> tagKeyToId = <String, int>{};
-
-        final List<Map<String, Object?>> existingTags = await txn.query(
-          'memory_tags',
-        );
-        int existingTagIndex = 0;
-        for (final Map<String, Object?> row in existingTags) {
-          existingTagIndex++;
-          final String key = (row['tag_key'] as String?) ?? '';
-          if (key.isEmpty) continue;
-          final int id = (row['id'] as int?) ?? 0;
-          tagKeyToId[key] = id;
-          existingTagRows[key] = Map<String, Object?>.from(row);
-          if (existingTagIndex % 5000 == 0) {
-            await Future<void>.delayed(Duration.zero);
-          }
-        }
-
-        final List<Map<String, Object?>> importTags = await importDb0.query(
-          'memory_tags',
-          orderBy: 'id ASC',
-        );
-        for (final Map<String, Object?> row in importTags) {
-          final int oldId = (row['id'] as int?) ?? 0;
-          if (oldId <= 0) continue;
-          final String tagKey = (row['tag_key'] as String?) ?? '';
-          if (tagKey.isEmpty) continue;
-
-          if (tagKeyToId.containsKey(tagKey)) {
-            final int existingId = tagKeyToId[tagKey]!;
-            final Map<String, Object?> merged = _mergeTagRows(
-              existingTagRows[tagKey] ?? <String, Object?>{},
-              row,
-            );
-            final Map<String, Object?> updateRow = Map<String, Object?>.from(
-              merged,
-            )..remove('id');
-            final Map<String, Object?> filteredUpdateRow =
-                _filterByColumns(updateRow, tagCols);
-            await txn.update(
-              'memory_tags',
-              filteredUpdateRow,
-              where: 'id = ?',
-              whereArgs: [existingId],
-            );
-            existingTagRows[tagKey] = Map<String, Object?>.from(merged)
-              ..['id'] = existingId;
-            tagIdMap[oldId] = existingId;
-            continue;
-          }
-
-          final Map<String, Object?> insertRow =
-              _filterByColumns(row, tagCols)..remove('id');
-          final int newTagId = await txn.insert('memory_tags', insertRow);
-          if (newTagId > 0) {
-            tagIdMap[oldId] = newTagId;
-            tagKeyToId[tagKey] = newTagId;
-            existingTagRows[tagKey] = Map<String, Object?>.from(row)
-              ..['id'] = newTagId;
-            ctx.mergedMemoryTags++;
-          }
-        }
-
         if (hasMetadataTable &&
             await _tableExists(importDb0, 'memory_metadata')) {
           final List<Map<String, Object?>> importMetadata =
@@ -918,38 +825,6 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
                   whereArgs: [key],
                 );
               }
-            }
-          }
-        }
-
-        if (hasEvidenceTable &&
-            await _tableExists(importDb0, 'memory_tag_evidence')) {
-          final List<Map<String, Object?>> importEvidence = await importDb0.query(
-            'memory_tag_evidence',
-            orderBy: 'id ASC',
-          );
-          for (final Map<String, Object?> row in importEvidence) {
-            final int oldTagId = (row['tag_id'] as int?) ?? -1;
-            final int oldEventId = (row['event_id'] as int?) ?? -1;
-            final int? newTagId = tagIdMap[oldTagId];
-            final int? newEventId = eventIdMap[oldEventId];
-            if (newTagId == null || newEventId == null) continue;
-
-            final Map<String, Object?> insertRow =
-                _filterByColumns(row, evidenceCols)..remove('id');
-            if (evidenceCols.isEmpty || evidenceCols.contains('tag_id')) {
-              insertRow['tag_id'] = newTagId;
-            }
-            if (evidenceCols.isEmpty || evidenceCols.contains('event_id')) {
-              insertRow['event_id'] = newEventId;
-            }
-            final int insertedId = await txn.insert(
-              'memory_tag_evidence',
-              insertRow,
-              conflictAlgorithm: ConflictAlgorithm.ignore,
-            );
-            if (insertedId > 0) {
-              ctx.mergedMemoryEvidence++;
             }
           }
         }

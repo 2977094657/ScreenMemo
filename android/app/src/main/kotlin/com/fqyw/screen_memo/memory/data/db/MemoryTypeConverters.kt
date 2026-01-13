@@ -1,8 +1,6 @@
 package com.fqyw.screen_memo.memory.data.db
 
 import androidx.room.TypeConverter
-import com.fqyw.screen_memo.memory.model.TagCategory
-import com.fqyw.screen_memo.memory.model.TagStatus
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,16 +56,4 @@ class MemoryTypeConverters {
             emptyList()
         }
     }
-
-    @TypeConverter
-    fun fromTagStatus(status: TagStatus?): String? = status?.storageValue
-
-    @TypeConverter
-    fun toTagStatus(value: String?): TagStatus = TagStatus.fromStorageValue(value)
-
-    @TypeConverter
-    fun fromTagCategory(category: TagCategory?): String? = category?.storageValue
-
-    @TypeConverter
-    fun toTagCategory(value: String?): TagCategory = TagCategory.fromStorageValue(value)
 }

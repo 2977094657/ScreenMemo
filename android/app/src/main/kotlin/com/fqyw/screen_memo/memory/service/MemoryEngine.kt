@@ -4,16 +4,12 @@ import android.content.Context
 import com.fqyw.screen_memo.FileLogger
 import com.fqyw.screen_memo.SegmentDatabaseHelper
 import com.fqyw.screen_memo.memory.data.MemoryRepository
-import com.fqyw.screen_memo.memory.data.MemoryRepository.TagUpdateResult
 import com.fqyw.screen_memo.memory.data.db.MemoryDatabase
 import com.fqyw.screen_memo.memory.data.db.MemoryEventEntity
 import com.fqyw.screen_memo.memory.model.MemoryEventSummary
 import com.fqyw.screen_memo.memory.model.MemoryProgressState
 import com.fqyw.screen_memo.memory.model.MemorySnapshot
-import com.fqyw.screen_memo.memory.model.TagStatus
-import com.fqyw.screen_memo.memory.model.TagCategory
 import com.fqyw.screen_memo.memory.model.UserEvent
-import com.fqyw.screen_memo.memory.model.UserTag
 import com.fqyw.screen_memo.memory.model.PersonaProfile
 import com.fqyw.screen_memo.memory.model.PersonaProfilePatch
 import com.fqyw.screen_memo.memory.processor.LlmEndpointConfigurationException
@@ -25,9 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -51,12 +45,6 @@ class MemoryEngine private constructor(
     private val repository: MemoryRepository
 ) {
 
-    data class TagUpdateEvent(
-        val tag: UserTag,
-        val isNewTag: Boolean,
-        val statusChanged: Boolean
-    )
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _snapshotState = MutableStateFlow(MemorySnapshot(personaSummary = DEFAULT_PERSONA_SUMMARY))
@@ -71,12 +59,6 @@ class MemoryEngine private constructor(
 
     private val _personaProfileState = MutableStateFlow(PersonaProfile.default())
     val personaProfileState: StateFlow<PersonaProfile> = _personaProfileState
-
-    private val _tagUpdateEvents = MutableSharedFlow<TagUpdateEvent>(
-        replay = 0,
-        extraBufferCapacity = 64
-    )
-    val tagUpdateEvents: SharedFlow<TagUpdateEvent> = _tagUpdateEvents
 
     private val initializing = AtomicBoolean(false)
     private var initializationJob: Job? = null
@@ -208,55 +190,47 @@ class MemoryEngine private constructor(
         FileLogger.i(TAG, "Extraction context updated: ${context?.toLogSafeString() ?: "cleared"}")
     }
 
+    fun getLastExtractionRequestDebug(): Map<String, Any?>? {
+        return LlmUserSignalExtractor.getLastRequestDebug()
+    }
+
     private suspend fun extractWithLlm(event: UserEvent): UserSignalExtractionResult {
         val context = extractionContext
         if (context == null || !context.isValid) {
             FileLogger.w(TAG, "LLM 提取已跳过：缺少提取上下文")
-            return UserSignalExtractionResult(emptyList(), null, null)
+            return UserSignalExtractionResult(
+                personaProfilePatch = null,
+                personaSummaryFallback = null
+            )
         }
-        val existingTagPaths = repository.listAllTagPaths()
         val currentPersona = personaSummaryState.value
         val currentProfile = personaProfileState.value
-        return llmExtractor.extractSignals(event, context, existingTagPaths, currentPersona, currentProfile)
+        return llmExtractor.extractSignals(
+            event = event,
+            context = context,
+            currentPersonaSummary = currentPersona,
+            currentPersonaProfile = currentProfile
+        )
     }
 
     private fun observeSnapshotStreams() {
         scope.launch {
-            val baseSnapshotFlow = combine(
-                repository.observeTagsByStatus(TagStatus.PENDING, SNAPSHOT_PENDING_LIMIT),
-                repository.observeTagsByStatus(TagStatus.CONFIRMED, SNAPSHOT_CONFIRMED_LIMIT),
+            combine(
                 repository.observeRecentEvents(SNAPSHOT_RECENT_EVENT_LIMIT),
-                repository.observeTagCountByStatus(TagStatus.PENDING),
-                repository.observeTagCountByStatus(TagStatus.CONFIRMED)
-            ) { pending: List<UserTag>,
-                confirmed: List<UserTag>,
-                events: List<MemoryEventSummary>,
-                pendingCount: Int,
-                confirmedCount: Int ->
+                personaSummaryState,
+                personaProfileState
+            ) { events: List<MemoryEventSummary>, persona: String, profile: PersonaProfile ->
                 MemorySnapshot(
-                    pendingTags = pending,
-                    confirmedTags = confirmed,
                     recentEvents = events,
-                    pendingTotalCount = pendingCount,
-                    confirmedTotalCount = confirmedCount,
                     recentEventTotalCount = events.size,
                     lastUpdatedAt = System.currentTimeMillis(),
-                    personaSummary = "",
-                    personaProfile = _personaProfileState.value
+                    personaSummary = persona,
+                    personaProfile = profile
                 )
+            }.collect { snapshot ->
+                _snapshotState.value = snapshot
+                maybeRefreshPersonaSummary(snapshot)
             }
-
-            baseSnapshotFlow
-                .combine(personaSummaryState) { snapshot, persona ->
-                    snapshot.copy(personaSummary = persona)
-                }
-                .combine(personaProfileState) { snapshot, profile ->
-                    snapshot.copy(personaProfile = profile)
-                }
-                .collect { snapshot ->
-                    _snapshotState.value = snapshot
-                    maybeRefreshPersonaSummary(snapshot)
-                }
         }
     }
 
@@ -264,17 +238,8 @@ class MemoryEngine private constructor(
         withContext(scope.coroutineContext) {
             val entity = repository.upsertEvent(event)
             val extraction = extractWithLlm(event)
+            val beforePersona = _personaSummaryState.value
             applyPersonaUpdateFromLlm(extraction.personaProfilePatch, extraction.personaSummaryFallback)
-
-            val tagEvents = mutableListOf<TagUpdateEvent>()
-            extraction.candidates.forEach { candidate ->
-                val result = repository.upsertTagWithEvidence(
-                    candidate = candidate,
-                    eventId = entity.id,
-                    eventTimestamp = event.occurredAt
-                )
-                tagEvents += result.toUpdateEvent()
-            }
 
             repository.applyGraphUpdates(
                 eventId = entity.id,
@@ -285,15 +250,13 @@ class MemoryEngine private constructor(
                 graphEdgeClosures = extraction.graphEdgeClosures
             )
 
-            val containsContext = extraction.candidates.isNotEmpty() ||
-                extraction.graphEntities.isNotEmpty() ||
+            val personaUpdated = _personaSummaryState.value != beforePersona
+            val graphUpdated = extraction.graphEntities.isNotEmpty() ||
                 extraction.graphEdges.isNotEmpty() ||
                 extraction.graphEdgeClosures.isNotEmpty()
+            val containsContext = personaUpdated || graphUpdated
 
             repository.markEventProcessed(entity.id, containsUserContext = containsContext)
-
-            // 发出标签更新事件
-            tagEvents.forEach { update -> _tagUpdateEvents.emit(update) }
         }
     }
 
@@ -319,8 +282,7 @@ class MemoryEngine private constructor(
                     progress = if (totalDays == 0) 1f else 0f,
                     currentEventId = null,
                     currentEventExternalId = null,
-                    currentEventType = null,
-                    newlyDiscoveredTags = emptyList()
+                    currentEventType = null
                 )
 
                 if (totalDays == 0 && processOnlyPending) {
@@ -364,8 +326,7 @@ class MemoryEngine private constructor(
                             progress = progress,
                             currentEventId = result.aggregatedEntity?.id,
                             currentEventExternalId = result.aggregatedEntity?.externalId,
-                            currentEventType = result.aggregatedEntity?.type,
-                            newlyDiscoveredTags = result.newTags
+                            currentEventType = result.aggregatedEntity?.type
                         )
                     }
                 } else {
@@ -399,8 +360,7 @@ class MemoryEngine private constructor(
                                 progress = progress,
                                 currentEventId = result.aggregatedEntity?.id,
                                 currentEventExternalId = result.aggregatedEntity?.externalId,
-                                currentEventType = result.aggregatedEntity?.type,
-                                newlyDiscoveredTags = result.newTags
+                                currentEventType = result.aggregatedEntity?.type
                             )
                         }
                         offset += batch.size
@@ -455,21 +415,6 @@ class MemoryEngine private constructor(
         }
     }
 
-    suspend fun confirmTag(tagId: Long, confirmedByUser: Boolean = true): UserTag? {
-        return repository.confirmTag(tagId, confirmedByUser)?.also {
-            _tagUpdateEvents.emit(TagUpdateEvent(it, isNewTag = false, statusChanged = true))
-        }
-    }
-
-    suspend fun updateEvidence(
-        evidenceId: Long,
-        newExcerpt: String,
-        notes: String?,
-        markAsUserEdited: Boolean
-    ) = repository.updateEvidence(evidenceId, newExcerpt, notes, markAsUserEdited)
-
-    suspend fun getTag(tagId: Long): UserTag? = repository.getTagById(tagId)
-
     suspend fun getEventSummary(eventId: Long) = repository.getEventSummary(eventId)
 
     suspend fun searchGraph(
@@ -481,22 +426,36 @@ class MemoryEngine private constructor(
         repository.searchGraph(query, depth, limit, includeHistory)
     }
 
-    suspend fun deleteTag(tagId: Long): Boolean = withContext(scope.coroutineContext) {
-        val removed = repository.deleteTag(tagId)
-        if (removed) {
-            val current = _snapshotState.value
-            val pendingFiltered = current.pendingTags.filterNot { it.id.toLong() == tagId }
-            val confirmedFiltered = current.confirmedTags.filterNot { it.id.toLong() == tagId }
-            val pendingRemoved = current.pendingTags.size - pendingFiltered.size
-            val confirmedRemoved = current.confirmedTags.size - confirmedFiltered.size
-            _snapshotState.value = current.copy(
-                pendingTags = pendingFiltered,
-                confirmedTags = confirmedFiltered,
-                pendingTotalCount = (current.pendingTotalCount - pendingRemoved).coerceAtLeast(0),
-                confirmedTotalCount = (current.confirmedTotalCount - confirmedRemoved).coerceAtLeast(0)
-            )
-        }
-        removed
+    suspend fun buildWorkingMemory(
+        query: String?,
+        edgeLimit: Int = 60,
+        includeHistoryEdges: Boolean = false
+    ): Map<String, Any?> = withContext(scope.coroutineContext) {
+        val normalizedQuery = query?.trim().orEmpty()
+        val safeEdgeLimit = edgeLimit.coerceIn(10, 200)
+
+        val personaSummary = personaSummaryState.value
+        val personaProfile = personaProfileState.value
+        val graphQuery = if (normalizedQuery.isBlank()) "我" else normalizedQuery
+        val graph = repository.searchGraph(
+            query = graphQuery,
+            depth = 2,
+            limit = safeEdgeLimit,
+            includeHistory = includeHistoryEdges
+        )
+        val markdown = buildWorkingMemoryMarkdown(
+            query = normalizedQuery,
+            personaSummary = personaSummary,
+            graph = graph
+        )
+        mapOf(
+            "query" to normalizedQuery,
+            "generated_at" to System.currentTimeMillis(),
+            "persona_summary" to personaSummary,
+            "persona_profile" to personaProfile.toMap(),
+            "graph" to graph,
+            "working_memory_markdown" to markdown
+        )
     }
 
     fun cancelInitialization() {
@@ -508,9 +467,59 @@ class MemoryEngine private constructor(
 
     private data class DailyAggregationResult(
         val processedEvents: Int,
-        val aggregatedEntity: MemoryEventEntity?,
-        val newTags: List<String>
+        val aggregatedEntity: MemoryEventEntity?
     )
+
+    private fun buildWorkingMemoryMarkdown(
+        query: String,
+        personaSummary: String,
+        graph: Map<String, Any?>
+    ): String {
+        val sb = StringBuilder()
+        sb.append("## 工作记忆（自动装配）\n")
+        if (query.isNotBlank()) {
+            sb.append("- query: ").append(query).append('\n')
+        }
+        sb.append('\n')
+
+        val persona = personaSummary.trim()
+        if (persona.isNotEmpty()) {
+            sb.append("### Persona\n\n")
+            sb.append(persona).append("\n\n")
+        }
+
+        val edges = (graph["edges"] as? List<*>)?.filterIsInstance<Map<*, *>>() ?: emptyList()
+        if (edges.isNotEmpty()) {
+            sb.append("### 相关图谱边\n\n")
+            edges.take(20).forEach { raw ->
+                val subject = raw["subject_key"]?.toString().orEmpty()
+                val predicate = raw["predicate"]?.toString().orEmpty()
+                val objKey = raw["object_key"]?.toString()
+                val objValue = raw["object_value"]?.toString()
+                val objectText = when {
+                    !objKey.isNullOrBlank() -> objKey
+                    !objValue.isNullOrBlank() -> objValue
+                    else -> "?"
+                }
+                sb.append("- ").append(subject).append(" --").append(predicate).append("--> ").append(objectText)
+                val qualifiers = raw["qualifiers"]
+                if (qualifiers is Map<*, *> && qualifiers.isNotEmpty()) {
+                    sb.append(" ").append(qualifiers.entries.joinToString(prefix = "{", postfix = "}") { (k, v) ->
+                        "${k.toString()}:${v.toString()}"
+                    })
+                }
+                val evidence = raw["evidence"] as? List<*>
+                val excerpt = (evidence?.firstOrNull() as? Map<*, *>)?.get("excerpt")?.toString()?.trim().orEmpty()
+                if (excerpt.isNotBlank()) {
+                    sb.append(" 证据：").append(truncate(excerpt, 120))
+                }
+                sb.append('\n')
+            }
+            sb.append('\n')
+        }
+
+        return sb.toString().trim()
+    }
 
     private suspend fun countRemainingDays(
         forceReprocess: Boolean,
@@ -542,7 +551,7 @@ class MemoryEngine private constructor(
         forceReprocess: Boolean
     ): DailyAggregationResult {
         if (dayEvents.isEmpty()) {
-            return DailyAggregationResult(0, null, emptyList())
+            return DailyAggregationResult(0, null)
         }
 
         val baseEvents = dayEvents.filter { it.type != DAILY_EVENT_TYPE }.sortedBy { it.occurredAt }
@@ -550,7 +559,7 @@ class MemoryEngine private constructor(
         val processedEvents = baseEvents.size
 
         if (baseEvents.isEmpty() && existingAggregate == null) {
-            return DailyAggregationResult(processedEvents, null, emptyList())
+            return DailyAggregationResult(processedEvents, null)
         }
 
         val aggregateExternalId = buildAggregateExternalId(day)
@@ -581,21 +590,8 @@ class MemoryEngine private constructor(
         )
         val userEvent = aggregateEntity.toDomain()
         val extraction = extractWithLlm(userEvent)
+        val beforePersona = _personaSummaryState.value
         applyPersonaUpdateFromLlm(extraction.personaProfilePatch, extraction.personaSummaryFallback)
-
-        val newTags = mutableListOf<String>()
-        val tagUpdates = mutableListOf<TagUpdateEvent>()
-        extraction.candidates.forEach { candidate ->
-            val result = repository.upsertTagWithEvidence(
-                candidate = candidate,
-                eventId = aggregateEntity.id,
-                eventTimestamp = aggregateEntity.occurredAt
-            )
-            if (result.isNewTag || result.statusChanged) {
-                newTags += result.tag.label
-            }
-            tagUpdates += result.toUpdateEvent()
-        }
 
         val graphTimestamp = baseEvents.lastOrNull()?.occurredAt ?: aggregateEntity.occurredAt
         repository.applyGraphUpdates(
@@ -607,18 +603,17 @@ class MemoryEngine private constructor(
             graphEdgeClosures = extraction.graphEdgeClosures
         )
 
-        val containsContext = extraction.candidates.isNotEmpty() ||
-            extraction.graphEntities.isNotEmpty() ||
+        val personaUpdated = _personaSummaryState.value != beforePersona
+        val graphUpdated = extraction.graphEntities.isNotEmpty() ||
             extraction.graphEdges.isNotEmpty() ||
             extraction.graphEdgeClosures.isNotEmpty()
+        val containsContext = personaUpdated || graphUpdated
         repository.markEventProcessed(aggregateEntity.id, containsUserContext = containsContext)
         baseEvents.forEach { repository.markEventProcessed(it.id, containsUserContext = containsContext) }
-        tagUpdates.forEach { _tagUpdateEvents.emit(it) }
 
         return DailyAggregationResult(
             processedEvents = processedEvents,
-            aggregatedEntity = aggregateEntity,
-            newTags = newTags
+            aggregatedEntity = aggregateEntity
         )
     }
 
@@ -677,11 +672,25 @@ class MemoryEngine private constructor(
     ): String {
         if (events.isEmpty()) return ""
         val sorted = events.sortedBy { it.occurredAt }
+        val selected = buildList {
+            val preferred = sorted.filter { it.type != "segment" }
+            addAll(preferred.take(DAILY_AGG_MAX_EVENT_ITEMS))
+            if (size < DAILY_AGG_MAX_EVENT_ITEMS) {
+                val remaining = DAILY_AGG_MAX_EVENT_ITEMS - size
+                addAll(sorted.filter { it.type == "segment" }.take(remaining))
+            }
+        }.distinctBy { it.id }
+        val selectedIds = selected.mapTo(LinkedHashSet()) { it.id }
+        val omitted = sorted.filter { !selectedIds.contains(it.id) }
+        val omittedCount = omitted.size
         val sb = StringBuilder()
         sb.append("日期：").append(day.format(dateFormatter)).append('\n')
         sb.append("事件数量：").append(sorted.size).append('\n')
+        if (omittedCount > 0) {
+            sb.append("（已筛选 ").append(selected.size).append(" 条高信息量事件；省略 ").append(omittedCount).append(" 条）\n")
+        }
         sb.append('\n')
-        sorted.forEachIndexed { index, entity ->
+        selected.forEachIndexed { index, entity ->
             sb.append("【事件 ").append(index + 1).append("】")
             sb.append(formatEventTimeRange(entity))
             val originParts = mutableListOf<String>()
@@ -691,12 +700,24 @@ class MemoryEngine private constructor(
                 sb.append(' ').append(originParts.joinToString(" | "))
             }
             sb.append('\n')
-            sb.append(entity.content.trim()).append('\n')
+            sb.append(truncate(entity.content.trim(), DAILY_AGG_EVENT_CONTENT_LIMIT)).append('\n')
             val metaSummary = summarizeMetadata(entity.metadata)
             if (metaSummary.isNotEmpty()) {
                 sb.append(metaSummary).append('\n')
             }
             sb.append('\n')
+        }
+        if (omittedCount > 0) {
+            val typeCounts = omitted
+                .groupingBy { it.type.ifBlank { "(unknown)" } }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .take(8)
+                .joinToString("，") { (k, v) -> "$k=$v" }
+            if (typeCounts.isNotBlank()) {
+                sb.append("省略事件类型统计：").append(typeCounts).append('\n')
+            }
         }
         return sb.toString().trim()
     }
@@ -739,14 +760,6 @@ class MemoryEngine private constructor(
             source = source,
             content = content,
             metadata = metadata
-        )
-    }
-
-    private fun TagUpdateResult.toUpdateEvent(): TagUpdateEvent {
-        return TagUpdateEvent(
-            tag = tag,
-            isNewTag = isNewTag,
-            statusChanged = statusChanged
         )
     }
 
@@ -803,30 +816,6 @@ class MemoryEngine private constructor(
         return if (markdown.isNotBlank()) markdown else DEFAULT_PERSONA_SUMMARY
     }
 
-    private fun buildTagExplanation(tag: UserTag): String {
-        val evidence = tag.evidences.firstOrNull()
-        val raw = evidence?.notes?.takeIf { !it.isNullOrBlank() }?.trim()
-            ?: evidence?.excerpt?.takeIf { !it.isNullOrBlank() }?.trim()
-        val text = raw?.replace('\n', ' ')?.take(MAX_EXPLANATION_LENGTH)
-        val sentence = text?.let {
-            val t = it.trim()
-            if (t.isEmpty()) null else t
-        } ?: "该特征仍需更多上下文支撑。"
-        val endsWithPunctuation = sentence.endsWith('。') ||
-            sentence.endsWith('.') ||
-            sentence.endsWith('!') ||
-            sentence.endsWith('！') ||
-            sentence.endsWith('?') ||
-            sentence.endsWith('？')
-        return if (endsWithPunctuation) sentence else "$sentence。"
-    }
-
-    suspend fun loadTagsByStatus(
-        status: TagStatus,
-        limit: Int,
-        offset: Int
-    ): List<UserTag> = repository.loadTagsByStatus(status, limit, offset)
-
     suspend fun loadRecentEvents(
         limit: Int,
         offset: Int
@@ -836,14 +825,11 @@ class MemoryEngine private constructor(
         withContext(scope.coroutineContext) {
             repository.clearAllMemoryData()
             _snapshotState.value = MemorySnapshot(
-                pendingTags = emptyList(),
-                confirmedTags = emptyList(),
                 recentEvents = emptyList(),
-                pendingTotalCount = 0,
-                confirmedTotalCount = 0,
                 recentEventTotalCount = 0,
                 lastUpdatedAt = System.currentTimeMillis(),
-                personaSummary = DEFAULT_PERSONA_SUMMARY
+                personaSummary = DEFAULT_PERSONA_SUMMARY,
+                personaProfile = PersonaProfile.default()
             )
             _progressState.value = MemoryProgressState.Idle
             _personaSummaryState.value = DEFAULT_PERSONA_SUMMARY
@@ -886,8 +872,7 @@ class MemoryEngine private constructor(
                 progress = 0f,
                 currentEventId = null,
                 currentEventExternalId = null,
-                currentEventType = null,
-                newlyDiscoveredTags = emptyList()
+                currentEventType = null
             )
 
             var processedDays = 0
@@ -912,8 +897,7 @@ class MemoryEngine private constructor(
                     progress = progress,
                     currentEventId = result.aggregatedEntity?.id,
                     currentEventExternalId = result.aggregatedEntity?.externalId,
-                    currentEventType = result.aggregatedEntity?.type,
-                    newlyDiscoveredTags = result.newTags
+                    currentEventType = result.aggregatedEntity?.type
                 )
                 if (processedDays >= targetDays) {
                     break
@@ -935,18 +919,16 @@ class MemoryEngine private constructor(
 
     companion object {
         private const val TAG = "MemoryEngine"
-        private const val SNAPSHOT_PENDING_LIMIT = 20
-        private const val SNAPSHOT_CONFIRMED_LIMIT = 20
         private const val SNAPSHOT_RECENT_EVENT_LIMIT = 20
         private const val DEFAULT_BATCH_SIZE = 40
         private const val SEGMENT_SYNC_BATCH = 50
         private const val MAX_METADATA_TEXT = 4000
-        private const val FALLBACK_SUMMARY_TAG_LIMIT = 3
         private const val DEFAULT_PERSONA_SUMMARY = ""
-        private const val MAX_EXPLANATION_LENGTH = 160
         private const val FAILURE_ENDPOINT_INVALID = "endpoint_invalid"
         private const val DAILY_EVENT_TYPE = "daily_aggregate"
         private const val DAILY_EVENT_SOURCE = "memory_engine"
+        private const val DAILY_AGG_MAX_EVENT_ITEMS = 40
+        private const val DAILY_AGG_EVENT_CONTENT_LIMIT = 280
         const val SAMPLE_TEST_EVENT_LIMIT = 30
 
         @Volatile

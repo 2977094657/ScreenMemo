@@ -11,14 +11,13 @@ import java.io.File
 @Database(
     entities = [
         MemoryEventEntity::class,
-        MemoryTagEntity::class,
-        MemoryTagEvidenceEntity::class,
         MemoryMetadataEntity::class,
         MemoryEntityEntity::class,
         MemoryEdgeEntity::class,
-        MemoryEdgeEvidenceEntity::class
+        MemoryEdgeEvidenceEntity::class,
+        MemoryEntityAliasEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(MemoryTypeConverters::class)
@@ -42,7 +41,7 @@ abstract class MemoryDatabase : RoomDatabase() {
             val storageContext = MemoryDatabaseContext(appContext)
             migrateLegacyDatabaseIfNeeded(appContext, storageContext)
             return Room.databaseBuilder(storageContext, MemoryDatabase::class.java, DATABASE_NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 // 允许版本降级时清空旧数据，避免迁移路径缺失导致崩溃
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
@@ -136,6 +135,45 @@ abstract class MemoryDatabase : RoomDatabase() {
                 database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_edge_evidence_pair ON memory_edge_evidence(edge_id, event_id)")
                 database.execSQL("CREATE INDEX IF NOT EXISTS idx_memory_edge_evidence_edge ON memory_edge_evidence(edge_id)")
                 database.execSQL("CREATE INDEX IF NOT EXISTS idx_memory_edge_evidence_event ON memory_edge_evidence(event_id)")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_tag_aliases (
+                        alias_key TEXT NOT NULL PRIMARY KEY,
+                        tag_id INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        FOREIGN KEY(tag_id) REFERENCES memory_tags(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS idx_memory_tag_aliases_tag ON memory_tag_aliases(tag_id)")
+
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_entity_aliases (
+                        alias_key TEXT NOT NULL PRIMARY KEY,
+                        entity_id INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        FOREIGN KEY(entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS idx_memory_entity_aliases_entity ON memory_entity_aliases(entity_id)"
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // v6 removes tag-related tables entirely.
+                database.execSQL("DROP TABLE IF EXISTS memory_tag_aliases")
+                database.execSQL("DROP TABLE IF EXISTS memory_tag_evidence")
+                database.execSQL("DROP TABLE IF EXISTS memory_tags")
             }
         }
 

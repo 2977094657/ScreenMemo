@@ -122,20 +122,8 @@ interface MemoryDao {
             LIMIT :limit
         """
     )
-    fun observeRecentEventsWithTags(limit: Int): Flow<List<EventWithTagIds>>
+    fun observeRecentEvents(limit: Int): Flow<List<MemoryEventEntity>>
 
-    @Transaction
-    @Query(
-        """
-            SELECT * FROM memory_tags
-            WHERE status = :status
-            ORDER BY last_seen_at DESC
-            LIMIT :limit OFFSET :offset
-        """
-    )
-    suspend fun loadTagsByStatus(status: String, limit: Int, offset: Int): List<TagWithEvidence>
-
-    @Transaction
     @Query(
         """
             SELECT * FROM memory_events
@@ -143,80 +131,13 @@ interface MemoryDao {
             LIMIT :limit OFFSET :offset
         """
     )
-    suspend fun loadEventsDescending(limit: Int, offset: Int): List<EventWithTagIds>
+    suspend fun loadEventsDescending(limit: Int, offset: Int): List<MemoryEventEntity>
 
     @Query("SELECT * FROM memory_events WHERE id = :eventId LIMIT 1")
     suspend fun getEventById(eventId: Long): MemoryEventEntity?
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertTag(entity: MemoryTagEntity): Long
-
-    @Update
-    suspend fun updateTag(entity: MemoryTagEntity)
-
-    @Query("SELECT * FROM memory_tags WHERE tag_key = :tagKey LIMIT 1")
-    suspend fun findTagByKey(tagKey: String): MemoryTagEntity?
-
-    @Query("SELECT * FROM memory_tags WHERE id = :tagId LIMIT 1")
-    suspend fun getTagById(tagId: Long): MemoryTagEntity?
-
-    @Transaction
-    @Query(
-        """
-            SELECT * FROM memory_tags
-            WHERE status = :status
-            ORDER BY last_seen_at DESC
-            LIMIT :limit
-        """
-    )
-    fun observeTagsByStatus(status: String, limit: Int): Flow<List<TagWithEvidence>>
-
-    @Query("SELECT COUNT(*) FROM memory_tags WHERE status = :status")
-    fun observeTagCountByStatus(status: String): Flow<Int>
-
     @Query("SELECT COUNT(*) FROM memory_events")
     fun observeEventCount(): Flow<Int>
-
-    @Transaction
-    @Query("SELECT * FROM memory_tags WHERE id = :tagId LIMIT 1")
-    suspend fun getTagWithEvidence(tagId: Long): TagWithEvidence?
-
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertEvidence(entity: MemoryTagEvidenceEntity): Long
-
-    @Update
-    suspend fun updateEvidence(entity: MemoryTagEvidenceEntity)
-
-    @Query("SELECT * FROM memory_tag_evidence WHERE id = :id LIMIT 1")
-    suspend fun getEvidenceById(id: Long): MemoryTagEvidenceEntity?
-
-    @Query("SELECT * FROM memory_tag_evidence WHERE tag_id = :tagId AND event_id = :eventId LIMIT 1")
-    suspend fun findEvidenceByTagAndEvent(tagId: Long, eventId: Long): MemoryTagEvidenceEntity?
-
-    @Query("SELECT tag_id FROM memory_tag_evidence WHERE event_id = :eventId")
-    suspend fun findTagIdsForEvent(eventId: Long): List<Long>
-
-    @Transaction
-    @Query("SELECT * FROM memory_events WHERE id = :eventId LIMIT 1")
-    suspend fun getEventWithTags(eventId: Long): EventWithTagIds?
-
-    @Query("SELECT COUNT(*) FROM memory_tag_evidence WHERE tag_id = :tagId")
-    suspend fun countEvidenceForTag(tagId: Long): Int
-
-    @Query("SELECT * FROM memory_tags ORDER BY last_seen_at DESC")
-    suspend fun getAllTags(): List<MemoryTagEntity>
-
-    @Query("DELETE FROM memory_tag_evidence")
-    suspend fun clearTagEvidence()
-
-    @Query("DELETE FROM memory_tag_evidence WHERE tag_id = :tagId")
-    suspend fun deleteEvidenceByTag(tagId: Long)
-
-    @Query("DELETE FROM memory_tags")
-    suspend fun clearTags()
-
-    @Query("DELETE FROM memory_tags WHERE id = :tagId")
-    suspend fun deleteTagById(tagId: Long): Int
 
     @Query("DELETE FROM memory_events")
     suspend fun clearEvents()
@@ -346,6 +267,14 @@ interface MemoryDao {
     @Query("DELETE FROM memory_entities")
     suspend fun clearEntities()
 
+    // ========== Alias (Entity) ==========
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEntityAlias(entity: MemoryEntityAliasEntity): Long
+
+    @Query("SELECT entity_id FROM memory_entity_aliases WHERE alias_key = :aliasKey LIMIT 1")
+    suspend fun findEntityIdByAlias(aliasKey: String): Long?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMetadata(entity: MemoryMetadataEntity)
 
@@ -363,8 +292,6 @@ interface MemoryDao {
         clearEdgeEvidence()
         clearEdges()
         clearEntities()
-        clearTagEvidence()
-        clearTags()
         clearEvents()
         clearMetadata()
     }

@@ -5,10 +5,7 @@ import com.fqyw.screen_memo.FileLogger
 import com.fqyw.screen_memo.memory.model.MemoryEventSummary
 import com.fqyw.screen_memo.memory.model.MemoryProgressState
 import com.fqyw.screen_memo.memory.model.MemorySnapshot
-import com.fqyw.screen_memo.memory.model.TagEvidence
-import com.fqyw.screen_memo.memory.model.TagStatus
 import com.fqyw.screen_memo.memory.model.UserEvent
-import com.fqyw.screen_memo.memory.model.UserTag
 import com.fqyw.screen_memo.memory.service.ExtractionContext
 import com.fqyw.screen_memo.memory.service.MemoryBackendService
 import com.fqyw.screen_memo.memory.service.MemoryEngine
@@ -31,7 +28,6 @@ class MemoryBridge(
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL_NAME)
     private val snapshotChannel = EventChannel(messenger, SNAPSHOT_CHANNEL_NAME)
     private val progressChannel = EventChannel(messenger, PROGRESS_CHANNEL_NAME)
-    private val tagUpdateChannel = EventChannel(messenger, TAG_UPDATE_CHANNEL_NAME)
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
     private val memoryEngine = MemoryEngine.getInstance(appContext)
@@ -40,7 +36,6 @@ class MemoryBridge(
         methodChannel.setMethodCallHandler(this)
         snapshotChannel.setStreamHandler(SnapshotStreamHandler())
         progressChannel.setStreamHandler(ProgressStreamHandler())
-        tagUpdateChannel.setStreamHandler(TagUpdateStreamHandler())
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -49,20 +44,38 @@ class MemoryBridge(
             "memory#setExtractionContext" -> handleSetExtractionContext(call, result)
             "memory#initialize" -> handleInitialize(call, result)
             "memory#syncSegments" -> handleSyncSegments(result)
-            "memory#loadTags" -> handleLoadTags(call, result)
             "memory#loadRecentEvents" -> handleLoadRecentEvents(call, result)
             "memory#ingestEvent" -> handleIngestEvent(call, result)
             "memory#graphSearch" -> handleGraphSearch(call, result)
-            "memory#confirmTag" -> handleConfirmTag(call, result)
-            "memory#updateEvidence" -> handleUpdateEvidence(call, result)
-            "memory#deleteTag" -> handleDeleteTag(call, result)
+            "memory#buildWorkingMemory" -> handleBuildWorkingMemory(call, result)
             "memory#getSnapshot" -> handleGetSnapshot(result)
-            "memory#getTag" -> handleGetTag(call, result)
             "memory#getEvent" -> handleGetEvent(call, result)
+            "memory#getLastExtractionRequestDebug" -> handleGetLastExtractionRequestDebug(result)
             "memory#processSampleEvents" -> handleProcessSampleEvents(call, result)
             "memory#clearMemoryData" -> handleClearMemoryData(result)
             "memory#cancelInitialization" -> handleCancelInitialization(result)
             else -> result.notImplemented()
+        }
+    }
+
+    private fun handleBuildWorkingMemory(call: MethodCall, result: MethodChannel.Result) {
+        val query = call.argument<String>("query")
+        val edgeLimit = (call.argument<Number>("edgeLimit") ?: 60).toInt().coerceIn(10, 200)
+        val includeHistoryEdges = call.argument<Boolean>("includeHistoryEdges")
+            ?: call.argument<Boolean>("include_history_edges")
+            ?: false
+        scope.launch {
+            try {
+                val payload = memoryEngine.buildWorkingMemory(
+                    query = query,
+                    edgeLimit = edgeLimit,
+                    includeHistoryEdges = includeHistoryEdges
+                )
+                result.success(payload)
+            } catch (t: Throwable) {
+                FileLogger.e(TAG, "buildWorkingMemory 失败 query=$query", t)
+                result.error("build_working_memory_failed", t.message, null)
+            }
         }
     }
 
@@ -74,29 +87,6 @@ class MemoryBridge(
             } catch (t: Throwable) {
                 FileLogger.e(TAG, "syncSegments 失败", t)
                 result.error("sync_segments_failed", t.message, null)
-            }
-        }
-    }
-
-    private fun handleLoadTags(call: MethodCall, result: MethodChannel.Result) {
-        val statusStr = call.argument<String>("status")
-        val offset = (call.argument<Number>("offset") ?: 0).toInt().coerceAtLeast(0)
-        val limit = (call.argument<Number>("limit") ?: SNAPSHOT_TAG_LIMIT).toInt().coerceAtLeast(1)
-        val status = when (statusStr) {
-            "pending" -> TagStatus.PENDING
-            "confirmed" -> TagStatus.CONFIRMED
-            else -> {
-                result.error("invalid_args", "status must be pending or confirmed", statusStr)
-                return
-            }
-        }
-        scope.launch {
-            try {
-                val tags = memoryEngine.loadTagsByStatus(status, limit, offset)
-                result.success(tags.map { it.toMap() })
-            } catch (t: Throwable) {
-                FileLogger.e(TAG, "loadTags 失败", t)
-                result.error("load_tags_failed", t.message, null)
             }
         }
     }
@@ -127,7 +117,6 @@ class MemoryBridge(
         methodChannel.setMethodCallHandler(null)
         snapshotChannel.setStreamHandler(null)
         progressChannel.setStreamHandler(null)
-        tagUpdateChannel.setStreamHandler(null)
         memoryEngine.setExtractionContext(null)
     }
 
@@ -197,64 +186,8 @@ class MemoryBridge(
         }
     }
 
-    private fun handleConfirmTag(call: MethodCall, result: MethodChannel.Result) {
-        val tagId = call.argument<Number>("tagId")?.toLong()
-        if (tagId == null) {
-            result.error("invalid_args", "tagId is required", null)
-            return
-        }
-        scope.launch {
-            val tag = memoryEngine.confirmTag(tagId, confirmedByUser = true)
-            result.success(tag?.toMap())
-        }
-    }
-
-    private fun handleUpdateEvidence(call: MethodCall, result: MethodChannel.Result) {
-        val evidenceId = call.argument<Number>("evidenceId")?.toLong()
-        val excerpt = call.argument<String>("excerpt") ?: ""
-        val notes = call.argument<String>("notes")
-        val markEdited = call.argument<Boolean>("markUserEdited") ?: true
-        if (evidenceId == null) {
-            result.error("invalid_args", "evidenceId is required", null)
-            return
-        }
-        scope.launch {
-            val evidence = memoryEngine.updateEvidence(evidenceId, excerpt, notes, markEdited)
-            result.success(evidence?.toMap())
-        }
-    }
-    
-    private fun handleDeleteTag(call: MethodCall, result: MethodChannel.Result) {
-        val tagId = call.argument<Number>("tagId")?.toLong()
-        if (tagId == null) {
-            result.error("invalid_args", "tagId is required", null)
-            return
-        }
-        scope.launch {
-            try {
-                val removed = memoryEngine.deleteTag(tagId)
-                result.success(removed)
-            } catch (t: Throwable) {
-                FileLogger.e(TAG, "deleteTag 失败", t)
-                result.error("delete_tag_failed", t.message, null)
-            }
-        }
-    }
-
     private fun handleGetSnapshot(result: MethodChannel.Result) {
         result.success(memoryEngine.snapshotState.value.toMap())
-    }
-
-    private fun handleGetTag(call: MethodCall, result: MethodChannel.Result) {
-        val tagId = call.argument<Number>("tagId")?.toLong()
-        if (tagId == null) {
-            result.error("invalid_args", "tagId is required", null)
-            return
-        }
-        scope.launch {
-            val tag = memoryEngine.getTag(tagId)
-            result.success(tag?.toMap())
-        }
     }
 
     private fun handleGetEvent(call: MethodCall, result: MethodChannel.Result) {
@@ -266,6 +199,15 @@ class MemoryBridge(
         scope.launch {
             val summary = memoryEngine.getEventSummary(eventId)
             result.success(summary?.toMap())
+        }
+    }
+
+    private fun handleGetLastExtractionRequestDebug(result: MethodChannel.Result) {
+        try {
+            result.success(memoryEngine.getLastExtractionRequestDebug())
+        } catch (t: Throwable) {
+            FileLogger.e(TAG, "getLastExtractionRequestDebug 失败", t)
+            result.error("get_last_request_debug_failed", t.message, null)
         }
     }
 
@@ -326,28 +268,6 @@ class MemoryBridge(
         }
     }
 
-    private inner class TagUpdateStreamHandler : EventChannel.StreamHandler {
-        private var job: Job? = null
-
-        override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-            job = scope.launch {
-                memoryEngine.tagUpdateEvents.collectLatest { update ->
-                    events.success(
-                        mapOf(
-                            "tag" to update.tag.toMap(),
-                            "isNewTag" to update.isNewTag,
-                            "statusChanged" to update.statusChanged
-                        )
-                    )
-                }
-            }
-        }
-
-        override fun onCancel(arguments: Any?) {
-            job?.cancel()
-        }
-    }
-
     private fun Map<String, Any?>.toUserEvent(): UserEvent? {
         val occurredAt = (this["occurredAt"] as? Number)?.toLong() ?: return null
         val type = this["type"] as? String ?: return null
@@ -370,56 +290,13 @@ class MemoryBridge(
     }
 
     private fun MemorySnapshot.toMap(): Map<String, Any?> {
-        val limitedPending = pendingTags.take(SNAPSHOT_TAG_LIMIT).map { it.toMap() }
-        val limitedConfirmed = confirmedTags.take(SNAPSHOT_TAG_LIMIT).map { it.toMap() }
         val limitedEvents = recentEvents.take(SNAPSHOT_EVENT_LIMIT).map { it.toMap() }
         return mapOf(
-            "pendingTags" to limitedPending,
-            "pendingTotalCount" to pendingTotalCount,
-            "confirmedTags" to limitedConfirmed,
-            "confirmedTotalCount" to confirmedTotalCount,
             "recentEvents" to limitedEvents,
             "recentEventTotalCount" to recentEventTotalCount,
             "lastUpdatedAt" to lastUpdatedAt,
             "personaSummary" to personaSummary,
             "personaProfile" to personaProfile.toMap()
-        )
-    }
-
-    private fun UserTag.toMap(): Map<String, Any?> {
-        return mapOf(
-            "id" to id,
-            "tagKey" to tagKey,
-            "label" to label,
-            "level1" to level1,
-            "level2" to level2,
-            "level3" to level3,
-            "level4" to level4,
-            "fullPath" to fullPath,
-            "category" to category.storageValue,
-            "status" to status.storageValue,
-            "occurrences" to occurrences,
-            "confidence" to confidence,
-            "firstSeenAt" to firstSeenAt,
-            "lastSeenAt" to lastSeenAt,
-            "autoConfirmedAt" to autoConfirmedAt,
-            "manualConfirmedAt" to manualConfirmedAt,
-            "evidences" to evidences.map { it.toMap() },
-            "evidenceTotalCount" to evidenceTotalCount
-        )
-    }
-
-    private fun TagEvidence.toMap(): Map<String, Any?> {
-        return mapOf(
-            "id" to id,
-            "tagId" to tagId,
-            "eventId" to eventId,
-            "excerpt" to excerpt,
-            "confidence" to confidence,
-            "createdAt" to createdAt,
-            "lastModifiedAt" to lastModifiedAt,
-            "isUserEdited" to isUserEdited,
-            "notes" to notes
         )
     }
 
@@ -431,8 +308,7 @@ class MemoryBridge(
             "type" to type,
             "source" to source,
             "content" to content,
-            "containsUserContext" to containsUserContext,
-            "relatedTagIds" to relatedTagIds
+            "containsUserContext" to containsUserContext
         )
     }
 
@@ -445,8 +321,7 @@ class MemoryBridge(
             "progress" to progress,
             "currentEventId" to currentEventId,
             "currentEventExternalId" to currentEventExternalId,
-            "currentEventType" to currentEventType,
-            "newlyDiscoveredTags" to newlyDiscoveredTags
+            "currentEventType" to currentEventType
         )
         is MemoryProgressState.Completed -> mapOf(
             "state" to "completed",
@@ -469,8 +344,6 @@ class MemoryBridge(
         private const val METHOD_CHANNEL_NAME = "com.fqyw.screen_memo/memory"
         private const val SNAPSHOT_CHANNEL_NAME = "com.fqyw.screen_memo/memory/snapshot"
         private const val PROGRESS_CHANNEL_NAME = "com.fqyw.screen_memo/memory/progress"
-        private const val TAG_UPDATE_CHANNEL_NAME = "com.fqyw.screen_memo/memory/tag_updates"
-        private const val SNAPSHOT_TAG_LIMIT = 60
         private const val SNAPSHOT_EVENT_LIMIT = 60
     }
 }

@@ -13,20 +13,20 @@ class MemoryBridgeService {
 
   static final MemoryBridgeService instance = MemoryBridgeService._();
 
-  static const MethodChannel _methodChannel = MethodChannel('com.fqyw.screen_memo/memory');
-  static const EventChannel _snapshotChannel =
-      EventChannel('com.fqyw.screen_memo/memory/snapshot');
-  static const EventChannel _progressChannel =
-      EventChannel('com.fqyw.screen_memo/memory/progress');
-  static const EventChannel _tagUpdateChannel =
-      EventChannel('com.fqyw.screen_memo/memory/tag_updates');
+  static const MethodChannel _methodChannel = MethodChannel(
+    'com.fqyw.screen_memo/memory',
+  );
+  static const EventChannel _snapshotChannel = EventChannel(
+    'com.fqyw.screen_memo/memory/snapshot',
+  );
+  static const EventChannel _progressChannel = EventChannel(
+    'com.fqyw.screen_memo/memory/progress',
+  );
 
   final StreamController<MemorySnapshot> _snapshotController =
       StreamController<MemorySnapshot>.broadcast();
   final StreamController<MemoryProgressState> _progressController =
       StreamController<MemoryProgressState>.broadcast();
-  final StreamController<MemoryTagUpdate> _tagUpdateController =
-      StreamController<MemoryTagUpdate>.broadcast();
 
   MemorySnapshot? _latestSnapshot;
   String _cachedPersonaSummary = '';
@@ -36,7 +36,6 @@ class MemoryBridgeService {
 
   StreamSubscription<dynamic>? _snapshotSubscription;
   StreamSubscription<dynamic>? _progressSubscription;
-  StreamSubscription<dynamic>? _tagUpdateSubscription;
 
   bool _initialized = false;
 
@@ -78,30 +77,23 @@ class MemoryBridgeService {
     _waitingForInitialProgress = false;
     _pendingStageLabel = null;
   }
-  
-  Future<bool> deleteTag(int tagId) async {
-    await ensureInitialized();
-    _logInfo('删除标签调用 tagId=$tagId');
-    final dynamic result =
-        await _methodChannel.invokeMethod('memory#deleteTag', <String, dynamic>{'tagId': tagId});
-    return result == true;
-  }
 
   Stream<MemorySnapshot> get snapshotStream => _snapshotController.stream;
   Stream<MemoryProgressState> get progressStream => _progressController.stream;
-  Stream<MemoryTagUpdate> get tagUpdateStream => _tagUpdateController.stream;
 
   Future<void> ensureInitialized() async {
     _logInfo('ensureInitialized 调用；initialized=$_initialized');
     if (_initialized) return;
     _initialized = true;
     await _startBackendService();
-    _snapshotSubscription ??=
-        _snapshotChannel.receiveBroadcastStream().listen(_onSnapshotEvent, onError: _logError);
-    _progressSubscription ??=
-        _progressChannel.receiveBroadcastStream().listen(_onProgressEvent, onError: _logError);
-    _tagUpdateSubscription ??=
-        _tagUpdateChannel.receiveBroadcastStream().listen(_onTagUpdateEvent, onError: _logError);
+    _snapshotSubscription ??= _snapshotChannel.receiveBroadcastStream().listen(
+      _onSnapshotEvent,
+      onError: _logError,
+    );
+    _progressSubscription ??= _progressChannel.receiveBroadcastStream().listen(
+      _onProgressEvent,
+      onError: _logError,
+    );
     _logInfo('ensureInitialized 完成；订阅已激活=${_snapshotSubscription != null}');
   }
 
@@ -110,21 +102,29 @@ class MemoryBridgeService {
     String? model,
   }) async {
     await ensureInitialized();
-    if (provider == null || provider.id == null || model == null || model.trim().isEmpty) {
+    if (provider == null ||
+        provider.id == null ||
+        model == null ||
+        model.trim().isEmpty) {
       _logInfo('setExtractionContext 清空上下文（provider/model 缺失）');
     }
-    if (provider == null || provider.id == null || model == null || model.trim().isEmpty) {
-      await _methodChannel.invokeMethod('memory#setExtractionContext', <String, dynamic>{
-        'context': null,
-      });
+    if (provider == null ||
+        provider.id == null ||
+        model == null ||
+        model.trim().isEmpty) {
+      await _methodChannel.invokeMethod(
+        'memory#setExtractionContext',
+        <String, dynamic>{'context': null},
+      );
       return;
     }
 
     final apiKey = await AIProvidersService.instance.getApiKey(provider.id!);
     if (apiKey == null || apiKey.trim().isEmpty) {
-      await _methodChannel.invokeMethod('memory#setExtractionContext', <String, dynamic>{
-        'context': null,
-      });
+      await _methodChannel.invokeMethod(
+        'memory#setExtractionContext',
+        <String, dynamic>{'context': null},
+      );
       return;
     }
 
@@ -156,9 +156,10 @@ class MemoryBridgeService {
       'extra': provider.extra,
     };
 
-    await _methodChannel.invokeMethod('memory#setExtractionContext', <String, dynamic>{
-      'context': context,
-    });
+    await _methodChannel.invokeMethod(
+      'memory#setExtractionContext',
+      <String, dynamic>{'context': context},
+    );
     _logInfo(
       'setExtractionContext applied providerId=${provider.id} type=${provider.type} model=${model.trim()} baseUrl=${base ?? 'default'}',
     );
@@ -191,9 +192,13 @@ class MemoryBridgeService {
       event['externalId'] = externalId.trim();
     }
     try {
-      await _methodChannel.invokeMethod('memory#ingestEvent', <String, dynamic>{'event': event});
+      await _methodChannel.invokeMethod('memory#ingestEvent', <String, dynamic>{
+        'event': event,
+      });
     } catch (err) {
-      _logWarn('导入事件失败 type=$type source=$source externalId=$externalId error=$err');
+      _logWarn(
+        '导入事件失败 type=$type source=$source externalId=$externalId error=$err',
+      );
     }
   }
 
@@ -202,10 +207,13 @@ class MemoryBridgeService {
     final ScreenshotDatabase db = ScreenshotDatabase.instance;
     final List<Map<String, dynamic>> convRows = await db.listAiConversations();
     final Set<String> cids = <String>{
-      ...convRows.map((e) => (e['cid'] as String?)?.trim() ?? '').where((cid) => cid.isNotEmpty),
+      ...convRows
+          .map((e) => (e['cid'] as String?)?.trim() ?? '')
+          .where((cid) => cid.isNotEmpty),
     };
     if (cids.isEmpty) {
-      final String fallback = await AISettingsService.instance.getActiveConversationCid();
+      final String fallback = await AISettingsService.instance
+          .getActiveConversationCid();
       if (fallback.trim().isNotEmpty) {
         cids.add(fallback.trim());
       }
@@ -289,15 +297,39 @@ class MemoryBridgeService {
     };
   }
 
+  Future<Map<String, dynamic>> buildWorkingMemory({
+    String? query,
+    int edgeLimit = 60,
+    bool includeHistoryEdges = false,
+  }) async {
+    await ensureInitialized();
+    final dynamic result = await _methodChannel
+        .invokeMethod('memory#buildWorkingMemory', <String, dynamic>{
+          'query': (query ?? '').trim(),
+          'edgeLimit': edgeLimit,
+          'includeHistoryEdges': includeHistoryEdges,
+        });
+    if (result is Map) {
+      return _toStringMap(result);
+    }
+    return <String, dynamic>{
+      'error': 'invalid_payload',
+      'query': query ?? '',
+      'raw_type': result.runtimeType.toString(),
+    };
+  }
+
   Future<MemorySnapshot?> fetchSnapshot() async {
     await ensureInitialized();
     _logInfo('fetchSnapshot 调用 memory#getSnapshot');
-    final dynamic result = await _methodChannel.invokeMethod('memory#getSnapshot');
+    final dynamic result = await _methodChannel.invokeMethod(
+      'memory#getSnapshot',
+    );
     final MemorySnapshot? snapshot = _parseSnapshot(result);
     if (snapshot != null) {
       _emitSnapshot(snapshot);
       _logInfo(
-        'fetchSnapshot received pending=${snapshot.pendingTags.length} confirmed=${snapshot.confirmedTags.length} events=${snapshot.recentEvents.length}',
+        'fetchSnapshot received events=${snapshot.recentEvents.length}',
       );
     } else {
       _logInfo('fetchSnapshot 返回 null snapshot');
@@ -305,9 +337,27 @@ class MemoryBridgeService {
     return snapshot;
   }
 
+  Future<Map<String, dynamic>?> getLastExtractionRequestDebug() async {
+    await ensureInitialized();
+    _logInfo('getLastExtractionRequestDebug 调用');
+    final dynamic result = await _methodChannel.invokeMethod(
+      'memory#getLastExtractionRequestDebug',
+    );
+    if (result == null) return null;
+    if (result is Map) {
+      return _toStringMap(result);
+    }
+    return <String, dynamic>{
+      'error': 'invalid_payload',
+      'raw_type': result.runtimeType.toString(),
+    };
+  }
+
   Future<int> syncSegmentsToMemory() async {
     await ensureInitialized();
-    final int? count = await _methodChannel.invokeMethod<int>('memory#syncSegments');
+    final int? count = await _methodChannel.invokeMethod<int>(
+      'memory#syncSegments',
+    );
     return count ?? 0;
   }
 
@@ -346,47 +396,18 @@ class MemoryBridgeService {
     }
   }
 
-  Future<MemoryTag?> fetchTagById(int tagId) async {
-    await ensureInitialized();
-    _logInfo('fetchTagById 调用 tagId=$tagId');
-    final dynamic result =
-        await _methodChannel.invokeMethod('memory#getTag', <String, dynamic>{'tagId': tagId});
-    final MemoryTag? tag = _parseTag(result);
-    if (tag == null) {
-      _logWarn('fetchTagById 返回 null tagId=$tagId');
-    }
-    return tag;
-  }
-
   Future<MemoryEventSummary?> fetchEventById(int eventId) async {
     await ensureInitialized();
     _logInfo('fetchEventById 调用 eventId=$eventId');
-    final dynamic result =
-        await _methodChannel.invokeMethod('memory#getEvent', <String, dynamic>{'eventId': eventId});
+    final dynamic result = await _methodChannel.invokeMethod(
+      'memory#getEvent',
+      <String, dynamic>{'eventId': eventId},
+    );
     final MemoryEventSummary? summary = _parseEvent(result);
     if (summary == null) {
       _logWarn('fetchEventById 返回 null eventId=$eventId');
     }
     return summary;
-  }
-
-  Future<List<MemoryTag>> loadTags({
-    required String status,
-    required int offset,
-    required int limit,
-  }) async {
-    await ensureInitialized();
-    final dynamic result =
-        await _methodChannel.invokeMethod('memory#loadTags', <String, dynamic>{
-      'status': status,
-      'offset': offset,
-      'limit': limit,
-    });
-    final List<dynamic> raw = (result as List?) ?? const [];
-    return raw
-        .whereType<Map>()
-        .map((e) => MemoryTag.fromMap(Map<String, dynamic>.from(e)))
-        .toList(growable: false);
   }
 
   Future<List<MemoryEventSummary>> loadRecentEvents({
@@ -396,33 +417,13 @@ class MemoryBridgeService {
     await ensureInitialized();
     final dynamic result = await _methodChannel.invokeMethod(
       'memory#loadRecentEvents',
-      <String, dynamic>{
-        'offset': offset,
-        'limit': limit,
-      },
+      <String, dynamic>{'offset': offset, 'limit': limit},
     );
     final List<dynamic> raw = (result as List?) ?? const [];
     return raw
         .whereType<Map>()
         .map((e) => MemoryEventSummary.fromMap(Map<String, dynamic>.from(e)))
         .toList(growable: false);
-  }
-
-  Future<MemoryTag?> confirmTag(int tagId) async {
-    await ensureInitialized();
-    _logInfo('confirmTag 调用 tagId=$tagId');
-    final dynamic result =
-        await _methodChannel.invokeMethod('memory#confirmTag', <String, dynamic>{'tagId': tagId});
-    if (result == null) {
-      _logInfo('confirmTag 返回 null tagId=$tagId');
-      return null;
-    }
-    final MemoryTag? tag = _parseTag(result);
-    if (tag != null) {
-      _logInfo('confirmTag 响应 status=${tag.status} occurrences=${tag.occurrences}');
-      _handleTagUpdate(MemoryTagUpdate(tag: tag, isNewTag: false, statusChanged: true));
-    }
-    return tag;
   }
 
   Future<void> startHistoricalProcessing({bool forceReprocess = false}) async {
@@ -437,10 +438,8 @@ class MemoryBridgeService {
   void dispose() {
     _snapshotSubscription?.cancel();
     _progressSubscription?.cancel();
-    _tagUpdateSubscription?.cancel();
     _snapshotController.close();
     _progressController.close();
-    _tagUpdateController.close();
     _initialized = false;
   }
 
@@ -470,17 +469,6 @@ class MemoryBridgeService {
     _logInfo('进度更新 runtime=${progress.runtimeType}');
   }
 
-  void _onTagUpdateEvent(dynamic event) {
-    _logInfo('收到标签更新事件 type=${event.runtimeType}');
-    final MemoryTagUpdate? update = _parseTagUpdate(event);
-    if (update != null) {
-      _logInfo(
-        'tag update parsed tagId=${update.tag.id} isNew=${update.isNewTag} statusChanged=${update.statusChanged}',
-      );
-      _handleTagUpdate(update);
-    }
-  }
-
   void _emitSnapshot(MemorySnapshot snapshot) {
     final String incomingPersona = snapshot.personaSummary.trim();
     final String derivedPersona = incomingPersona.isNotEmpty
@@ -497,31 +485,19 @@ class MemoryBridgeService {
 
     final MemorySnapshot effectiveSnapshot = shouldPreservePersona
         ? snapshot.copyWith(personaSummary: _cachedPersonaSummary)
-        : snapshot.copyWith(personaSummary: hasDerivedPersona ? derivedPersona : snapshot.personaSummary);
+        : snapshot.copyWith(
+            personaSummary: hasDerivedPersona
+                ? derivedPersona
+                : snapshot.personaSummary,
+          );
 
     _latestSnapshot = effectiveSnapshot;
     _snapshotController.add(effectiveSnapshot);
   }
 
-  void _handleTagUpdate(MemoryTagUpdate update) {
-    _logInfo('处理标签更新 tagId=${update.tag.id} status=${update.tag.status}');
-    final MemorySnapshot? snapshot = _latestSnapshot;
-    if (snapshot == null) {
-      unawaited(fetchSnapshot());
-    } else {
-      _emitSnapshot(snapshot.mergeTag(update.tag));
-    }
-    _tagUpdateController.add(update);
-  }
-
   MemorySnapshot? _parseSnapshot(dynamic data) {
     if (data is! Map) return null;
     return MemorySnapshot.fromMap(_toStringMap(data));
-  }
-
-  MemoryTag? _parseTag(dynamic data) {
-    if (data is! Map) return null;
-    return MemoryTag.fromMap(_toStringMap(data));
   }
 
   MemoryEventSummary? _parseEvent(dynamic data) {
@@ -541,9 +517,6 @@ class MemoryBridgeService {
     );
     switch (state) {
       case 'running':
-        final List<String> tags = ((map['newlyDiscoveredTags'] as List?) ?? const [])
-            .whereType<String>()
-            .toList(growable: false);
         return MemoryProgressRunning(
           processedCount: _toInt(map['processedCount']) ?? 0,
           totalCount: _toInt(map['totalCount']) ?? 0,
@@ -551,11 +524,11 @@ class MemoryBridgeService {
           currentEventId: _toInt(map['currentEventId']),
           currentEventExternalId: map['currentEventExternalId'] as String?,
           currentEventType: map['currentEventType'] as String?,
-          newlyDiscoveredTags: List<String>.unmodifiable(tags),
         );
       case 'completed':
-        final Duration duration =
-            Duration(milliseconds: _toInt(map['durationMillis']) ?? 0);
+        final Duration duration = Duration(
+          milliseconds: _toInt(map['durationMillis']) ?? 0,
+        );
         _logInfo(
           'parseProgress 已完成 总数=${map['totalCount']} 耗时Ms=${duration.inMilliseconds}',
         );
@@ -579,17 +552,6 @@ class MemoryBridgeService {
       default:
         return const MemoryProgressIdle();
     }
-  }
-
-  MemoryTagUpdate? _parseTagUpdate(dynamic data) {
-    if (data is! Map) return null;
-    final Map<String, dynamic> map = _toStringMap(data);
-    final dynamic tagRaw = map['tag'];
-    if (tagRaw is! Map) return null;
-    final MemoryTag tag = MemoryTag.fromMap(_toStringMap(tagRaw));
-    final bool isNewTag = map['isNewTag'] == true;
-    final bool statusChanged = map['statusChanged'] == true;
-    return MemoryTagUpdate(tag: tag, isNewTag: isNewTag, statusChanged: statusChanged);
   }
 
   Map<String, dynamic> _toStringMap(Map<dynamic, dynamic> input) {
@@ -620,7 +582,10 @@ class MemoryBridgeService {
     } catch (_) {}
   }
 
-  Future<int> _ingestChatRows(String cid, List<Map<String, dynamic>> rows) async {
+  Future<int> _ingestChatRows(
+    String cid,
+    List<Map<String, dynamic>> rows,
+  ) async {
     if (rows.isEmpty) return 0;
     int ingested = 0;
     int index = 0;
@@ -635,8 +600,8 @@ class MemoryBridgeService {
         index++;
         continue;
       }
-      final int createdAt = (row['created_at'] as int?) ??
-          DateTime.now().millisecondsSinceEpoch;
+      final int createdAt =
+          (row['created_at'] as int?) ?? DateTime.now().millisecondsSinceEpoch;
       final int? messageId = row['id'] is int ? row['id'] as int : null;
       final String? reasoning = row['reasoning_content'] as String?;
       final int? reasoningDurationMs = row['reasoning_duration_ms'] as int?;
@@ -691,8 +656,9 @@ class MemoryBridgeService {
     final String normalizedRole = role.trim().toLowerCase();
     final int resolvedMessageId =
         messageId ?? _stableHash('$conversationId|$createdAt|$normalizedRole');
-    final int hash =
-        _stableHash('$conversationId|$resolvedMessageId|$createdAt|$normalizedRole|$content');
+    final int hash = _stableHash(
+      '$conversationId|$resolvedMessageId|$createdAt|$normalizedRole|$content',
+    );
     return 'chat:$conversationId:$resolvedMessageId:$createdAt:$normalizedRole:$hash';
   }
 

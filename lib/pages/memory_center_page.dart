@@ -17,12 +17,9 @@ import '../services/persona_article_service.dart';
 import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/model_icon_utils.dart';
-import '../widgets/app_side_drawer.dart';
-import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
-import '../widgets/tag_hierarchy_tree.dart';
 import '../widgets/ui_dialog.dart';
-import 'tag_detail_page.dart';
+import 'memory_request_debug_page.dart';
 
 class MemoryCenterPage extends StatefulWidget {
   const MemoryCenterPage({super.key});
@@ -36,15 +33,12 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   final PersonaArticleService _articleService = PersonaArticleService.instance;
   final AISettingsService _settings = AISettingsService.instance;
   final AIProvidersService _providers = AIProvidersService.instance;
-  final Set<int> _confirmingTagIds = <int>{};
-  final Set<int> _deletingTagIds = <int>{};
   AIProvider? _memoryProvider;
   String? _memoryModel;
   bool _memoryCtxLoading = true;
   StreamSubscription<String>? _ctxChangedSub;
 
   static const int _pageStep = 10;
-  static const int _prefetchStep = 20;
   MemorySnapshot? _snapshot;
   MemoryProgressState _progress = const MemoryProgressIdle();
   bool _refreshing = false;
@@ -53,30 +47,19 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
   bool _pausing = false;
   bool _waitingForInitialProgress = false;
   String? _preparingStageLabel;
-  int _pendingVisible = _pageStep;
-  int _confirmedVisible = _pageStep;
   int _eventVisible = _pageStep;
   MemorySnapshot? _bufferedSnapshot;
-  final List<MemoryTag> _pendingTags = <MemoryTag>[];
-  final List<MemoryTag> _confirmedTags = <MemoryTag>[];
   final List<MemoryEventSummary> _recentEvents = <MemoryEventSummary>[];
-  final Map<int, MemoryTag> _tagIndex = <int, MemoryTag>{};
-  int _pendingTotal = 0;
-  int _confirmedTotal = 0;
   int _eventTotal = 0;
-  bool _loadingPendingMore = false;
-  bool _loadingConfirmedMore = false;
 
   StreamSubscription<MemorySnapshot>? _snapshotSub;
   StreamSubscription<MemoryProgressState>? _progressSub;
-  StreamSubscription<MemoryTagUpdate>? _tagUpdateSub;
   StreamSubscription<AIStreamEvent>? _articleSubscription;
   String _article = '';
   bool _articleGenerating = false;
   String? _articleError;
   String _lastPersonaSummary = '';
   final List<String> _articleLogs = <String>[];
-  StateSetter? _tagSheetStateSetter;
 
   @override
   void initState() {
@@ -109,31 +92,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       _snapshot =
           _service.latestSnapshot ??
           MemorySnapshot(
-            pendingTags: <MemoryTag>[],
-            confirmedTags: <MemoryTag>[],
             recentEvents: <MemoryEventSummary>[],
             personaSummary: '',
           );
-      _pendingTotal = _snapshot!.pendingTotalCount;
-      _confirmedTotal = _snapshot!.confirmedTotalCount;
       _eventTotal = _snapshot!.recentEventTotalCount;
-      if (_snapshot!.pendingTags.isNotEmpty) {
-        _replaceLeadingTags(_pendingTags, _snapshot!.pendingTags);
-      }
-      if (_snapshot!.confirmedTags.isNotEmpty) {
-        _replaceLeadingTags(_confirmedTags, _snapshot!.confirmedTags);
-      }
       if (_snapshot!.recentEvents.isNotEmpty) {
         _replaceLeadingEvents(_recentEvents, _snapshot!.recentEvents);
       }
-      _pendingVisible = _normalizeVisible(
-        _pendingVisible,
-        math.min(_pendingTags.length, _pendingTotal),
-      );
-      _confirmedVisible = _normalizeVisible(
-        _confirmedVisible,
-        math.min(_confirmedTags.length, _confirmedTotal),
-      );
       _eventVisible = _normalizeVisible(
         _eventVisible,
         math.min(_recentEvents.length, _eventTotal),
@@ -182,18 +147,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       if (progress is MemoryProgressCompleted) {
         _appendArticleLog('解析完成，触发画像文章再生成');
         _scheduleArticleRegeneration(force: true);
-      }
-    });
-    _tagUpdateSub = _service.tagUpdateStream.listen((MemoryTagUpdate update) {
-      _logInfo(
-        'tagUpdateStream tagId=${update.tag.id} isNew=${update.isNewTag} statusChanged=${update.statusChanged}',
-      );
-      if (!mounted) return;
-      if (update.isNewTag) {
-        UINotifier.info(
-          context,
-          AppLocalizations.of(context).memorySnapshotUpdated,
-        );
       }
     });
     unawaited(_runInitialSync());
@@ -563,9 +516,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     _ctxChangedSub?.cancel();
     _snapshotSub?.cancel();
     _progressSub?.cancel();
-    _tagUpdateSub?.cancel();
     _articleSubscription?.cancel();
-    _tagSheetStateSetter = null;
     super.dispose();
   }
 
@@ -684,91 +635,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     unawaited(_regenerateArticle(force: force));
   }
 
-  Future<void> _confirmTag(MemoryTag tag) async {
-    if (_confirmingTagIds.contains(tag.id)) {
-      _logInfo('确认标签已忽略（正在运行）tagId=${tag.id}');
-      return;
-    }
-    _logInfo('确认标签开始 tagId=${tag.id}');
-    setState(() => _confirmingTagIds.add(tag.id));
-    try {
-      final MemoryTag? updated = await _service.confirmTag(tag.id);
-      if (!mounted) return;
-      _logInfo('确认标签成功 tagId=${tag.id} 状态=${(updated ?? tag).status}');
-      UINotifier.success(
-        context,
-        AppLocalizations.of(
-          context,
-        ).memoryConfirmSuccessToast((updated ?? tag).label),
-      );
-    } on PlatformException catch (e) {
-      if (!mounted) return;
-      UINotifier.error(
-        context,
-        AppLocalizations.of(
-          context,
-        ).memoryConfirmFailedToast(e.message ?? 'error'),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      UINotifier.error(
-        context,
-        AppLocalizations.of(context).memoryConfirmFailedToast(e.toString()),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _confirmingTagIds.remove(tag.id));
-      }
-    }
-  }
-
-  Future<void> _confirmDeleteTag(MemoryTag tag) async {
-    if (_deletingTagIds.contains(tag.id)) {
-      return;
-    }
-    final AppLocalizations t = AppLocalizations.of(context);
-    final bool? confirmed = await showUIDialog<bool>(
-      context: context,
-      title: t.memoryDeleteTagConfirmTitle,
-      message: t.memoryDeleteTagConfirmMessage(tag.label),
-      actions: [
-        UIDialogAction(text: t.dialogCancel),
-        UIDialogAction(
-          text: t.actionDelete,
-          style: UIDialogActionStyle.destructive,
-          result: true,
-        ),
-      ],
-    );
-    if (confirmed != true) {
-      return;
-    }
-    setState(() => _deletingTagIds.add(tag.id));
-    try {
-      final bool removed = await _service.deleteTag(tag.id);
-      if (!mounted) return;
-      if (removed) {
-        setState(() {
-          _handleTagRemoved(tag.id);
-        });
-        _notifyTagSheetRebuild();
-        UINotifier.success(context, t.memoryDeleteTagSuccess);
-        unawaited(_refresh(initial: true));
-      } else {
-        UINotifier.error(context, t.memoryDeleteTagFailed('not_removed'));
-      }
-    } catch (e) {
-      if (!mounted) return;
-      UINotifier.error(context, t.memoryDeleteTagFailed(e.toString()));
-    } finally {
-      if (mounted) {
-        setState(() => _deletingTagIds.remove(tag.id));
-      } else {
-        _deletingTagIds.remove(tag.id);
-      }
-    }
-  }
-
   Future<void> _startHistoricalProcessing({
     required bool forceReprocess,
   }) async {
@@ -785,7 +651,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       currentEventId: null,
       currentEventExternalId: null,
       currentEventType: null,
-      newlyDiscoveredTags: const <String>[],
     );
     setState(() {
       _initializingHistory = true;
@@ -859,8 +724,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     final MemorySnapshot snapshot =
         _snapshot ??
         MemorySnapshot(
-          pendingTags: <MemoryTag>[],
-          confirmedTags: <MemoryTag>[],
           recentEvents: <MemoryEventSummary>[],
           personaSummary: '',
         );
@@ -878,9 +741,15 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
         title: _buildMemoryAppBarTitle(context),
         actions: [
           IconButton(
-            tooltip: t.memoryTagsEntranceTooltip,
-            onPressed: _openTagBottomSheet,
-            icon: const Icon(Icons.sell_outlined),
+            tooltip: '请求调试',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MemoryRequestDebugPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.bug_report_outlined),
           ),
           IconButton(
             tooltip: t.memoryClearAllTooltip,
@@ -906,6 +775,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           padding: EdgeInsets.zero,
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
+            const SizedBox(height: AppTheme.spacing4),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+              ),
+              child: _buildPersonaSection(context, snapshot),
+            ),
             const SizedBox(height: AppTheme.spacing4),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -997,26 +873,16 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       if (!mounted) return;
       setState(() {
         _snapshot = MemorySnapshot(
-          pendingTags: const <MemoryTag>[],
-          confirmedTags: const <MemoryTag>[],
           recentEvents: const <MemoryEventSummary>[],
           lastUpdatedAt: DateTime.now(),
           personaSummary: '',
         );
-        _pendingTags.clear();
-        _confirmedTags.clear();
         _recentEvents.clear();
-        _tagIndex.clear();
-        _pendingTotal = 0;
-        _confirmedTotal = 0;
         _eventTotal = 0;
-        _pendingVisible = _pageStep;
-        _confirmedVisible = _pageStep;
         _eventVisible = _pageStep;
         _article = '';
         _articleLogs.clear();
       });
-      _notifyTagSheetRebuild();
       _service.primeProgressState(
         const MemoryProgressIdle(),
         waitingForInitialProgress: false,
@@ -1044,11 +910,46 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
-  void _notifyTagSheetRebuild() {
-    final StateSetter? setter = _tagSheetStateSetter;
-    if (setter != null) {
-      setter(() {});
+  Widget _buildPersonaSection(BuildContext context, MemorySnapshot snapshot) {
+    final AppLocalizations t = AppLocalizations.of(context);
+    final ThemeData theme = Theme.of(context);
+    final String persona = snapshot.personaSummary.trim();
+    if (persona.isEmpty) {
+      return Text(
+        t.memoryPersonaEmptyPlaceholder,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
     }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                t.memoryCenterHeroTitle,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: t.copyPersonaTooltip,
+              icon: const Icon(Icons.copy_rounded),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: persona));
+                if (!context.mounted) return;
+                UINotifier.success(context, t.copySuccess);
+              },
+            ),
+          ],
+        ),
+        _buildArticleMarkdown(theme, persona),
+      ],
+    );
   }
 
   Widget _buildArticleSection(BuildContext context) {
@@ -1159,98 +1060,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     );
   }
 
-  Widget _buildGradientTagPill(
-    BuildContext context,
-    String tag,
-    double maxWidth,
-  ) {
-    final ThemeData theme = Theme.of(context);
-    final Brightness brightness = theme.brightness;
-    final List<Color> colors = _geminiGradientColors(brightness);
-    return Container(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing2,
-        vertical: AppTheme.spacing1,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ShaderMask(
-            shaderCallback: (Rect bounds) => LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[colors[2], colors[6], colors[8]],
-              stops: const <double>[0.0, 0.55, 1.0],
-            ).createShader(bounds),
-            blendMode: BlendMode.srcIn,
-            child: const Icon(
-              Icons.auto_awesome,
-              size: 16,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing1),
-          Flexible(
-            child: Text(
-              tag,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiscoveredTagList(BuildContext context, List<String> tags) {
-    if (tags.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    const double viewportHeight = 128;
-    const double rowExtent = 34;
-    const double rowSpacing = AppTheme.spacing1;
-
-    final bool showScrollbar =
-        (tags.length * (rowExtent + rowSpacing)) > viewportHeight;
-
-    return SizedBox(
-      height: viewportHeight,
-      child: Scrollbar(
-        thumbVisibility: showScrollbar,
-        child: ListView.separated(
-          padding: EdgeInsets.zero,
-          primary: false,
-          physics: const ClampingScrollPhysics(),
-          itemCount: tags.length,
-          itemBuilder: (BuildContext context, int index) {
-            return SizedBox(
-              height: rowExtent,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _buildGradientTagPill(
-                  context,
-                  tags[index],
-                  double.infinity,
-                ),
-              ),
-            );
-          },
-          separatorBuilder: (_, __) => const SizedBox(height: rowSpacing),
-        ),
-      ),
-    );
-  }
-
   Widget _buildProgressDetailRow({
     required BuildContext context,
     required TextStyle bodyStyle,
@@ -1258,39 +1067,13 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     required String percentText,
     required AppLocalizations t,
   }) {
-    final ThemeData theme = Theme.of(context);
-    final Widget processed = Text(
+    return Text(
       t.memoryProgressRunningDetail(
         progress.processedCount,
         progress.totalCount,
         percentText,
       ),
       style: bodyStyle,
-    );
-
-    if (progress.newlyDiscoveredTags.isEmpty) {
-      return processed;
-    }
-
-    final Widget headerRow = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: processed),
-        const SizedBox(width: AppTheme.spacing2),
-        Text(
-          t.memoryProgressNewTagsDetail(progress.newlyDiscoveredTags.length),
-          style: bodyStyle.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      ],
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        headerRow,
-        const SizedBox(height: AppTheme.spacing1),
-        _buildDiscoveredTagList(context, progress.newlyDiscoveredTags),
-      ],
     );
   }
 
@@ -1704,258 +1487,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     return 'Tap below to reprocess past activity events and complete your personal archive';
   }
 
-  Widget _buildTagSection({
-    required BuildContext context,
-    required String title,
-    required String emptyText,
-    required List<MemoryTag> tags,
-    required bool showConfirmAction,
-    required int visibleCount,
-    required int totalCount,
-    required ValueChanged<MemoryTag> onTap,
-    VoidCallback? onLoadMore,
-    bool isLoadingMore = false,
-    required String storagePrefix,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final int safeVisible = math.min(
-      visibleCount,
-      math.min(tags.length, totalCount),
-    );
-    final List<MemoryTag> displayTags = tags.take(safeVisible).toList();
-    final bool canLoadMore = onLoadMore != null && safeVisible < totalCount;
-    final Color statusColor = showConfirmAction
-        ? theme.colorScheme.errorContainer
-        : theme.colorScheme.secondaryContainer;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing2),
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                totalCount.toString(),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacing3),
-          if (totalCount == 0)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppTheme.spacing4),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              ),
-              child: Text(
-                emptyText,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else if (displayTags.isNotEmpty)
-            TagHierarchyTree(
-              tags: displayTags,
-              showConfirmAction: showConfirmAction,
-              onTapTag: onTap,
-              onConfirmTag: _confirmTag,
-              onDeleteTag: _confirmDeleteTag,
-              deletingTagIds: _deletingTagIds,
-              confirmingTagIds: _confirmingTagIds,
-              storagePrefix: storagePrefix,
-            ),
-          if (displayTags.isEmpty && totalCount > 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing2),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (canLoadMore) ...[
-            const SizedBox(height: AppTheme.spacing2),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: isLoadingMore ? null : onLoadMore,
-                child: isLoadingMore
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                theme.colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppTheme.spacing2),
-                          Text(AppLocalizations.of(context).memoryLoadMore),
-                        ],
-                      )
-                    : Text(AppLocalizations.of(context).memoryLoadMore),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _openTagBottomSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext sheetContext) {
-        return StatefulBuilder(
-          builder: (BuildContext contentContext, StateSetter sheetSetState) {
-            _tagSheetStateSetter = sheetSetState;
-            final AppLocalizations t = AppLocalizations.of(contentContext);
-
-            return UISheetSurface(
-              child: FractionallySizedBox(
-                heightFactor: 0.9,
-                child: DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: AppTheme.spacing3),
-                      const Align(
-                        alignment: Alignment.center,
-                        child: UISheetHandle(),
-                      ),
-                      const SizedBox(height: AppTheme.spacing2),
-                      ScreenshotStyleTabBar(
-                        height: 40,
-                        isScrollable: false,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing4,
-                        ),
-                        indicatorPadding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing2,
-                        ),
-                        indicatorInsets: EdgeInsets.zero,
-                        tabs: [
-                          Tab(text: t.memoryPendingSectionTitle),
-                          Tab(text: t.memoryConfirmedSectionTitle),
-                        ],
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          physics: const ClampingScrollPhysics(),
-                          children: [
-                            _buildTagSheetTab(
-                              contentContext,
-                              title: t.memoryPendingSectionTitle,
-                              emptyText: t.memoryNoPending,
-                              tags: _pendingTags,
-                              showConfirmAction: true,
-                              totalCount: _pendingTotal,
-                              visibleCount: _pendingVisible,
-                              onLoadMore: _pendingVisible < _pendingTotal
-                                  ? _loadMorePending
-                                  : null,
-                              storagePrefix: 'pending',
-                            ),
-                            _buildTagSheetTab(
-                              contentContext,
-                              title: t.memoryConfirmedSectionTitle,
-                              emptyText: t.memoryNoConfirmed,
-                              tags: _confirmedTags,
-                              showConfirmAction: false,
-                              totalCount: _confirmedTotal,
-                              visibleCount: _confirmedVisible,
-                              onLoadMore: _confirmedVisible < _confirmedTotal
-                                  ? _loadMoreConfirmed
-                                  : null,
-                              storagePrefix: 'confirmed',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      _tagSheetStateSetter = null;
-    });
-  }
-
-  Widget _buildTagSheetTab(
-    BuildContext context, {
-    required String title,
-    required String emptyText,
-    required List<MemoryTag> tags,
-    required bool showConfirmAction,
-    required int visibleCount,
-    required int totalCount,
-    VoidCallback? onLoadMore,
-    required String storagePrefix,
-  }) {
-    return ListView(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing4,
-        vertical: AppTheme.spacing3,
-      ),
-      children: [
-        _buildTagSection(
-          context: context,
-          title: title,
-          emptyText: emptyText,
-          tags: tags,
-          showConfirmAction: showConfirmAction,
-          totalCount: totalCount,
-          visibleCount: visibleCount,
-          onTap: _openTagDetail,
-          onLoadMore: onLoadMore,
-          storagePrefix: storagePrefix,
-        ),
-      ],
-    );
-  }
-
   Widget _buildInfoChip({
     required BuildContext context,
     required IconData icon,
@@ -1998,142 +1529,22 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     return '空闲';
   }
 
-  Future<void> _loadMorePending() async {
-    if (_loadingPendingMore || _pendingVisible >= _pendingTotal) return;
-    final int target = math.min(_pendingVisible + _pageStep, _pendingTotal);
-    if (target <= _pendingVisible) return;
-    if (_pendingTags.length >= target) {
-      setState(() => _pendingVisible = target);
-      _notifyTagSheetRebuild();
-      return;
-    }
-    setState(() => _loadingPendingMore = true);
-    _notifyTagSheetRebuild();
-    try {
-      final int offset = _pendingTags.length;
-      final int limit = math.max(
-        _pageStep,
-        target - _pendingTags.length + _prefetchStep,
-      );
-      final List<MemoryTag> fetched = await _service.loadTags(
-        status: MemoryTagStatus.pending,
-        offset: offset,
-        limit: limit,
-      );
-      if (!mounted) return;
-      setState(() {
-        _appendTags(_pendingTags, fetched);
-        _pendingVisible = math.min(target, _pendingTags.length);
-        _loadingPendingMore = false;
-      });
-      _notifyTagSheetRebuild();
-    } catch (e) {
-      _logInfo('加载更多（待确认）失败：$e');
-      if (mounted) {
-        setState(() => _loadingPendingMore = false);
-        _notifyTagSheetRebuild();
-      } else {
-        _loadingPendingMore = false;
-      }
-    }
-  }
-
-  Future<void> _loadMoreConfirmed() async {
-    if (_loadingConfirmedMore || _confirmedVisible >= _confirmedTotal) return;
-    final int target = math.min(_confirmedVisible + _pageStep, _confirmedTotal);
-    if (target <= _confirmedVisible) return;
-    if (_confirmedTags.length >= target) {
-      setState(() => _confirmedVisible = target);
-      _notifyTagSheetRebuild();
-      return;
-    }
-    setState(() => _loadingConfirmedMore = true);
-    _notifyTagSheetRebuild();
-    try {
-      final int offset = _confirmedTags.length;
-      final int limit = math.max(
-        _pageStep,
-        target - _confirmedTags.length + _prefetchStep,
-      );
-      final List<MemoryTag> fetched = await _service.loadTags(
-        status: MemoryTagStatus.confirmed,
-        offset: offset,
-        limit: limit,
-      );
-      if (!mounted) return;
-      setState(() {
-        _appendTags(_confirmedTags, fetched);
-        _confirmedVisible = math.min(target, _confirmedTags.length);
-        _loadingConfirmedMore = false;
-      });
-      _notifyTagSheetRebuild();
-    } catch (e) {
-      _logInfo('加载更多（已确认）失败：$e');
-      if (mounted) {
-        setState(() => _loadingConfirmedMore = false);
-        _notifyTagSheetRebuild();
-      } else {
-        _loadingConfirmedMore = false;
-      }
-    }
-  }
-
   void _applySnapshot(MemorySnapshot snapshot) {
     if (!mounted) return;
     setState(() {
       _snapshot = snapshot;
-      _pendingTotal = snapshot.pendingTotalCount;
-      _confirmedTotal = snapshot.confirmedTotalCount;
       _eventTotal = snapshot.recentEventTotalCount;
 
-      if (snapshot.pendingTags.isNotEmpty || _pendingTags.isEmpty) {
-        _replaceLeadingTags(_pendingTags, snapshot.pendingTags);
-      }
-      if (snapshot.confirmedTags.isNotEmpty || _confirmedTags.isEmpty) {
-        _replaceLeadingTags(_confirmedTags, snapshot.confirmedTags);
-      }
       if (snapshot.recentEvents.isNotEmpty || _recentEvents.isEmpty) {
         _replaceLeadingEvents(_recentEvents, snapshot.recentEvents);
       }
 
-      _pendingVisible = _normalizeVisible(
-        _pendingVisible,
-        math.min(_pendingTags.length, _pendingTotal),
-      );
-      _confirmedVisible = _normalizeVisible(
-        _confirmedVisible,
-        math.min(_confirmedTags.length, _confirmedTotal),
-      );
       _eventVisible = _normalizeVisible(
         _eventVisible,
         math.min(_recentEvents.length, _eventTotal),
       );
     });
-    _notifyTagSheetRebuild();
     _handlePersonaSummaryChange(snapshot.personaSummary);
-  }
-
-  void _replaceLeadingTags(List<MemoryTag> target, List<MemoryTag> incoming) {
-    if (incoming.isEmpty) return;
-    final Set<int> incomingIds = incoming.map((e) => e.id).toSet();
-    target.removeWhere((tag) => incomingIds.contains(tag.id));
-    target.insertAll(0, incoming);
-    for (final MemoryTag tag in incoming) {
-      _tagIndex[tag.id] = tag;
-    }
-  }
-
-  void _appendTags(List<MemoryTag> target, List<MemoryTag> incoming) {
-    if (incoming.isEmpty) return;
-    final Set<int> existingIds = target.map((e) => e.id).toSet();
-    for (final MemoryTag tag in incoming) {
-      if (existingIds.add(tag.id)) {
-        target.add(tag);
-        _tagIndex[tag.id] = tag;
-      } else {
-        _tagIndex[tag.id] = tag;
-      }
-    }
   }
 
   void _replaceLeadingEvents(
@@ -2159,41 +1570,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
     }
   }
 
-  void _handleTagRemoved(int tagId) {
-    _tagIndex.remove(tagId);
-    final bool removedPending = _removeTagFromCollection(_pendingTags, tagId);
-    final bool removedConfirmed = _removeTagFromCollection(
-      _confirmedTags,
-      tagId,
-    );
-    if (!removedPending && !removedConfirmed) {
-      return;
-    }
-    if (removedPending) {
-      _pendingTotal = math.max(0, _pendingTotal - 1);
-      _pendingVisible = _normalizeVisible(
-        _pendingVisible,
-        math.min(_pendingTags.length, _pendingTotal),
-      );
-    }
-    if (removedConfirmed) {
-      _confirmedTotal = math.max(0, _confirmedTotal - 1);
-      _confirmedVisible = _normalizeVisible(
-        _confirmedVisible,
-        math.min(_confirmedTags.length, _confirmedTotal),
-      );
-    }
-  }
-
-  bool _removeTagFromCollection(List<MemoryTag> target, int tagId) {
-    final int index = target.indexWhere((tag) => tag.id == tagId);
-    if (index == -1) {
-      return false;
-    }
-    target.removeAt(index);
-    return true;
-  }
-
   void _handlePersonaSummaryChange(String summary) {
     final String trimmed = summary.trim();
     if (trimmed.isEmpty) return;
@@ -2213,14 +1589,6 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       final String timestamp = DateFormat('HH:mm:ss').format(DateTime.now());
       _articleLogs.add('[$timestamp] $message');
     });
-  }
-
-  void _openTagDetail(MemoryTag tag) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TagDetailPage(tagId: tag.id, initialTag: tag),
-      ),
-    );
   }
 
   void _logInfo(String message) {

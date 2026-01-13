@@ -4,7 +4,6 @@ import com.fqyw.screen_memo.FileLogger
 import com.fqyw.screen_memo.OkHttpClientFactory
 import com.fqyw.screen_memo.memory.model.PersonaProfile
 import com.fqyw.screen_memo.memory.model.PersonaProfilePatch
-import com.fqyw.screen_memo.memory.model.TagCategory
 import com.fqyw.screen_memo.memory.model.UserEvent
 import com.fqyw.screen_memo.memory.service.ExtractionContext
 import com.fqyw.screen_memo.memory.service.MemoryPromptProvider
@@ -34,17 +33,26 @@ class LlmUserSignalExtractor(
     override suspend fun extractSignals(
         event: UserEvent,
         context: ExtractionContext?,
-        existingTagPaths: List<String>,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult {
-        if (context == null || !context.isValid) return UserSignalExtractionResult(emptyList(), null, null)
-        if (!supportsContext(context)) return UserSignalExtractionResult(emptyList(), null, null)
+        if (context == null || !context.isValid) {
+            return UserSignalExtractionResult(
+                personaProfilePatch = null,
+                personaSummaryFallback = null
+            )
+        }
+        if (!supportsContext(context)) {
+            return UserSignalExtractionResult(
+                personaProfilePatch = null,
+                personaSummaryFallback = null
+            )
+        }
         return try {
             if (isGoogleContext(context)) {
-                callGeminiEndpoint(event, context, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
+                callGeminiEndpoint(event, context, currentPersonaSummary, currentPersonaProfile)
             } else {
-                callOpenAiStyleEndpoint(event, context, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
+                callOpenAiStyleEndpoint(event, context, currentPersonaSummary, currentPersonaProfile)
             }
         } catch (t: Throwable) {
             FileLogger.w(TAG, "LLM 提取失败：${t.message}")
@@ -73,38 +81,38 @@ class LlmUserSignalExtractor(
     private suspend fun callOpenAiStyleEndpoint(
         event: UserEvent,
         context: ExtractionContext,
-        existingTagPaths: List<String>,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult {
-        if (shouldAttemptStreaming(context)) {
-            try {
-                return callOpenAiStyleEndpointStreaming(
-                    event = event,
-                    context = context,
-                    existingTagPaths = existingTagPaths,
-                    currentPersonaSummary = currentPersonaSummary,
-                    currentPersonaProfile = currentPersonaProfile
-                )
-            } catch (e: StreamingNotSupportedException) {
-                FileLogger.w(TAG, "不支持流式：${e.message}")
-            } catch (e: Throwable) {
-                FileLogger.w(TAG, "流式失败，回退到非流式：${e.message}")
-            }
+        if (!shouldAttemptStreaming(context)) {
+            return callOpenAiStyleEndpointBlocking(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
         }
-        return callOpenAiStyleEndpointBlocking(
-            event = event,
-            context = context,
-            existingTagPaths = existingTagPaths,
-            currentPersonaSummary = currentPersonaSummary,
-            currentPersonaProfile = currentPersonaProfile
-        )
+        return try {
+            callOpenAiStyleEndpointStreaming(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
+        } catch (e: StreamingNotSupportedException) {
+            FileLogger.i(TAG, "OpenAI 流式不可用，回退非流式：${e.message}")
+            callOpenAiStyleEndpointBlocking(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
+        }
     }
 
     private suspend fun callOpenAiStyleEndpointBlocking(
         event: UserEvent,
         context: ExtractionContext,
-        existingTagPaths: List<String>,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
@@ -113,9 +121,9 @@ class LlmUserSignalExtractor(
         val payload = buildOpenAiRequestBody(
             event,
             context,
-            existingTagPaths,
             currentPersonaSummary,
             currentPersonaProfile,
+            url = url,
             stream = false
         )
 
@@ -137,14 +145,13 @@ class LlmUserSignalExtractor(
                 throw LlmHttpException(resp.code, snippet, event.externalId)
             }
             val text = extractContent(body, context)
-            parseCandidates(text, event, context)
+            parseCandidates(text)
         }
     }
 
     private suspend fun callOpenAiStyleEndpointStreaming(
         event: UserEvent,
         context: ExtractionContext,
-        existingTagPaths: List<String>,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
@@ -154,9 +161,9 @@ class LlmUserSignalExtractor(
         val payload = buildOpenAiRequestBody(
             event,
             context,
-            existingTagPaths,
             currentPersonaSummary,
             currentPersonaProfile,
+            url = url,
             stream = true
         )
 
@@ -237,7 +244,7 @@ class LlmUserSignalExtractor(
                 rawEvents.toString()
             }
             FileLogger.d(TAG, "LLM(OpenAI流式) 聚合长度=${finalText.length}")
-            parseCandidates(finalText, event, context)
+            parseCandidates(finalText)
         }
     }
 
@@ -271,24 +278,23 @@ class LlmUserSignalExtractor(
     private fun buildOpenAiRequestBody(
         event: UserEvent,
         context: ExtractionContext,
-        existingTagPaths: List<String>,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile,
+        url: HttpUrl,
         stream: Boolean = false
     ): String {
-        val metadataJson = JSONObject(event.metadata)
+        val metadataJson = buildPromptMetadataJson(event)
         val model = context.model?.trim().orEmpty()
         val userPrompt = MemoryPromptProvider.userPrompt(
             eventId = metadataJson.optString("event_id").ifBlank { event.externalId ?: "" },
             timestamp = metadataJson.optString("event_timestamp").ifBlank { formatTimestamp(event.occurredAt) },
             content = event.content,
             metadata = metadataJson,
-            existingTags = existingTagPaths,
             personaSummary = currentPersonaSummary,
             personaProfile = currentPersonaProfile
         )
         val systemPrompt = MemoryPromptProvider.systemPrompt()
-        return if (context.useResponseApi) {
+        val body = if (context.useResponseApi) {
             JSONObject()
                 .put("model", model)
                 .put("input", JSONArray().put(JSONObject().put("role", "user").put("content", userPrompt)))
@@ -315,6 +321,128 @@ class LlmUserSignalExtractor(
                 }
                 .toString()
         }
+
+        recordLastRequestDebug(
+            event = event,
+            context = context,
+            url = url,
+            stream = stream,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            requestBody = body,
+            metadataJson = metadataJson,
+            currentPersonaSummary = currentPersonaSummary,
+            currentPersonaProfile = currentPersonaProfile
+        )
+        return body
+    }
+
+    private fun buildPromptMetadataJson(event: UserEvent): JSONObject {
+        if (event.metadata.isEmpty()) return JSONObject()
+
+        val type = event.type.trim().lowercase()
+        val allowKeys: Set<String> = when (type) {
+            "segment" -> setOf(
+                "segment_id",
+                "segment_start",
+                "segment_end",
+                "segment_status"
+            )
+            "daily_aggregate" -> setOf(
+                "event_date",
+                "aggregation_scope",
+                "day_start",
+                "day_end_exclusive",
+                "events_count"
+            )
+            "chat_message" -> setOf(
+                "conversation_cid",
+                "role",
+                "message_id",
+                "created_at_ms"
+            )
+            else -> emptySet()
+        }
+
+        val sanitized = LinkedHashMap<String, Any?>()
+        val dropKeys = setOf(
+            // Large and not useful for persona / temporal graph extraction.
+            "segment_samples",
+            "aggregated_events",
+            "ai_output_text",
+            "ai_structured_json",
+            "reasoning"
+        )
+
+        if (allowKeys.isNotEmpty()) {
+            allowKeys.forEach { key ->
+                val value = event.metadata[key]?.trim().orEmpty()
+                if (value.isNotEmpty()) {
+                    sanitized[key] = clipMetadataValue(value, maxChars = 400)
+                }
+            }
+        } else {
+            event.metadata.entries.forEach { (key, rawValue) ->
+                val normalizedKey = key.trim()
+                if (normalizedKey.isEmpty() || dropKeys.contains(normalizedKey)) return@forEach
+                val value = rawValue.trim()
+                if (value.isNotEmpty()) {
+                    sanitized[normalizedKey] = clipMetadataValue(value, maxChars = 200)
+                }
+                if (sanitized.size >= 8) return@forEach
+            }
+        }
+
+        return JSONObject(sanitized)
+    }
+
+    private fun clipMetadataValue(value: String, maxChars: Int): String {
+        if (value.length <= maxChars) return value
+        if (maxChars <= 1) return "…"
+        val cutoff = (maxChars - 1).coerceAtLeast(0)
+        return value.substring(0, cutoff) + "…"
+    }
+
+    private fun recordLastRequestDebug(
+        event: UserEvent,
+        context: ExtractionContext,
+        url: HttpUrl,
+        stream: Boolean,
+        systemPrompt: String,
+        userPrompt: String,
+        requestBody: String,
+        metadataJson: JSONObject,
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
+    ) {
+        val providerType = context.providerType?.trim().orEmpty().ifBlank {
+            if (isGoogleContext(context)) "gemini" else "openai"
+        }
+        val model = context.model?.trim().orEmpty()
+        val debug = linkedMapOf<String, Any?>(
+            "captured_at_ms" to System.currentTimeMillis(),
+            "provider_type" to providerType,
+            "model" to model,
+            "base_url" to context.baseUrl?.trim(),
+            "chat_path" to context.chatPath?.trim(),
+            "use_response_api" to context.useResponseApi,
+            "stream" to stream,
+            "url" to url.toString(),
+            "event_external_id" to event.externalId,
+            "event_type" to event.type,
+            "event_occurred_at" to event.occurredAt,
+            "event_content_len" to event.content.length,
+            "metadata_json_len" to metadataJson.toString().length,
+            "persona_summary_len" to currentPersonaSummary.length,
+            "persona_profile_json_len" to currentPersonaProfile.toJsonString().length,
+            "system_prompt_len" to systemPrompt.length,
+            "user_prompt_len" to userPrompt.length,
+            "request_body_len" to requestBody.length,
+            "system_prompt" to systemPrompt,
+            "user_prompt" to userPrompt,
+            "request_body" to requestBody
+        )
+        lastRequestDebug = debug
     }
 
     private fun extractContent(raw: String, context: ExtractionContext): String {
@@ -430,106 +558,42 @@ class LlmUserSignalExtractor(
 
     private class StreamingNotSupportedException(message: String) : Exception(message)
 
-    private fun parseCandidates(text: String, event: UserEvent, context: ExtractionContext): UserSignalExtractionResult {
+    private fun parseCandidates(text: String): UserSignalExtractionResult {
         val payload = extractJsonPayload(text)
         val personaSegment = analyzePersonaSegment(payload.trailingText)
         return try {
             val root = JSONObject(payload.jsonText)
-            if (root.optString("error").isNotBlank()) {
-                FileLogger.w(TAG, "LLM 报告错误：${root.optString("error")}")
-                val persona = personaSegment.sanitized
-                val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
-                UserSignalExtractionResult(
-                    candidates = emptyList(),
-                    personaProfilePatch = patch,
-                    personaSummaryFallback = persona,
-                    rawResponse = payload.rawResponse,
-                    isMalformed = false
-                )
-            } else {
-                val filteredOut = root.optBoolean("filtered_out", false)
-                if (filteredOut) {
-                    val persona = personaSegment.sanitized
-                    val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
-                    return UserSignalExtractionResult(
-                        candidates = emptyList(),
-                        personaProfilePatch = patch,
-                        personaSummaryFallback = persona,
-                        rawResponse = payload.rawResponse,
-                        isMalformed = false,
-                        graphEntities = emptyList(),
-                        graphEdges = emptyList(),
-                        graphEdgeClosures = emptyList()
-                    )
-                }
-                val confirmedTags = collectConfirmedTags(root.optJSONArray("update_tags"))
-                val clues = root.optJSONArray("extracted_user_related_clues") ?: JSONArray()
-                val list = mutableListOf<TagCandidate>()
-                for (i in 0 until clues.length()) {
-                    val clue = clues.optJSONObject(i) ?: continue
-                    val suggestedRaw = clue.optString("tag_suggested")
-                    val hierarchy = parseHierarchy(suggestedRaw) ?: continue
-                    val key = buildTagKey(hierarchy)
-                    if (key.isBlank()) continue
-                    val label = hierarchy.fullPath
-                    val category = inferCategoryFromLevel(hierarchy.level1)
-                    val statusRaw = clue.optString("tag_status")
-                    val inference = clue.optString("clue_text").trim()
-                    val isConfirmed = normalizeStatus(statusRaw) || confirmedTags.contains(key)
-                    val confidence = if (isConfirmed) 0.85 else 0.6
-                    val evidenceIds = extractEvidenceIds(clue.optJSONArray("evidence"))
-                    val evidenceText = buildEvidenceText(
-                        clue.optString("clue_text"),
-                        clue.optString("event_brief"),
-                        evidenceIds
-                    )
+            val persona = personaSegment.sanitized
+            val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
+            val filteredOut = root.optBoolean("filtered_out", false)
+            val graphEntities = if (filteredOut) emptyList() else parseGraphEntities(root.optJSONArray("graph_entities"))
+            val graphEdges = if (filteredOut) emptyList() else parseGraphEdges(root.optJSONArray("graph_edges"))
+            val graphClosures =
+                if (filteredOut) emptyList() else parseGraphEdgeClosures(root.optJSONArray("graph_edge_closures"))
 
-                    list += TagCandidate(
-                        tagKey = key,
-                        label = label,
-                        category = category,
-                        hierarchy = hierarchy,
-                        inference = inference.ifBlank { null },
-                        confidence = confidence,
-                        evidence = evidenceText,
-                        notes = null,
-                        autoConfirmThreshold = if (isConfirmed) 1 else TagCandidate.DEFAULT_AUTO_CONFIRM_THRESHOLD,
-                        shouldOverrideLabel = false,
-                        forceOverrideEvidence = false,
-                        metadata = mapOf(
-                            "tag_status" to statusRaw,
-                            "level1" to hierarchy.level1,
-                            "level2" to hierarchy.level2,
-                            "level3" to hierarchy.level3,
-                            "level4" to hierarchy.level4,
-                            "full_path" to hierarchy.fullPath,
-                            "provider_type" to (context.providerType ?: ""),
-                            "provider_name" to (context.providerName ?: ""),
-                            "model" to (context.model ?: ""),
-                            "evidence_refs" to evidenceIds.joinToString(",")
-                        )
-                    )
-                }
-                val persona = personaSegment.sanitized
-                val patch = PersonaProfilePatch.fromJson(root.optJSONObject("persona_profile_patch"))
-                val graphEntities = parseGraphEntities(root.optJSONArray("graph_entities"))
-                val graphEdges = parseGraphEdges(root.optJSONArray("graph_edges"))
-                val graphClosures = parseGraphEdgeClosures(root.optJSONArray("graph_edge_closures"))
-                UserSignalExtractionResult(
-                    candidates = list,
-                    personaProfilePatch = patch,
-                    personaSummaryFallback = persona,
-                    rawResponse = payload.rawResponse,
-                    isMalformed = false,
-                    graphEntities = graphEntities,
-                    graphEdges = graphEdges,
-                    graphEdgeClosures = graphClosures
-                )
+            val hasError = root.optString("error").isNotBlank()
+            if (hasError) {
+                FileLogger.w(TAG, "LLM 报告错误：${root.optString("error")}")
             }
+
+            UserSignalExtractionResult(
+                personaProfilePatch = patch,
+                personaSummaryFallback = persona,
+                rawResponse = payload.rawResponse,
+                isMalformed = hasError,
+                graphEntities = graphEntities,
+                graphEdges = graphEdges,
+                graphEdgeClosures = graphClosures
+            )
         } catch (t: Throwable) {
             FileLogger.w(TAG, "解析 LLM JSON 失败：${t.message}")
             val persona = personaSegment.sanitized
-            UserSignalExtractionResult(emptyList(), null, persona, payload.rawResponse, false)
+            UserSignalExtractionResult(
+                personaProfilePatch = null,
+                personaSummaryFallback = persona,
+                rawResponse = payload.rawResponse,
+                isMalformed = true
+            )
         }
     }
 
@@ -645,7 +709,7 @@ class LlmUserSignalExtractor(
         val start = trimmed.indexOf('{')
         val end = trimmed.lastIndexOf('}')
         if (start < 0 || end <= start) {
-            return JsonPayload("{\"extracted_user_related_clues\":[]}", trimmed, text)
+            return JsonPayload("{\"filtered_out\":true}", trimmed, text)
         }
         val jsonText = trimmed.substring(start, end + 1)
         val trailing = if (end + 1 < trimmed.length) trimmed.substring(end + 1).trim() else ""
@@ -666,12 +730,50 @@ class LlmUserSignalExtractor(
     private suspend fun callGeminiEndpoint(
         event: UserEvent,
         context: ExtractionContext,
-        existingTagPaths: List<String>,
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
+    ): UserSignalExtractionResult {
+        if (!shouldAttemptStreaming(context)) {
+            return callGeminiEndpointBlocking(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
+        }
+        return try {
+            callGeminiEndpointStreaming(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
+        } catch (e: StreamingNotSupportedException) {
+            FileLogger.i(TAG, "Gemini 流式不可用，回退非流式：${e.message}")
+            callGeminiEndpointBlocking(
+                event = event,
+                context = context,
+                currentPersonaSummary = currentPersonaSummary,
+                currentPersonaProfile = currentPersonaProfile
+            )
+        }
+    }
+
+    private suspend fun callGeminiEndpointBlocking(
+        event: UserEvent,
+        context: ExtractionContext,
         currentPersonaSummary: String,
         currentPersonaProfile: PersonaProfile
     ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
-        val url = buildGeminiUrl(event, context)
-        val payload = buildGeminiRequestBody(event, existingTagPaths, currentPersonaSummary, currentPersonaProfile)
+        val url = buildGeminiUrl(event, context, stream = false)
+        val payload = buildGeminiRequestBody(
+            event,
+            context,
+            currentPersonaSummary,
+            currentPersonaProfile,
+            url = url,
+            stream = false
+        )
 
         val request = Request.Builder()
             .url(url)
@@ -691,37 +793,167 @@ class LlmUserSignalExtractor(
                 FileLogger.w(TAG, "Gemini 请求失败：code=${resp.code} body=${snippet}")
                 throw LlmHttpException(resp.code, snippet, event.externalId)
             }
-            val text = extractContent(body, context)
-            parseCandidates(text, event, context)
+            val text = extractContent(body, context.copy(providerType = "gemini"))
+            parseCandidates(text)
         }
     }
 
-    private fun buildGeminiUrl(event: UserEvent, context: ExtractionContext): HttpUrl {
+    private suspend fun callGeminiEndpointStreaming(
+        event: UserEvent,
+        context: ExtractionContext,
+        currentPersonaSummary: String,
+        currentPersonaProfile: PersonaProfile
+    ): UserSignalExtractionResult = withContext(Dispatchers.IO) {
+        val url = buildGeminiUrl(event, context, stream = true)
+        val payload = buildGeminiRequestBody(
+            event,
+            context,
+            currentPersonaSummary,
+            currentPersonaProfile,
+            url = url,
+            stream = true
+        )
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "text/event-stream")
+            .addHeader("x-goog-api-key", context.apiKey.orEmpty())
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        FileLogger.i(TAG, "LLM(Gemini流式) 请求：url=$url model=${context.model}")
+        FileLogger.d(TAG, "LLM(Gemini) 请求体=$payload")
+
+        okHttpClient.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val body = resp.body?.string().orEmpty()
+                FileLogger.d(TAG, "LLM(Gemini流式) 响应：code=${resp.code} body=$body")
+                val snippet = body.take(MAX_ERROR_BODY_CHARS)
+                FileLogger.w(TAG, "Gemini 请求失败：code=${resp.code} body=${snippet}")
+                if (resp.code == 400 || resp.code == 404 || resp.code == 405) {
+                    throw StreamingNotSupportedException("HTTP ${resp.code}")
+                }
+                throw LlmHttpException(resp.code, snippet, event.externalId)
+            }
+            val responseBody = resp.body ?: throw StreamingNotSupportedException("Empty response body")
+            val reader = responseBody.charStream().buffered()
+            val aggregated = StringBuilder()
+            val rawEvents = StringBuilder()
+            var sawData = false
+            var lastCumulative = ""
+            reader.use { buffered ->
+                while (true) {
+                    val line = buffered.readLine() ?: break
+                    if (line.isEmpty()) continue
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substring(5).trim()
+                    if (data.isEmpty()) continue
+                    if (data == "[DONE]") break
+                    sawData = true
+                    rawEvents.append(data).append('\n')
+                    try {
+                        val json = JSONObject(data)
+                        if (json.has("error")) {
+                            val message = json.optJSONObject("error")?.optString("message")
+                                ?: json.optString("error")
+                            throw LlmHttpException(resp.code, message.take(MAX_ERROR_BODY_CHARS), event.externalId)
+                        }
+                        var chunkText = ""
+                        val candidates = json.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val c0 = candidates.optJSONObject(0)
+                            val ct = c0?.optJSONObject("content")
+                            val parts = ct?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                val sb = StringBuilder()
+                                for (i in 0 until parts.length()) {
+                                    val p = parts.optJSONObject(i) ?: continue
+                                    val t = p.optString("text")
+                                    if (t.isNotBlank()) sb.append(t)
+                                }
+                                chunkText = sb.toString()
+                            }
+                        }
+                        if (chunkText.isBlank()) continue
+                        val delta = if (chunkText.startsWith(lastCumulative)) {
+                            chunkText.substring(lastCumulative.length)
+                        } else {
+                            chunkText
+                        }
+                        if (delta.isNotBlank()) {
+                            aggregated.append(delta)
+                        }
+                        lastCumulative = if (chunkText.startsWith(lastCumulative)) {
+                            chunkText
+                        } else {
+                            lastCumulative + chunkText
+                        }
+                    } catch (ex: Exception) {
+                        aggregated.append(data)
+                    }
+                }
+            }
+            if (!sawData) {
+                FileLogger.w(TAG, "Gemini 流式返回无数据；raw=${rawEvents.take(MAX_ERROR_BODY_CHARS)}")
+                throw StreamingNotSupportedException("No data received")
+            }
+            val finalText = aggregated.toString().ifBlank { rawEvents.toString() }
+            FileLogger.d(TAG, "LLM(Gemini流式) 聚合长度=${finalText.length}")
+            parseCandidates(finalText)
+        }
+    }
+
+    private fun buildGeminiUrl(event: UserEvent, context: ExtractionContext, stream: Boolean): HttpUrl {
         val base = resolveBaseUrl(context.baseUrl, DEFAULT_GEMINI_BASE, event)
         val model = context.model?.takeIf { it.isNotBlank() } ?: DEFAULT_GEMINI_MODEL
         val rawPath = context.chatPath?.trim().orEmpty()
-        val effectivePath = when {
-            rawPath.isEmpty() -> "/v1beta/models/$model:generateContent"
-            rawPath.contains("chat/completions", ignoreCase = true) -> "/v1beta/models/$model:generateContent"
-            !rawPath.contains("models", ignoreCase = true) -> "/v1beta/models/$model:generateContent"
-            else -> rawPath
+        val defaultPath = if (stream) {
+            "/v1beta/models/$model:streamGenerateContent"
+        } else {
+            "/v1beta/models/$model:generateContent"
         }
-        return resolveEndpointUrl(base, effectivePath, event)
+        val effectivePath = when {
+            rawPath.isEmpty() -> defaultPath
+            stream && rawPath.contains("streamGenerateContent", ignoreCase = true) -> rawPath
+            !stream && rawPath.contains("generateContent", ignoreCase = true) &&
+                !rawPath.contains("streamGenerateContent", ignoreCase = true) -> rawPath
+            stream && rawPath.contains("generateContent", ignoreCase = true) -> rawPath.replace(
+                "generateContent",
+                "streamGenerateContent",
+                ignoreCase = true
+            )
+            !stream && rawPath.contains("streamGenerateContent", ignoreCase = true) -> rawPath.replace(
+                "streamGenerateContent",
+                "generateContent",
+                ignoreCase = true
+            )
+            rawPath.contains("chat/completions", ignoreCase = true) -> defaultPath
+            rawPath.contains("models", ignoreCase = true) && rawPath.contains(":") -> rawPath
+            else -> defaultPath
+        }
+        val resolved = resolveEndpointUrl(base, effectivePath, event)
+        return if (stream) {
+            resolved.newBuilder().addQueryParameter("alt", "sse").build()
+        } else {
+            resolved
+        }
     }
 
     private fun buildGeminiRequestBody(
         event: UserEvent,
-        existingTagPaths: List<String>,
+        context: ExtractionContext,
         currentPersonaSummary: String,
-        currentPersonaProfile: PersonaProfile
+        currentPersonaProfile: PersonaProfile,
+        url: HttpUrl,
+        stream: Boolean
     ): String {
-        val metadataJson = JSONObject(event.metadata)
+        val metadataJson = buildPromptMetadataJson(event)
         val userPrompt = MemoryPromptProvider.userPrompt(
             eventId = metadataJson.optString("event_id").ifBlank { event.externalId ?: "" },
             timestamp = metadataJson.optString("event_timestamp").ifBlank { formatTimestamp(event.occurredAt) },
             content = event.content,
             metadata = metadataJson,
-            existingTags = existingTagPaths,
             personaSummary = currentPersonaSummary,
             personaProfile = currentPersonaProfile
         )
@@ -733,7 +965,7 @@ class LlmUserSignalExtractor(
             .put("role", "user")
             .put("parts", JSONArray().put(JSONObject().put("text", userPrompt)))
 
-        return JSONObject()
+        val body = JSONObject()
             .put("system_instruction", systemInstruction)
             .put("contents", JSONArray().put(userContent))
             .put(
@@ -743,6 +975,20 @@ class LlmUserSignalExtractor(
                     .put("responseMimeType", "application/json")
             )
             .toString()
+
+        recordLastRequestDebug(
+            event = event,
+            context = context.copy(providerType = "gemini"),
+            url = url,
+            stream = stream,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            requestBody = body,
+            metadataJson = metadataJson,
+            currentPersonaSummary = currentPersonaSummary,
+            currentPersonaProfile = currentPersonaProfile
+        )
+        return body
     }
 
     private fun resolveBaseUrl(raw: String?, fallback: String, event: UserEvent): HttpUrl {
@@ -764,114 +1010,6 @@ class LlmUserSignalExtractor(
         val normalized = if (candidate.startsWith("/")) candidate else "/$candidate"
         return base.resolve(normalized)
             ?: throw LlmEndpointConfigurationException("Invalid endpoint path: $candidate", event.externalId)
-    }
-
-    private fun collectConfirmedTags(array: JSONArray?): Set<String> {
-        if (array == null) return emptySet()
-        val set = mutableSetOf<String>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            val hierarchy = parseHierarchy(item.optString("tag")) ?: continue
-            val tag = buildTagKey(hierarchy)
-            val newStatus = item.optString("new_status")
-            if (tag.isNotBlank() && normalizeStatus(newStatus)) {
-                set += tag
-            }
-        }
-        return set
-    }
-
-    private fun normalizeStatus(status: String?): Boolean {
-        val v = status?.trim()?.lowercase() ?: return false
-        return v == "已确认" || v == "已確認" || v == "confirmed" || v == "确认" || v == "confirm"
-    }
-
-    private fun inferCategoryFromLevel(level1: String): TagCategory {
-        val normalized = level1.trim().lowercase()
-        return when {
-            normalized.contains("兴趣") || normalized.contains("爱好") || normalized.contains("hobby") -> TagCategory.INTEREST
-            normalized.contains("关系") || normalized.contains("family") || normalized.contains("亲友") -> TagCategory.RELATIONSHIP
-            normalized.contains("行为") || normalized.contains("习惯") || normalized.contains("behavior") -> TagCategory.BEHAVIOR
-            normalized.contains("偏好") || normalized.contains("喜好") || normalized.contains("preference") -> TagCategory.PREFERENCE
-            normalized.contains("身份") || normalized.contains("昵称") || normalized.contains("姓名") || normalized.contains("职业") || normalized.contains("角色") -> TagCategory.IDENTITY
-            normalized.contains("技能") || normalized.contains("skill") -> TagCategory.PREFERENCE
-            else -> TagCategory.OTHER
-        }
-    }
-
-    private fun extractEvidenceIds(array: JSONArray?): List<String> {
-        if (array == null) return emptyList()
-        val list = mutableListOf<String>()
-        for (i in 0 until array.length()) {
-            val value = array.optString(i)
-            if (value.isNotBlank()) list += value
-        }
-        return list
-    }
-
-    private fun buildEvidenceText(clue: String, brief: String, refs: List<String>): String {
-        val normalizedClue = clue.trim()
-        val normalizedBrief = brief.trim()
-        val base = when {
-            normalizedBrief.isNotEmpty() -> normalizedBrief
-            normalizedClue.isNotEmpty() -> normalizedClue
-            else -> "用户相关线索"
-        }
-        if (refs.isEmpty()) {
-            return base
-        }
-        return buildString {
-            append(base)
-            append(" [ref=")
-            append(refs.joinToString(","))
-            append("]")
-        }
-    }
-
-    private fun parseHierarchy(raw: String?): TagHierarchy? {
-        if (raw.isNullOrBlank()) return null
-        val normalized = raw.replace("／", "/").replace("｜", "|")
-        val segments = normalized.split('/', '|')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-        if (segments.size < 4) return null
-        val fixed = segments.take(4)
-        val hierarchy = TagHierarchy(
-            level1 = fixed[0],
-            level2 = fixed[1],
-            level3 = fixed[2],
-            level4 = fixed[3]
-        )
-        return if (hierarchy.isValid()) hierarchy else null
-    }
-
-    private fun buildTagKey(hierarchy: TagHierarchy): String {
-        val segments = listOf(hierarchy.level1, hierarchy.level2, hierarchy.level3, hierarchy.level4)
-        val slug = segments.joinToString("|") { slugify(it) }
-        return slug.lowercase()
-    }
-
-    private fun slugify(input: String): String {
-        val normalized = input.trim()
-            .lowercase()
-            .replace('：', ':')
-            .replace('/', ' ')
-            .replace('|', ' ')
-        val builder = StringBuilder()
-        for (ch in normalized) {
-            when {
-                ch in 'a'..'z' || ch in '0'..'9' -> builder.append(ch)
-                ch == '-' || ch == '_' -> builder.append(ch)
-                ch.isWhitespace() -> {
-                    if (builder.length > 0 && builder[builder.length - 1] != '_') {
-                        builder.append('_')
-                    }
-                }
-                else -> {}
-            }
-        }
-        val result = builder.toString().trim('_')
-        return if (result.isNotEmpty()) result else normalized.replace("\\s+".toRegex(), "_")
     }
 
     private data class JsonPayload(
@@ -928,6 +1066,11 @@ class LlmUserSignalExtractor(
             "persona summary:",
             "user summary:"
         )
+
+        @Volatile
+        private var lastRequestDebug: Map<String, Any?>? = null
+
+        fun getLastRequestDebug(): Map<String, Any?>? = lastRequestDebug
     }
 }
 

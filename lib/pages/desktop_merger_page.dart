@@ -39,8 +39,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
   int _totalFiles = 0;
   int _totalReused = 0;
   int _totalEvents = 0;
-  int _totalTags = 0;
-  int _totalEvidence = 0;
   final Set<String> _allAffectedApps = {};
   final List<String> _allWarnings = [];
 
@@ -876,11 +874,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                         t.desktopMergerStatEvents,
                         report.mergedMemoryEvents,
                       ),
-                      _buildMiniStat(
-                        context,
-                        t.desktopMergerStatTags,
-                        report.mergedMemoryTags,
-                      ),
                     ],
                   ),
                   // 涉及应用
@@ -1105,7 +1098,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         _totalSkipped > 0 ||
         _totalFiles > 0 ||
         _totalEvents > 0 ||
-        _totalTags > 0 ||
         _results.isNotEmpty;
   }
 
@@ -1143,8 +1135,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       _totalFiles = 0;
       _totalReused = 0;
       _totalEvents = 0;
-      _totalTags = 0;
-      _totalEvidence = 0;
       _allAffectedApps.clear();
       _allWarnings.clear();
     });
@@ -1227,8 +1217,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             _totalFiles += report.copiedFiles;
             _totalReused += report.reusedFiles;
             _totalEvents += report.mergedMemoryEvents;
-            _totalTags += report.mergedMemoryTags;
-            _totalEvidence += report.mergedMemoryEvidence;
             _allAffectedApps.addAll(report.affectedPackages);
             _allWarnings.addAll(report.warnings);
           });

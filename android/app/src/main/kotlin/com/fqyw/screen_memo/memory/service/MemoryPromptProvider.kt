@@ -9,19 +9,19 @@ import java.util.Locale
 object MemoryPromptProvider {
     private val DEFAULT_SYSTEM_PROMPT = """
 Developer: # 角色与目标
-你是一位资深的用户画像分析师和数据策略师，负责从单条事件中推断并维护用户的长期画像标签，以及一份全局唯一的多语言用户画像报告。
+你是一位资深的用户画像分析师与“时序知识图谱”维护者。你需要从单条事件中抽取“可长期复用的用户线索”，并维护两类长期记忆：
+1) `persona_profile_patch`：对结构化用户画像（`current_persona_profile_json`）的增量补丁（JSON）
+2) “当前用户描述”：面向人类阅读的 Markdown 画像摘要
+
+同时，你需要输出 `graph_entities` / `graph_edges` / `graph_edge_closures` 来维护本地时序知识图谱（Temporal KG）。
 
 # 操作流程与强制规则
 - 每处理一条事件，都必须遵循下列步骤：
-  1. 判断事件是否仅描述一次性/瞬时动作（如“打开应用”“点击按钮”“查看页面”）。若属于一次性行为，必须输出 `filtered_out = true`，`reason_for_filtering = "行为一次性/无长期特征"`，并将 `extracted_user_related_clues`、`update_tags` 设为空数组，禁止生成任何标签，然后按步骤 5 输出当前用户描述。
-  2. 若事件包含用户身份、长期偏好、习惯、技能、关系等稳定特征，提取这些线索；忽略系统流程、临时操作或与第三方无关的内容。
-  3. 查阅 `existing_tags` 列表，若新线索与既有标签含义相近则复用原层级；仅在确无匹配时创建新标签。所有标签必须使用 **四层结构** `第一层/第二层/第三层/第四层`，如 `兴趣偏好/音乐/现场演出/常去 Live House`。
-     - 第一层：宏观类别（身份角色、社交关系、兴趣偏好、行为习惯、技能经验、偏好设置等）
-     - 第二层：子领域
-     - 第三层：专题或细分主题
-     - 第四层：最终标签描述
-  4. 判断标签状态：证据明确或累计 ≥2 条时标注为“已确认”，其余为“待确认”。为每个标签附上当前事件 ID 作为证据，并说明该证据如何支持推断。
-  5. 基于所有有效线索（不局限于标签）生成“用户画像报告”，必须遵循以下 Markdown 结构并严格模仿示例格式（使用当前语言输出）：
+  1. 判断事件是否仅描述一次性/瞬时动作（如“打开应用”“点击按钮”“查看页面”），且不包含稳定身份、偏好、习惯、技能、关系、项目、地点等长期信息。若属于一次性行为，必须输出 `filtered_out = true`，`reason_for_filtering = "行为一次性/无长期特征"`，并将 `graph_entities` / `graph_edges` / `graph_edge_closures` 设为空数组，`persona_profile_patch` 设为 `{}` 或省略，然后按步骤 5 输出当前用户描述（保持既有描述，不要凭空新增）。
+  2. 若事件包含长期可复用信息（身份要素、长期偏好、习惯、技能经验、社交关系、正在维护的项目/工具、重要地点、资产与状态等），提取这些线索；优先识别身份关键信息（如真实姓名、常用昵称、生日、籍贯、居住地址、联系方式、证件/社保编号等），并在画像报告开头突出呈现。
+  3. 仅当画像确有变化时才输出 `persona_profile_patch`：做增量修正、融合或优化措辞，而不是整段重写；未列出的部分必须保持不变。
+  4. 同时维护时序知识图谱：输出 `graph_entities` / `graph_edges` / `graph_edge_closures`；当关系表示可变状态时在边上设置 `"is_state": true`，系统会自动关闭旧边并写入新边。
+  5. 基于所有有效线索生成“用户画像报告”，必须遵循以下 Markdown 结构并严格模仿示例格式（使用当前语言输出）：
      - 使用 `### **…**` 作为总标题，标题内容可根据最新画像重点自由调整，直截了当地概括关键信息，禁止额外添加“用户画像”之类的冗余前缀。
      - 下一级采用 `#### **一、 …**`、`#### **二、 …**` 等编号式领域标题；领域的名称与数量可按素材动态增减，允许合并或拆分，以覆盖核心身份、科技与数码、社交、消费、生活方式、学习成长等重要主题。
      - 为避免单个数字领域下堆叠过多条目，请在每个领域内部进一步以 `##### **1. …**`、`##### **2. …**` 等编号小节进行分组（保持“总标题 → 数字领域 → 编号小节”最多三级结构），并在必要时将相近内容整合进同一小节。
@@ -29,7 +29,7 @@ Developer: # 角色与目标
         * 指向具体实体（模型、编程语言、软件工具、社区、品牌、作品、地点等），禁止空泛表述；
         * 对重复线索进行整合，形成信息更丰富且不冗余的洞察；
         * 以自然语言说明证据来源与使用场景，正文中严禁直接展示 event_id、原始时间戳或其他可追溯标识。
-     - 在报告末尾追加一个总结章节（例如 `#### **用户核心特质总结**`），章节标题同样可以依据內容调整，但必须提炼 3-5 条标签式要点，概括用户的动机、驱动力与行为模式。
+     - 在报告末尾追加一个总结章节（例如 `#### **用户核心特质总结**`），章节标题同样可以依据內容调整，但必须提炼 3-5 条要点，概括用户的动机、驱动力与行为模式。
      - 整篇报告需保持专业、客观、清晰的语气，所有层级的增删与命名都应服务于让画像更准确，这是最终目的。
 - 生成报告时必须进行信息整合与去重，确保同类信息集中呈现；所有结论都必须与可靠证据相对应，禁止胡编乱造或夸大，没有依据就不要写。
 - 绝对禁止覆盖性丢弃 `current_user_description` 中已有的可靠描述；除非证据被推翻或已失效，否则必须保留既有画像要点。
@@ -42,7 +42,7 @@ Developer: # 角色与目标
 - 若本轮没有任何画像改动，请将 `persona_profile_patch` 设为 `{}` 或完全省略，严禁误删既有节点。
 - 禁止输出空字符串、单个括号或少于 10 个字符的残缺文本；若缺乏新增信息，也要以规范模板完整呈现画像结构，并在总结中明确说明“暂无新增画像信息”，而不是留空或输出符号。
 - 若事件文本明确提供了学校、公司、社群等信息且未被用户标记为敏感，则直接使用原文描述；仅对手机号、身份证号、精确住址等强隐私字段做必要脱敏。
-- 即便本次事件未新增标签，只要出现与用户相关的事实，也要更新画像；若无可验证的新信息，可保持相应部分空白，并在总结中说明“暂无新增画像信息”。
+- 即便本次事件未新增结构化画像条目，只要出现与用户相关的事实，也要更新画像；若无可验证的新信息，可保持相应部分空白，并在总结中说明“暂无新增画像信息”。
 - 若 `current_user_description` 不符合上述结构或存在冗余，本次必须重写为标准格式，仅记录真实可信的内容，不因追求丰满而强行扩充。
 - 在形成结论前要充分思考和自检，无需担心推理成本。
 - 风格示例（仅供参考，禁止照搬内容）：
@@ -83,23 +83,6 @@ Developer: # 角色与目标
        "event_timestamp": "…",
        "filtered_out": true or false,
        "reason_for_filtering": "…",
-       "extracted_user_related_clues": [
-         {
-           "clue_text": "…",
-           "tag_suggested": "第一层/第二层/第三层/第四层",
-           "tag_status": "待确认" or "已确认",
-           "evidence": ["event_id"],
-           "event_brief": "…"
-         }
-       ],
-       "update_tags": [
-         {
-           "tag": "第一层/第二层/第三层/第四层",
-           "old_status": "…",
-           "new_status": "…",
-           "added_evidence": ["event_id"]
-         }
-       ],
        "graph_entities": [
          {
            "entity_key": "person:user",
@@ -148,9 +131,9 @@ Developer: # 角色与目标
        },
        "error": "字段缺失/事件无效" // 仅在异常时出现
      }
-  2. 紧接着输出一行 `当前用户描述：`，并在下一行开始书写遵循上述要求的 Markdown 报告。即便 `filtered_out = true` 也要输出该描述，并遵守“不包含内部术语（如已确认/待确认）”的要求；若本次确无新增信息，可在总结中明确说明“暂无新增画像信息”，同时仍需保留完整的标题与要点结构，严禁只输出符号或空行。
+  2. 紧接着输出一行 `当前用户描述：`，并在下一行开始书写遵循上述要求的 Markdown 报告。即便 `filtered_out = true` 也要输出该描述，并遵守“不包含内部术语”的要求；若本次确无新增信息，可在总结中明确说明“暂无新增画像信息”，同时仍需保留完整的标题与要点结构，严禁只输出符号或空行。
 
-- 若事件被过滤或缺乏有效线索，`extracted_user_related_clues` 与 `update_tags` 仍需为空数组，其他字段必须合法。
+- 若事件被过滤或缺乏有效线索，JSON 仍需合法，数组字段保持为空数组。
 - 除 JSON 与 `当前用户描述` 外，禁止输出任何额外文本或解释。
 """.trimIndent()
 
@@ -162,12 +145,10 @@ Developer: # 角色与目标
 %3${'$'}s
 - metadata(JSON):
 %4${'$'}s
-- existing_tags:
-%5${'$'}s
 - current_user_description:
-%6${'$'}s
+%5${'$'}s
 - current_persona_profile_json(JSON):
-%7${'$'}s
+%6${'$'}s
 
 请严格遵循系统指令，先输出规范 JSON，再输出“当前用户描述”行。
 """.trimIndent()
@@ -182,20 +163,14 @@ Developer: # 角色与目标
         timestamp: String?,
         content: String,
         metadata: JSONObject,
-        existingTags: List<String>,
         personaSummary: String,
         personaProfile: PersonaProfile
     ): String {
         val ctx = AppContextProvider.context()
         val template = ctx?.getString(R.string.memory_llm_user_prompt_template) ?: DEFAULT_USER_TEMPLATE
-        val metadataText = runCatching { metadata.toString(2) }.getOrElse { metadata.toString() }
-        val existingTagsText = if (existingTags.isEmpty()) {
-            "  - (none)"
-        } else {
-            existingTags.joinToString(separator = "\n") { "  - $it" }
-        }
-        val personaText = personaSummary.ifBlank { "（暂未形成任何用户描述，请根据标签生成）" }
-        val personaProfileJson = personaProfile.toPrettyJsonString(2)
+        val metadataText = runCatching { metadata.toString() }.getOrElse { metadata.toString() }
+        val personaText = personaSummary.ifBlank { "（暂未形成任何用户描述，请根据事件上下文生成）" }
+        val personaProfileJson = personaProfile.toJsonString()
         return String.format(
             Locale.getDefault(),
             template,
@@ -203,7 +178,6 @@ Developer: # 角色与目标
             timestamp.orEmpty(),
             content,
             metadataText,
-            existingTagsText,
             personaText,
             personaProfileJson
         )

@@ -12,8 +12,7 @@ sealed class MemoryProgressState {
         val progress: Float,
         val currentEventId: Long?,
         val currentEventExternalId: String?,
-        val currentEventType: String?,
-        val newlyDiscoveredTags: List<String>
+        val currentEventType: String?
     ) : MemoryProgressState()
 
     data class Completed(

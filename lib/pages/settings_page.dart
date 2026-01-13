@@ -370,31 +370,12 @@ class _SettingsPageState extends State<SettingsPage>
           t.mergeReportCopied(report.copiedFiles),
           style: theme.textTheme.bodyMedium,
         ),
-        if (report.mergedMemoryEvents > 0 ||
-            report.mergedMemoryTags > 0 ||
-            report.mergedMemoryEvidence > 0) ...[
+        if (report.mergedMemoryEvents > 0) ...[
           const SizedBox(height: AppTheme.spacing3),
-          if (report.mergedMemoryEvents > 0)
-            Text(
-              t.mergeReportMemoryEvents(report.mergedMemoryEvents),
-              style: theme.textTheme.bodyMedium,
-            ),
-          if (report.mergedMemoryTags > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: AppTheme.spacing1),
-              child: Text(
-                t.mergeReportMemoryTags(report.mergedMemoryTags),
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          if (report.mergedMemoryEvidence > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: AppTheme.spacing1),
-              child: Text(
-                t.mergeReportMemoryEvidence(report.mergedMemoryEvidence),
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
+          Text(
+            t.mergeReportMemoryEvents(report.mergedMemoryEvents),
+            style: theme.textTheme.bodyMedium,
+          ),
         ],
         if (affectedPackages.isNotEmpty) ...[
           const SizedBox(height: AppTheme.spacing3),
@@ -1302,8 +1283,7 @@ class _SettingsPageState extends State<SettingsPage>
           await FlutterLogger.nativeInfo(
             'UI_IMPORT',
             '合并成功 插入截图=${mergeReport.insertedScreenshots} 跳过重复=${mergeReport.skippedScreenshotDuplicates} '
-                '动态事件=${mergeReport.mergedMemoryEvents} 标签=${mergeReport.mergedMemoryTags} '
-                '证据=${mergeReport.mergedMemoryEvidence}',
+                '动态事件=${mergeReport.mergedMemoryEvents}',
           );
           await ScreenshotService.instance.invalidateStatsCache();
           ScreenshotService.instance.invalidateAvailableDayCountCache();
