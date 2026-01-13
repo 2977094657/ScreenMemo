@@ -1197,8 +1197,8 @@ object SegmentSummaryManager {
         } catch (_: Exception) {}
 
         if (isGoogle) {
-            // Gemini REST: POST {base}/v1beta/models/{model}:generateContent
-            val url = "$base/v1beta/models/$model:generateContent"
+            // Gemini SSE: POST {base}/v1beta/models/{model}:streamGenerateContent?alt=sse
+            val url = "$base/v1beta/models/$model:streamGenerateContent?alt=sse"
             try { FileLogger.i(TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { FileLogger.i(TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
@@ -1220,10 +1220,12 @@ object SegmentSummaryManager {
             val req = Request.Builder()
                 .url(url)
                 .addHeader("x-goog-api-key", apiKey ?: "")
+                .addHeader("Accept", "text/event-stream")
                 .post(reqBody)
                 .build()
             val t0 = System.currentTimeMillis()
             var respText = ""
+            var outputText = ""
             run {
                 var attempt = 0
                 val maxAttempts = 3
@@ -1232,29 +1234,100 @@ object SegmentSummaryManager {
                 while (attempt < maxAttempts) {
                     val start = System.currentTimeMillis()
                     try {
-                        val resp = client.newCall(req).execute()
-                        val end = System.currentTimeMillis()
-                        lastCode = resp.code
-                        try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        if (resp.isSuccessful) {
-                            respText = resp.body?.string() ?: ""
-                            break
-                        } else {
-                            lastBody = resp.body?.string()
-                            if (!lastBody.isNullOrEmpty()) {
-                                val lower = lastBody.lowercase()
-                                if (lower.contains("user location is not supported")) {
-                                    try { FileLogger.e(TAG, "Gemini 请求因地区策略被阻止：${truncateForLog(lastBody, 800)}") } catch (_: Exception) {}
+                        var finished = false
+                        client.newCall(req).execute().use { resp ->
+                            val end = System.currentTimeMillis()
+                            lastCode = resp.code
+                            try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            if (resp.isSuccessful) {
+                                val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
+                                val reader = responseBody.charStream().buffered()
+                                val aggregated = StringBuilder()
+                                val rawEvents = StringBuilder()
+                                var sawData = false
+                                var lastCumulative = ""
+                                var payloadError: String? = null
+                                reader.use { buffered ->
+                                    while (true) {
+                                        val line = buffered.readLine() ?: break
+                                        if (line.isEmpty()) continue
+                                        if (!line.startsWith("data:")) continue
+                                        val data = line.substring(5).trim()
+                                        if (data.isEmpty()) continue
+                                        if (data == "[DONE]") break
+                                        sawData = true
+                                        rawEvents.append(data).append('\n')
+                                        try {
+                                            val obj = JSONObject(data)
+                                            if (obj.has("error")) {
+                                                payloadError = obj.optJSONObject("error")?.toString()
+                                                    ?: obj.optString("error")
+                                                break
+                                            }
+                                            var chunkText = ""
+                                            val candidates = obj.optJSONArray("candidates")
+                                            if (candidates != null && candidates.length() > 0) {
+                                                val c0 = candidates.optJSONObject(0)
+                                                val content = c0?.optJSONObject("content")
+                                                val partsOut = content?.optJSONArray("parts")
+                                                if (partsOut != null && partsOut.length() > 0) {
+                                                    val sb = StringBuilder()
+                                                    for (i in 0 until partsOut.length()) {
+                                                        val p = partsOut.optJSONObject(i) ?: continue
+                                                        val t = p.optString("text")
+                                                        if (t.isNotBlank()) sb.append(t)
+                                                    }
+                                                    chunkText = sb.toString()
+                                                }
+                                            }
+                                            if (chunkText.isBlank()) continue
+                                            val delta = if (chunkText.startsWith(lastCumulative)) {
+                                                chunkText.substring(lastCumulative.length)
+                                            } else {
+                                                chunkText
+                                            }
+                                            if (delta.isNotBlank()) {
+                                                aggregated.append(delta)
+                                            }
+                                            lastCumulative = if (chunkText.startsWith(lastCumulative)) {
+                                                chunkText
+                                            } else {
+                                                lastCumulative + chunkText
+                                            }
+                                        } catch (_: Exception) {
+                                            // ignore malformed event chunk
+                                        }
+                                    }
                                 }
+                                respText = rawEvents.toString()
+                                if (!sawData) {
+                                    throw IllegalStateException("No SSE data received: ${respText.take(800)}")
+                                }
+                                if (payloadError != null) {
+                                    // 保留 rawEvents 供前端展示错误预览
+                                    finished = true
+                                } else {
+                                    outputText = aggregated.toString()
+                                    finished = true
+                                }
+                            } else {
+                                lastBody = resp.body?.string()
+                                if (!lastBody.isNullOrEmpty()) {
+                                    val lower = lastBody.lowercase()
+                                    if (lower.contains("user location is not supported")) {
+                                        try { FileLogger.e(TAG, "Gemini 请求因地区策略被阻止：${truncateForLog(lastBody, 800)}") } catch (_: Exception) {}
+                                    }
+                                }
+                                val shouldRetry = resp.code >= 500
+                                try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                             }
-                            val shouldRetry = resp.code >= 500
-                            try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
+                        if (finished) break
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI 请求超时 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求超时 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
@@ -1302,21 +1375,6 @@ object SegmentSummaryManager {
             try {
                 val preview = truncateForLog(respText, 2000)
                 OutputFileLogger.info(ctx, TAG, "AI 响应预览：${preview}")
-            } catch (_: Exception) {}
-
-            var outputText = ""
-            try {
-                val obj = JSONObject(respText)
-                val candidates = obj.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val c0 = candidates.getJSONObject(0)
-                    val content = c0.optJSONObject("content")
-                    val partsOut = content?.optJSONArray("parts")
-                    if (partsOut != null && partsOut.length() > 0) {
-                        val p0 = partsOut.getJSONObject(0)
-                        outputText = p0.optString("text", "")
-                    }
-                }
             } catch (_: Exception) {}
             // 若无正常内容且响应体包含 error，则回落为直接保存错误预览，供前端显示
             if (outputText.isBlank()) {
@@ -1390,7 +1448,7 @@ object SegmentSummaryManager {
                 .put("model", model)
                 .put("messages", messages)
                 .put("temperature", 0.2)
-                .put("stream", false)
+                .put("stream", true)
                 .toString()
 
             val reqBody: RequestBody = body.toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -1399,9 +1457,11 @@ object SegmentSummaryManager {
                 .post(reqBody)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "text/event-stream")
                 .build()
             val t0 = System.currentTimeMillis()
             var respText = ""
+            var outputText = ""
             run {
                 var attempt = 0
                 val maxAttempts = 3
@@ -1410,42 +1470,73 @@ object SegmentSummaryManager {
                 while (attempt < maxAttempts) {
                     val start = System.currentTimeMillis()
                     try {
-                        val resp = client.newCall(req).execute()
-                        val end = System.currentTimeMillis()
-                        lastCode = resp.code
-                        try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
-                        if (resp.isSuccessful) {
-                            respText = resp.body?.string() ?: ""
-                            // 检测 200 成功但响应体为错误或无候选的情况（如 {"error":{...}}）
-                            var hasPayloadError = false
-                            try {
-                                val obj = org.json.JSONObject(respText)
-                                val err = obj.optJSONObject("error")
-                                if (err != null) {
-                                    hasPayloadError = true
+                        var finished = false
+                        client.newCall(req).execute().use { resp ->
+                            val end = System.currentTimeMillis()
+                            lastCode = resp.code
+                            try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            if (resp.isSuccessful) {
+                                val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
+                                val reader = responseBody.charStream().buffered()
+                                val aggregated = StringBuilder()
+                                val rawEvents = StringBuilder()
+                                var sawData = false
+                                var payloadError: String? = null
+                                reader.use { buffered ->
+                                    while (true) {
+                                        val line = buffered.readLine() ?: break
+                                        if (line.isEmpty()) continue
+                                        if (!line.startsWith("data:")) continue
+                                        val data = line.substring(5).trim()
+                                        if (data.isEmpty()) continue
+                                        if (data == "[DONE]") break
+                                        sawData = true
+                                        rawEvents.append(data).append('\n')
+                                        try {
+                                            val obj = JSONObject(data)
+                                            val err = obj.optJSONObject("error")
+                                            if (err != null) {
+                                                payloadError = err.toString()
+                                                break
+                                            }
+                                            val choices = obj.optJSONArray("choices") ?: continue
+                                            if (choices.length() == 0) continue
+                                            val c0 = choices.optJSONObject(0) ?: continue
+                                            val delta = c0.optJSONObject("delta") ?: continue
+                                            val piece = delta.optString("content")
+                                            if (piece.isNotBlank()) {
+                                                aggregated.append(piece)
+                                            }
+                                        } catch (_: Exception) {
+                                            // ignore malformed event chunk
+                                        }
+                                    }
                                 }
-                            } catch (_: Exception) {
-                                // 非 JSON 或无法解析则按正常成功处理
-                            }
-                            if (hasPayloadError) {
-                                // 记录并视为"带错误负载的成功"，交由下游保存错误预览供前端展示，避免自动重试
-                            try { FileLogger.w(TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
-                            try { OutputFileLogger.error(ctx, TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
-                                break
+                                respText = rawEvents.toString()
+                                if (!sawData) {
+                                    throw IllegalStateException("No SSE data received: ${respText.take(800)}")
+                                }
+                                if (payloadError != null) {
+                                    // 保留 rawEvents 供前端展示错误预览
+                                    try { FileLogger.w(TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
+                                    try { OutputFileLogger.error(ctx, TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
+                                    finished = true
+                                } else {
+                                    outputText = aggregated.toString()
+                                    finished = true
+                                }
                             } else {
-                                // 正常成功
-                                break
+                                lastBody = resp.body?.string()
+                                val shouldRetry = resp.code >= 500
+                                try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                             }
-                        } else {
-                            lastBody = resp.body?.string()
-                            val shouldRetry = resp.code >= 500
-                            try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
-                            if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                         }
+                        if (finished) break
                     } catch (e: java.net.SocketTimeoutException) {
                         try { FileLogger.w(TAG, "AI 请求超时(OpenAI) 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求超时(OpenAI) 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
@@ -1492,16 +1583,6 @@ object SegmentSummaryManager {
             try {
                 val preview = truncateForLog(respText, 2000)
                 OutputFileLogger.info(ctx, TAG, "AI 响应预览(OpenAI)：${preview}")
-            } catch (_: Exception) {}
-            var outputText = ""
-            try {
-                val obj = JSONObject(respText)
-                val choices = obj.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val c0 = choices.getJSONObject(0)
-                    val msg = c0.optJSONObject("message")
-                    outputText = msg?.optString("content", "") ?: ""
-                }
             } catch (_: Exception) {}
             // 若无正常内容且响应体包含 error，则回落为直接保存错误预览，供前端显示
             if (outputText.isBlank()) {

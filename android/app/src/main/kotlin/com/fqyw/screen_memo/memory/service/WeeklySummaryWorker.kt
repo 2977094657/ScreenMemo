@@ -232,7 +232,10 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
         val isAzure = typeLower == "azure_openai"
 
         return if (isGoogle) {
-            val url = resolveEndpointUrl(baseUrl, "/v1beta/models/${cfg.model}:generateContent").toString()
+            val url = resolveEndpointUrl(baseUrl, "/v1beta/models/${cfg.model}:streamGenerateContent")
+                .newBuilder()
+                .addQueryParameter("alt", "sse")
+                .build()
             val body = JSONObject().put(
                 "contents",
                 JSONArray().put(
@@ -248,26 +251,79 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
             val req = Request.Builder()
                 .url(url)
                 .addHeader("x-goog-api-key", cfg.apiKey)
+                .addHeader("Accept", "text/event-stream")
                 .post(reqBody)
                 .build()
-            val resp = client.newCall(req).execute()
-            val respText = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} $respText")
-            var content = ""
-            try {
-                val obj = JSONObject(respText)
-                val candidates = obj.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val c0 = candidates.getJSONObject(0)
-                    val ct = c0.optJSONObject("content")
-                    val parts = ct?.optJSONArray("parts")
-                    if (parts != null && parts.length() > 0) {
-                        content = parts.getJSONObject(0).optString("text", "")
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val respText = resp.body?.string().orEmpty()
+                    val lower = respText.lowercase()
+                    if (lower.contains("user location is not supported")) {
+                        try { FileLogger.e(TAG, "Gemini 请求因地区策略被阻止：${respText.take(800)}") } catch (_: Exception) {}
+                    }
+                    throw IllegalStateException("Request failed: ${resp.code} $respText")
+                }
+                val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
+                val reader = responseBody.charStream().buffered()
+                val aggregated = StringBuilder()
+                val rawEvents = StringBuilder()
+                var sawData = false
+                var lastCumulative = ""
+                reader.use { buffered ->
+                    while (true) {
+                        val line = buffered.readLine() ?: break
+                        if (line.isEmpty()) continue
+                        if (!line.startsWith("data:")) continue
+                        val data = line.substring(5).trim()
+                        if (data.isEmpty()) continue
+                        if (data == "[DONE]") break
+                        sawData = true
+                        rawEvents.append(data).append('\n')
+                        val obj = try { JSONObject(data) } catch (_: Exception) { continue }
+                        if (obj.has("error")) {
+                            throw IllegalStateException("Request failed: ${obj.optJSONObject("error") ?: obj.optString("error")}")
+                        }
+                        var chunkText = ""
+                        val candidates = obj.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val c0 = candidates.optJSONObject(0)
+                            val ct = c0?.optJSONObject("content")
+                            val parts = ct?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                val sb = StringBuilder()
+                                for (i in 0 until parts.length()) {
+                                    val p = parts.optJSONObject(i) ?: continue
+                                    val t = p.optString("text")
+                                    if (t.isNotBlank()) sb.append(t)
+                                }
+                                chunkText = sb.toString()
+                            }
+                        }
+                        if (chunkText.isBlank()) continue
+                        val delta = if (chunkText.startsWith(lastCumulative)) {
+                            chunkText.substring(lastCumulative.length)
+                        } else {
+                            chunkText
+                        }
+                        if (delta.isNotBlank()) {
+                            aggregated.append(delta)
+                        }
+                        lastCumulative = if (chunkText.startsWith(lastCumulative)) {
+                            chunkText
+                        } else {
+                            lastCumulative + chunkText
+                        }
                     }
                 }
-            } catch (_: Exception) {}
-            if (content.isBlank()) throw IllegalStateException("Empty content: $respText")
-            Pair(cfg.model, content)
+                if (!sawData) {
+                    throw IllegalStateException("No SSE data received: ${rawEvents.take(800)}")
+                }
+                val content = aggregated.toString().trim()
+                if (content.isBlank()) {
+                    throw IllegalStateException("Empty content: ${rawEvents.take(2000)}")
+                }
+                Pair(cfg.model, content)
+            }
         } else {
             val chatPath = cfg.chatPath?.trim().takeIf { !it.isNullOrEmpty() } ?: "/v1/chat/completions"
             val url = resolveEndpointUrl(baseUrl, chatPath).toString()
@@ -277,7 +333,7 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
             val body = JSONObject()
                 .put("messages", messages)
                 .put("temperature", 0.2)
-                .put("stream", false)
+                .put("stream", true)
             if (!isAzure) {
                 body.put("model", cfg.model)
             }
@@ -286,27 +342,55 @@ class WeeklySummaryWorker(appContext: Context, params: WorkerParameters) :
                 .url(url)
                 .post(reqBody)
                 .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "text/event-stream")
             if (isAzure) {
                 reqBuilder.addHeader("api-key", cfg.apiKey)
             } else {
                 reqBuilder.addHeader("Authorization", "Bearer ${cfg.apiKey}")
             }
             val req = reqBuilder.build()
-            val resp = client.newCall(req).execute()
-            val respText = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) throw IllegalStateException("Request failed: ${resp.code} $respText")
-            var content = ""
-            try {
-                val obj = JSONObject(respText)
-                val choices = obj.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val c0 = choices.getJSONObject(0)
-                    val msg = c0.optJSONObject("message")
-                    content = msg?.optString("content", "") ?: ""
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val respText = resp.body?.string().orEmpty()
+                    throw IllegalStateException("Request failed: ${resp.code} $respText")
                 }
-            } catch (_: Exception) {}
-            if (content.isBlank()) throw IllegalStateException("Empty content: $respText")
-            Pair(cfg.model, content)
+                val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
+                val reader = responseBody.charStream().buffered()
+                val aggregated = StringBuilder()
+                val rawEvents = StringBuilder()
+                var sawData = false
+                reader.use { buffered ->
+                    while (true) {
+                        val line = buffered.readLine() ?: break
+                        if (line.isEmpty()) continue
+                        if (!line.startsWith("data:")) continue
+                        val data = line.substring(5).trim()
+                        if (data.isEmpty()) continue
+                        if (data == "[DONE]") break
+                        sawData = true
+                        rawEvents.append(data).append('\n')
+                        val obj = try { JSONObject(data) } catch (_: Exception) { continue }
+                        val err = obj.optJSONObject("error")
+                        if (err != null) {
+                            throw IllegalStateException("Request failed: $err")
+                        }
+                        val choices = obj.optJSONArray("choices") ?: continue
+                        if (choices.length() == 0) continue
+                        val c0 = choices.optJSONObject(0) ?: continue
+                        val delta = c0.optJSONObject("delta") ?: continue
+                        val piece = delta.optString("content")
+                        if (piece.isNotBlank()) aggregated.append(piece)
+                    }
+                }
+                if (!sawData) {
+                    throw IllegalStateException("No SSE data received: ${rawEvents.take(800)}")
+                }
+                val content = aggregated.toString().trim()
+                if (content.isBlank()) {
+                    throw IllegalStateException("Empty content: ${rawEvents.take(2000)}")
+                }
+                Pair(cfg.model, content)
+            }
         }
     }
 
