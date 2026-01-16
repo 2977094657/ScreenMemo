@@ -1632,6 +1632,42 @@ abstract class AppLocalizations {
   /// **'Current: {seconds}s (minimum 1s)'**
   String aiRequestIntervalDesc(Object seconds);
 
+  /// No description provided for @dynamicMergeMaxSpanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic merge: max span (minutes)'**
+  String get dynamicMergeMaxSpanTitle;
+
+  /// No description provided for @dynamicMergeMaxSpanDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {minutes} minutes (0 = unlimited)'**
+  String dynamicMergeMaxSpanDesc(Object minutes);
+
+  /// No description provided for @dynamicMergeMaxGapTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic merge: max gap (minutes)'**
+  String get dynamicMergeMaxGapTitle;
+
+  /// No description provided for @dynamicMergeMaxGapDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {minutes} minutes (0 = unlimited)'**
+  String dynamicMergeMaxGapDesc(Object minutes);
+
+  /// No description provided for @dynamicMergeLimitInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an integer >= 0 (0 = unlimited)'**
+  String get dynamicMergeLimitInputHint;
+
+  /// No description provided for @dynamicMergeLimitInvalidError.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid integer >= 0'**
+  String get dynamicMergeLimitInvalidError;
+
   /// No description provided for @dailyReminderTimeTitle.
   ///
   /// In en, this message translates to:

@@ -853,6 +853,28 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxSpanTitle => '동적 병합: 전체 범위 상한(분)';
+
+  @override
+  String dynamicMergeMaxSpanDesc(Object minutes) {
+    return '현재: $minutes분(0 = 제한 없음)';
+  }
+
+  @override
+  String get dynamicMergeMaxGapTitle => '동적 병합: 이벤트 간 최대 간격(분)';
+
+  @override
+  String dynamicMergeMaxGapDesc(Object minutes) {
+    return '현재: $minutes분(0 = 제한 없음)';
+  }
+
+  @override
+  String get dynamicMergeLimitInputHint => '0 이상의 정수를 입력하세요(0 = 제한 없음)';
+
+  @override
+  String get dynamicMergeLimitInvalidError => '0 이상의 유효한 정수를 입력하세요';
+
+  @override
   String get dailyReminderTimeTitle => '일일 요약 알림 시간';
 
   @override

@@ -444,6 +444,22 @@
       "seconds": {}
     }
   },
+  "dynamicMergeMaxSpanTitle": "동적 병합: 전체 범위 상한(분)",
+  "dynamicMergeMaxSpanDesc": "현재: {minutes}분(0 = 제한 없음)",
+  "@dynamicMergeMaxSpanDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeMaxGapTitle": "동적 병합: 이벤트 간 최대 간격(분)",
+  "dynamicMergeMaxGapDesc": "현재: {minutes}분(0 = 제한 없음)",
+  "@dynamicMergeMaxGapDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeLimitInputHint": "0 이상의 정수를 입력하세요(0 = 제한 없음)",
+  "dynamicMergeLimitInvalidError": "0 이상의 유효한 정수를 입력하세요",
   "dailyReminderTimeTitle": "일일 요약 알림 시간",
   "currentTimeLabel": "현재:",
   "testNotificationTitle": "알림 테스트",

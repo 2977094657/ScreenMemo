@@ -1689,6 +1689,56 @@ object SegmentSummaryManager {
                 return
             }
 
+        // 动态合并硬限制：若触发限制则直接跳过 AI 判定与合并，并在 UI 展示原因。
+        if (!forceMerge) {
+            val maxSpanSecRaw = try {
+                UserSettingsStorage.getInt(
+                    ctx,
+                    UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
+                    3 * 3600
+                )
+            } catch (_: Exception) { 3 * 3600 }
+            val maxGapSecRaw = try {
+                UserSettingsStorage.getInt(
+                    ctx,
+                    UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
+                    3600
+                )
+            } catch (_: Exception) { 3600 }
+            val maxSpanSec = if (maxSpanSecRaw < 0) 0 else maxSpanSecRaw
+            val maxGapSec = if (maxGapSecRaw < 0) 0 else maxGapSecRaw
+            val mergedSpanMs = kotlin.math.max(0L, cur.endTime - prev.startTime)
+            val mergedGapMs = kotlin.math.max(0L, cur.startTime - prev.endTime)
+            val spanExceeded = maxSpanSec > 0 && mergedSpanMs > maxSpanSec.toLong() * 1000L
+            val gapExceeded = maxGapSec > 0 && mergedGapMs > maxGapSec.toLong() * 1000L
+            if (spanExceeded || gapExceeded) {
+                val spanMin = mergedSpanMs / 60000L
+                val gapMin = mergedGapMs / 60000L
+                val details = ArrayList<String>()
+                if (spanExceeded) {
+                    val limitMin = maxSpanSec.toLong() / 60L
+                    details.add("触发整体跨度限制：${spanMin}分钟 > ${limitMin}分钟")
+                }
+                if (gapExceeded) {
+                    val limitMin = maxGapSec.toLong() / 60L
+                    details.add("触发时间间隔限制：${gapMin}分钟 > ${limitMin}分钟")
+                }
+                val reason = details.joinToString("；") + "，系统禁止合并"
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = prev.id,
+                        decisionJson = null,
+                        reason = reason,
+                        forced = false
+                    )
+                } catch (_: Exception) {}
+                SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                return
+            }
+        }
+
         // 读取上一个段的样本与文本（用于"已引用图片数"判断）
         val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
         try { FileLogger.i(TAG, "merge: prev=${prev.id} A=${prevSamples.size} imgs, cur=${cur.id} B=${curSamples.size} imgs") } catch (_: Exception) {}

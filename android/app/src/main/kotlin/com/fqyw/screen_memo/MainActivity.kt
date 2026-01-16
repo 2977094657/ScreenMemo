@@ -304,6 +304,57 @@ class MainActivity : FlutterActivity() {
                         result.error("read_failed", e.message, null)
                     }
                 }
+                "setDynamicMergeLimits" -> {
+                    try {
+                        val spanRaw = call.argument<Int>("maxSpanSec") ?: (3 * 3600)
+                        val gapRaw = call.argument<Int>("maxGapSec") ?: 3600
+                        val span = when {
+                            spanRaw < 0 -> 0
+                            spanRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
+                            else -> spanRaw
+                        }
+                        val gap = when {
+                            gapRaw < 0 -> 0
+                            gapRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
+                            else -> gapRaw
+                        }
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
+                            span
+                        )
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
+                            gap
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
+                    }
+                }
+                "getDynamicMergeLimits" -> {
+                    try {
+                        val span = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
+                            3 * 3600
+                        ).let { if (it < 0) 0 else it }
+                        val gap = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
+                            3600
+                        ).let { if (it < 0) 0 else it }
+                        result.success(
+                            mapOf(
+                                "maxSpanSec" to span,
+                                "maxGapSec" to gap
+                            )
+                        )
+                    } catch (e: Exception) {
+                        result.error("read_failed", e.message, null)
+                    }
+                }
                 "setAiRequestIntervalSec" -> {
                     try {
                         val secRaw = call.argument<Int>("seconds") ?: 3

@@ -842,6 +842,28 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxSpanTitle => '动态合并：整体跨度上限（分钟）';
+
+  @override
+  String dynamicMergeMaxSpanDesc(Object minutes) {
+    return '当前：$minutes 分钟（0 表示不限制）';
+  }
+
+  @override
+  String get dynamicMergeMaxGapTitle => '动态合并：两事件最大间隔（分钟）';
+
+  @override
+  String dynamicMergeMaxGapDesc(Object minutes) {
+    return '当前：$minutes 分钟（0 表示不限制）';
+  }
+
+  @override
+  String get dynamicMergeLimitInputHint => '请输入 >= 0 的整数（0 表示不限制）';
+
+  @override
+  String get dynamicMergeLimitInvalidError => '请输入 >= 0 的有效整数';
+
+  @override
   String get dailyReminderTimeTitle => '每日总结提醒时间';
 
   @override

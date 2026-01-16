@@ -882,6 +882,30 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxSpanTitle => 'Dynamic merge: max span (minutes)';
+
+  @override
+  String dynamicMergeMaxSpanDesc(Object minutes) {
+    return 'Current: $minutes minutes (0 = unlimited)';
+  }
+
+  @override
+  String get dynamicMergeMaxGapTitle => 'Dynamic merge: max gap (minutes)';
+
+  @override
+  String dynamicMergeMaxGapDesc(Object minutes) {
+    return 'Current: $minutes minutes (0 = unlimited)';
+  }
+
+  @override
+  String get dynamicMergeLimitInputHint =>
+      'Enter an integer >= 0 (0 = unlimited)';
+
+  @override
+  String get dynamicMergeLimitInvalidError =>
+      'Please enter a valid integer >= 0';
+
+  @override
   String get dailyReminderTimeTitle => 'Daily summary reminder time';
 
   @override

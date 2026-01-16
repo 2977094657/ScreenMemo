@@ -21,6 +21,9 @@ class UserSettingKeys {
   static const String segmentSampleIntervalSec = 'segment_sample_interval_sec';
   static const String segmentDurationSec = 'segment_duration_sec';
   static const String aiMinRequestIntervalSec = 'ai_min_request_interval_sec';
+  // 动态合并（仅自动合并；强制合并不受限）
+  static const String mergeDynamicMaxSpanSec = 'merge_dynamic_max_span_sec';
+  static const String mergeDynamicMaxGapSec = 'merge_dynamic_max_gap_sec';
 
   // 每日总结提醒
   static const String dailyNotifyEnabled = 'daily_notify_enabled';

@@ -97,6 +97,9 @@ class _SettingsPageState extends State<SettingsPage>
   int _segmentDurationMin = 5; // 以分钟显示，最小1分钟
   // AI 请求最小间隔（秒）
   int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
+  // 动态合并限制（分钟；0 表示不限制）
+  int _dynamicMergeMaxSpanMin = 180; // 默认 3h
+  int _dynamicMergeMaxGapMin = 60; // 默认 1h
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
   int _imageQuality = 90; // 备用项，已被"目标大小"策略覆盖
@@ -202,6 +205,7 @@ class _SettingsPageState extends State<SettingsPage>
         break;
       case _SettingsSubPage.segmentSummary:
         unawaited(_loadSegmentSettings());
+        unawaited(_loadDynamicMergeLimits());
         unawaited(_loadAiRequestInterval());
         break;
       case _SettingsSubPage.dailyReminder:
@@ -1861,6 +1865,8 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 _buildSegmentSampleItem(context),
                 _buildSegmentDurationItem(context),
+                _buildDynamicMergeMaxSpanItem(context),
+                _buildDynamicMergeMaxGapItem(context),
                 _buildAiRequestIntervalItem(context),
               ],
             ),
@@ -2116,6 +2122,137 @@ class _SettingsPageState extends State<SettingsPage>
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
             onPressed: _showSegmentDurationDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== 动态合并限制 UI =====
+  Widget _buildDynamicMergeMaxSpanItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.merge_type_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context).dynamicMergeMaxSpanTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).dynamicMergeMaxSpanDesc(_dynamicMergeMaxSpanMin),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showDynamicMergeMaxSpanDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicMergeMaxGapItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.more_time_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context).dynamicMergeMaxGapTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).dynamicMergeMaxGapDesc(_dynamicMergeMaxGapMin),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showDynamicMergeMaxGapDialog,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
@@ -2456,6 +2593,88 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  void _showDynamicMergeMaxSpanDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _dynamicMergeMaxSpanMin.toString(),
+    );
+    showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).dynamicMergeMaxSpanTitle,
+      content: _numberField(
+        controller,
+        hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final parsed = int.tryParse(controller.text.trim());
+            if (parsed == null || parsed < 0) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).dynamicMergeLimitInvalidError,
+              );
+              return;
+            }
+            final v = parsed.clamp(0, 7 * 24 * 60);
+            final ok = await _saveDynamicMergeLimits(
+              maxSpanMin: v,
+              maxGapMin: _dynamicMergeMaxGapMin,
+            );
+            if (ctx.mounted && ok) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(ctx, AppLocalizations.of(ctx).saveSuccess);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showDynamicMergeMaxGapDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _dynamicMergeMaxGapMin.toString(),
+    );
+    showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).dynamicMergeMaxGapTitle,
+      content: _numberField(
+        controller,
+        hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final parsed = int.tryParse(controller.text.trim());
+            if (parsed == null || parsed < 0) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).dynamicMergeLimitInvalidError,
+              );
+              return;
+            }
+            final v = parsed.clamp(0, 7 * 24 * 60);
+            final ok = await _saveDynamicMergeLimits(
+              maxSpanMin: _dynamicMergeMaxSpanMin,
+              maxGapMin: v,
+            );
+            if (ctx.mounted && ok) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(ctx, AppLocalizations.of(ctx).saveSuccess);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   Future<void> _loadSegmentSettings() async {
     try {
       const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
@@ -2473,6 +2692,26 @@ class _SettingsPageState extends State<SettingsPage>
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _loadDynamicMergeLimits() async {
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      final res = await platform.invokeMethod('getDynamicMergeLimits');
+      final map = Map<String, dynamic>.from(res ?? {});
+      final int spanSec = (map['maxSpanSec'] as int?) ?? 3 * 3600;
+      final int gapSec = (map['maxGapSec'] as int?) ?? 3600;
+      if (mounted) {
+        setState(() {
+          _dynamicMergeMaxSpanMin =
+              ((spanSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
+          _dynamicMergeMaxGapMin =
+              ((gapSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
+        });
+      }
+    } catch (_) {
+      // keep defaults
+    }
   }
 
   // 读取AI请求最小间隔（秒），默认3，最低1
@@ -2649,6 +2888,33 @@ class _SettingsPageState extends State<SettingsPage>
       try {
         await FlutterLogger.nativeError('Settings', 'setSegmentSettings 失败：$e');
       } catch (_) {}
+      return false;
+    }
+  }
+
+  Future<bool> _saveDynamicMergeLimits({
+    required int maxSpanMin,
+    required int maxGapMin,
+  }) async {
+    final int spanMinClamped = maxSpanMin < 0 ? 0 : maxSpanMin;
+    final int gapMinClamped = maxGapMin < 0 ? 0 : maxGapMin;
+    final int spanSec = spanMinClamped * 60;
+    final int gapSec = gapMinClamped * 60;
+    try {
+      const platform = MethodChannel('com.fqyw.screen_memo/accessibility');
+      await platform.invokeMethod('setDynamicMergeLimits', {
+        'maxSpanSec': spanSec,
+        'maxGapSec': gapSec,
+      });
+      if (mounted) {
+        setState(() {
+          _dynamicMergeMaxSpanMin = spanMinClamped;
+          _dynamicMergeMaxGapMin = gapMinClamped;
+        });
+      }
+      return true;
+    } catch (e) {
+      if (mounted) UINotifier.error(context, '保存失败: ' + e.toString());
       return false;
     }
   }

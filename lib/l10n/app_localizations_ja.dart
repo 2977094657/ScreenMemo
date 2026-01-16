@@ -856,6 +856,28 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxSpanTitle => '動的マージ：最大スパン (分)';
+
+  @override
+  String dynamicMergeMaxSpanDesc(Object minutes) {
+    return '現在: $minutes 分 (0 = 無制限)';
+  }
+
+  @override
+  String get dynamicMergeMaxGapTitle => '動的マージ：最大間隔 (分)';
+
+  @override
+  String dynamicMergeMaxGapDesc(Object minutes) {
+    return '現在: $minutes 分 (0 = 無制限)';
+  }
+
+  @override
+  String get dynamicMergeLimitInputHint => '0 以上の整数を入力（0 = 無制限）';
+
+  @override
+  String get dynamicMergeLimitInvalidError => '0 以上の有効な整数を入力してください';
+
+  @override
   String get dailyReminderTimeTitle => '毎日のサマリー通知時刻';
 
   @override

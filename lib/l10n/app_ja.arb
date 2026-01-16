@@ -444,6 +444,22 @@
       "seconds": {}
     }
   },
+  "dynamicMergeMaxSpanTitle": "動的マージ：最大スパン (分)",
+  "dynamicMergeMaxSpanDesc": "現在: {minutes} 分 (0 = 無制限)",
+  "@dynamicMergeMaxSpanDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeMaxGapTitle": "動的マージ：最大間隔 (分)",
+  "dynamicMergeMaxGapDesc": "現在: {minutes} 分 (0 = 無制限)",
+  "@dynamicMergeMaxGapDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeLimitInputHint": "0 以上の整数を入力（0 = 無制限）",
+  "dynamicMergeLimitInvalidError": "0 以上の有効な整数を入力してください",
   "dailyReminderTimeTitle": "毎日のサマリー通知時刻",
   "currentTimeLabel": "現在：",
   "testNotificationTitle": "通知をテスト",

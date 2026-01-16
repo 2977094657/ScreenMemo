@@ -466,6 +466,22 @@
       "seconds": {}
     }
   },
+  "dynamicMergeMaxSpanTitle": "动态合并：整体跨度上限（分钟）",
+  "dynamicMergeMaxSpanDesc": "当前：{minutes} 分钟（0 表示不限制）",
+  "@dynamicMergeMaxSpanDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeMaxGapTitle": "动态合并：两事件最大间隔（分钟）",
+  "dynamicMergeMaxGapDesc": "当前：{minutes} 分钟（0 表示不限制）",
+  "@dynamicMergeMaxGapDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeLimitInputHint": "请输入 >= 0 的整数（0 表示不限制）",
+  "dynamicMergeLimitInvalidError": "请输入 >= 0 的有效整数",
 
   "dailyReminderTimeTitle": "每日总结提醒时间",
   "currentTimeLabel": "当前：",

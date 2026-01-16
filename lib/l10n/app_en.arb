@@ -466,6 +466,22 @@
       "seconds": {}
     }
   },
+  "dynamicMergeMaxSpanTitle": "Dynamic merge: max span (minutes)",
+  "dynamicMergeMaxSpanDesc": "Current: {minutes} minutes (0 = unlimited)",
+  "@dynamicMergeMaxSpanDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeMaxGapTitle": "Dynamic merge: max gap (minutes)",
+  "dynamicMergeMaxGapDesc": "Current: {minutes} minutes (0 = unlimited)",
+  "@dynamicMergeMaxGapDesc": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "dynamicMergeLimitInputHint": "Enter an integer >= 0 (0 = unlimited)",
+  "dynamicMergeLimitInvalidError": "Please enter a valid integer >= 0",
 
   "dailyReminderTimeTitle": "Daily summary reminder time",
   "currentTimeLabel": "Current: ",
