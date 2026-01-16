@@ -2082,7 +2082,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get deepThinkingLabel => 'Deep thinking';
+  String get deepThinkingLabel => 'Thinking';
 
   @override
   String get thinkingInProgress => 'Thinking…';

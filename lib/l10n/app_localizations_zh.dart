@@ -2016,7 +2016,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get deepThinkingLabel => '深度思考';
+  String get deepThinkingLabel => '思考中';
 
   @override
   String get thinkingInProgress => '思考中…';

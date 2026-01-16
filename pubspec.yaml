@@ -73,6 +73,7 @@ dependencies:
   # HTTP 网络请求
   http: ^1.2.2
   flutter_svg: ^2.0.10+1
+  shimmer: ^3.0.0
 
   # flutter_secure_storage 已被 SecureStorageService 替代
   # flutter_secure_storage: ^9.2.4

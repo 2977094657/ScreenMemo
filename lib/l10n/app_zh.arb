@@ -1287,7 +1287,7 @@
   "providerLabel": "提供商",
   "sendMessageToModelPlaceholder": "给 {model} 发送消息",
   "@sendMessageToModelPlaceholder": { "placeholders": { "model": {} } },
-  "deepThinkingLabel": "深度思考",
+  "deepThinkingLabel": "思考中",
   "thinkingInProgress": "思考中…",
   "requestStoppedInfo": "已停止请求",
   "reasoningLabel": "Reasoning:",

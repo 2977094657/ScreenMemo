@@ -3717,7 +3717,7 @@ abstract class AppLocalizations {
   /// No description provided for @deepThinkingLabel.
   ///
   /// In en, this message translates to:
-  /// **'Deep thinking'**
+  /// **'Thinking'**
   String get deepThinkingLabel;
 
   /// No description provided for @thinkingInProgress.

@@ -1048,7 +1048,7 @@
   "providerLabel": "Provider",
   "sendMessageToModelPlaceholder": "Send a message to {model}",
   "@sendMessageToModelPlaceholder": { "placeholders": { "model": {} } },
-  "deepThinkingLabel": "Deep thinking",
+  "deepThinkingLabel": "Thinking",
   "thinkingInProgress": "Thinking…",
   "requestStoppedInfo": "Request stopped",
   "reasoningLabel": "Reasoning:",

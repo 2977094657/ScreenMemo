@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../services/ai_settings_service.dart';
@@ -18,7 +19,6 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/ai_providers_service.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/markdown_math.dart';
-import '../widgets/reasoning_card.dart';
 import '../widgets/app_side_drawer.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../services/intent_analysis_service.dart';
@@ -27,6 +27,11 @@ import '../services/prompt_budget.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
 import '../widgets/chat_context_sheet.dart';
+
+// Thinking/Reasoning content should be visually distinct from the final answer.
+const Color _thinkingTextColor = Color(0xFF71717A);
+// Warm "platinum/white-gold" shimmer highlight used while thinking.
+const Color _thinkingShimmerHighlightColor = Color(0xFFFFFBEB);
 
 enum _ClarifyReason { missingTime, tooBroad }
 
@@ -72,6 +77,52 @@ class _ClarifyState {
   final List<_ProbeCandidate> candidates = <_ProbeCandidate>[];
 }
 
+enum _ThinkingEventType { status, intent, tools }
+
+class _ThinkingToolChip {
+  _ThinkingToolChip({
+    required this.callId,
+    required this.toolName,
+    required this.label,
+    this.active = true,
+    this.resultSummary,
+  });
+
+  final String callId;
+  final String toolName;
+  final String label;
+  bool active;
+  String? resultSummary;
+}
+
+class _ThinkingEvent {
+  _ThinkingEvent({
+    required this.type,
+    required this.title,
+    this.subtitle,
+    this.icon,
+    this.active = false,
+    this.tools = const <_ThinkingToolChip>[],
+  });
+
+  final _ThinkingEventType type;
+  String title;
+  String? subtitle;
+  IconData? icon;
+  bool active; // shimmer when active=true
+  final List<_ThinkingToolChip> tools;
+}
+
+class _ThinkingBlock {
+  _ThinkingBlock({required this.createdAt});
+
+  final DateTime createdAt;
+  DateTime? finishedAt;
+  final List<_ThinkingEvent> events = <_ThinkingEvent>[];
+
+  bool get isLoading => finishedAt == null;
+}
+
 /// AI 设置与测试页面：配置 OpenAI 兼容接口并进行多轮聊天测试
 class AISettingsPage extends StatefulWidget {
   final bool embedded;
@@ -113,6 +164,9 @@ class _AISettingsPageState extends State<AISettingsPage>
 
   Timer? _inFlightSaveTimer;
   bool _inFlightHistoryDirty = false;
+  // Serialize history persistence so a slow in-flight save can't overwrite the
+  // final post-processed content after streaming finishes.
+  Future<void> _chatHistorySaveChain = Future<void>.value();
 
   List<AIMessage> _messages = <AIMessage>[];
   bool _loading = true;
@@ -139,6 +193,13 @@ class _AISettingsPageState extends State<AISettingsPage>
   int? _currentAssistantIndex;
   // 是否在下一条 content token 到来时，清空占位内容（用于"阶段状态" -> 最终回答的替换）
   bool _replaceAssistantContentOnNextToken = false;
+  // 每条助手消息的思考块（索引 -> blocks）
+  final Map<int, List<_ThinkingBlock>> _thinkingBlocksByIndex =
+      <int, List<_ThinkingBlock>>{};
+  // 每条助手消息的正文分段（用于 思考块/正文 交替展示）
+  final Map<int, List<String>> _contentSegmentsByIndex = <int, List<String>>{};
+  // 标记下一次 content 增量是否需要开启一个新分段
+  final Map<int, bool> _nextContentStartsNewSegmentByIndex = <int, bool>{};
   // 每条助手消息附带的证据图片（索引 -> 附件列表）
   final Map<int, List<EvidenceImageAttachment>> _attachmentsByIndex =
       <int, List<EvidenceImageAttachment>>{};
@@ -318,6 +379,9 @@ class _AISettingsPageState extends State<AISettingsPage>
             _attachmentsByIndex.clear();
             _reasoningByIndex.clear();
             _reasoningDurationByIndex.clear();
+            _thinkingBlocksByIndex.clear();
+            _contentSegmentsByIndex.clear();
+            _nextContentStartsNewSegmentByIndex.clear();
             _currentAssistantIndex = null;
             _inStreaming = false;
             _clarifyState = null;
@@ -404,6 +468,7 @@ class _AISettingsPageState extends State<AISettingsPage>
       // 回填历史消息的深度思考内容与耗时（索引映射到消息）
       final Map<int, String> rb = <int, String>{};
       final Map<int, Duration> rd = <int, Duration>{};
+      final Map<int, List<_ThinkingBlock>> tb = <int, List<_ThinkingBlock>>{};
       for (int i = 0; i < history.length; i++) {
         final m = history[i];
         if (m.role != 'user') {
@@ -411,6 +476,13 @@ class _AISettingsPageState extends State<AISettingsPage>
           if (rc != null && rc.trim().isNotEmpty) rb[i] = rc;
           final Duration? dur = m.reasoningDuration;
           if (dur != null && dur.inMilliseconds > 0) rd[i] = dur;
+        }
+
+        // Restore chat-bubble thinking timeline blocks/events (if available).
+        final String? uiJson = m.uiThinkingJson;
+        if (uiJson != null && uiJson.trim().isNotEmpty) {
+          final List<_ThinkingBlock> blocks = _decodeThinkingBlocks(uiJson);
+          if (blocks.isNotEmpty) tb[i] = blocks;
         }
       }
 
@@ -438,6 +510,11 @@ class _AISettingsPageState extends State<AISettingsPage>
         _attachmentsByIndex.clear();
         _evidenceResolvedByMsgKey.clear();
         _evidenceResolveFutures.clear();
+        _thinkingBlocksByIndex
+          ..clear()
+          ..addAll(tb);
+        _contentSegmentsByIndex.clear();
+        _nextContentStartsNewSegmentByIndex.clear();
         _reasoningByIndex
           ..clear()
           ..addAll(rb);
@@ -1033,6 +1110,17 @@ class _AISettingsPageState extends State<AISettingsPage>
     _dotsTimer = null;
   }
 
+  Future<void> _enqueueChatHistorySave(List<AIMessage> messages) {
+    final Future<void> next = _chatHistorySaveChain.then((_) async {
+      try {
+        await _settings.saveChatHistoryActive(messages);
+      } catch (_) {}
+    });
+    // Keep the chain alive even if a write fails.
+    _chatHistorySaveChain = next.catchError((_) {});
+    return _chatHistorySaveChain;
+  }
+
   void _markInFlightHistoryDirty() {
     if (!_inStreaming) return;
     _inFlightHistoryDirty = true;
@@ -1048,7 +1136,7 @@ class _AISettingsPageState extends State<AISettingsPage>
           final List<AIMessage> merged = _mergeReasoningForPersistence(
             List<AIMessage>.from(_messages),
           );
-          await _settings.saveChatHistoryActive(merged);
+          await _enqueueChatHistorySave(merged);
         } catch (_) {}
         if (_inStreaming && _inFlightHistoryDirty) {
           _markInFlightHistoryDirty();
@@ -1097,6 +1185,196 @@ class _AISettingsPageState extends State<AISettingsPage>
     _scheduleAutoScroll();
     _scheduleReasoningPreviewScroll();
     _markInFlightHistoryDirty();
+  }
+
+  _ThinkingEvent? _findEvent(
+    _ThinkingBlock block,
+    _ThinkingEventType type,
+    String title,
+  ) {
+    for (final e in block.events) {
+      if (e.type == type && e.title == title) return e;
+    }
+    return null;
+  }
+
+  _ThinkingEvent _upsertEvent(
+    _ThinkingBlock block, {
+    required _ThinkingEventType type,
+    required String title,
+    IconData? icon,
+    bool active = false,
+    String? subtitle,
+    List<_ThinkingToolChip>? tools,
+  }) {
+    final _ThinkingEvent? existing = _findEvent(block, type, title);
+    if (existing != null) {
+      existing.icon = icon ?? existing.icon;
+      existing.active = active;
+      existing.subtitle = subtitle;
+      return existing;
+    }
+    final _ThinkingEvent created = _ThinkingEvent(
+      type: type,
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      active: active,
+      tools: tools ?? const <_ThinkingToolChip>[],
+    );
+    block.events.add(created);
+    return created;
+  }
+
+  String _formatIntentSubtitle(IntentResult intent) {
+    // Only show the intent summary; hide date/time range noise.
+    return intent.intentSummary.trim();
+  }
+
+  String _truncateConversationTitle(String text) {
+    final String t = text.trim();
+    if (t.isEmpty) return '';
+    if (t.length <= 30) return t;
+    return t.substring(0, 30) + '...';
+  }
+
+  void _renameActiveConversationTo(String titleSource) {
+    final String t = _truncateConversationTitle(titleSource);
+    if (t.isEmpty) return;
+    unawaited(() async {
+      try {
+        final String cid = await _settings.getActiveConversationCid();
+        if (cid.trim().isEmpty) return;
+        await _settings.renameConversation(cid.trim(), t);
+      } catch (_) {}
+    }());
+  }
+
+  void _handleAiUiEvent(int assistantIdx, Map<String, dynamic> payload) {
+    final String type = (payload['type'] as String?)?.trim() ?? '';
+    if (type.isEmpty) return;
+
+    if (type == 'tool_batch_begin') {
+      final List<dynamic> tools = (payload['tools'] as List?) ?? const [];
+      final _ThinkingBlock block = _ensureThinkingBlock(assistantIdx);
+      final String title = _isZhLocale() ? '工具调用' : 'Tools';
+      final _ThinkingEvent toolsEvent = _upsertEvent(
+        block,
+        type: _ThinkingEventType.tools,
+        title: title,
+        icon: Icons.auto_awesome_outlined,
+        tools: <_ThinkingToolChip>[],
+      );
+
+      final Set<String> seenInBatch = <String>{};
+      for (final t in tools) {
+        if (t is! Map) continue;
+        final Map<String, dynamic> m = Map<String, dynamic>.from(t);
+        final String callId = (m['call_id'] as String?)?.trim() ?? '';
+        final String toolName = (m['tool_name'] as String?)?.trim() ?? '';
+        final String label = (m['label'] as String?)?.trim() ?? toolName.trim();
+        if (callId.isEmpty || toolName.isEmpty) continue;
+        seenInBatch.add(callId);
+
+        _ThinkingToolChip? existing;
+        for (final c in toolsEvent.tools) {
+          if (c.callId == callId) {
+            existing = c;
+            break;
+          }
+        }
+        if (existing != null) {
+          existing.active = true;
+          existing.resultSummary = null;
+        } else {
+          toolsEvent.tools.add(
+            _ThinkingToolChip(
+              callId: callId,
+              toolName: toolName,
+              label: label.isEmpty ? toolName : label,
+              active: true,
+            ),
+          );
+        }
+      }
+
+      // Only shimmer the tools that are currently in flight.
+      for (final c in toolsEvent.tools) {
+        if (!seenInBatch.contains(c.callId)) c.active = false;
+      }
+      return;
+    }
+
+    if (type == 'tool_call_end') {
+      final String callId = (payload['call_id'] as String?)?.trim() ?? '';
+      if (callId.isEmpty) return;
+      final String resultSummary =
+          (payload['result_summary'] as String?)?.trim() ?? '';
+
+      final List<_ThinkingBlock> blocks =
+          _thinkingBlocksByIndex[assistantIdx] ?? const <_ThinkingBlock>[];
+      for (int bi = blocks.length - 1; bi >= 0; bi--) {
+        final b = blocks[bi];
+        for (final e in b.events) {
+          if (e.type != _ThinkingEventType.tools) continue;
+          for (final chip in e.tools) {
+            if (chip.callId != callId) continue;
+            chip.active = false;
+            if (resultSummary.isNotEmpty) chip.resultSummary = resultSummary;
+            return;
+          }
+        }
+      }
+      return;
+    }
+  }
+
+  _ThinkingBlock _ensureThinkingBlock(int assistantIdx) {
+    final List<_ThinkingBlock> blocks = _thinkingBlocksByIndex.putIfAbsent(
+      assistantIdx,
+      () => <_ThinkingBlock>[],
+    );
+    if (blocks.isEmpty || !blocks.last.isLoading) {
+      final DateTime createdAt = DateTime.now();
+      blocks.add(_ThinkingBlock(createdAt: createdAt));
+      // 新思考块开启后，下一次 content 应当进入一个新分段（用于 思考块/正文 交替）
+      _nextContentStartsNewSegmentByIndex[assistantIdx] = true;
+    }
+    return blocks.last;
+  }
+
+  void _finishActiveThinkingBlock(int assistantIdx) {
+    final List<_ThinkingBlock>? blocks = _thinkingBlocksByIndex[assistantIdx];
+    if (blocks == null || blocks.isEmpty) return;
+    final _ThinkingBlock last = blocks.last;
+    last.finishedAt ??= DateTime.now();
+
+    // Persist a stable "thinking duration" for this assistant message.
+    // We only record it once (the first time we finish a thinking block),
+    // so later tool loops won't overwrite the original value.
+    if (_reasoningDurationByIndex[assistantIdx] == null &&
+        assistantIdx >= 0 &&
+        assistantIdx < _messages.length) {
+      final Duration d = last.finishedAt!.difference(
+        _messages[assistantIdx].createdAt,
+      );
+      if (d.inMilliseconds > 0) _reasoningDurationByIndex[assistantIdx] = d;
+    }
+  }
+
+  void _appendContentChunk(int assistantIdx, String chunk) {
+    final List<String> segs = _contentSegmentsByIndex.putIfAbsent(
+      assistantIdx,
+      () => <String>[],
+    );
+    final bool startNew =
+        (_nextContentStartsNewSegmentByIndex[assistantIdx] ?? segs.isEmpty);
+    if (startNew) {
+      segs.add(chunk);
+      _nextContentStartsNewSegmentByIndex[assistantIdx] = false;
+    } else {
+      segs[segs.length - 1] = segs.last + chunk;
+    }
   }
 
   String _stripMarkdownCodeFences(String text) {
@@ -1660,6 +1938,7 @@ class _AISettingsPageState extends State<AISettingsPage>
         // 追加一个空的助手消息作为占位，并进入"思考中"可视化状态
         final int assistantIdx = _messages.length;
         QueryContextPack? ctxPackForRewrite;
+        final DateTime createdAt = DateTime.now();
         setState(() {
           _inStreaming = true;
           _thinkingText = '';
@@ -1667,15 +1946,24 @@ class _AISettingsPageState extends State<AISettingsPage>
           // 使用当前时刻作为占位消息的 createdAt，用于正确计算思考耗时
           _messages = List<AIMessage>.from(_messages)
             ..add(
-              AIMessage(
-                role: 'assistant',
-                content: '',
-                createdAt: DateTime.now(),
-              ),
+              AIMessage(role: 'assistant', content: '', createdAt: createdAt),
             );
           _currentAssistantIndex = assistantIdx;
           _reasoningByIndex[assistantIdx] = '';
           _reasoningDurationByIndex.remove(assistantIdx);
+
+          final _ThinkingBlock first = _ThinkingBlock(createdAt: createdAt);
+          first.events.add(
+            _ThinkingEvent(
+              type: _ThinkingEventType.intent,
+              title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+              icon: Icons.search_outlined,
+              active: true,
+            ),
+          );
+          _thinkingBlocksByIndex[assistantIdx] = <_ThinkingBlock>[first];
+          _contentSegmentsByIndex[assistantIdx] = <String>[];
+          _nextContentStartsNewSegmentByIndex[assistantIdx] = true;
         });
         _markInFlightHistoryDirty();
         _startDots();
@@ -1976,6 +2264,10 @@ class _AISettingsPageState extends State<AISettingsPage>
                   createdAt: last.createdAt,
                 );
               }
+              _contentSegmentsByIndex[assistantIdx] = <String>[
+                localAssistantText,
+              ];
+              _finishActiveThinkingBlock(assistantIdx);
             });
             // 本地澄清/候选不走流式网络请求
             _stopDots();
@@ -2008,6 +2300,21 @@ class _AISettingsPageState extends State<AISettingsPage>
                     : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
               );
               setState(() {
+                final List<_ThinkingBlock>? blocks =
+                    _thinkingBlocksByIndex[assistantIdx];
+                if (blocks == null || blocks.isEmpty) return;
+                final _ThinkingBlock b = blocks.last;
+                _upsertEvent(
+                  b,
+                  type: _ThinkingEventType.intent,
+                  title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                  icon: Icons.search_outlined,
+                  active: false,
+                  subtitle: _formatIntentSubtitle(resolvedIntent),
+                );
+              });
+              _renameActiveConversationTo(resolvedIntent.intentSummary);
+              setState(() {
                 final lastIdx = _messages.length - 1;
                 final last = _messages[lastIdx];
                 if (last.role == 'assistant') {
@@ -2029,6 +2336,9 @@ class _AISettingsPageState extends State<AISettingsPage>
                 text,
                 text,
                 includeHistory: true,
+                // UI persists a post-processed version (e.g. evidence tag rewrites).
+                // Prevent service-level tail persistence from overwriting UI history.
+                persistHistoryTail: false,
                 tools: AIChatService.defaultMemoryTools(),
                 toolChoice: 'auto',
               );
@@ -2079,7 +2389,22 @@ class _AISettingsPageState extends State<AISettingsPage>
                     createdAt: last.createdAt,
                   );
                 }
+
+                final List<_ThinkingBlock>? blocks =
+                    _thinkingBlocksByIndex[assistantIdx];
+                if (blocks != null && blocks.isNotEmpty) {
+                  final _ThinkingBlock b = blocks.last;
+                  _upsertEvent(
+                    b,
+                    type: _ThinkingEventType.intent,
+                    title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                    icon: Icons.search_outlined,
+                    active: false,
+                    subtitle: _formatIntentSubtitle(resolvedIntent),
+                  );
+                }
               });
+              _renameActiveConversationTo(resolvedIntent.intentSummary);
 
               // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
               await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
@@ -2209,6 +2534,30 @@ class _AISettingsPageState extends State<AISettingsPage>
                       ? '查询本地数据库并组装上下文…'
                       : 'Querying local DB and assembling context…',
                 );
+                setState(() {
+                  final _ThinkingBlock b = _ensureThinkingBlock(assistantIdx);
+                  final DateTime ds = DateTime.fromMillisecondsSinceEpoch(
+                    preloadStartMs,
+                  );
+                  final DateTime de = DateTime.fromMillisecondsSinceEpoch(
+                    preloadEndMs,
+                  );
+                  String two(int v) => v.toString().padLeft(2, '0');
+                  String ymd(DateTime d) =>
+                      '${d.year}-${two(d.month)}-${two(d.day)}';
+                  String hm(DateTime d) => '${two(d.hour)}:${two(d.minute)}';
+                  String dt(DateTime d) => '${ymd(d)} ${hm(d)}';
+                  _upsertEvent(
+                    b,
+                    type: _ThinkingEventType.status,
+                    title: _isZhLocale() ? '搜索' : 'Search',
+                    icon: Icons.manage_search_outlined,
+                    active: true,
+                    subtitle: _isZhLocale()
+                        ? '${dt(ds)} 至 ${dt(de)} 的事件'
+                        : '${dt(ds)} to ${dt(de)}',
+                  );
+                });
                 final Stopwatch swCtx = Stopwatch()..start();
                 ctxPack = await QueryContextService.instance.buildContext(
                   startMs: preloadStartMs,
@@ -2225,6 +2574,17 @@ class _AISettingsPageState extends State<AISettingsPage>
                       ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
                       : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
                 );
+                setState(() {
+                  final List<_ThinkingBlock>? blocks =
+                      _thinkingBlocksByIndex[assistantIdx];
+                  if (blocks == null || blocks.isEmpty) return;
+                  for (final e in blocks.last.events) {
+                    if (e.type == _ThinkingEventType.status &&
+                        e.title == (_isZhLocale() ? '搜索' : 'Search')) {
+                      e.active = false;
+                    }
+                  }
+                });
               }
               await FlutterLogger.nativeInfo(
                 'ChatFlow',
@@ -2313,6 +2673,9 @@ class _AISettingsPageState extends State<AISettingsPage>
                 finalQuery,
                 includeHistory: resolvedIntent.skipContext,
                 extraSystemMessages: extraSystemMessages,
+                // UI persists a post-processed version (e.g. evidence tag rewrites).
+                // Prevent service-level tail persistence from overwriting UI history.
+                persistHistoryTail: false,
                 tools: chatTools,
                 toolChoice: 'auto',
                 forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
@@ -2323,19 +2686,25 @@ class _AISettingsPageState extends State<AISettingsPage>
           if (session != null) {
             await for (final AIStreamEvent evt in session!.stream) {
               if (!mounted) return;
-              // 优先消费"思考内容"
-              if (evt.kind == 'reasoning') {
-                setState(() {
-                  _thinkingText += evt.data;
-                  final idx = _currentAssistantIndex;
-                  if (idx != null) {
-                    _reasoningByIndex[idx] =
-                        (_reasoningByIndex[idx] ?? '') + evt.data;
+              final int? idx = _currentAssistantIndex;
+
+              // UI 事件（工具调用等）：不作为正文输出，单独驱动“思考块”渲染。
+              if (evt.kind == 'ui') {
+                if (idx != null) {
+                  final Map<String, dynamic>? payload = _tryParseJsonMap(
+                    evt.data,
+                  );
+                  if (payload != null) {
+                    setState(() => _handleAiUiEvent(idx, payload));
+                    _scheduleAutoScroll();
+                    _markInFlightHistoryDirty();
                   }
-                });
-                _scheduleAutoScroll();
-                _scheduleReasoningPreviewScroll();
-                _markInFlightHistoryDirty();
+                }
+                continue;
+              }
+
+              // 禁止将模型 reasoning / 过程性文本放入“思考块”或正文（只展示结构化事件）。
+              if (evt.kind == 'reasoning') {
                 continue;
               }
               // 正文增量（首 token 到来时先清空阶段状态，再开始写入最终答案）
@@ -2347,10 +2716,6 @@ class _AISettingsPageState extends State<AISettingsPage>
                       ? ''
                       : last.content;
                   String incoming = evt.data;
-                  // 在首个 token 写入前插入"已复用上一轮上下文"提示（仅一次）
-                  if (_replaceAssistantContentOnNextToken && reuse) {
-                    incoming = '（已复用上一轮上下文）\n\n' + incoming;
-                  }
                   final updated = AIMessage(
                     role: 'assistant',
                     content: base + incoming,
@@ -2360,6 +2725,11 @@ class _AISettingsPageState extends State<AISettingsPage>
                   newList[lastIdx] = updated;
                   _messages = newList;
                   _replaceAssistantContentOnNextToken = false;
+
+                  if (idx != null && incoming.isNotEmpty) {
+                    _finishActiveThinkingBlock(idx);
+                    _appendContentChunk(idx, incoming);
+                  }
                 }
               });
               _scheduleAutoScroll();
@@ -2419,10 +2789,11 @@ class _AISettingsPageState extends State<AISettingsPage>
         if (mounted) {
           setState(() {
             _inStreaming = false;
-            // 记录本条消息最终思考耗时
             final idx = _currentAssistantIndex;
             if (idx != null && idx >= 0 && idx < _messages.length) {
-              _reasoningDurationByIndex[idx] = DateTime.now().difference(
+              _finishActiveThinkingBlock(idx);
+              // Safety net: in case we never observed a "finish" moment (e.g. stream ended early).
+              _reasoningDurationByIndex[idx] ??= DateTime.now().difference(
                 _messages[idx].createdAt,
               );
             }
@@ -2454,15 +2825,20 @@ class _AISettingsPageState extends State<AISettingsPage>
                   createdAt: m.createdAt,
                   reasoningContent: m.reasoningContent,
                   reasoningDuration: m.reasoningDuration,
+                  uiThinkingJson: m.uiThinkingJson,
                 );
               }
             }
             if (mounted) {
               setState(() {
                 _messages = merged;
+                // After completion, render directly from the persisted `content`
+                // so re-entering the page shows the exact same UI.
+                _contentSegmentsByIndex.clear();
+                _nextContentStartsNewSegmentByIndex.clear();
               });
             }
-            await _settings.saveChatHistoryActive(merged);
+            await _enqueueChatHistorySave(merged);
           } catch (_) {
             try {
               List<AIMessage> toSave = _mergeReasoningForPersistence(
@@ -2486,10 +2862,11 @@ class _AISettingsPageState extends State<AISettingsPage>
                     createdAt: m.createdAt,
                     reasoningContent: m.reasoningContent,
                     reasoningDuration: m.reasoningDuration,
+                    uiThinkingJson: m.uiThinkingJson,
                   );
                 }
               }
-              await _settings.saveChatHistoryActive(toSave);
+              await _enqueueChatHistorySave(toSave);
             } catch (_) {}
           }
         }
@@ -2808,7 +3185,7 @@ class _AISettingsPageState extends State<AISettingsPage>
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
-              await _settings.saveChatHistoryActive(toSave);
+              await _enqueueChatHistorySave(toSave);
             } catch (_) {}
             return;
           }
@@ -2841,6 +3218,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                   : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
               assistantIndex: assistantIdx,
             );
+            _renameActiveConversationTo(resolvedIntent.intentSummary);
             setState(() {
               final lastIdx = _messages.length - 1;
               final last = _messages[lastIdx];
@@ -2862,6 +3240,9 @@ class _AISettingsPageState extends State<AISettingsPage>
               text,
               text,
               includeHistory: true,
+              // UI persists a post-processed version (e.g. evidence tag rewrites).
+              // Prevent service-level tail persistence from overwriting UI history.
+              persistHistoryTail: false,
               tools: AIChatService.defaultMemoryTools(),
               toolChoice: 'auto',
               emitEvent: (evt) {
@@ -2897,7 +3278,7 @@ class _AISettingsPageState extends State<AISettingsPage>
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
-              await _settings.saveChatHistoryActive(toSave);
+              await _enqueueChatHistorySave(toSave);
             } catch (_) {}
             return;
           }
@@ -2912,6 +3293,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                 : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
             assistantIndex: assistantIdx,
           );
+          _renameActiveConversationTo(resolvedIntent.intentSummary);
           final start = DateTime.fromMillisecondsSinceEpoch(
             resolvedIntent.startMs,
           );
@@ -3171,6 +3553,9 @@ class _AISettingsPageState extends State<AISettingsPage>
             finalQuery,
             includeHistory: resolvedIntent.skipContext,
             extraSystemMessages: extraSystemMessages,
+            // UI persists a post-processed version (e.g. evidence tag rewrites).
+            // Prevent service-level tail persistence from overwriting UI history.
+            persistHistoryTail: false,
             tools: chatTools,
             toolChoice: 'auto',
             forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
@@ -3229,11 +3614,12 @@ class _AISettingsPageState extends State<AISettingsPage>
                   createdAt: m.createdAt,
                   reasoningContent: m.reasoningContent,
                   reasoningDuration: m.reasoningDuration,
+                  uiThinkingJson: m.uiThinkingJson,
                 );
                 if (mounted) setState(() => _messages = toSave);
               }
             }
-            await _settings.saveChatHistoryActive(toSave);
+            await _enqueueChatHistorySave(toSave);
           } catch (_) {}
           // 成功路径：更新"上一轮"缓存
           _lastCtxPack = ctxPack;
@@ -3287,6 +3673,193 @@ class _AISettingsPageState extends State<AISettingsPage>
     }
   }
 
+  String? _thinkingIconKey(IconData? icon) {
+    if (icon == null) return null;
+    if (icon == Icons.search_outlined) return 'search_outlined';
+    if (icon == Icons.manage_search_outlined) return 'manage_search_outlined';
+    if (icon == Icons.auto_awesome_outlined) return 'auto_awesome_outlined';
+    return null;
+  }
+
+  IconData? _thinkingIconFromKey(String? key) {
+    final String k = (key ?? '').trim();
+    switch (k) {
+      case 'search_outlined':
+        return Icons.search_outlined;
+      case 'manage_search_outlined':
+        return Icons.manage_search_outlined;
+      case 'auto_awesome_outlined':
+        return Icons.auto_awesome_outlined;
+    }
+    return null;
+  }
+
+  String? _encodeThinkingBlocksForIndex(int assistantIdx) {
+    final List<_ThinkingBlock>? blocks0 = _thinkingBlocksByIndex[assistantIdx];
+    if (blocks0 == null || blocks0.isEmpty) return null;
+
+    bool hasAnyEvents = false;
+    for (final b in blocks0) {
+      if (b.events.isNotEmpty) {
+        hasAnyEvents = true;
+        break;
+      }
+    }
+    if (!hasAnyEvents) return null;
+
+    final List<Map<String, dynamic>> blocks = <Map<String, dynamic>>[];
+    for (final b in blocks0) {
+      final bool isLoading = b.finishedAt == null;
+      final List<Map<String, dynamic>> events = <Map<String, dynamic>>[];
+      for (final e in b.events) {
+        final String iconKey = (_thinkingIconKey(e.icon) ?? '').trim();
+        final List<Map<String, dynamic>> tools = <Map<String, dynamic>>[];
+        for (final c in e.tools) {
+          final Map<String, dynamic> chip = <String, dynamic>{
+            'call_id': c.callId,
+            'tool_name': c.toolName,
+            'label': c.label,
+            if (isLoading) 'active': c.active,
+            if (c.resultSummary != null && c.resultSummary!.trim().isNotEmpty)
+              'result_summary': c.resultSummary,
+          };
+          tools.add(chip);
+        }
+
+        final Map<String, dynamic> ev = <String, dynamic>{
+          'type': e.type.name,
+          'title': e.title,
+          if (e.subtitle != null && e.subtitle!.trim().isNotEmpty)
+            'subtitle': e.subtitle,
+          if (iconKey.isNotEmpty) 'icon': iconKey,
+          if (isLoading && e.active) 'active': true,
+          if (tools.isNotEmpty) 'tools': tools,
+        };
+        events.add(ev);
+      }
+
+      blocks.add(<String, dynamic>{
+        'created_at': b.createdAt.millisecondsSinceEpoch,
+        if (b.finishedAt != null)
+          'finished_at': b.finishedAt!.millisecondsSinceEpoch,
+        if (events.isNotEmpty) 'events': events,
+      });
+    }
+
+    return jsonEncode(<String, dynamic>{'v': 1, 'blocks': blocks});
+  }
+
+  List<_ThinkingBlock> _decodeThinkingBlocks(String raw) {
+    final String t = raw.trim();
+    if (t.isEmpty) return const <_ThinkingBlock>[];
+
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v.trim()) ?? 0;
+      return 0;
+    }
+
+    bool asBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is int) return v != 0;
+      if (v is String) {
+        final String s = v.trim().toLowerCase();
+        return s == '1' || s == 'true' || s == 'yes';
+      }
+      return false;
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(t);
+    } catch (_) {
+      return const <_ThinkingBlock>[];
+    }
+    if (decoded is! Map) return const <_ThinkingBlock>[];
+    final Map<String, dynamic> obj = Map<String, dynamic>.from(decoded as Map);
+    final int ver = asInt(obj['v']);
+    if (ver != 1) return const <_ThinkingBlock>[];
+
+    final List<dynamic> blocks0 = (obj['blocks'] is List)
+        ? List<dynamic>.from(obj['blocks'] as List)
+        : const <dynamic>[];
+    final List<_ThinkingBlock> out = <_ThinkingBlock>[];
+    for (final b0 in blocks0) {
+      if (b0 is! Map) continue;
+      final Map<String, dynamic> b = Map<String, dynamic>.from(b0 as Map);
+      final int createdAtMs = asInt(b['created_at']);
+      if (createdAtMs <= 0) continue;
+      final _ThinkingBlock block = _ThinkingBlock(
+        createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+      );
+      final int finishedAtMs = asInt(b['finished_at']);
+      if (finishedAtMs > 0) {
+        block.finishedAt = DateTime.fromMillisecondsSinceEpoch(finishedAtMs);
+      }
+
+      final List<dynamic> events0 = (b['events'] is List)
+          ? List<dynamic>.from(b['events'] as List)
+          : const <dynamic>[];
+      for (final e0 in events0) {
+        if (e0 is! Map) continue;
+        final Map<String, dynamic> eMap = Map<String, dynamic>.from(e0 as Map);
+        final String typeStr = (eMap['type'] ?? '').toString().trim();
+        final _ThinkingEventType type = switch (typeStr) {
+          'intent' => _ThinkingEventType.intent,
+          'tools' => _ThinkingEventType.tools,
+          _ => _ThinkingEventType.status,
+        };
+
+        final String title = (eMap['title'] ?? '').toString().trim();
+        if (title.isEmpty) continue;
+        final String subtitleRaw = (eMap['subtitle'] ?? '').toString().trim();
+        final String iconKey = (eMap['icon'] ?? '').toString().trim();
+
+        final List<dynamic> tools0 = (eMap['tools'] is List)
+            ? List<dynamic>.from(eMap['tools'] as List)
+            : const <dynamic>[];
+        final List<_ThinkingToolChip> tools = <_ThinkingToolChip>[];
+        for (final c0 in tools0) {
+          if (c0 is! Map) continue;
+          final Map<String, dynamic> cm = Map<String, dynamic>.from(c0 as Map);
+          final String callId = (cm['call_id'] ?? '').toString().trim();
+          final String toolName = (cm['tool_name'] ?? '').toString().trim();
+          if (callId.isEmpty || toolName.isEmpty) continue;
+          final String labelRaw = (cm['label'] ?? '').toString().trim();
+          final String summaryRaw = (cm['result_summary'] ?? '')
+              .toString()
+              .trim();
+          tools.add(
+            _ThinkingToolChip(
+              callId: callId,
+              toolName: toolName,
+              label: labelRaw.isEmpty ? toolName : labelRaw,
+              active: asBool(cm['active']),
+              resultSummary: summaryRaw.isEmpty ? null : summaryRaw,
+            ),
+          );
+        }
+
+        block.events.add(
+          _ThinkingEvent(
+            type: type,
+            title: title,
+            subtitle: subtitleRaw.isEmpty ? null : subtitleRaw,
+            icon: _thinkingIconFromKey(iconKey),
+            active: asBool(eMap['active']),
+            tools: tools,
+          ),
+        );
+      }
+
+      if (block.events.isNotEmpty || block.finishedAt != null) {
+        out.add(block);
+      }
+    }
+    return out;
+  }
+
   List<AIMessage> _mergeReasoningForPersistence(List<AIMessage> input) {
     final List<AIMessage> out = List<AIMessage>.from(input);
     for (int i = 0; i < out.length; i++) {
@@ -3294,19 +3867,29 @@ class _AISettingsPageState extends State<AISettingsPage>
       if (m.role == 'user' || m.role == 'system') continue;
       final String? r = _reasoningByIndex[i];
       final Duration? d = _reasoningDurationByIndex[i];
+      final String? uiJson = _encodeThinkingBlocksForIndex(i);
       final String? existingR = m.reasoningContent;
       final Duration? existingD = m.reasoningDuration;
+      final String? existingUi = m.uiThinkingJson;
       final String? mergedR = (r != null && r.trim().isNotEmpty)
           ? r
           : existingR;
       final Duration? mergedD = d ?? existingD;
-      if (mergedR == existingR && mergedD == existingD) continue;
+      final String? mergedUi = (uiJson != null && uiJson.trim().isNotEmpty)
+          ? uiJson
+          : existingUi;
+      if (mergedR == existingR &&
+          mergedD == existingD &&
+          mergedUi == existingUi) {
+        continue;
+      }
       out[i] = AIMessage(
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
         reasoningContent: mergedR,
         reasoningDuration: mergedD,
+        uiThinkingJson: mergedUi,
       );
     }
     return out;
@@ -4110,14 +4693,7 @@ class _AISettingsPageState extends State<AISettingsPage>
             body: Column(
               children: [
                 const SizedBox(height: AppTheme.spacing1),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing4,
-                    ),
-                    child: _buildChatList(),
-                  ),
-                ),
+                Expanded(child: _buildChatList()),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
                     AppTheme.spacing4,
@@ -4581,6 +5157,238 @@ class _AISettingsPageState extends State<AISettingsPage>
     );
   }
 
+  Widget _buildMarkdownForMessage({
+    required AIMessage message,
+    required int messageIndex,
+    required String content,
+    required Color fg,
+    required bool isCurrentStreaming,
+  }) {
+    if (isCurrentStreaming && !_renderImagesDuringStreaming) {
+      // 流式期间渲染轻量文本，避免高频 Markdown 重建
+      return SelectableText(
+        content,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+      );
+    }
+
+    // 非流式：构建 Markdown 与 evidence 解析
+    final String preprocessedMd = preprocessForChatMarkdown(content);
+    final Map<String, String> evidenceNameToPath = <String, String>{};
+    final List<EvidenceImageAttachment> atts =
+        _attachmentsByIndex[messageIndex] ?? const <EvidenceImageAttachment>[];
+    for (final a in atts) {
+      final String name = _basenameFromPath(a.path).trim();
+      if (name.isNotEmpty) evidenceNameToPath[name] = a.path;
+    }
+    final List<String> orderedEvidencePathsFromAtts = (() {
+      final List<String> out = <String>[];
+      final Set<String> seen = <String>{};
+      for (final a in atts) {
+        final String p = a.path.trim();
+        if (p.isEmpty) continue;
+        if (seen.add(p)) out.add(p);
+      }
+      return out;
+    })();
+    final mathConfig = MarkdownMathConfig(
+      inlineTextStyle: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: fg),
+      blockTextStyle: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: fg),
+      evidenceNameToPath: evidenceNameToPath,
+      orderedEvidencePaths: orderedEvidencePathsFromAtts,
+    );
+
+    // 提取 evidence 引用（保留顺序，便于为查看器构建稳定的 gallery 顺序）
+    final List<String> evidenceNamesInOrder = <String>[];
+    final Set<String> evidenceNames = <String>{};
+    for (final mm in RegExp(
+      r'\[evidence:\s*([^\]\s]+)\s*\]',
+    ).allMatches(preprocessedMd)) {
+      final String name = (mm.group(1) ?? '').trim();
+      if (name.isEmpty) continue;
+      if (evidenceNames.add(name)) evidenceNamesInOrder.add(name);
+    }
+
+    // 流式期间（且允许渲染图片）尽量只用预加载附件映射，避免高频重建触发扫库
+    if (isCurrentStreaming) {
+      return MarkdownBody(
+        data: preprocessedMd,
+        builders: mathConfig.builders,
+        inlineSyntaxes: mathConfig.inlineSyntaxes,
+        styleSheet: _mdStyle(context).copyWith(
+          p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+        ),
+        onTapLink: (text, href, title) async {
+          if (href == null) return;
+          final uri = Uri.tryParse(href);
+          if (uri != null) {
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          }
+        },
+      );
+    }
+
+    if (evidenceNames.isEmpty) {
+      return MarkdownBody(
+        data: preprocessedMd,
+        builders: mathConfig.builders,
+        inlineSyntaxes: mathConfig.inlineSyntaxes,
+        styleSheet: _mdStyle(context).copyWith(
+          p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+        ),
+        onTapLink: (text, href, title) async {
+          if (href == null) return;
+          final uri = Uri.tryParse(href);
+          if (uri != null) {
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          }
+        },
+      );
+    }
+
+    final String msgKey = _evidenceMsgKey(message);
+    final Map<String, String> cached =
+        _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
+    final Map<String, String> baseMap = <String, String>{
+      ...evidenceNameToPath,
+      ...cached,
+    };
+    final Set<String> missing = evidenceNames
+        .where((n) => !baseMap.containsKey(n))
+        .toSet();
+
+    List<String> orderedEvidencePathsFromMap(Map<String, String> map) {
+      if (orderedEvidencePathsFromAtts.isNotEmpty) {
+        return orderedEvidencePathsFromAtts;
+      }
+      final List<String> out = <String>[];
+      final Set<String> seen = <String>{};
+      for (final n in evidenceNamesInOrder) {
+        final String? p = map[n];
+        if (p == null || p.trim().isEmpty) continue;
+        if (seen.add(p)) out.add(p);
+      }
+      return out;
+    }
+
+    if (missing.isEmpty) {
+      final resolved = MarkdownMathConfig(
+        inlineTextStyle: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: fg),
+        blockTextStyle: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: fg),
+        evidenceNameToPath: baseMap,
+        orderedEvidencePaths: orderedEvidencePathsFromMap(baseMap),
+      );
+      return MarkdownBody(
+        data: preprocessedMd,
+        builders: resolved.builders,
+        inlineSyntaxes: resolved.inlineSyntaxes,
+        styleSheet: _mdStyle(context).copyWith(
+          p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+        ),
+        onTapLink: (text, href, title) async {
+          if (href == null) return;
+          final uri = Uri.tryParse(href);
+          if (uri != null) {
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          }
+        },
+      );
+    }
+
+    return FutureBuilder<Map<String, String>>(
+      future: _resolveEvidencePathsCached(
+        msgKey: msgKey,
+        missingNames: missing,
+      ),
+      builder: (context, snap) {
+        final Map<String, String> map = snap.data ?? const <String, String>{};
+        final merged = <String, String>{...baseMap, ...map};
+        final resolved = MarkdownMathConfig(
+          inlineTextStyle: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: fg),
+          blockTextStyle: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: fg),
+          evidenceNameToPath: merged,
+          orderedEvidencePaths: orderedEvidencePathsFromMap(merged),
+        );
+        return MarkdownBody(
+          data: preprocessedMd,
+          builders: resolved.builders,
+          inlineSyntaxes: resolved.inlineSyntaxes,
+          styleSheet: _mdStyle(context).copyWith(
+            p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
+          ),
+          onTapLink: (text, href, title) async {
+            if (href == null) return;
+            final uri = Uri.tryParse(href);
+            if (uri != null) {
+              try {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } catch (_) {}
+            }
+          },
+        );
+      },
+    );
+  }
+
+  List<_ThinkingBlock> _blocksForMessageIndex(int messageIndex) {
+    final List<_ThinkingBlock>? existing = _thinkingBlocksByIndex[messageIndex];
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    // When restoring history, keep the UI consistent with the live rendering:
+    // - We do NOT expand legacy reasoning logs into many event rows.
+    // - We still show a thinking card with the recorded duration (if available).
+    final String legacyReasoning = (_reasoningByIndex[messageIndex] ?? '')
+        .trim();
+    final Duration? dur =
+        _reasoningDurationByIndex[messageIndex] ??
+        ((messageIndex >= 0 && messageIndex < _messages.length)
+            ? _messages[messageIndex].reasoningDuration
+            : null);
+    if (legacyReasoning.isEmpty && (dur == null || dur.inMilliseconds <= 0)) {
+      return const <_ThinkingBlock>[];
+    }
+
+    final DateTime createdAt =
+        (messageIndex >= 0 && messageIndex < _messages.length)
+        ? _messages[messageIndex].createdAt
+        : DateTime.now();
+    final _ThinkingBlock b = _ThinkingBlock(createdAt: createdAt);
+    if (dur != null && dur.inMilliseconds > 0) {
+      b.finishedAt = createdAt.add(dur);
+    } else {
+      b.finishedAt = createdAt;
+    }
+    return <_ThinkingBlock>[b];
+  }
+
+  List<String> _contentSegmentsForMessageIndex(int messageIndex) {
+    final List<String>? segs = _contentSegmentsByIndex[messageIndex];
+    if (segs != null) return segs;
+    if (messageIndex >= 0 && messageIndex < _messages.length) {
+      final String t = _messages[messageIndex].content;
+      if (t.trim().isNotEmpty) return <String>[t];
+    }
+    return const <String>[];
+  }
+
   Widget _buildChatList() {
     if (_messages.isEmpty) {
       final l10n = AppLocalizations.of(context);
@@ -4625,7 +5433,12 @@ class _AISettingsPageState extends State<AISettingsPage>
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: true,
       addSemanticIndexes: false,
-      padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.spacing4,
+        0,
+        AppTheme.spacing4,
+        AppTheme.spacing2,
+      ),
       itemBuilder: (context, index) {
         final m = _messages[index];
         final isUser = m.role == 'user';
@@ -4645,50 +5458,7 @@ class _AISettingsPageState extends State<AISettingsPage>
             ? Theme.of(context).colorScheme.onPrimary
             : isError
             ? Theme.of(context).colorScheme.onErrorContainer
-            : Theme.of(context).colorScheme.onSurfaceVariant;
-
-        final List<Widget> bubbleChildren = [];
-
-        // 在助手消息气泡内显示"思考内容"（靠左无图标），并在等待首字时显示占位
-        if (!isUser) {
-          final r = _reasoningByIndex[index] ?? '';
-          final isCurrentStreaming =
-              _inStreaming && (_currentAssistantIndex == index);
-          final finishedDur = _reasoningDurationByIndex[index];
-          if (isCurrentStreaming && r.isEmpty) {
-            bubbleChildren.add(
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
-                child: ReasoningCard(
-                  reasoning: '',
-                  isLoading: true,
-                  createdAt: _messages[index].createdAt,
-                  finishedAt: null,
-                  textColor: fg,
-                  accentColor: Theme.of(context).colorScheme.secondary,
-                  autoCloseOnFinish: false,
-                ),
-              ),
-            );
-          } else if (r.isNotEmpty || finishedDur != null) {
-            bubbleChildren.add(
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
-                child: ReasoningCard(
-                  reasoning: r,
-                  isLoading: isCurrentStreaming,
-                  createdAt: _messages[index].createdAt,
-                  finishedAt: finishedDur != null
-                      ? _messages[index].createdAt.add(finishedDur)
-                      : null,
-                  textColor: fg,
-                  accentColor: Theme.of(context).colorScheme.secondary,
-                  autoCloseOnFinish: false,
-                ),
-              ),
-            );
-          }
-        }
+            : Theme.of(context).colorScheme.onSurface;
 
         // 正文渲染：流式期间对当前消息使用轻量文本，完成后再进行 Markdown 解析
         final bool isCurrentStreaming =
@@ -4699,7 +5469,135 @@ class _AISettingsPageState extends State<AISettingsPage>
           return const SizedBox.shrink();
         }
 
-        final Widget mdWidget =
+        final bool isAssistant = !isUser && !isError;
+        if (isAssistant) {
+          final List<_ThinkingBlock> blocks = _blocksForMessageIndex(index);
+          final List<String> segs = _contentSegmentsForMessageIndex(index);
+          final int n = (blocks.length > segs.length)
+              ? blocks.length
+              : segs.length;
+
+          final List<Widget> children = <Widget>[];
+          for (int i = 0; i < n; i++) {
+            if (i < blocks.length) {
+              final b = blocks[i];
+              // Only show legacy fallback reasoning while the block is still loading.
+              // For completed turns, prefer the structured timeline events; avoid
+              // dumping internal logs on restore.
+              final String? fallbackReasoning = (i == 0 && b.isLoading)
+                  ? (_reasoningByIndex[index] ?? m.reasoningContent)
+                  : null;
+              children.add(
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                  child: _ThinkingTimelineCard(
+                    key: ValueKey(
+                      'think:${m.createdAt.millisecondsSinceEpoch}:$i',
+                    ),
+                    createdAt: b.createdAt,
+                    finishedAt: b.finishedAt,
+                    events: b.events,
+                    fallbackReasoning: fallbackReasoning,
+                    autoCloseOnFinish: true,
+                  ),
+                ),
+              );
+            }
+            if (i < segs.length) {
+              final String seg = segs[i];
+              if (seg.trim().isNotEmpty) {
+                children.add(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                    child: _buildMarkdownForMessage(
+                      message: m,
+                      messageIndex: index,
+                      content: seg,
+                      fg: fg,
+                      isCurrentStreaming: isCurrentStreaming,
+                    ),
+                  ),
+                );
+              }
+            }
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.zero,
+                child: Text(
+                  DateFormat('HH:mm:ss').format(
+                    (m.role == 'assistant' &&
+                            _reasoningDurationByIndex[index] != null)
+                        ? m.createdAt.add(_reasoningDurationByIndex[index]!)
+                        : m.createdAt,
+                  ),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: children,
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.zero,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () async {
+                        try {
+                          await Clipboard.setData(
+                            ClipboardData(text: m.content),
+                          );
+                          if (mounted)
+                            UINotifier.success(
+                              context,
+                              AppLocalizations.of(context).copySuccess,
+                            );
+                        } catch (_) {}
+                      },
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 24,
+                      ),
+                      padding: const EdgeInsets.all(0),
+                      visualDensity: const VisualDensity(
+                        horizontal: -4,
+                        vertical: -4,
+                      ),
+                      splashRadius: 16,
+                      iconSize: 16,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withOpacity(0.8),
+                      icon: const Icon(Icons.copy_rounded),
+                      tooltip: AppLocalizations.of(context).actionCopy,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        final Widget mdWidget = _buildMarkdownForMessage(
+          message: m,
+          messageIndex: index,
+          content: m.content,
+          fg: fg,
+          isCurrentStreaming: isCurrentStreaming,
+        ); /* Legacy inline markdown builder:
             (isCurrentStreaming && !_renderImagesDuringStreaming)
             // 流式期间渲染轻量文本，避免高频 Markdown 重建
             ? SelectableText(
@@ -4910,9 +5808,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                     );
                   },
                 );
-              })();
-
-        bubbleChildren.add(mdWidget);
+              })(); */
 
         // 取消底部缩略图展示：图片仅通过正文中的 [evidence: FILENAME.EXT] 内联渲染
 
@@ -4954,7 +5850,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: bubbleChildren,
+                  children: [mdWidget],
                 ),
               ),
             ),
@@ -5167,7 +6063,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                       AppLocalizations.of(context).deepThinkingLabel +
                           (_inStreaming ? _thinkingDots : ''),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: _thinkingTextColor,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -5189,7 +6085,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                         return Text(
                           '($secs s)',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: _thinkingTextColor,
                           ),
                         );
                       },
@@ -5233,7 +6129,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                     Text(
                       AppLocalizations.of(context).thinkingInProgress,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: _thinkingTextColor,
                       ),
                     ),
                   ],
@@ -5265,7 +6161,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                           return Text(
                             parts[i],
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                              color: _thinkingTextColor,
                               fontFamily: 'monospace',
                               height: 1.20,
                             ),
@@ -5302,7 +6198,7 @@ class _AISettingsPageState extends State<AISettingsPage>
                           return Text(
                             parts[i],
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                              color: _thinkingTextColor,
                               fontFamily: 'monospace',
                               height: 1.20,
                             ),
@@ -5459,8 +6355,7 @@ class _AISettingsPageState extends State<AISettingsPage>
       ),
     );
 
-    // 个人助手：在流式时叠加"流光"效果
-    return _ShimmerBorder(active: _inStreaming, child: barInner);
+    return _ShimmerBorder(active: _inStreaming || _sending, child: barInner);
   }
 
   // 统一的小型选项芯片
@@ -5503,6 +6398,280 @@ class _AISettingsPageState extends State<AISettingsPage>
                 style: theme.textTheme.bodySmall?.copyWith(color: fg),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThinkingTimelineCard extends StatefulWidget {
+  const _ThinkingTimelineCard({
+    super.key,
+    required this.createdAt,
+    required this.finishedAt,
+    required this.events,
+    this.fallbackReasoning,
+    this.autoCloseOnFinish = true,
+  });
+
+  final DateTime createdAt;
+  final DateTime? finishedAt;
+  final List<_ThinkingEvent> events;
+  final String? fallbackReasoning;
+  final bool autoCloseOnFinish;
+
+  bool get isLoading => finishedAt == null;
+
+  @override
+  State<_ThinkingTimelineCard> createState() => _ThinkingTimelineCardState();
+}
+
+class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
+  bool _expanded = true;
+  Timer? _elapsedTimer;
+  final ScrollController _fallbackScrollController = ScrollController();
+
+  void _syncElapsedTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+    if (widget.isLoading) {
+      _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {});
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.isLoading;
+    _syncElapsedTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThinkingTimelineCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isLoading != widget.isLoading) {
+      _syncElapsedTimer();
+    }
+    if (oldWidget.isLoading && !widget.isLoading && widget.autoCloseOnFinish) {
+      if (mounted) setState(() => _expanded = false);
+    }
+    if (!oldWidget.isLoading && widget.isLoading) {
+      if (mounted) setState(() => _expanded = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _elapsedTimer?.cancel();
+    _fallbackScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    final Color titleColor = _thinkingTextColor;
+    final Color subtle = _thinkingTextColor;
+    final String titleText = l10n.deepThinkingLabel;
+    final String fallback = (widget.fallbackReasoning ?? '').trim();
+
+    final Duration elapsed = (widget.finishedAt ?? DateTime.now()).difference(
+      widget.createdAt,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Row(
+            children: [
+              Expanded(
+                child: _Shimmer(
+                  active: widget.isLoading,
+                  baseColor: titleColor,
+                  child: Text(
+                    titleText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatDuration(elapsed),
+                style: theme.textTheme.labelSmall?.copyWith(color: subtle),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                _expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: titleColor,
+              ),
+            ],
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: AppTheme.spacing2),
+          if (widget.events.isEmpty)
+            if (fallback.isNotEmpty)
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 220),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Scrollbar(
+                  controller: _fallbackScrollController,
+                  child: SingleChildScrollView(
+                    controller: _fallbackScrollController,
+                    physics: const ClampingScrollPhysics(),
+                    child: SelectableText(
+                      fallback,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: subtle,
+                        fontFamily: 'monospace',
+                        height: 1.20,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Text(
+                widget.isLoading ? '…' : '',
+                style: theme.textTheme.bodySmall?.copyWith(color: subtle),
+              )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (int i = 0; i < widget.events.length; i++)
+                  _buildEventRow(
+                    context,
+                    widget.events[i],
+                    isLast: i == widget.events.length - 1,
+                  ),
+              ],
+            ),
+        ],
+      ],
+    );
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.isNegative) d = Duration.zero;
+    if (d.inMilliseconds < 1000) {
+      final double secs = d.inMilliseconds / 1000.0;
+      return '${secs.toStringAsFixed(1)}s';
+    }
+    final int totalSeconds = d.inSeconds.clamp(0, 24 * 3600);
+    final int h = totalSeconds ~/ 3600;
+    final int m = (totalSeconds % 3600) ~/ 60;
+    final int s = totalSeconds % 60;
+    if (h > 0) {
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildEventRow(
+    BuildContext context,
+    _ThinkingEvent e, {
+    required bool isLast,
+  }) {
+    final theme = Theme.of(context);
+    final Color titleColor = _thinkingTextColor;
+    final Color subtitleColor = _thinkingTextColor;
+
+    Widget title = Text(
+      e.title,
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: titleColor,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    title = _Shimmer(active: e.active, baseColor: titleColor, child: title);
+
+    final List<Widget> right = <Widget>[title];
+    final String sub = (e.subtitle ?? '').trim();
+    if (sub.isNotEmpty) {
+      right.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            sub,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: subtitleColor,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (e.type == _ThinkingEventType.tools && e.tools.isNotEmpty) {
+      right.add(const SizedBox(height: 8));
+      right.add(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final chip in e.tools) _buildToolChip(context, chip)],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: right,
+      ),
+    );
+  }
+
+  Widget _buildToolChip(BuildContext context, _ThinkingToolChip chip) {
+    final theme = Theme.of(context);
+    final bool isSearch = chip.toolName.startsWith('search_');
+    final Color bg =
+        (isSearch
+                ? theme.colorScheme.primaryContainer
+                : theme.colorScheme.secondaryContainer)
+            .withOpacity(0.65);
+    final Color fg = isSearch
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSecondaryContainer;
+
+    final String summary = (chip.resultSummary ?? '').trim();
+    final String label = summary.isEmpty
+        ? chip.label
+        : '${chip.label} · $summary';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: _Shimmer(
+        active: chip.active,
+        baseColor: fg,
+        child: Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: fg,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -5768,60 +6937,38 @@ class _RingSweepPainter extends CustomPainter {
   }
 }
 
-// Shimmer widget for flowing white highlight (思考时白色流高亮从左到右移动)
-class _Shimmer extends StatefulWidget {
+class _Shimmer extends StatelessWidget {
   final Widget child;
   final bool active;
-  const _Shimmer({super.key, required this.child, required this.active});
+  final Color? baseColor;
+  final Color? highlightColor;
+  final Duration period;
 
-  @override
-  State<_Shimmer> createState() => _ShimmerState();
-}
-
-class _ShimmerState extends State<_Shimmer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  const _Shimmer({
+    super.key,
+    required this.child,
+    required this.active,
+    this.baseColor,
+    this.highlightColor,
+    this.period = const Duration(milliseconds: 2200),
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.active) return widget.child;
-    return AnimatedBuilder(
-      animation: _ctrl,
-      child: widget.child,
-      builder: (context, child) {
-        final value = _ctrl.value; // 0..1
-        return ShaderMask(
-          shaderCallback: (Rect bounds) {
-            return LinearGradient(
-              begin: Alignment(-1.0 + 2.0 * value, 0),
-              end: Alignment(1.0 + 2.0 * value, 0),
-              colors: [
-                Colors.transparent,
-                Colors.white.withOpacity(0.75),
-                Colors.transparent,
-              ],
-              stops: const [0.43, 0.50, 0.57],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.screen,
-          child: child!,
-        );
-      },
+    if (!active) return child;
+
+    final Color base =
+        baseColor ??
+        DefaultTextStyle.of(context).style.color ??
+        _thinkingTextColor;
+    final Color highlight = highlightColor ?? _thinkingShimmerHighlightColor;
+
+    return Shimmer.fromColors(
+      baseColor: base,
+      highlightColor: highlight,
+      direction: ShimmerDirection.ltr,
+      period: period,
+      child: child,
     );
   }
 }
