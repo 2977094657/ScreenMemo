@@ -424,13 +424,9 @@ class AIChatService {
           const int tail = 5;
           final int omitted = v.length - head - tail;
           final List<dynamic> out = <dynamic>[];
-          out.addAll(
-            v.take(head).map((e) => compact(e, depth + 1)),
-          );
+          out.addAll(v.take(head).map((e) => compact(e, depth + 1)));
           out.add('…omitted $omitted items…');
-          out.addAll(
-            v.skip(v.length - tail).map((e) => compact(e, depth + 1)),
-          );
+          out.addAll(v.skip(v.length - tail).map((e) => compact(e, depth + 1)));
           return out;
         }
         if (v is Map) {
@@ -568,10 +564,9 @@ class AIChatService {
       }
       if (sysEnd < working.length) {
         final AIMessage m = working[sysEnd];
-        final int maxBytes = (maxToolLoopPromptTokens *
-                PromptBudget.approxBytesPerToken *
-                0.6)
-            .floor();
+        final int maxBytes =
+            (maxToolLoopPromptTokens * PromptBudget.approxBytesPerToken * 0.6)
+                .floor();
         final String truncated = PromptBudget.truncateTextByBytes(
           text: m.content,
           maxBytes: maxBytes,
@@ -849,6 +844,16 @@ class AIChatService {
     final String prefix = bullet ? '- ' : '';
     final String line = message.endsWith('\n') ? message : '$message\n';
     emitEvent(AIStreamEvent('reasoning', prefix + line));
+  }
+
+  void _emitUi(
+    void Function(AIStreamEvent event)? emitEvent,
+    Map<String, dynamic> payload,
+  ) {
+    if (emitEvent == null) return;
+    try {
+      emitEvent(AIStreamEvent('ui', jsonEncode(payload)));
+    } catch (_) {}
   }
 
   ({
@@ -1563,6 +1568,92 @@ class AIChatService {
     }
 
     return jsonEncode(_sortJsonForSignature(sig));
+  }
+
+  String _toolCallUiLabel(AIToolCall call) {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String query = (args['query'] as String?)?.trim() ?? '';
+    final String app = (args['app_package_name'] as String?)?.trim() ?? '';
+    final String appSuffix = app.isEmpty ? '' : ' · $app';
+    final String mode = (args['mode'] as String?)?.trim().toLowerCase() ?? '';
+
+    final int startMs = _normalizeStartMs(args);
+    final int endMs = _normalizeEndMs(args);
+    final String range = (startMs > 0 && endMs > 0)
+        ? _formatLocalRangeForTool(startMs, endMs)
+        : '';
+    final String rangeSuffix = range.isEmpty ? '' : ' · $range';
+
+    String clip(String s, {int maxLen = 28}) => _clipLine(s, maxLen: maxLen);
+
+    switch (call.name) {
+      case 'search_screenshots_ocr':
+        return _loc(
+          '搜索 OCR：${query.isEmpty ? '（无关键词）' : clip(query)}$appSuffix$rangeSuffix',
+          'Search OCR: ${query.isEmpty ? '(no query)' : clip(query)}$appSuffix$rangeSuffix',
+        );
+      case 'search_segments':
+        if (mode == 'ocr') {
+          return _loc(
+            '搜索动态 OCR：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
+            'Search segments (OCR): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+          );
+        }
+        if (mode == 'ai') {
+          return _loc(
+            '搜索动态（语义）：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
+            'Search segments (semantic): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+          );
+        }
+        return _loc(
+          '搜索动态：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
+          'Search segments: ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+        );
+      case 'search_segments_ocr':
+        return _loc(
+          '搜索动态 OCR：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
+          'Search segments (OCR): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+        );
+      case 'search_ai_image_meta':
+        return _loc(
+          '搜索图片：${query.isEmpty ? '（无关键词）' : clip(query)}$appSuffix$rangeSuffix',
+          'Search images: ${query.isEmpty ? '(no query)' : clip(query)}$appSuffix$rangeSuffix',
+        );
+      case 'search_memory_graph':
+        return _loc(
+          '检索记忆：${query.isEmpty ? '（无关键词）' : clip(query, maxLen: 32)}',
+          'Search memory: ${query.isEmpty ? '(no query)' : clip(query, maxLen: 32)}',
+        );
+      case 'get_segment_result':
+        final int sid = _toInt(args['segment_id']) ?? 0;
+        return sid > 0
+            ? _loc('获取片段：#$sid', 'Get segment: #$sid')
+            : _loc('获取片段结果', 'Get segment result');
+      case 'get_segment_samples':
+        final int sid = _toInt(args['segment_id']) ?? 0;
+        final int limit = (_toInt(args['limit']) ?? 10).clamp(1, 50);
+        return sid > 0
+            ? _loc('抽样片段：#$sid · $limit 条', 'Sample segment: #$sid · $limit')
+            : _loc('抽样片段：$limit 条', 'Sample segment: $limit');
+      case 'get_images':
+        final dynamic raw = args['filenames'];
+        final List<String> names = <String>[];
+        if (raw is List) {
+          for (final v in raw) {
+            final String n = v?.toString().trim() ?? '';
+            if (_looksLikeBasename(n)) names.add(n);
+          }
+        } else if (raw is String) {
+          final String n = raw.trim();
+          if (_looksLikeBasename(n)) names.add(n);
+        }
+        final int count = <String>{...names}.length;
+        return count <= 0
+            ? _loc('查看图片', 'View images')
+            : _loc('查看图片：$count 张', 'View images: $count');
+      default:
+        return call.name;
+    }
   }
 
   Map<String, dynamic> _toolPayloadDigest(Map<String, dynamic> payload) {
@@ -3080,18 +3171,20 @@ class AIChatService {
     // exceed the UI tail limit.
     List<AIMessage> requestHistory = history;
     try {
-      final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
-        cid: cid,
-        maxTokens: maxHistoryPromptTokens,
-      );
+      final List<AIMessage> full = await _chatContext
+          .loadRecentMessagesForPrompt(
+            cid: cid,
+            maxTokens: maxHistoryPromptTokens,
+          );
       if (full.isNotEmpty) requestHistory = full;
     } catch (_) {}
 
     final String systemPrompt = _systemPromptForLocale();
     final List<String> extras = <String>[];
     try {
-      final String ctxMsg =
-          await _chatContext.buildSystemContextMessage(cid: cid);
+      final String ctxMsg = await _chatContext.buildSystemContextMessage(
+        cid: cid,
+      );
       if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
     } catch (_) {}
     final List<AIMessage> requestMessages = _composeMessages(
@@ -3104,7 +3197,9 @@ class AIChatService {
       unawaited(
         _chatContext.recordPromptTokens(
           cid: cid,
-          tokensApprox: PromptBudget.approxTokensForMessagesJson(requestMessages),
+          tokensApprox: PromptBudget.approxTokensForMessagesJson(
+            requestMessages,
+          ),
         ),
       );
     } catch (_) {}
@@ -3179,6 +3274,10 @@ class AIChatService {
     bool includeHistory = false,
     List<String> extraSystemMessages = const <String>[],
     bool persistHistory = true,
+    // When true, persist UI tail history into `ai_messages`.
+    // Some callers (e.g., chat UI) may persist their own post-processed content and
+    // only want the service to update the append-only transcript/tool memory.
+    bool persistHistoryTail = true,
     String context = 'chat',
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
@@ -3221,6 +3320,7 @@ class AIChatService {
             toolChoice: toolChoice,
             maxToolIters: maxToolIters,
             persistHistory: persistHistory,
+            persistHistoryTail: persistHistoryTail,
             context: context,
             toolStartMs: toolStartMs,
             toolEndMs: toolEndMs,
@@ -3276,6 +3376,7 @@ class AIChatService {
       context: context,
       includeHistory: includeHistory,
       persistHistory: persistHistory,
+      persistHistoryTail: persistHistoryTail,
       extraSystemMessages: extraSystemMessages,
     );
   }
@@ -3290,6 +3391,7 @@ class AIChatService {
     String context = 'chat',
     bool includeHistory = true,
     bool persistHistory = true,
+    bool persistHistoryTail = true,
     List<String> extraSystemMessages = const <String>[],
   }) async {
     final String cid = await _settings.getActiveConversationCid();
@@ -3303,10 +3405,11 @@ class AIChatService {
     if (includeHistory) {
       // Prefer append-only transcript for prompt history.
       try {
-        final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
-          cid: cid,
-          maxTokens: maxHistoryPromptTokens,
-        );
+        final List<AIMessage> full = await _chatContext
+            .loadRecentMessagesForPrompt(
+              cid: cid,
+              maxTokens: maxHistoryPromptTokens,
+            );
         if (full.isNotEmpty) {
           effectiveHistory = full;
         } else {
@@ -3320,8 +3423,9 @@ class AIChatService {
     final List<String> effectiveExtras = <String>[];
     if (context == 'chat' && persistHistory) {
       try {
-        final String ctxMsg =
-            await _chatContext.buildSystemContextMessage(cid: cid);
+        final String ctxMsg = await _chatContext.buildSystemContextMessage(
+          cid: cid,
+        );
         if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
       } catch (_) {}
     }
@@ -3339,8 +3443,9 @@ class AIChatService {
         unawaited(
           _chatContext.recordPromptTokens(
             cid: cid,
-            tokensApprox:
-                PromptBudget.approxTokensForMessagesJson(requestMessages),
+            tokensApprox: PromptBudget.approxTokensForMessagesJson(
+              requestMessages,
+            ),
           ),
         );
       } catch (_) {}
@@ -3377,6 +3482,7 @@ class AIChatService {
               assistant: assistant,
               modelUsed: result.modelUsed,
               toolSignatureDigests: const <String, Map<String, dynamic>>{},
+              persistHistoryTail: persistHistoryTail,
             );
           } catch (_) {}
         }());
@@ -3399,6 +3505,7 @@ class AIChatService {
     int maxToolIters =
         0, // 0 = unlimited (HARD RULE: do NOT introduce a fixed cap)
     bool persistHistory = true,
+    bool persistHistoryTail = true,
     String context = 'chat',
     int? toolStartMs,
     int? toolEndMs,
@@ -3415,6 +3522,7 @@ class AIChatService {
       toolChoice: toolChoice,
       maxToolIters: maxToolIters,
       persistHistory: persistHistory,
+      persistHistoryTail: persistHistoryTail,
       context: context,
       toolStartMs: toolStartMs,
       toolEndMs: toolEndMs,
@@ -3434,6 +3542,7 @@ class AIChatService {
     int maxToolIters =
         0, // 0 = unlimited (HARD RULE: do NOT introduce a fixed cap)
     bool persistHistory = true,
+    bool persistHistoryTail = true,
     String context = 'chat',
     int? toolStartMs,
     int? toolEndMs,
@@ -3457,10 +3566,11 @@ class AIChatService {
     if (includeHistory) {
       // Prefer append-only transcript for prompt history.
       try {
-        final List<AIMessage> full = await _chatContext.loadRecentMessagesForPrompt(
-          cid: cid,
-          maxTokens: maxHistoryPromptTokens,
-        );
+        final List<AIMessage> full = await _chatContext
+            .loadRecentMessagesForPrompt(
+              cid: cid,
+              maxTokens: maxHistoryPromptTokens,
+            );
         if (full.isNotEmpty) {
           filteredHistory = full;
         } else {
@@ -3476,11 +3586,13 @@ class AIChatService {
     }
     final String systemPrompt = _systemPromptForLocale();
     final List<String> effectiveExtras = <String>[];
-    if (tools.isNotEmpty) effectiveExtras.add(_buildToolUsageInstruction(tools));
+    if (tools.isNotEmpty)
+      effectiveExtras.add(_buildToolUsageInstruction(tools));
     if (context == 'chat' && persistHistory) {
       try {
-        final String ctxMsg =
-            await _chatContext.buildSystemContextMessage(cid: cid);
+        final String ctxMsg = await _chatContext.buildSystemContextMessage(
+          cid: cid,
+        );
         if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
       } catch (_) {}
     }
@@ -3497,8 +3609,9 @@ class AIChatService {
         unawaited(
           _chatContext.recordPromptTokens(
             cid: cid,
-            tokensApprox:
-                PromptBudget.approxTokensForMessagesJson(requestMessages),
+            tokensApprox: PromptBudget.approxTokensForMessagesJson(
+              requestMessages,
+            ),
           ),
         );
       } catch (_) {}
@@ -3773,6 +3886,19 @@ class AIChatService {
         ),
       );
 
+      _emitUi(emitEvent, <String, dynamic>{
+        'type': 'tool_batch_begin',
+        'iteration': iters,
+        'tools': [
+          for (final c in result.toolCalls)
+            <String, dynamic>{
+              'call_id': c.id,
+              'tool_name': c.name,
+              'label': _toolCallUiLabel(c),
+            },
+        ],
+      });
+
       // Execute each tool call and append tool + follow-up user messages
       int idxInBatch = 0;
       bool executedAnyNew = false;
@@ -3823,6 +3949,12 @@ class AIChatService {
               toolCallId: call.id,
             ),
           );
+          _emitUi(emitEvent, <String, dynamic>{
+            'type': 'tool_call_end',
+            'call_id': call.id,
+            'tool_name': call.name,
+            'result_summary': 'skipped',
+          });
           continue;
         }
         seenToolSignatures.add(signature);
@@ -3831,9 +3963,9 @@ class AIChatService {
         final Stopwatch toolSw = Stopwatch()..start();
         final List<AIMessage> toolMsgs = _compactToolMessagesForPrompt(
           await _executeToolCall(
-          call,
-          toolStartMs: toolStartMs,
-          toolEndMs: toolEndMs,
+            call,
+            toolStartMs: toolStartMs,
+            toolEndMs: toolEndMs,
           ),
         );
         toolSw.stop();
@@ -3868,6 +4000,13 @@ class AIChatService {
             'Finished tool #$totalToolCalls: ${call.name}${summarySuffix} (${toolSw.elapsedMilliseconds}ms)',
           ),
         );
+        _emitUi(emitEvent, <String, dynamic>{
+          'type': 'tool_call_end',
+          'call_id': call.id,
+          'tool_name': call.name,
+          'result_summary': toolSummary,
+          'duration_ms': toolSw.elapsedMilliseconds,
+        });
       }
 
       if (!executedAnyNew) {
@@ -3929,8 +4068,8 @@ class AIChatService {
           ),
         );
       }
-      final bool forceNoTools = (consecutiveDuplicateBatches >= 2 ||
-              shouldForceNoProgressStop) &&
+      final bool forceNoTools =
+          (consecutiveDuplicateBatches >= 2 || shouldForceNoProgressStop) &&
           result.toolCalls.isNotEmpty;
       if (emitEvent != null) {
         followHeartbeatStarter = Timer(const Duration(seconds: 12), () {
@@ -4139,6 +4278,7 @@ class AIChatService {
             modelUsed: result.modelUsed,
             conversationTitle: displayUserMessage,
             toolSignatureDigests: signatureDigests,
+            persistHistoryTail: persistHistoryTail,
           );
         } catch (_) {}
       }());
@@ -4236,13 +4376,20 @@ class AIChatService {
     required String modelUsed,
     required Map<String, Map<String, dynamic>> toolSignatureDigests,
     bool persistHistory = true,
+    bool persistHistoryTail = true,
     String? conversationTitle,
   }) async {
     if (!persistHistory) return;
 
     final AIMessage user = AIMessage(role: 'user', content: userMessage);
-    final List<AIMessage> newHistory = <AIMessage>[...history, user, assistant];
-    await _settings.saveChatHistoryActive(newHistory);
+    if (persistHistoryTail) {
+      final List<AIMessage> newHistory = <AIMessage>[
+        ...history,
+        user,
+        assistant,
+      ];
+      await _settings.saveChatHistoryActive(newHistory);
+    }
     await _updateConversationModel(modelUsed);
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
@@ -4250,7 +4397,10 @@ class AIChatService {
       final String cid = await _settings.getActiveConversationCid();
       // Keep a separate append-only transcript + compacted memory for long chats.
       try {
-        await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
+        await _chatContext.seedFromChatHistoryIfEmpty(
+          cid: cid,
+          history: history,
+        );
         await _chatContext.appendCompletedTurn(
           cid: cid,
           userMessage: userMessage,
@@ -4301,6 +4451,11 @@ class AIChatService {
     final String title = _truncateTitle(trimmed);
     try {
       final String cid = await _settings.getActiveConversationCid();
+      // Do not override a non-empty title (e.g., UI already renamed by intent).
+      final Map<String, dynamic>? row = await ScreenshotDatabase.instance
+          .getAiConversationByCid(cid);
+      final String existing = (row?['title'] as String?)?.trim() ?? '';
+      if (existing.isNotEmpty) return;
       await _settings.renameConversation(cid, title);
     } catch (_) {}
   }

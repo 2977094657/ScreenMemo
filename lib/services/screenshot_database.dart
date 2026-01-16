@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 25,
+          version: 26,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 25,
+          version: 26,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 25,
+          version: 26,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 25,
+        version: 26,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -642,19 +642,27 @@ class ScreenshotDatabase {
     }
     if (oldVersion < 14) {
       try {
-        await db.execute('ALTER TABLE ai_providers ADD COLUMN models_path TEXT');
+        await db.execute(
+          'ALTER TABLE ai_providers ADD COLUMN models_path TEXT',
+        );
       } catch (_) {}
     }
     if (oldVersion < 15) {
       // 为 segment_samples 增加 pHash/关键帧字段
       try {
-        await db.execute('ALTER TABLE segment_samples ADD COLUMN p_hash INTEGER');
+        await db.execute(
+          'ALTER TABLE segment_samples ADD COLUMN p_hash INTEGER',
+        );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segment_samples ADD COLUMN is_keyframe INTEGER NOT NULL DEFAULT 0');
+        await db.execute(
+          'ALTER TABLE segment_samples ADD COLUMN is_keyframe INTEGER NOT NULL DEFAULT 0',
+        );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segment_samples ADD COLUMN hash_distance INTEGER');
+        await db.execute(
+          'ALTER TABLE segment_samples ADD COLUMN hash_distance INTEGER',
+        );
       } catch (_) {}
 
       // 尝试创建 fts_content FTS5 虚拟表（如不支持 FTS5 则忽略）
@@ -670,7 +678,10 @@ class ScreenshotDatabase {
         ''');
       } catch (e) {
         try {
-          await FlutterLogger.nativeWarn('DB', 'FTS5 for fts_content not supported: ' + e.toString());
+          await FlutterLogger.nativeWarn(
+            'DB',
+            'FTS5 for fts_content not supported: ' + e.toString(),
+          );
         } catch (_) {}
       }
     }
@@ -687,7 +698,9 @@ class ScreenshotDatabase {
         );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segments ADD COLUMN merged_into_id INTEGER');
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merged_into_id INTEGER',
+        );
       } catch (_) {}
       try {
         await db.execute(
@@ -740,13 +753,19 @@ class ScreenshotDatabase {
     // v23: segments 增加合并判定信息字段（用于展示合并原因/强制合并）
     if (oldVersion < 23) {
       try {
-        await db.execute('ALTER TABLE segments ADD COLUMN merge_prev_id INTEGER');
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_prev_id INTEGER',
+        );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_json TEXT');
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_decision_json TEXT',
+        );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_reason TEXT');
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_decision_reason TEXT',
+        );
       } catch (_) {}
       try {
         await db.execute(
@@ -754,7 +773,9 @@ class ScreenshotDatabase {
         );
       } catch (_) {}
       try {
-        await db.execute('ALTER TABLE segments ADD COLUMN merge_decision_at INTEGER');
+        await db.execute(
+          'ALTER TABLE segments ADD COLUMN merge_decision_at INTEGER',
+        );
       } catch (_) {}
     }
     // v24: 动态全文索引纳入 structured_json，支持搜索合并后的“原始事件”内容
@@ -778,7 +799,9 @@ class ScreenshotDatabase {
     // v25: Conversation context system (summary + tool memory + rollout events).
     if (oldVersion < 25) {
       try {
-        await db.execute('ALTER TABLE ai_conversations ADD COLUMN summary TEXT');
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN summary TEXT',
+        );
       } catch (_) {}
       try {
         await db.execute(
@@ -818,6 +841,15 @@ class ScreenshotDatabase {
       try {
         await db.execute(
           'ALTER TABLE ai_conversations ADD COLUMN last_prompt_at INTEGER',
+        );
+      } catch (_) {}
+    }
+
+    // v26: Persist chat UI thinking timeline (blocks/events) for stable restore.
+    if (oldVersion < 26) {
+      try {
+        await db.execute(
+          'ALTER TABLE ai_messages ADD COLUMN ui_thinking_json TEXT',
         );
       } catch (_) {}
     }

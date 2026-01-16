@@ -19,6 +19,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         content TEXT NOT NULL,
         reasoning_content TEXT,
         reasoning_duration_ms INTEGER,
+        ui_thinking_json TEXT,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
@@ -361,6 +362,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? createdAt,
     String? reasoningContent,
     int? reasoningDurationMs,
+    String? uiThinkingJson,
   }) async {
     try {
       final db = await database;
@@ -381,6 +383,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         if (reasoningContent != null) 'reasoning_content': reasoningContent,
         if (reasoningDurationMs != null)
           'reasoning_duration_ms': reasoningDurationMs,
+        if (uiThinkingJson != null) 'ui_thinking_json': uiThinkingJson,
         if (createdAt != null) 'created_at': createdAt,
       });
 

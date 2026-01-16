@@ -683,6 +683,7 @@ class AISettingsService {
             reasoningDuration: ((e['reasoning_duration_ms'] as int?) != null)
                 ? Duration(milliseconds: (e['reasoning_duration_ms'] as int))
                 : null,
+            uiThinkingJson: (e['ui_thinking_json'] as String?),
           ),
         )
         .toList();
@@ -729,9 +730,11 @@ class AISettingsService {
             'conversation_id': conversationCid,
             'role': m.role,
             'content': m.content,
-            if (m.reasoningContent != null) 'reasoning_content': m.reasoningContent,
+            if (m.reasoningContent != null)
+              'reasoning_content': m.reasoningContent,
             if (m.reasoningDuration != null)
               'reasoning_duration_ms': m.reasoningDuration!.inMilliseconds,
+            if (m.uiThinkingJson != null) 'ui_thinking_json': m.uiThinkingJson,
             'created_at': m.createdAt.millisecondsSinceEpoch,
           });
         }
@@ -852,6 +855,8 @@ class AIMessage {
   // 新增：深度思考内容与耗时（仅用于本地持久化与 UI 展示，不参与上行）
   final String? reasoningContent;
   final Duration? reasoningDuration;
+  // UI-only: persist thinking timeline blocks/events for stable restore.
+  final String? uiThinkingJson;
   // —— 以下字段仅用于上行请求（不参与本地持久化）——
   // 多模态/结构化 content：如 [{type:'text',text:'..'},{type:'image_url',image_url:{url:'data:...'}}]
   final Object? apiContent;
@@ -865,6 +870,7 @@ class AIMessage {
     DateTime? createdAt,
     this.reasoningContent,
     this.reasoningDuration,
+    this.uiThinkingJson,
     this.apiContent,
     this.toolCalls,
     this.toolCallId,
