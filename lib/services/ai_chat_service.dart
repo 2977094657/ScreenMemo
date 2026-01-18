@@ -89,8 +89,8 @@ class AIChatService {
     sb.writeln(_loc('规则：', 'Rules:'));
     sb.writeln(
       _loc(
-        '- 避免重复调用：不要在同一任务中反复用“相同参数”调用同一个工具；如需更多信息，必须改变参数（关键词/分页 paging/offset/时间窗）。',
-        '- Avoid repetition: do NOT repeatedly call the same tool with the SAME arguments in the same task. If you need more information, you MUST change parameters (keywords / paging / offset / time window).',
+        '- 允许重复调用同一工具的相同参数（例如刷新/确认）；若多次结果无变化，可再尝试更换关键词/分页 paging/offset/时间窗。',
+        '- You MAY repeat the same tool call with the same arguments (e.g., refresh/confirm). If results do not change, try different keywords / paging / offset / time window.',
       ),
     );
     sb.writeln(
@@ -949,6 +949,18 @@ class AIChatService {
     return '${_formatLocalDateTimeForTool(startMs)}–${_formatLocalDateTimeForTool(endMs)}';
   }
 
+  // UI-only range formatter: keep it readable (date precision only).
+  String _formatLocalRangeForToolUi(int startMs, int endMs) {
+    final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMs);
+    final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMs);
+    String two(int v) => v.toString().padLeft(2, '0');
+    String dateOf(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+    final String sd = dateOf(s);
+    final String ed = dateOf(e);
+    if (s.year == e.year && s.month == e.month && s.day == e.day) return sd;
+    return '$sd–$ed';
+  }
+
   Map<String, dynamic> _buildWeeklyPagingHint({
     required int servedStartMs,
     required int servedEndMs,
@@ -1015,7 +1027,7 @@ class AIChatService {
     final Map<String, dynamic> obj = _safeJsonObject(toolMsgs.first.content);
     final String tool = (obj['tool'] as String?)?.trim() ?? '';
     final Object? error = obj['error'];
-    if (error != null) return 'error=$error';
+    if (error != null) return _loc('错误：$error', 'error=$error');
     if (tool == 'get_images') {
       final Map<String, dynamic>? stats = (obj['stats'] is Map)
           ? (obj['stats'] as Map).cast<String, dynamic>()
@@ -1028,26 +1040,40 @@ class AIChatService {
       final int skipped = (obj['skipped'] is List)
           ? (obj['skipped'] as List).length
           : 0;
-      return 'provided=$provided missing=$missing skipped=$skipped';
+      if (provided <= 0 && missing <= 0 && skipped <= 0) {
+        return _loc('无图片', 'no images');
+      }
+      final String head = _loc('已加载 $provided 张', 'loaded $provided');
+      final List<String> extras = <String>[];
+      if (missing > 0) extras.add(_loc('缺失 $missing', 'missing $missing'));
+      if (skipped > 0) extras.add(_loc('跳过 $skipped', 'skipped $skipped'));
+      if (extras.isEmpty) return head;
+      final String sep = _loc('，', ', ');
+      final String open = _loc('（', ' (');
+      final String close = _loc('）', ')');
+      return '$head$open${extras.join(sep)}$close';
     }
     if (tool == 'get_segment_result') {
       final int sid = _toInt(obj['segment_id']) ?? 0;
-      return sid > 0 ? 'segment_id=$sid' : '';
+      if (sid <= 0) return _loc('已获取', 'retrieved');
+      // Tool chip label already includes the segment id; keep summary minimal.
+      return _loc('已获取', 'retrieved');
     }
     if (tool == 'get_segment_samples') {
       final int sid = _toInt(obj['segment_id']) ?? 0;
       final int count = _toInt(obj['count']) ?? 0;
-      return sid > 0 ? 'segment_id=$sid count=$count' : 'count=$count';
+      // UI label already contains the requested limit; surface actual returned count.
+      return sid > 0 ? _loc('返回 $count 条', 'returned $count') : _loc('返回 $count 条', 'returned $count');
     }
     final int count = _toInt(obj['count']) ?? -1;
     if (count >= 0) {
       final int? total = _toInt(obj['total_count']);
       if (total != null && total >= 0 && total != count) {
-        return 'count=$count total=$total';
+        return _loc('找到 $total 个（本页 $count）', 'found $total (page $count)');
       }
-      return 'count=$count';
+      return _loc('找到 $count 个', 'found $count');
     }
-    return tool.isEmpty ? '' : 'ok';
+    return tool.isEmpty ? '' : _loc('完成', 'ok');
   }
 
   static List<Map<String, dynamic>>
@@ -1580,7 +1606,7 @@ class AIChatService {
     final int startMs = _normalizeStartMs(args);
     final int endMs = _normalizeEndMs(args);
     final String range = (startMs > 0 && endMs > 0)
-        ? _formatLocalRangeForTool(startMs, endMs)
+        ? _formatLocalRangeForToolUi(startMs, endMs)
         : '';
     final String rangeSuffix = range.isEmpty ? '' : ' · $range';
 
@@ -3847,8 +3873,8 @@ class AIChatService {
     }
 
     // HARD RULE: 禁止在 maxToolIters<=0（无限制）时引入任何“固定轮次上限/安全上限”。
-    // 若担心模型陷入循环，只能使用“无进展/重复参数”的护栏（例如去重、强提示、临时禁用 tools）
-    // 来打断重复，而不是用固定轮次截断（否则会破坏跨月/跨年检索等长任务）。
+    // 若担心模型陷入循环，优先用“无进展”护栏 + 强提示引导退出循环，
+    // 避免用固定轮次截断（否则会破坏跨月/跨年检索等长任务）。
     final bool unlimitedIters = maxToolIters <= 0;
     int iters = 0;
     int totalToolCalls = 0;
@@ -3856,10 +3882,8 @@ class AIChatService {
     bool hadAnyRetrievalHit = false;
     String lastRetrievalTool = '';
     int lastRetrievalCount = -1;
-    final Set<String> seenToolSignatures = <String>{};
     final Map<String, Map<String, dynamic>> signatureDigests =
         <String, Map<String, dynamic>>{};
-    int consecutiveDuplicateBatches = 0;
     int consecutiveEmptyRetrievalBatches = 0;
     bool forcedNoProgressStop = false;
 
@@ -3901,7 +3925,6 @@ class AIChatService {
 
       // Execute each tool call and append tool + follow-up user messages
       int idxInBatch = 0;
-      bool executedAnyNew = false;
       int batchRetrievalCalls = 0;
       int batchRetrievalHits = 0;
       for (final AIToolCall call in result.toolCalls) {
@@ -3922,43 +3945,6 @@ class AIChatService {
         );
 
         final String signature = _toolCallSignature(call);
-        if (seenToolSignatures.contains(signature)) {
-          final Map<String, dynamic>? prev = signatureDigests[signature];
-          _emitProgress(
-            emitEvent,
-            _loc(
-              '检测到重复工具调用参数，已跳过执行：${call.name}',
-              'Detected duplicate tool call args; skipping: ${call.name}',
-            ),
-          );
-          working.add(
-            AIMessage(
-              role: 'tool',
-              content: jsonEncode(<String, dynamic>{
-                'tool': call.name,
-                'warning': 'duplicate_tool_call_skipped',
-                if (prev != null && prev.isNotEmpty)
-                  'previous_result_digest': prev,
-                'message': _loc(
-                  '已跳过与之前完全相同参数的工具调用；请基于已有工具结果继续推理/统计并回答。'
-                      '如需更多信息，请更换关键词、调整时间窗或使用 paging/offset 获取新的结果。',
-                  'Skipped an identical tool call; use the existing tool outputs to reason/count and answer. '
-                      'If you still need more information, change keywords, adjust time window, or use paging/offset to fetch NEW results.',
-                ),
-              }),
-              toolCallId: call.id,
-            ),
-          );
-          _emitUi(emitEvent, <String, dynamic>{
-            'type': 'tool_call_end',
-            'call_id': call.id,
-            'tool_name': call.name,
-            'result_summary': 'skipped',
-          });
-          continue;
-        }
-        seenToolSignatures.add(signature);
-        executedAnyNew = true;
 
         final Stopwatch toolSw = Stopwatch()..start();
         final List<AIMessage> toolMsgs = _compactToolMessagesForPrompt(
@@ -4009,25 +3995,6 @@ class AIChatService {
         });
       }
 
-      if (!executedAnyNew) {
-        consecutiveDuplicateBatches += 1;
-        working.add(
-          AIMessage(
-            role: 'user',
-            content: _loc(
-              '你正在重复调用完全相同参数的工具，这不会带来新信息。\n'
-                  '请不要再重复同参数调用；请基于已返回的工具结果汇总/统计并给出最终回答。\n'
-                  '如果仍需检索：必须更换关键词，或使用 paging.prev/paging.next 翻页，或调整 offset/limit 获取“新的”结果。',
-              'You are repeating identical tool calls; this will not produce new information.\n'
-                  'Do NOT repeat the same-argument calls again; summarize/count based on the tool outputs already returned, then answer.\n'
-                  'If you still need to search: change keywords, or page via paging.prev/paging.next, or adjust offset/limit to fetch NEW results.',
-            ),
-          ),
-        );
-      } else {
-        consecutiveDuplicateBatches = 0;
-      }
-
       if (batchRetrievalCalls > 0) {
         if (batchRetrievalHits > 0) {
           consecutiveEmptyRetrievalBatches = 0;
@@ -4069,8 +4036,7 @@ class AIChatService {
         );
       }
       final bool forceNoTools =
-          (consecutiveDuplicateBatches >= 2 || shouldForceNoProgressStop) &&
-          result.toolCalls.isNotEmpty;
+          shouldForceNoProgressStop && result.toolCalls.isNotEmpty;
       if (emitEvent != null) {
         followHeartbeatStarter = Timer(const Duration(seconds: 12), () {
           followHeartbeatTicker = Timer.periodic(const Duration(seconds: 10), (
