@@ -126,7 +126,10 @@ extension _AISettingsPageStateExt4 on _AISettingsPageState {
                       messageIndex: index,
                       content: seg,
                       fg: fg,
-                      isCurrentStreaming: isCurrentStreaming,
+                      // Only the last segment is actively streaming; completed
+                      // segments should render as final Markdown immediately.
+                      isCurrentStreaming: isCurrentStreaming &&
+                          (i == segs.length - 1),
                     ),
                   ),
                 );

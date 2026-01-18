@@ -1422,9 +1422,13 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     required bool isCurrentStreaming,
   }) {
     if (isCurrentStreaming && !_renderImagesDuringStreaming) {
-      // 流式期间渲染轻量文本，避免高频 Markdown 重建
+      // 流式期间渲染轻量文本，避免高频 Markdown 重建。
+      // 同时裁掉开头的空行，避免与最终 Markdown（会忽略前导换行）出现明显跳动。
+      final String t = content
+          .replaceAll('\r\n', '\n')
+          .replaceFirst(RegExp(r'^\n+'), '');
       return SelectableText(
-        content,
+        t,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
       );
     }
@@ -1658,11 +1662,8 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
         if (sub.isNotEmpty) sb.writeln(sub);
         if (e.type == _ThinkingEventType.tools && e.tools.isNotEmpty) {
           for (final chip in e.tools) {
-            final String label = chip.label.trim().isNotEmpty
-                ? chip.label.trim()
-                : chip.toolName;
-            final String summary = (chip.resultSummary ?? '').trim();
-            sb.writeln(summary.isEmpty ? '- $label' : '- $label: $summary');
+            final String text = _toolChipTextForDisplay(context, chip).trim();
+            if (text.isNotEmpty) sb.writeln('- $text');
           }
         }
         if (title.isNotEmpty || sub.isNotEmpty || e.tools.isNotEmpty) {
@@ -1685,14 +1686,20 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
 
     if (!isAssistant) return answer;
 
-    String reasoning =
-        (_reasoningByIndex[messageIndex] ?? m.reasoningContent ?? '').trim();
-    if (reasoning.isEmpty) {
-      reasoning = _buildThinkingTimelineTextForCopy(messageIndex);
-    }
-    if (reasoning.isEmpty) return answer;
+    // Copy what the UI shows: prefer the structured thinking timeline; fall back
+    // to legacy reasoning text only when no timeline is available.
+    String reasoning = _buildThinkingTimelineTextForCopy(messageIndex).trim();
+    if (reasoning.isNotEmpty) return '$reasoning\n\n$answer';
 
-    final t = AppLocalizations.of(context);
-    return '${t.reasoningLabel}\n$reasoning\n\n${t.answerLabel}\n$answer';
+    // Only include legacy reasoning while the thinking block is still loading
+    // (matches the UI, which hides legacy logs after completion).
+    final List<_ThinkingBlock> blocks = _blocksForMessageIndex(messageIndex);
+    final bool anyLoading = blocks.any((b) => b.finishedAt == null);
+    if (!anyLoading) return answer;
+
+    reasoning = (_reasoningByIndex[messageIndex] ?? m.reasoningContent ?? '')
+        .trim();
+    if (reasoning.isEmpty) return answer;
+    return '$reasoning\n\n$answer';
   }
 }

@@ -2038,7 +2038,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get deepThinkingLabel => '思考中';
+  String get deepThinkingLabel => '思考过程';
 
   @override
   String get thinkingInProgress => '思考中…';

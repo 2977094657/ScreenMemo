@@ -2,6 +2,170 @@
 
 // Extracted widgets/helpers from ai_settings_page.dart (kept in same library via part).
 
+bool _isZhLocaleUi(BuildContext context) {
+  try {
+    return Localizations.localeOf(
+      context,
+    ).languageCode.toLowerCase().startsWith('zh');
+  } catch (_) {
+    return true;
+  }
+}
+
+String _coarsenToolLabelForDisplay(String label) {
+  String s = label.trim();
+  if (s.isEmpty) return '';
+
+  // Drop time parts: keep YYYY-MM-DD only.
+  s = s.replaceAllMapped(
+    RegExp(r'(\d{4}-\d{2}-\d{2})[ T]\d{2}:\d{2}(?::\d{2})?'),
+    (m) => m.group(1) ?? m.group(0) ?? '',
+  );
+
+  // Collapse date ranges like "2026-01-18–2026-01-18" to a single date.
+  s = s.replaceAllMapped(
+    RegExp(r'(\d{4}-\d{2}-\d{2})\s*[–-]\s*(\d{4}-\d{2}-\d{2})'),
+    (m) {
+      final String a = (m.group(1) ?? '').trim();
+      final String b = (m.group(2) ?? '').trim();
+      if (a.isEmpty || b.isEmpty) return m.group(0) ?? '';
+      return a == b ? a : '$a–$b';
+    },
+  );
+
+  return s;
+}
+
+String _normalizeToolSummaryForDisplay(
+  BuildContext context, {
+  required String toolName,
+  required String summary,
+}) {
+  String s = summary.trim();
+  if (s.isEmpty) return '';
+  if (!_isZhLocaleUi(context)) return s;
+
+  // If it's already Chinese, keep it.
+  if (RegExp(r'[\u4e00-\u9fff]').hasMatch(s)) return s;
+
+  final String low = s.toLowerCase();
+  if (low.startsWith('skipped')) return '已跳过';
+  if (low == 'ok') return '完成';
+  if (low == 'retrieved') return '已获取';
+  if (low == 'no images') return '无图片';
+  if (low.startsWith('error=')) {
+    final int i = s.indexOf('=');
+    return i >= 0 ? '错误：${s.substring(i + 1)}' : '错误';
+  }
+
+  // "found 1944 (page 3)" / "found 3"
+  final Match? mFound = RegExp(
+    r'found\s+(\d+)(?:\s*\(page\s+(\d+)\))?',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (mFound != null) {
+    final int a = int.tryParse(mFound.group(1) ?? '') ?? -1;
+    final int b = int.tryParse(mFound.group(2) ?? '') ?? -1;
+    if (a >= 0 && b >= 0 && a != b) return '找到 $a 个（本页 $b）';
+    if (a >= 0) return '找到 $a 个';
+  }
+
+  // "returned 10"
+  final Match? mReturned = RegExp(
+    r'returned\s+(\d+)',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (mReturned != null) {
+    final int c = int.tryParse(mReturned.group(1) ?? '') ?? -1;
+    if (c >= 0) return '返回 $c 条';
+  }
+
+  // "loaded 3 (missing 1, skipped 2)" / "loaded 3"
+  final Match? mLoaded = RegExp(
+    r'loaded\s+(\d+)(?:\s*\(([^)]*)\))?',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (mLoaded != null) {
+    final int provided = int.tryParse(mLoaded.group(1) ?? '') ?? -1;
+    if (provided >= 0) {
+      final String head = '已加载 $provided 张';
+      final String extrasRaw = (mLoaded.group(2) ?? '').trim();
+      if (extrasRaw.isEmpty) return head;
+      final List<String> extras = <String>[];
+      final Match? mMissing = RegExp(
+        r'missing\s+(\d+)',
+        caseSensitive: false,
+      ).firstMatch(extrasRaw);
+      final Match? mSkipped = RegExp(
+        r'skipped\s+(\d+)',
+        caseSensitive: false,
+      ).firstMatch(extrasRaw);
+      final int missing = int.tryParse(mMissing?.group(1) ?? '') ?? 0;
+      final int skipped = int.tryParse(mSkipped?.group(1) ?? '') ?? 0;
+      if (missing > 0) extras.add('缺失 $missing');
+      if (skipped > 0) extras.add('跳过 $skipped');
+      return extras.isEmpty ? head : '$head（${extras.join('，')}）';
+    }
+  }
+
+  // Legacy summaries from older versions:
+  // - count=3 / count=3 total=1944
+  final Match? mCount = RegExp(
+    r'count=(\d+)(?:\s+total=(\d+))?',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (mCount != null) {
+    final int c = int.tryParse(mCount.group(1) ?? '') ?? -1;
+    final int t = int.tryParse(mCount.group(2) ?? '') ?? -1;
+    if (c >= 0 && t >= 0 && t != c) return '找到 $t 个（本页 $c）';
+    if (c >= 0) return '找到 $c 个';
+  }
+
+  // - provided=5 missing=1 skipped=2
+  final Match? mImgs = RegExp(
+    r'provided=(\d+)\s+missing=(\d+)\s+skipped=(\d+)',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (mImgs != null) {
+    final int provided = int.tryParse(mImgs.group(1) ?? '') ?? 0;
+    final int missing = int.tryParse(mImgs.group(2) ?? '') ?? 0;
+    final int skipped = int.tryParse(mImgs.group(3) ?? '') ?? 0;
+    if (provided <= 0 && missing <= 0 && skipped <= 0) return '无图片';
+    final String head = '已加载 $provided 张';
+    final List<String> extras = <String>[];
+    if (missing > 0) extras.add('缺失 $missing');
+    if (skipped > 0) extras.add('跳过 $skipped');
+    return extras.isEmpty ? head : '$head（${extras.join('，')}）';
+  }
+
+  // - segment_id=123 count=10 / segment_id=123
+  if (toolName == 'get_segment_result') return '已获取';
+  if (toolName == 'get_segment_samples') {
+    final Match? mSegCount = RegExp(
+      r'count=(\d+)',
+      caseSensitive: false,
+    ).firstMatch(s);
+    final int c = int.tryParse(mSegCount?.group(1) ?? '') ?? -1;
+    if (c >= 0) return '返回 $c 条';
+    return '返回';
+  }
+
+  return s;
+}
+
+String _toolChipTextForDisplay(BuildContext context, _ThinkingToolChip chip) {
+  final String rawSummary = (chip.resultSummary ?? '').trim();
+  final String summary = _normalizeToolSummaryForDisplay(
+    context,
+    toolName: chip.toolName,
+    summary: rawSummary,
+  );
+  final String baseLabel =
+      chip.label.trim().isEmpty ? chip.toolName : chip.label.trim();
+  final String normalizedLabel = _coarsenToolLabelForDisplay(baseLabel);
+  return summary.isEmpty ? normalizedLabel : '$normalizedLabel · $summary';
+}
+
 class _ThinkingTimelineCard extends StatefulWidget {
   const _ThinkingTimelineCard({
     super.key,
@@ -74,7 +238,8 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     final l10n = AppLocalizations.of(context);
     final Color titleColor = _thinkingTextColor;
     final Color subtle = _thinkingTextColor;
-    final String titleText = l10n.deepThinkingLabel;
+    final String titleText =
+        widget.isLoading ? l10n.thinkingInProgress : l10n.deepThinkingLabel;
     final String fallback = (widget.fallbackReasoning ?? '').trim();
 
     final Duration elapsed = (widget.finishedAt ?? DateTime.now()).difference(
@@ -221,10 +386,15 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     if (e.type == _ThinkingEventType.tools && e.tools.isNotEmpty) {
       right.add(const SizedBox(height: 8));
       right.add(
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [for (final chip in e.tools) _buildToolChip(context, chip)],
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int i = 0; i < e.tools.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i == e.tools.length - 1 ? 0 : 6),
+                child: _buildToolChip(context, e.tools[i]),
+              ),
+          ],
         ),
       );
     }
@@ -236,6 +406,31 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         children: right,
       ),
     );
+  }
+
+  IconData _toolIconFor(String toolName) {
+    switch (toolName) {
+      case 'get_images':
+        return Icons.image_rounded;
+      case 'search_screenshots_ocr':
+        return Icons.document_scanner_rounded;
+      case 'search_ai_image_meta':
+        return Icons.image_search_rounded;
+      case 'search_segments':
+        return Icons.manage_search_rounded;
+      case 'search_segments_ocr':
+        return Icons.text_snippet_rounded;
+      case 'search_memory_graph':
+        return Icons.hub_rounded;
+      case 'get_segment_result':
+        return Icons.description_rounded;
+      case 'get_segment_samples':
+        return Icons.collections_rounded;
+      default:
+        if (toolName.startsWith('search_')) return Icons.search_rounded;
+        if (toolName.startsWith('get_')) return Icons.download_rounded;
+        return Icons.build_circle_outlined;
+    }
   }
 
   Widget _buildToolChip(BuildContext context, _ThinkingToolChip chip) {
@@ -250,26 +445,39 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         ? theme.colorScheme.onPrimaryContainer
         : theme.colorScheme.onSecondaryContainer;
 
-    final String summary = (chip.resultSummary ?? '').trim();
-    final String label = summary.isEmpty
-        ? chip.label
-        : '${chip.label} · $summary';
+    final String label = _toolChipTextForDisplay(context, chip);
+    final IconData icon = _toolIconFor(chip.toolName);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       ),
       child: _Shimmer(
         active: chip.active,
         baseColor: fg,
-        child: Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: fg,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(icon, size: 16, color: fg.withOpacity(0.95)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                softWrap: true,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
