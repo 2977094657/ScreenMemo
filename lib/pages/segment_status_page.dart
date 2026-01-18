@@ -2357,9 +2357,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
               child: _buildMarkdownBody(
                 context,
                 keyActionDetail,
-                DefaultTextStyle.of(
-                  context,
-                ).style.copyWith(color: actionColor),
+                DefaultTextStyle.of(context).style.copyWith(color: actionColor),
               ),
             ),
           ),
@@ -2744,34 +2742,36 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             chipHeight * _tagMaxVisibleRows +
             _tagGridMainAxisSpacing * (_tagMaxVisibleRows - 1);
         final theme = Theme.of(context);
-        final Color hintColor =
-            theme.colorScheme.onSurfaceVariant.withOpacity(0.45);
+        final Color hintColor = theme.colorScheme.onSurfaceVariant.withOpacity(
+          0.45,
+        );
 
         // 最多显示两行，超过则在内部滚动（不撑爆卡片布局）。
         return SizedBox(
           height: viewportHeight + _tagOverflowHintHeight,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
                 height: viewportHeight,
                 child: Scrollbar(
-                controller: _tagScrollController,
-                thumbVisibility: true,
-                trackVisibility: true,
-                thickness: 3,
-                radius: const Radius.circular(3),
-                child: SingleChildScrollView(
                   controller: _tagScrollController,
-                  primary: false,
-                  padding: EdgeInsets.zero,
-                  physics: const ClampingScrollPhysics(),
-                  child: Wrap(
-                    spacing: _tagGridCrossAxisSpacing,
-                    runSpacing: _tagGridMainAxisSpacing,
-                    alignment: WrapAlignment.start,
-                    children: chips,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  thickness: 3,
+                  radius: const Radius.circular(3),
+                  child: SingleChildScrollView(
+                    controller: _tagScrollController,
+                    primary: false,
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    child: Wrap(
+                      spacing: _tagGridCrossAxisSpacing,
+                      runSpacing: _tagGridMainAxisSpacing,
+                      alignment: WrapAlignment.start,
+                      children: chips,
+                    ),
                   ),
-                ),
                 ),
               ),
               IgnorePointer(
