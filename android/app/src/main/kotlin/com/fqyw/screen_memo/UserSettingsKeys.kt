@@ -18,6 +18,7 @@ object UserSettingsKeysNative {
     // 动态合并（仅自动合并；强制合并不受限）
     const val MERGE_DYNAMIC_MAX_SPAN_SEC = "merge_dynamic_max_span_sec"
     const val MERGE_DYNAMIC_MAX_GAP_SEC = "merge_dynamic_max_gap_sec"
+    const val MERGE_DYNAMIC_MAX_IMAGES = "merge_dynamic_max_images"
     const val DAILY_NOTIFY_ENABLED = "daily_notify_enabled"
     const val DAILY_NOTIFY_HOUR = "daily_notify_hour"
     const val DAILY_NOTIFY_MINUTE = "daily_notify_minute"

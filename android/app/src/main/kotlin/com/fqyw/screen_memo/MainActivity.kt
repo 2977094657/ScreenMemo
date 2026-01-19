@@ -308,6 +308,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         val spanRaw = call.argument<Int>("maxSpanSec") ?: (3 * 3600)
                         val gapRaw = call.argument<Int>("maxGapSec") ?: 3600
+                        val maxImagesRaw = call.argument<Int>("maxImages") ?: 200
                         val span = when {
                             spanRaw < 0 -> 0
                             spanRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
@@ -318,6 +319,11 @@ class MainActivity : FlutterActivity() {
                             gapRaw > 7 * 24 * 3600 -> 7 * 24 * 3600
                             else -> gapRaw
                         }
+                        val maxImages = when {
+                            maxImagesRaw < 0 -> 0
+                            maxImagesRaw > 100000 -> 100000
+                            else -> maxImagesRaw
+                        }
                         UserSettingsStorage.putInt(
                             this,
                             UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
@@ -327,6 +333,11 @@ class MainActivity : FlutterActivity() {
                             this,
                             UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
                             gap
+                        )
+                        UserSettingsStorage.putInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
+                            maxImages
                         )
                         result.success(true)
                     } catch (e: Exception) {
@@ -345,10 +356,16 @@ class MainActivity : FlutterActivity() {
                             UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
                             3600
                         ).let { if (it < 0) 0 else it }
+                        val maxImages = UserSettingsStorage.getInt(
+                            this,
+                            UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
+                            200
+                        ).let { if (it < 0) 0 else it }
                         result.success(
                             mapOf(
                                 "maxSpanSec" to span,
-                                "maxGapSec" to gap
+                                "maxGapSec" to gap,
+                                "maxImages" to maxImages
                             )
                         )
                     } catch (e: Exception) {

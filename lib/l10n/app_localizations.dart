@@ -1656,6 +1656,18 @@ abstract class AppLocalizations {
   /// **'Current: {minutes} minutes (0 = unlimited)'**
   String dynamicMergeMaxGapDesc(Object minutes);
 
+  /// No description provided for @dynamicMergeMaxImagesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dynamic merge: max images'**
+  String get dynamicMergeMaxImagesTitle;
+
+  /// No description provided for @dynamicMergeMaxImagesDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Current: {count} images (0 = unlimited)'**
+  String dynamicMergeMaxImagesDesc(Object count);
+
   /// No description provided for @dynamicMergeLimitInputHint.
   ///
   /// In en, this message translates to:

@@ -458,6 +458,13 @@
       "minutes": {}
     }
   },
+  "dynamicMergeMaxImagesTitle": "動的マージ：最大画像数",
+  "dynamicMergeMaxImagesDesc": "現在: {count} 枚 (0 = 無制限)",
+  "@dynamicMergeMaxImagesDesc": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "dynamicMergeLimitInputHint": "0 以上の整数を入力（0 = 無制限）",
   "dynamicMergeLimitInvalidError": "0 以上の有効な整数を入力してください",
   "dailyReminderTimeTitle": "毎日のサマリー通知時刻",

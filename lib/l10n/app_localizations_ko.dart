@@ -869,6 +869,14 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxImagesTitle => '동적 병합: 이미지 수 상한(장)';
+
+  @override
+  String dynamicMergeMaxImagesDesc(Object count) {
+    return '현재: $count장(0 = 제한 없음)';
+  }
+
+  @override
   String get dynamicMergeLimitInputHint => '0 이상의 정수를 입력하세요(0 = 제한 없음)';
 
   @override

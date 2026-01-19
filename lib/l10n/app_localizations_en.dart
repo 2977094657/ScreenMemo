@@ -898,6 +898,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxImagesTitle => 'Dynamic merge: max images';
+
+  @override
+  String dynamicMergeMaxImagesDesc(Object count) {
+    return 'Current: $count images (0 = unlimited)';
+  }
+
+  @override
   String get dynamicMergeLimitInputHint =>
       'Enter an integer >= 0 (0 = unlimited)';
 

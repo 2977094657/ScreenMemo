@@ -872,6 +872,14 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxImagesTitle => '動的マージ：最大画像数';
+
+  @override
+  String dynamicMergeMaxImagesDesc(Object count) {
+    return '現在: $count 枚 (0 = 無制限)';
+  }
+
+  @override
   String get dynamicMergeLimitInputHint => '0 以上の整数を入力（0 = 無制限）';
 
   @override

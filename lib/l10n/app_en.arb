@@ -480,6 +480,13 @@
       "minutes": {}
     }
   },
+  "dynamicMergeMaxImagesTitle": "Dynamic merge: max images",
+  "dynamicMergeMaxImagesDesc": "Current: {count} images (0 = unlimited)",
+  "@dynamicMergeMaxImagesDesc": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "dynamicMergeLimitInputHint": "Enter an integer >= 0 (0 = unlimited)",
   "dynamicMergeLimitInvalidError": "Please enter a valid integer >= 0",
 

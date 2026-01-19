@@ -858,6 +858,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get dynamicMergeMaxImagesTitle => '动态合并：图片数量上限（张）';
+
+  @override
+  String dynamicMergeMaxImagesDesc(Object count) {
+    return '当前：$count 张（0 表示不限制）';
+  }
+
+  @override
   String get dynamicMergeLimitInputHint => '请输入 >= 0 的整数（0 表示不限制）';
 
   @override

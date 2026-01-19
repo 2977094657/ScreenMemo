@@ -100,6 +100,7 @@ class _SettingsPageState extends State<SettingsPage>
   // 动态合并限制（分钟；0 表示不限制）
   int _dynamicMergeMaxSpanMin = 180; // 默认 3h
   int _dynamicMergeMaxGapMin = 60; // 默认 1h
+  int _dynamicMergeMaxImages = 200; // 默认 200（0 表示不限制）
   // 截图质量设置（仅通过编码压缩，不修改分辨率）
   String _imageFormat = 'webp_lossy'; // jpeg | png | webp_lossy | webp_lossless
   int _imageQuality = 90; // 备用项，已被"目标大小"策略覆盖
@@ -1867,6 +1868,7 @@ class _SettingsPageState extends State<SettingsPage>
                 _buildSegmentDurationItem(context),
                 _buildDynamicMergeMaxSpanItem(context),
                 _buildDynamicMergeMaxGapItem(context),
+                _buildDynamicMergeMaxImagesItem(context),
                 _buildAiRequestIntervalItem(context),
               ],
             ),
@@ -2212,6 +2214,14 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildDynamicMergeMaxGapItem(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           Container(
@@ -2253,6 +2263,65 @@ class _SettingsPageState extends State<SettingsPage>
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
             onPressed: _showDynamicMergeMaxGapDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicMergeMaxImagesItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.image_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context).dynamicMergeMaxImagesTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  AppLocalizations.of(
+                    context,
+                  ).dynamicMergeMaxImagesDesc(_dynamicMergeMaxImages),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showDynamicMergeMaxImagesDialog,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
@@ -2623,6 +2692,7 @@ class _SettingsPageState extends State<SettingsPage>
             final ok = await _saveDynamicMergeLimits(
               maxSpanMin: v,
               maxGapMin: _dynamicMergeMaxGapMin,
+              maxImages: _dynamicMergeMaxImages,
             );
             if (ctx.mounted && ok) {
               Navigator.of(ctx).pop();
@@ -2664,6 +2734,49 @@ class _SettingsPageState extends State<SettingsPage>
             final ok = await _saveDynamicMergeLimits(
               maxSpanMin: _dynamicMergeMaxSpanMin,
               maxGapMin: v,
+              maxImages: _dynamicMergeMaxImages,
+            );
+            if (ctx.mounted && ok) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(ctx, AppLocalizations.of(ctx).saveSuccess);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showDynamicMergeMaxImagesDialog() {
+    final TextEditingController controller = TextEditingController(
+      text: _dynamicMergeMaxImages.toString(),
+    );
+    showUIDialog<void>(
+      context: context,
+      title: AppLocalizations.of(context).dynamicMergeMaxImagesTitle,
+      content: _numberField(
+        controller,
+        hint: AppLocalizations.of(context).dynamicMergeLimitInputHint,
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final parsed = int.tryParse(controller.text.trim());
+            if (parsed == null || parsed < 0) {
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).dynamicMergeLimitInvalidError,
+              );
+              return;
+            }
+            final v = parsed.clamp(0, 100000);
+            final ok = await _saveDynamicMergeLimits(
+              maxSpanMin: _dynamicMergeMaxSpanMin,
+              maxGapMin: _dynamicMergeMaxGapMin,
+              maxImages: v,
             );
             if (ctx.mounted && ok) {
               Navigator.of(ctx).pop();
@@ -2701,12 +2814,14 @@ class _SettingsPageState extends State<SettingsPage>
       final map = Map<String, dynamic>.from(res ?? {});
       final int spanSec = (map['maxSpanSec'] as int?) ?? 3 * 3600;
       final int gapSec = (map['maxGapSec'] as int?) ?? 3600;
+      final int maxImages = (map['maxImages'] as int?) ?? 200;
       if (mounted) {
         setState(() {
           _dynamicMergeMaxSpanMin =
               ((spanSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
           _dynamicMergeMaxGapMin =
               ((gapSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
+          _dynamicMergeMaxImages = maxImages.clamp(0, 100000).toInt();
         });
       }
     } catch (_) {
@@ -2895,9 +3010,11 @@ class _SettingsPageState extends State<SettingsPage>
   Future<bool> _saveDynamicMergeLimits({
     required int maxSpanMin,
     required int maxGapMin,
+    required int maxImages,
   }) async {
     final int spanMinClamped = maxSpanMin < 0 ? 0 : maxSpanMin;
     final int gapMinClamped = maxGapMin < 0 ? 0 : maxGapMin;
+    final int maxImagesClamped = maxImages.clamp(0, 100000).toInt();
     final int spanSec = spanMinClamped * 60;
     final int gapSec = gapMinClamped * 60;
     try {
@@ -2905,11 +3022,13 @@ class _SettingsPageState extends State<SettingsPage>
       await platform.invokeMethod('setDynamicMergeLimits', {
         'maxSpanSec': spanSec,
         'maxGapSec': gapSec,
+        'maxImages': maxImagesClamped,
       });
       if (mounted) {
         setState(() {
           _dynamicMergeMaxSpanMin = spanMinClamped;
           _dynamicMergeMaxGapMin = gapMinClamped;
+          _dynamicMergeMaxImages = maxImagesClamped;
         });
       }
       return true;

@@ -480,6 +480,13 @@
       "minutes": {}
     }
   },
+  "dynamicMergeMaxImagesTitle": "动态合并：图片数量上限（张）",
+  "dynamicMergeMaxImagesDesc": "当前：{count} 张（0 表示不限制）",
+  "@dynamicMergeMaxImagesDesc": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "dynamicMergeLimitInputHint": "请输入 >= 0 的整数（0 表示不限制）",
   "dynamicMergeLimitInvalidError": "请输入 >= 0 的有效整数",
 

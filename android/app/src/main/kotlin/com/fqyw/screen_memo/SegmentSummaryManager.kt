@@ -1752,6 +1752,34 @@ object SegmentSummaryManager {
         val mergedAllSamples = mergeSamples(prevSamples, curSamples)
         val mergedUniqueSamples = mergedAllSamples
 
+        // 动态合并硬限制：图片数量（仅自动合并；强制合并不受限）
+        if (!forceMerge) {
+            val maxImagesRaw = try {
+                UserSettingsStorage.getInt(
+                    ctx,
+                    UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
+                    200
+                )
+            } catch (_: Exception) { 200 }
+            val maxImages = if (maxImagesRaw < 0) 0 else maxImagesRaw
+            val imagesExceeded = maxImages > 0 && mergedUniqueSamples.size > maxImages
+            if (imagesExceeded) {
+                val reason = "触发图片数量限制：${mergedUniqueSamples.size}张 > ${maxImages}张，系统禁止合并"
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = prev.id,
+                        decisionJson = null,
+                        reason = reason,
+                        forced = false
+                    )
+                } catch (_: Exception) {}
+                SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                return
+            }
+        }
+
         val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
         val prevOutput = prevRes.first ?: ""
 
