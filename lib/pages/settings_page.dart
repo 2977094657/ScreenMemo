@@ -145,6 +145,24 @@ class _SettingsPageState extends State<SettingsPage>
     return false;
   }
 
+  Color _settingsBackgroundColor(BuildContext context) {
+    final theme = Theme.of(context);
+    if (theme.brightness == Brightness.dark) {
+      return theme.scaffoldBackgroundColor;
+    }
+    // Light mode: use a subtle grey background like common "settings" pages.
+    return AppTheme.secondary;
+  }
+
+  BorderSide _settingsDividerSide(BuildContext context) {
+    final theme = Theme.of(context);
+    final double opacity = theme.brightness == Brightness.dark ? 0.35 : 0.18;
+    return BorderSide(
+      color: theme.colorScheme.outline.withValues(alpha: opacity),
+      width: 1,
+    );
+  }
+
   Future<void> _restoreDailySummaryScheduleOnStartup() async {
     try {
       final bool enabled = await UserSettingsService.instance.getBool(
@@ -1685,7 +1703,7 @@ class _SettingsPageState extends State<SettingsPage>
       },
       child: Scaffold(
         appBar: _buildSettingsAppBar(context),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: _settingsBackgroundColor(context),
         body: _buildSettingsBody(context),
       ),
     );
@@ -1710,12 +1728,17 @@ class _SettingsPageState extends State<SettingsPage>
       title = l10n.advancedSectionTitle;
     }
 
+    final bool canPop = Navigator.of(context).canPop();
     return AppBar(
-      toolbarHeight: 36,
-      centerTitle: true,
+      centerTitle: false,
       automaticallyImplyLeading: false,
       leading: _subPage == _SettingsSubPage.home
-          ? null
+          ? (canPop
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                )
+              : null)
           : IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () => _switchSubPage(_SettingsSubPage.home),
@@ -1724,6 +1747,10 @@ class _SettingsPageState extends State<SettingsPage>
         padding: const EdgeInsets.only(top: 2.0),
         child: Text(title),
       ),
+      backgroundColor: _settingsBackgroundColor(context),
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
       actions: [
         if (_subPage == _SettingsSubPage.permissions)
           IconButton(
@@ -1746,7 +1773,6 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 _buildNavItem(
                   context: context,
-                  icon: Icons.verified_user_outlined,
                   title: AppLocalizations.of(context).permissionsSectionTitle,
                   subtitle: AppLocalizations.of(context).permissionsSectionDesc,
                   showBottomBorder: true,
@@ -1754,7 +1780,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 _buildNavItem(
                   context: context,
-                  icon: Icons.palette_outlined,
                   title: AppLocalizations.of(context).displaySectionTitle,
                   subtitle: AppLocalizations.of(context).displaySectionDesc,
                   showBottomBorder: true,
@@ -1762,7 +1787,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 _buildNavItem(
                   context: context,
-                  icon: Icons.photo_camera_outlined,
                   title: AppLocalizations.of(context).screenshotSectionTitle,
                   subtitle: AppLocalizations.of(context).screenshotSectionDesc,
                   showBottomBorder: true,
@@ -1770,7 +1794,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 _buildNavItem(
                   context: context,
-                  icon: Icons.view_timeline_outlined,
                   title: AppLocalizations.of(
                     context,
                   ).segmentSummarySectionTitle,
@@ -1782,7 +1805,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 _buildNavItem(
                   context: context,
-                  icon: Icons.notifications_active_outlined,
                   title: AppLocalizations.of(context).dailyReminderSectionTitle,
                   subtitle: AppLocalizations.of(
                     context,
@@ -1792,7 +1814,6 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
                 _buildNavItem(
                   context: context,
-                  icon: Icons.backup_outlined,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
                   subtitle: AppLocalizations.of(context).dataBackupSectionDesc,
                   showBottomBorder: false,
@@ -1800,13 +1821,12 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
               ],
             ),
-            const SizedBox(height: AppTheme.spacing4),
+            const SizedBox(height: AppTheme.spacing3),
             _buildCard(
               context: context,
               children: [
                 _buildNavItem(
                   context: context,
-                  icon: Icons.tune_outlined,
                   title: AppLocalizations.of(context).advancedSectionTitle,
                   subtitle: AppLocalizations.of(context).advancedSectionDesc,
                   showBottomBorder: false,
@@ -1923,90 +1943,61 @@ class _SettingsPageState extends State<SettingsPage>
     required BuildContext context,
     required List<Widget> children,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.8),
-          width: 1,
-        ),
-      ),
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(AppTheme.radiusXl),
+      clipBehavior: Clip.antiAlias,
       child: Column(children: children),
     );
   }
 
   Widget _buildNavItem({
     required BuildContext context,
-    required IconData icon,
     required String title,
     String? subtitle,
     required bool showBottomBorder,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    final borderSide = BorderSide(
-      color: theme.colorScheme.outline.withOpacity(0.6),
-      width: 1,
-    );
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(AppTheme.spacing3),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: showBottomBorder ? borderSide : BorderSide.none,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  icon,
-                  color: theme.colorScheme.onSecondaryContainer,
-                  size: 18,
+    final borderSide = _settingsDividerSide(context);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing4,
+          vertical: AppTheme.spacing4,
+        ),
+        decoration: BoxDecoration(
+          border: Border(bottom: showBottomBorder ? borderSide : BorderSide.none),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(width: AppTheme.spacing3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (subtitle != null && subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
+            ),
+            if (subtitle != null && subtitle.isNotEmpty) ...[
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               const SizedBox(width: AppTheme.spacing2),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
             ],
-          ),
+            Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
@@ -2018,10 +2009,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -2145,14 +2133,8 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          top: _settingsDividerSide(context),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -2216,10 +2198,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -2343,10 +2322,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          top: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -2411,10 +2387,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3086,10 +3059,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3287,10 +3257,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          top: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3359,10 +3326,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          top: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3430,10 +3394,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3499,10 +3460,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -3641,12 +3599,7 @@ class _SettingsPageState extends State<SettingsPage>
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withOpacity(0.6),
-                          width: 1,
-                        ),
+                        bottom: _settingsDividerSide(context),
                       ),
                     ),
                     child: Stack(
@@ -3733,12 +3686,7 @@ class _SettingsPageState extends State<SettingsPage>
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        bottom: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withOpacity(0.6),
-                          width: 1,
-                        ),
+                        bottom: _settingsDividerSide(context),
                       ),
                     ),
                     child: Stack(
@@ -3831,10 +3779,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Stack(
@@ -3905,10 +3850,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -4263,10 +4205,7 @@ class _SettingsPageState extends State<SettingsPage>
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          top: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -4780,9 +4719,7 @@ class _SettingsPageState extends State<SettingsPage>
                     color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                     border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withOpacity(0.6),
+                      color: _settingsDividerSide(context).color,
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -5185,10 +5122,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
@@ -5401,10 +5335,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-            width: 1,
-          ),
+          bottom: _settingsDividerSide(context),
         ),
       ),
       child: Row(
