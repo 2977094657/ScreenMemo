@@ -8,6 +8,7 @@ import 'package:screen_memo/models/screenshot_record.dart';
 
 import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
+import 'atomic_memory_service.dart';
 import 'chat_context_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
@@ -49,6 +50,9 @@ class AIChatService {
   // Per tool message cap, mainly for very large JSON payloads (e.g. segment
   // detail). This is an approximate token budget (bytes/4).
   static const int maxToolMessageTokens = 12000;
+  // MemOS working memory injection (persona + relevant temporal-KG edges).
+  static const int defaultMaxWorkingMemoryPromptTokens = 1400;
+  static const int defaultWorkingMemoryEdgeLimit = 60;
 
   final AISettingsService _settings = AISettingsService.instance;
   final AIRequestGateway _gateway = AIRequestGateway.instance;
@@ -953,8 +957,12 @@ class AIChatService {
   String _formatLocalRangeForToolUi(int startMs, int endMs) {
     final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMs);
     final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMs);
+    final int nowYear = DateTime.now().year;
+    final bool omitYear = s.year == nowYear && e.year == nowYear;
     String two(int v) => v.toString().padLeft(2, '0');
-    String dateOf(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
+    String dateOf(DateTime d) => omitYear
+        ? '${two(d.month)}-${two(d.day)}'
+        : '${d.year}-${two(d.month)}-${two(d.day)}';
     final String sd = dateOf(s);
     final String ed = dateOf(e);
     if (s.year == e.year && s.month == e.month && s.day == e.day) return sd;
@@ -1611,6 +1619,18 @@ class AIChatService {
     final String rangeSuffix = range.isEmpty ? '' : ' · $range';
 
     String clip(String s, {int maxLen = 28}) => _clipLine(s, maxLen: maxLen);
+    String withOptionalQueryZh(String head) {
+      // Avoid noisy placeholders like "（列出）" when listing with empty query.
+      return query.isEmpty
+          ? '$head$appSuffix$rangeSuffix'
+          : '$head：${clip(query)}$appSuffix$rangeSuffix';
+    }
+
+    String withOptionalQueryEn(String head) {
+      return query.isEmpty
+          ? '$head$appSuffix$rangeSuffix'
+          : '$head: ${clip(query)}$appSuffix$rangeSuffix';
+    }
 
     switch (call.name) {
       case 'search_screenshots_ocr':
@@ -1621,24 +1641,24 @@ class AIChatService {
       case 'search_segments':
         if (mode == 'ocr') {
           return _loc(
-            '搜索动态 OCR：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
-            'Search segments (OCR): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+            withOptionalQueryZh('搜索动态'),
+            withOptionalQueryEn('Search segments'),
           );
         }
         if (mode == 'ai') {
           return _loc(
-            '搜索动态（语义）：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
-            'Search segments (semantic): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+            withOptionalQueryZh('搜索动态'),
+            withOptionalQueryEn('Search segments'),
           );
         }
         return _loc(
-          '搜索动态：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
-          'Search segments: ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+          withOptionalQueryZh('搜索动态'),
+          withOptionalQueryEn('Search segments'),
         );
       case 'search_segments_ocr':
         return _loc(
-          '搜索动态 OCR：${query.isEmpty ? '（列出）' : clip(query)}$appSuffix$rangeSuffix',
-          'Search segments (OCR): ${query.isEmpty ? '(list)' : clip(query)}$appSuffix$rangeSuffix',
+          withOptionalQueryZh('搜索动态'),
+          withOptionalQueryEn('Search segments'),
         );
       case 'search_ai_image_meta':
         return _loc(
@@ -3107,6 +3127,15 @@ class AIChatService {
       payload.putIfAbsent('depth', () => depth);
       payload.putIfAbsent('limit', () => limit);
       payload.putIfAbsent('include_history', () => includeHistory);
+      // Normalize a lightweight `count` so tool-memory (and loop heuristics) can
+      // surface whether the graph had hits without dumping full edges.
+      try {
+        final Map<String, dynamic>? stats = (payload['stats'] is Map)
+            ? Map<String, dynamic>.from(payload['stats'] as Map)
+            : null;
+        final int edgeCount = _toInt(stats?['edge_count']) ?? 0;
+        payload.putIfAbsent('count', () => edgeCount);
+      } catch (_) {}
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -3213,6 +3242,19 @@ class AIChatService {
       );
       if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
     } catch (_) {}
+    String amMsg = '';
+    try {
+      amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
+        cid: cid,
+        query: userMessage.trim(),
+      );
+      if (amMsg.trim().isNotEmpty) extras.add(amMsg.trim());
+    } catch (_) {}
+    String wmMsg = '';
+    try {
+      wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
+      if (wmMsg.trim().isNotEmpty) extras.add(wmMsg.trim());
+    } catch (_) {}
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: requestHistory,
@@ -3226,6 +3268,45 @@ class AIChatService {
           tokensApprox: PromptBudget.approxTokensForMessagesJson(
             requestMessages,
           ),
+        ),
+      );
+    } catch (_) {}
+    try {
+      final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
+      final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+      final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
+      final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
+      unawaited(
+        _chatContext.logContextEvent(
+          cid: cid,
+          type: 'atomic_memory',
+          payload: <String, dynamic>{
+            'enabled': amEnabled,
+            'auto_extract': amAutoExtract,
+            'injected': amMsg.trim().isNotEmpty,
+            'am_tokens': PromptBudget.approxTokensForText(amMsg),
+            'max_tokens': amMaxTokens,
+            'max_items': amMaxItems,
+          },
+        ),
+      );
+    } catch (_) {}
+    try {
+      final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
+      final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
+      final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
+      unawaited(
+        _chatContext.logContextEvent(
+          cid: cid,
+          type: 'working_memory',
+          payload: <String, dynamic>{
+            'enabled': wmEnabled,
+            'injected': wmMsg.trim().isNotEmpty,
+            'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
+            'wm_truncated': wmMsg.contains('…working_memory truncated…'),
+            'edge_limit': wmEdgeLimit,
+            'max_tokens': wmMaxTokens,
+          },
         ),
       );
     } catch (_) {}
@@ -3447,12 +3528,25 @@ class AIChatService {
     }
 
     final List<String> effectiveExtras = <String>[];
+    String amMsg = '';
+    String wmMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         final String ctxMsg = await _chatContext.buildSystemContextMessage(
           cid: cid,
         );
         if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+      try {
+        amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
+          cid: cid,
+          query: userMessage.trim(),
+        );
+        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
+      } catch (_) {}
+      try {
+        wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
+        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
       } catch (_) {}
     }
     effectiveExtras.addAll(extraSystemMessages);
@@ -3472,6 +3566,45 @@ class AIChatService {
             tokensApprox: PromptBudget.approxTokensForMessagesJson(
               requestMessages,
             ),
+          ),
+        );
+      } catch (_) {}
+      try {
+        final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
+        final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+        final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
+        final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
+        unawaited(
+          _chatContext.logContextEvent(
+            cid: cid,
+            type: 'atomic_memory',
+            payload: <String, dynamic>{
+              'enabled': amEnabled,
+              'auto_extract': amAutoExtract,
+              'injected': amMsg.trim().isNotEmpty,
+              'am_tokens': PromptBudget.approxTokensForText(amMsg),
+              'max_tokens': amMaxTokens,
+              'max_items': amMaxItems,
+            },
+          ),
+        );
+      } catch (_) {}
+      try {
+        final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
+        final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
+        final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
+        unawaited(
+          _chatContext.logContextEvent(
+            cid: cid,
+            type: 'working_memory',
+            payload: <String, dynamic>{
+              'enabled': wmEnabled,
+              'injected': wmMsg.trim().isNotEmpty,
+              'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
+              'wm_truncated': wmMsg.contains('…working_memory truncated…'),
+              'edge_limit': wmEdgeLimit,
+              'max_tokens': wmMaxTokens,
+            },
           ),
         );
       } catch (_) {}
@@ -3614,12 +3747,25 @@ class AIChatService {
     final List<String> effectiveExtras = <String>[];
     if (tools.isNotEmpty)
       effectiveExtras.add(_buildToolUsageInstruction(tools));
+    String amMsg = '';
+    String wmMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         final String ctxMsg = await _chatContext.buildSystemContextMessage(
           cid: cid,
         );
         if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+      try {
+        amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
+          cid: cid,
+          query: actualUserMessage.trim(),
+        );
+        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
+      } catch (_) {}
+      try {
+        wmMsg = await _buildWorkingMemoryContextMessage(actualUserMessage);
+        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
       } catch (_) {}
     }
     effectiveExtras.addAll(extraSystemMessages);
@@ -3638,6 +3784,47 @@ class AIChatService {
             tokensApprox: PromptBudget.approxTokensForMessagesJson(
               requestMessages,
             ),
+          ),
+        );
+      } catch (_) {}
+      try {
+        final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
+        final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+        final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
+        final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
+        unawaited(
+          _chatContext.logContextEvent(
+            cid: cid,
+            type: 'atomic_memory',
+            payload: <String, dynamic>{
+              'enabled': amEnabled,
+              'auto_extract': amAutoExtract,
+              'injected': amMsg.trim().isNotEmpty,
+              'am_tokens': PromptBudget.approxTokensForText(amMsg),
+              'max_tokens': amMaxTokens,
+              'max_items': amMaxItems,
+              'tool_loop': tools.isNotEmpty,
+            },
+          ),
+        );
+      } catch (_) {}
+      try {
+        final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
+        final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
+        final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
+        unawaited(
+          _chatContext.logContextEvent(
+            cid: cid,
+            type: 'working_memory',
+            payload: <String, dynamic>{
+              'enabled': wmEnabled,
+              'injected': wmMsg.trim().isNotEmpty,
+              'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
+              'wm_truncated': wmMsg.contains('…working_memory truncated…'),
+              'edge_limit': wmEdgeLimit,
+              'max_tokens': wmMaxTokens,
+              'tool_loop': tools.isNotEmpty,
+            },
           ),
         );
       } catch (_) {}
@@ -4306,6 +4493,45 @@ class AIChatService {
     return const Locale('en');
   }
 
+  Future<String> _buildWorkingMemoryContextMessage(String userMessage) async {
+    try {
+      final bool enabled = await _settings.getWorkingMemoryInjectionEnabled();
+      if (!enabled) return '';
+      final int edgeLimit = await _settings.getWorkingMemoryEdgeLimit();
+      final int maxTokens = await _settings.getWorkingMemoryPromptTokens();
+
+      final Map<String, dynamic> payload =
+          await MemoryBridgeService.instance.buildWorkingMemory(
+        query: userMessage.trim(),
+        edgeLimit: edgeLimit,
+        includeHistoryEdges: false,
+      );
+      final String raw =
+          (payload['working_memory_markdown'] as String?)?.trim() ?? '';
+      if (raw.isEmpty) return '';
+
+      String text = raw;
+      final int tokens = PromptBudget.approxTokensForText(text);
+      if (tokens > maxTokens) {
+        final int maxBytes =
+            maxTokens * PromptBudget.approxBytesPerToken;
+        text = PromptBudget.truncateTextByBytes(
+          text: text,
+          maxBytes: maxBytes,
+          marker: '…working_memory truncated…',
+        ).trim();
+      }
+
+      return [
+        '<working_memory>',
+        text,
+        '</working_memory>',
+      ].join('\n').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
   List<AIMessage> _composeMessages({
     required String systemMessage,
     required List<AIMessage> history,
@@ -4359,11 +4585,11 @@ class AIChatService {
     await _updateConversationModel(modelUsed);
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
-    try {
-      final String cid = await _settings.getActiveConversationCid();
-      // Keep a separate append-only transcript + compacted memory for long chats.
       try {
-        await _chatContext.seedFromChatHistoryIfEmpty(
+        final String cid = await _settings.getActiveConversationCid();
+        // Keep a separate append-only transcript + compacted memory for long chats.
+        try {
+          await _chatContext.seedFromChatHistoryIfEmpty(
           cid: cid,
           history: history,
         );
@@ -4381,6 +4607,12 @@ class AIChatService {
         _chatContext.scheduleAutoCompact(
           cid: cid,
           reason: toolSignatureDigests.isNotEmpty ? 'tool_loop' : 'turn',
+        );
+      } catch (_) {}
+      try {
+        AtomicMemoryService.instance.scheduleExtractFromTurn(
+          cid: cid,
+          userMessage: userMessage,
         );
       } catch (_) {}
       unawaited(

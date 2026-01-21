@@ -95,6 +95,17 @@ class AISettingsService {
   static const String _keyStreamEnabled = 'stream_enabled';
   static const String _keyRenderImagesDuringStreaming =
       'render_images_during_streaming';
+  static const String _keyWorkingMemoryInjectionEnabled =
+      'working_memory_injection_enabled';
+  static const String _keyWorkingMemoryPromptTokens =
+      'working_memory_prompt_tokens';
+  static const String _keyWorkingMemoryEdgeLimit = 'working_memory_edge_limit';
+  static const String _keyAtomicMemoryInjectionEnabled =
+      'atomic_memory_injection_enabled';
+  static const String _keyAtomicMemoryAutoExtractEnabled =
+      'atomic_memory_auto_extract_enabled';
+  static const String _keyAtomicMemoryPromptTokens = 'atomic_memory_prompt_tokens';
+  static const String _keyAtomicMemoryMaxItems = 'atomic_memory_max_items';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
   static const String _keyPromptSegmentExtraZh = 'prompt_segment_extra_zh';
@@ -111,6 +122,10 @@ class AISettingsService {
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
   static const String _defaultModel = 'gpt-4o-mini';
+  static const int _defaultWorkingMemoryPromptTokens = 1400;
+  static const int _defaultWorkingMemoryEdgeLimit = 60;
+  static const int _defaultAtomicMemoryPromptTokens = 700;
+  static const int _defaultAtomicMemoryMaxItems = 24;
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
   static const int _maxHistoryMessages = 40;
@@ -141,6 +156,108 @@ class AISettingsService {
   Future<void> setRenderImagesDuringStreaming(bool value) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyRenderImagesDuringStreaming, value ? '1' : '0');
+  }
+
+  // ========== MemOS 工作记忆注入（系统消息） ==========
+
+  Future<bool> getWorkingMemoryInjectionEnabled() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyWorkingMemoryInjectionEnabled);
+    if (v == null || v.isEmpty) return true; // 默认开启
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setWorkingMemoryInjectionEnabled(bool enabled) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyWorkingMemoryInjectionEnabled, enabled ? '1' : '0');
+  }
+
+  Future<int> getWorkingMemoryPromptTokens() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyWorkingMemoryPromptTokens);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    // Keep it conservative: this is an approximate token budget (bytes/4).
+    final int raw = parsed ?? _defaultWorkingMemoryPromptTokens;
+    return raw.clamp(200, 4000);
+  }
+
+  Future<void> setWorkingMemoryPromptTokens(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(200, 4000);
+    await db.setAiSetting(_keyWorkingMemoryPromptTokens, v.toString());
+  }
+
+  Future<int> getWorkingMemoryEdgeLimit() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyWorkingMemoryEdgeLimit);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int raw = parsed ?? _defaultWorkingMemoryEdgeLimit;
+    return raw.clamp(10, 200);
+  }
+
+  Future<void> setWorkingMemoryEdgeLimit(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(10, 200);
+    await db.setAiSetting(_keyWorkingMemoryEdgeLimit, v.toString());
+  }
+
+  // ========== 原子记忆注入（SimpleMem-style） ==========
+
+  Future<bool> getAtomicMemoryInjectionEnabled() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyAtomicMemoryInjectionEnabled);
+    if (v == null || v.isEmpty) return true; // 默认开启（若无数据则不注入）
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setAtomicMemoryInjectionEnabled(bool enabled) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyAtomicMemoryInjectionEnabled, enabled ? '1' : '0');
+  }
+
+  /// Whether to auto-extract atomic memories after each turn (uses AI calls).
+  /// Defaults to false to avoid unexpected cost.
+  Future<bool> getAtomicMemoryAutoExtractEnabled() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyAtomicMemoryAutoExtractEnabled);
+    if (v == null || v.isEmpty) return false;
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setAtomicMemoryAutoExtractEnabled(bool enabled) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyAtomicMemoryAutoExtractEnabled, enabled ? '1' : '0');
+  }
+
+  Future<int> getAtomicMemoryPromptTokens() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyAtomicMemoryPromptTokens);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int raw = parsed ?? _defaultAtomicMemoryPromptTokens;
+    return raw.clamp(100, 2000);
+  }
+
+  Future<void> setAtomicMemoryPromptTokens(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(100, 2000);
+    await db.setAiSetting(_keyAtomicMemoryPromptTokens, v.toString());
+  }
+
+  Future<int> getAtomicMemoryMaxItems() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyAtomicMemoryMaxItems);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int raw = parsed ?? _defaultAtomicMemoryMaxItems;
+    return raw.clamp(5, 80);
+  }
+
+  Future<void> setAtomicMemoryMaxItems(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(5, 80);
+    await db.setAiSetting(_keyAtomicMemoryMaxItems, v.toString());
   }
 
   // ========== 分组管理（v6 起移除 legacy，统一使用提供商+上下文） ==========

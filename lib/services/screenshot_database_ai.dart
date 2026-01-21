@@ -84,6 +84,40 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       'CREATE INDEX IF NOT EXISTS idx_ai_context_events_conv ON ai_context_events(conversation_id, id)',
     );
 
+    // SimpleMem-style atomic memories (facts/rules) for chat personalization.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_atomic_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        kind TEXT NOT NULL,           -- fact | rule
+        memory_key TEXT,              -- optional stable key for upserts (e.g. user.name)
+        content TEXT NOT NULL,        -- atomic, lossless restatement
+        content_hash TEXT NOT NULL,   -- stable hash for de-dup (computed in Dart)
+        keywords_json TEXT,           -- optional JSON array of keywords
+        confidence REAL,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_atomic_memories_conv ON ai_atomic_memories(conversation_id, updated_at DESC, id DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_atomic_memories_kind ON ai_atomic_memories(conversation_id, kind, updated_at DESC, id DESC)',
+    );
+    try {
+      await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_ai_atomic_memories_key ON ai_atomic_memories(conversation_id, memory_key) WHERE memory_key IS NOT NULL AND memory_key != ''",
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS uniq_ai_atomic_memories_hash ON ai_atomic_memories(conversation_id, content_hash)',
+      );
+    } catch (_) {}
+    await _createAtomicMemoriesFts(db);
+    await _backfillAtomicMemoriesFts(db);
+
     // 首次升级/创建时，将 ai_messages 中的会话ID迁移为显式会话条目，并初始化激活会话
     try {
       await _migrateLegacyConversations(db);
@@ -2512,6 +2546,63 @@ Future<void> _backfillAiImageMetaFts(DatabaseExecutor db) async {
   } catch (e) {
     try {
       FlutterLogger.nativeWarn('DB', '回填 ai_image_meta_fts 失败：$e');
+    } catch (_) {}
+  }
+}
+
+/// Create FTS5 index for ai_atomic_memories (atomic facts/rules).
+Future<void> _createAtomicMemoriesFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      CREATE VIRTUAL TABLE IF NOT EXISTS ai_atomic_memories_fts USING fts5(
+        memory_key,
+        content,
+        keywords_json,
+        content='ai_atomic_memories',
+        content_rowid='rowid'
+      )
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_atomic_memories_ai AFTER INSERT ON ai_atomic_memories BEGIN
+        INSERT INTO ai_atomic_memories_fts(rowid, memory_key, content, keywords_json)
+        VALUES (NEW.rowid, NEW.memory_key, NEW.content, NEW.keywords_json);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_atomic_memories_ad AFTER DELETE ON ai_atomic_memories BEGIN
+        INSERT INTO ai_atomic_memories_fts(ai_atomic_memories_fts, rowid, memory_key, content, keywords_json)
+        VALUES ('delete', OLD.rowid, OLD.memory_key, OLD.content, OLD.keywords_json);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS ai_atomic_memories_au AFTER UPDATE ON ai_atomic_memories BEGIN
+        INSERT INTO ai_atomic_memories_fts(ai_atomic_memories_fts, rowid, memory_key, content, keywords_json)
+        VALUES ('delete', OLD.rowid, OLD.memory_key, OLD.content, OLD.keywords_json);
+        INSERT INTO ai_atomic_memories_fts(rowid, memory_key, content, keywords_json)
+        VALUES (NEW.rowid, NEW.memory_key, NEW.content, NEW.keywords_json);
+      END
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', 'FTS5（ai_atomic_memories）不支持：$e');
+    } catch (_) {}
+  }
+}
+
+/// Backfill existing rows into ai_atomic_memories_fts.
+Future<void> _backfillAtomicMemoriesFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      INSERT OR IGNORE INTO ai_atomic_memories_fts(rowid, memory_key, content, keywords_json)
+      SELECT rowid, memory_key, content, keywords_json FROM ai_atomic_memories
+      WHERE
+        (content IS NOT NULL AND TRIM(content) != '')
+        OR (memory_key IS NOT NULL AND TRIM(memory_key) != '')
+        OR (keywords_json IS NOT NULL AND TRIM(keywords_json) != '')
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', '回填 ai_atomic_memories_fts 失败：$e');
     } catch (_) {}
   }
 }

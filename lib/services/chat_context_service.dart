@@ -76,6 +76,23 @@ class ChatContextService {
     } catch (_) {}
   }
 
+  Future<void> logContextEvent({
+    required String cid,
+    required String type,
+    Map<String, dynamic>? payload,
+  }) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final storage = await _db.database;
+      await storage.insert('ai_context_events', <String, Object?>{
+        'conversation_id': cid,
+        'type': type.trim().isEmpty ? 'event' : type.trim(),
+        'payload_json': payload == null ? null : jsonEncode(payload),
+        'created_at': now,
+      });
+    } catch (_) {}
+  }
+
   Future<ChatContextSnapshot> getSnapshot({String? cid}) async {
     final String resolvedCid = (cid == null || cid.trim().isEmpty)
         ? await _settings.getActiveConversationCid()
@@ -373,6 +390,13 @@ class ChatContextService {
         try {
           await txn.delete(
             'ai_messages_full',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[resolvedCid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_atomic_memories',
             where: 'conversation_id = ?',
             whereArgs: <Object?>[resolvedCid],
           );

@@ -95,6 +95,7 @@ AI 领先差距
 
 - **三层存储**：UI 尾部历史（`ai_messages`）+ 全量转写（`ai_messages_full`）+ 压缩记忆（`ai_conversations.summary/tool_memory_json`）。
 - **上下文注入**：每次请求会注入 `<conversation_context>`（摘要 + 工具摘要），并从全量转写中取最近 tail 作为 prompt history。
+- **工作记忆注入**：每次请求会额外注入 `<working_memory>`（MemOS persona + 时序图谱相关边），降低“长期记忆/关系链”类问题的遗漏。
 - **自动压缩**：当对话过长时自动调用模型生成滚动摘要，避免“忘记/重复检索/工具循环”。
 - **可观测性**：记录最近一次 prompt 的粗估 tokens（bytes/4），并提供 UI 面板查看/手动压缩/清空记忆。
 

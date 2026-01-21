@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 26,
+          version: 27,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 26,
+          version: 27,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 26,
+          version: 27,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 26,
+        version: 27,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );

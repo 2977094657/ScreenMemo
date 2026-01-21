@@ -53,6 +53,13 @@ class _ChatContextSheetBody extends StatefulWidget {
 class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
   Future<ChatContextSnapshot>? _future;
   bool _busy = false;
+  bool _wmEnabled = true;
+  int _wmMaxTokens = 1400;
+  int _wmEdgeLimit = 60;
+  bool _amEnabled = true;
+  bool _amAutoExtract = false;
+  int _amMaxTokens = 700;
+  int _amMaxItems = 24;
 
   @override
   void initState() {
@@ -64,6 +71,93 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     setState(() {
       _future = ChatContextService.instance.getSnapshot();
     });
+    _loadWorkingMemorySettings();
+    _loadAtomicMemorySettings();
+  }
+
+  Future<void> _loadWorkingMemorySettings() async {
+    try {
+      final s = AISettingsService.instance;
+      final bool enabled = await s.getWorkingMemoryInjectionEnabled();
+      final int maxTokens = await s.getWorkingMemoryPromptTokens();
+      final int edgeLimit = await s.getWorkingMemoryEdgeLimit();
+      if (!mounted) return;
+      setState(() {
+        _wmEnabled = enabled;
+        _wmMaxTokens = maxTokens;
+        _wmEdgeLimit = edgeLimit;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _setWmEnabled(bool v) async {
+    setState(() => _wmEnabled = v);
+    try {
+      await AISettingsService.instance.setWorkingMemoryInjectionEnabled(v);
+    } catch (_) {}
+  }
+
+  Future<void> _setWmMaxTokens(int v) async {
+    final int next = v.clamp(200, 4000);
+    setState(() => _wmMaxTokens = next);
+    try {
+      await AISettingsService.instance.setWorkingMemoryPromptTokens(next);
+    } catch (_) {}
+  }
+
+  Future<void> _setWmEdgeLimit(int v) async {
+    final int next = v.clamp(10, 200);
+    setState(() => _wmEdgeLimit = next);
+    try {
+      await AISettingsService.instance.setWorkingMemoryEdgeLimit(next);
+    } catch (_) {}
+  }
+
+  Future<void> _loadAtomicMemorySettings() async {
+    try {
+      final s = AISettingsService.instance;
+      final bool enabled = await s.getAtomicMemoryInjectionEnabled();
+      final bool autoExtract = await s.getAtomicMemoryAutoExtractEnabled();
+      final int maxTokens = await s.getAtomicMemoryPromptTokens();
+      final int maxItems = await s.getAtomicMemoryMaxItems();
+      if (!mounted) return;
+      setState(() {
+        _amEnabled = enabled;
+        _amAutoExtract = autoExtract;
+        _amMaxTokens = maxTokens;
+        _amMaxItems = maxItems;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _setAmEnabled(bool v) async {
+    setState(() => _amEnabled = v);
+    try {
+      await AISettingsService.instance.setAtomicMemoryInjectionEnabled(v);
+    } catch (_) {}
+  }
+
+  Future<void> _setAmAutoExtract(bool v) async {
+    setState(() => _amAutoExtract = v);
+    try {
+      await AISettingsService.instance.setAtomicMemoryAutoExtractEnabled(v);
+    } catch (_) {}
+  }
+
+  Future<void> _setAmMaxTokens(int v) async {
+    final int next = v.clamp(100, 2000);
+    setState(() => _amMaxTokens = next);
+    try {
+      await AISettingsService.instance.setAtomicMemoryPromptTokens(next);
+    } catch (_) {}
+  }
+
+  Future<void> _setAmMaxItems(int v) async {
+    final int next = v.clamp(5, 80);
+    setState(() => _amMaxItems = next);
+    try {
+      await AISettingsService.instance.setAtomicMemoryMaxItems(next);
+    } catch (_) {}
   }
 
   Future<void> _copy(String text) async {
@@ -236,6 +330,10 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                           ],
                         ),
                         const SizedBox(height: AppTheme.spacing3),
+                        _workingMemoryCard(context),
+                        const SizedBox(height: AppTheme.spacing3),
+                        _atomicMemoryCard(context),
+                        const SizedBox(height: AppTheme.spacing3),
                         _actionRow(
                           context,
                           busy: _busy,
@@ -377,6 +475,239 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
+  Widget _workingMemoryCard(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ChatContextSheet._loc(
+              context,
+              '工作记忆注入（MemOS）',
+              'Working memory injection (MemOS)',
+            ),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(
+                    context,
+                    '启用 <working_memory> 系统消息',
+                    'Enable <working_memory> system message',
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              Switch(
+                value: _wmEnabled,
+                onChanged: _busy ? null : (v) => _setWmEnabled(v),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          _stepperRow(
+            context,
+            label: ChatContextSheet._loc(
+              context,
+              'Token 预算（粗估）',
+              'Token budget (approx)',
+            ),
+            valueText: _wmMaxTokens.toString(),
+            onMinus: _busy || _wmMaxTokens <= 200
+                ? null
+                : () => _setWmMaxTokens(_wmMaxTokens - 200),
+            onPlus: _busy || _wmMaxTokens >= 4000
+                ? null
+                : () => _setWmMaxTokens(_wmMaxTokens + 200),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          _stepperRow(
+            context,
+            label: ChatContextSheet._loc(
+              context,
+              '图谱边条数上限',
+              'Edge limit',
+            ),
+            valueText: _wmEdgeLimit.toString(),
+            onMinus: _busy || _wmEdgeLimit <= 10
+                ? null
+                : () => _setWmEdgeLimit(_wmEdgeLimit - 10),
+            onPlus: _busy || _wmEdgeLimit >= 200
+                ? null
+                : () => _setWmEdgeLimit(_wmEdgeLimit + 10),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            ChatContextSheet._loc(
+              context,
+              '提示：这是每次对话请求前的“长期记忆装配”，用于稳定 persona/关系链；过大可能挤占历史上下文。',
+              'Tip: this injects long-term memory before each request (persona/relations). Too large may crowd out chat history.',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _atomicMemoryCard(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ChatContextSheet._loc(
+              context,
+              '原子记忆注入（SimpleMem）',
+              'Atomic memory injection (SimpleMem)',
+            ),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(
+                    context,
+                    '启用 <atomic_memory> 系统消息（事实/规则）',
+                    'Enable <atomic_memory> system message (facts/rules)',
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              Switch(
+                value: _amEnabled,
+                onChanged: _busy ? null : (v) => _setAmEnabled(v),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(
+                    context,
+                    '自动抽取并写入（会触发 AI 调用）',
+                    'Auto-extract & write (uses AI calls)',
+                  ),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              Switch(
+                value: _amAutoExtract,
+                onChanged: _busy ? null : (v) => _setAmAutoExtract(v),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          _stepperRow(
+            context,
+            label: ChatContextSheet._loc(
+              context,
+              'Token 预算（粗估）',
+              'Token budget (approx)',
+            ),
+            valueText: _amMaxTokens.toString(),
+            onMinus: _busy || _amMaxTokens <= 100
+                ? null
+                : () => _setAmMaxTokens(_amMaxTokens - 100),
+            onPlus: _busy || _amMaxTokens >= 2000
+                ? null
+                : () => _setAmMaxTokens(_amMaxTokens + 100),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          _stepperRow(
+            context,
+            label: ChatContextSheet._loc(
+              context,
+              '条目上限',
+              'Max items',
+            ),
+            valueText: _amMaxItems.toString(),
+            onMinus:
+                _busy || _amMaxItems <= 5 ? null : () => _setAmMaxItems(_amMaxItems - 5),
+            onPlus:
+                _busy || _amMaxItems >= 80 ? null : () => _setAmMaxItems(_amMaxItems + 5),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            ChatContextSheet._loc(
+              context,
+              '提示：原子记忆用于稳定保存“可复用的个人事实/偏好规则”。开启自动抽取会增加一次小的后台请求（已做节流）。',
+              'Tip: atomic memory stores durable user facts/preferences. Auto-extract adds a small background request (throttled).',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepperRow(
+    BuildContext context, {
+    required String label,
+    required String valueText,
+    required VoidCallback? onMinus,
+    required VoidCallback? onPlus,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+        IconButton(
+          tooltip: ChatContextSheet._loc(context, '减少', 'Decrease'),
+          onPressed: onMinus,
+          icon: const Icon(Icons.remove_rounded),
+        ),
+        SizedBox(
+          width: 64,
+          child: Center(
+            child: Text(
+              valueText,
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: ChatContextSheet._loc(context, '增加', 'Increase'),
+          onPressed: onPlus,
+          icon: const Icon(Icons.add_rounded),
+        ),
+      ],
+    );
+  }
+
   Widget _kvCard(
     BuildContext context, {
     required String title,
@@ -472,4 +803,3 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 }
-
