@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.SkipQueryVerification
 import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -171,6 +172,40 @@ interface MemoryDao {
     )
     suspend fun searchEntities(query: String, limit: Int): List<MemoryEntityEntity>
 
+    @SkipQueryVerification
+    @Query(
+        """
+            SELECT e.* FROM memory_entities e
+            JOIN memory_entities_fts f ON f.rowid = e.id
+            WHERE f MATCH :ftsQuery
+            ORDER BY e.last_modified_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEntitiesByFts(ftsQuery: String, limit: Int): List<MemoryEntityEntity>
+
+    @SkipQueryVerification
+    @Query(
+        """
+            SELECT ev.* FROM memory_events ev
+            JOIN memory_events_fts f ON f.rowid = ev.id
+            WHERE f MATCH :ftsQuery
+            ORDER BY ev.occurred_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEventsByFts(ftsQuery: String, limit: Int): List<MemoryEventEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_events
+            WHERE content LIKE '%' || :query || '%'
+            ORDER BY occurred_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEventsByContent(query: String, limit: Int): List<MemoryEventEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertEdge(entity: MemoryEdgeEntity): Long
 
@@ -257,6 +292,43 @@ interface MemoryDao {
         """
     )
     suspend fun loadEdgeEvidence(edgeId: Long, limit: Int): List<MemoryEdgeEvidenceEntity>
+
+    @SkipQueryVerification
+    @Query(
+        """
+            SELECT ev.* FROM memory_edge_evidence ev
+            JOIN memory_edge_evidence_fts f ON f.rowid = ev.id
+            WHERE f MATCH :ftsQuery
+            ORDER BY ev.last_modified_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEdgeEvidenceByFts(ftsQuery: String, limit: Int): List<MemoryEdgeEvidenceEntity>
+
+    @Query(
+        """
+            SELECT * FROM memory_edge_evidence
+            WHERE excerpt LIKE '%' || :query || '%'
+            ORDER BY last_modified_at DESC
+            LIMIT :limit
+        """
+    )
+    suspend fun searchEdgeEvidenceByExcerpt(
+        query: String,
+        limit: Int
+    ): List<MemoryEdgeEvidenceEntity>
+
+    @Query(
+        """
+            SELECT DISTINCT edge_id FROM memory_edge_evidence
+            WHERE event_id IN (:eventIds)
+            LIMIT :limit
+        """
+    )
+    suspend fun findEdgeIdsByEventIds(eventIds: List<Long>, limit: Int): List<Long>
+
+    @Query("SELECT * FROM memory_edges WHERE id IN (:edgeIds)")
+    suspend fun loadEdgesByIds(edgeIds: List<Long>): List<MemoryEdgeEntity>
 
     @Query("DELETE FROM memory_edge_evidence")
     suspend fun clearEdgeEvidence()

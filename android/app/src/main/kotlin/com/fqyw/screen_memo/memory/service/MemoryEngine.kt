@@ -446,7 +446,8 @@ class MemoryEngine private constructor(
         val markdown = buildWorkingMemoryMarkdown(
             query = normalizedQuery,
             personaSummary = personaSummary,
-            graph = graph
+            graph = graph,
+            edgeLimit = safeEdgeLimit
         )
         mapOf(
             "query" to normalizedQuery,
@@ -473,7 +474,8 @@ class MemoryEngine private constructor(
     private fun buildWorkingMemoryMarkdown(
         query: String,
         personaSummary: String,
-        graph: Map<String, Any?>
+        graph: Map<String, Any?>,
+        edgeLimit: Int
     ): String {
         val sb = StringBuilder()
         sb.append("## 工作记忆（自动装配）\n")
@@ -491,7 +493,8 @@ class MemoryEngine private constructor(
         val edges = (graph["edges"] as? List<*>)?.filterIsInstance<Map<*, *>>() ?: emptyList()
         if (edges.isNotEmpty()) {
             sb.append("### 相关图谱边\n\n")
-            edges.take(20).forEach { raw ->
+            val maxEdges = edgeLimit.coerceIn(10, 60)
+            edges.take(maxEdges).forEach { raw ->
                 val subject = raw["subject_key"]?.toString().orEmpty()
                 val predicate = raw["predicate"]?.toString().orEmpty()
                 val objKey = raw["object_key"]?.toString()

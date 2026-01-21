@@ -413,15 +413,79 @@ class MemoryRepository(
             memoryDao.findEntityByKey(USER_ENTITY_KEY)?.let { seedEntities[it.id] = it }
         }
 
+        // If the query itself is an entity key (e.g. "person:user"), seed it directly to avoid tokenizer issues.
+        if (normalizedQuery.contains(':') && normalizedQuery.length in 2..96) {
+            val canonical = canonicalizeEntityKey(normalizedQuery)
+            (memoryDao.findEntityByKey(canonical) ?: memoryDao.findEntityByKey(normalizedQuery))?.let { e ->
+                seedEntities.putIfAbsent(e.id, e)
+            }
+        }
+
         val tokens = extractSearchTokens(normalizedQuery)
+        val seedEdgeIds = LinkedHashSet<Long>()
+        val seedEventIds = LinkedHashSet<Long>()
+
         tokens.forEach { token ->
             if (seedEntities.size >= GRAPH_MAX_SEED_ENTITIES) return@forEach
-            val hits = memoryDao.searchEntities(token, limit = GRAPH_SEED_SEARCH_LIMIT)
+            val hits = searchEntitiesHybrid(token, limit = GRAPH_SEED_SEARCH_LIMIT)
             hits.forEach { e ->
                 if (seedEntities.size < GRAPH_MAX_SEED_ENTITIES) {
                     seedEntities.putIfAbsent(e.id, e)
                 }
             }
+        }
+
+        // Episode/evidence seeding (Graphiti-style): if the query matches event text or edge evidence,
+        // pull in those edges so older-but-relevant facts are not drowned out by recency-only ordering.
+        val episodeTokens = tokens.take(GRAPH_SEED_EPISODE_TOKENS)
+        episodeTokens.forEach { token ->
+            if (seedEventIds.size < GRAPH_MAX_SEED_EVENTS) {
+                val hits = searchEventsHybrid(token, limit = GRAPH_SEED_EVENT_SEARCH_LIMIT)
+                hits.forEach { ev ->
+                    if (seedEventIds.size < GRAPH_MAX_SEED_EVENTS) seedEventIds.add(ev.id)
+                }
+            }
+            if (seedEdgeIds.size < GRAPH_MAX_SEED_EDGES) {
+                val evHits = searchEdgeEvidenceHybrid(
+                    token = token,
+                    limit = GRAPH_SEED_EVIDENCE_SEARCH_LIMIT
+                )
+                evHits.forEach { ev ->
+                    if (seedEdgeIds.size < GRAPH_MAX_SEED_EDGES) seedEdgeIds.add(ev.edgeId)
+                    if (seedEventIds.size < GRAPH_MAX_SEED_EVENTS) seedEventIds.add(ev.eventId)
+                }
+            }
+        }
+
+        if (seedEventIds.isNotEmpty() && seedEdgeIds.size < GRAPH_MAX_SEED_EDGES) {
+            val extra = memoryDao.findEdgeIdsByEventIds(
+                eventIds = seedEventIds.toList(),
+                limit = GRAPH_MAX_SEED_EDGES - seedEdgeIds.size
+            )
+            extra.forEach { eid ->
+                if (seedEdgeIds.size < GRAPH_MAX_SEED_EDGES) seedEdgeIds.add(eid)
+            }
+        }
+
+        val seedEdges = if (seedEdgeIds.isEmpty()) {
+            emptyList()
+        } else {
+            memoryDao.loadEdgesByIds(seedEdgeIds.toList())
+        }
+
+        if (seedEntities.isEmpty() && seedEdges.isNotEmpty()) {
+            val extraIds = LinkedHashSet<Long>()
+            seedEdges.forEach { edge ->
+                extraIds.add(edge.subjectEntityId)
+                edge.objectEntityId?.let { extraIds.add(it) }
+            }
+            memoryDao.loadEntitiesByIds(extraIds.toList())
+                .sortedByDescending { it.lastModifiedAt }
+                .forEach { e ->
+                    if (seedEntities.size < GRAPH_MAX_SEED_ENTITIES) {
+                        seedEntities.putIfAbsent(e.id, e)
+                    }
+                }
         }
 
         if (seedEntities.isEmpty()) {
@@ -444,6 +508,17 @@ class MemoryRepository(
         }
 
         val edgesById = LinkedHashMap<Long, MemoryEdgeEntity>()
+        if (seedEdges.isNotEmpty()) {
+            // Include evidence-matched edges for visibility, but do not expand from their nodes unless
+            // they are also part of the main seed set.
+            seedEdges
+                .sortedByDescending { it.validFrom }
+                .forEach { edge ->
+                    if (edgesById.size < maxEdges) edgesById.putIfAbsent(edge.id, edge)
+                    visited.add(edge.subjectEntityId)
+                    edge.objectEntityId?.let { visited.add(it) }
+                }
+        }
         var currentFrontier = frontier
         repeat(safeDepth) {
             if (currentFrontier.isEmpty() || edgesById.size >= maxEdges || visited.size >= maxNodes) return@repeat
@@ -486,8 +561,14 @@ class MemoryRepository(
                 )
             }
 
+        val orderTokens = tokens.filter { it.length in 2..64 }.take(8)
         val edgeMaps = edgesById.values
-            .sortedByDescending { it.validFrom }
+            .sortedWith(
+                compareByDescending<MemoryEdgeEntity> { seedEdgeIds.contains(it.id) }
+                    .thenByDescending { edgeMatchScore(it, idToKey, orderTokens) }
+                    .thenByDescending { it.confidence }
+                    .thenByDescending { it.validFrom }
+            )
             .map { edge ->
                 val evidence = memoryDao.loadEdgeEvidence(edge.id, GRAPH_EDGE_EVIDENCE_LIMIT)
                     .sortedByDescending { it.lastModifiedAt }
@@ -818,6 +899,91 @@ class MemoryRepository(
             .toList()
     }
 
+    private fun toFtsPrefixQuery(token: String): String? {
+        val t = token.trim()
+        if (t.isBlank()) return null
+        // Keep the query syntax simple and safe for FTS MATCH.
+        if (!Regex("^[A-Za-z0-9_\\u4e00-\\u9fff]{2,64}$").matches(t)) return null
+        return "${t}*"
+    }
+
+    private suspend fun searchEntitiesHybrid(
+        token: String,
+        limit: Int
+    ): List<MemoryEntityEntity> {
+        val out = LinkedHashMap<Long, MemoryEntityEntity>()
+        val ftsQuery = toFtsPrefixQuery(token)
+        if (ftsQuery != null) {
+            try {
+                memoryDao.searchEntitiesByFts(ftsQuery, limit).forEach { e ->
+                    out.putIfAbsent(e.id, e)
+                }
+            } catch (_: Throwable) {
+                // FTS is optional. Fall back to LIKE-based search.
+            }
+        }
+        try {
+            memoryDao.searchEntities(token, limit).forEach { e ->
+                out.putIfAbsent(e.id, e)
+            }
+        } catch (_: Throwable) {
+        }
+        return out.values.toList()
+    }
+
+    private suspend fun searchEventsHybrid(token: String, limit: Int): List<MemoryEventEntity> {
+        val ftsQuery = toFtsPrefixQuery(token)
+        if (ftsQuery != null) {
+            try {
+                val out = memoryDao.searchEventsByFts(ftsQuery, limit)
+                if (out.isNotEmpty()) return out
+            } catch (_: Throwable) {
+            }
+        }
+        return try {
+            memoryDao.searchEventsByContent(token, limit)
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private suspend fun searchEdgeEvidenceHybrid(
+        token: String,
+        limit: Int
+    ): List<MemoryEdgeEvidenceEntity> {
+        val ftsQuery = toFtsPrefixQuery(token)
+        if (ftsQuery != null) {
+            try {
+                val out = memoryDao.searchEdgeEvidenceByFts(ftsQuery, limit)
+                if (out.isNotEmpty()) return out
+            } catch (_: Throwable) {
+            }
+        }
+        return try {
+            memoryDao.searchEdgeEvidenceByExcerpt(token, limit)
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun edgeMatchScore(
+        edge: MemoryEdgeEntity,
+        idToKey: Map<Long, String>,
+        tokens: List<String>
+    ): Int {
+        if (tokens.isEmpty()) return 0
+        val subject = idToKey[edge.subjectEntityId].orEmpty()
+        val obj = edge.objectEntityId?.let { idToKey[it].orEmpty() }.orEmpty()
+        val value = edge.objectValue.orEmpty()
+        val text = "$subject $obj $value".lowercase()
+        var score = 0
+        tokens.forEach { raw ->
+            val t = raw.trim().lowercase()
+            if (t.length >= 2 && text.contains(t)) score += 1
+        }
+        return score
+    }
+
     private fun MemoryEventEntity.toSummary(): MemoryEventSummary {
         return MemoryEventSummary(
             id = id,
@@ -840,6 +1006,11 @@ class MemoryRepository(
         private const val GRAPH_MAX_TOKENS = 12
         private const val GRAPH_MAX_SEED_ENTITIES = 12
         private const val GRAPH_SEED_SEARCH_LIMIT = 8
+        private const val GRAPH_SEED_EPISODE_TOKENS = 6
+        private const val GRAPH_SEED_EVENT_SEARCH_LIMIT = 6
+        private const val GRAPH_SEED_EVIDENCE_SEARCH_LIMIT = 8
+        private const val GRAPH_MAX_SEED_EVENTS = 24
+        private const val GRAPH_MAX_SEED_EDGES = 30
         private const val GRAPH_EDGE_EVIDENCE_LIMIT = 3
         private val STATEFUL_PREDICATES = setOf(
             "works_at",
