@@ -6,7 +6,6 @@ import '../models/memory_models.dart';
 import 'locale_service.dart';
 import 'ai_chat_service.dart';
 import 'memory_bridge_service.dart';
-import 'ai_settings_service.dart';
 import 'ai_providers_service.dart';
 import 'screenshot_database.dart';
 
@@ -35,9 +34,10 @@ class PersonaArticleService {
   static final PersonaArticleService instance =
       PersonaArticleService._internal();
 
+  static const String _aiContext = 'memory';
+
   final MemoryBridgeService _memory = MemoryBridgeService.instance;
   final AIChatService _chat = AIChatService.instance;
-  final AISettingsService _settings = AISettingsService.instance;
   final AIProvidersService _providers = AIProvidersService.instance;
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
 
@@ -63,12 +63,13 @@ class PersonaArticleService {
       personaSummary: personaSummary,
     );
 
-    final AIStreamingSession session =
-        await _chat.sendMessageStreamedV2WithDisplayOverride(
+    final AIStreamingSession
+    session = await _chat.sendMessageStreamedV2WithDisplayOverride(
       'persona_article_${style.name}',
       prompt,
       includeHistory: false,
       persistHistory: false,
+      context: _aiContext,
       extraSystemMessages: <String>[
         'Respond strictly in Markdown paragraphs. Do not output JSON or wrap the entire article inside code fences.',
       ],
@@ -80,8 +81,7 @@ class PersonaArticleService {
     PersonaArticleStyle style = PersonaArticleStyle.narrative,
   }) async {
     try {
-      final Map<String, dynamic>? row =
-          await _db.getPersonaArticle(style.name);
+      final Map<String, dynamic>? row = await _db.getPersonaArticle(style.name);
       if (row == null) return null;
       final int? updatedAt = row['updated_at'] as int?;
       return PersonaArticleCache(
@@ -114,12 +114,10 @@ class PersonaArticleService {
     String? providerName;
     String? model;
     try {
-      final Map<String, dynamic>? ctx =
-          await _db.getAIContext('chat');
+      final Map<String, dynamic>? ctx = await _db.getAIContext(_aiContext);
       AIProvider? provider;
       if (ctx != null && ctx['provider_id'] is int) {
-        provider =
-            await _providers.getProvider(ctx['provider_id'] as int);
+        provider = await _providers.getProvider(ctx['provider_id'] as int);
       } else {
         provider = await _providers.getDefaultProvider();
       }
@@ -134,7 +132,24 @@ class PersonaArticleService {
         }
       }
     } catch (_) {}
-    model ??= await _settings.getModel();
+
+    if (model == null || model.trim().isEmpty) {
+      // Do NOT fall back to the chat context. Best-effort resolve a model from
+      // the default provider so cached metadata stays meaningful.
+      try {
+        final AIProvider? provider = await _providers.getDefaultProvider();
+        if (provider != null) {
+          providerName ??= provider.name;
+          model = (provider.extra['active_model'] as String?)?.trim();
+          if (model == null || model.isEmpty) {
+            model = provider.defaultModel.trim();
+          }
+          if (model.isEmpty && provider.models.isNotEmpty) {
+            model = provider.models.first;
+          }
+        }
+      } catch (_) {}
+    }
 
     await _db.upsertPersonaArticle(
       style: style.name,
@@ -168,9 +183,7 @@ class PersonaArticleService {
   }
 
   String _localeTag(Locale locale) {
-    final List<String> segments = <String>[
-      locale.languageCode.toLowerCase(),
-    ];
+    final List<String> segments = <String>[locale.languageCode.toLowerCase()];
     final String? script = locale.scriptCode;
     if (script != null && script.isNotEmpty) {
       segments.add(script);

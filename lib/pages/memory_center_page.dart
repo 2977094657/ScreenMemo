@@ -727,6 +727,8 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
           recentEvents: <MemoryEventSummary>[],
           personaSummary: '',
         );
+    final String persona = snapshot.personaSummary.trim();
+    final bool canCopyPersona = persona.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -740,6 +742,16 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
             : null,
         title: _buildMemoryAppBarTitle(context),
         actions: [
+          if (canCopyPersona)
+            IconButton(
+              tooltip: t.copyPersonaTooltip,
+              icon: const Icon(Icons.copy_rounded),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: persona));
+                if (!context.mounted) return;
+                UINotifier.success(context, t.copySuccess);
+              },
+            ),
           IconButton(
             tooltip: '请求调试',
             onPressed: () {
@@ -923,33 +935,7 @@ class _MemoryCenterPageState extends State<MemoryCenterPage> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                t.memoryCenterHeroTitle,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: t.copyPersonaTooltip,
-              icon: const Icon(Icons.copy_rounded),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: persona));
-                if (!context.mounted) return;
-                UINotifier.success(context, t.copySuccess);
-              },
-            ),
-          ],
-        ),
-        _buildArticleMarkdown(theme, persona),
-      ],
-    );
+    return _buildArticleMarkdown(theme, persona);
   }
 
   Widget _buildArticleSection(BuildContext context) {
