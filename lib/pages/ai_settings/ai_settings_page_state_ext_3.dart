@@ -434,6 +434,12 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     final List<String> sorted = missingNames.toList()..sort();
     final String lookupKey = '$msgKey|${sorted.join("|")}';
     return _evidenceResolveFutures.putIfAbsent(lookupKey, () async {
+      final Stopwatch sw = Stopwatch()..start();
+      _uiPerf.log(
+        'evidence.resolve.start',
+        detail:
+            'lookup=${lookupKey.hashCode} missing=${missingNames.length} names=${sorted.take(3).join(",")}',
+      );
       Map<String, String> map = const <String, String>{};
       try {
         map = await ScreenshotDatabase.instance.findPathsByBasenames(
@@ -442,6 +448,11 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       } catch (_) {
         map = const <String, String>{};
       }
+      _uiPerf.log(
+        'evidence.resolve.db.done',
+        detail:
+            'lookup=${lookupKey.hashCode} ms=${sw.elapsedMilliseconds} found=${map.length}',
+      );
       if (!mounted) return map;
       if (map.isNotEmpty) {
         final Map<String, String> existing =
@@ -458,11 +469,21 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
             ...existing,
             ...map,
           };
+          _uiPerf.log(
+            'evidence.cache.update',
+            detail:
+                'lookup=${lookupKey.hashCode} msg=${msgKey.hashCode} merged=${existing.length + map.length}',
+          );
           // 关键：证据路径缓存更新后，主动触发一次页面重建；
           // 否则在“退出→进入”场景里可能要等到 Drawer/键盘等外部 UI 事件触发 rebuild 才会显示图片。
           _scheduleEvidenceRebuild();
         }
       }
+      _uiPerf.log(
+        'evidence.resolve.done',
+        detail:
+            'lookup=${lookupKey.hashCode} ms=${sw.elapsedMilliseconds} found=${map.length}',
+      );
       return map;
     });
   }
@@ -1434,7 +1455,17 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     }
 
     // 非流式：构建 Markdown 与 evidence 解析
+    final String perfMsgKey = _evidenceMsgKey(message);
+    final bool logOnce = _perfLoggedMarkdownMsgKeys.add(perfMsgKey);
+    final Stopwatch mdSw = Stopwatch()..start();
     final String preprocessedMd = preprocessForChatMarkdown(content);
+    if (logOnce) {
+      _uiPerf.log(
+        'md.preprocess',
+        detail:
+            'msg=${perfMsgKey.hashCode} ms=${mdSw.elapsedMilliseconds} len=${content.length}',
+      );
+    }
     final Map<String, String> evidenceNameToPath = <String, String>{};
     final List<EvidenceImageAttachment> atts =
         _attachmentsByIndex[messageIndex] ?? const <EvidenceImageAttachment>[];
@@ -1461,6 +1492,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       ).textTheme.bodyMedium?.copyWith(color: fg),
       evidenceNameToPath: evidenceNameToPath,
       orderedEvidencePaths: orderedEvidencePathsFromAtts,
+      perfLogger: _uiPerf,
     );
 
     // 提取 evidence 引用（保留顺序，便于为查看器构建稳定的 gallery 顺序）
@@ -1472,6 +1504,13 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       final String name = (mm.group(1) ?? '').trim();
       if (name.isEmpty) continue;
       if (evidenceNames.add(name)) evidenceNamesInOrder.add(name);
+    }
+    if (logOnce) {
+      _uiPerf.log(
+        'md.evidence.scan',
+        detail:
+            'msg=${perfMsgKey.hashCode} evidence=${evidenceNames.length} atts=${atts.length}',
+      );
     }
 
     // 流式期间（且允许渲染图片）尽量只用预加载附件映射，避免高频重建触发扫库
@@ -1515,7 +1554,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       );
     }
 
-    final String msgKey = _evidenceMsgKey(message);
+    final String msgKey = perfMsgKey;
     final Map<String, String> cached =
         _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
     final Map<String, String> baseMap = <String, String>{
@@ -1525,6 +1564,13 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     final Set<String> missing = evidenceNames
         .where((n) => !baseMap.containsKey(n))
         .toSet();
+    if (logOnce) {
+      _uiPerf.log(
+        'md.evidence.missing',
+        detail:
+            'msg=${perfMsgKey.hashCode} missing=${missing.length} cached=${cached.length}',
+      );
+    }
 
     List<String> orderedEvidencePathsFromMap(Map<String, String> map) {
       if (orderedEvidencePathsFromAtts.isNotEmpty) {
@@ -1550,6 +1596,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
         ).textTheme.bodyMedium?.copyWith(color: fg),
         evidenceNameToPath: baseMap,
         orderedEvidencePaths: orderedEvidencePathsFromMap(baseMap),
+        perfLogger: _uiPerf,
       );
       return MarkdownBody(
         data: preprocessedMd,
@@ -1570,6 +1617,13 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       );
     }
 
+    if (logOnce) {
+      _uiPerf.log(
+        'md.evidence.resolve.future',
+        detail:
+            'msg=${perfMsgKey.hashCode} missing=${missing.length} willQueryDb=1',
+      );
+    }
     return FutureBuilder<Map<String, String>>(
       future: _resolveEvidencePathsCached(
         msgKey: msgKey,
@@ -1585,10 +1639,20 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
           blockTextStyle: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: fg),
+          // While the future is resolving, avoid flashing raw `[evidence: ...]`
+          // text; show a fixed-size shimmer placeholder instead.
+          evidenceLoading: snap.connectionState != ConnectionState.done,
           evidenceNameToPath: merged,
           orderedEvidencePaths: orderedEvidencePathsFromMap(merged),
+          perfLogger: _uiPerf,
         );
         return MarkdownBody(
+          // flutter_markdown may cache internal builders across rebuilds when the
+          // markdown `data` doesn't change. Force a rebuild when the evidence
+          // resolve state changes so resolved paths can take effect.
+          key: ValueKey(
+            'md:$msgKey:${snap.connectionState.name}:${map.length}',
+          ),
           data: preprocessedMd,
           builders: resolved.builders,
           inlineSyntaxes: resolved.inlineSyntaxes,

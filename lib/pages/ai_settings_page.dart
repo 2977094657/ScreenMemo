@@ -26,7 +26,9 @@ import '../services/query_context_service.dart';
 import '../services/prompt_budget.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
+import '../services/ui_perf_logger.dart';
 import '../widgets/chat_context_sheet.dart';
+import '../widgets/ui_perf_overlay.dart';
 
 part 'ai_settings/ai_settings_page_state_ext_1.dart';
 part 'ai_settings/ai_settings_page_state_ext_2.dart';
@@ -143,6 +145,12 @@ class _AISettingsPageState extends State<AISettingsPage>
   static const double _inputRowHeight = 40.0;
   final AISettingsService _settings = AISettingsService.instance;
   final AIChatService _chat = AIChatService.instance;
+
+  // In-page perf timeline for troubleshooting slow image render on chat page.
+  final UiPerfLogger _uiPerf = UiPerfLogger(scope: 'AIChat');
+  // Enabled by default so it is visible even in release builds.
+  bool _showPerfOverlay = true;
+  final Set<String> _perfLoggedMarkdownMsgKeys = <String>{};
 
   final TextEditingController _baseUrlController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
@@ -274,6 +282,8 @@ class _AISettingsPageState extends State<AISettingsPage>
   @override
   void initState() {
     super.initState();
+    _uiPerf.clear(restart: true);
+    _uiPerf.log('page.initState');
     // 预加载图标清单，确保首屏动态图标匹配生效
     ModelIconUtils.preload();
     _loadAll();
@@ -323,6 +333,7 @@ class _AISettingsPageState extends State<AISettingsPage>
     _inFlightSaveTimer?.cancel();
     _ctxDebounceTimer?.cancel();
     _ctxChangedSub?.cancel();
+    _uiPerf.dispose();
     super.dispose();
   }
 
@@ -406,8 +417,26 @@ class _AISettingsPageState extends State<AISettingsPage>
 
     // 包裹全屏横向滑动手势（嵌入/独立模式均生效）
     final Widget body = _withDrawerSwipe(bodyCore);
+    final Widget bodyWithPerf = Stack(
+      children: [
+        body,
+        if (_showPerfOverlay)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: SafeArea(
+              bottom: false,
+              child: UiPerfOverlay(
+                logger: _uiPerf,
+                onClear: () => _uiPerf.clear(restart: true),
+                onClose: () => _setState(() => _showPerfOverlay = false),
+              ),
+            ),
+          ),
+      ],
+    );
     if (widget.embedded) {
-      return body;
+      return bodyWithPerf;
     }
     return Scaffold(
       appBar: AppBar(
@@ -420,12 +449,28 @@ class _AISettingsPageState extends State<AISettingsPage>
             onPressed: () => ChatContextSheet.show(context),
             icon: const Icon(Icons.memory_outlined),
           ),
+          IconButton(
+            tooltip: _showPerfOverlay
+                ? 'Hide perf overlay'
+                : 'Show perf overlay',
+            onPressed: () {
+              _setState(() => _showPerfOverlay = !_showPerfOverlay);
+              _uiPerf.log(
+                _showPerfOverlay ? 'perfOverlay.show' : 'perfOverlay.hide',
+              );
+            },
+            icon: Icon(
+              _showPerfOverlay
+                  ? Icons.timer_off_outlined
+                  : Icons.timer_outlined,
+            ),
+          ),
         ],
       ),
       drawer: const AppSideDrawer(),
       drawerEnableOpenDragGesture: false, // 关闭默认边缘拖拽，改用自定义"任意位置"滑动
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: body,
+      body: bodyWithPerf,
     );
   }
 }

@@ -1622,11 +1622,19 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             columns: ['file_path'],
             where: 'file_path LIKE ?',
             whereArgs: ['%' + base + '.' + e],
-            limit: 1,
+            // 同名文件可能跨天重复（文件名仅 HHmmss_SSS）；按时间倒序取一批并优先返回仍存在的文件，
+            // 以避免 UI 退出/进入后解析到已被清理的旧路径。
+            orderBy: 'capture_time DESC, id DESC',
+            limit: 20,
           );
-          if (rows.isNotEmpty) {
-            final p = (rows.first['file_path'] as String?) ?? '';
-            if (p.isNotEmpty) return p;
+          for (final r in rows) {
+            final p = (r['file_path'] as String?) ?? '';
+            if (p.isEmpty) continue;
+            try {
+              if (await File(p).exists()) return p;
+            } catch (_) {
+              // ignore
+            }
           }
         } catch (_) {}
       }
@@ -1724,11 +1732,17 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
                   columns: ['file_path'],
                   where: 'file_path LIKE ?',
                   whereArgs: [pattern],
-                  limit: 1,
+                  orderBy: 'capture_time DESC, id DESC',
+                  limit: 20,
                 );
-                if (rows.isNotEmpty) {
-                  final p = (rows.first['file_path'] as String?) ?? '';
-                  if (p.isNotEmpty) return p;
+                for (final r in rows) {
+                  final p = (r['file_path'] as String?) ?? '';
+                  if (p.isEmpty) continue;
+                  try {
+                    if (await File(p).exists()) return p;
+                  } catch (_) {
+                    // ignore
+                  }
                 }
               }
             } catch (_) {}

@@ -17,52 +17,56 @@ import 'timeline_jump_overlay.dart';
 class ScreenshotImageWidget extends StatelessWidget {
   /// 图片文件
   final File file;
-  
+
+  /// Optional override for the underlying ImageProvider (useful for perf probes).
+  final ImageProvider? imageProvider;
+
   /// 是否启用隐私模式
   final bool privacyMode;
 
   /// 额外的 NSFW 遮罩（例如来自 AI 的 nsfw tag）
   final bool extraNsfwMask;
-  
+
   /// 页面链接（用于判断是否为 NSFW）- 已废弃，使用 screenshot 参数
   final String? pageUrl;
-  
+
   /// 截图记录（用于准确判断 NSFW）
   final ScreenshotRecord? screenshot;
-  
+
   /// 图片宽度
   final double? width;
-  
+
   /// 图片高度
   final double? height;
-  
+
   /// 图片适配方式
   final BoxFit fit;
-  
+
   /// 圆角
   final BorderRadius? borderRadius;
-  
+
   /// 点击回调
   final VoidCallback? onTap;
-  
+
   /// NSFW 显示回调（点击"显示"按钮时）
   final VoidCallback? onReveal;
-  
+
   /// 是否显示 NSFW 的"显示"按钮
   final bool showNsfwButton;
-  
+
   /// 目标缩略图宽度（用于性能优化）
   final int? targetWidth;
-  
+
   /// 错误占位文本
   final String? errorText;
 
   /// 是否显示“时间线跳转”按钮（默认关闭）
   final bool showTimelineJumpButton;
-  
+
   const ScreenshotImageWidget({
     super.key,
     required this.file,
+    this.imageProvider,
     this.privacyMode = true,
     this.extraNsfwMask = false,
     this.pageUrl,
@@ -83,12 +87,13 @@ class ScreenshotImageWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     // 优先使用 screenshot 参数进行准确判断，否则回退到旧的 URL 判断方式
-    final bool nsfwMasked = privacyMode &&
+    final bool nsfwMasked =
+        privacyMode &&
         (extraNsfwMask ||
             (screenshot != null
                 ? NsfwPreferenceService.instance.shouldMaskCached(screenshot!)
                 : NsfwDetector.isNsfwUrl(pageUrl)));
-    
+
     Widget base = _buildImage(context, isDark);
 
     final List<Widget> layers = <Widget>[base];
@@ -125,15 +130,17 @@ class ScreenshotImageWidget extends StatelessWidget {
 
     return result;
   }
-  
+
   /// 构建图片
   Widget _buildImage(BuildContext context, bool isDark) {
-    final ImageProvider imageProvider = targetWidth != null
-        ? ResizeImage(FileImage(file), width: targetWidth!)
-        : FileImage(file);
-    
+    final ImageProvider provider =
+        imageProvider ??
+        (targetWidth != null
+            ? ResizeImage(FileImage(file), width: targetWidth!)
+            : FileImage(file));
+
     final baseImage = Image(
-      image: imageProvider,
+      image: provider,
       width: width,
       height: height,
       fit: fit,
@@ -141,7 +148,7 @@ class ScreenshotImageWidget extends StatelessWidget {
       gaplessPlayback: true,
       errorBuilder: (context, error, stackTrace) => _buildErrorWidget(context),
     );
-    
+
     // 深色模式下添加黑色遮罩
     if (isDark) {
       return ColorFiltered(
@@ -152,10 +159,10 @@ class ScreenshotImageWidget extends StatelessWidget {
         child: baseImage,
       );
     }
-    
+
     return baseImage;
   }
-  
+
   /// 构建错误占位
   Widget _buildErrorWidget(BuildContext context) {
     return Container(
@@ -190,4 +197,3 @@ class ScreenshotImageWidget extends StatelessWidget {
     );
   }
 }
-

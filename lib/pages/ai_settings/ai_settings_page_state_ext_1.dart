@@ -103,8 +103,12 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
 
   Future<void> _loadAll() async {
     final sw = Stopwatch()..start();
+    _uiPerf.log('loadAll.start');
     try {
-      if (_loadingAllInFlight) return; // 防止重入触发的重复加载
+      if (_loadingAllInFlight) {
+        _uiPerf.log('loadAll.skip', detail: 'reentry');
+        return; // 防止重入触发的重复加载
+      }
       _loadingAllInFlight = true;
       // 并行预取，避免串行等待造成的累计时延
       final Future<List<AISiteGroup>> fGroups = _settings.listSiteGroups();
@@ -125,6 +129,11 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
       // 先拿到分组与激活ID
       final List<AISiteGroup> groups = await fGroups;
       final int? activeId = await fActiveId;
+      _uiPerf.log(
+        'loadAll.groups.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} groups=${groups.length} activeId=${activeId ?? -1}',
+      );
 
       // 基础配置：若存在激活分组，则优先使用分组中的值；否则使用未分组键值
       String baseUrl;
@@ -140,6 +149,10 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
         apiKey = await fApiKey;
         model = await fModel;
       }
+      _uiPerf.log(
+        'loadAll.config.done',
+        detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
+      );
 
       // 收集其余预取结果
       final List<AIMessage> history = await fHistory;
@@ -148,6 +161,11 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
       final String? segPrompt = await fSegPrompt;
       final String? mergePrompt = await fMergePrompt;
       final String? dailyPrompt = await fDailyPrompt;
+      _uiPerf.log(
+        'loadAll.history.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} history=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
+      );
 
       // 回填历史消息的深度思考内容与耗时（索引映射到消息）
       final Map<int, String> rb = <int, String>{};
@@ -171,6 +189,7 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
       }
 
       if (!mounted) return;
+      _perfLoggedMarkdownMsgKeys.clear();
       _setState(() {
         _groups = groups;
         _activeGroupId = activeId;
@@ -216,6 +235,10 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
         _promptDailyController.text = _promptDaily?.trim() ?? '';
         _loading = false;
       });
+      _uiPerf.log(
+        'loadAll.setState.done',
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
       if (mounted) {
         // 将消息分批追加到列表，避免一次性构建大量 Markdown
         const int batch = 24;
@@ -225,14 +248,25 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
               : (i + batch);
           final List<AIMessage> slice = history.sublist(i, end);
           final bool isLast = end >= history.length;
+          final int startIdx = i;
+          final int endIdx = end;
           // 逐批在微任务中追加，释放主帧
           scheduleMicrotask(() {
             if (!mounted) return;
             _setState(() {
               _messages.addAll(slice);
             });
+            _uiPerf.log(
+              'history.append',
+              detail:
+                  'ms=${sw.elapsedMilliseconds} range=$startIdx-$endIdx total=${history.length}',
+            );
             if (isLast) {
               _scrollToBottom(animated: true);
+              _uiPerf.log(
+                'history.append.done',
+                detail: 'ms=${sw.elapsedMilliseconds} total=${history.length}',
+              );
             }
           });
         }
@@ -255,6 +289,7 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
     }
     // 首帧绘制完成耗时（状态更新到绘制）
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _uiPerf.log('loadAll.firstFrame', detail: 'ms=${sw.elapsedMilliseconds}');
       try {
         await FlutterLogger.nativeInfo(
           'UI',
@@ -902,7 +937,17 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
 
     if (type == 'tool_batch_begin') {
       final List<dynamic> tools = (payload['tools'] as List?) ?? const [];
-      final _ThinkingBlock block = _ensureThinkingBlock(assistantIdx);
+      // Tool UI events can arrive after we've already started streaming content
+      // for the same assistant turn (e.g. when the model emits some content
+      // before declaring tool_calls). In that case we must NOT create a new
+      // thinking block; otherwise tools show up as a second "思考过程" at the
+      // end of the bubble. Always attach tool chips to the existing (last)
+      // block for this assistant message.
+      final List<_ThinkingBlock>? blocks0 =
+          _thinkingBlocksByIndex[assistantIdx];
+      final _ThinkingBlock block = (blocks0 != null && blocks0.isNotEmpty)
+          ? blocks0.last
+          : _ensureThinkingBlock(assistantIdx);
       final String title = _isZhLocale() ? '工具调用' : 'Tools';
       final _ThinkingEvent toolsEvent = _upsertEvent(
         block,

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart' as fm;
 import 'package:markdown/markdown.dart' as md;
+import 'package:shimmer/shimmer.dart';
 import 'dart:io';
 import '../widgets/screenshot_image_widget.dart';
 import '../widgets/timeline_jump_overlay.dart';
 import '../services/screenshot_database.dart';
 import '../services/navigation_service.dart';
 import '../services/timeline_jump_service.dart';
+import '../services/ui_perf_logger.dart';
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
 import '../theme/app_theme.dart';
@@ -41,6 +44,18 @@ import '../services/flutter_logger.dart';
 ///
 /// 注意：本文件不引入 markdown 的自定义 Block/Inline 语法，纯靠预处理 + builders，
 /// 以避免不同 markdown 版本 API 差异导致的编译问题。
+
+// Keep the evidence loading shimmer consistent with the "thinking" shimmer.
+const Color _kThinkingShimmerHighlightColor = Color(0xFFFFFBEB);
+// TEMP (debug-only): show evidence resolve state under each image/placeholder.
+// Remove once the restore/render issue is confirmed fixed.
+const bool _kChatEvidenceDebugUi = kDebugMode;
+
+String _shortenDebugText(String s, {int max = 72}) {
+  final String t = s.trim();
+  if (t.length <= max) return t;
+  return '…' + t.substring(t.length - max);
+}
 
 /// 将原文预处理为带 <math-inline>/<math-block> 与思考引用块的 Markdown 文本。
 String preprocessForChatMarkdown(String content) {
@@ -78,7 +93,10 @@ String preprocessForChatMarkdown(String content) {
 
 /// 从可见正文中移除 <think>...</think>（支持缺失闭合标签）。
 String _removeThinkBlocks(String text) {
-  final thinkRegex = RegExp(r'<think>([\s\S]*?)(?:</think>|$)', multiLine: true);
+  final thinkRegex = RegExp(
+    r'<think>([\s\S]*?)(?:</think>|$)',
+    multiLine: true,
+  );
   return text.replaceAll(thinkRegex, '');
 }
 
@@ -223,9 +241,11 @@ String _ensureEvidenceBlocksOnOwnLine(String input) {
     final nextIsEv = next != null && evLine.hasMatch(next.trim());
 
     // 在 evidence-only 行前后添加空行（但相邻 evidence 行之间不加）
-    if (isEv && (prev != null) && prev.trim().isNotEmpty && !prevIsEv) sb.writeln('');
+    if (isEv && (prev != null) && prev.trim().isNotEmpty && !prevIsEv)
+      sb.writeln('');
     sb.writeln(cur);
-    if (isEv && (next != null) && next.trim().isNotEmpty && !nextIsEv) sb.writeln('');
+    if (isEv && (next != null) && next.trim().isNotEmpty && !nextIsEv)
+      sb.writeln('');
   }
   var s = sb.toString();
   if (s.endsWith('\n')) s = s.substring(0, s.length - 1);
@@ -314,11 +334,20 @@ class _MathBuilder extends MarkdownElementBuilder {
 }
 
 class _EvidenceBuilder extends MarkdownElementBuilder {
-  _EvidenceBuilder({required this.evidenceNameToPath, required this.orderedEvidencePaths});
+  _EvidenceBuilder({
+    required this.evidenceNameToPath,
+    required this.orderedEvidencePaths,
+    required this.showLoadingPlaceholder,
+    this.perfLogger,
+  });
 
   final Map<String, String> evidenceNameToPath;
   final List<String> orderedEvidencePaths;
+  final bool showLoadingPlaceholder;
+  final UiPerfLogger? perfLogger;
   static final Set<String> _loggedMissing = <String>{};
+  static final Set<String> _loggedPlaceholder = <String>{};
+  static final Set<String> _loggedResolved = <String>{};
 
   @override
   Widget? visitElementAfter(element, TextStyle? preferredStyle) {
@@ -335,23 +364,140 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
       }
     }
     if (resolvedPath == null || resolvedPath.isEmpty) {
+      // While evidence paths are being resolved (e.g. on page restore), render a
+      // fixed-size skeleton instead of showing the raw tag text.
+      if (showLoadingPlaceholder) {
+        final int loggerId = (perfLogger == null)
+            ? 0
+            : identityHashCode(perfLogger!);
+        if (_loggedPlaceholder.add('$loggerId|$name')) {
+          perfLogger?.log('evidence.placeholder', detail: 'name=$name');
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Builder(
+            builder: (context) {
+              Widget wrapDebug(Widget child) {
+                if (!_kChatEvidenceDebugUi) return child;
+                final String p = resolvedPath ?? '';
+                final String dbg =
+                    'evidence="$name"\nloading=$showLoadingPlaceholder\nhasKey=${evidenceNameToPath.containsKey(name)} mapSize=${evidenceNameToPath.length}\npath="${_shortenDebugText(p)}"';
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    child,
+                    const SizedBox(height: 2),
+                    Text(
+                      dbg,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        height: 1.05,
+                        fontFamily: 'monospace',
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              final BorderRadius br = BorderRadius.circular(AppTheme.radiusLg);
+              final Color base = Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.65);
+              return wrapDebug(
+                Container(
+                  constraints: const BoxConstraints.tightFor(
+                    width: 96,
+                    height: 168,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.12),
+                      width: 1,
+                    ),
+                    borderRadius: br,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: br,
+                    child: Shimmer.fromColors(
+                      baseColor: base,
+                      highlightColor: _kThinkingShimmerHighlightColor,
+                      direction: ShimmerDirection.ltr,
+                      period: const Duration(milliseconds: 2200),
+                      child: Container(color: base),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
       // 便于排查：当引用格式正确但无法解析到本地文件时，打一次日志（去重）。
-      if (_loggedMissing.add(name)) {
+      final int loggerId = (perfLogger == null)
+          ? 0
+          : identityHashCode(perfLogger!);
+      if (_loggedMissing.add('$loggerId|$name')) {
         try {
           FlutterLogger.nativeWarn('UI.Chat-Evidence', '无法解析证据引用：' + name);
         } catch (_) {}
+        perfLogger?.log('evidence.unresolved', detail: 'name=$name');
       }
       // 未匹配到文件名时，回退为可选的明文占位，避免渲染空白
       return Text('[evidence: ' + name + ']', style: preferredStyle);
+    }
+    final int loggerId = (perfLogger == null)
+        ? 0
+        : identityHashCode(perfLogger!);
+    if (_loggedResolved.add('$loggerId|$resolvedPath')) {
+      perfLogger?.log('evidence.resolved', detail: 'name=$name');
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Builder(
         builder: (context) {
+          Widget wrapDebug(Widget child) {
+            if (!_kChatEvidenceDebugUi) return child;
+            final String p = resolvedPath ?? '';
+            final bool exists = p.isNotEmpty ? File(p).existsSync() : false;
+            final String dbg =
+                'evidence="$name"\nloading=$showLoadingPlaceholder\nhasKey=${evidenceNameToPath.containsKey(name)} mapSize=${evidenceNameToPath.length}\nexists=$exists\npath="${_shortenDebugText(p)}"';
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                child,
+                const SizedBox(height: 2),
+                Text(
+                  dbg,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    height: 1.05,
+                    fontFamily: 'monospace',
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            );
+          }
+
           final BorderRadius br = BorderRadius.circular(AppTheme.radiusLg);
           final String path = resolvedPath!;
-          final Widget thumbImage = ScreenshotImageWidget(
-            file: File(path),
+          final File file = File(path);
+          final ImageProvider imageProvider = ResizeImage(
+            FileImage(file),
+            width: 192,
+          );
+          final Widget thumbCore = ScreenshotImageWidget(
+            file: file,
+            imageProvider: imageProvider,
             privacyMode: true,
             width: 96,
             height: 168,
@@ -364,14 +510,20 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
               // 保留原有：点击“显示”仍可进入大图查看
               () async {
                 try {
-                  final List<String> galleryPaths = (orderedEvidencePaths.isNotEmpty)
+                  final List<String> galleryPaths =
+                      (orderedEvidencePaths.isNotEmpty)
                       ? orderedEvidencePaths
                       : <String>[path];
                   final List<String> paths = <String>{...galleryPaths}.toList();
                   if (!paths.contains(path)) paths.insert(0, path);
                   final int initialIndex = paths.indexOf(path);
-                  try { await FlutterLogger.info('UI.Chat-ImageTap：跳转查看器（显示）数量='+paths.length.toString()); } catch (_) {}
-                  final nav = NavigationService.instance.navigatorKey.currentState;
+                  try {
+                    await FlutterLogger.info(
+                      'UI.Chat-ImageTap：跳转查看器（显示）数量=' + paths.length.toString(),
+                    );
+                  } catch (_) {}
+                  final nav =
+                      NavigationService.instance.navigatorKey.currentState;
                   nav?.pushNamed(
                     '/screenshot_viewer',
                     arguments: {
@@ -396,14 +548,20 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
               // 保留原有：点击缩略图进入大图
               () async {
                 try {
-                  final List<String> galleryPaths = (orderedEvidencePaths.isNotEmpty)
+                  final List<String> galleryPaths =
+                      (orderedEvidencePaths.isNotEmpty)
                       ? orderedEvidencePaths
                       : <String>[path];
                   final List<String> paths = <String>{...galleryPaths}.toList();
                   if (!paths.contains(path)) paths.insert(0, path);
                   final int initialIndex = paths.indexOf(path);
-                  try { await FlutterLogger.info('UI.Chat-ImageTap：跳转查看器（点击）数量='+paths.length.toString()); } catch (_) {}
-                  final nav = NavigationService.instance.navigatorKey.currentState;
+                  try {
+                    await FlutterLogger.info(
+                      'UI.Chat-ImageTap：跳转查看器（点击）数量=' + paths.length.toString(),
+                    );
+                  } catch (_) {}
+                  final nav =
+                      NavigationService.instance.navigatorKey.currentState;
                   nav?.pushNamed(
                     '/screenshot_viewer',
                     arguments: {
@@ -425,22 +583,132 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
               }();
             },
           );
-          return Container(
-            constraints: const BoxConstraints.tightFor(width: 96, height: 168),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.12),
-                width: 1,
+          final Widget thumbImage = (perfLogger == null)
+              ? thumbCore
+              : _PerfImageProbe(
+                  perfLogger: perfLogger!,
+                  tag: 'evidence:$name',
+                  imageProvider: imageProvider,
+                  child: thumbCore,
+                );
+          return wrapDebug(
+            Container(
+              constraints: const BoxConstraints.tightFor(
+                width: 96,
+                height: 168,
               ),
-              borderRadius: br,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.outline.withValues(alpha: 0.12),
+                  width: 1,
+                ),
+                borderRadius: br,
+              ),
+              // 已在 ScreenshotImageWidget 内显示时间线按钮，这里不再叠加，避免错位与重复
+              child: thumbImage,
             ),
-            // 已在 ScreenshotImageWidget 内显示时间线按钮，这里不再叠加，避免错位与重复
-            child: thumbImage,
           );
         },
       ),
     );
   }
+}
+
+class _PerfImageProbe extends StatefulWidget {
+  const _PerfImageProbe({
+    required this.perfLogger,
+    required this.tag,
+    required this.imageProvider,
+    required this.child,
+  });
+
+  final UiPerfLogger perfLogger;
+  final String tag;
+  final ImageProvider imageProvider;
+  final Widget child;
+
+  @override
+  State<_PerfImageProbe> createState() => _PerfImageProbeState();
+}
+
+class _PerfImageProbeState extends State<_PerfImageProbe> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  final Stopwatch _sw = Stopwatch();
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sw
+      ..reset()
+      ..start();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _attach();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PerfImageProbe oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageProvider != widget.imageProvider) {
+      _done = false;
+      _sw
+        ..reset()
+        ..start();
+      _detach();
+      _attach();
+    }
+  }
+
+  void _attach() {
+    final ImageStream newStream = widget.imageProvider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    _detach();
+    _stream = newStream;
+    _listener = ImageStreamListener(
+      (ImageInfo info, bool sync) {
+        if (_done) return;
+        _done = true;
+        widget.perfLogger.log(
+          'image.decoded',
+          detail: 'ms=${_sw.elapsedMilliseconds} sync=$sync ${widget.tag}',
+        );
+      },
+      onError: (Object error, StackTrace? stackTrace) {
+        if (_done) return;
+        _done = true;
+        widget.perfLogger.log(
+          'image.error',
+          detail: 'ms=${_sw.elapsedMilliseconds} ${widget.tag} err=$error',
+        );
+      },
+    );
+    _stream!.addListener(_listener!);
+  }
+
+  void _detach() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    _stream = null;
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// 提供给页面使用的统一配置对象。
@@ -450,26 +718,32 @@ class MarkdownMathConfig {
     this.blockTextStyle,
     Map<String, String>? evidenceNameToPath,
     List<String>? orderedEvidencePaths,
+    this.evidenceLoading = false,
+    this.perfLogger,
   }) : _evidenceNameToPath = evidenceNameToPath ?? const <String, String>{},
        _orderedEvidencePaths = orderedEvidencePaths ?? const <String>[];
 
   final TextStyle? inlineTextStyle;
   final TextStyle? blockTextStyle;
+  final bool evidenceLoading;
+  final UiPerfLogger? perfLogger;
   final Map<String, String> _evidenceNameToPath;
   final List<String> _orderedEvidencePaths;
 
   Map<String, MarkdownElementBuilder> get builders => {
-        'math-inline': _MathBuilder(inlineTextStyle: inlineTextStyle),
-        'math-block': _MathBuilder(blockTextStyle: blockTextStyle),
-        'evidence': _EvidenceBuilder(
-          evidenceNameToPath: _evidenceNameToPath,
-          orderedEvidencePaths: _orderedEvidencePaths,
-        ),
-      };
+    'math-inline': _MathBuilder(inlineTextStyle: inlineTextStyle),
+    'math-block': _MathBuilder(blockTextStyle: blockTextStyle),
+    'evidence': _EvidenceBuilder(
+      evidenceNameToPath: _evidenceNameToPath,
+      orderedEvidencePaths: _orderedEvidencePaths,
+      showLoadingPlaceholder: evidenceLoading,
+      perfLogger: perfLogger,
+    ),
+  };
 
   List<md.InlineSyntax> get inlineSyntaxes => <md.InlineSyntax>[
-        EvidenceInlineSyntax(),
-      ];
+    EvidenceInlineSyntax(),
+  ];
 }
 
 class _Seg {
