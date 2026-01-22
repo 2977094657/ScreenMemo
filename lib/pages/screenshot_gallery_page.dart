@@ -1030,7 +1030,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                   : Container(
                       height: 36,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Theme.of(context).colorScheme.surface
+                            : Theme.of(context).scaffoldBackgroundColor,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: Colors.grey.withOpacity(0.5),

@@ -154,13 +154,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           if (_currentIndex == 4 && isInSubPage) {
             return const SizedBox.shrink();
           }
+          final theme = Theme.of(context);
+          final Color navBg = theme.brightness == Brightness.dark
+              ? (theme.bottomNavigationBarTheme.backgroundColor ??
+                  theme.colorScheme.surface)
+              : Colors.white;
           return SizedBox(
             height: 52,
             child: BottomNavigationBar(
+              backgroundColor: navBg,
+              elevation: 0,
               currentIndex: _currentIndex,
               onTap: _onTabTapped,
               showSelectedLabels: false,
               showUnselectedLabels: false,
+              // Force a compact bar (labels are hidden anyway).
+              selectedFontSize: 0,
+              unselectedFontSize: 0,
               items: _buildNavigationItems(context),
             ),
           );

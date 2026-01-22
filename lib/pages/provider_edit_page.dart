@@ -553,6 +553,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                                       hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         color: AppTheme.mutedForeground,
                                       ),
+                                      filled: true,
+                                      fillColor: Theme.of(context).brightness == Brightness.dark
+                                          ? Theme.of(context).colorScheme.surface
+                                          : Theme.of(context).scaffoldBackgroundColor,
                                       contentPadding: const EdgeInsets.symmetric(
                                         horizontal: AppTheme.spacing3,
                                         vertical: 0,
@@ -656,13 +660,16 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   }
 
   Widget _buildSectionCard({required Widget child}) {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color surface = isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: surface,
         border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+          color: theme.colorScheme.outline.withOpacity(0.3),
           width: 1,
         ),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
@@ -677,12 +684,16 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     String? hint,
     bool obscure = false,
   }) {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color fieldBg =
+        isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          style: theme.textTheme.labelMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -690,13 +701,15 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         TextField(
           controller: controller,
           obscureText: obscure,
-          style: Theme.of(context).textTheme.bodyMedium,
+          style: theme.textTheme.bodyMedium,
           decoration: InputDecoration(
             isDense: true,
             hintText: hint,
-            hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+            hintStyle: theme.textTheme.bodySmall?.copyWith(
               color: AppTheme.mutedForeground,
             ),
+            filled: true,
+            fillColor: fieldBg,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppTheme.spacing3,
               vertical: AppTheme.spacing2,
@@ -715,6 +728,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   }
 
   Widget _buildTypePicker() {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color fieldBg =
+        isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
     final items = <DropdownMenuItem<String>>[
       const DropdownMenuItem(value: AIProviderTypes.openai, child: Text('OpenAI')),
       const DropdownMenuItem(value: AIProviderTypes.azureOpenAI, child: Text('Azure OpenAI')),
@@ -730,7 +747,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           children: [
             Text(
               AppLocalizations.of(context).interfaceTypeLabel,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -761,6 +778,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           },
           decoration: InputDecoration(
             isDense: true,
+            filled: true,
+            fillColor: fieldBg,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: AppTheme.spacing3,
               vertical: AppTheme.spacing2,

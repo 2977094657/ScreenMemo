@@ -190,6 +190,9 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color surface = isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
     return Column(
       children: [
         // 搜索栏和统计信息
@@ -201,7 +204,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
             AppTheme.spacing2, // bottom
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: surface,
           ),
           child: Column(
             children: [
@@ -219,6 +222,8 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                           },
                         )
                       : null,
+                  filled: true,
+                  fillColor: surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   ),

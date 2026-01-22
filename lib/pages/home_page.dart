@@ -1242,6 +1242,9 @@ class _HomePageState extends State<HomePage>
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
+        // Keep the same background when content scrolls under the AppBar (Material 3).
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         toolbarHeight: 48,
         automaticallyImplyLeading: false,
         leadingWidth: 0,
@@ -1568,6 +1571,7 @@ class _HomePageState extends State<HomePage>
   /// 构建副导航栏：统计信息 + 排序菜单
   Widget _buildSubNavigation() {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     final appCount = _totals['app_count'] as int? ?? 0;
     final screenshotCount = _totals['screenshot_count'] as int? ?? 0;
     final totalSizeBytes = _totals['total_size_bytes'] as int? ?? 0;
@@ -1580,9 +1584,9 @@ class _HomePageState extends State<HomePage>
         vertical: AppTheme.spacing2,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: theme.scaffoldBackgroundColor,
         border: Border(
-          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 0.5),
+          bottom: BorderSide(color: theme.dividerColor, width: 0.5),
         ),
       ),
       child: Row(
@@ -1683,32 +1687,35 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSearchBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color fillColor =
+        isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
+    // Keep border style consistent with Screenshot Gallery search box.
+    final Color borderColor = Colors.grey.withOpacity(0.5);
     return InkWell(
       borderRadius: const BorderRadius.all(Radius.circular(8.0)),
       onTap: () => Navigator.pushNamed(context, '/search'),
       child: Container(
         height: 36,
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: fillColor,
           borderRadius: const BorderRadius.all(Radius.circular(8.0)),
-          border: Border.all(
-            color: Theme.of(context).dividerColor.withOpacity(0.6),
-            width: 1.0,
-          ),
+          border: Border.all(color: borderColor, width: 1.0),
         ),
         child: Row(
           children: [
             const SizedBox(width: 4),
             Icon(
               Icons.search,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: theme.colorScheme.onSurface.withOpacity(0.5),
               size: 18,
             ),
             const SizedBox(width: 2),
             Text(
               AppLocalizations.of(context).searchPlaceholder,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withOpacity(0.5),
                 fontSize: 14,
               ),
             ),
@@ -2040,12 +2047,6 @@ class _HomePageState extends State<HomePage>
                         ? Theme.of(context).colorScheme.primary
                         : Theme.of(context).colorScheme.surfaceVariant,
                     borderRadius: const BorderRadius.all(Radius.circular(4.0)),
-                    border: Border.all(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline,
-                      width: isSelected ? 1.6 : 1.2,
-                    ),
                   ),
                   alignment: Alignment.center,
                   child: isSelected

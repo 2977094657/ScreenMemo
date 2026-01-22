@@ -1935,7 +1935,9 @@ class _SearchPageState extends State<SearchPage>
                 child: Container(
                   height: 36,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Theme.of(context).colorScheme.surface
+                        : Theme.of(context).scaffoldBackgroundColor,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: Colors.grey.withOpacity(0.5),
@@ -2121,7 +2123,9 @@ class _SearchPageState extends State<SearchPage>
             vertical: AppTheme.spacing2,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
             ),
@@ -2486,7 +2490,9 @@ class _SearchPageState extends State<SearchPage>
             vertical: AppTheme.spacing2,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
             ),
@@ -2624,7 +2630,9 @@ class _SearchPageState extends State<SearchPage>
             vertical: AppTheme.spacing2,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
             ),
@@ -2862,7 +2870,9 @@ class _SearchPageState extends State<SearchPage>
             vertical: AppTheme.spacing2,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
             ),
@@ -2965,7 +2975,9 @@ class _SearchPageState extends State<SearchPage>
         child: Container(
           padding: const EdgeInsets.all(AppTheme.spacing3),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).scaffoldBackgroundColor,
             borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             border: Border.all(
               color: Theme.of(context).colorScheme.outline.withOpacity(0.12),

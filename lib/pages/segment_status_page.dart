@@ -1777,7 +1777,11 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     String dateKey,
     Map<String, List<Map<String, dynamic>>> grouped,
   ) {
+    final theme = Theme.of(context);
     return Card(
+      // Daily summary entry should blend with the page background (user-selected).
+      color: theme.scaffoldBackgroundColor,
+      surfaceTintColor: Colors.transparent,
       child: ListTile(
         leading: const Icon(Icons.event_note_outlined),
         title: Text(AppLocalizations.of(context).dailySummaryShort),
