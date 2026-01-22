@@ -1440,6 +1440,8 @@
   "themeColorTitle": "테마 색상",
   "themeColorDesc": "앱의 기본 색상을 사용자 지정하세요",
   "chooseThemeColorTitle": "테마 색상 선택",
+  "pageBackgroundTitle": "페이지 배경",
+  "pageBackgroundDesc": "라이트 모드 메인 페이지 배경색",
   "loggingTitle": "로그",
   "loggingDesc": "중앙 집중식 로그 활성화(기본값)",
   "loggingAiTitle": "AI 로그",

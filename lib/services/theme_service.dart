@@ -5,17 +5,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeService extends ChangeNotifier {
   static const String _themeKey = 'theme_mode';
   static const String _seedKey = 'theme_seed_color';
-  
+  static const String _lightPageBackgroundKey = 'light_page_background_color';
+
   ThemeMode _themeMode = ThemeMode.system;
   Color _seedColor = const Color(0xFF3B82F6); // 与 AppTheme.primary 保持一致的默认值
-  
+  Color _lightPageBackgroundColor = const Color(0xFFFAF9F5);
+
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => _seedColor;
-  
+  Color get lightPageBackgroundColor => _lightPageBackgroundColor;
+
   ThemeService() {
     _loadTheme();
   }
-  
+
   /// 加载保存的主题设置
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,9 +28,13 @@ class ThemeService extends ChangeNotifier {
     if (savedSeed != null) {
       _seedColor = Color(savedSeed);
     }
+    final savedPageBg = prefs.getInt(_lightPageBackgroundKey);
+    if (savedPageBg != null) {
+      _lightPageBackgroundColor = Color(savedPageBg);
+    }
     notifyListeners();
   }
-  
+
   /// 切换主题模式
   Future<void> toggleTheme() async {
     // 循环切换：系统 -> 浅色 -> 深色 -> 系统
@@ -42,24 +49,24 @@ class ThemeService extends ChangeNotifier {
         _themeMode = ThemeMode.system;
         break;
     }
-    
+
     // 保存到本地存储
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_themeKey, _themeMode.index);
-    
+
     notifyListeners();
   }
-  
+
   /// 设置主题模式
   Future<void> setThemeMode(ThemeMode mode) async {
     if (_themeMode == mode) return;
-    
+
     _themeMode = mode;
-    
+
     // 保存到本地存储
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_themeKey, _themeMode.index);
-    
+
     notifyListeners();
   }
 
@@ -79,7 +86,28 @@ class ThemeService extends ChangeNotifier {
     await prefs.setInt(_seedKey, _seedColor.value);
     notifyListeners();
   }
-  
+
+  /// 设置浅色模式下的页面背景色（用于首页/设置/列表等页面）
+  Future<void> setLightPageBackgroundColor(Color color) async {
+    final Color opaque = color.withAlpha(0xFF);
+    if (_lightPageBackgroundColor.value == opaque.value) return;
+    _lightPageBackgroundColor = opaque;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lightPageBackgroundKey, opaque.value);
+    notifyListeners();
+  }
+
+  /// 重置浅色页面背景色为默认值
+  Future<void> resetLightPageBackgroundColor() async {
+    _lightPageBackgroundColor = const Color(0xFFFAF9F5);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _lightPageBackgroundKey,
+      _lightPageBackgroundColor.value,
+    );
+    notifyListeners();
+  }
+
   /// 获取当前主题模式的图标
   IconData get themeModeIcon {
     switch (_themeMode) {
@@ -91,7 +119,7 @@ class ThemeService extends ChangeNotifier {
         return Icons.brightness_4_outlined;
     }
   }
-  
+
   /// 获取当前主题模式的描述
   String get themeModeDescription {
     switch (_themeMode) {

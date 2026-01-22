@@ -2528,6 +2528,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chooseThemeColorTitle => '选择主题颜色';
 
   @override
+  String get pageBackgroundTitle => '页面背景';
+
+  @override
+  String get pageBackgroundDesc => '浅色模式下主页面的背景颜色';
+
+  @override
   String get loggingTitle => '日志打印';
 
   @override

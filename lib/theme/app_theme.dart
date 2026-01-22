@@ -17,6 +17,8 @@ class AppTheme {
   static const Color input = Color(0xFFE4E4E7);
   static const Color ring = Color(0xFF3B82F6);
   static const Color background = Color(0xFFFFFFFF);
+  // 部分页面在浅色模式下使用的暖白背景（默认 #FAF9F5）
+  static const Color pageBackgroundLight = Color(0xFFFAF9F5);
   static const Color foreground = Color(0xFF09090B);
   static const Color card = Color(0xFFFFFFFF);
   static const Color cardForeground = Color(0xFF09090B);
@@ -504,7 +506,10 @@ class AppTheme {
   }
 
   /// 基于 seed color 构建浅色主题（仅影响 ColorScheme 与关键控件的强调色）
-  static ThemeData lightThemeFor(Color seed) {
+  static ThemeData lightThemeFor(
+    Color seed, {
+    Color pageBackground = pageBackgroundLight,
+  }) {
     final ColorScheme cs =
         ColorScheme.fromSeed(
           seedColor: seed,
@@ -536,10 +541,10 @@ class AppTheme {
           return cs.outline; // 关闭态显示外边界以增强可见性
         }),
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: background,
+      appBarTheme: AppBarTheme(
+        backgroundColor: pageBackground,
         foregroundColor: foreground,
-        iconTheme: IconThemeData(color: foreground),
+        iconTheme: const IconThemeData(color: foreground),
         elevation: 0,
       ),
       dividerColor: cs.outline,
@@ -567,7 +572,7 @@ class AppTheme {
         ),
         clipBehavior: Clip.hardEdge,
       ),
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: pageBackground,
       cardTheme: const CardThemeData(
         color: card,
         elevation: 0,

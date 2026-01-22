@@ -1367,6 +1367,8 @@
   "themeColorTitle": "主题颜色",
   "themeColorDesc": "自定义应用主色调",
   "chooseThemeColorTitle": "选择主题颜色",
+  "pageBackgroundTitle": "页面背景",
+  "pageBackgroundDesc": "浅色模式下主页面的背景颜色",
   "loggingTitle": "日志打印",
   "loggingDesc": "开启后统一打印所有日志（默认开启）",
   "loggingAiTitle": "AI 日志",

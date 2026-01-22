@@ -2550,6 +2550,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chooseThemeColorTitle => 'テーマカラーを選択';
 
   @override
+  String get pageBackgroundTitle => 'ページ背景';
+
+  @override
+  String get pageBackgroundDesc => 'ライトモードのメインページ背景色';
+
+  @override
   String get loggingTitle => 'ログ出力';
 
   @override

@@ -2547,6 +2547,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chooseThemeColorTitle => '테마 색상 선택';
 
   @override
+  String get pageBackgroundTitle => '페이지 배경';
+
+  @override
+  String get pageBackgroundDesc => '라이트 모드 메인 페이지 배경색';
+
+  @override
   String get loggingTitle => '로그';
 
   @override

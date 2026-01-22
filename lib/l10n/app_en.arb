@@ -1263,6 +1263,8 @@
   "themeColorTitle": "Theme color",
   "themeColorDesc": "Customize the app's primary color",
   "chooseThemeColorTitle": "Choose theme color",
+  "pageBackgroundTitle": "Page background",
+  "pageBackgroundDesc": "Background color for main pages (light mode)",
   "loggingTitle": "Logging",
   "loggingDesc": "Enable centralized logging (enabled by default)",
   "loggingAiTitle": "AI logs",

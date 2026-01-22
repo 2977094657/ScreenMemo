@@ -4576,6 +4576,18 @@ abstract class AppLocalizations {
   /// **'Choose theme color'**
   String get chooseThemeColorTitle;
 
+  /// No description provided for @pageBackgroundTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Page background'**
+  String get pageBackgroundTitle;
+
+  /// No description provided for @pageBackgroundDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Background color for main pages (light mode)'**
+  String get pageBackgroundDesc;
+
   /// No description provided for @loggingTitle.
   ///
   /// In en, this message translates to:

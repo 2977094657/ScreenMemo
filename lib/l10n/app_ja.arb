@@ -1440,6 +1440,8 @@
   "themeColorTitle": "テーマカラー",
   "themeColorDesc": "アプリのキーカラーをカスタマイズ",
   "chooseThemeColorTitle": "テーマカラーを選択",
+  "pageBackgroundTitle": "ページ背景",
+  "pageBackgroundDesc": "ライトモードのメインページ背景色",
   "loggingTitle": "ログ出力",
   "loggingDesc": "集中ログを有効化（既定で有効）",
   "loggingAiTitle": "AI ログ",

@@ -146,12 +146,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Color _settingsBackgroundColor(BuildContext context) {
-    final theme = Theme.of(context);
-    if (theme.brightness == Brightness.dark) {
-      return theme.scaffoldBackgroundColor;
-    }
-    // Light mode: use a subtle grey background like common "settings" pages.
-    return AppTheme.secondary;
+    return Theme.of(context).scaffoldBackgroundColor;
   }
 
   BorderSide _settingsDividerSide(BuildContext context) {
@@ -1734,11 +1729,11 @@ class _SettingsPageState extends State<SettingsPage>
       automaticallyImplyLeading: false,
       leading: _subPage == _SettingsSubPage.home
           ? (canPop
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                )
-              : null)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  )
+                : null)
           : IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () => _switchSubPage(_SettingsSubPage.home),
@@ -1857,6 +1852,7 @@ class _SettingsPageState extends State<SettingsPage>
               context: context,
               children: [
                 _buildThemeColorItem(context),
+                _buildPageBackgroundItem(context),
                 _buildPrivacyModeItem(context),
                 _buildNsfwEntryItem(context),
               ],
@@ -1969,7 +1965,9 @@ class _SettingsPageState extends State<SettingsPage>
           vertical: AppTheme.spacing4,
         ),
         decoration: BoxDecoration(
-          border: Border(bottom: showBottomBorder ? borderSide : BorderSide.none),
+          border: Border(
+            bottom: showBottomBorder ? borderSide : BorderSide.none,
+          ),
         ),
         child: Row(
           children: [
@@ -1996,7 +1994,10 @@ class _SettingsPageState extends State<SettingsPage>
               ),
               const SizedBox(width: AppTheme.spacing2),
             ],
-            Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.chevron_right,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -2008,9 +2009,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -2197,9 +2196,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -2321,9 +2318,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          top: _settingsDividerSide(context),
-        ),
+        border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -2386,9 +2381,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -2570,6 +2563,370 @@ class _SettingsPageState extends State<SettingsPage>
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPageBackgroundItem(BuildContext context) {
+    final Color current = widget.themeService.lightPageBackgroundColor;
+    final String hex =
+        '#${current.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(bottom: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.format_color_fill_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context).pageBackgroundTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        AppLocalizations.of(context).pageBackgroundDesc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.spacing2),
+                    Text(
+                      hex,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.spacing2),
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: current,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outline,
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showPageBackgroundSheet,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPageBackgroundSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final l10n = AppLocalizations.of(context);
+        final Color initial = widget.themeService.lightPageBackgroundColor;
+        HSVColor hsv = HSVColor.fromColor(initial.withAlpha(0xFF));
+
+        void updateSv(
+          Offset localPos,
+          double size,
+          void Function(void Function()) setSheetState,
+        ) {
+          final double s = (localPos.dx / size).clamp(0.0, 1.0);
+          final double v = (1.0 - (localPos.dy / size)).clamp(0.0, 1.0);
+          setSheetState(() {
+            hsv = hsv.withSaturation(s).withValue(v);
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final Color selected = hsv.toColor().withAlpha(0xFF);
+            final String hex =
+                '#${selected.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+            final presets = <Color>[
+              const Color(0xFFFAF9F5), // Warm white (default)
+              const Color(0xFFEBEBEB), // Neutral light grey
+              const Color(0xFFFFFFFF), // Pure white
+            ];
+
+            return UISheetSurface(
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4 + MediaQuery.of(context).padding.bottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: AppTheme.spacing3),
+                        const Center(child: UISheetHandle()),
+                        const SizedBox(height: AppTheme.spacing3),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                l10n.pageBackgroundTitle,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                await widget.themeService
+                                    .resetLightPageBackgroundColor();
+                                if (mounted) Navigator.of(context).pop();
+                                if (mounted) setState(() {});
+                              },
+                              child: Text(l10n.defaultLabel),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: selected,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppTheme.spacing2),
+                            Text(
+                              hex,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppTheme.spacing3),
+                        Wrap(
+                          spacing: AppTheme.spacing3,
+                          runSpacing: AppTheme.spacing2,
+                          children: presets.map((c) {
+                            final bool isSelected = selected.value == c.value;
+                            return InkWell(
+                              onTap: () {
+                                setSheetState(() {
+                                  hsv = HSVColor.fromColor(c.withAlpha(0xFF));
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(18),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: c,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.outline,
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: AppTheme.spacing4),
+                        // SV 平面（拖动选择饱和度/明度），Hue 通过下方滑杆调整
+                        SizedBox(
+                          height: 220,
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final double size = constraints.maxWidth;
+                                final Color hueColor = HSVColor.fromAHSV(
+                                  1,
+                                  hsv.hue,
+                                  1,
+                                  1,
+                                ).toColor();
+                                return GestureDetector(
+                                  onPanDown: (d) => updateSv(
+                                    d.localPosition,
+                                    size,
+                                    setSheetState,
+                                  ),
+                                  onPanUpdate: (d) => updateSv(
+                                    d.localPosition,
+                                    size,
+                                    setSheetState,
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: hueColor,
+                                            borderRadius: BorderRadius.circular(
+                                              AppTheme.radiusMd,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned.fill(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              AppTheme.radiusMd,
+                                            ),
+                                            gradient: const LinearGradient(
+                                              begin: Alignment.centerLeft,
+                                              end: Alignment.centerRight,
+                                              colors: [
+                                                Colors.white,
+                                                Colors.transparent,
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned.fill(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              AppTheme.radiusMd,
+                                            ),
+                                            gradient: const LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.transparent,
+                                                Colors.black,
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        left: (hsv.saturation * size - 10)
+                                            .clamp(0.0, size - 20),
+                                        top: ((1 - hsv.value) * size - 10)
+                                            .clamp(0.0, size - 20),
+                                        child: Container(
+                                          width: 20,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withOpacity(
+                                                  0.25,
+                                                ),
+                                                blurRadius: 6,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.spacing3),
+                        Slider(
+                          value: hsv.hue,
+                          min: 0,
+                          max: 360,
+                          divisions: 360,
+                          onChanged: (v) {
+                            setSheetState(() {
+                              hsv = hsv.withHue(v);
+                            });
+                          },
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text(l10n.dialogCancel),
+                            ),
+                            const SizedBox(width: AppTheme.spacing2),
+                            TextButton(
+                              onPressed: () async {
+                                await widget.themeService
+                                    .setLightPageBackgroundColor(selected);
+                                if (mounted) Navigator.of(context).pop();
+                                if (mounted) setState(() {});
+                              },
+                              child: Text(l10n.dialogOk),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -2790,10 +3147,12 @@ class _SettingsPageState extends State<SettingsPage>
       final int maxImages = (map['maxImages'] as int?) ?? 200;
       if (mounted) {
         setState(() {
-          _dynamicMergeMaxSpanMin =
-              ((spanSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
-          _dynamicMergeMaxGapMin =
-              ((gapSec / 60).round()).clamp(0, 7 * 24 * 60).toInt();
+          _dynamicMergeMaxSpanMin = ((spanSec / 60).round())
+              .clamp(0, 7 * 24 * 60)
+              .toInt();
+          _dynamicMergeMaxGapMin = ((gapSec / 60).round())
+              .clamp(0, 7 * 24 * 60)
+              .toInt();
           _dynamicMergeMaxImages = maxImages.clamp(0, 100000).toInt();
         });
       }
@@ -3058,9 +3417,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -3256,9 +3613,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          top: _settingsDividerSide(context),
-        ),
+        border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -3325,9 +3680,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          top: _settingsDividerSide(context),
-        ),
+        border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -3393,9 +3746,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -3459,9 +3810,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -3598,9 +3947,7 @@ class _SettingsPageState extends State<SettingsPage>
                       bottom: AppTheme.spacing3,
                     ),
                     decoration: BoxDecoration(
-                      border: Border(
-                        bottom: _settingsDividerSide(context),
-                      ),
+                      border: Border(bottom: _settingsDividerSide(context)),
                     ),
                     child: Stack(
                       children: [
@@ -3685,9 +4032,7 @@ class _SettingsPageState extends State<SettingsPage>
                       bottom: AppTheme.spacing3,
                     ),
                     decoration: BoxDecoration(
-                      border: Border(
-                        bottom: _settingsDividerSide(context),
-                      ),
+                      border: Border(bottom: _settingsDividerSide(context)),
                     ),
                     child: Stack(
                       children: [
@@ -3778,9 +4123,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Stack(
         children: [
@@ -3849,9 +4192,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -4204,9 +4545,7 @@ class _SettingsPageState extends State<SettingsPage>
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          top: _settingsDividerSide(context),
-        ),
+        border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -5121,9 +5460,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
@@ -5334,9 +5671,7 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: _settingsDividerSide(context),
-        ),
+        border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [

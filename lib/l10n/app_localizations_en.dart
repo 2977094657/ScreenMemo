@@ -2606,6 +2606,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chooseThemeColorTitle => 'Choose theme color';
 
   @override
+  String get pageBackgroundTitle => 'Page background';
+
+  @override
+  String get pageBackgroundDesc =>
+      'Background color for main pages (light mode)';
+
+  @override
   String get loggingTitle => 'Logging';
 
   @override
