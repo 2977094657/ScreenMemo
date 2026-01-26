@@ -1037,16 +1037,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                   onPressed: _showImageInfo,
                   tooltip: AppLocalizations.of(context).imageInfoTooltip,
                 ),
-                if (_aiStructured != null ||
-                    _aiTagsByFile.isNotEmpty ||
-                    _aiDescByFile.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    onPressed: _showAiMetaOverview,
-                    tooltip: AppLocalizations.of(
-                      context,
-                    ).aiImageDescriptionsTitle,
-                  ),
                 if (_screenshots.isNotEmpty &&
                     _screenshots[_currentIndex].pageUrl != null &&
                     _screenshots[_currentIndex].pageUrl!.isNotEmpty)

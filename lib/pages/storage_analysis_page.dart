@@ -67,14 +67,16 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final pageBg = theme.scaffoldBackgroundColor;
     return Scaffold(
       backgroundColor: theme.brightness == Brightness.dark
           ? theme.colorScheme.surfaceContainerHigh
-          : AppTheme.muted,
+          : pageBg,
       appBar: AppBar(
         title: Text(l10n.storageAnalysisPageTitle),
         centerTitle: true,
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor:
+            theme.brightness == Brightness.dark ? theme.colorScheme.surface : pageBg,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
       ),

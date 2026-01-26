@@ -697,15 +697,42 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     if (a == null) return const SizedBox.shrink();
     final start = (a['start_time'] as int?) ?? 0;
     final end = (a['end_time'] as int?) ?? 0;
-    final dur = (a['duration_sec'] as int?) ?? 0;
-    final interval = (a['sample_interval_sec'] as int?) ?? 0;
-    return Card(
-      child: ListTile(
-        title: Text(AppLocalizations.of(context).activeSegmentTitle),
-        subtitle: Text(
-          '${_fmtTime(start)} - ${_fmtTime(end)}  ·  ${dur}s  ·  ${AppLocalizations.of(context).sampleEverySeconds(interval)}',
-        ),
-        trailing: const Icon(Icons.timelapse),
+
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
+
+    // Banner-style, smaller font, single-line; background matches page (avoid pure white).
+    final String text =
+        '${l10n.activeSegmentTitle}: ${_fmtTime(start)}-${_fmtTime(end)}';
+
+    final TextStyle style = (theme.textTheme.bodySmall ?? const TextStyle())
+        .copyWith(color: cs.onSurface, fontWeight: FontWeight.w600, height: 1);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: AppTheme.spacing1),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing3,
+        vertical: AppTheme.spacing2,
+      ),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: cs.outline.withOpacity(0.35), width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.timelapse, size: 16, color: cs.onSurfaceVariant),
+          const SizedBox(width: AppTheme.spacing2),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+        ],
       ),
     );
   }
