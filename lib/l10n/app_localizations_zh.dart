@@ -2519,6 +2519,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamRenderImagesDesc => '可能影响滚动流畅度';
 
   @override
+  String get aiChatPerfOverlayTitle => 'AIChat 性能日志悬浮窗';
+
+  @override
+  String get aiChatPerfOverlayDesc => '在 AIChat 页面显示 Perf 日志窗口（仅用于排查）';
+
+  @override
   String get themeColorTitle => '主题颜色';
 
   @override

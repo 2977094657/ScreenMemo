@@ -2541,6 +2541,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get streamRenderImagesDesc => 'スクロールに影響する場合があります';
 
   @override
+  String get aiChatPerfOverlayTitle => 'AIChat パフォーマンスオーバーレイ';
+
+  @override
+  String get aiChatPerfOverlayDesc =>
+      'AIChat ページに Perf ログウィンドウを表示（トラブルシューティング用）';
+
+  @override
   String get themeColorTitle => 'テーマカラー';
 
   @override

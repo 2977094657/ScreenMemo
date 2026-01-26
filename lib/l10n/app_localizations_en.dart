@@ -2597,6 +2597,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get streamRenderImagesDesc => 'May affect scrolling';
 
   @override
+  String get aiChatPerfOverlayTitle => 'AIChat perf overlay';
+
+  @override
+  String get aiChatPerfOverlayDesc =>
+      'Show the Perf log window on AI chat page (for troubleshooting)';
+
+  @override
   String get themeColorTitle => 'Theme color';
 
   @override

@@ -4558,6 +4558,18 @@ abstract class AppLocalizations {
   /// **'May affect scrolling'**
   String get streamRenderImagesDesc;
 
+  /// No description provided for @aiChatPerfOverlayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AIChat perf overlay'**
+  String get aiChatPerfOverlayTitle;
+
+  /// No description provided for @aiChatPerfOverlayDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the Perf log window on AI chat page (for troubleshooting)'**
+  String get aiChatPerfOverlayDesc;
+
   /// No description provided for @themeColorTitle.
   ///
   /// In en, this message translates to:

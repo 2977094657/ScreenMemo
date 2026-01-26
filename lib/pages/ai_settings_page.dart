@@ -148,8 +148,8 @@ class _AISettingsPageState extends State<AISettingsPage>
 
   // In-page perf timeline for troubleshooting slow image render on chat page.
   final UiPerfLogger _uiPerf = UiPerfLogger(scope: 'AIChat');
-  // Enabled by default so it is visible even in release builds.
-  bool _showPerfOverlay = true;
+  // Controlled by Settings > Advanced. Defaults to hidden to avoid noisy UI.
+  bool _showPerfOverlay = false;
   final Set<String> _perfLoggedMarkdownMsgKeys = <String>{};
 
   final TextEditingController _baseUrlController = TextEditingController();
@@ -279,11 +279,20 @@ class _AISettingsPageState extends State<AISettingsPage>
 
   void _setState(VoidCallback fn) => setState(fn);
 
+  Future<void> _loadPerfOverlayEnabled() async {
+    try {
+      final bool enabled = await _settings.getAiChatPerfOverlayEnabled();
+      if (!mounted) return;
+      setState(() => _showPerfOverlay = enabled);
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     _uiPerf.clear(restart: true);
     _uiPerf.log('page.initState');
+    unawaited(_loadPerfOverlayEnabled());
     // 预加载图标清单，确保首屏动态图标匹配生效
     ModelIconUtils.preload();
     _loadAll();
@@ -429,7 +438,10 @@ class _AISettingsPageState extends State<AISettingsPage>
               child: UiPerfOverlay(
                 logger: _uiPerf,
                 onClear: () => _uiPerf.clear(restart: true),
-                onClose: () => _setState(() => _showPerfOverlay = false),
+                onClose: () {
+                  _setState(() => _showPerfOverlay = false);
+                  unawaited(_settings.setAiChatPerfOverlayEnabled(false));
+                },
               ),
             ),
           ),
@@ -457,6 +469,9 @@ class _AISettingsPageState extends State<AISettingsPage>
               _setState(() => _showPerfOverlay = !_showPerfOverlay);
               _uiPerf.log(
                 _showPerfOverlay ? 'perfOverlay.show' : 'perfOverlay.hide',
+              );
+              unawaited(
+                _settings.setAiChatPerfOverlayEnabled(_showPerfOverlay),
               );
             },
             icon: Icon(

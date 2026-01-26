@@ -95,6 +95,9 @@ class AISettingsService {
   static const String _keyStreamEnabled = 'stream_enabled';
   static const String _keyRenderImagesDuringStreaming =
       'render_images_during_streaming';
+  // 是否显示 AIChat 页面的性能日志悬浮窗（UiPerfOverlay）。默认关闭。
+  static const String _keyAiChatPerfOverlayEnabled =
+      'ai_chat_perf_overlay_enabled';
   static const String _keyWorkingMemoryInjectionEnabled =
       'working_memory_injection_enabled';
   static const String _keyWorkingMemoryPromptTokens =
@@ -156,6 +159,20 @@ class AISettingsService {
   Future<void> setRenderImagesDuringStreaming(bool value) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyRenderImagesDuringStreaming, value ? '1' : '0');
+  }
+
+  // AIChat 页面的性能日志悬浮窗开关（默认 false：避免默认刷屏）
+  Future<bool> getAiChatPerfOverlayEnabled() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyAiChatPerfOverlayEnabled);
+    if (v == null || v.isEmpty) return false;
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setAiChatPerfOverlayEnabled(bool enabled) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyAiChatPerfOverlayEnabled, enabled ? '1' : '0');
   }
 
   // ========== MemOS 工作记忆注入（系统消息） ==========

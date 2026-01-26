@@ -2538,6 +2538,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get streamRenderImagesDesc => '스크롤에 영향을 줄 수 있습니다';
 
   @override
+  String get aiChatPerfOverlayTitle => 'AIChat 성능 로그 오버레이';
+
+  @override
+  String get aiChatPerfOverlayDesc => 'AIChat 페이지에 Perf 로그 창을 표시합니다(문제 해결용)';
+
+  @override
   String get themeColorTitle => '테마 색상';
 
   @override

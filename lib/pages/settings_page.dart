@@ -127,6 +127,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _screenshotLoggingEnabled = false;
   // 流式期间实时渲染图片（影响 AI 对话性能的全局开关）
   bool _renderImagesDuringStreaming = false;
+  // AIChat 性能日志悬浮窗（默认关闭，避免默认刷屏）
+  bool _aiChatPerfOverlayEnabled = false;
   // 最近一次导入模式，默认合并
   _ImportMode _lastImportMode = _ImportMode.merge;
   bool _recalculatingAll = false;
@@ -230,6 +232,7 @@ class _SettingsPageState extends State<SettingsPage>
       case _SettingsSubPage.advanced:
         unawaited(_loadLoggingEnabled());
         unawaited(_loadRenderImagesDuringStreaming());
+        unawaited(_loadAiChatPerfOverlayEnabled());
         break;
     }
   }
@@ -846,6 +849,20 @@ class _SettingsPageState extends State<SettingsPage>
     try {
       await AISettingsService.instance.setRenderImagesDuringStreaming(enabled);
       if (mounted) setState(() => _renderImagesDuringStreaming = enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _loadAiChatPerfOverlayEnabled() async {
+    try {
+      final v = await AISettingsService.instance.getAiChatPerfOverlayEnabled();
+      if (mounted) setState(() => _aiChatPerfOverlayEnabled = v);
+    } catch (_) {}
+  }
+
+  Future<void> _updateAiChatPerfOverlayEnabled(bool enabled) async {
+    try {
+      await AISettingsService.instance.setAiChatPerfOverlayEnabled(enabled);
+      if (mounted) setState(() => _aiChatPerfOverlayEnabled = enabled);
     } catch (_) {}
   }
 
@@ -1927,6 +1944,7 @@ class _SettingsPageState extends State<SettingsPage>
               context: context,
               children: [
                 _buildStreamRenderImagesItem(context),
+                _buildAiChatPerfOverlayItem(context),
                 _buildLoggingToggleItem(context),
               ],
             ),
@@ -4180,6 +4198,75 @@ class _SettingsPageState extends State<SettingsPage>
                 value: _renderImagesDuringStreaming,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onChanged: (v) => _updateRenderImagesDuringStreaming(v),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiChatPerfOverlayItem(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(bottom: _settingsDividerSide(context)),
+      ),
+      child: Stack(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Icon(
+                  Icons.speed_outlined,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 72),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppLocalizations.of(context).aiChatPerfOverlayTitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        AppLocalizations.of(context).aiChatPerfOverlayDesc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            top: -1,
+            right: 0,
+            child: Transform.scale(
+              scale: 0.9,
+              child: Switch(
+                value: _aiChatPerfOverlayEnabled,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (v) => _updateAiChatPerfOverlayEnabled(v),
               ),
             ),
           ),

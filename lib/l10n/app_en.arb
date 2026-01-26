@@ -1260,6 +1260,8 @@
   "displaySectionDesc": "Theme, privacy mode, NSFW",
   "streamRenderImagesTitle": "Render images during streaming",
   "streamRenderImagesDesc": "May affect scrolling",
+  "aiChatPerfOverlayTitle": "AIChat perf overlay",
+  "aiChatPerfOverlayDesc": "Show the Perf log window on AI chat page (for troubleshooting)",
   "themeColorTitle": "Theme color",
   "themeColorDesc": "Customize the app's primary color",
   "chooseThemeColorTitle": "Choose theme color",

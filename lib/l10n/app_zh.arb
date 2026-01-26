@@ -1364,6 +1364,8 @@
   "displaySectionDesc": "主题颜色/隐私模式/NSFW",
   "streamRenderImagesTitle": "流式期间实时渲染图片",
   "streamRenderImagesDesc": "可能影响滚动流畅度",
+  "aiChatPerfOverlayTitle": "AIChat 性能日志悬浮窗",
+  "aiChatPerfOverlayDesc": "在 AIChat 页面显示 Perf 日志窗口（仅用于排查）",
   "themeColorTitle": "主题颜色",
   "themeColorDesc": "自定义应用主色调",
   "chooseThemeColorTitle": "选择主题颜色",
