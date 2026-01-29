@@ -1,6 +1,6 @@
 part of '../ai_settings_page.dart';
 
-extension _AISettingsPageStateExt1 on _AISettingsPageState {
+extension _AISettingsPageStateCoreExt on _AISettingsPageState {
   Widget _withDrawerSwipe(Widget child) {
     // 在任意位置从左向右滑动达到一定阈值后，打开上层 Scaffold 的 Drawer
     return GestureDetector(
@@ -937,17 +937,15 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
 
     if (type == 'tool_batch_begin') {
       final List<dynamic> tools = (payload['tools'] as List?) ?? const [];
-      // Tool UI events can arrive after we've already started streaming content
-      // for the same assistant turn (e.g. when the model emits some content
-      // before declaring tool_calls). In that case we must NOT create a new
-      // thinking block; otherwise tools show up as a second "思考过程" at the
-      // end of the bubble. Always attach tool chips to the existing (last)
-      // block for this assistant message.
-      final List<_ThinkingBlock>? blocks0 =
-          _thinkingBlocksByIndex[assistantIdx];
-      final _ThinkingBlock block = (blocks0 != null && blocks0.isNotEmpty)
-          ? blocks0.last
-          : _ensureThinkingBlock(assistantIdx);
+      // Tool UI events can arrive after we've already streamed some visible
+      // content for the same assistant turn (e.g. the model emits a preamble
+      // before declaring tool_calls). In that case we want tools to appear
+      // AFTER that earlier content, matching the model output order.
+      //
+      // `_ensureThinkingBlock` will create a new block only when the previous
+      // one has been marked finished (e.g. after the first content token), and
+      // will also start a new content segment after this block.
+      final _ThinkingBlock block = _ensureThinkingBlock(assistantIdx);
       final String title = _isZhLocale() ? '工具调用' : 'Tools';
       final _ThinkingEvent toolsEvent = _upsertEvent(
         block,
@@ -964,6 +962,24 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
         final String callId = (m['call_id'] as String?)?.trim() ?? '';
         final String toolName = (m['tool_name'] as String?)?.trim() ?? '';
         final String label = (m['label'] as String?)?.trim() ?? toolName.trim();
+
+        List<String> parseStringList(dynamic raw) {
+          if (raw is List) {
+            return raw
+                .map((e) => e?.toString().trim() ?? '')
+                .where((e) => e.isNotEmpty)
+                .toSet()
+                .toList(growable: false);
+          }
+          if (raw is String) {
+            final String s = raw.trim();
+            return s.isEmpty ? const <String>[] : <String>[s];
+          }
+          return const <String>[];
+        }
+
+        final List<String> appNames = parseStringList(m['app_names']);
+        final List<String> appPkgs = parseStringList(m['app_package_names']);
         if (callId.isEmpty || toolName.isEmpty) continue;
         seenInBatch.add(callId);
 
@@ -977,12 +993,16 @@ extension _AISettingsPageStateExt1 on _AISettingsPageState {
         if (existing != null) {
           existing.active = true;
           existing.resultSummary = null;
+          if (appNames.isNotEmpty) existing.appNames = appNames;
+          if (appPkgs.isNotEmpty) existing.appPackageNames = appPkgs;
         } else {
           toolsEvent.tools.add(
             _ThinkingToolChip(
               callId: callId,
               toolName: toolName,
               label: label.isEmpty ? toolName : label,
+              appNames: appNames,
+              appPackageNames: appPkgs,
               active: true,
             ),
           );

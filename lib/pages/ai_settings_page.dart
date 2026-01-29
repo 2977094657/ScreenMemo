@@ -21,19 +21,21 @@ import '../utils/model_icon_utils.dart';
 import '../widgets/markdown_math.dart';
 import '../widgets/app_side_drawer.dart';
 import '../widgets/screenshot_image_widget.dart';
+import '../services/app_selection_service.dart';
 import '../services/intent_analysis_service.dart';
 import '../services/query_context_service.dart';
 import '../services/prompt_budget.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
+import '../services/nsfw_preference_service.dart';
 import '../services/ui_perf_logger.dart';
 import '../widgets/chat_context_sheet.dart';
 import '../widgets/ui_perf_overlay.dart';
 
-part 'ai_settings/ai_settings_page_state_ext_1.dart';
-part 'ai_settings/ai_settings_page_state_ext_2.dart';
-part 'ai_settings/ai_settings_page_state_ext_3.dart';
-part 'ai_settings/ai_settings_page_state_ext_4.dart';
+part 'ai_settings/ai_settings_page_state_core.dart';
+part 'ai_settings/ai_settings_page_state_send_message.dart';
+part 'ai_settings/ai_settings_page_state_thinking_codec.dart';
+part 'ai_settings/ai_settings_page_state_chat_list.dart';
 part 'ai_settings/ai_settings_page_widgets.dart';
 
 // Thinking/Reasoning content should be visually distinct from the final answer.
@@ -92,6 +94,8 @@ class _ThinkingToolChip {
     required this.callId,
     required this.toolName,
     required this.label,
+    this.appNames = const <String>[],
+    this.appPackageNames = const <String>[],
     this.active = true,
     this.resultSummary,
   });
@@ -99,6 +103,8 @@ class _ThinkingToolChip {
   final String callId;
   final String toolName;
   final String label;
+  List<String> appNames;
+  List<String> appPackageNames;
   bool active;
   String? resultSummary;
 }
@@ -217,6 +223,12 @@ class _AISettingsPageState extends State<AISettingsPage>
   // 每条助手消息附带的证据图片（索引 -> 附件列表）
   final Map<int, List<EvidenceImageAttachment>> _attachmentsByIndex =
       <int, List<EvidenceImageAttachment>>{};
+  // 证据缩略图需要同步显示 NSFW 遮罩；这里缓存 filePath -> ScreenshotRecord，避免重复扫库。
+  final Map<String, ScreenshotRecord?> _evidenceScreenshotByPath =
+      <String, ScreenshotRecord?>{};
+  // 防止滚动/重建触发重复的 NSFW 批量预加载。
+  final Set<String> _evidenceNsfwRequestedPaths = <String>{};
+  Future<void>? _evidenceNsfwPreloadFuture;
   // 证据图片解析缓存：避免退出/重进或页面重建时重复扫库/扫盘导致“解析中一直不出图”
   final Map<String, Map<String, String>> _evidenceResolvedByMsgKey =
       <String, Map<String, String>>{};
@@ -305,6 +317,9 @@ class _AISettingsPageState extends State<AISettingsPage>
           setState(() {
             _messages = <AIMessage>[];
             _attachmentsByIndex.clear();
+            _evidenceScreenshotByPath.clear();
+            _evidenceNsfwRequestedPaths.clear();
+            _evidenceNsfwPreloadFuture = null;
             _reasoningByIndex.clear();
             _reasoningDurationByIndex.clear();
             _thinkingBlocksByIndex.clear();

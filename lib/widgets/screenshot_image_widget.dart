@@ -118,8 +118,8 @@ class ScreenshotImageWidget extends StatelessWidget {
 
     Widget result = layers.length == 1 ? base : Stack(children: layers);
 
-    // 添加点击手势（在未遮罩时允许点击）
-    if (onTap != null && !nsfwMasked) {
+    // 允许在遮罩状态下点击（例如进入查看器再选择“显示”）。
+    if (onTap != null) {
       result = GestureDetector(onTap: onTap, child: result);
     }
 

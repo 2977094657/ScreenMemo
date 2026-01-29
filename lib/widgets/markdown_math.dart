@@ -8,6 +8,7 @@ import 'dart:io';
 import '../widgets/screenshot_image_widget.dart';
 import '../widgets/timeline_jump_overlay.dart';
 import '../services/screenshot_database.dart';
+import '../services/nsfw_preference_service.dart';
 import '../services/navigation_service.dart';
 import '../services/timeline_jump_service.dart';
 import '../services/ui_perf_logger.dart';
@@ -338,12 +339,14 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
     required this.evidenceNameToPath,
     required this.orderedEvidencePaths,
     required this.showLoadingPlaceholder,
+    required this.screenshotByPath,
     this.perfLogger,
   });
 
   final Map<String, String> evidenceNameToPath;
   final List<String> orderedEvidencePaths;
   final bool showLoadingPlaceholder;
+  final Map<String, ScreenshotRecord?> screenshotByPath;
   final UiPerfLogger? perfLogger;
   static final Set<String> _loggedMissing = <String>{};
   static final Set<String> _loggedPlaceholder = <String>{};
@@ -489,8 +492,12 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
           }
 
           final BorderRadius br = BorderRadius.circular(AppTheme.radiusLg);
-          final String path = resolvedPath!;
+          final String path = resolvedPath!.trim();
           final File file = File(path);
+          final ScreenshotRecord? screenshot = screenshotByPath[path];
+          final bool extraNsfwMask =
+              NsfwPreferenceService.instance.isAiNsfwCached(filePath: path) ||
+              NsfwPreferenceService.instance.isSegmentNsfwCached(filePath: path);
           final ImageProvider imageProvider = ResizeImage(
             FileImage(file),
             width: 192,
@@ -499,6 +506,8 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
             file: file,
             imageProvider: imageProvider,
             privacyMode: true,
+            extraNsfwMask: extraNsfwMask,
+            screenshot: screenshot,
             width: 96,
             height: 168,
             fit: BoxFit.cover,
@@ -718,10 +727,12 @@ class MarkdownMathConfig {
     this.blockTextStyle,
     Map<String, String>? evidenceNameToPath,
     List<String>? orderedEvidencePaths,
+    Map<String, ScreenshotRecord?>? screenshotByPath,
     this.evidenceLoading = false,
     this.perfLogger,
   }) : _evidenceNameToPath = evidenceNameToPath ?? const <String, String>{},
-       _orderedEvidencePaths = orderedEvidencePaths ?? const <String>[];
+       _orderedEvidencePaths = orderedEvidencePaths ?? const <String>[],
+       _screenshotByPath = screenshotByPath ?? const <String, ScreenshotRecord?>{};
 
   final TextStyle? inlineTextStyle;
   final TextStyle? blockTextStyle;
@@ -729,6 +740,7 @@ class MarkdownMathConfig {
   final UiPerfLogger? perfLogger;
   final Map<String, String> _evidenceNameToPath;
   final List<String> _orderedEvidencePaths;
+  final Map<String, ScreenshotRecord?> _screenshotByPath;
 
   Map<String, MarkdownElementBuilder> get builders => {
     'math-inline': _MathBuilder(inlineTextStyle: inlineTextStyle),
@@ -737,6 +749,7 @@ class MarkdownMathConfig {
       evidenceNameToPath: _evidenceNameToPath,
       orderedEvidencePaths: _orderedEvidencePaths,
       showLoadingPlaceholder: evidenceLoading,
+      screenshotByPath: _screenshotByPath,
       perfLogger: perfLogger,
     ),
   };

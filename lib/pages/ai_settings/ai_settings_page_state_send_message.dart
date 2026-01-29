@@ -1,6 +1,6 @@
 part of '../ai_settings_page.dart';
 
-extension _AISettingsPageStateExt2 on _AISettingsPageState {
+extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
   Future<void> _sendMessage() async {
     if (_sending) return;
     final text = _inputController.text.trim();
@@ -716,6 +716,7 @@ extension _AISettingsPageStateExt2 on _AISettingsPageState {
                   );
                 }
               });
+              _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
 
               // 生成最终提示词（包含上下文包的精简文本）
               final String finalQuery = _buildFinalQuestion(
@@ -893,31 +894,63 @@ extension _AISettingsPageStateExt2 on _AISettingsPageState {
           _scheduleAutoScroll();
           // 结束后合并深度思考内容并持久化
           try {
-            List<AIMessage> merged = _mergeReasoningForPersistence(
-              List<AIMessage>.from(_messages),
-            );
             final QueryContextPack? pack = ctxPackForRewrite;
             if (pack != null &&
                 assistantIdx >= 0 &&
-                assistantIdx < merged.length &&
-                merged[assistantIdx].role == 'assistant') {
-              final AIMessage m = merged[assistantIdx];
-              String rewritten = await _rewriteNumericEvidenceTagsToFilenames(
-                m.content,
-                ctxPack: pack,
-              );
-              if (rewritten != m.content) {
-                merged = List<AIMessage>.from(merged);
-                merged[assistantIdx] = AIMessage(
-                  role: m.role,
-                  content: rewritten,
-                  createdAt: m.createdAt,
-                  reasoningContent: m.reasoningContent,
-                  reasoningDuration: m.reasoningDuration,
-                  uiThinkingJson: m.uiThinkingJson,
-                );
+                assistantIdx < _messages.length &&
+                _messages[assistantIdx].role == 'assistant') {
+              // Keep segment boundaries stable by rewriting per segment first.
+              final List<String>? segs0 = _contentSegmentsByIndex[assistantIdx];
+              if (segs0 != null && segs0.isNotEmpty) {
+                final List<String> segs1 = <String>[];
+                for (final s in segs0) {
+                  segs1.add(
+                    await _rewriteNumericEvidenceTagsToFilenames(
+                      s,
+                      ctxPack: pack,
+                    ),
+                  );
+                }
+                _contentSegmentsByIndex[assistantIdx] = segs1;
+                final String joined = segs1.join('');
+                final AIMessage m0 = _messages[assistantIdx];
+                if (joined != m0.content) {
+                  final List<AIMessage> tmp = List<AIMessage>.from(_messages);
+                  tmp[assistantIdx] = AIMessage(
+                    role: m0.role,
+                    content: joined,
+                    createdAt: m0.createdAt,
+                    reasoningContent: m0.reasoningContent,
+                    reasoningDuration: m0.reasoningDuration,
+                    uiThinkingJson: m0.uiThinkingJson,
+                  );
+                  _messages = tmp;
+                }
+              } else {
+                final AIMessage m0 = _messages[assistantIdx];
+                final String rewritten =
+                    await _rewriteNumericEvidenceTagsToFilenames(
+                      m0.content,
+                      ctxPack: pack,
+                    );
+                if (rewritten != m0.content) {
+                  final List<AIMessage> tmp = List<AIMessage>.from(_messages);
+                  tmp[assistantIdx] = AIMessage(
+                    role: m0.role,
+                    content: rewritten,
+                    createdAt: m0.createdAt,
+                    reasoningContent: m0.reasoningContent,
+                    reasoningDuration: m0.reasoningDuration,
+                    uiThinkingJson: m0.uiThinkingJson,
+                  );
+                  _messages = tmp;
+                }
               }
             }
+
+            final List<AIMessage> merged = _mergeReasoningForPersistence(
+              List<AIMessage>.from(_messages),
+            );
             if (mounted) {
               _setState(() {
                 _messages = merged;
@@ -930,31 +963,63 @@ extension _AISettingsPageStateExt2 on _AISettingsPageState {
             await _enqueueChatHistorySave(merged);
           } catch (_) {
             try {
-              List<AIMessage> toSave = _mergeReasoningForPersistence(
-                List<AIMessage>.from(_messages),
-              );
               final QueryContextPack? pack = ctxPackForRewrite;
               if (pack != null &&
                   assistantIdx >= 0 &&
-                  assistantIdx < toSave.length &&
-                  toSave[assistantIdx].role == 'assistant') {
-                final AIMessage m = toSave[assistantIdx];
-                String rewritten = await _rewriteNumericEvidenceTagsToFilenames(
-                  m.content,
-                  ctxPack: pack,
-                );
-                if (rewritten != m.content) {
-                  toSave = List<AIMessage>.from(toSave);
-                  toSave[assistantIdx] = AIMessage(
-                    role: m.role,
-                    content: rewritten,
-                    createdAt: m.createdAt,
-                    reasoningContent: m.reasoningContent,
-                    reasoningDuration: m.reasoningDuration,
-                    uiThinkingJson: m.uiThinkingJson,
-                  );
+                  assistantIdx < _messages.length &&
+                  _messages[assistantIdx].role == 'assistant') {
+                final List<String>? segs0 =
+                    _contentSegmentsByIndex[assistantIdx];
+                if (segs0 != null && segs0.isNotEmpty) {
+                  final List<String> segs1 = <String>[];
+                  for (final s in segs0) {
+                    segs1.add(
+                      await _rewriteNumericEvidenceTagsToFilenames(
+                        s,
+                        ctxPack: pack,
+                      ),
+                    );
+                  }
+                  _contentSegmentsByIndex[assistantIdx] = segs1;
+                  final String joined = segs1.join('');
+                  final AIMessage m0 = _messages[assistantIdx];
+                  if (joined != m0.content) {
+                    final List<AIMessage> tmp = List<AIMessage>.from(_messages);
+                    tmp[assistantIdx] = AIMessage(
+                      role: m0.role,
+                      content: joined,
+                      createdAt: m0.createdAt,
+                      reasoningContent: m0.reasoningContent,
+                      reasoningDuration: m0.reasoningDuration,
+                      uiThinkingJson: m0.uiThinkingJson,
+                    );
+                    _messages = tmp;
+                  }
+                } else {
+                  final AIMessage m0 = _messages[assistantIdx];
+                  final String rewritten =
+                      await _rewriteNumericEvidenceTagsToFilenames(
+                        m0.content,
+                        ctxPack: pack,
+                      );
+                  if (rewritten != m0.content) {
+                    final List<AIMessage> tmp = List<AIMessage>.from(_messages);
+                    tmp[assistantIdx] = AIMessage(
+                      role: m0.role,
+                      content: rewritten,
+                      createdAt: m0.createdAt,
+                      reasoningContent: m0.reasoningContent,
+                      reasoningDuration: m0.reasoningDuration,
+                      uiThinkingJson: m0.uiThinkingJson,
+                    );
+                    _messages = tmp;
+                  }
                 }
               }
+
+              final List<AIMessage> toSave = _mergeReasoningForPersistence(
+                List<AIMessage>.from(_messages),
+              );
               await _enqueueChatHistorySave(toSave);
             } catch (_) {}
           }
@@ -1595,6 +1660,7 @@ extension _AISettingsPageStateExt2 on _AISettingsPageState {
               createdAt: last.createdAt,
             );
           });
+          _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
 
           final finalQuery = _buildFinalQuestion(
             userQuestionForFinal,

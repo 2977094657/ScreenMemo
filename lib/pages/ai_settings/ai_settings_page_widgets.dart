@@ -192,6 +192,42 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
   bool _expanded = true;
   Timer? _elapsedTimer;
   final ScrollController _fallbackScrollController = ScrollController();
+  Map<String, Uint8List?> _appIconByPackage = <String, Uint8List?>{};
+  Map<String, Uint8List?> _appIconByNameLower = <String, Uint8List?>{};
+  bool _appIconCacheLoaded = false;
+
+  void _warmAppIconCache() {
+    if (_appIconCacheLoaded) return;
+    unawaited(() async {
+      try {
+        var apps = await AppSelectionService.instance.getSelectedApps();
+        // Selected apps carry cached icons (no platform plugin call). If empty,
+        // fall back to installed app scan on Android only.
+        if (apps.isEmpty && Platform.isAndroid) {
+          apps = await AppSelectionService.instance.getAllInstalledApps();
+        }
+
+        final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
+        final Map<String, Uint8List?> byName = <String, Uint8List?>{};
+        for (final a in apps) {
+          final String pkg = a.packageName.trim();
+          if (pkg.isNotEmpty) byPkg[pkg] = a.icon;
+          final String nameKey = a.appName.trim().toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = a.icon;
+        }
+        if (!mounted) return;
+        setState(() {
+          _appIconByPackage = byPkg;
+          _appIconByNameLower = byName;
+          _appIconCacheLoaded = true;
+        });
+      } catch (_) {
+        // Best-effort; tool chips will fall back to generic icons.
+        if (!mounted) return;
+        setState(() => _appIconCacheLoaded = true);
+      }
+    }());
+  }
 
   void _syncElapsedTimer() {
     _elapsedTimer?.cancel();
@@ -209,6 +245,7 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     super.initState();
     _expanded = widget.isLoading;
     _syncElapsedTimer();
+    _warmAppIconCache();
   }
 
   @override
@@ -447,6 +484,14 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
 
     final String label = _toolChipTextForDisplay(context, chip);
     final IconData icon = _toolIconFor(chip.toolName);
+    final Widget leading = _buildToolChipLeading(
+      context,
+      theme: theme,
+      chip: chip,
+      fg: fg,
+      fallbackIcon: icon,
+      isSearch: isSearch,
+    );
 
     return Container(
       width: double.infinity,
@@ -464,7 +509,7 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 1),
-              child: Icon(icon, size: 16, color: fg.withOpacity(0.95)),
+              child: leading,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -478,6 +523,148 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolChipLeading(
+    BuildContext context, {
+    required ThemeData theme,
+    required _ThinkingToolChip chip,
+    required Color fg,
+    required IconData fallbackIcon,
+    required bool isSearch,
+  }) {
+    final List<String> byName = chip.appNames
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+    final List<String> byPkg = chip.appPackageNames
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+
+    final List<String> keys = byName.isNotEmpty ? byName : byPkg;
+    final bool showAppIcons = isSearch && keys.isNotEmpty;
+    if (!showAppIcons) {
+      return Icon(fallbackIcon, size: 16, color: fg.withOpacity(0.95));
+    }
+
+    const int maxIcons = 3;
+    final List<String> shown = keys.take(maxIcons).toList(growable: false);
+    final int extraCount = keys.length - shown.length;
+
+    final List<Uint8List?> icons = <Uint8List?>[];
+    if (byName.isNotEmpty) {
+      for (final name in shown) {
+        icons.add(_appIconByNameLower[name.toLowerCase()]);
+      }
+    } else {
+      for (final pkg in shown) {
+        icons.add(_appIconByPackage[pkg]);
+      }
+    }
+
+    return _buildAppIconStack(
+      context,
+      theme: theme,
+      fg: fg,
+      icons: icons,
+      extraCount: extraCount,
+    );
+  }
+
+  Widget _buildAppIconStack(
+    BuildContext context, {
+    required ThemeData theme,
+    required Color fg,
+    required List<Uint8List?> icons,
+    required int extraCount,
+  }) {
+    const double size = 18;
+    const double overlap = 6;
+    final double step = size - overlap;
+    final int shownCount = icons.length;
+    final double width =
+        size + (shownCount <= 1 ? 0 : (shownCount - 1) * step) + (extraCount > 0 ? step : 0);
+
+    return SizedBox(
+      width: width,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (int i = 0; i < shownCount; i++)
+            Positioned(
+              left: i * step,
+              child: _buildSingleAppIcon(
+                bytes: icons[i],
+                fg: fg,
+                size: size,
+              ),
+            ),
+          if (extraCount > 0)
+            Positioned(
+              left: shownCount * step,
+              child: _buildExtraCountBadge(
+                theme,
+                extraCount: extraCount,
+                fg: fg,
+                size: size,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSingleAppIcon({
+    required Uint8List? bytes,
+    required Color fg,
+    required double size,
+  }) {
+    final Widget child = bytes != null
+        ? Image.memory(
+            bytes,
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+          )
+        : Icon(
+            Icons.android,
+            size: size * 0.75,
+            color: fg.withOpacity(0.9),
+          );
+
+    // Display the icon as-is; do not add a background behind it.
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Center(child: child),
+    );
+  }
+
+  Widget _buildExtraCountBadge(
+    ThemeData theme, {
+    required int extraCount,
+    required Color fg,
+    required double size,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '+$extraCount',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: fg.withOpacity(0.9),
+          fontWeight: FontWeight.w700,
+          fontSize: 9,
         ),
       ),
     );

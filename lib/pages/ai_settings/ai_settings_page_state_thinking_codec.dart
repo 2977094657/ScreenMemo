@@ -1,6 +1,38 @@
 part of '../ai_settings_page.dart';
 
-extension _AISettingsPageStateExt3 on _AISettingsPageState {
+extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
+  List<int> _decodeSegmentLengthsFromUiJson(String raw) {
+    final String t = raw.trim();
+    if (t.isEmpty) return const <int>[];
+
+    int asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is double) return v.toInt();
+      if (v is String) return int.tryParse(v.trim()) ?? 0;
+      return 0;
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(t);
+    } catch (_) {
+      return const <int>[];
+    }
+    if (decoded is! Map) return const <int>[];
+    final Map<String, dynamic> obj = Map<String, dynamic>.from(decoded as Map);
+    final int ver = asInt(obj['v']);
+    if (ver != 2) return const <int>[];
+
+    final dynamic lens0 = obj['seg_lens'];
+    if (lens0 is! List) return const <int>[];
+    final List<int> lens = <int>[];
+    for (final dynamic it in lens0) {
+      final int n = asInt(it);
+      if (n > 0) lens.add(n);
+    }
+    return lens;
+  }
+
   String? _encodeThinkingBlocksForIndex(int assistantIdx) {
     final List<_ThinkingBlock>? blocks0 = _thinkingBlocksByIndex[assistantIdx];
     if (blocks0 == null || blocks0.isEmpty) return null;
@@ -26,6 +58,9 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
             'call_id': c.callId,
             'tool_name': c.toolName,
             'label': c.label,
+            if (c.appNames.isNotEmpty) 'app_names': c.appNames,
+            if (c.appPackageNames.isNotEmpty)
+              'app_package_names': c.appPackageNames,
             if (isLoading) 'active': c.active,
             if (c.resultSummary != null && c.resultSummary!.trim().isNotEmpty)
               'result_summary': c.resultSummary,
@@ -53,7 +88,25 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       });
     }
 
-    return jsonEncode(<String, dynamic>{'v': 1, 'blocks': blocks});
+    // Persist content segment boundaries so we can restore the same
+    // 思考块/正文 interleaving order after reload/copy.
+    List<int> segLens = <int>[];
+    final List<String>? segs0 = _contentSegmentsByIndex[assistantIdx];
+    if (segs0 != null && segs0.length > 1) {
+      segLens = <int>[for (final s in segs0) s.length];
+    } else if (assistantIdx >= 0 && assistantIdx < _messages.length) {
+      final String? existingUi = _messages[assistantIdx].uiThinkingJson;
+      if (existingUi != null && existingUi.trim().isNotEmpty) {
+        final List<int> fromUi = _decodeSegmentLengthsFromUiJson(existingUi);
+        if (fromUi.length > 1) segLens = fromUi;
+      }
+    }
+
+    return jsonEncode(<String, dynamic>{
+      'v': 2,
+      'blocks': blocks,
+      if (segLens.length > 1) 'seg_lens': segLens,
+    });
   }
 
   List<_ThinkingBlock> _decodeThinkingBlocks(String raw) {
@@ -86,7 +139,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     if (decoded is! Map) return const <_ThinkingBlock>[];
     final Map<String, dynamic> obj = Map<String, dynamic>.from(decoded as Map);
     final int ver = asInt(obj['v']);
-    if (ver != 1) return const <_ThinkingBlock>[];
+    if (ver != 1 && ver != 2) return const <_ThinkingBlock>[];
 
     final List<dynamic> blocks0 = (obj['blocks'] is List)
         ? List<dynamic>.from(obj['blocks'] as List)
@@ -133,15 +186,35 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
           final String callId = (cm['call_id'] ?? '').toString().trim();
           final String toolName = (cm['tool_name'] ?? '').toString().trim();
           if (callId.isEmpty || toolName.isEmpty) continue;
+
+          List<String> parseStringList(dynamic raw) {
+            if (raw is List) {
+              return raw
+                  .map((e) => e?.toString().trim() ?? '')
+                  .where((e) => e.isNotEmpty)
+                  .toSet()
+                  .toList(growable: false);
+            }
+            if (raw is String) {
+              final String s = raw.trim();
+              return s.isEmpty ? const <String>[] : <String>[s];
+            }
+            return const <String>[];
+          }
+
           final String labelRaw = (cm['label'] ?? '').toString().trim();
           final String summaryRaw = (cm['result_summary'] ?? '')
               .toString()
               .trim();
+          final List<String> appNames = parseStringList(cm['app_names']);
+          final List<String> appPkgs = parseStringList(cm['app_package_names']);
           tools.add(
             _ThinkingToolChip(
               callId: callId,
               toolName: toolName,
               label: labelRaw.isEmpty ? toolName : labelRaw,
+              appNames: appNames,
+              appPackageNames: appPkgs,
               active: asBool(cm['active']),
               resultSummary: summaryRaw.isEmpty ? null : summaryRaw,
             ),
@@ -426,6 +499,88 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     });
   }
 
+  void _scheduleEvidenceNsfwPreload(Iterable<String> filePaths) {
+    final List<String> paths = filePaths
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (paths.isEmpty) return;
+
+    final List<String> toLoad = <String>[];
+    for (final p in paths) {
+      if (_evidenceNsfwRequestedPaths.add(p)) {
+        toLoad.add(p);
+      }
+    }
+    if (toLoad.isEmpty) return;
+
+    // Serialize to avoid DB storms while scrolling/rebuilding.
+    final Future<void>? prev = _evidenceNsfwPreloadFuture;
+    final Future<void> next = () async {
+      if (prev != null) {
+        try {
+          await prev;
+        } catch (_) {}
+      }
+      try {
+        await _preloadEvidenceNsfwNow(toLoad);
+      } catch (_) {}
+    }();
+    _evidenceNsfwPreloadFuture = next;
+    unawaited(next);
+  }
+
+  Future<void> _preloadEvidenceNsfwNow(List<String> filePaths) async {
+    if (filePaths.isEmpty) return;
+
+    final List<ScreenshotRecord> found = <ScreenshotRecord>[];
+    for (final p in filePaths) {
+      if (_evidenceScreenshotByPath.containsKey(p)) continue;
+      try {
+        final ScreenshotRecord? s =
+            await ScreenshotDatabase.instance.getScreenshotByPath(p);
+        _evidenceScreenshotByPath[p] = s;
+        if (s != null) found.add(s);
+      } catch (_) {
+        _evidenceScreenshotByPath[p] = null;
+      }
+    }
+
+    // Best-effort preloads. Missing caches are treated as "not NSFW".
+    try {
+      await NsfwPreferenceService.instance.ensureRulesLoaded();
+    } catch (_) {}
+    try {
+      await NsfwPreferenceService.instance.preloadAiNsfwFlags(
+        filePaths: filePaths,
+      );
+    } catch (_) {}
+    try {
+      await NsfwPreferenceService.instance.preloadSegmentNsfwFlags(
+        filePaths: filePaths,
+      );
+    } catch (_) {}
+
+    final Map<String, Set<int>> idsByApp = <String, Set<int>>{};
+    for (final s in found) {
+      final int? id = s.id;
+      if (id == null) continue;
+      idsByApp.putIfAbsent(s.appPackageName, () => <int>{}).add(id);
+    }
+    for (final e in idsByApp.entries) {
+      try {
+        await NsfwPreferenceService.instance.preloadManualFlags(
+          appPackageName: e.key,
+          screenshotIds: e.value.toList(growable: false),
+        );
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    _scheduleEvidenceRebuild();
+  }
+
   Future<Map<String, String>> _resolveEvidencePathsCached({
     required String msgKey,
     required Set<String> missingNames,
@@ -455,6 +610,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       );
       if (!mounted) return map;
       if (map.isNotEmpty) {
+        _scheduleEvidenceNsfwPreload(map.values);
         final Map<String, String> existing =
             _evidenceResolvedByMsgKey[msgKey] ?? const <String, String>{};
         bool changed = false;
@@ -1492,6 +1648,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       ).textTheme.bodyMedium?.copyWith(color: fg),
       evidenceNameToPath: evidenceNameToPath,
       orderedEvidencePaths: orderedEvidencePathsFromAtts,
+      screenshotByPath: _evidenceScreenshotByPath,
       perfLogger: _uiPerf,
     );
 
@@ -1561,6 +1718,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       ...evidenceNameToPath,
       ...cached,
     };
+    _scheduleEvidenceNsfwPreload(baseMap.values);
     final Set<String> missing = evidenceNames
         .where((n) => !baseMap.containsKey(n))
         .toSet();
@@ -1596,6 +1754,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
         ).textTheme.bodyMedium?.copyWith(color: fg),
         evidenceNameToPath: baseMap,
         orderedEvidencePaths: orderedEvidencePathsFromMap(baseMap),
+        screenshotByPath: _evidenceScreenshotByPath,
         perfLogger: _uiPerf,
       );
       return MarkdownBody(
@@ -1632,6 +1791,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
       builder: (context, snap) {
         final Map<String, String> map = snap.data ?? const <String, String>{};
         final merged = <String, String>{...baseMap, ...map};
+        _scheduleEvidenceNsfwPreload(merged.values);
         final resolved = MarkdownMathConfig(
           inlineTextStyle: Theme.of(
             context,
@@ -1644,6 +1804,7 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
           evidenceLoading: snap.connectionState != ConnectionState.done,
           evidenceNameToPath: merged,
           orderedEvidencePaths: orderedEvidencePathsFromMap(merged),
+          screenshotByPath: _evidenceScreenshotByPath,
           perfLogger: _uiPerf,
         );
         return MarkdownBody(
@@ -1708,10 +1869,69 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     final List<String>? segs = _contentSegmentsByIndex[messageIndex];
     if (segs != null) return segs;
     if (messageIndex >= 0 && messageIndex < _messages.length) {
-      final String t = _messages[messageIndex].content;
-      if (t.trim().isNotEmpty) return <String>[t];
+      final AIMessage m = _messages[messageIndex];
+      final String t = m.content;
+      if (t.trim().isEmpty) return const <String>[];
+
+      // Restore streaming segment boundaries (if recorded) so the bubble/copy
+      // order matches the original model/tool interleaving.
+      final String uiJson = (m.uiThinkingJson ?? '').trim();
+      if (uiJson.isNotEmpty) {
+        final List<int> lens = _decodeSegmentLengthsFromUiJson(uiJson);
+        if (lens.length > 1) {
+          int offset = 0;
+          final List<String> out = <String>[];
+          bool invalid = false;
+          for (final int len in lens) {
+            final int end = offset + len;
+            if (len <= 0 || end > t.length) {
+              invalid = true;
+              break;
+            }
+            out.add(t.substring(offset, end));
+            offset = end;
+          }
+          if (!invalid) {
+            if (offset < t.length) {
+              // Preserve any tail text if content changed (best-effort).
+              if (out.isEmpty) {
+                out.add(t.substring(offset));
+              } else {
+                out[out.length - 1] = out.last + t.substring(offset);
+              }
+            }
+            if (out.length > 1) {
+              _contentSegmentsByIndex[messageIndex] = out;
+              return out;
+            }
+          }
+        }
+      }
+
+      return <String>[t];
     }
     return const <String>[];
+  }
+
+  String _buildThinkingBlockTextForCopy(_ThinkingBlock b) {
+    if (b.events.isEmpty) return '';
+    final sb = StringBuffer();
+    for (final e in b.events) {
+      final String title = e.title.trim();
+      final String sub = (e.subtitle ?? '').trim();
+      if (title.isNotEmpty) sb.writeln(title);
+      if (sub.isNotEmpty) sb.writeln(sub);
+      if (e.type == _ThinkingEventType.tools && e.tools.isNotEmpty) {
+        for (final chip in e.tools) {
+          final String text = _toolChipTextForDisplay(context, chip).trim();
+          if (text.isNotEmpty) sb.writeln('- $text');
+        }
+      }
+      if (title.isNotEmpty || sub.isNotEmpty || e.tools.isNotEmpty) {
+        sb.writeln();
+      }
+    }
+    return sb.toString().trim();
   }
 
   String _buildThinkingTimelineTextForCopy(int messageIndex) {
@@ -1719,21 +1939,8 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
     if (blocks.isEmpty) return '';
     final sb = StringBuffer();
     for (final b in blocks) {
-      for (final e in b.events) {
-        final String title = e.title.trim();
-        final String sub = (e.subtitle ?? '').trim();
-        if (title.isNotEmpty) sb.writeln(title);
-        if (sub.isNotEmpty) sb.writeln(sub);
-        if (e.type == _ThinkingEventType.tools && e.tools.isNotEmpty) {
-          for (final chip in e.tools) {
-            final String text = _toolChipTextForDisplay(context, chip).trim();
-            if (text.isNotEmpty) sb.writeln('- $text');
-          }
-        }
-        if (title.isNotEmpty || sub.isNotEmpty || e.tools.isNotEmpty) {
-          sb.writeln();
-        }
-      }
+      final String part = _buildThinkingBlockTextForCopy(b);
+      if (part.isNotEmpty) sb.writeln(part + '\n');
     }
     return sb.toString().trim();
   }
@@ -1741,29 +1948,37 @@ extension _AISettingsPageStateExt3 on _AISettingsPageState {
   String _buildMessageCopyText(AIMessage m, int messageIndex) {
     final bool isAssistant = m.role == 'assistant';
 
-    String answer = m.content;
-    if (isAssistant) {
-      final List<String> segs = _contentSegmentsForMessageIndex(messageIndex);
-      if (segs.isNotEmpty) answer = segs.join('\n\n');
-    }
-    answer = answer.trim();
+    if (!isAssistant) return m.content.trim();
 
-    if (!isAssistant) return answer;
-
-    // Copy what the UI shows: prefer the structured thinking timeline; fall back
-    // to legacy reasoning text only when no timeline is available.
-    String reasoning = _buildThinkingTimelineTextForCopy(messageIndex).trim();
-    if (reasoning.isNotEmpty) return '$reasoning\n\n$answer';
-
-    // Only include legacy reasoning while the thinking block is still loading
-    // (matches the UI, which hides legacy logs after completion).
+    // Interleave blocks/segs in the same order as the bubble UI.
     final List<_ThinkingBlock> blocks = _blocksForMessageIndex(messageIndex);
-    final bool anyLoading = blocks.any((b) => b.finishedAt == null);
-    if (!anyLoading) return answer;
+    final List<String> segs = _contentSegmentsForMessageIndex(messageIndex);
+    final int n = (blocks.length > segs.length) ? blocks.length : segs.length;
 
-    reasoning = (_reasoningByIndex[messageIndex] ?? m.reasoningContent ?? '')
-        .trim();
-    if (reasoning.isEmpty) return answer;
-    return '$reasoning\n\n$answer';
+    final List<String> parts = <String>[];
+    for (int i = 0; i < n; i++) {
+      if (i < blocks.length) {
+        final String t = _buildThinkingBlockTextForCopy(blocks[i]).trim();
+        if (t.isNotEmpty) parts.add(t);
+      }
+      if (i < segs.length) {
+        final String s = segs[i].trim();
+        if (s.isNotEmpty) parts.add(s);
+      }
+    }
+
+    // Only include legacy reasoning while any thinking block is still loading
+    // (matches the UI, which hides legacy logs after completion).
+    if (parts.isEmpty) {
+      final bool anyLoading = blocks.any((b) => b.finishedAt == null);
+      if (anyLoading) {
+        final String legacy =
+            (_reasoningByIndex[messageIndex] ?? m.reasoningContent ?? '')
+                .trim();
+        if (legacy.isNotEmpty) return legacy;
+      }
+      return m.content.trim();
+    }
+    return parts.join('\n\n').trim();
   }
 }

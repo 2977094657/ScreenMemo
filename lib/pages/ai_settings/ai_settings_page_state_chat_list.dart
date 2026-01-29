@@ -1,6 +1,6 @@
 part of '../ai_settings_page.dart';
 
-extension _AISettingsPageStateExt4 on _AISettingsPageState {
+extension _AISettingsPageStateChatListExt on _AISettingsPageState {
   Widget _buildChatList() {
     if (_messages.isEmpty) {
       final l10n = AppLocalizations.of(context);
@@ -577,6 +577,11 @@ extension _AISettingsPageStateExt4 on _AISettingsPageState {
     Color fg,
   ) {
     final file = File(att.path);
+    final String p = att.path.trim();
+    final ScreenshotRecord? screenshot = _evidenceScreenshotByPath[p];
+    final bool extraNsfwMask =
+        NsfwPreferenceService.instance.isAiNsfwCached(filePath: p) ||
+        NsfwPreferenceService.instance.isSegmentNsfwCached(filePath: p);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -586,6 +591,8 @@ extension _AISettingsPageStateExt4 on _AISettingsPageState {
             ScreenshotImageWidget(
               file: file,
               privacyMode: true,
+              extraNsfwMask: extraNsfwMask,
+              screenshot: screenshot,
               width: 88,
               height: 158,
               fit: BoxFit.cover,
