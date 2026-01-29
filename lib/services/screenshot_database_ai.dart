@@ -1080,12 +1080,14 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
   /// - has_summary: 0 表示无总结；1 表示已有总结
   /// - 仅返回“至少有一张样本图片”的事件，避免前端渲染后再隐藏导致滚动抖动
   /// - 可选按 start_time 进行时间范围过滤（用于“动态”页按日期窗口增量加载）
+  /// - 可选按 appPackageName / appPackageNames 过滤（按 segment_samples.app_package_name）。
   Future<List<Map<String, dynamic>>> listSegmentsEx({
     int limit = 50,
     int offset = 0,
     bool onlyNoSummary = false,
     int? startMillis,
     int? endMillis,
+    List<String>? appPackageNames,
     String? appPackageName,
   }) async {
     final db = await database;
@@ -1104,12 +1106,26 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       ];
       final List<Object?> params = <Object?>[];
 
-      final String appPkg = (appPackageName ?? '').trim();
-      if (appPkg.isNotEmpty) {
+      List<String> pkgs = (appPackageNames ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+      if (pkgs.isEmpty) {
+        final String single = (appPackageName ?? '').trim();
+        if (single.isNotEmpty) pkgs = <String>[single];
+      }
+      pkgs.sort();
+      if (pkgs.length > 30) {
+        pkgs = pkgs.take(30).toList(growable: false);
+      }
+
+      if (pkgs.isNotEmpty) {
+        final String placeholders = List.filled(pkgs.length, '?').join(',');
         whereClauses.add(
-          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id AND ss.app_package_name = ?)",
+          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id AND ss.app_package_name IN ($placeholders))",
         );
-        params.add(appPkg);
+        params.addAll(pkgs);
       } else {
         whereClauses.add(hasSamplesCond);
       }
@@ -1513,6 +1529,43 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
+  /// Resolve app package names by app display names using app_registry.
+  ///
+  /// Notes:
+  /// - Tool calling prefers human app names to avoid hallucinated package names.
+  /// - We still search/filter by package name internally (more stable/unique).
+  Future<List<String>> findPackagesByAppNames(List<String> appNames) async {
+    final List<String> names = appNames
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (names.isEmpty) return <String>[];
+
+    // Guard: SQLite has a hard parameter limit; keep this small.
+    final List<String> limited = (names.length > 30)
+        ? (names..sort()).take(30).toList(growable: false)
+        : (names..sort());
+
+    try {
+      final db = await database;
+      final String placeholders = List.filled(limited.length, '?').join(',');
+      final rows = await db.query(
+        'app_registry',
+        columns: ['app_package_name'],
+        where: 'app_name COLLATE NOCASE IN ($placeholders)',
+        whereArgs: limited,
+      );
+      return rows
+          .map((r) => (r['app_package_name'] as String?)?.trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
   /// 搜索 AI 图片元数据（tags/description），用于“无 OCR 或 OCR 不足”的图片检索。
   ///
   /// - 优先使用 FTS；如 FTS 不可用或命中为空，则回退 LIKE（更适配中文子串）。
@@ -1524,7 +1577,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? startMillis,
     int? endMillis,
     bool includeNsfw = false,
-    String? appPackageName,
+    List<String>? appPackageNames,
   }) async {
     final db = await database;
     final String q = query.trim();
@@ -1567,9 +1620,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         filters.add('m.capture_time <= ?');
         args.add(endMillis);
       }
-      if (appPackageName != null && appPackageName.trim().isNotEmpty) {
-        filters.add('ss.app_package_name = ?');
-        args.add(appPackageName.trim());
+
+      final List<String> appPkgs = (appPackageNames ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (appPkgs.isNotEmpty) {
+        final String placeholders = List.filled(appPkgs.length, '?').join(',');
+        filters.add('ss.app_package_name IN ($placeholders)');
+        args.addAll(appPkgs);
       }
 
       final String whereClause = filters.isEmpty
@@ -1621,9 +1681,16 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         filters.add('m.capture_time <= ?');
         args.add(endMillis);
       }
-      if (appPackageName != null && appPackageName.trim().isNotEmpty) {
-        filters.add('ss.app_package_name = ?');
-        args.add(appPackageName.trim());
+
+      final List<String> appPkgs = (appPackageNames ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (appPkgs.isNotEmpty) {
+        final String placeholders = List.filled(appPkgs.length, '?').join(',');
+        filters.add('ss.app_package_name IN ($placeholders)');
+        args.addAll(appPkgs);
       }
       args.add(fetchLimit);
       args.add(fetchOffset);
@@ -1687,7 +1754,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     int? offset,
     int? startMillis,
     int? endMillis,
-    String? appPackageName,
+    List<String>? appPackageNames,
     bool matchAllTerms = true,
   }) async {
     final db = await database;
@@ -1728,12 +1795,17 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         baseFilters.add('s.start_time <= ?');
         baseArgs.add(endMillis);
       }
-      final String appPkg = (appPackageName ?? '').trim();
-      if (appPkg.isNotEmpty) {
+      final List<String> appPkgs = (appPackageNames ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (appPkgs.isNotEmpty) {
+        final String placeholders = List.filled(appPkgs.length, '?').join(',');
         baseFilters.add(
-          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name IN ($placeholders))',
         );
-        baseArgs.add(appPkg);
+        baseArgs.addAll(appPkgs);
       }
 
       final String whereClause = baseFilters.isEmpty
@@ -1854,7 +1926,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     String query, {
     int? startMillis,
     int? endMillis,
-    String? appPackageName,
+    List<String>? appPackageNames,
     bool matchAllTerms = true,
   }) async {
     final db = await database;
@@ -1891,12 +1963,17 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         baseFilters.add('s.start_time <= ?');
         baseArgs.add(endMillis);
       }
-      final String appPkg = (appPackageName ?? '').trim();
-      if (appPkg.isNotEmpty) {
+      final List<String> appPkgs = (appPackageNames ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (appPkgs.isNotEmpty) {
+        final String placeholders = List.filled(appPkgs.length, '?').join(',');
         baseFilters.add(
-          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name = ?)',
+          'EXISTS (SELECT 1 FROM segment_samples ss0 WHERE ss0.segment_id = s.id AND ss0.app_package_name IN ($placeholders))',
         );
-        baseArgs.add(appPkg);
+        baseArgs.addAll(appPkgs);
       }
 
       final String whereClause = baseFilters.isEmpty
