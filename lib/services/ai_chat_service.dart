@@ -7,6 +7,7 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 
 import 'ai_request_gateway.dart';
+import 'ai_context_budgets.dart';
 import 'ai_settings_service.dart';
 import 'atomic_memory_service.dart';
 import 'chat_context_service.dart';

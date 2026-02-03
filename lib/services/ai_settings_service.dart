@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'screenshot_database.dart';
 import 'locale_service.dart';
 import 'ai_providers_service.dart';
+import 'ai_context_budgets.dart';
 import 'package:flutter/services.dart'; // Added for MethodChannel
 import 'flutter_logger.dart';
 
@@ -107,7 +108,8 @@ class AISettingsService {
       'atomic_memory_injection_enabled';
   static const String _keyAtomicMemoryAutoExtractEnabled =
       'atomic_memory_auto_extract_enabled';
-  static const String _keyAtomicMemoryPromptTokens = 'atomic_memory_prompt_tokens';
+  static const String _keyAtomicMemoryPromptTokens =
+      'atomic_memory_prompt_tokens';
   static const String _keyAtomicMemoryMaxItems = 'atomic_memory_max_items';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
@@ -125,13 +127,97 @@ class AISettingsService {
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
   static const String _defaultModel = 'gpt-4o-mini';
-  static const int _defaultWorkingMemoryPromptTokens = 1400;
+
+  // Prompt budgets should scale with the active model's prompt/context window.
+  // Ratios are derived from the old fixed defaults (tuned around ~32k prompt cap).
+  static const double _defaultWorkingMemoryPromptTokensRatio = 1400.0 / 32000.0;
+  static const double _defaultAtomicMemoryPromptTokensRatio = 700.0 / 32000.0;
+
+  // Hard safety caps (we still want scaling, but avoid absurd token budgets on
+  // ultra-large context models).
+  static const int _workingMemoryPromptTokensAbsMax = 12000;
+  static const int _atomicMemoryPromptTokensAbsMax = 8000;
+
+  // Max budget as a percentage of prompt cap.
+  static const double _workingMemoryPromptTokensMaxRatio = 0.20;
+  static const double _atomicMemoryPromptTokensMaxRatio = 0.15;
+
+  static const int _workingMemoryPromptTokensMin = 200;
+  static const int _atomicMemoryPromptTokensMin = 100;
+
   static const int _defaultWorkingMemoryEdgeLimit = 60;
-  static const int _defaultAtomicMemoryPromptTokens = 700;
   static const int _defaultAtomicMemoryMaxItems = 24;
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
   static const int _maxHistoryMessages = 40;
+
+  Future<int> _promptCapTokensForBudget() async {
+    try {
+      final String model = await getModel();
+      return AIContextBudgets.forModel(model).promptCapTokens;
+    } catch (_) {
+      return AIContextBudgets.forModel(_defaultModel).promptCapTokens;
+    }
+  }
+
+  static int _capByPct(
+    int cap,
+    double ratio, {
+    required int min,
+    required int absMax,
+  }) {
+    final int v = (cap * ratio).round();
+    return v.clamp(min, absMax);
+  }
+
+  static int _maxWorkingMemoryTokensForCap(int cap) {
+    return _capByPct(
+      cap,
+      _workingMemoryPromptTokensMaxRatio,
+      min: _workingMemoryPromptTokensMin,
+      absMax: _workingMemoryPromptTokensAbsMax,
+    );
+  }
+
+  static int _maxAtomicMemoryTokensForCap(int cap) {
+    return _capByPct(
+      cap,
+      _atomicMemoryPromptTokensMaxRatio,
+      min: _atomicMemoryPromptTokensMin,
+      absMax: _atomicMemoryPromptTokensAbsMax,
+    );
+  }
+
+  static int _defaultWorkingMemoryTokensForCap(int cap) {
+    final int suggested = (cap * _defaultWorkingMemoryPromptTokensRatio)
+        .round();
+    return suggested.clamp(
+      _workingMemoryPromptTokensMin,
+      _maxWorkingMemoryTokensForCap(cap),
+    );
+  }
+
+  static int _defaultAtomicMemoryTokensForCap(int cap) {
+    final int suggested = (cap * _defaultAtomicMemoryPromptTokensRatio).round();
+    return suggested.clamp(
+      _atomicMemoryPromptTokensMin,
+      _maxAtomicMemoryTokensForCap(cap),
+    );
+  }
+
+  static int _clampWorkingMemoryTokens(int value, int cap) {
+    return value.clamp(
+      _workingMemoryPromptTokensMin,
+      _maxWorkingMemoryTokensForCap(cap),
+    );
+  }
+
+  static int _clampAtomicMemoryTokens(int value, int cap) {
+    return value.clamp(
+      _atomicMemoryPromptTokensMin,
+      _maxAtomicMemoryTokensForCap(cap),
+    );
+  }
 
   // ========== 基础布尔设置（流式开关） ==========
   Future<bool> getStreamEnabled() async {
@@ -187,21 +273,27 @@ class AISettingsService {
 
   Future<void> setWorkingMemoryInjectionEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyWorkingMemoryInjectionEnabled, enabled ? '1' : '0');
+    await db.setAiSetting(
+      _keyWorkingMemoryInjectionEnabled,
+      enabled ? '1' : '0',
+    );
   }
 
   Future<int> getWorkingMemoryPromptTokens() async {
     final db = ScreenshotDatabase.instance;
     final v = await db.getAiSetting(_keyWorkingMemoryPromptTokens);
     final int? parsed = int.tryParse((v ?? '').trim());
-    // Keep it conservative: this is an approximate token budget (bytes/4).
-    final int raw = parsed ?? _defaultWorkingMemoryPromptTokens;
-    return raw.clamp(200, 4000);
+    // Keep it conservative: this is an approximate token budget (bytes/4),
+    // but it should scale with the active model's prompt cap.
+    final int cap = await _promptCapTokensForBudget();
+    final int raw = parsed ?? _defaultWorkingMemoryTokensForCap(cap);
+    return _clampWorkingMemoryTokens(raw, cap);
   }
 
   Future<void> setWorkingMemoryPromptTokens(int value) async {
     final db = ScreenshotDatabase.instance;
-    final int v = value.clamp(200, 4000);
+    final int cap = await _promptCapTokensForBudget();
+    final int v = _clampWorkingMemoryTokens(value, cap);
     await db.setAiSetting(_keyWorkingMemoryPromptTokens, v.toString());
   }
 
@@ -231,7 +323,10 @@ class AISettingsService {
 
   Future<void> setAtomicMemoryInjectionEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyAtomicMemoryInjectionEnabled, enabled ? '1' : '0');
+    await db.setAiSetting(
+      _keyAtomicMemoryInjectionEnabled,
+      enabled ? '1' : '0',
+    );
   }
 
   /// Whether to auto-extract atomic memories after each turn (uses AI calls).
@@ -246,20 +341,25 @@ class AISettingsService {
 
   Future<void> setAtomicMemoryAutoExtractEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyAtomicMemoryAutoExtractEnabled, enabled ? '1' : '0');
+    await db.setAiSetting(
+      _keyAtomicMemoryAutoExtractEnabled,
+      enabled ? '1' : '0',
+    );
   }
 
   Future<int> getAtomicMemoryPromptTokens() async {
     final db = ScreenshotDatabase.instance;
     final v = await db.getAiSetting(_keyAtomicMemoryPromptTokens);
     final int? parsed = int.tryParse((v ?? '').trim());
-    final int raw = parsed ?? _defaultAtomicMemoryPromptTokens;
-    return raw.clamp(100, 2000);
+    final int cap = await _promptCapTokensForBudget();
+    final int raw = parsed ?? _defaultAtomicMemoryTokensForCap(cap);
+    return _clampAtomicMemoryTokens(raw, cap);
   }
 
   Future<void> setAtomicMemoryPromptTokens(int value) async {
     final db = ScreenshotDatabase.instance;
-    final int v = value.clamp(100, 2000);
+    final int cap = await _promptCapTokensForBudget();
+    final int v = _clampAtomicMemoryTokens(value, cap);
     await db.setAiSetting(_keyAtomicMemoryPromptTokens, v.toString());
   }
 

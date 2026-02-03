@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 27,
+          version: 28,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 27,
+          version: 28,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 27,
+          version: 28,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 27,
+        version: 28,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -850,6 +850,15 @@ class ScreenshotDatabase {
       try {
         await db.execute(
           'ALTER TABLE ai_messages ADD COLUMN ui_thinking_json TEXT',
+        );
+      } catch (_) {}
+    }
+
+    // v28: Persist last prompt token breakdown JSON (for UI usage bar).
+    if (oldVersion < 28) {
+      try {
+        await db.execute(
+          'ALTER TABLE ai_conversations ADD COLUMN last_prompt_breakdown_json TEXT',
         );
       } catch (_) {}
     }

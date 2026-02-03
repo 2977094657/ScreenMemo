@@ -1,4 +1,4 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServicePromptBudgetExt on AIChatService {
   bool _apiContentHasImageParts(Object? apiContent) {
@@ -135,10 +135,13 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     return changed ? out : messages;
   }
 
-  String _compactToolContentForPrompt(String content) {
+  String _compactToolContentForPrompt(
+    String content, {
+    required int maxToolMessageTokens,
+  }) {
     if (content.trim().isEmpty) return content;
     final int maxBytes =
-        AIChatService.maxToolMessageTokens * PromptBudget.approxBytesPerToken;
+        maxToolMessageTokens * PromptBudget.approxBytesPerToken;
 
     if (PromptBudget.utf8Bytes(content) <= maxBytes) return content;
 
@@ -196,12 +199,18 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     }
   }
 
-  List<AIMessage> _compactToolMessagesForPrompt(List<AIMessage> toolMsgs) {
+  List<AIMessage> _compactToolMessagesForPrompt(
+    List<AIMessage> toolMsgs, {
+    required int maxToolMessageTokens,
+  }) {
     bool changed = false;
     final List<AIMessage> out = <AIMessage>[];
     for (final m in toolMsgs) {
       if (m.role == 'tool') {
-        final String compacted = _compactToolContentForPrompt(m.content);
+        final String compacted = _compactToolContentForPrompt(
+          m.content,
+          maxToolMessageTokens: maxToolMessageTokens,
+        );
         if (compacted != m.content) changed = true;
         out.add(
           AIMessage(
@@ -252,10 +261,11 @@ extension AIChatServicePromptBudgetExt on AIChatService {
   List<AIMessage> _enforceToolLoopPromptBudget(
     List<AIMessage> messages, {
     required AIMessage pinnedUser,
+    required int maxPromptTokens,
     required void Function(AIStreamEvent event)? emitEvent,
   }) {
     int totalTokens = _approxTokensForToolLoopMessages(messages);
-    if (totalTokens <= AIChatService.maxToolLoopPromptTokens) return messages;
+    if (totalTokens <= maxPromptTokens) return messages;
 
     final int before = totalTokens;
     int droppedHistory = 0;
@@ -265,7 +275,7 @@ extension AIChatServicePromptBudgetExt on AIChatService {
 
     while (true) {
       totalTokens = _approxTokensForToolLoopMessages(working);
-      if (totalTokens <= AIChatService.maxToolLoopPromptTokens) break;
+      if (totalTokens <= maxPromptTokens) break;
 
       int sysEnd = 0;
       while (sysEnd < working.length && working[sysEnd].role == 'system') {
@@ -298,7 +308,7 @@ extension AIChatServicePromptBudgetExt on AIChatService {
 
     // As a last resort, truncate the oldest kept non-system message content.
     totalTokens = _approxTokensForToolLoopMessages(working);
-    if (totalTokens > AIChatService.maxToolLoopPromptTokens) {
+    if (totalTokens > maxPromptTokens) {
       int sysEnd = 0;
       while (sysEnd < working.length && working[sysEnd].role == 'system') {
         sysEnd += 1;
@@ -306,10 +316,7 @@ extension AIChatServicePromptBudgetExt on AIChatService {
       if (sysEnd < working.length) {
         final AIMessage m = working[sysEnd];
         final int maxBytes =
-            (AIChatService.maxToolLoopPromptTokens *
-                    PromptBudget.approxBytesPerToken *
-                    0.6)
-                .floor();
+            (maxPromptTokens * PromptBudget.approxBytesPerToken * 0.6).floor();
         final String truncated = PromptBudget.truncateTextByBytes(
           text: m.content,
           maxBytes: maxBytes,
@@ -336,5 +343,4 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     );
     return working;
   }
-
 }

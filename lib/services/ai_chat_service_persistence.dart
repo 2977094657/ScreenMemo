@@ -1,4 +1,4 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServicePersistenceExt on AIChatService {
   String _systemPromptForLocale() {
@@ -24,12 +24,12 @@ extension AIChatServicePersistenceExt on AIChatService {
       final int edgeLimit = await _settings.getWorkingMemoryEdgeLimit();
       final int maxTokens = await _settings.getWorkingMemoryPromptTokens();
 
-      final Map<String, dynamic> payload =
-          await MemoryBridgeService.instance.buildWorkingMemory(
-        query: userMessage.trim(),
-        edgeLimit: edgeLimit,
-        includeHistoryEdges: false,
-      );
+      final Map<String, dynamic> payload = await MemoryBridgeService.instance
+          .buildWorkingMemory(
+            query: userMessage.trim(),
+            edgeLimit: edgeLimit,
+            includeHistoryEdges: false,
+          );
       final String raw =
           (payload['working_memory_markdown'] as String?)?.trim() ?? '';
       if (raw.isEmpty) return '';
@@ -37,8 +37,7 @@ extension AIChatServicePersistenceExt on AIChatService {
       String text = raw;
       final int tokens = PromptBudget.approxTokensForText(text);
       if (tokens > maxTokens) {
-        final int maxBytes =
-            maxTokens * PromptBudget.approxBytesPerToken;
+        final int maxBytes = maxTokens * PromptBudget.approxBytesPerToken;
         text = PromptBudget.truncateTextByBytes(
           text: text,
           maxBytes: maxBytes,
@@ -46,11 +45,7 @@ extension AIChatServicePersistenceExt on AIChatService {
         ).trim();
       }
 
-      return [
-        '<working_memory>',
-        text,
-        '</working_memory>',
-      ].join('\n').trim();
+      return ['<working_memory>', text, '</working_memory>'].join('\n').trim();
     } catch (_) {
       return '';
     }
@@ -62,6 +57,7 @@ extension AIChatServicePersistenceExt on AIChatService {
     required String userMessage,
     Iterable<String> extraSystemMessages = const <String>[],
     bool includeHistory = true,
+    int? historyMaxTokens,
   }) {
     final List<AIMessage> messages = <AIMessage>[
       AIMessage(role: 'system', content: systemMessage),
@@ -70,11 +66,13 @@ extension AIChatServicePersistenceExt on AIChatService {
           .map((msg) => AIMessage(role: 'system', content: msg.trim())),
     ];
     if (includeHistory && history.isNotEmpty) {
-      final List<AIMessage> trimmedHistory =
-          PromptBudget.keepTailUnderTokenBudget(
-            history,
-            maxTokens: AIChatService.maxHistoryPromptTokens,
+      final int maxTokens =
+          (historyMaxTokens ?? AIChatService.maxHistoryPromptTokens).clamp(
+            0,
+            1 << 30,
           );
+      final List<AIMessage> trimmedHistory =
+          PromptBudget.keepTailUnderTokenBudget(history, maxTokens: maxTokens);
       messages.addAll(
         trimmedHistory.map(
           (msg) => AIMessage(role: msg.role, content: msg.content),
@@ -109,11 +107,11 @@ extension AIChatServicePersistenceExt on AIChatService {
     await _updateConversationModel(modelUsed);
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
+    try {
+      final String cid = await _settings.getActiveConversationCid();
+      // Keep a separate append-only transcript + compacted memory for long chats.
       try {
-        final String cid = await _settings.getActiveConversationCid();
-        // Keep a separate append-only transcript + compacted memory for long chats.
-        try {
-          await _chatContext.seedFromChatHistoryIfEmpty(
+        await _chatContext.seedFromChatHistoryIfEmpty(
           cid: cid,
           history: history,
         );

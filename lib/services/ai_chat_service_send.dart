@@ -1,6 +1,245 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServiceSendExt on AIChatService {
+  int _approxMsgTokens(String role, String content) {
+    return PromptBudget.approxTokensForMessageJson(
+      AIMessage(role: role, content: content),
+    );
+  }
+
+  int _approxReservedPromptTokens({
+    required String systemPrompt,
+    required List<String> extraSystemMessages,
+    required String userMessage,
+  }) {
+    int total = 0;
+    total += _approxMsgTokens('system', systemPrompt);
+    for (final String s in extraSystemMessages) {
+      final String t = s.trim();
+      if (t.isEmpty) continue;
+      total += _approxMsgTokens('system', t);
+    }
+    total += _approxMsgTokens('user', userMessage);
+    return total;
+  }
+
+  int _historyBudgetTokensForPrompt({
+    required AIContextBudgets budgets,
+    required int reservedTokens,
+    required int toolsSchemaTokens,
+  }) {
+    final int v = budgets.effectivePromptCapTokens - reservedTokens - toolsSchemaTokens;
+    if (v <= 0) return 0;
+    return v.clamp(0, budgets.effectivePromptCapTokens);
+  }
+
+  int _toolLoopBudgetTokensForPrompt({
+    required AIContextBudgets budgets,
+    required int toolsSchemaTokens,
+  }) {
+    final int v = budgets.effectivePromptCapTokens - toolsSchemaTokens;
+    if (v <= 0) return 0;
+    return v.clamp(0, budgets.effectivePromptCapTokens);
+  }
+
+  int _approxToolSchemaTokens(List<Map<String, dynamic>> tools) {
+    if (tools.isEmpty) return 0;
+    try {
+      return PromptBudget.approxTokensForText(jsonEncode(tools));
+    } catch (_) {
+      return PromptBudget.approxTokensForText('$tools');
+    }
+  }
+
+  String _buildPromptBreakdownJson({
+    required String model,
+    required String systemPrompt,
+    required String userMessage,
+    required List<AIMessage> history,
+    required bool includeHistory,
+    required List<Map<String, dynamic>> tools,
+    String toolUsageInstruction = '',
+    String conversationContextMsg = '',
+    String atomicMemoryMsg = '',
+    String workingMemoryMsg = '',
+    List<String> extraSystemMessages = const <String>[],
+    int? historyMaxTokens,
+  }) {
+    int msgTokens(String role, String content) {
+      return PromptBudget.approxTokensForMessageJson(
+        AIMessage(role: role, content: content),
+      );
+    }
+
+    final Map<String, int> parts = <String, int>{};
+
+    final int systemTokens = msgTokens('system', systemPrompt);
+    parts['system_prompt'] = systemTokens;
+
+    int extraSystemTotal = 0;
+    int addExtra(String key, String raw) {
+      final String t = raw.trim();
+      if (t.isEmpty) return 0;
+      final int v = msgTokens('system', t);
+      parts[key] = (parts[key] ?? 0) + v;
+      extraSystemTotal += v;
+      return v;
+    }
+
+    addExtra('tool_instruction', toolUsageInstruction);
+    addExtra('conversation_context', conversationContextMsg);
+    addExtra('atomic_memory', atomicMemoryMsg);
+    addExtra('working_memory', workingMemoryMsg);
+    for (final String s in extraSystemMessages) {
+      addExtra('extra_system', s);
+    }
+
+    int historyUser = 0;
+    int historyAssistant = 0;
+    int historyTool = 0;
+    if (includeHistory && history.isNotEmpty) {
+      final int maxTokens =
+          (historyMaxTokens ??
+                  AIContextBudgets.forModel(model).historyPromptTokens)
+              .clamp(0, 1 << 30);
+      final List<AIMessage> trimmed = PromptBudget.keepTailUnderTokenBudget(
+        history,
+        maxTokens: maxTokens,
+      );
+      for (final AIMessage m in trimmed) {
+        final int t = msgTokens(m.role, m.content);
+        if (m.role == 'assistant') {
+          historyAssistant += t;
+        } else if (m.role == 'tool') {
+          historyTool += t;
+        } else {
+          historyUser += t;
+        }
+      }
+    }
+    if (historyUser > 0) parts['history_user'] = historyUser;
+    if (historyAssistant > 0) parts['history_assistant'] = historyAssistant;
+    if (historyTool > 0) parts['history_tool'] = historyTool;
+
+    final int userTokens = msgTokens('user', userMessage);
+    parts['user_message'] = userTokens;
+
+    final int toolsSchemaTokens = _approxToolSchemaTokens(tools);
+    if (toolsSchemaTokens > 0) parts['tool_schema'] = toolsSchemaTokens;
+
+    final int total = parts.values.fold(0, (a, b) => a + b);
+
+    try {
+      return jsonEncode(<String, dynamic>{
+        'v': 1,
+        'model': model,
+        'total_tokens': total,
+        'parts': parts,
+        'tools_count': tools.length,
+        'include_history': includeHistory,
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  bool _looksLikeToolUsageInstruction(String text) {
+    final String t = text.trim();
+    if (t.isEmpty) return false;
+    final String lower = t.toLowerCase();
+    // Heuristic: detect the common tool-instruction preface (zh/en).
+    return lower.contains('tool calling is enabled') ||
+        lower.contains('available tools:') ||
+        t.contains('已启用工具调用') ||
+        t.contains('可用工具：');
+  }
+
+  String _buildPromptBreakdownJsonFromMessages({
+    required String model,
+    required List<AIMessage> messages,
+    required List<Map<String, dynamic>> tools,
+  }) {
+    int msgTokens(AIMessage m) => PromptBudget.approxTokensForMessageJson(m);
+
+    final Map<String, int> parts = <String, int>{};
+
+    final int toolsSchemaTokens = _approxToolSchemaTokens(tools);
+    if (toolsSchemaTokens > 0) parts['tool_schema'] = toolsSchemaTokens;
+
+    bool firstSystem = true;
+    int lastUserIdx = -1;
+    for (int i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role == 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+
+    for (int i = 0; i < messages.length; i++) {
+      final AIMessage m = messages[i];
+      final String role = m.role;
+      final int t = msgTokens(m);
+      if (t <= 0) continue;
+
+      if (role == 'system') {
+        if (firstSystem) {
+          parts['system_prompt'] = (parts['system_prompt'] ?? 0) + t;
+          firstSystem = false;
+          continue;
+        }
+        final String content = m.content;
+        final String trimmed = content.trim();
+        if (trimmed.contains('<conversation_context>')) {
+          parts['conversation_context'] =
+              (parts['conversation_context'] ?? 0) + t;
+        } else if (trimmed.contains('<atomic_memory>')) {
+          parts['atomic_memory'] = (parts['atomic_memory'] ?? 0) + t;
+        } else if (trimmed.contains('<working_memory>')) {
+          parts['working_memory'] = (parts['working_memory'] ?? 0) + t;
+        } else if (_looksLikeToolUsageInstruction(trimmed)) {
+          parts['tool_instruction'] = (parts['tool_instruction'] ?? 0) + t;
+        } else {
+          parts['extra_system'] = (parts['extra_system'] ?? 0) + t;
+        }
+        continue;
+      }
+
+      if (role == 'user') {
+        final String k = (i == lastUserIdx) ? 'user_message' : 'history_user';
+        parts[k] = (parts[k] ?? 0) + t;
+        continue;
+      }
+
+      if (role == 'assistant') {
+        parts['history_assistant'] = (parts['history_assistant'] ?? 0) + t;
+        continue;
+      }
+
+      if (role == 'tool') {
+        parts['history_tool'] = (parts['history_tool'] ?? 0) + t;
+        continue;
+      }
+
+      // Unknown role: keep it under "extra_system" so we don't drop tokens.
+      parts['extra_system'] = (parts['extra_system'] ?? 0) + t;
+    }
+
+    final int total = parts.values.fold(0, (a, b) => a + b);
+
+    try {
+      return jsonEncode(<String, dynamic>{
+        'v': 1,
+        'model': model,
+        'total_tokens': total,
+        'parts': parts,
+        'tools_count': tools.length,
+        'include_history': true,
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<AIMessage> sendMessage(String userMessage, {Duration? timeout}) async {
     try {
       await FlutterLogger.nativeInfo(
@@ -12,6 +251,10 @@ extension AIChatServiceSendExt on AIChatService {
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: 'chat',
     );
+    final String modelForBudget = endpoints.isNotEmpty
+        ? endpoints.first.model
+        : (await _settings.getModel());
+    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
     final List<AIMessage> history = await _settings.getChatHistory();
     final String cid = await _settings.getActiveConversationCid();
     // Best-effort bootstrap: seed append-only transcript from existing tail.
@@ -19,32 +262,17 @@ extension AIChatServiceSendExt on AIChatService {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
 
-    // Prefer using the append-only transcript for prompt history so context can
-    // exceed the UI tail limit.
-    List<AIMessage> requestHistory = history;
-    try {
-      final List<AIMessage> full = await _chatContext
-          .loadRecentMessagesForPrompt(
-            cid: cid,
-            maxTokens: AIChatService.maxHistoryPromptTokens,
-          );
-      if (full.isNotEmpty) requestHistory = full;
-    } catch (_) {}
-
     final String systemPrompt = _systemPromptForLocale();
-    final List<String> extras = <String>[];
+    List<String> extras = <String>[];
+    String ctxMsg = '';
     try {
-      final String ctxMsg = await _chatContext.buildSystemContextMessage(
-        cid: cid,
-      );
+      ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
       if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
     } catch (_) {}
     String amMsg = '';
     try {
-      amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
-        cid: cid,
-        query: userMessage.trim(),
-      );
+      amMsg = await AtomicMemoryService.instance
+          .buildAtomicMemoryContextMessage(cid: cid, query: userMessage.trim());
       if (amMsg.trim().isNotEmpty) extras.add(amMsg.trim());
     } catch (_) {}
     String wmMsg = '';
@@ -52,25 +280,121 @@ extension AIChatServiceSendExt on AIChatService {
       wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
       if (wmMsg.trim().isNotEmpty) extras.add(wmMsg.trim());
     } catch (_) {}
-    final List<AIMessage> requestMessages = _composeMessages(
+
+    // Codex-style dynamic history budget: keep as much history as fits after
+    // accounting for system/extras/user (+ tool schema, if any).
+    const int toolsSchemaTokens = 0;
+    int reservedTokens = _approxReservedPromptTokens(
+      systemPrompt: systemPrompt,
+      extraSystemMessages: extras,
+      userMessage: userMessage,
+    );
+    int historyMaxTokens = _historyBudgetTokensForPrompt(
+      budgets: budgets,
+      reservedTokens: reservedTokens,
+      toolsSchemaTokens: toolsSchemaTokens,
+    );
+
+    // Prefer using the append-only transcript for prompt history so context can
+    // exceed the UI tail limit.
+    List<AIMessage> requestHistory = history;
+    if (historyMaxTokens > 0) {
+      try {
+        final List<AIMessage> full = await _chatContext
+            .loadRecentMessagesForPrompt(
+              cid: cid,
+              maxTokens: historyMaxTokens,
+            );
+        if (full.isNotEmpty) requestHistory = full;
+      } catch (_) {}
+    }
+
+    List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: requestHistory,
       userMessage: userMessage,
       extraSystemMessages: extras,
+      historyMaxTokens: historyMaxTokens,
     );
+
+    // Codex-style: if we are close to the window, compact first, then retry once.
+    int tokensApprox =
+        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+    if (tokensApprox >= budgets.autoCompactTriggerTokens) {
+      try {
+        await _chatContext.compactNow(cid: cid, reason: 'preflight');
+        // Rebuild context message (summary likely changed) and recompute budgets.
+        extras = <String>[];
+        ctxMsg = '';
+        try {
+          ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+          if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
+        } catch (_) {}
+        if (amMsg.trim().isNotEmpty) extras.add(amMsg.trim());
+        if (wmMsg.trim().isNotEmpty) extras.add(wmMsg.trim());
+        reservedTokens = _approxReservedPromptTokens(
+          systemPrompt: systemPrompt,
+          extraSystemMessages: extras,
+          userMessage: userMessage,
+        );
+        historyMaxTokens = _historyBudgetTokensForPrompt(
+          budgets: budgets,
+          reservedTokens: reservedTokens,
+          toolsSchemaTokens: toolsSchemaTokens,
+        );
+        requestHistory = history;
+        if (historyMaxTokens > 0) {
+          try {
+            final List<AIMessage> full = await _chatContext
+                .loadRecentMessagesForPrompt(
+                  cid: cid,
+                  maxTokens: historyMaxTokens,
+                );
+            if (full.isNotEmpty) requestHistory = full;
+          } catch (_) {}
+        }
+        requestMessages = _composeMessages(
+          systemMessage: systemPrompt,
+          history: requestHistory,
+          userMessage: userMessage,
+          extraSystemMessages: extras,
+          historyMaxTokens: historyMaxTokens,
+        );
+        tokensApprox =
+            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+      } catch (_) {}
+    }
     try {
+      final String modelForPrompt = endpoints.isNotEmpty
+          ? endpoints.first.model
+          : '';
+      final String breakdownJson = _buildPromptBreakdownJson(
+        model: modelForPrompt,
+        systemPrompt: systemPrompt,
+        userMessage: userMessage,
+        history: requestHistory,
+        includeHistory: true,
+        tools: const <Map<String, dynamic>>[],
+        conversationContextMsg: ctxMsg,
+        atomicMemoryMsg: amMsg,
+        workingMemoryMsg: wmMsg,
+        historyMaxTokens: historyMaxTokens,
+      );
+      final int tokensApprox = PromptBudget.approxTokensForMessagesJson(
+        requestMessages,
+      );
       unawaited(
         _chatContext.recordPromptTokens(
           cid: cid,
-          tokensApprox: PromptBudget.approxTokensForMessagesJson(
-            requestMessages,
-          ),
+          tokensApprox: tokensApprox,
+          breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
         ),
       );
     } catch (_) {}
     try {
       final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
-      final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+      final bool amAutoExtract = await _settings
+          .getAtomicMemoryAutoExtractEnabled();
       final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
       final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
       unawaited(
@@ -299,20 +623,63 @@ extension AIChatServiceSendExt on AIChatService {
     List<String> extraSystemMessages = const <String>[],
   }) async {
     final String cid = await _settings.getActiveConversationCid();
+    final String modelForBudget = endpoints.isNotEmpty
+        ? endpoints.first.model
+        : (await _settings.getModel());
+    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
 
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
 
+    final List<String> effectiveExtras = <String>[];
+    String ctxMsg = '';
+    String amMsg = '';
+    String wmMsg = '';
+    if (context == 'chat' && persistHistory) {
+      try {
+        ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+      try {
+        amMsg = await AtomicMemoryService.instance
+            .buildAtomicMemoryContextMessage(
+              cid: cid,
+              query: userMessage.trim(),
+            );
+        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
+      } catch (_) {}
+      try {
+        wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
+        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
+      } catch (_) {}
+    }
+    effectiveExtras.addAll(extraSystemMessages);
+    final String systemPrompt = _systemPromptForLocale();
+
+    const int toolsSchemaTokens = 0;
+    int reservedTokens = _approxReservedPromptTokens(
+      systemPrompt: systemPrompt,
+      extraSystemMessages: effectiveExtras,
+      userMessage: userMessage,
+    );
+    int historyMaxTokens = includeHistory
+        ? _historyBudgetTokensForPrompt(
+            budgets: budgets,
+            reservedTokens: reservedTokens,
+            toolsSchemaTokens: toolsSchemaTokens,
+          )
+        : 0;
+
     List<AIMessage> effectiveHistory = const <AIMessage>[];
-    if (includeHistory) {
+    if (includeHistory && historyMaxTokens > 0) {
       // Prefer append-only transcript for prompt history.
       try {
         final List<AIMessage> full = await _chatContext
             .loadRecentMessagesForPrompt(
               cid: cid,
-              maxTokens: AIChatService.maxHistoryPromptTokens,
+              maxTokens: historyMaxTokens,
             );
         if (full.isNotEmpty) {
           effectiveHistory = full;
@@ -324,51 +691,107 @@ extension AIChatServiceSendExt on AIChatService {
       }
     }
 
-    final List<String> effectiveExtras = <String>[];
-    String amMsg = '';
-    String wmMsg = '';
-    if (context == 'chat' && persistHistory) {
-      try {
-        final String ctxMsg = await _chatContext.buildSystemContextMessage(
-          cid: cid,
-        );
-        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
-      } catch (_) {}
-      try {
-        amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
-          cid: cid,
-          query: userMessage.trim(),
-        );
-        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
-      } catch (_) {}
-      try {
-        wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
-        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
-      } catch (_) {}
-    }
-    effectiveExtras.addAll(extraSystemMessages);
-    final String systemPrompt = _systemPromptForLocale();
-    final List<AIMessage> requestMessages = _composeMessages(
+    List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: effectiveHistory,
       userMessage: userMessage,
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistory,
+      historyMaxTokens: historyMaxTokens,
     );
+
+    // If close to the window, compact first, then retry once.
+    int tokensApprox =
+        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+    if (context == 'chat' &&
+        persistHistory &&
+        tokensApprox >= budgets.autoCompactTriggerTokens) {
+      try {
+        await _chatContext.compactNow(cid: cid, reason: 'preflight');
+        // Refresh only the context message + history tail; keep AM/WM stable.
+        final List<String> extras2 = <String>[];
+        ctxMsg = '';
+        try {
+          ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+          if (ctxMsg.trim().isNotEmpty) extras2.add(ctxMsg.trim());
+        } catch (_) {}
+        if (amMsg.trim().isNotEmpty) extras2.add(amMsg.trim());
+        if (wmMsg.trim().isNotEmpty) extras2.add(wmMsg.trim());
+        extras2.addAll(extraSystemMessages);
+        reservedTokens = _approxReservedPromptTokens(
+          systemPrompt: systemPrompt,
+          extraSystemMessages: extras2,
+          userMessage: userMessage,
+        );
+        historyMaxTokens = includeHistory
+            ? _historyBudgetTokensForPrompt(
+                budgets: budgets,
+                reservedTokens: reservedTokens,
+                toolsSchemaTokens: toolsSchemaTokens,
+              )
+            : 0;
+        effectiveHistory = const <AIMessage>[];
+        if (includeHistory && historyMaxTokens > 0) {
+          try {
+            final List<AIMessage> full = await _chatContext
+                .loadRecentMessagesForPrompt(
+                  cid: cid,
+                  maxTokens: historyMaxTokens,
+                );
+            if (full.isNotEmpty) {
+              effectiveHistory = full;
+            } else {
+              effectiveHistory = requestHistory ?? history;
+            }
+          } catch (_) {
+            effectiveHistory = requestHistory ?? history;
+          }
+        }
+        requestMessages = _composeMessages(
+          systemMessage: systemPrompt,
+          history: effectiveHistory,
+          userMessage: userMessage,
+          extraSystemMessages: extras2,
+          includeHistory: includeHistory,
+          historyMaxTokens: historyMaxTokens,
+        );
+        tokensApprox =
+            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+      } catch (_) {}
+    }
     if (context == 'chat' && persistHistory) {
       try {
+        final String modelForPrompt = endpoints.isNotEmpty
+            ? endpoints.first.model
+            : '';
+        final String breakdownJson = _buildPromptBreakdownJson(
+          model: modelForPrompt,
+          systemPrompt: systemPrompt,
+          userMessage: userMessage,
+          history: effectiveHistory,
+          includeHistory: includeHistory,
+          tools: const <Map<String, dynamic>>[],
+          conversationContextMsg: ctxMsg,
+          atomicMemoryMsg: amMsg,
+          workingMemoryMsg: wmMsg,
+          extraSystemMessages: extraSystemMessages,
+          historyMaxTokens: historyMaxTokens,
+        );
         unawaited(
           _chatContext.recordPromptTokens(
             cid: cid,
             tokensApprox: PromptBudget.approxTokensForMessagesJson(
               requestMessages,
             ),
+            breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
           ),
         );
       } catch (_) {}
       try {
-        final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
-        final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+        final bool amEnabled = await _settings
+            .getAtomicMemoryInjectionEnabled();
+        final bool amAutoExtract = await _settings
+            .getAtomicMemoryAutoExtractEnabled();
         final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
         final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
         unawaited(
@@ -387,7 +810,8 @@ extension AIChatServiceSendExt on AIChatService {
         );
       } catch (_) {}
       try {
-        final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
+        final bool wmEnabled = await _settings
+            .getWorkingMemoryInjectionEnabled();
         final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
         final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
         unawaited(
@@ -511,21 +935,71 @@ extension AIChatServiceSendExt on AIChatService {
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
+    final String modelForBudget = endpoints.isNotEmpty
+        ? endpoints.first.model
+        : (await _settings.getModel());
+    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
     final List<AIMessage> history = await _settings.getChatHistory();
     final String cid = await _settings.getActiveConversationCid();
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
+    final String systemPrompt = _systemPromptForLocale();
+    final List<String> effectiveExtras = <String>[];
+    String toolUsageInstruction = '';
+    if (tools.isNotEmpty) {
+      toolUsageInstruction = _buildToolUsageInstruction(tools);
+      if (toolUsageInstruction.trim().isNotEmpty) {
+        effectiveExtras.add(toolUsageInstruction);
+      }
+    }
+    String ctxMsg = '';
+    String amMsg = '';
+    String wmMsg = '';
+    if (context == 'chat' && persistHistory) {
+      try {
+        ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
+      } catch (_) {}
+      try {
+        amMsg = await AtomicMemoryService.instance
+            .buildAtomicMemoryContextMessage(
+              cid: cid,
+              query: actualUserMessage.trim(),
+            );
+        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
+      } catch (_) {}
+      try {
+        wmMsg = await _buildWorkingMemoryContextMessage(actualUserMessage);
+        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
+      } catch (_) {}
+    }
+    effectiveExtras.addAll(extraSystemMessages);
+
+    final int toolsSchemaTokens = _approxToolSchemaTokens(tools);
+    final int reservedTokens = _approxReservedPromptTokens(
+      systemPrompt: systemPrompt,
+      extraSystemMessages: effectiveExtras,
+      userMessage: actualUserMessage,
+    );
+    final int historyMaxTokens = includeHistory
+        ? _historyBudgetTokensForPrompt(
+            budgets: budgets,
+            reservedTokens: reservedTokens,
+            toolsSchemaTokens: toolsSchemaTokens,
+          )
+        : 0;
+    int historyMaxTokensForBreakdown = historyMaxTokens;
 
     List<AIMessage> filteredHistory = const <AIMessage>[];
-    if (includeHistory) {
+    if (includeHistory && historyMaxTokens > 0) {
       // Prefer append-only transcript for prompt history.
       try {
         final List<AIMessage> full = await _chatContext
             .loadRecentMessagesForPrompt(
               cid: cid,
-              maxTokens: AIChatService.maxHistoryPromptTokens,
+              maxTokens: historyMaxTokens,
             );
         if (full.isNotEmpty) {
           filteredHistory = full;
@@ -540,53 +1014,119 @@ extension AIChatServiceSendExt on AIChatService {
             .toList();
       }
     }
-    final String systemPrompt = _systemPromptForLocale();
-    final List<String> effectiveExtras = <String>[];
-    if (tools.isNotEmpty)
-      effectiveExtras.add(_buildToolUsageInstruction(tools));
-    String amMsg = '';
-    String wmMsg = '';
-    if (context == 'chat' && persistHistory) {
-      try {
-        final String ctxMsg = await _chatContext.buildSystemContextMessage(
-          cid: cid,
-        );
-        if (ctxMsg.trim().isNotEmpty) effectiveExtras.add(ctxMsg.trim());
-      } catch (_) {}
-      try {
-        amMsg = await AtomicMemoryService.instance.buildAtomicMemoryContextMessage(
-          cid: cid,
-          query: actualUserMessage.trim(),
-        );
-        if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
-      } catch (_) {}
-      try {
-        wmMsg = await _buildWorkingMemoryContextMessage(actualUserMessage);
-        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
-      } catch (_) {}
-    }
-    effectiveExtras.addAll(extraSystemMessages);
-    final List<AIMessage> requestMessages = _composeMessages(
+
+    List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: filteredHistory,
       userMessage: actualUserMessage,
       extraSystemMessages: effectiveExtras,
       includeHistory: includeHistory,
+      historyMaxTokens: historyMaxTokens,
     );
+
+    // If close to the window, compact first, then rebuild the prompt once.
+    int promptTokensApprox =
+        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+    if (context == 'chat' &&
+        persistHistory &&
+        promptTokensApprox >= budgets.autoCompactTriggerTokens) {
+      try {
+        await _chatContext.compactNow(cid: cid, reason: 'preflight');
+        // Refresh ctx message and history tail; keep tool instruction + AM/WM stable.
+        final List<String> extras2 = <String>[];
+        if (toolUsageInstruction.trim().isNotEmpty) {
+          extras2.add(toolUsageInstruction.trim());
+        }
+        ctxMsg = '';
+        try {
+          ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+          if (ctxMsg.trim().isNotEmpty) extras2.add(ctxMsg.trim());
+        } catch (_) {}
+        if (amMsg.trim().isNotEmpty) extras2.add(amMsg.trim());
+        if (wmMsg.trim().isNotEmpty) extras2.add(wmMsg.trim());
+        extras2.addAll(extraSystemMessages);
+
+        final int reserved2 = _approxReservedPromptTokens(
+          systemPrompt: systemPrompt,
+          extraSystemMessages: extras2,
+          userMessage: actualUserMessage,
+        );
+        final int historyMax2 = includeHistory
+            ? _historyBudgetTokensForPrompt(
+                budgets: budgets,
+                reservedTokens: reserved2,
+                toolsSchemaTokens: toolsSchemaTokens,
+              )
+            : 0;
+        filteredHistory = const <AIMessage>[];
+        if (includeHistory && historyMax2 > 0) {
+          try {
+            final List<AIMessage> full = await _chatContext
+                .loadRecentMessagesForPrompt(
+                  cid: cid,
+                  maxTokens: historyMax2,
+                );
+            if (full.isNotEmpty) {
+              filteredHistory = full;
+            } else {
+              filteredHistory = history
+                  .where((m) => m.role == 'user' || m.role == 'assistant')
+                  .toList();
+            }
+          } catch (_) {
+            filteredHistory = history
+                .where((m) => m.role == 'user' || m.role == 'assistant')
+                .toList();
+          }
+        }
+        requestMessages = _composeMessages(
+          systemMessage: systemPrompt,
+          history: filteredHistory,
+          userMessage: actualUserMessage,
+          extraSystemMessages: extras2,
+          includeHistory: includeHistory,
+          historyMaxTokens: historyMax2,
+        );
+        historyMaxTokensForBreakdown = historyMax2;
+        promptTokensApprox =
+            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+      } catch (_) {}
+    }
     if (context == 'chat' && persistHistory) {
       try {
+        final String modelForPrompt = endpoints.isNotEmpty
+            ? endpoints.first.model
+            : '';
+        final String breakdownJson = _buildPromptBreakdownJson(
+          model: modelForPrompt,
+          systemPrompt: systemPrompt,
+          userMessage: actualUserMessage,
+          history: filteredHistory,
+          includeHistory: includeHistory,
+          tools: tools,
+          toolUsageInstruction: toolUsageInstruction,
+          conversationContextMsg: ctxMsg,
+          atomicMemoryMsg: amMsg,
+          workingMemoryMsg: wmMsg,
+          extraSystemMessages: extraSystemMessages,
+          historyMaxTokens: historyMaxTokensForBreakdown,
+        );
+        final int tokensApprox =
+            _approxToolSchemaTokens(tools) +
+            PromptBudget.approxTokensForMessagesJson(requestMessages);
         unawaited(
           _chatContext.recordPromptTokens(
             cid: cid,
-            tokensApprox: PromptBudget.approxTokensForMessagesJson(
-              requestMessages,
-            ),
+            tokensApprox: tokensApprox,
+            breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
           ),
         );
       } catch (_) {}
       try {
-        final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
-        final bool amAutoExtract = await _settings.getAtomicMemoryAutoExtractEnabled();
+        final bool amEnabled = await _settings
+            .getAtomicMemoryInjectionEnabled();
+        final bool amAutoExtract = await _settings
+            .getAtomicMemoryAutoExtractEnabled();
         final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
         final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
         unawaited(
@@ -606,7 +1146,8 @@ extension AIChatServiceSendExt on AIChatService {
         );
       } catch (_) {}
       try {
-        final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
+        final bool wmEnabled = await _settings
+            .getWorkingMemoryInjectionEnabled();
         final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
         final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
         unawaited(
@@ -641,6 +1182,29 @@ extension AIChatServiceSendExt on AIChatService {
       Object? toolChoiceForCall,
       bool preferStreaming = true,
     }) async {
+      if (context == 'chat' && persistHistory) {
+        try {
+          final String modelForPrompt = endpoints.isNotEmpty
+              ? endpoints.first.model
+              : '';
+          final String breakdownJson = _buildPromptBreakdownJsonFromMessages(
+            model: modelForPrompt,
+            messages: messages,
+            tools: toolsForCall,
+          );
+          final int tokensApprox =
+              _approxToolSchemaTokens(toolsForCall) +
+              PromptBudget.approxTokensForMessagesJson(messages);
+          unawaited(
+            _chatContext.recordPromptTokens(
+              cid: cid,
+              tokensApprox: tokensApprox,
+              breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
+            ),
+          );
+        } catch (_) {}
+      }
+
       if (emitEvent != null && preferStreaming) {
         final AIGatewayStreamingSession session = _gateway.startStreaming(
           endpoints: endpoints,
@@ -717,6 +1281,10 @@ extension AIChatServiceSendExt on AIChatService {
       working = _enforceToolLoopPromptBudget(
         working,
         pinnedUser: pinnedUserMessage,
+        maxPromptTokens: _toolLoopBudgetTokensForPrompt(
+          budgets: budgets,
+          toolsSchemaTokens: toolsSchemaTokens,
+        ),
         emitEvent: emitEvent,
       );
       result = await callModel(
@@ -824,6 +1392,10 @@ extension AIChatServiceSendExt on AIChatService {
         retryMessages = _enforceToolLoopPromptBudget(
           retryMessages,
           pinnedUser: pinnedUserMessage,
+          maxPromptTokens: _toolLoopBudgetTokensForPrompt(
+            budgets: budgets,
+            toolsSchemaTokens: toolsSchemaTokens,
+          ),
           emitEvent: emitEvent,
         );
         result = await callModel(
@@ -895,18 +1467,24 @@ extension AIChatServiceSendExt on AIChatService {
       );
 
       final List<Map<String, dynamic>> uiTools = await Future.wait(
-        result.toolCalls.map((c) async {
-          final Map<String, dynamic> args = _safeJsonObject(c.argumentsJson);
-          final List<String> appNames = _normalizeAppNamesArg(args);
-          final List<String> appPkgs = await _resolveAppPackagesFromArgs(args);
-          return <String, dynamic>{
-            'call_id': c.id,
-            'tool_name': c.name,
-            'label': _toolCallUiLabel(c),
-            if (appNames.isNotEmpty) 'app_names': appNames,
-            if (appPkgs.isNotEmpty) 'app_package_names': appPkgs,
-          };
-        }).toList(growable: false),
+        result.toolCalls
+            .map((c) async {
+              final Map<String, dynamic> args = _safeJsonObject(
+                c.argumentsJson,
+              );
+              final List<String> appNames = _normalizeAppNamesArg(args);
+              final List<String> appPkgs = await _resolveAppPackagesFromArgs(
+                args,
+              );
+              return <String, dynamic>{
+                'call_id': c.id,
+                'tool_name': c.name,
+                'label': _toolCallUiLabel(c),
+                if (appNames.isNotEmpty) 'app_names': appNames,
+                if (appPkgs.isNotEmpty) 'app_package_names': appPkgs,
+              };
+            })
+            .toList(growable: false),
       );
       _emitUi(emitEvent, <String, dynamic>{
         'type': 'tool_batch_begin',
@@ -944,6 +1522,7 @@ extension AIChatServiceSendExt on AIChatService {
             toolStartMs: toolStartMs,
             toolEndMs: toolEndMs,
           ),
+          maxToolMessageTokens: budgets.toolMessageTokens,
         );
         toolSw.stop();
         working.addAll(toolMsgs);
@@ -1053,6 +1632,10 @@ extension AIChatServiceSendExt on AIChatService {
         working = _enforceToolLoopPromptBudget(
           working,
           pinnedUser: pinnedUserMessage,
+          maxPromptTokens: _toolLoopBudgetTokensForPrompt(
+            budgets: budgets,
+            toolsSchemaTokens: toolsSchemaTokens,
+          ),
           emitEvent: emitEvent,
         );
         result = await callModel(
@@ -1165,6 +1748,10 @@ extension AIChatServiceSendExt on AIChatService {
           retryMessages = _enforceToolLoopPromptBudget(
             retryMessages,
             pinnedUser: pinnedUserMessage,
+            maxPromptTokens: _toolLoopBudgetTokensForPrompt(
+              budgets: budgets,
+              toolsSchemaTokens: toolsSchemaTokens,
+            ),
             emitEvent: emitEvent,
           );
           result = await callModel(
@@ -1280,5 +1867,4 @@ extension AIChatServiceSendExt on AIChatService {
   Future<void> clearConversation() => _settings.clearChatHistory();
 
   Future<List<AIMessage>> getConversation() => _settings.getChatHistory();
-
 }

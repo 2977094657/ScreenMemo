@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 
+import 'ai_context_budgets.dart';
 import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
@@ -22,6 +23,7 @@ class ChatContextSnapshot {
     required this.toolMemoryUpdatedAtMs,
     required this.lastPromptTokens,
     required this.lastPromptAtMs,
+    required this.lastPromptBreakdownJson,
     required this.fullMessageCount,
   });
 
@@ -35,6 +37,7 @@ class ChatContextSnapshot {
   final int? toolMemoryUpdatedAtMs;
   final int? lastPromptTokens;
   final int? lastPromptAtMs;
+  final String lastPromptBreakdownJson;
   final int fullMessageCount;
 }
 
@@ -65,14 +68,22 @@ class ChatContextService {
   Future<void> recordPromptTokens({
     required String cid,
     required int tokensApprox,
+    String? breakdownJson,
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     try {
       final storage = await _db.database;
-      await storage.execute(
-        'UPDATE ai_conversations SET last_prompt_tokens = ?, last_prompt_at = ? WHERE cid = ?',
-        <Object?>[tokensApprox, now, cid],
-      );
+      if (breakdownJson != null) {
+        await storage.execute(
+          'UPDATE ai_conversations SET last_prompt_tokens = ?, last_prompt_at = ?, last_prompt_breakdown_json = ? WHERE cid = ?',
+          <Object?>[tokensApprox, now, breakdownJson, cid],
+        );
+      } else {
+        await storage.execute(
+          'UPDATE ai_conversations SET last_prompt_tokens = ?, last_prompt_at = ? WHERE cid = ?',
+          <Object?>[tokensApprox, now, cid],
+        );
+      }
     } catch (_) {}
   }
 
@@ -97,8 +108,9 @@ class ChatContextService {
     final String resolvedCid = (cid == null || cid.trim().isEmpty)
         ? await _settings.getActiveConversationCid()
         : cid.trim();
-    final Map<String, dynamic>? row =
-        await _db.getAiConversationByCid(resolvedCid);
+    final Map<String, dynamic>? row = await _db.getAiConversationByCid(
+      resolvedCid,
+    );
 
     String summary = '';
     int? summaryUpdatedAtMs;
@@ -109,6 +121,7 @@ class ChatContextService {
     int? toolMemoryUpdatedAtMs;
     int? lastPromptTokens;
     int? lastPromptAtMs;
+    String lastPromptBreakdownJson = '';
 
     if (row != null) {
       summary = (row['summary'] as String?)?.trim() ?? '';
@@ -120,6 +133,8 @@ class ChatContextService {
       toolMemoryUpdatedAtMs = row['tool_memory_updated_at'] as int?;
       lastPromptTokens = _toInt(row['last_prompt_tokens']);
       lastPromptAtMs = row['last_prompt_at'] as int?;
+      lastPromptBreakdownJson =
+          (row['last_prompt_breakdown_json'] as String?)?.trim() ?? '';
     }
 
     final int fullMessageCount = await _countFullMessages(resolvedCid);
@@ -138,6 +153,7 @@ class ChatContextService {
       toolMemoryUpdatedAtMs: toolMemoryUpdatedAtMs,
       lastPromptTokens: lastPromptTokens,
       lastPromptAtMs: lastPromptAtMs,
+      lastPromptBreakdownJson: lastPromptBreakdownJson,
       fullMessageCount: fullMessageCount,
     );
   }
@@ -218,8 +234,7 @@ class ChatContextService {
         orderBy: 'id DESC',
         limit: lim,
       );
-      final List<AIMessage> msgs = rowsDesc
-          .reversed
+      final List<AIMessage> msgs = rowsDesc.reversed
           .map((r) {
             final String role = (r['role'] as String?) ?? 'user';
             if (role != 'user' && role != 'assistant') return null;
@@ -238,10 +253,7 @@ class ChatContextService {
           .toList();
 
       if (msgs.isEmpty) return const <AIMessage>[];
-      return PromptBudget.keepTailUnderTokenBudget(
-        msgs,
-        maxTokens: maxTokens,
-      );
+      return PromptBudget.keepTailUnderTokenBudget(msgs, maxTokens: maxTokens);
     } catch (_) {
       return const <AIMessage>[];
     }
@@ -274,7 +286,10 @@ class ChatContextService {
     if (signatureDigests.isEmpty) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
 
-    Map<String, dynamic> parsed = <String, dynamic>{'v': 1, 'items': <dynamic>[]};
+    Map<String, dynamic> parsed = <String, dynamic>{
+      'v': 1,
+      'items': <dynamic>[],
+    };
     try {
       final Map<String, dynamic>? row = await _db.getAiConversationByCid(cid);
       final String? raw = row?['tool_memory_json'] as String?;
@@ -312,11 +327,12 @@ class ChatContextService {
       };
     }
 
-    final List<Map<String, dynamic>> merged = bySig.values
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList()
-      ..sort((a, b) => _toInt(a['ts']).compareTo(_toInt(b['ts'])));
+    final List<Map<String, dynamic>> merged =
+        bySig.values
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList()
+          ..sort((a, b) => _toInt(a['ts']).compareTo(_toInt(b['ts'])));
 
     final List<Map<String, dynamic>> tail = merged.length <= toolMemoryMaxItems
         ? merged
@@ -334,7 +350,8 @@ class ChatContextService {
       final List<Map<String, dynamic>> shrink = List<Map<String, dynamic>>.from(
         tail,
       );
-      while (shrink.isNotEmpty && PromptBudget.utf8Bytes(encoded) > toolMemoryMaxBytes) {
+      while (shrink.isNotEmpty &&
+          PromptBudget.utf8Bytes(encoded) > toolMemoryMaxBytes) {
         shrink.removeAt(0);
         encoded = jsonEncode(<String, dynamic>{
           'v': 1,
@@ -355,13 +372,12 @@ class ChatContextService {
 
   /// Enqueue auto-compaction for a conversation. Safe to call frequently; it
   /// serializes by cid and exits early when under budget.
-  void scheduleAutoCompact({
-    required String cid,
-    String reason = 'auto',
-  }) {
-    _serialized[cid] = (_serialized[cid] ?? Future<void>.value()).then((_) async {
-      await _maybeAutoCompact(cid, reason: reason);
-    }).catchError((_) {});
+  void scheduleAutoCompact({required String cid, String reason = 'auto'}) {
+    _serialized[cid] = (_serialized[cid] ?? Future<void>.value())
+        .then((_) async {
+          await _maybeAutoCompact(cid, reason: reason);
+        })
+        .catchError((_) {});
   }
 
   Future<void> compactNow({String? cid, String reason = 'manual'}) async {
@@ -369,7 +385,11 @@ class ChatContextService {
         ? await _settings.getActiveConversationCid()
         : cid.trim();
     await (_serialized[resolvedCid] ?? Future<void>.value());
-    final Future<void> task = _maybeAutoCompact(resolvedCid, force: true, reason: reason);
+    final Future<void> task = _maybeAutoCompact(
+      resolvedCid,
+      force: true,
+      reason: reason,
+    );
     _serialized[resolvedCid] = task;
     await task;
   }
@@ -383,7 +403,7 @@ class ChatContextService {
       await storage.transaction((txn) async {
         try {
           await txn.execute(
-            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL WHERE cid = ?',
+            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL, last_prompt_breakdown_json = NULL WHERE cid = ?',
             <Object?>[resolvedCid],
           );
         } catch (_) {}
@@ -422,14 +442,23 @@ class ChatContextService {
     final List<_FullMsg> msgs = await _loadFullMessages(cid);
     if (msgs.isEmpty) return;
 
-    final int totalTokens = _approxTokensForFullMessages(msgs);
-    if (!force &&
-        totalTokens < autoCompactTriggerTokens &&
-        msgs.length < autoCompactTriggerMessages) {
-      return;
-    }
+    final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
+      context: 'chat',
+    );
+    if (endpoints.isEmpty) return;
+    final String modelForBudget = endpoints.first.model.trim().isNotEmpty
+        ? endpoints.first.model
+        : (await _settings.getModel());
+    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
 
-    final int keepStart = _selectKeepStartIndex(msgs);
+    final int totalTokens = _approxTokensForFullMessages(msgs);
+    // Codex-style: compact only when we are close to the model context window.
+    if (!force && totalTokens < budgets.autoCompactTriggerTokens) return;
+
+    final int keepStart = _selectKeepStartIndex(
+      msgs,
+      keepRecentTokens: budgets.keepRecentUncompactedTokens,
+    );
     if (keepStart <= 0) return;
     final List<_FullMsg> toCompact = msgs.sublist(0, keepStart);
     final List<_FullMsg> toKeep = msgs.sublist(keepStart);
@@ -437,26 +466,32 @@ class ChatContextService {
     final Map<String, dynamic>? row = await _db.getAiConversationByCid(cid);
     final String oldSummary = (row?['summary'] as String?)?.trim() ?? '';
 
-    final List<AIEndpoint> endpoints =
-        await _settings.getEndpointCandidates(context: 'chat');
-    if (endpoints.isEmpty) return;
-
-    final int beforeSummaryTokens = PromptBudget.approxTokensForText(oldSummary);
+    final int beforeSummaryTokens = PromptBudget.approxTokensForText(
+      oldSummary,
+    );
     final int beforeMessages = msgs.length;
 
     String summary = oldSummary;
     String modelUsed = '';
-    final List<List<_FullMsg>> chunks = _chunkForCompaction(toCompact);
+    final List<List<_FullMsg>> chunks = _chunkForCompaction(
+      toCompact,
+      maxChunkTokens: budgets.maxCompactionInputTokens,
+    );
     for (final chunk in chunks) {
       final _CompactionRun out = await _runCompactionOnce(
         endpoints: endpoints,
         previousSummary: summary,
         messages: chunk,
+        maxSummaryTokens: budgets.maxSummaryTokens,
+        maxCompactionInputTokens: budgets.maxCompactionInputTokens,
       );
       summary = out.summary;
       modelUsed = out.modelUsed;
     }
-    summary = _enforceSummaryBudget(summary);
+    summary = _enforceSummaryBudget(
+      summary,
+      maxSummaryTokens: budgets.maxSummaryTokens,
+    );
 
     final int afterSummaryTokens = PromptBudget.approxTokensForText(summary);
     final int compactedUpToId = toCompact.last.id;
@@ -483,13 +518,7 @@ class ChatContextService {
         try {
           await txn.execute(
             'UPDATE ai_conversations SET summary = ?, summary_updated_at = ?, summary_tokens = ?, compaction_count = COALESCE(compaction_count, 0) + 1, last_compaction_reason = ? WHERE cid = ?',
-            <Object?>[
-              summary,
-              now,
-              afterSummaryTokens,
-              reason,
-              cid,
-            ],
+            <Object?>[summary, now, afterSummaryTokens, reason, cid],
           );
         } catch (_) {}
         try {
@@ -594,16 +623,21 @@ class ChatContextService {
     }
   }
 
-  int _selectKeepStartIndex(List<_FullMsg> msgs) {
-    // Keep at least N last messages, and keep tail tokens <= keepRecentUncompactedTokens.
+  int _selectKeepStartIndex(
+    List<_FullMsg> msgs, {
+    required int keepRecentTokens,
+  }) {
+    // Keep at least N last messages, and keep tail tokens <= keepRecentTokens.
     int tokens = 0;
     int kept = 0;
     int i = msgs.length - 1;
     for (; i >= 0; i--) {
-      tokens += PromptBudget.approxTokensForText('${msgs[i].role}\n${msgs[i].content}');
+      tokens += PromptBudget.approxTokensForText(
+        '${msgs[i].role}\n${msgs[i].content}',
+      );
       kept += 1;
       if (kept >= keepRecentUncompactedMinMessages &&
-          tokens >= keepRecentUncompactedTokens) {
+          tokens >= keepRecentTokens) {
         break;
       }
     }
@@ -619,7 +653,10 @@ class ChatContextService {
     return total;
   }
 
-  List<List<_FullMsg>> _chunkForCompaction(List<_FullMsg> msgs) {
+  List<List<_FullMsg>> _chunkForCompaction(
+    List<_FullMsg> msgs, {
+    required int maxChunkTokens,
+  }) {
     if (msgs.isEmpty) return const <List<_FullMsg>>[];
     final List<List<_FullMsg>> out = <List<_FullMsg>>[];
     int i = 0;
@@ -628,8 +665,10 @@ class ChatContextService {
       int j = i;
       for (; j < msgs.length; j++) {
         final _FullMsg m = msgs[j];
-        final int t = PromptBudget.approxTokensForText('${m.role}\n${m.content}');
-        if (j > i && tokens + t > maxCompactionInputTokens) break;
+        final int t = PromptBudget.approxTokensForText(
+          '${m.role}\n${m.content}',
+        );
+        if (j > i && tokens + t > maxChunkTokens) break;
         tokens += t;
       }
       out.add(msgs.sublist(i, j));
@@ -642,12 +681,17 @@ class ChatContextService {
     required List<AIEndpoint> endpoints,
     required String previousSummary,
     required List<_FullMsg> messages,
+    required int maxSummaryTokens,
+    required int maxCompactionInputTokens,
   }) async {
     final Stopwatch sw = Stopwatch()..start();
-    final String system = _compactionSystemPrompt();
+    final String system = _compactionSystemPrompt(
+      maxSummaryTokens: maxSummaryTokens,
+    );
     final String user = _compactionUserPrompt(
       previousSummary: previousSummary,
       messages: messages,
+      maxCompactionInputTokens: maxCompactionInputTokens,
     );
 
     final AIGatewayResult result = await _gateway.complete(
@@ -671,7 +715,7 @@ class ChatContextService {
     );
   }
 
-  String _compactionSystemPrompt() {
+  String _compactionSystemPrompt({required int maxSummaryTokens}) {
     final bool zh = _isZhLocale();
     if (zh) {
       return [
@@ -702,6 +746,7 @@ class ChatContextService {
   String _compactionUserPrompt({
     required String previousSummary,
     required List<_FullMsg> messages,
+    required int maxCompactionInputTokens,
   }) {
     final String prev = previousSummary.trim().isEmpty
         ? '(empty)'
@@ -715,7 +760,10 @@ class ChatContextService {
     sb.writeln('New messages to incorporate:');
     for (final _FullMsg m in messages) {
       final String role = m.role == 'assistant' ? 'Assistant' : 'User';
-      final String content = _trimForCompaction(m.content);
+      final String content = _trimForCompaction(
+        m.content,
+        maxCompactionInputTokens: maxCompactionInputTokens,
+      );
       sb.writeln('- $role: $content');
     }
     sb.writeln('');
@@ -723,11 +771,15 @@ class ChatContextService {
     return sb.toString().trim();
   }
 
-  String _trimForCompaction(String text) {
+  String _trimForCompaction(
+    String text, {
+    required int maxCompactionInputTokens,
+  }) {
     final String t = text.trim();
     if (t.isEmpty) return '';
-    final int maxBytes = (maxCompactionInputTokens * PromptBudget.approxBytesPerToken * 0.9)
-        .floor();
+    final int maxBytes =
+        (maxCompactionInputTokens * PromptBudget.approxBytesPerToken * 0.9)
+            .floor();
     return PromptBudget.truncateTextByBytes(
       text: t,
       maxBytes: maxBytes,
@@ -743,7 +795,10 @@ class ChatContextService {
     return t.trim();
   }
 
-  String _enforceSummaryBudget(String summary) {
+  String _enforceSummaryBudget(
+    String summary, {
+    required int maxSummaryTokens,
+  }) {
     final String t = summary.trim();
     if (t.isEmpty) return t;
     final int tokens = PromptBudget.approxTokensForText(t);
@@ -759,10 +814,7 @@ class ChatContextService {
   String _formatSummaryBlock(String summary) {
     final bool zh = _isZhLocale();
     final String label = zh ? '对话摘要（压缩）' : 'Conversation summary (compacted)';
-    return [
-      '$label:',
-      summary.trim(),
-    ].join('\n');
+    return ['$label:', summary.trim()].join('\n');
   }
 
   String _formatToolMemoryBlock(String rawJson) {

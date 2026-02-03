@@ -47,6 +47,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         tool_memory_updated_at INTEGER,
         last_prompt_tokens INTEGER,
         last_prompt_at INTEGER,
+        last_prompt_breakdown_json TEXT,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
         updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
@@ -447,7 +448,7 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         // Conversation context system (v25): clear compacted memory + transcript + diagnostics.
         try {
           await txn.execute(
-            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL WHERE cid = ?',
+            'UPDATE ai_conversations SET summary = NULL, summary_updated_at = NULL, summary_tokens = NULL, compaction_count = 0, last_compaction_reason = NULL, tool_memory_json = NULL, tool_memory_updated_at = NULL, last_prompt_tokens = NULL, last_prompt_at = NULL, last_prompt_breakdown_json = NULL WHERE cid = ?',
             <Object?>[conversationId],
           );
         } catch (_) {}
