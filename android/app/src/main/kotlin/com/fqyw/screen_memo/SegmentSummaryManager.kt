@@ -1479,8 +1479,9 @@ object SegmentSummaryManager {
                             try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             if (resp.isSuccessful) {
                                 val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
-                                val reader = responseBody.charStream().buffered()
+                                 val reader = responseBody.charStream().buffered()
                                 val aggregated = StringBuilder()
+                                val aggregatedReasoning = StringBuilder()
                                 val rawEvents = StringBuilder()
                                 var sawData = false
                                 var payloadError: String? = null
@@ -1509,6 +1510,21 @@ object SegmentSummaryManager {
                                             if (piece.isNotBlank()) {
                                                 aggregated.append(piece)
                                             }
+                                            // Some OpenAI-compatible relays/models stream "thinking" into
+                                            // `reasoning_content` (or `reasoning`) and leave `content` empty.
+                                            // Keep it as a fallback so the caller doesn't end up with empty output.
+                                            val reasoningPiece =
+                                                delta.optString("reasoning_content").ifBlank {
+                                                    delta.optString("reasoning")
+                                                }
+                                            if (reasoningPiece.isNotBlank()) {
+                                                if (aggregatedReasoning.isNotEmpty() &&
+                                                    aggregatedReasoning[aggregatedReasoning.length - 1] != '\n' &&
+                                                    reasoningPiece.firstOrNull() != '\n') {
+                                                    aggregatedReasoning.append('\n')
+                                                }
+                                                aggregatedReasoning.append(reasoningPiece)
+                                            }
                                         } catch (_: Exception) {
                                             // ignore malformed event chunk
                                         }
@@ -1524,7 +1540,11 @@ object SegmentSummaryManager {
                                     try { OutputFileLogger.error(ctx, TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
                                     finished = true
                                 } else {
-                                    outputText = aggregated.toString()
+                                    outputText = if (aggregated.isNotEmpty()) {
+                                        aggregated.toString()
+                                    } else {
+                                        aggregatedReasoning.toString()
+                                    }
                                     finished = true
                                 }
                             } else {
