@@ -3,11 +3,9 @@ import '../services/theme_service.dart';
 import '../widgets/ui_components.dart';
 import 'home_page.dart';
 import 'settings_page.dart';
-import 'segment_status_page.dart';
 import 'timeline_page.dart';
 import 'favorites_page.dart';
 import 'event_home_page.dart';
-import '../theme/app_theme.dart';
 import '../services/app_lifecycle_service.dart';
 import '../services/timeline_jump_service.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
@@ -16,7 +14,7 @@ import '../services/flutter_logger.dart';
 /// 主导航页面 - 包含底部导航栏的主界面
 class MainNavigationPage extends StatefulWidget {
   final ThemeService themeService;
-  
+
   const MainNavigationPage({super.key, required this.themeService});
 
   @override
@@ -27,11 +25,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
   DateTime? _lastBackPressedAt;
 
-  final SettingsPageController _settingsPageController = SettingsPageController();
+  final SettingsPageController _settingsPageController =
+      SettingsPageController();
 
   late final List<Widget> _pages;
   VoidCallback? _jumpListener;
-  
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +50,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       final req = TimelineJumpService.instance.requestNotifier.value;
       if (req != null) {
         if (mounted && _currentIndex != 3) {
-          setState(() { _currentIndex = 3; });
+          setState(() {
+            _currentIndex = 3;
+          });
           AppLifecycleService.instance.emitTimelineShown();
         }
       }
@@ -107,9 +108,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     FocusManager.instance.primaryFocus?.unfocus();
     // 事件（AI）Tab：沉浸式全屏进入，不显示底部菜单
     if (index == 2) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const EventHomePage()),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const EventHomePage()));
       return;
     }
     setState(() {
@@ -117,11 +118,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     });
     // 每次进入"时间线"页（索引3，因为收藏页插入到了索引1）都触发刷新事件
     if (index == 3) {
-      try { FlutterLogger.nativeInfo('MainNav', '切换到时间线Tab，发出timelineShown'); } catch (_) {}
+      try {
+        FlutterLogger.nativeInfo('MainNav', '切换到时间线Tab，发出timelineShown');
+      } catch (_) {}
       AppLifecycleService.instance.emitTimelineShown();
     }
   }
-  
+
   Future<bool> _onWillPop() async {
     // 让当前 Tab 优先处理自己的“返回”（例如设置二级页返回到设置首页）
     if (_currentIndex == 4) {
@@ -133,7 +136,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     if (_lastBackPressedAt == null ||
         now.difference(_lastBackPressedAt!) > const Duration(seconds: 2)) {
       _lastBackPressedAt = now;
-      UINotifier.center(context, AppLocalizations.of(context).pressBackAgainToExit);
+      UINotifier.center(
+        context,
+        AppLocalizations.of(context).pressBackAgainToExit,
+      );
       return false;
     }
     return true;
@@ -144,38 +150,42 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
-      bottomNavigationBar: ValueListenableBuilder<bool>(
-        valueListenable: _settingsPageController.isInSubPage,
-        builder: (context, isInSubPage, _) {
-          if (_currentIndex == 4 && isInSubPage) {
-            return const SizedBox.shrink();
-          }
-          final theme = Theme.of(context);
-          final Color navBg = theme.brightness == Brightness.dark
-              ? (theme.bottomNavigationBarTheme.backgroundColor ??
-                  theme.colorScheme.surface)
-              : Colors.white;
-          return SizedBox(
-            height: 52,
-            child: BottomNavigationBar(
-              backgroundColor: navBg,
-              elevation: 0,
-              currentIndex: _currentIndex,
-              onTap: _onTabTapped,
-              showSelectedLabels: false,
-              showUnselectedLabels: false,
-              // Force a compact bar (labels are hidden anyway).
-              selectedFontSize: 0,
-              unselectedFontSize: 0,
-              items: _buildNavigationItems(context),
-            ),
-          );
-        },
-      ),
+        body: IndexedStack(index: _currentIndex, children: _pages),
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: _settingsPageController.isInSubPage,
+          builder: (context, isInSubPage, _) {
+            if (_currentIndex == 4 && isInSubPage) {
+              return const SizedBox.shrink();
+            }
+            final theme = Theme.of(context);
+            final Color navBg =
+                theme.bottomNavigationBarTheme.backgroundColor ??
+                theme.scaffoldBackgroundColor;
+            final Color topBorder = theme.colorScheme.outline.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.40 : 0.60,
+            );
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: topBorder, width: 0.5)),
+              ),
+              child: SizedBox(
+                height: 52,
+                child: BottomNavigationBar(
+                  backgroundColor: navBg,
+                  elevation: 0,
+                  currentIndex: _currentIndex,
+                  onTap: _onTabTapped,
+                  showSelectedLabels: false,
+                  showUnselectedLabels: false,
+                  // Force a compact bar (labels are hidden anyway).
+                  selectedFontSize: 0,
+                  unselectedFontSize: 0,
+                  items: _buildNavigationItems(context),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -184,7 +194,9 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   void dispose() {
     try {
       if (_jumpListener != null) {
-        TimelineJumpService.instance.requestNotifier.removeListener(_jumpListener!);
+        TimelineJumpService.instance.requestNotifier.removeListener(
+          _jumpListener!,
+        );
       }
     } catch (_) {}
     _settingsPageController.dispose();

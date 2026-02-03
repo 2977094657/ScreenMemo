@@ -71,6 +71,17 @@ class AppTheme {
     }
   }
 
+  // 底部菜单栏背景尽量“贴合页面背景”，避免在浅色自定义背景下出现突兀的纯白块。
+  // 通过在 pageBackground 上轻微叠加黑/白透明层，得到更柔和的分层效果。
+  static Color _bottomBarBackgroundForPage(Color pageBackground) {
+    final Color bg = pageBackground.withAlpha(0xFF);
+    final Brightness bgBrightness = ThemeData.estimateBrightnessForColor(bg);
+    final Color overlay = bgBrightness == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.03);
+    return Color.alphaBlend(overlay, bg);
+  }
+
   static const double spacing12 = 48.0;
   static const double spacing16 = 64.0;
   static const double spacing20 = 80.0;
@@ -550,7 +561,7 @@ class AppTheme {
       dividerColor: cs.outline,
       progressIndicatorTheme: ProgressIndicatorThemeData(color: cs.primary),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: cs.surfaceVariant,
+        backgroundColor: _bottomBarBackgroundForPage(pageBackground),
         selectedItemColor: cs.primary,
         unselectedItemColor: cs.onSurfaceVariant,
         type: BottomNavigationBarType.fixed,
