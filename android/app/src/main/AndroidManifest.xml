@@ -153,12 +153,6 @@
                 android:value="通过无障碍截屏并在后台保持运行" />
         </service>
 
-        <!-- 记忆系统后端服务（事件解析、标签管理、证据存储） -->
-        <service
-            android:name=".memory.service.MemoryBackendService"
-            android:exported="false"
-            android:stopWithTask="false" />
-            
         <!-- 守护服务（已禁用，避免重复前台通知） -->
         <!--
         <service
@@ -186,12 +180,6 @@
             android:name=".DailySummaryAlarmReceiver"
             android:exported="false" />
  
-        <!-- 记忆解析调度接收器 -->
-        <receiver
-            android:name=".memory.service.MemoryProcessingReceiver"
-            android:enabled="true"
-            android:exported="false" />
-
         <!-- 开机自启接收器 -->
         <receiver
             android:name=".BootReceiver"

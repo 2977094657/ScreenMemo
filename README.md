@@ -70,32 +70,12 @@ AI 领先差距
 
 ---
 
-## Kotlin 原生记忆后端（MemOS Mobile）
-
-> 源码目录：`android/app/src/main/kotlin/com/fqyw/screen_memo/memory`
-
-- **服务化架构**：`MemoryBackendService` 常驻后台，串联事件落库、LLM 解析、persona 维护、时序图谱（Temporal KG）更新与进度追踪；Flutter 仅负责订阅 EventChannel 进行渲染。
-- **Room 数据库存储**：内置 `memory_backend.db`（事件 + persona 元数据 + 时序图谱实体/关系/证据/别名），支持关系生命周期（`valid_from/valid_to`）与证据溯源。
-- **统一落盘路径**：记忆库与截图库一样写入 `output/databases/memory_backend.db`，导出压缩包即可带走事件、persona 与图谱数据。
-- **事件解析模块**：`LlmUserSignalExtractor` 按照前端 AppBar 选择的 LLM（支持 OpenAI / Azure / Gemini 等）调用模型输出 `persona_profile_patch` + `graph_entities/graph_edges/graph_edge_closures`，用于增量更新 persona 与时序图谱。
-- **提示词本地化**：系统 / 用户提示词定义在 `android/app/src/main/res/values(-*lang*)/memory_prompts.xml`，可按语言自定义。
-- **实时同步机制**：`MemoryBridge` 暴露 MethodChannel（`com.fqyw.screen_memo/memory`）与 EventChannel（快照/进度），Flutter 层可以：
-  - 调用 `memory#ingestEvent` 上报任意“用户事件”；
-  - 调用 `memory#initialize`/`memory#cancelInitialization` 控制历史重放；
-  - 调用 `memory#graphSearch` / `memory#buildWorkingMemory` 做图谱检索与工作记忆构建；
-  - 订阅 `memory/snapshot`、`memory/progress` 获取实时快照与初始化进度。
-- **用户画像描述**：原生层持久化 `persona_summary`（Markdown）与 `persona_profile`（结构化 JSON），并在后续事件请求中携带；若尚无画像，则使用默认 persona 模板生成占位说明。
-- **开机初始化**：应用首帧后自动调用 `MemoryBackendService.start()` 仅保持服务常驻；历史事件重放需显式调用 `MemoryBackendService.startHistoricalProcessing(...)`，避免在用户暂停或导入样本后再次进入时自动恢复，新的画像与图谱更新仍会实时推送至侧边栏“记忆入口”。
-
----
-
 ## Flutter 对话上下文系统（Codex-style）
 
 > 设计文档：`docs/CONTEXT_MEMORY.md`
 
 - **三层存储**：UI 尾部历史（`ai_messages`）+ 全量转写（`ai_messages_full`）+ 压缩记忆（`ai_conversations.summary/tool_memory_json`）。
 - **上下文注入**：每次请求会注入 `<conversation_context>`（摘要 + 工具摘要），并从全量转写中取最近 tail 作为 prompt history。
-- **工作记忆注入**：每次请求会额外注入 `<working_memory>`（MemOS persona + 时序图谱相关边），降低“长期记忆/关系链”类问题的遗漏。
 - **自动压缩**：当对话过长时自动调用模型生成滚动摘要，避免“忘记/重复检索/工具循环”。
 - **可观测性**：记录最近一次 prompt 的粗估 tokens（bytes/4），并提供 UI 面板查看/手动压缩/清空记忆。
 
@@ -317,7 +297,7 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 - 选择多个导出的 ZIP 备份文件
 - 指定输出目录（合并后的数据保存位置）
 - 显示合并进度和详细结果
-- 支持截图、数据库、记忆档案的完整合并
+- 支持截图、数据库的完整合并
 
 ### 构建可执行文件
 
