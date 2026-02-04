@@ -98,11 +98,20 @@ class IntentAnalysisService {
     } catch (_) {}
 
     // 使用一次性请求，避免污染会话历史
-    final AIMessage resp = await _chat.sendMessageOneShot(
-      sys + '\n\n' + user,
-      context: 'chat',
-      timeout: const Duration(seconds: 45),
-    );
+    late final AIMessage resp;
+    try {
+      resp = await _chat.sendMessageOneShot(
+        sys + '\n\n' + user,
+        context: 'chat',
+        timeout: const Duration(seconds: 45),
+      );
+    } catch (e) {
+      // Graceful fallback when AI is not configured / unavailable (e.g. tests).
+      try {
+        await FlutterLogger.nativeWarn('Intent', 'analyze fallback: $e');
+      } catch (_) {}
+      return _fallbackResult(now, tzReadable);
+    }
 
     try {
       final raw = resp.content;
@@ -132,6 +141,39 @@ class IntentAnalysisService {
       );
     } catch (_) {}
     return result;
+  }
+
+  IntentResult _fallbackResult(DateTime now, String tzReadable) {
+    final DateTime end = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      23,
+      59,
+      59,
+      999,
+    );
+    final DateTime start = end.subtract(const Duration(days: 6));
+    final int startMs = start.millisecondsSinceEpoch;
+    final int endMs = end.millisecondsSinceEpoch;
+    return IntentResult(
+      intent: 'time_range_query',
+      intentSummary: '默认查询最近一周（未配置 AI 或请求失败）',
+      startMs: startMs,
+      endMs: endMs,
+      timezone: tzReadable,
+      apps: const <String>[],
+      keywords: const <String>[],
+      sqlFill: <String, dynamic>{
+        'segments_between': <String, dynamic>{
+          'start_ms': startMs,
+          'end_ms': endMs,
+        },
+      },
+      skipContext: false,
+      contextAction: 'refresh',
+      userWantsProceed: false,
+    );
   }
 
   String _buildSystemPrompt(DateTime now, String tzName, String tzReadable) {

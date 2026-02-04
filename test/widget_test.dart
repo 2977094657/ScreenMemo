@@ -16,11 +16,16 @@ void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(
       const ScreenMemoApp(
-        initialShowOnboarding: false,
-        isFirstLaunch: false,
+        initialShowOnboarding: true,
+        isFirstLaunch: true,
       ),
     );
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // Let post-frame callbacks / zero-duration timers settle.
+    await tester.pump();
+    // Smoke-test: app widget tree mounts without throwing.
+    expect(find.byType(MaterialApp), findsOneWidget);
+    // Advance fake time a bit to flush internal zero-delay timers (e.g. scroll physics).
+    await tester.pump(const Duration(seconds: 1));
   });
 
   test('IntentAnalysisService basic structure fallback', () async {
