@@ -506,7 +506,8 @@ class AIRequestGateway {
     final StringBuffer contentBuffer = StringBuffer();
     final StringBuffer reasoningBuffer = StringBuffer();
     final DateTime reasoningStart = DateTime.now();
-    String googleLastText = '';
+    String googleLastContent = '';
+    String googleLastThought = '';
 
     try {
       final http.Request request = http.Request('POST', prepared.uri)
@@ -561,14 +562,20 @@ class AIRequestGateway {
           }
 
           if (prepared.isGoogle) {
-            final String chunkText = _extractGoogleStreamText(json);
-            if (chunkText.isNotEmpty) {
+            final _GoogleStreamParts chunk = _extractGoogleStreamParts(json);
+
+            // Visible content parts (thought=false). Still run through the <think> filter for
+            // OpenAI-compatible relays that embed tags in plain text.
+            if (chunk.content.isNotEmpty) {
               final String delta = _deltaFromPossiblyCumulative(
-                previous: googleLastText,
-                incoming: chunkText,
+                previous: googleLastContent,
+                incoming: chunk.content,
               );
               if (delta.isNotEmpty) {
-                googleLastText = _updateCumulativeProbe(previous: googleLastText, incoming: chunkText);
+                googleLastContent = _updateCumulativeProbe(
+                  previous: googleLastContent,
+                  incoming: chunk.content,
+                );
                 final _ThinkStreamFilterResult r = thinkFilter.process(delta);
                 if (r.visibleDelta.isNotEmpty) {
                   final String? sanitized = startFilter.process(r.visibleDelta);
@@ -587,6 +594,26 @@ class AIRequestGateway {
                     r.reasoningDelta,
                   ));
                 }
+              }
+            }
+
+            // Gemini thinking mode may stream chain-of-thought as parts with `thought=true`.
+            // Treat them as reasoning (never as content).
+            if (chunk.thought.isNotEmpty) {
+              final String delta = _deltaFromPossiblyCumulative(
+                previous: googleLastThought,
+                incoming: chunk.thought,
+              );
+              if (delta.isNotEmpty) {
+                googleLastThought = _updateCumulativeProbe(
+                  previous: googleLastThought,
+                  incoming: chunk.thought,
+                );
+                reasoningBuffer.write(delta);
+                controller?.add(AIGatewayEvent(
+                  AIGatewayEventKind.reasoning,
+                  delta,
+                ));
               }
             }
             continue;
@@ -1001,27 +1028,50 @@ class _PreparedRequest {
   final bool hasTools;
 }
 
-String _extractGoogleStreamText(Map<String, dynamic> json) {
+class _GoogleStreamParts {
+  const _GoogleStreamParts({
+    required this.content,
+    required this.thought,
+  });
+
+  final String content;
+  final String thought;
+}
+
+_GoogleStreamParts _extractGoogleStreamParts(Map<String, dynamic> json) {
   final dynamic candidates = json['candidates'];
-  if (candidates is! List || candidates.isEmpty) return '';
+  if (candidates is! List || candidates.isEmpty) {
+    return const _GoogleStreamParts(content: '', thought: '');
+  }
   final dynamic first = candidates.first;
-  if (first is! Map) return '';
+  if (first is! Map) return const _GoogleStreamParts(content: '', thought: '');
   final Map<String, dynamic> candidate = Map<String, dynamic>.from(first as Map);
   final dynamic content = candidate['content'];
-  if (content is! Map) return '';
+  if (content is! Map) return const _GoogleStreamParts(content: '', thought: '');
   final Map<String, dynamic> contentMap = Map<String, dynamic>.from(content as Map);
   final dynamic parts = contentMap['parts'];
-  if (parts is! List || parts.isEmpty) return '';
-  final StringBuffer out = StringBuffer();
+  if (parts is! List || parts.isEmpty) {
+    return const _GoogleStreamParts(content: '', thought: '');
+  }
+  final StringBuffer contentOut = StringBuffer();
+  final StringBuffer thoughtOut = StringBuffer();
   for (final dynamic p in parts) {
     if (p is! Map) continue;
     final Map<String, dynamic> part = Map<String, dynamic>.from(p as Map);
     final dynamic text = part['text'];
     if (text is String && text.isNotEmpty) {
-      out.write(text);
+      final bool thought = (part['thought'] as bool?) ?? false;
+      if (thought) {
+        thoughtOut.write(text);
+      } else {
+        contentOut.write(text);
+      }
     }
   }
-  return out.toString();
+  return _GoogleStreamParts(
+    content: contentOut.toString(),
+    thought: thoughtOut.toString(),
+  );
 }
 
 String _deltaFromPossiblyCumulative({

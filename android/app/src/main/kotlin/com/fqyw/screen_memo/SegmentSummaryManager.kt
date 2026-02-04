@@ -1276,6 +1276,9 @@ object SegmentSummaryManager {
                                                     val sb = StringBuilder()
                                                     for (i in 0 until partsOut.length()) {
                                                         val p = partsOut.optJSONObject(i) ?: continue
+                                                        // Gemini "thinking" mode may emit reasoning as parts with `thought=true`.
+                                                        // Those are not user-facing content; skip them to avoid polluting outputText.
+                                                        if (p.optBoolean("thought", false)) continue
                                                         val t = p.optString("text")
                                                         if (t.isNotBlank()) sb.append(t)
                                                     }

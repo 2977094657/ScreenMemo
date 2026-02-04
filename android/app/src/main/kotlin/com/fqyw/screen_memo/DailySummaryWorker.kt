@@ -584,6 +584,9 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                                         val sb = StringBuilder()
                                         for (i in 0 until parts.length()) {
                                             val p = parts.optJSONObject(i) ?: continue
+                                            // Gemini "thinking" mode may emit reasoning parts with `thought=true`.
+                                            // Skip them; this worker expects user-facing JSON only.
+                                            if (p.optBoolean("thought", false)) continue
                                             val t = p.optString("text")
                                             if (t.isNotBlank()) sb.append(t)
                                         }
