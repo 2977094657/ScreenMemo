@@ -24,8 +24,6 @@ import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
 import 'daily_summary_page.dart';
 import 'weekly_summary_page.dart';
-import 'persona_article_page.dart';
-import '../services/persona_article_service.dart';
 
 /// 搜索类型枚举
 enum SearchTab { all, screenshots, moments }
@@ -73,7 +71,6 @@ class _SearchPageState extends State<SearchPage>
     kSearchDocTypeDailySummary,
     kSearchDocTypeWeeklySummary,
     kSearchDocTypeMorningInsights,
-    kSearchDocTypePersonaArticle,
     kSearchDocTypeFavoriteNote,
   };
   static const Set<String> _docIndexSources = <String>{
@@ -81,7 +78,6 @@ class _SearchPageState extends State<SearchPage>
     kSearchIndexSourceDailySummaries,
     kSearchIndexSourceWeeklySummaries,
     kSearchIndexSourceMorningInsights,
-    kSearchIndexSourcePersonaArticles,
   };
   int _offset = 0;
   bool _hasMore = false;
@@ -3070,8 +3066,6 @@ class _SearchPageState extends State<SearchPage>
         return '周总结';
       case kSearchDocTypeMorningInsights:
         return '早报';
-      case kSearchDocTypePersonaArticle:
-        return '画像文章';
       default:
         return docType.trim().isEmpty ? '文档' : docType.trim();
     }
@@ -3223,23 +3217,6 @@ class _SearchPageState extends State<SearchPage>
     _openSampleViewer(<ScreenshotRecord>[rec], 0);
   }
 
-  PersonaArticleStyle _parsePersonaStyleFromDoc(Map<String, dynamic> doc) {
-    final String key = (doc['doc_key'] as String?)?.trim() ?? '';
-    String style = '';
-    if (key.startsWith('persona:')) {
-      style = key.substring('persona:'.length).trim();
-    }
-    if (style.isEmpty) {
-      style = (doc['date_key'] as String?)?.trim() ?? '';
-    }
-    if (style.isEmpty) {
-      style = (doc['title'] as String?)?.trim() ?? '';
-    }
-    final String normalized = style.toLowerCase();
-    if (normalized.contains('timeline')) return PersonaArticleStyle.timeline;
-    return PersonaArticleStyle.narrative;
-  }
-
   Future<void> _showDocDetail(Map<String, dynamic> doc) async {
     if (!mounted) return;
     final String docType = (doc['doc_type'] as String?)?.trim() ?? '';
@@ -3386,21 +3363,6 @@ class _SearchPageState extends State<SearchPage>
                                 },
                                 icon: const Icon(Icons.open_in_new, size: 18),
                                 label: const Text('打开周总结'),
-                              ),
-                            if (docType == kSearchDocTypePersonaArticle)
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  final style = _parsePersonaStyleFromDoc(doc);
-                                  Navigator.of(ctx).pop();
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          PersonaArticlePage(style: style),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.open_in_new, size: 18),
-                                label: const Text('打开画像文章'),
                               ),
                           ],
                         ),
@@ -3749,7 +3711,6 @@ class _SearchPageState extends State<SearchPage>
       kSearchDocTypeDailySummary,
       kSearchDocTypeMorningInsights,
       kSearchDocTypeWeeklySummary,
-      kSearchDocTypePersonaArticle,
       kSearchDocTypeFavoriteNote,
     ];
     final Set<String> active =

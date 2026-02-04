@@ -289,7 +289,7 @@ class _SegmentTimelineTabViewState extends State<SegmentTimelineTabView>
                                   ),
                                 )
                               : const Icon(Icons.more_horiz, size: 18),
-                          label: Text(l10n.memoryLoadMore),
+                          label: Text(l10n.loadMore),
                         ),
                       ),
                   ],

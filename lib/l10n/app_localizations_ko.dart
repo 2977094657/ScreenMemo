@@ -754,9 +754,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get mergeProgressMergingDb => '데이터베이스를 병합하는 중…';
 
   @override
-  String get mergeProgressMemoryDb => '메모리 데이터베이스를 병합하는 중…';
-
-  @override
   String get mergeProgressFinalizing => '병합을 마무리하는 중…';
 
   @override
@@ -775,16 +772,6 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String mergeReportCopied(int count) {
     return '복사한 파일: $count';
-  }
-
-  @override
-  String mergeReportMemoryEvents(int count) {
-    return '추가된 메모리 이벤트: $count';
-  }
-
-  @override
-  String mergeReportMemoryTags(int count) {
-    return '추가된 메모리 태그: $count';
   }
 
   @override
@@ -1168,6 +1155,9 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get loadMore => '더 보기';
+
+  @override
   String loadMoreFailedWithError(Object error) {
     return '추가 로드 실패: $error';
   }
@@ -1389,9 +1379,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get copyResultsTooltip => '결과 복사';
 
   @override
-  String get generatePersonaArticle => '프로필 기사 생성';
-
-  @override
   String get articleGenerating => '기사 생성 중...';
 
   @override
@@ -1401,35 +1388,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get articleGenerateFailed => '기사 생성에 실패했습니다';
 
   @override
-  String get articlePreviewTitle => '프로필 기사 미리보기';
-
-  @override
   String get articleCopySuccess => '기사가 클립보드에 복사되었습니다';
 
   @override
   String get articleLogTitle => '생성 로그';
 
   @override
-  String get memoryPersonaHubTitle => '메모리 아카이브';
-
-  @override
-  String get memoryTagsEntranceTooltip => '태그 라이브러리 열기';
-
-  @override
-  String get memoryTagLibraryTitle => '태그 라이브러리';
-
-  @override
-  String get memoryArticleEmptyPlaceholder => '아직 프로필 기사가 없습니다. 생성 후 다시 확인하세요.';
-
-  @override
-  String get memoryPauseActionLabel => '분석 일시중지';
-
-  @override
   String get copyPersonaTooltip => '사용자 프로필 복사';
-
-  @override
-  String get memoryPersonaEmptyPlaceholder =>
-      '아직 사용자 프로필이 없습니다. 이벤트를 계속 기록해 주세요.';
 
   @override
   String get saveImageTooltip => '갤러리에 저장';
@@ -2187,342 +2152,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get providerNotFound => '프로바이더를 찾을 수 없습니다';
 
   @override
-  String get memoryMenuEntry => '메모리 아카이브';
-
-  @override
-  String get memoryCenterTitle => '메모리 아카이브';
-
-  @override
-  String get memoryClearAllTooltip => '기억 저장소 비우기';
-
-  @override
-  String get memoryClearAllConfirmTitle => '기억 저장소 비우기';
-
-  @override
-  String get memoryClearAllConfirmMessage =>
-      '모든 기억 태그, 이벤트, 증거가 삭제됩니다. 이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?';
-
-  @override
-  String get memoryImportSampleTooltip => '테스트용으로 30개 가져오기';
-
-  @override
-  String memoryImportSampleSuccess(Object count) {
-    return '테스트용으로 $count개의 이벤트를 가져왔습니다';
-  }
-
-  @override
-  String get memoryImportSampleEmpty => '가져올 기억 이벤트가 없습니다';
-
-  @override
-  String memoryImportSampleFailed(Object error) {
-    return '가져오기에 실패했습니다: $error';
-  }
-
-  @override
-  String get memoryPauseTooltip => '처리 일시중지';
-
-  @override
-  String get memoryPauseSuccess => '분석을 일시중지했습니다';
-
-  @override
-  String memoryPauseFailed(Object error) {
-    return '일시중지 실패: $error';
-  }
-
-  @override
-  String get memoryPendingSectionTitle => '확인 대기 태그';
-
-  @override
-  String get memoryConfirmedSectionTitle => '확인된 태그';
-
-  @override
-  String get memoryRecentEventsSectionTitle => '최근 이벤트';
-
-  @override
-  String get memoryNoPending => '확인 대기 태그가 없습니다';
-
-  @override
-  String get memoryNoConfirmed => '확인된 태그가 아직 없습니다';
-
-  @override
-  String get memoryNoEvents => '관련 이벤트가 아직 없습니다';
-
-  @override
-  String get memoryConfirmAction => '확인됨으로 표시';
-
-  @override
-  String get memoryStatusPending => '확인 대기';
-
-  @override
-  String get memoryStatusConfirmed => '확인됨';
-
-  @override
-  String get memoryCategoryIdentity => '신원';
-
-  @override
-  String get memoryCategoryRelationship => '관계';
-
-  @override
-  String get memoryCategoryInterest => '관심사';
-
-  @override
-  String get memoryCategoryBehavior => '행동';
-
-  @override
-  String get memoryCategoryPreference => '선호';
-
-  @override
-  String get memoryCategoryOther => '기타';
-
-  @override
-  String memoryConfidenceLabel(Object value) {
-    return '신뢰도: $value%';
-  }
-
-  @override
-  String memoryOccurrencesLabel(Object count) {
-    return '발생 횟수: $count';
-  }
-
-  @override
-  String memoryFirstSeenLabel(Object date) {
-    return '처음 발견: $date';
-  }
-
-  @override
-  String memoryLastSeenLabel(Object date) {
-    return '최근 발견: $date';
-  }
-
-  @override
-  String memoryEvidenceCountLabel(Object count) {
-    return '증거: $count건';
-  }
-
-  @override
-  String get memoryEventContainsContext => '사용자 관련 정보 포함';
-
-  @override
-  String get memoryEventNoContext => '사용자 관련 정보가 감지되지 않았습니다';
-
-  @override
-  String memoryEventTimeLabel(Object date) {
-    return '시간: $date';
-  }
-
-  @override
-  String memoryEventSourceLabel(Object source) {
-    return '출처: $source';
-  }
-
-  @override
-  String memoryEventTypeLabel(Object type) {
-    return '유형: $type';
-  }
-
-  @override
-  String get memoryProgressIdle => '과거 이벤트 처리를 대기 중';
-
-  @override
-  String get memoryProgressRunning => '과거 이벤트 분석 중';
-
-  @override
-  String memoryProgressRunningDetail(
-    Object processed,
-    Object total,
-    Object percent,
-  ) {
-    return '$processed/$total일 처리됨 ($percent%)';
-  }
-
-  @override
-  String memoryProgressNewTagsDetail(Object count) {
-    return '새 태그: $count';
-  }
-
-  @override
-  String memoryProgressCompleted(Object total, Object seconds) {
-    return '과거 이벤트 분석 완료: 총 $total일, 소요 $seconds초';
-  }
-
-  @override
-  String memoryProgressFailed(Object message) {
-    return '분석 실패: $message';
-  }
-
-  @override
-  String memoryProgressFailedEvent(Object event) {
-    return '실패한 이벤트: $event';
-  }
-
-  @override
-  String memoryProgressPreparing(Object stage) {
-    return '준비 중: $stage';
-  }
-
-  @override
-  String get memoryProgressStageSyncSegments => '스크린샷 이벤트 동기화';
-
-  @override
-  String get memoryProgressStageSyncChats => '대화 기록 동기화';
-
-  @override
-  String get memoryProgressStageDispatch => '히스토리 분석 시작';
-
-  @override
-  String get memoryRefreshTooltip => '새로고침';
-
-  @override
-  String memoryConfirmSuccessToast(Object label) {
-    return '\"$label\" 태그가 확인되었습니다';
-  }
-
-  @override
-  String memoryConfirmFailedToast(Object message) {
-    return '실패: $message';
-  }
-
-  @override
-  String get memorySnapshotUpdated => '메모리 스냅샷이 업데이트되었습니다';
-
-  @override
-  String get memoryStartProcessingAction => '과거 이벤트 분석 시작';
-
-  @override
-  String get memoryStartProcessingActionShort => '분석 시작';
-
-  @override
-  String get memoryMalformedResponseTitle => '비정상 응답이 감지되어 분석이 일시 중지되었습니다';
-
-  @override
-  String memoryMalformedResponseSubtitle(Object eventId) {
-    return '이벤트 $eventId의 응답에 \"当前用户描述：\" 표시가 없습니다. 확인 후 다시 시작하세요.';
-  }
-
-  @override
-  String get memoryMalformedResponseSubtitleNoId =>
-      '최근 응답에 \"当前用户描述：\" 표시가 없습니다. 확인 후 다시 시작하세요.';
-
-  @override
-  String get memoryMalformedResponseRawLabel => '원본 응답:';
-
-  @override
-  String get memoryDeleteTagAction => '태그 삭제';
-
-  @override
-  String get memoryDeleteTagConfirmTitle => '태그 삭제';
-
-  @override
-  String memoryDeleteTagConfirmMessage(Object tagLabel) {
-    return '\"$tagLabel\" 태그를 삭제할까요? 관련 증거도 제거됩니다.';
-  }
-
-  @override
-  String get memoryDeleteTagSuccess => '태그가 삭제되었습니다';
-
-  @override
-  String memoryDeleteTagFailed(Object error) {
-    return '삭제 실패: $error';
-  }
-
-  @override
-  String get memoryStatusPendingIndicator => '확인 대기';
-
-  @override
-  String get memoryStatusConfirmedIndicator => '확인됨';
-
-  @override
-  String get memoryReprocessAction => '모든 과거 이벤트 재분석';
-
-  @override
-  String get memoryStartProcessingToast => '과거 이벤트 분석을 시작했습니다';
-
-  @override
-  String get memoryLoadMore => '더 보기';
-
-  @override
-  String get memoryCenterHeroTitle => '캐릭터 프로필';
-
-  @override
-  String get memoryCenterHeroSubtitle => '이벤트에서 추출한 RPG 스타일의 사용자 기록';
-
-  @override
-  String memoryCenterPendingCountLabel(Object count) {
-    return '보류: $count';
-  }
-
-  @override
-  String memoryCenterConfirmedCountLabel(Object count) {
-    return '확정: $count';
-  }
-
-  @override
-  String memoryCenterEventCountLabel(Object count) {
-    return '관련 이벤트: $count';
-  }
-
-  @override
-  String get memoryTagDetailTitle => '태그 상세';
-
-  @override
-  String get memoryTagDetailRefresh => '새로고침';
-
-  @override
-  String get memoryTagDetailInfoTitle => '프로필';
-
-  @override
-  String get memoryTagDetailStatisticsTitle => '속성';
-
-  @override
-  String memoryTagDetailOccurrences(Object count) {
-    return '등장 횟수: $count';
-  }
-
-  @override
-  String memoryTagDetailConfidence(Object confidence) {
-    return '신뢰도: $confidence';
-  }
-
-  @override
-  String memoryTagDetailFirstSeen(Object date) {
-    return '첫 등장: $date';
-  }
-
-  @override
-  String memoryTagDetailLastSeen(Object date) {
-    return '마지막 등장: $date';
-  }
-
-  @override
-  String get memoryTagDetailEvidenceTitle => '증거 목록';
-
-  @override
-  String memoryTagDetailEvidenceCount(Object count) {
-    return '총 증거 수: $count';
-  }
-
-  @override
-  String get memoryTagDetailNoEvidence => '증거가 아직 없습니다';
-
-  @override
-  String get memoryTagDetailLoadFailed => '태그 데이터를 불러오지 못했습니다';
-
-  @override
-  String get memoryEvidenceInferenceLabel => '추론 설명';
-
-  @override
-  String get memoryEvidenceNotesLabel => '메모';
-
-  @override
-  String get memoryEvidenceNoNotes => '메모 없음';
-
-  @override
-  String get memoryEvidenceEventHeading => '출처 이벤트';
-
-  @override
-  String get memoryEvidenceUserEditedBadge => '사용자 편집';
-
-  @override
   String get conversationsSectionTitle => '대화';
 
   @override
@@ -2743,9 +2372,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get desktopMergerStageMerging => '데이터베이스 병합 중...';
 
   @override
-  String get desktopMergerStageMemory => '메모리 데이터 병합 중...';
-
-  @override
   String get desktopMergerStageFinalizing => '완료 중...';
 
   @override
@@ -2778,9 +2404,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get desktopMergerStatReused => '재사용 파일';
-
-  @override
-  String get desktopMergerStatEvents => '메모리 이벤트';
 
   @override
   String get desktopMergerStatTags => '메모리 태그';
@@ -2860,9 +2483,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get desktopMergerMergingHint => '스마트 중복 제거로 데이터베이스 레코드 병합 중...';
-
-  @override
-  String get desktopMergerMemoryHint => '메모리 아카이브 데이터 병합 중...';
 
   @override
   String get desktopMergerPackingHint => '병합된 결과를 ZIP 파일로 압축 중...';

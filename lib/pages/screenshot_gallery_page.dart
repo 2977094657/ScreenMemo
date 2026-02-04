@@ -1410,7 +1410,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                             onPressed: _expandDayTabsIfNeeded,
                             icon: const Icon(Icons.more_horiz, size: 18),
                             label: Text(
-                              AppLocalizations.of(context).memoryLoadMore,
+                              AppLocalizations.of(context).loadMore,
                             ),
                           ),
                         ),

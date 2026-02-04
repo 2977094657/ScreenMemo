@@ -281,7 +281,6 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await _createWeeklySummariesTable(db);
 
     await _createMorningInsightsTable(db);
-    await _createPersonaArticlesTable(db);
 
     // 创建动态搜索 FTS 索引
     await _createSegmentResultsFts(db);
@@ -364,6 +363,73 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       return rows;
     } catch (_) {
       return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 按时间范围读取所有会话的 AI 消息（created_at 毫秒时间戳，按 created_at/id 升序）。
+  ///
+  /// 注意：部分历史数据 created_at 可能为空，这里会按 0 处理并被过滤掉。
+  Future<List<Map<String, dynamic>>> getAiMessagesBetween({
+    required int startMs,
+    required int endMs,
+    int? limit,
+    int? offset,
+  }) async {
+    try {
+      final db = await database;
+      // SQLite 的 OFFSET 语法需要搭配 LIMIT；当仅提供 offset 时用 LIMIT -1。
+      final bool hasLimit = limit != null;
+      final bool hasOffset = offset != null;
+      final String sql = '''
+SELECT *
+FROM ai_messages
+WHERE COALESCE(created_at, 0) >= ?
+  AND COALESCE(created_at, 0) < ?
+ORDER BY created_at ASC, id ASC
+${hasLimit ? 'LIMIT ?' : (hasOffset ? 'LIMIT -1' : '')}
+${hasOffset ? 'OFFSET ?' : ''}
+''';
+      final List<dynamic> args = <dynamic>[
+        startMs,
+        endMs,
+        if (limit != null) limit,
+        if (offset != null) offset,
+      ];
+      final rows = await db.rawQuery(sql, args);
+      return rows;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 获取 ai_messages 中出现过的日期列表（按本地时区转换为 yyyy-MM-dd）。
+  Future<List<String>> listAiMessageDays({
+    int? startMs,
+    int? endMs,
+  }) async {
+    try {
+      final db = await database;
+      final String where = (startMs != null && endMs != null)
+          ? 'WHERE COALESCE(created_at, 0) >= ? AND COALESCE(created_at, 0) < ?'
+          : '';
+      final List<dynamic> args = <dynamic>[
+        if (startMs != null && endMs != null) ...<dynamic>[startMs, endMs],
+      ];
+      final rows = await db.rawQuery(
+        '''
+SELECT DISTINCT date(COALESCE(created_at, 0) / 1000, 'unixepoch', 'localtime') AS day
+FROM ai_messages
+$where
+ORDER BY day ASC
+''',
+        args,
+      );
+      return rows
+          .map((e) => (e['day'] as String?)?.trim() ?? '')
+          .where((e) => e.isNotEmpty && e != '1970-01-01')
+          .toList(growable: false);
+    } catch (_) {
+      return <String>[];
     }
   }
 
@@ -2400,76 +2466,6 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
-  // ===================== Persona 画像文章缓存 =====================
-  Future<Map<String, dynamic>?> getPersonaArticle(String style) async {
-    final db = await database;
-    try {
-      final rows = await db.query(
-        'persona_articles',
-        where: 'style = ?',
-        whereArgs: [style],
-        limit: 1,
-      );
-      if (rows.isEmpty) return null;
-      return rows.first;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<bool> upsertPersonaArticle({
-    required String style,
-    required String article,
-    String? locale,
-    String? aiProvider,
-    String? aiModel,
-  }) async {
-    final db = await database;
-    try {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await db.insert('persona_articles', {
-        'style': style,
-        'article': article,
-        'locale': locale,
-        'ai_provider': aiProvider,
-        'ai_model': aiModel,
-        'created_at': now,
-        'updated_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-
-      // ignore: unawaited_futures
-      this.upsertSearchDoc(
-        docKey: _personaArticleDocKey(style),
-        docType: kSearchDocTypePersonaArticle,
-        title: '画像文章 · $style',
-        content: article,
-        tags: locale,
-        updatedAt: now,
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<void> clearPersonaArticles({String? style}) async {
-    final db = await database;
-    try {
-      if (style == null) {
-        await db.delete('persona_articles');
-        // ignore: unawaited_futures
-        this.deleteSearchDocsByType(kSearchDocTypePersonaArticle);
-      } else {
-        await db.delete(
-          'persona_articles',
-          where: 'style = ?',
-          whereArgs: [style],
-        );
-        // ignore: unawaited_futures
-        this.deleteSearchDoc(_personaArticleDocKey(style));
-      }
-    } catch (_) {}
-  }
 }
 
 Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {
@@ -2497,20 +2493,6 @@ Future<void> _createMorningInsightsTable(DatabaseExecutor db) async {
       tips_json TEXT NOT NULL,
       raw_response TEXT,
       created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
-    )
-  ''');
-}
-
-Future<void> _createPersonaArticlesTable(DatabaseExecutor db) async {
-  await db.execute('''
-    CREATE TABLE IF NOT EXISTS persona_articles (
-      style TEXT PRIMARY KEY,
-      article TEXT NOT NULL,
-      locale TEXT,
-      ai_provider TEXT,
-      ai_model TEXT,
-      created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
-      updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
     )
   ''');
 }

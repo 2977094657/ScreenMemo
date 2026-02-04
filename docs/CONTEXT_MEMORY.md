@@ -34,7 +34,6 @@
 - System：语言策略/工具使用规则
 - System：`<conversation_context>...</conversation_context>`（摘要 + 工具摘要）
 - System：`<atomic_memory>...</atomic_memory>`（原子事实/规则块；可在 UI 中关闭/调预算；可选自动抽取写入）
-- System：`<working_memory>...</working_memory>`（MemOS 工作记忆：persona + 时序图谱相关边；可在 UI 中关闭/调预算）
 - History：从 `ai_messages_full` 取最近 tail，并按预算裁剪
 - User：本次输入
 
@@ -58,7 +57,6 @@ Codex（CLI，开源项目）在长线程中使用“粗估 token + 压缩任务
 - Chat 组装与持久化：`lib/services/ai_chat_service.dart`
   - 请求前：注入 `buildSystemContextMessage()`；记录 prompt tokens
   - 请求前：注入原子记忆 `<atomic_memory>...</atomic_memory>`（`AtomicMemoryService.buildAtomicMemoryContextMessage()`）
-  - 请求前：注入 MemOS `working_memory`（`MemoryBridgeService.buildWorkingMemory()` -> `<working_memory>...</working_memory>`）
   - 请求后：写入 `ai_messages_full`；合并工具摘要；调度自动压缩
   - 请求后：可选自动抽取原子记忆（写入 `ai_atomic_memories`）
 
@@ -76,7 +74,6 @@ Codex（CLI，开源项目）在长线程中使用“粗估 token + 压缩任务
 - UI 入口：`lib/pages/ai_settings_page.dart` AppBar -> “对话上下文”
 - 底部面板：`lib/widgets/chat_context_sheet.dart`
   - 查看 summary / tool memory / prompt tokens / compaction 计数
-  - 可配置工作记忆注入开关与预算（token/edge limit）
   - 可配置原子记忆注入开关与预算（token/items），以及“自动抽取写入”开关
   - 支持手动 `Compact now` / `Clear memory` / `Clear chat`
 

@@ -203,7 +203,6 @@
   "dataExtractedTo": "데이터 추출 위치:",
   "importFailedTitle": "가져오기에 실패했습니다",
   "importFailedCheckZip": "ZIP 파일을 확인하고 다시 시도해 주세요.",
-
   "storageAnalysisPageTitle": "저장소 분석",
   "storageAnalysisLoadFailed": "저장소 데이터를 불러오지 못했습니다",
   "storageAnalysisEmptyMessage": "표시할 저장소 데이터가 없습니다",
@@ -354,7 +353,6 @@
   "mergeProgressCopying": "스크린샷 파일을 복사하는 중…",
   "mergeProgressCopyingGeneric": "추가 리소스를 복사하는 중…",
   "mergeProgressMergingDb": "데이터베이스를 병합하는 중…",
-  "mergeProgressMemoryDb": "메모리 데이터베이스를 병합하는 중…",
   "mergeProgressFinalizing": "병합을 마무리하는 중…",
   "mergeCompleteTitle": "병합이 완료되었습니다",
   "mergeReportInserted": "새 스크린샷: {count}",
@@ -375,22 +373,6 @@
   },
   "mergeReportCopied": "복사한 파일: {count}",
   "@mergeReportCopied": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryEvents": "추가된 메모리 이벤트: {count}",
-  "@mergeReportMemoryEvents": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryTags": "추가된 메모리 태그: {count}",
-  "@mergeReportMemoryTags": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -631,6 +613,7 @@
       "error": {}
     }
   },
+  "loadMore": "더 보기",
   "loadMoreFailedWithError": "추가 로드 실패: {error}",
   "@loadMoreFailedWithError": {
     "placeholders": {
@@ -747,12 +730,16 @@
   "mergedOriginalEventsTitle": "원본 이벤트({count})",
   "@mergedOriginalEventsTitle": {
     "description": "병합된 이벤트에 포함된 원본 이벤트 목록 섹션 제목",
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "mergedOriginalEventTitle": "원본 이벤트 {index}",
   "@mergedOriginalEventTitle": {
     "description": "병합된 이벤트 내 각 원본 이벤트 항목의 제목",
-    "placeholders": { "index": {} }
+    "placeholders": {
+      "index": {}
+    }
   },
   "collapse": "접기",
   "expandMore": "더 보기",
@@ -775,20 +762,12 @@
   "alreadyQueuedOrFailed": "이미 대기 중이거나 실패했습니다.",
   "retryFailed": "재시도 실패",
   "copyResultsTooltip": "결과 복사",
-  "generatePersonaArticle": "프로필 기사 생성",
   "articleGenerating": "기사 생성 중...",
   "articleGenerateSuccess": "기사가 성공적으로 생성되었습니다",
   "articleGenerateFailed": "기사 생성에 실패했습니다",
-  "articlePreviewTitle": "프로필 기사 미리보기",
   "articleCopySuccess": "기사가 클립보드에 복사되었습니다",
   "articleLogTitle": "생성 로그",
-  "memoryPersonaHubTitle": "메모리 아카이브",
-  "memoryTagsEntranceTooltip": "태그 라이브러리 열기",
-  "memoryTagLibraryTitle": "태그 라이브러리",
-  "memoryArticleEmptyPlaceholder": "아직 프로필 기사가 없습니다. 생성 후 다시 확인하세요.",
-  "memoryPauseActionLabel": "분석 일시중지",
   "copyPersonaTooltip": "사용자 프로필 복사",
-  "memoryPersonaEmptyPlaceholder": "아직 사용자 프로필이 없습니다. 이벤트를 계속 기록해 주세요.",
   "saveImageTooltip": "갤러리에 저장",
   "saveImageSuccess": "갤러리에 저장했습니다",
   "saveImageFailed": "저장에 실패했습니다",
@@ -1189,249 +1168,6 @@
   "editProviderTitle": "프로바이더 편집",
   "deletedToast": "삭제했습니다",
   "providerNotFound": "프로바이더를 찾을 수 없습니다",
-  "memoryMenuEntry": "메모리 아카이브",
-  "memoryCenterTitle": "메모리 아카이브",
-  "memoryClearAllTooltip": "기억 저장소 비우기",
-  "memoryClearAllConfirmTitle": "기억 저장소 비우기",
-  "memoryClearAllConfirmMessage": "모든 기억 태그, 이벤트, 증거가 삭제됩니다. 이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?",
-  "memoryImportSampleTooltip": "테스트용으로 30개 가져오기",
-  "memoryImportSampleSuccess": "테스트용으로 {count}개의 이벤트를 가져왔습니다",
-  "@memoryImportSampleSuccess": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryImportSampleEmpty": "가져올 기억 이벤트가 없습니다",
-  "memoryImportSampleFailed": "가져오기에 실패했습니다: {error}",
-  "@memoryImportSampleFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryPauseTooltip": "처리 일시중지",
-  "memoryPauseSuccess": "분석을 일시중지했습니다",
-  "memoryPauseFailed": "일시중지 실패: {error}",
-  "@memoryPauseFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryPendingSectionTitle": "확인 대기 태그",
-  "memoryConfirmedSectionTitle": "확인된 태그",
-  "memoryRecentEventsSectionTitle": "최근 이벤트",
-  "memoryNoPending": "확인 대기 태그가 없습니다",
-  "memoryNoConfirmed": "확인된 태그가 아직 없습니다",
-  "memoryNoEvents": "관련 이벤트가 아직 없습니다",
-  "memoryConfirmAction": "확인됨으로 표시",
-  "memoryStatusPending": "확인 대기",
-  "memoryStatusConfirmed": "확인됨",
-  "memoryCategoryIdentity": "신원",
-  "memoryCategoryRelationship": "관계",
-  "memoryCategoryInterest": "관심사",
-  "memoryCategoryBehavior": "행동",
-  "memoryCategoryPreference": "선호",
-  "memoryCategoryOther": "기타",
-  "memoryConfidenceLabel": "신뢰도: {value}%",
-  "@memoryConfidenceLabel": {
-    "placeholders": {
-      "value": {}
-    }
-  },
-  "memoryOccurrencesLabel": "발생 횟수: {count}",
-  "@memoryOccurrencesLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryFirstSeenLabel": "처음 발견: {date}",
-  "@memoryFirstSeenLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryLastSeenLabel": "최근 발견: {date}",
-  "@memoryLastSeenLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryEvidenceCountLabel": "증거: {count}건",
-  "@memoryEvidenceCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryEventContainsContext": "사용자 관련 정보 포함",
-  "memoryEventNoContext": "사용자 관련 정보가 감지되지 않았습니다",
-  "memoryEventTimeLabel": "시간: {date}",
-  "@memoryEventTimeLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryEventSourceLabel": "출처: {source}",
-  "@memoryEventSourceLabel": {
-    "placeholders": {
-      "source": {}
-    }
-  },
-  "memoryEventTypeLabel": "유형: {type}",
-  "@memoryEventTypeLabel": {
-    "placeholders": {
-      "type": {}
-    }
-  },
-  "memoryProgressIdle": "과거 이벤트 처리를 대기 중",
-  "memoryProgressRunning": "과거 이벤트 분석 중",
-  "memoryProgressRunningDetail": "{processed}/{total}일 처리됨 ({percent}%)",
-  "@memoryProgressRunningDetail": {
-    "placeholders": {
-      "processed": {},
-      "total": {},
-      "percent": {}
-    }
-  },
-  "memoryProgressNewTagsDetail": "새 태그: {count}",
-  "@memoryProgressNewTagsDetail": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryProgressCompleted": "과거 이벤트 분석 완료: 총 {total}일, 소요 {seconds}초",
-  "@memoryProgressCompleted": {
-    "placeholders": {
-      "total": {},
-      "seconds": {}
-    }
-  },
-  "memoryProgressFailed": "분석 실패: {message}",
-  "@memoryProgressFailed": {
-    "placeholders": {
-      "message": {}
-    }
-  },
-  "memoryProgressFailedEvent": "실패한 이벤트: {event}",
-  "@memoryProgressFailedEvent": {
-    "placeholders": {
-      "event": {}
-    }
-  },
-  "memoryProgressPreparing": "준비 중: {stage}",
-  "@memoryProgressPreparing": {
-    "placeholders": {
-      "stage": {}
-    }
-  },
-  "memoryProgressStageSyncSegments": "스크린샷 이벤트 동기화",
-  "memoryProgressStageSyncChats": "대화 기록 동기화",
-  "memoryProgressStageDispatch": "히스토리 분석 시작",
-  "memoryRefreshTooltip": "새로고침",
-  "memoryConfirmSuccessToast": "\"{label}\" 태그가 확인되었습니다",
-  "@memoryConfirmSuccessToast": {
-    "placeholders": {
-      "label": {}
-    }
-  },
-  "memoryConfirmFailedToast": "실패: {message}",
-  "@memoryConfirmFailedToast": {
-    "placeholders": {
-      "message": {}
-    }
-  },
-  "memorySnapshotUpdated": "메모리 스냅샷이 업데이트되었습니다",
-  "memoryStartProcessingAction": "과거 이벤트 분석 시작",
-  "memoryStartProcessingActionShort": "분석 시작",
-  "memoryMalformedResponseTitle": "비정상 응답이 감지되어 분석이 일시 중지되었습니다",
-  "memoryMalformedResponseSubtitle": "이벤트 {eventId}의 응답에 \"当前用户描述：\" 표시가 없습니다. 확인 후 다시 시작하세요.",
-  "@memoryMalformedResponseSubtitle": {
-    "placeholders": {
-      "eventId": {}
-    }
-  },
-  "memoryMalformedResponseSubtitleNoId": "최근 응답에 \"当前用户描述：\" 표시가 없습니다. 확인 후 다시 시작하세요.",
-  "memoryMalformedResponseRawLabel": "원본 응답:",
-  "memoryDeleteTagAction": "태그 삭제",
-  "memoryDeleteTagConfirmTitle": "태그 삭제",
-  "memoryDeleteTagConfirmMessage": "\"{tagLabel}\" 태그를 삭제할까요? 관련 증거도 제거됩니다.",
-  "@memoryDeleteTagConfirmMessage": {
-    "placeholders": {
-      "tagLabel": {}
-    }
-  },
-  "memoryDeleteTagSuccess": "태그가 삭제되었습니다",
-  "memoryDeleteTagFailed": "삭제 실패: {error}",
-  "@memoryDeleteTagFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryStatusPendingIndicator": "확인 대기",
-  "memoryStatusConfirmedIndicator": "확인됨",
-  "memoryReprocessAction": "모든 과거 이벤트 재분석",
-  "memoryStartProcessingToast": "과거 이벤트 분석을 시작했습니다",
-  "memoryLoadMore": "더 보기",
-  "memoryCenterHeroTitle": "캐릭터 프로필",
-  "memoryCenterHeroSubtitle": "이벤트에서 추출한 RPG 스타일의 사용자 기록",
-  "memoryCenterPendingCountLabel": "보류: {count}",
-  "@memoryCenterPendingCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryCenterConfirmedCountLabel": "확정: {count}",
-  "@memoryCenterConfirmedCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryCenterEventCountLabel": "관련 이벤트: {count}",
-  "@memoryCenterEventCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailTitle": "태그 상세",
-  "memoryTagDetailRefresh": "새로고침",
-  "memoryTagDetailInfoTitle": "프로필",
-  "memoryTagDetailStatisticsTitle": "속성",
-  "memoryTagDetailOccurrences": "등장 횟수: {count}",
-  "@memoryTagDetailOccurrences": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailConfidence": "신뢰도: {confidence}",
-  "@memoryTagDetailConfidence": {
-    "placeholders": {
-      "confidence": {}
-    }
-  },
-  "memoryTagDetailFirstSeen": "첫 등장: {date}",
-  "@memoryTagDetailFirstSeen": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryTagDetailLastSeen": "마지막 등장: {date}",
-  "@memoryTagDetailLastSeen": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryTagDetailEvidenceTitle": "증거 목록",
-  "memoryTagDetailEvidenceCount": "총 증거 수: {count}",
-  "@memoryTagDetailEvidenceCount": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailNoEvidence": "증거가 아직 없습니다",
-  "memoryTagDetailLoadFailed": "태그 데이터를 불러오지 못했습니다",
-  "memoryEvidenceInferenceLabel": "추론 설명",
-  "memoryEvidenceNotesLabel": "메모",
-  "memoryEvidenceNoNotes": "메모 없음",
-  "memoryEvidenceEventHeading": "출처 이벤트",
-  "memoryEvidenceUserEditedBadge": "사용자 편집",
   "conversationsSectionTitle": "대화",
   "displaySectionTitle": "디스플레이",
   "displaySectionDesc": "테마/개인정보/NSFW",
@@ -1496,7 +1232,6 @@
   "homeMorningTipsCooldownMessage": "많이 새로고침했어요. 잠시 휴대폰을 내려놓고 현실의 풍경을 바라보세요.",
   "languageJapanese": "일본어",
   "languageKorean": "한국어",
-
   "expireCleanupConfirmTitle": "스크린샷 만료 정리를 활성화하시겠습니까?",
   "expireCleanupConfirmMessage": "활성화하면 {days}일이 지난 스크린샷 이미지가 즉시 삭제됩니다.\n\n참고: 이미지 파일만 삭제되며, 이벤트, 요약 등의 콘텐츠는 유지됩니다.",
   "@expireCleanupConfirmMessage": {
@@ -1505,7 +1240,6 @@
     }
   },
   "expireCleanupConfirmAction": "활성화",
-
   "desktopMergerTitle": "데이터 병합 도구",
   "desktopMergerDescription": "여러 백업 파일을 효율적으로 병합",
   "desktopMergerSteps": "1. 출력 디렉토리 선택 (병합된 데이터가 여기에 저장됩니다)\n2. 병합할 ZIP 백업 파일 추가\n3. 병합 시작 클릭",
@@ -1536,11 +1270,9 @@
   "desktopMergerStageExtracting": "압축 해제 중...",
   "desktopMergerStageCopying": "파일 복사 중...",
   "desktopMergerStageMerging": "데이터베이스 병합 중...",
-  "desktopMergerStageMemory": "메모리 데이터 병합 중...",
   "desktopMergerStageFinalizing": "완료 중...",
   "desktopMergerStageProcessing": "처리 중...",
   "desktopMergerStageCompleted": "병합 완료",
-
   "desktopMergerLiveStats": "실시간 통계",
   "desktopMergerProcessingFile": "처리 중: {fileName}",
   "@desktopMergerProcessingFile": {
@@ -1559,10 +1291,8 @@
   "desktopMergerStatSkipped": "건너뛴 중복",
   "desktopMergerStatFiles": "복사된 파일",
   "desktopMergerStatReused": "재사용 파일",
-  "desktopMergerStatEvents": "메모리 이벤트",
   "desktopMergerStatTags": "메모리 태그",
   "desktopMergerStatEvidence": "메모리 증거",
-
   "desktopMergerSummaryTitle": "병합 요약",
   "desktopMergerSummaryTotal": "총 {count}개 파일 처리됨",
   "@desktopMergerSummaryTotal": {
@@ -1600,7 +1330,6 @@
   "desktopMergerNoData": "데이터 변경 없음",
   "desktopMergerExpandAll": "모두 펼치기",
   "desktopMergerCollapseAll": "모두 접기",
-
   "desktopMergerStagePacking": "ZIP 압축 중...",
   "desktopMergerOutputZip": "출력 파일",
   "desktopMergerOpenFolder": "폴더 열기",
@@ -1614,9 +1343,7 @@
   "desktopMergerExtractingHint": "백업 파일 압축 해제 중입니다. 대용량 백업(수만 장의 스크린샷)은 몇 분 정도 걸릴 수 있습니다. 잠시만 기다려 주세요...",
   "desktopMergerCopyingHint": "스크린샷 파일 복사 중, 기존 이미지 건너뛰기...",
   "desktopMergerMergingHint": "스마트 중복 제거로 데이터베이스 레코드 병합 중...",
-  "desktopMergerMemoryHint": "메모리 아카이브 데이터 병합 중...",
   "desktopMergerPackingHint": "병합된 결과를 ZIP 파일로 압축 중...",
-
   "unknownTitle": "알 수 없음",
   "unknownTime": "알 수 없는 시간",
   "empty": "비어 있음",

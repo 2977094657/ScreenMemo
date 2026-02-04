@@ -99,11 +99,6 @@ class AISettingsService {
   // 是否显示 AIChat 页面的性能日志悬浮窗（UiPerfOverlay）。默认关闭。
   static const String _keyAiChatPerfOverlayEnabled =
       'ai_chat_perf_overlay_enabled';
-  static const String _keyWorkingMemoryInjectionEnabled =
-      'working_memory_injection_enabled';
-  static const String _keyWorkingMemoryPromptTokens =
-      'working_memory_prompt_tokens';
-  static const String _keyWorkingMemoryEdgeLimit = 'working_memory_edge_limit';
   static const String _keyAtomicMemoryInjectionEnabled =
       'atomic_memory_injection_enabled';
   static const String _keyAtomicMemoryAutoExtractEnabled =
@@ -130,22 +125,17 @@ class AISettingsService {
 
   // Prompt budgets should scale with the active model's prompt/context window.
   // Ratios are derived from the old fixed defaults (tuned around ~32k prompt cap).
-  static const double _defaultWorkingMemoryPromptTokensRatio = 1400.0 / 32000.0;
   static const double _defaultAtomicMemoryPromptTokensRatio = 700.0 / 32000.0;
 
   // Hard safety caps (we still want scaling, but avoid absurd token budgets on
   // ultra-large context models).
-  static const int _workingMemoryPromptTokensAbsMax = 12000;
   static const int _atomicMemoryPromptTokensAbsMax = 8000;
 
   // Max budget as a percentage of prompt cap.
-  static const double _workingMemoryPromptTokensMaxRatio = 0.20;
   static const double _atomicMemoryPromptTokensMaxRatio = 0.15;
 
-  static const int _workingMemoryPromptTokensMin = 200;
   static const int _atomicMemoryPromptTokensMin = 100;
 
-  static const int _defaultWorkingMemoryEdgeLimit = 60;
   static const int _defaultAtomicMemoryMaxItems = 24;
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
@@ -170,15 +160,6 @@ class AISettingsService {
     return v.clamp(min, absMax);
   }
 
-  static int _maxWorkingMemoryTokensForCap(int cap) {
-    return _capByPct(
-      cap,
-      _workingMemoryPromptTokensMaxRatio,
-      min: _workingMemoryPromptTokensMin,
-      absMax: _workingMemoryPromptTokensAbsMax,
-    );
-  }
-
   static int _maxAtomicMemoryTokensForCap(int cap) {
     return _capByPct(
       cap,
@@ -188,27 +169,11 @@ class AISettingsService {
     );
   }
 
-  static int _defaultWorkingMemoryTokensForCap(int cap) {
-    final int suggested = (cap * _defaultWorkingMemoryPromptTokensRatio)
-        .round();
-    return suggested.clamp(
-      _workingMemoryPromptTokensMin,
-      _maxWorkingMemoryTokensForCap(cap),
-    );
-  }
-
   static int _defaultAtomicMemoryTokensForCap(int cap) {
     final int suggested = (cap * _defaultAtomicMemoryPromptTokensRatio).round();
     return suggested.clamp(
       _atomicMemoryPromptTokensMin,
       _maxAtomicMemoryTokensForCap(cap),
-    );
-  }
-
-  static int _clampWorkingMemoryTokens(int value, int cap) {
-    return value.clamp(
-      _workingMemoryPromptTokensMin,
-      _maxWorkingMemoryTokensForCap(cap),
     );
   }
 
@@ -259,56 +224,6 @@ class AISettingsService {
   Future<void> setAiChatPerfOverlayEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyAiChatPerfOverlayEnabled, enabled ? '1' : '0');
-  }
-
-  // ========== MemOS 工作记忆注入（系统消息） ==========
-
-  Future<bool> getWorkingMemoryInjectionEnabled() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyWorkingMemoryInjectionEnabled);
-    if (v == null || v.isEmpty) return true; // 默认开启
-    final s = v.toLowerCase();
-    return s == '1' || s == 'true' || s == 'yes';
-  }
-
-  Future<void> setWorkingMemoryInjectionEnabled(bool enabled) async {
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(
-      _keyWorkingMemoryInjectionEnabled,
-      enabled ? '1' : '0',
-    );
-  }
-
-  Future<int> getWorkingMemoryPromptTokens() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyWorkingMemoryPromptTokens);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    // Keep it conservative: this is an approximate token budget (bytes/4),
-    // but it should scale with the active model's prompt cap.
-    final int cap = await _promptCapTokensForBudget();
-    final int raw = parsed ?? _defaultWorkingMemoryTokensForCap(cap);
-    return _clampWorkingMemoryTokens(raw, cap);
-  }
-
-  Future<void> setWorkingMemoryPromptTokens(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int cap = await _promptCapTokensForBudget();
-    final int v = _clampWorkingMemoryTokens(value, cap);
-    await db.setAiSetting(_keyWorkingMemoryPromptTokens, v.toString());
-  }
-
-  Future<int> getWorkingMemoryEdgeLimit() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyWorkingMemoryEdgeLimit);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    final int raw = parsed ?? _defaultWorkingMemoryEdgeLimit;
-    return raw.clamp(10, 200);
-  }
-
-  Future<void> setWorkingMemoryEdgeLimit(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int v = value.clamp(10, 200);
-    await db.setAiSetting(_keyWorkingMemoryEdgeLimit, v.toString());
   }
 
   // ========== 原子记忆注入（SimpleMem-style） ==========

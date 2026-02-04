@@ -1506,78 +1506,6 @@ extension AIChatServiceToolExecExt on AIChatService {
     ];
   }
 
-  Future<List<AIMessage>> _executeSearchMemoryGraphTool(AIToolCall call) async {
-    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
-    final String query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
-      return <AIMessage>[
-        AIMessage(
-          role: 'tool',
-          content: jsonEncode(<String, dynamic>{
-            'tool': 'search_memory_graph',
-            'error': 'missing_query',
-          }),
-          toolCallId: call.id,
-        ),
-      ];
-    }
-
-    int depth = _toInt(args['depth']) ?? 2;
-    if (depth < 1) depth = 1;
-    if (depth > 4) depth = 4;
-    int limit = _toInt(args['limit']) ?? 80;
-    if (limit < 10) limit = 10;
-    if (limit > 200) limit = 200;
-    final Object? includeRaw = args.containsKey('include_history')
-        ? args['include_history']
-        : (args.containsKey('includeHistory') ? args['includeHistory'] : null);
-    final bool includeHistory = includeRaw == null ? true : _toBool(includeRaw);
-
-    try {
-      final Map<String, dynamic> rawPayload = await MemoryBridgeService.instance
-          .searchMemoryGraph(
-            query: query,
-            depth: depth,
-            limit: limit,
-            includeHistory: includeHistory,
-          );
-      final Map<String, dynamic> payload = <String, dynamic>{...rawPayload};
-      payload['tool'] = 'search_memory_graph';
-      payload.putIfAbsent('query', () => query);
-      payload.putIfAbsent('depth', () => depth);
-      payload.putIfAbsent('limit', () => limit);
-      payload.putIfAbsent('include_history', () => includeHistory);
-      // Normalize a lightweight `count` so tool-memory (and loop heuristics) can
-      // surface whether the graph had hits without dumping full edges.
-      try {
-        final Map<String, dynamic>? stats = (payload['stats'] is Map)
-            ? Map<String, dynamic>.from(payload['stats'] as Map)
-            : null;
-        final int edgeCount = _toInt(stats?['edge_count']) ?? 0;
-        payload.putIfAbsent('count', () => edgeCount);
-      } catch (_) {}
-      return <AIMessage>[
-        AIMessage(
-          role: 'tool',
-          content: jsonEncode(payload),
-          toolCallId: call.id,
-        ),
-      ];
-    } catch (err) {
-      return <AIMessage>[
-        AIMessage(
-          role: 'tool',
-          content: jsonEncode(<String, dynamic>{
-            'tool': 'search_memory_graph',
-            'error': 'graph_search_failed',
-            'message': err.toString(),
-          }),
-          toolCallId: call.id,
-        ),
-      ];
-    }
-  }
-
   Future<List<AIMessage>> _executeToolCall(
     AIToolCall call, {
     int? toolStartMs,
@@ -1608,8 +1536,6 @@ extension AIChatServiceToolExecExt on AIChatService {
           toolStartMs: toolStartMs,
           toolEndMs: toolEndMs,
         );
-      case 'search_memory_graph':
-        return _executeSearchMemoryGraphTool(call);
       default:
         return <AIMessage>[
           AIMessage(

@@ -372,52 +372,7 @@ extension AIChatServiceToolingExt on AIChatService {
         },
       },
     },
-    <String, dynamic>{
-      'type': 'function',
-      'function': <String, dynamic>{
-        'name': 'search_memory_graph',
-        'description':
-            'Search local temporal memory graph (entities/edges/evidence). Use this to answer relationship-chain questions like “who did I work with at which company” or “how is this project related to that meeting”.',
-        'parameters': <String, dynamic>{
-          'type': 'object',
-          'properties': <String, dynamic>{
-            'query': <String, dynamic>{
-              'type': 'string',
-              'description':
-                  'Natural language query or an entity key (e.g., person:user).',
-            },
-            'depth': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Neighborhood expansion depth (1-4).',
-            },
-            'limit': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Max edges to return (10-200).',
-            },
-            'include_history': <String, dynamic>{
-              'type': 'boolean',
-              'description': 'Whether to include historical (ended) edges.',
-            },
-          },
-          'required': <String>['query'],
-        },
-      },
-    },
   ];
-
-  static List<Map<String, dynamic>> defaultMemoryTools() {
-    final List<Map<String, dynamic>> all = defaultChatTools();
-    return all
-        .where((t) {
-          final fn = t['function'];
-          if (fn is Map) {
-            final String name = (fn['name'] as String?)?.trim() ?? '';
-            return name == 'search_memory_graph';
-          }
-          return false;
-        })
-        .toList(growable: false);
-  }
 
   String _detectImageMimeByExt(String path) {
     final String p = path.toLowerCase();
@@ -695,19 +650,6 @@ extension AIChatServiceToolingExt on AIChatService {
         sig['limit'] = (_toInt(args['limit']) ?? 20).clamp(1, 50);
         sig['offset'] = (_toInt(args['offset']) ?? 0).clamp(0, 1 << 30);
         break;
-      case 'search_memory_graph':
-        sig['query'] = (args['query'] as String?)?.trim() ?? '';
-        sig['depth'] = (_toInt(args['depth']) ?? 2).clamp(1, 6);
-        sig['limit'] = (_toInt(args['limit']) ?? 80).clamp(10, 200);
-        final Object? includeRaw = args.containsKey('include_history')
-            ? args['include_history']
-            : (args.containsKey('includeHistory')
-                  ? args['includeHistory']
-                  : null);
-        sig['include_history'] = includeRaw == null
-            ? true
-            : _toBool(includeRaw);
-        break;
       case 'get_segment_result':
         sig['segment_id'] = _toInt(args['segment_id']) ?? 0;
         break;
@@ -797,11 +739,6 @@ extension AIChatServiceToolingExt on AIChatService {
           '搜索图片：${query.isEmpty ? '（无关键词）' : clip(query)}$rangeSuffix',
           'Search images: ${query.isEmpty ? '(no query)' : clip(query)}$rangeSuffix',
         );
-      case 'search_memory_graph':
-        return _loc(
-          '检索记忆：${query.isEmpty ? '（无关键词）' : clip(query, maxLen: 32)}',
-          'Search memory: ${query.isEmpty ? '(no query)' : clip(query, maxLen: 32)}',
-        );
       case 'get_segment_result':
         final int sid = _toInt(args['segment_id']) ?? 0;
         return sid > 0
@@ -853,10 +790,17 @@ extension AIChatServiceToolingExt on AIChatService {
       'warnings',
       'paging',
       'segment_id',
+      'path',
+      'from',
+      'lines',
+      'max_chars',
+      'start_line',
+      'end_line',
       'provided',
       'missing',
       'skipped',
       'stats',
+      'results',
     ];
     for (final String k in keep) {
       if (payload.containsKey(k)) out[k] = payload[k];

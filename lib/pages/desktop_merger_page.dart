@@ -38,7 +38,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
   int _totalSkipped = 0;
   int _totalFiles = 0;
   int _totalReused = 0;
-  int _totalEvents = 0;
   final Set<String> _allAffectedApps = {};
   final List<String> _allWarnings = [];
 
@@ -869,11 +868,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                         t.desktopMergerStatReused,
                         report.reusedFiles,
                       ),
-                      _buildMiniStat(
-                        context,
-                        t.desktopMergerStatEvents,
-                        report.mergedMemoryEvents,
-                      ),
                     ],
                   ),
                   // 涉及应用
@@ -1097,7 +1091,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     return _totalScreenshots > 0 ||
         _totalSkipped > 0 ||
         _totalFiles > 0 ||
-        _totalEvents > 0 ||
         _results.isNotEmpty;
   }
 
@@ -1134,7 +1127,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       _totalSkipped = 0;
       _totalFiles = 0;
       _totalReused = 0;
-      _totalEvents = 0;
       _allAffectedApps.clear();
       _allWarnings.clear();
     });
@@ -1216,7 +1208,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             _totalSkipped += report.skippedScreenshotDuplicates;
             _totalFiles += report.copiedFiles;
             _totalReused += report.reusedFiles;
-            _totalEvents += report.mergedMemoryEvents;
             _allAffectedApps.addAll(report.affectedPackages);
             _allWarnings.addAll(report.warnings);
           });
@@ -1458,8 +1449,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         return t.desktopMergerStageCopying;
       case 'merge_shard_databases':
         return t.desktopMergerStageMerging;
-      case 'merge_memory_database':
-        return t.desktopMergerStageMemory;
       case 'merge_finalizing':
         return t.desktopMergerStageFinalizing;
       case 'processing_file':
@@ -1482,8 +1471,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         return t.desktopMergerCopyingHint;
       case 'merge_shard_databases':
         return t.desktopMergerMergingHint;
-      case 'merge_memory_database':
-        return t.desktopMergerMemoryHint;
       case 'packing':
         return t.desktopMergerPackingHint;
       default:

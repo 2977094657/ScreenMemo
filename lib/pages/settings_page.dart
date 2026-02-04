@@ -391,13 +391,6 @@ class _SettingsPageState extends State<SettingsPage>
           t.mergeReportCopied(report.copiedFiles),
           style: theme.textTheme.bodyMedium,
         ),
-        if (report.mergedMemoryEvents > 0) ...[
-          const SizedBox(height: AppTheme.spacing3),
-          Text(
-            t.mergeReportMemoryEvents(report.mergedMemoryEvents),
-            style: theme.textTheme.bodyMedium,
-          ),
-        ],
         if (affectedPackages.isNotEmpty) ...[
           const SizedBox(height: AppTheme.spacing3),
           Text(
@@ -904,9 +897,6 @@ class _SettingsPageState extends State<SettingsPage>
     if (stage == 'merge_shard_databases') {
       return t.mergeProgressMergingDb;
     }
-    if (stage == 'merge_memory_database') {
-      return t.mergeProgressMemoryDb;
-    }
     if (stage == 'merge_finalizing') {
       return t.mergeProgressFinalizing;
     }
@@ -1317,8 +1307,7 @@ class _SettingsPageState extends State<SettingsPage>
           await _resyncScreenshotSettingsAfterImport();
           await FlutterLogger.nativeInfo(
             'UI_IMPORT',
-            '合并成功 插入截图=${mergeReport.insertedScreenshots} 跳过重复=${mergeReport.skippedScreenshotDuplicates} '
-                '动态事件=${mergeReport.mergedMemoryEvents}',
+            '合并成功 插入截图=${mergeReport.insertedScreenshots} 跳过重复=${mergeReport.skippedScreenshotDuplicates}',
           );
           await ScreenshotService.instance.invalidateStatsCache();
           ScreenshotService.instance.invalidateAvailableDayCountCache();

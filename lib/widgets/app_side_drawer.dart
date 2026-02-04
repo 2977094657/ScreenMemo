@@ -4,7 +4,6 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/theme_service.dart';
 import '../pages/provider_list_page.dart';
 import '../pages/prompt_manager_page.dart';
-import '../pages/memory_center_page.dart';
 import '../theme/app_theme.dart';
 import '../services/ai_settings_service.dart';
 import '../utils/model_icon_utils.dart';
@@ -54,18 +53,6 @@ class AppSideDrawer extends StatelessWidget {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const WeeklySummaryPage()),
-                );
-              },
-            ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.memory_outlined,
-              title: t.memoryMenuEntry,
-              isFirst: false,
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MemoryCenterPage()),
                 );
               },
             ),

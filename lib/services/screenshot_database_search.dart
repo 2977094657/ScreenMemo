@@ -15,14 +15,12 @@ const String kSearchDocTypeFavoriteNote = 'favorite_note';
 const String kSearchDocTypeDailySummary = 'daily_summary';
 const String kSearchDocTypeWeeklySummary = 'weekly_summary';
 const String kSearchDocTypeMorningInsights = 'morning_insights';
-const String kSearchDocTypePersonaArticle = 'persona_article';
 
 // ---- index source 常量（用于增量同步） ----
 const String kSearchIndexSourceFavorites = 'favorites';
 const String kSearchIndexSourceDailySummaries = 'daily_summaries';
 const String kSearchIndexSourceWeeklySummaries = 'weekly_summaries';
 const String kSearchIndexSourceMorningInsights = 'morning_insights';
-const String kSearchIndexSourcePersonaArticles = 'persona_articles';
 
 String _favoriteNoteDocKey(String appPackageName, int screenshotId) {
   final pkg = appPackageName.trim().toLowerCase();
@@ -33,7 +31,6 @@ String _dailySummaryDocKey(String dateKey) => 'daily:${dateKey.trim()}';
 String _weeklySummaryDocKey(String weekStartDate) =>
     'weekly:${weekStartDate.trim()}';
 String _morningInsightsDocKey(String dateKey) => 'morning:${dateKey.trim()}';
-String _personaArticleDocKey(String style) => 'persona:${style.trim()}';
 
 int? _parseYmdToStartMillis(String ymd) {
   final s = ymd.trim();
@@ -374,7 +371,6 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
           kSearchIndexSourceDailySummaries,
           kSearchIndexSourceWeeklySummaries,
           kSearchIndexSourceMorningInsights,
-          kSearchIndexSourcePersonaArticles,
         };
 
     for (final source in targets) {
@@ -393,9 +389,6 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
             break;
           case kSearchIndexSourceMorningInsights:
             maxProcessed = await _syncMorningInsights(db, last);
-            break;
-          case kSearchIndexSourcePersonaArticles:
-            maxProcessed = await _syncPersonaArticles(db, last);
             break;
         }
       } catch (_) {}
@@ -584,51 +577,6 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
           'end_time': null,
           'nsfw': 0,
           'updated_at': createdAt,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
-    return maxTs;
-  }
-
-  Future<int> _syncPersonaArticles(DatabaseExecutor db, int last) async {
-    final rows = await db.query(
-      'persona_articles',
-      where: 'updated_at > ? AND article IS NOT NULL AND TRIM(article) != ""',
-      whereArgs: [last],
-      orderBy: 'updated_at ASC, style ASC',
-    );
-    if (rows.isEmpty) return last;
-
-    final batch = (db as Database).batch();
-    int maxTs = last;
-    for (final r in rows) {
-      final String style = (r['style'] as String?) ?? '';
-      final String article = (r['article'] as String?) ?? '';
-      final String locale = (r['locale'] as String?) ?? '';
-      final int updatedAt = (r['updated_at'] as int?) ?? 0;
-      if (style.trim().isEmpty || article.trim().isEmpty) continue;
-      if (updatedAt > maxTs) maxTs = updatedAt;
-
-      batch.insert(
-        'search_docs',
-        {
-          'doc_key': _personaArticleDocKey(style),
-          'doc_type': kSearchDocTypePersonaArticle,
-          'title': '画像文章 · $style',
-          'content': article,
-          'tags': (locale.trim().isEmpty) ? null : locale.trim(),
-          'app_package_name': null,
-          'app_name': null,
-          'file_path': null,
-          'screenshot_id': null,
-          'segment_id': null,
-          'date_key': null,
-          'start_time': null,
-          'end_time': null,
-          'nsfw': 0,
-          'updated_at': updatedAt,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );

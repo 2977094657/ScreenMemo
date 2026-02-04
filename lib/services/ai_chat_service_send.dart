@@ -61,7 +61,6 @@ extension AIChatServiceSendExt on AIChatService {
     String toolUsageInstruction = '',
     String conversationContextMsg = '',
     String atomicMemoryMsg = '',
-    String workingMemoryMsg = '',
     List<String> extraSystemMessages = const <String>[],
     int? historyMaxTokens,
   }) {
@@ -89,7 +88,6 @@ extension AIChatServiceSendExt on AIChatService {
     addExtra('tool_instruction', toolUsageInstruction);
     addExtra('conversation_context', conversationContextMsg);
     addExtra('atomic_memory', atomicMemoryMsg);
-    addExtra('working_memory', workingMemoryMsg);
     for (final String s in extraSystemMessages) {
       addExtra('extra_system', s);
     }
@@ -194,8 +192,6 @@ extension AIChatServiceSendExt on AIChatService {
               (parts['conversation_context'] ?? 0) + t;
         } else if (trimmed.contains('<atomic_memory>')) {
           parts['atomic_memory'] = (parts['atomic_memory'] ?? 0) + t;
-        } else if (trimmed.contains('<working_memory>')) {
-          parts['working_memory'] = (parts['working_memory'] ?? 0) + t;
         } else if (_looksLikeToolUsageInstruction(trimmed)) {
           parts['tool_instruction'] = (parts['tool_instruction'] ?? 0) + t;
         } else {
@@ -275,11 +271,6 @@ extension AIChatServiceSendExt on AIChatService {
           .buildAtomicMemoryContextMessage(cid: cid, query: userMessage.trim());
       if (amMsg.trim().isNotEmpty) extras.add(amMsg.trim());
     } catch (_) {}
-    String wmMsg = '';
-    try {
-      wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
-      if (wmMsg.trim().isNotEmpty) extras.add(wmMsg.trim());
-    } catch (_) {}
 
     // Codex-style dynamic history budget: keep as much history as fits after
     // accounting for system/extras/user (+ tool schema, if any).
@@ -331,7 +322,6 @@ extension AIChatServiceSendExt on AIChatService {
           if (ctxMsg.trim().isNotEmpty) extras.add(ctxMsg.trim());
         } catch (_) {}
         if (amMsg.trim().isNotEmpty) extras.add(amMsg.trim());
-        if (wmMsg.trim().isNotEmpty) extras.add(wmMsg.trim());
         reservedTokens = _approxReservedPromptTokens(
           systemPrompt: systemPrompt,
           extraSystemMessages: extras,
@@ -377,7 +367,6 @@ extension AIChatServiceSendExt on AIChatService {
         tools: const <Map<String, dynamic>>[],
         conversationContextMsg: ctxMsg,
         atomicMemoryMsg: amMsg,
-        workingMemoryMsg: wmMsg,
         historyMaxTokens: historyMaxTokens,
       );
       final int tokensApprox = PromptBudget.approxTokensForMessagesJson(
@@ -408,25 +397,6 @@ extension AIChatServiceSendExt on AIChatService {
             'am_tokens': PromptBudget.approxTokensForText(amMsg),
             'max_tokens': amMaxTokens,
             'max_items': amMaxItems,
-          },
-        ),
-      );
-    } catch (_) {}
-    try {
-      final bool wmEnabled = await _settings.getWorkingMemoryInjectionEnabled();
-      final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
-      final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
-      unawaited(
-        _chatContext.logContextEvent(
-          cid: cid,
-          type: 'working_memory',
-          payload: <String, dynamic>{
-            'enabled': wmEnabled,
-            'injected': wmMsg.trim().isNotEmpty,
-            'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
-            'wm_truncated': wmMsg.contains('…working_memory truncated…'),
-            'edge_limit': wmEdgeLimit,
-            'max_tokens': wmMaxTokens,
           },
         ),
       );
@@ -636,7 +606,6 @@ extension AIChatServiceSendExt on AIChatService {
     final List<String> effectiveExtras = <String>[];
     String ctxMsg = '';
     String amMsg = '';
-    String wmMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
@@ -649,10 +618,6 @@ extension AIChatServiceSendExt on AIChatService {
               query: userMessage.trim(),
             );
         if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
-      } catch (_) {}
-      try {
-        wmMsg = await _buildWorkingMemoryContextMessage(userMessage);
-        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
       } catch (_) {}
     }
     effectiveExtras.addAll(extraSystemMessages);
@@ -716,7 +681,6 @@ extension AIChatServiceSendExt on AIChatService {
           if (ctxMsg.trim().isNotEmpty) extras2.add(ctxMsg.trim());
         } catch (_) {}
         if (amMsg.trim().isNotEmpty) extras2.add(amMsg.trim());
-        if (wmMsg.trim().isNotEmpty) extras2.add(wmMsg.trim());
         extras2.addAll(extraSystemMessages);
         reservedTokens = _approxReservedPromptTokens(
           systemPrompt: systemPrompt,
@@ -773,7 +737,6 @@ extension AIChatServiceSendExt on AIChatService {
           tools: const <Map<String, dynamic>>[],
           conversationContextMsg: ctxMsg,
           atomicMemoryMsg: amMsg,
-          workingMemoryMsg: wmMsg,
           extraSystemMessages: extraSystemMessages,
           historyMaxTokens: historyMaxTokens,
         );
@@ -805,26 +768,6 @@ extension AIChatServiceSendExt on AIChatService {
               'am_tokens': PromptBudget.approxTokensForText(amMsg),
               'max_tokens': amMaxTokens,
               'max_items': amMaxItems,
-            },
-          ),
-        );
-      } catch (_) {}
-      try {
-        final bool wmEnabled = await _settings
-            .getWorkingMemoryInjectionEnabled();
-        final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
-        final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
-        unawaited(
-          _chatContext.logContextEvent(
-            cid: cid,
-            type: 'working_memory',
-            payload: <String, dynamic>{
-              'enabled': wmEnabled,
-              'injected': wmMsg.trim().isNotEmpty,
-              'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
-              'wm_truncated': wmMsg.contains('…working_memory truncated…'),
-              'edge_limit': wmEdgeLimit,
-              'max_tokens': wmMaxTokens,
             },
           ),
         );
@@ -956,7 +899,6 @@ extension AIChatServiceSendExt on AIChatService {
     }
     String ctxMsg = '';
     String amMsg = '';
-    String wmMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
@@ -969,10 +911,6 @@ extension AIChatServiceSendExt on AIChatService {
               query: actualUserMessage.trim(),
             );
         if (amMsg.trim().isNotEmpty) effectiveExtras.add(amMsg.trim());
-      } catch (_) {}
-      try {
-        wmMsg = await _buildWorkingMemoryContextMessage(actualUserMessage);
-        if (wmMsg.trim().isNotEmpty) effectiveExtras.add(wmMsg.trim());
       } catch (_) {}
     }
     effectiveExtras.addAll(extraSystemMessages);
@@ -1043,7 +981,6 @@ extension AIChatServiceSendExt on AIChatService {
           if (ctxMsg.trim().isNotEmpty) extras2.add(ctxMsg.trim());
         } catch (_) {}
         if (amMsg.trim().isNotEmpty) extras2.add(amMsg.trim());
-        if (wmMsg.trim().isNotEmpty) extras2.add(wmMsg.trim());
         extras2.addAll(extraSystemMessages);
 
         final int reserved2 = _approxReservedPromptTokens(
@@ -1094,35 +1031,6 @@ extension AIChatServiceSendExt on AIChatService {
     }
     if (context == 'chat' && persistHistory) {
       try {
-        final String modelForPrompt = endpoints.isNotEmpty
-            ? endpoints.first.model
-            : '';
-        final String breakdownJson = _buildPromptBreakdownJson(
-          model: modelForPrompt,
-          systemPrompt: systemPrompt,
-          userMessage: actualUserMessage,
-          history: filteredHistory,
-          includeHistory: includeHistory,
-          tools: tools,
-          toolUsageInstruction: toolUsageInstruction,
-          conversationContextMsg: ctxMsg,
-          atomicMemoryMsg: amMsg,
-          workingMemoryMsg: wmMsg,
-          extraSystemMessages: extraSystemMessages,
-          historyMaxTokens: historyMaxTokensForBreakdown,
-        );
-        final int tokensApprox =
-            _approxToolSchemaTokens(tools) +
-            PromptBudget.approxTokensForMessagesJson(requestMessages);
-        unawaited(
-          _chatContext.recordPromptTokens(
-            cid: cid,
-            tokensApprox: tokensApprox,
-            breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
-          ),
-        );
-      } catch (_) {}
-      try {
         final bool amEnabled = await _settings
             .getAtomicMemoryInjectionEnabled();
         final bool amAutoExtract = await _settings
@@ -1140,27 +1048,6 @@ extension AIChatServiceSendExt on AIChatService {
               'am_tokens': PromptBudget.approxTokensForText(amMsg),
               'max_tokens': amMaxTokens,
               'max_items': amMaxItems,
-              'tool_loop': tools.isNotEmpty,
-            },
-          ),
-        );
-      } catch (_) {}
-      try {
-        final bool wmEnabled = await _settings
-            .getWorkingMemoryInjectionEnabled();
-        final int wmEdgeLimit = await _settings.getWorkingMemoryEdgeLimit();
-        final int wmMaxTokens = await _settings.getWorkingMemoryPromptTokens();
-        unawaited(
-          _chatContext.logContextEvent(
-            cid: cid,
-            type: 'working_memory',
-            payload: <String, dynamic>{
-              'enabled': wmEnabled,
-              'injected': wmMsg.trim().isNotEmpty,
-              'wm_tokens': PromptBudget.approxTokensForText(wmMsg),
-              'wm_truncated': wmMsg.contains('…working_memory truncated…'),
-              'edge_limit': wmEdgeLimit,
-              'max_tokens': wmMaxTokens,
               'tool_loop': tools.isNotEmpty,
             },
           ),

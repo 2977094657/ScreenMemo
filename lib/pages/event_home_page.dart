@@ -15,7 +15,6 @@ import '../services/ai_providers_service.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
-import '../services/memory_bridge_service.dart';
 import '../widgets/chat_context_sheet.dart';
 
 class EventHomePage extends StatefulWidget {
@@ -51,7 +50,6 @@ class _EventHomePageState extends State<EventHomePage> {
  @override
  void initState() {
    super.initState();
-    unawaited(MemoryBridgeService.instance.ensureInitialized());
    _loadChatContextSelection();
    _loadConversations();
    _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
@@ -114,7 +112,6 @@ class _EventHomePageState extends State<EventHomePage> {
             _ctxLoading = false;
           });
         }
-        await _applyExtractionContext(null, null);
         return;
       }
       final ctxRow = await _settings.getAIContextRow('chat');
@@ -140,18 +137,9 @@ class _EventHomePageState extends State<EventHomePage> {
           _ctxLoading = false;
         });
       }
-      await _applyExtractionContext(sel, model);
     } catch (_) {
       if (mounted) setState(() => _ctxLoading = false);
-      await _applyExtractionContext(null, null);
     }
-  }
-
-  Future<void> _applyExtractionContext(AIProvider? provider, String? model) {
-    return MemoryBridgeService.instance.setExtractionContext(
-      provider: provider,
-      model: model,
-    );
   }
 
  // —— 会话：加载/新建/切换 ——
@@ -292,7 +280,6 @@ class _EventHomePageState extends State<EventHomePage> {
                                     _ctxProvider = p;
                                     _ctxModel = model;
                                   });
-                                  await _applyExtractionContext(p, model);
                                   Navigator.of(ctx).pop();
                                   UINotifier.success(context, AppLocalizations.of(context).providerSelectedToast(p.name));
                                 }
@@ -398,7 +385,6 @@ class _EventHomePageState extends State<EventHomePage> {
                                 await _settings.setAIContextSelection(context: 'chat', providerId: p.id!, model: m);
                                 if (mounted) {
                                   setState(() => _ctxModel = m);
-                                  await _applyExtractionContext(p, m);
                                   Navigator.of(ctx).pop();
                                   UINotifier.success(context, AppLocalizations.of(context).modelSwitchedToast(m));
                                 }

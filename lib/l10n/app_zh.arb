@@ -76,15 +76,15 @@
   "refreshPermissionStatus": "刷新权限状态",
   "onboardingPermissionsDesc": "为了提供完整的功能体验，需要授权以下权限：",
   "storagePermissionTitle": "存储权限",
-  "storagePermissionDesc": "用于保存文件到设备存储",
+  "storagePermissionDesc": "保存截图文件到设备存储",
   "notificationPermissionTitle": "通知权限",
-  "notificationPermissionDesc": "用于显示应用状态通知",
+  "notificationPermissionDesc": "显示服务状态通知",
   "accessibilityPermissionTitle": "无障碍服务",
-  "accessibilityPermissionDesc": "用于智能信息识别和分析",
+  "accessibilityPermissionDesc": "监听应用切换并执行截图",
   "usageStatsPermissionTitle": "使用统计权限",
-  "usageStatsPermissionDesc": "用于准确检测前台应用",
+  "usageStatsPermissionDesc": "确保检测前台应用",
   "batteryOptimizationTitle": "电池优化白名单",
-  "batteryOptimizationDesc": "确保截屏服务稳定运行",
+  "batteryOptimizationDesc": "确保截图服务常驻运行",
   "pleaseCompleteInSystemSettings": "请在系统设置中完成授权，然后返回应用",
   "autostartPermissionTitle": "自启动权限",
   "autostartPermissionDesc": "允许应用在后台自动重启",
@@ -196,18 +196,15 @@
       "count": {}
     }
   },
-
   "exportSuccessTitle": "导出完成",
   "exportFileExportedTo": "文件已导出至：",
   "pathCopiedToast": "已复制路径",
   "exportFailedTitle": "导出失败",
   "pleaseTryAgain": "请稍后重试",
-
   "importCompleteTitle": "导入完成",
   "dataExtractedTo": "数据已解压到:",
   "importFailedTitle": "导入失败",
   "importFailedCheckZip": "请检查ZIP文件并重试。",
-
   "storageAnalysisPageTitle": "存储分析",
   "storageAnalysisLoadFailed": "存储数据加载失败",
   "storageAnalysisEmptyMessage": "暂无存储数据",
@@ -266,7 +263,6 @@
     }
   },
   "storageAnalysisOthersFallback": "其他",
-
   "noMediaProjectionNeeded": "已使用无障碍服务截图，无需屏幕录制权限",
   "autostartPermissionMarked": "自启动权限已标记为已授权",
   "requestPermissionFailed": "请求权限失败: {error}",
@@ -275,27 +271,12 @@
       "error": {}
     }
   },
-
   "expireCleanupSaved": "过期清理设置已保存",
   "dailyNotifyTriggered": "已触发通知",
   "dailyNotifyTriggerFailed": "触发通知失败或内容为空",
-
   "refreshPermissionStatusTooltip": "刷新权限状态",
-  "storagePermissionTitle": "存储权限",
-  "storagePermissionDesc": "保存截图文件到设备存储",
-  "notificationPermissionTitle": "通知权限",
-  "notificationPermissionDesc": "显示服务状态通知",
-  "accessibilityPermissionTitle": "无障碍服务",
-  "accessibilityPermissionDesc": "监听应用切换并执行截图",
-  "usageStatsPermissionTitle": "使用统计权限",
-  "usageStatsPermissionDesc": "确保检测前台应用",
-  "batteryOptimizationTitle": "电池优化白名单",
-  "batteryOptimizationDesc": "确保截图服务常驻运行",
-  "autostartPermissionTitle": "自启动权限",
-  "autostartPermissionDesc": "允许应用在后台自动重启",
   "grantedStatus": "已授权",
   "notGrantedStatus": "去授权",
-
   "privacyModeTitle": "隐私模式",
   "privacyModeDesc": "对敏感内容自动模糊遮挡",
   "homeSortingTitle": "首页排序",
@@ -362,7 +343,6 @@
   },
   "compressHistoryNothing": "最近的截图已经满足目标大小，无需压缩。",
   "compressHistoryFailure": "压缩失败，请稍后重试。",
-
   "exportDataTitle": "导出数据",
   "exportDataDesc": "导出 ZIP 至 Download/ScreenMemory",
   "importDataTitle": "导入数据",
@@ -375,7 +355,6 @@
   "mergeProgressCopying": "正在复制截图文件…",
   "mergeProgressCopyingGeneric": "正在复制其他资源…",
   "mergeProgressMergingDb": "正在合并数据库…",
-  "mergeProgressMemoryDb": "正在合并记忆数据库…",
   "mergeProgressFinalizing": "正在完成合并…",
   "mergeCompleteTitle": "合并完成",
   "mergeReportInserted": "新增截图：{count}",
@@ -396,22 +375,6 @@
   },
   "mergeReportCopied": "复制文件：{count}",
   "@mergeReportCopied": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryEvents": "新增记忆事件：{count}",
-  "@mergeReportMemoryEvents": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryTags": "新增记忆标签：{count}",
-  "@mergeReportMemoryTags": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -444,7 +407,6 @@
   "recalculateAllFailedTitle": "重新统计失败",
   "aiAssistantTitle": "AI 助手",
   "aiAssistantDesc": "配置 AI 接口与模型，并进行多轮对话测试",
-
   "segmentSampleIntervalTitle": "采样间隔（秒）",
   "segmentSampleIntervalDesc": "当前：{seconds} 秒",
   "@segmentSampleIntervalDesc": {
@@ -489,14 +451,12 @@
   },
   "dynamicMergeLimitInputHint": "请输入 >= 0 的整数（0 表示不限制）",
   "dynamicMergeLimitInvalidError": "请输入 >= 0 的有效整数",
-
   "dailyReminderTimeTitle": "每日总结提醒时间",
   "currentTimeLabel": "当前：",
   "testNotificationTitle": "测试通知",
   "testNotificationDesc": "立即触发\"今日总结\"通知",
   "enableBannerNotificationTitle": "开启横幅/悬浮通知",
   "enableBannerNotificationDesc": "允许在屏幕顶部弹出通知（横幅/悬浮）",
-
   "setIntervalDialogTitle": "设置截屏间隔",
   "intervalSecondsLabel": "间隔时间（秒）",
   "intervalInputHint": "请输入 5-60 的整数",
@@ -507,7 +467,6 @@
       "seconds": {}
     }
   },
-
   "setTargetSizeDialogTitle": "设置目标大小（单位KB）",
   "targetSizeKbLabel": "目标大小（KB）",
   "targetSizeInvalidError": "请输入 >= 50 的有效整数",
@@ -517,19 +476,16 @@
       "kb": {}
     }
   },
-
   "setExpireDaysDialogTitle": "设置截图过期天数",
   "expireDaysLabel": "过期天数",
   "expireDaysInputHint": "请输入 >= 1 的整数",
   "expireDaysInvalidError": "请输入 >= 1 的有效整数",
-  
   "expireDaysSavedSuccess": "已设置为 {days} 天",
   "@expireDaysSavedSuccess": {
     "placeholders": {
       "days": {}
     }
   },
-
   "sortTimeNewToOld": "时间（新→旧）",
   "sortTimeOldToNew": "时间（旧→新）",
   "sortSizeLargeToSmall": "大小（大→小）",
@@ -543,7 +499,6 @@
       "sorting": {}
     }
   },
-
   "sortFieldTime": "时间",
   "sortFieldCount": "数量",
   "sortFieldSize": "大小",
@@ -556,252 +511,6 @@
       "error": {}
     }
   },
-
-  "memoryMenuEntry": "记忆档案",
-  "memoryCenterTitle": "记忆档案",
-  "memoryClearAllTooltip": "清空记忆库",
-  "memoryClearAllConfirmTitle": "清空记忆库",
-  "memoryClearAllConfirmMessage": "确定要删除记忆库中的所有标签、事件与证据吗？此操作不可恢复。",
-  "memoryImportSampleTooltip": "导入 30 条用于测试",
-  "memoryImportSampleSuccess": "已导入 {count} 条动态用于测试",
-  "@memoryImportSampleSuccess": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryImportSampleEmpty": "没有可导入的记忆事件",
-  "memoryImportSampleFailed": "导入失败: {error}",
-  "@memoryImportSampleFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryPauseTooltip": "暂停处理",
-  "memoryPauseSuccess": "已暂停记忆解析",
-  "memoryPauseFailed": "暂停失败: {error}",
-  "@memoryPauseFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryPendingSectionTitle": "待确认标签",
-  "memoryConfirmedSectionTitle": "已确认标签",
-  "memoryRecentEventsSectionTitle": "最近事件",
-  "memoryNoPending": "暂无待确认标签",
-  "memoryNoConfirmed": "暂无已确认标签",
-  "memoryNoEvents": "暂无相关事件",
-  "memoryConfirmAction": "标记为已确认",
-  "memoryStatusPending": "待确认",
-  "memoryStatusConfirmed": "已确认",
-  "memoryCategoryIdentity": "身份",
-  "memoryCategoryRelationship": "关系",
-  "memoryCategoryInterest": "兴趣",
-  "memoryCategoryBehavior": "行为",
-  "memoryCategoryPreference": "偏好",
-  "memoryCategoryOther": "其他",
-  "memoryConfidenceLabel": "置信度：{value}%",
-  "@memoryConfidenceLabel": {
-    "placeholders": {
-      "value": {}
-    }
-  },
-  "memoryOccurrencesLabel": "出现次数：{count}",
-  "@memoryOccurrencesLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryFirstSeenLabel": "首次出现：{date}",
-  "@memoryFirstSeenLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryLastSeenLabel": "最近出现：{date}",
-  "@memoryLastSeenLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryEvidenceCountLabel": "证据：{count} 条",
-  "@memoryEvidenceCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryEventContainsContext": "包含用户相关信息",
-  "memoryEventNoContext": "未识别到用户相关信息",
-  "memoryEventTimeLabel": "时间：{date}",
-  "@memoryEventTimeLabel": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryEventSourceLabel": "来源：{source}",
-  "@memoryEventSourceLabel": {
-    "placeholders": {
-      "source": {}
-    }
-  },
-  "memoryEventTypeLabel": "类型：{type}",
-  "@memoryEventTypeLabel": {
-    "placeholders": {
-      "type": {}
-    }
-  },
-  "memoryProgressIdle": "等待处理历史事件",
-  "memoryProgressRunning": "正在解析历史事件",
-  "memoryProgressRunningDetail": "已处理 {processed}/{total} 天（{percent}%）",
-  "@memoryProgressRunningDetail": {
-    "placeholders": {
-      "processed": {},
-      "total": {},
-      "percent": {}
-    }
-  },
-  "memoryProgressNewTagsDetail": "新增标签：{count}",
-  "@memoryProgressNewTagsDetail": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryProgressCompleted": "历史解析完成，共 {total} 天，耗时 {seconds} 秒",
-  "@memoryProgressCompleted": {
-    "placeholders": {
-      "total": {},
-      "seconds": {}
-    }
-  },
-  "memoryProgressFailed": "解析失败：{message}",
-  "@memoryProgressFailed": {
-    "placeholders": {
-      "message": {}
-    }
-  },
-  "memoryProgressFailedEvent": "失败事件：{event}",
-  "@memoryProgressFailedEvent": {
-    "placeholders": {
-      "event": {}
-    }
-  },
-  "memoryProgressPreparing": "正在准备：{stage}",
-  "@memoryProgressPreparing": {
-    "placeholders": {
-      "stage": {}
-    }
-  },
-  "memoryProgressStageSyncSegments": "同步截图事件",
-  "memoryProgressStageSyncChats": "同步聊天记录",
-  "memoryProgressStageDispatch": "启动历史解析",
-  "memoryRefreshTooltip": "刷新记忆",
-  "memoryConfirmSuccessToast": "已确认标签：{label}",
-  "@memoryConfirmSuccessToast": {
-    "placeholders": {
-      "label": {}
-    }
-  },
-  "memoryConfirmFailedToast": "操作失败：{message}",
-  "@memoryConfirmFailedToast": {
-    "placeholders": {
-      "message": {}
-    }
-  },
-  "memorySnapshotUpdated": "记忆已更新",
-  "memoryStartProcessingAction": "开始解析历史事件",
-  "memoryStartProcessingActionShort": "开始解析",
-  "memoryMalformedResponseTitle": "检测到异常响应，解析已暂停",
-  "memoryMalformedResponseSubtitle": "事件 {eventId} 的响应缺少“当前用户描述：”标记，请检查后再继续。",
-  "@memoryMalformedResponseSubtitle": {
-    "placeholders": {
-      "eventId": {}
-    }
-  },
-  "memoryMalformedResponseSubtitleNoId": "最新响应缺少“当前用户描述：”标记，请检查后再继续。",
-  "memoryMalformedResponseRawLabel": "原始响应：",
-  "memoryDeleteTagAction": "删除标签",
-  "memoryDeleteTagConfirmTitle": "删除标签",
-  "memoryDeleteTagConfirmMessage": "确定要删除标签「{tagLabel}」吗？相关证据也会被移除。",
-  "@memoryDeleteTagConfirmMessage": {
-    "placeholders": {
-      "tagLabel": {}
-    }
-  },
-  "memoryDeleteTagSuccess": "标签已删除",
-  "memoryDeleteTagFailed": "删除失败：{error}",
-  "@memoryDeleteTagFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryStatusPendingIndicator": "待确认标签",
-  "memoryStatusConfirmedIndicator": "已确认标签",
-  "memoryReprocessAction": "重新解析全部历史事件",
-  "memoryStartProcessingToast": "已开始历史事件解析",
-  "memoryLoadMore": "加载更多",
-  "memoryCenterHeroTitle": "记忆角色卡",
-  "memoryCenterHeroSubtitle": "以 RPG 角色卡方式呈现你的用户画像与行为偏好",
-  "memoryCenterPendingCountLabel": "待确认：{count}",
-  "@memoryCenterPendingCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryCenterConfirmedCountLabel": "已确认：{count}",
-  "@memoryCenterConfirmedCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryCenterEventCountLabel": "用户相关事件：{count}",
-  "@memoryCenterEventCountLabel": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailTitle": "标签详情",
-  "memoryTagDetailRefresh": "刷新",
-  "memoryTagDetailInfoTitle": "标签档案",
-  "memoryTagDetailStatisticsTitle": "标签属性",
-  "memoryTagDetailOccurrences": "出现次数：{count}",
-  "@memoryTagDetailOccurrences": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailConfidence": "置信度：{confidence}",
-  "@memoryTagDetailConfidence": {
-    "placeholders": {
-      "confidence": {}
-    }
-  },
-  "memoryTagDetailFirstSeen": "首次出现：{date}",
-  "@memoryTagDetailFirstSeen": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryTagDetailLastSeen": "最近出现：{date}",
-  "@memoryTagDetailLastSeen": {
-    "placeholders": {
-      "date": {}
-    }
-  },
-  "memoryTagDetailEvidenceTitle": "全部证据",
-  "memoryTagDetailEvidenceCount": "证据总数：{count}",
-  "@memoryTagDetailEvidenceCount": {
-    "placeholders": {
-      "count": {}
-    }
-  },
-  "memoryTagDetailNoEvidence": "暂无证据记录",
-  "memoryTagDetailLoadFailed": "标签数据加载失败",
-  "memoryEvidenceInferenceLabel": "推断说明",
-  "memoryEvidenceNotesLabel": "备注",
-  "memoryEvidenceNoNotes": "无备注记录",
-  "memoryEvidenceEventHeading": "来源事件",
-  "memoryEvidenceUserEditedBadge": "用户已编辑",
-
-
   "setReminderTimeTitle": "设置提醒时间（24小时制）",
   "hourLabel": "小时(0-23)",
   "minuteLabel": "分钟(0-59)",
@@ -815,7 +524,6 @@
       "minute": {}
     }
   },
-
   "reminderScheduleSuccess": "已设置每日提醒时间为 {hour}:{minute}",
   "@reminderScheduleSuccess": {
     "placeholders": {
@@ -908,6 +616,7 @@
       "error": {}
     }
   },
+  "loadMore": "加载更多",
   "loadMoreFailedWithError": "加载更多失败: {error}",
   "@loadMoreFailedWithError": {
     "placeholders": {
@@ -935,7 +644,6 @@
       "deleted": {}
     }
   },
-
   "dailySummaryTitle": "每日总结 {date}",
   "@dailySummaryTitle": {
     "placeholders": {
@@ -972,7 +680,6 @@
   "generateFailed": "生成失败",
   "noDailySummaryToday": "暂无今日总结",
   "generateDailySummary": "生成今日总结",
-
   "statisticsTitle": "统计",
   "overviewTitle": "总览",
   "monitoredApps": "监控应用",
@@ -991,10 +698,8 @@
   "usageTrendsTitle": "使用趋势",
   "trendChartTitle": "趋势图表",
   "comingSoon": "功能开发中，敬请期待",
-
   "timelineTitle": "时间线",
   "pressBackAgainToExit": "再按一次退出屏忆",
-
   "segmentStatusTitle": "动态",
   "autoWatchingHint": "后台自动检测中…",
   "noEvents": "暂无事件",
@@ -1028,22 +733,30 @@
   "mergedOriginalEventsTitle": "原始事件（{count}）",
   "@mergedOriginalEventsTitle": {
     "description": "合并事件中可展开的“原始事件”区域标题",
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "mergedOriginalEventTitle": "原始事件 {index}",
   "@mergedOriginalEventTitle": {
     "description": "合并事件中每条原始事件的标题",
-    "placeholders": { "index": {} }
+    "placeholders": {
+      "index": {}
+    }
   },
   "collapse": "收起内容",
   "expandMore": "展开更多",
   "viewImagesCount": "查看图片 ({count})",
   "@viewImagesCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "hideImagesCount": "收起图片 ({count})",
   "@hideImagesCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "deleteEventTooltip": "删除事件",
   "confirmDeleteEventMessage": "确定删除该事件？此操作不会删除任何图片文件。",
@@ -1052,32 +765,21 @@
   "alreadyQueuedOrFailed": "已在队列或失败",
   "retryFailed": "重试失败",
   "copyResultsTooltip": "复制结果",
-  "generatePersonaArticle": "生成画像文章",
   "articleGenerating": "正在生成文章...",
   "articleGenerateSuccess": "文章生成成功",
   "articleGenerateFailed": "文章生成失败",
-  "articlePreviewTitle": "画像文章预览",
   "articleCopySuccess": "文章已复制到剪贴板",
   "articleLogTitle": "生成日志",
-  "memoryPersonaHubTitle": "记忆档案",
-  "memoryTagsEntranceTooltip": "查看标签库",
-  "memoryTagLibraryTitle": "标签库",
-  "memoryArticleEmptyPlaceholder": "当前暂无画像文章，请先生成或等待解析完成。",
-  "memoryPauseActionLabel": "暂停解析",
   "copyPersonaTooltip": "复制用户画像",
-  "memoryPersonaEmptyPlaceholder": "当前暂无画像，请继续记录事件。",
-
   "saveImageTooltip": "保存到相册",
   "saveImageSuccess": "已保存到相册",
   "saveImageFailed": "保存失败",
   "requestGalleryPermissionFailed": "请求相册权限失败",
-
- "aiSystemPromptLanguagePolicy": "无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。",
- "@aiSystemPromptLanguagePolicy": {
-   "description": "系统级语言策略提示，强制忽略传入内容语言，使用应用当前语言输出"
- },
-
- "aiSettingsTitle": "AI 设置与测试",
+  "aiSystemPromptLanguagePolicy": "无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。",
+  "@aiSystemPromptLanguagePolicy": {
+    "description": "系统级语言策略提示，强制忽略传入内容语言，使用应用当前语言输出"
+  },
+  "aiSettingsTitle": "AI 设置与测试",
   "connectionSettingsTitle": "连接设置",
   "actionSave": "保存",
   "clearConversation": "清空会话",
@@ -1121,7 +823,6 @@
   "showGroupSelector": "显示分组选择",
   "ungroupedSingleConfig": "未分组（单一配置）",
   "inputMessageHint": "请输入消息",
-
   "saveSuccess": "已保存",
   "savedCurrentGroupToast": "已保存当前分组",
   "savedNormalPromptToast": "已保存普通事件提示词",
@@ -1130,112 +831,196 @@
   "savedWeeklyPromptToast": "已保存周总结提示词",
   "resetToDefaultPromptToast": "已重置为默认提示词",
   "resetFailedWithError": "重置失败: {error}",
-  "@resetFailedWithError": { "placeholders": { "error": {} } },
+  "@resetFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "clearSuccess": "已清空",
   "clearFailedWithError": "清空失败: {error}",
-  "@clearFailedWithError": { "placeholders": { "error": {} } },
+  "@clearFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "messageCannotBeEmpty": "消息不能为空",
   "sendFailedWithError": "发送失败: {error}",
-  "@sendFailedWithError": { "placeholders": { "error": {} } },
-"groupSwitchedToUngrouped": "已切换到未分组",
-"groupSwitched": "已切换分组",
-"groupNotSelected": "未选择分组",
-"groupNotFound": "分组不存在",
-"renameGroupTitle": "重命名分组",
-"groupNameLabel": "分组名称",
-"groupNameHint": "请输入新的分组名称",
-"nameCannotBeEmpty": "名称不能为空",
-"renameSuccess": "已重命名",
-"renameFailedWithError": "重命名失败: {error}",
-"@renameFailedWithError": { "placeholders": { "error": {} } },
-"groupAddedToast": "已新增分组",
-"addGroupFailedWithError": "新增分组失败: {error}",
-"@addGroupFailedWithError": { "placeholders": { "error": {} } },
-"groupDeletedToast": "已删除分组",
-"deleteGroupFailedWithError": "删除分组失败: {error}",
-"@deleteGroupFailedWithError": { "placeholders": { "error": {} } },
-"loadGroupFailedWithError": "加载分组失败: {error}",
-"@loadGroupFailedWithError": { "placeholders": { "error": {} } },
-"siteGroupDefaultName": "站点组{index}",
-"@siteGroupDefaultName": { "placeholders": { "index": {} } },
-"defaultLabel": "默认",
-"customLabel": "已自定义",
-"normalShortLabel": "普通：",
-"mergeShortLabel": "合并：",
-"dailyShortLabel": "每日：",
-"timeRangeLabel": "时间段：{range}",
-"@timeRangeLabel": { "placeholders": { "range": {} } },
-"statusLabel": "状态：{status}",
-"@statusLabel": { "placeholders": { "status": {} } },
-"samplesTitle": "样本({count})",
-"@samplesTitle": { "placeholders": { "count": {} } },
-"aiResultTitle": "AI 结果",
-"modelValueLabel": "Model：{model}",
-"@modelValueLabel": { "placeholders": { "model": {} } },
-"tagMergedCopy": "标记：合并事件",
-"categoriesLabel": "类别：{categories}",
-"@categoriesLabel": { "placeholders": { "categories": {} } },
-"errorLabel": "错误：{error}",
-"@errorLabel": { "placeholders": { "error": {} } },
-"summaryLabel": "摘要：{summary}",
-"@summaryLabel": { "placeholders": { "summary": {} } },
-"autostartPermissionNote": "自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。",
-"monthDayTime": "{month}月{day}日 {hour}:{minute}",
-"@monthDayTime": { "placeholders": { "month": {}, "day": {}, "hour": {}, "minute": {} } },
-"yearMonthDayTime": "{year}年{month}月{day}日 {hour}:{minute}",
-"@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } },
-
-"imagesCountLabel": "{count}张",
-"@imagesCountLabel": { "placeholders": { "count": {} } },
-
-"apps": "应用",
-"images": "图片",
-"days": "天",
-
-"aiImageTagsTitle": "图片标签",
-"aiVisibleTextTitle": "可见文字",
-"aiImageDescriptionsTitle": "图片描述",
-
-"justNow": "刚刚",
-
-"minutesAgo": "{minutes}分钟前",
-"@minutesAgo": { "placeholders": { "minutes": {} } },
-
-"hoursAgo": "{hours}小时前",
-"@hoursAgo": { "placeholders": { "hours": {} } },
-
-"daysAgo": "{days}天前",
-"@daysAgo": { "placeholders": { "days": {} } },
-
-"searchResultsCount": "找到 {count} 张图片",
-"@searchResultsCount": {
-  "description": "搜索结果数量显示",
-  "placeholders": { "count": {} }
-},
-"searchFiltersTitle": "筛选",
-"filterByTime": "时间",
-"filterByApp": "应用",
-"filterBySize": "大小",
-"filterTimeAll": "全部",
-"filterTimeToday": "今天",
-"filterTimeYesterday": "昨天",
-"filterTimeLast7Days": "最近7天",
-"filterTimeLast30Days": "最近30天",
-"filterTimeCustomDays": "自定义天数",
-"filterTimeCustomDaysHint": "请输入1-365的天数",
-"filterTimeCustomRange": "自定义范围",
-"filterAppAll": "全部应用",
-"filterSizeAll": "全部大小",
-"filterSizeSmall": "< 100 KB",
-"filterSizeMedium": "100 KB - 1 MB",
-"filterSizeLarge": "> 1 MB",
-"applyFilters": "应用",
-"resetFilters": "重置",
-"selectDateRange": "选择日期范围",
-"startDate": "开始日期",
-"endDate": "结束日期",
+  "@sendFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupSwitchedToUngrouped": "已切换到未分组",
+  "groupSwitched": "已切换分组",
+  "groupNotSelected": "未选择分组",
+  "groupNotFound": "分组不存在",
+  "renameGroupTitle": "重命名分组",
+  "groupNameLabel": "分组名称",
+  "groupNameHint": "请输入新的分组名称",
+  "nameCannotBeEmpty": "名称不能为空",
+  "renameSuccess": "已重命名",
+  "renameFailedWithError": "重命名失败: {error}",
+  "@renameFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupAddedToast": "已新增分组",
+  "addGroupFailedWithError": "新增分组失败: {error}",
+  "@addGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "groupDeletedToast": "已删除分组",
+  "deleteGroupFailedWithError": "删除分组失败: {error}",
+  "@deleteGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "loadGroupFailedWithError": "加载分组失败: {error}",
+  "@loadGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "siteGroupDefaultName": "站点组{index}",
+  "@siteGroupDefaultName": {
+    "placeholders": {
+      "index": {}
+    }
+  },
+  "defaultLabel": "默认",
+  "customLabel": "已自定义",
+  "normalShortLabel": "普通：",
+  "mergeShortLabel": "合并：",
+  "dailyShortLabel": "每日：",
+  "timeRangeLabel": "时间段：{range}",
+  "@timeRangeLabel": {
+    "placeholders": {
+      "range": {}
+    }
+  },
+  "statusLabel": "状态：{status}",
+  "@statusLabel": {
+    "placeholders": {
+      "status": {}
+    }
+  },
+  "samplesTitle": "样本({count})",
+  "@samplesTitle": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiResultTitle": "AI 结果",
+  "modelValueLabel": "Model：{model}",
+  "@modelValueLabel": {
+    "placeholders": {
+      "model": {}
+    }
+  },
+  "tagMergedCopy": "标记：合并事件",
+  "categoriesLabel": "类别：{categories}",
+  "@categoriesLabel": {
+    "placeholders": {
+      "categories": {}
+    }
+  },
+  "errorLabel": "错误：{error}",
+  "@errorLabel": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "summaryLabel": "摘要：{summary}",
+  "@summaryLabel": {
+    "placeholders": {
+      "summary": {}
+    }
+  },
+  "autostartPermissionNote": "自启动权限因厂商而异，无法自动检测。请根据实际设置情况选择。",
+  "monthDayTime": "{month}月{day}日 {hour}:{minute}",
+  "@monthDayTime": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "yearMonthDayTime": "{year}年{month}月{day}日 {hour}:{minute}",
+  "@yearMonthDayTime": {
+    "placeholders": {
+      "year": {},
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
+  "imagesCountLabel": "{count}张",
+  "@imagesCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "apps": "应用",
+  "images": "图片",
+  "days": "天",
+  "aiImageTagsTitle": "图片标签",
+  "aiVisibleTextTitle": "可见文字",
+  "aiImageDescriptionsTitle": "图片描述",
+  "justNow": "刚刚",
+  "minutesAgo": "{minutes}分钟前",
+  "@minutesAgo": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
+  "hoursAgo": "{hours}小时前",
+  "@hoursAgo": {
+    "placeholders": {
+      "hours": {}
+    }
+  },
+  "daysAgo": "{days}天前",
+  "@daysAgo": {
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "searchResultsCount": "找到 {count} 张图片",
+  "@searchResultsCount": {
+    "description": "搜索结果数量显示",
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "searchFiltersTitle": "筛选",
+  "filterByTime": "时间",
+  "filterByApp": "应用",
+  "filterBySize": "大小",
+  "filterTimeAll": "全部",
+  "filterTimeToday": "今天",
+  "filterTimeYesterday": "昨天",
+  "filterTimeLast7Days": "最近7天",
+  "filterTimeLast30Days": "最近30天",
+  "filterTimeCustomDays": "自定义天数",
+  "filterTimeCustomDaysHint": "请输入1-365的天数",
+  "filterTimeCustomRange": "自定义范围",
+  "filterAppAll": "全部应用",
+  "filterSizeAll": "全部大小",
+  "filterSizeSmall": "< 100 KB",
+  "filterSizeMedium": "100 KB - 1 MB",
+  "filterSizeLarge": "> 1 MB",
+  "applyFilters": "应用",
+  "resetFilters": "重置",
+  "selectDateRange": "选择日期范围",
+  "startDate": "开始日期",
+  "endDate": "结束日期",
   "noResultsForFilters": "没有符合当前筛选条件的图片",
-  
   "openLink": "打开",
   "favoritePageTitle": "收藏",
   "noFavoritesTitle": "暂无收藏",
@@ -1248,7 +1033,6 @@
   "favoritesRemoved": "已取消收藏",
   "operationFailed": "操作失败",
   "cannotGetAppDir": "无法获取应用目录",
-
   "nsfwSettingsSectionTitle": "NSFW 设置",
   "blockedDomainListTitle": "禁用域名清单",
   "addDomainPlaceholder": "输入域名或 *.example.com",
@@ -1261,83 +1045,118 @@
   "clearAllRulesMessage": "将移除所有禁用域名规则，此操作不可恢复。",
   "previewAffectsCount": "预计影响 {count} 张图片",
   "@previewAffectsCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "affectCountLabel": "影响：{count} 张",
   "@affectCountLabel": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "confirmAddRuleTitle": "确认添加规则",
   "confirmAddRuleMessage": "将添加规则：{rule}",
   "@confirmAddRuleMessage": {
-    "placeholders": { "rule": {} }
+    "placeholders": {
+      "rule": {}
+    }
   },
   "ruleAddedToast": "规则已添加",
   "ruleRemovedToast": "规则已移除",
   "invalidDomainInputError": "请输入合法域名（支持 *.example.com）",
-
   "manualMarkNsfw": "标记为 NSFW",
   "manualUnmarkNsfw": "取消 NSFW 标记",
   "manualMarkSuccess": "已标记为 NSFW",
   "manualUnmarkSuccess": "已取消 NSFW 标记",
   "manualMarkFailed": "操作失败",
-  "nsfwTagLabel": "NSFW"
-  ,
+  "nsfwTagLabel": "NSFW",
   "nsfwBlockedByRulesHint": "该图片因域名规则被遮罩。请前往“设置 > NSFW 域名”管理。",
   "providersTitle": "提供商",
   "actionNew": "新建",
   "actionAdd": "添加",
   "noProvidersYetHint": "暂无提供商，可点击“新建”创建。",
   "confirmDeleteProviderMessage": "确定删除提供商“{name}”吗？此操作不可恢复。",
-  "@confirmDeleteProviderMessage": { "placeholders": { "name": {} } },
-
+  "@confirmDeleteProviderMessage": {
+    "placeholders": {
+      "name": {}
+    }
+  },
   "loadingConversations": "正在加载会话…",
   "noConversations": "暂无会话",
   "deleteConversationTitle": "删除会话",
   "confirmDeleteConversationMessage": "确定要删除会话“{title}”吗？",
-  "@confirmDeleteConversationMessage": { "placeholders": { "title": {} } },
+  "@confirmDeleteConversationMessage": {
+    "placeholders": {
+      "title": {}
+    }
+  },
   "untitledConversationLabel": "未命名会话",
-
   "searchProviderPlaceholder": "搜索提供商",
   "searchModelPlaceholder": "搜索模型",
   "providerSelectedToast": "已选择提供商：{name}",
-  "@providerSelectedToast": { "placeholders": { "name": {} } },
+  "@providerSelectedToast": {
+    "placeholders": {
+      "name": {}
+    }
+  },
   "pleaseSelectProviderFirst": "请先选择提供商",
   "noModelsForProviderHint": "该提供商无可用模型，请在“提供商”页刷新或手动添加",
   "noModelsDetectedHint": "未检测到可用模型，可点击“刷新”或手动添加。",
   "modelSwitchedToast": "已切换模型：{model}",
-  "@modelSwitchedToast": { "placeholders": { "model": {} } },
+  "@modelSwitchedToast": {
+    "placeholders": {
+      "model": {}
+    }
+  },
   "providerLabel": "提供商",
   "sendMessageToModelPlaceholder": "给 {model} 发送消息",
-  "@sendMessageToModelPlaceholder": { "placeholders": { "model": {} } },
+  "@sendMessageToModelPlaceholder": {
+    "placeholders": {
+      "model": {}
+    }
+  },
   "deepThinkingLabel": "思考过程",
   "thinkingInProgress": "思考中…",
   "requestStoppedInfo": "已停止请求",
   "reasoningLabel": "Reasoning:",
   "answerLabel": "Answer:",
-
   "aiSelfModeEnabledToast": "个人助手：对话将结合您的数据上下文",
-
   "selectModelWithCounts": "选择模型（{filtered}/{total}）",
-  "@selectModelWithCounts": { "placeholders": { "filtered": {}, "total": {} } },
+  "@selectModelWithCounts": {
+    "placeholders": {
+      "filtered": {},
+      "total": {}
+    }
+  },
   "modelsCountLabel": "模型（{count}）",
-  "@modelsCountLabel": { "placeholders": { "count": {} } },
+  "@modelsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "manualAddModelLabel": "手动添加模型",
   "inputAndAddModelHint": "输入并添加，如 gpt-4o-mini",
   "fetchModelsHint": "可点击“刷新”自动获取；失败时可手动添加模型名称。",
   "interfaceTypeLabel": "接口类型",
   "currentTypeLabel": "当前：{type}",
-  "@currentTypeLabel": { "placeholders": { "type": {} } },
-
+  "@currentTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
   "nameRequiredError": "名称必填",
   "nameAlreadyExistsError": "名称已存在",
   "apiKeyRequiredError": "API Key 必填",
   "baseUrlRequiredForAzureError": "Azure OpenAI 需填写 Base URL",
   "atLeastOneModelRequiredError": "至少添加一个模型",
   "modelsUpdatedToast": "已更新模型（{count}）",
-  "@modelsUpdatedToast": { "placeholders": { "count": {} } },
+  "@modelsUpdatedToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "fetchModelsFailedHint": "获取模型失败，可手动添加。",
-
   "useResponseApiLabel": "使用 Response API（仅OpenAI官方支持，第三方服务建议关闭）",
   "modelsPathOptionalLabel": "Models Path（可选）",
   "chatPathOptionalLabel": "Chat Path（可选）",
@@ -1351,15 +1170,11 @@
   "geminiRegionToast": "Gemini 仅支持特定地区，请点击问号查看详情",
   "baseUrlHintAzure": "必填，例如：https://{resource}.openai.azure.com",
   "baseUrlHintCustom": "请输入兼容 OpenAI 的 Base URL",
-
   "createProviderTitle": "新建提供商",
-  "editProviderTitle": "编辑提供商"
-  ,
+  "editProviderTitle": "编辑提供商",
   "deletedToast": "已删除",
-  "providerNotFound": "提供商不存在"
-  ,
-  "conversationsSectionTitle": "对话"
-  ,
+  "providerNotFound": "提供商不存在",
+  "conversationsSectionTitle": "对话",
   "displaySectionTitle": "显示",
   "displaySectionDesc": "主题颜色/隐私模式/NSFW",
   "streamRenderImagesTitle": "流式期间实时渲染图片",
@@ -1421,7 +1236,6 @@
   "homeMorningTipsDismiss": "关闭提醒",
   "homeMorningTipsCooldownHint": "稍作停顿，稍后再刷新灵感",
   "homeMorningTipsCooldownMessage": "已经刷新了很多次，先看看现实里的风景，放下手机喘口气吧。",
-
   "expireCleanupConfirmTitle": "确认开启截图过期清理",
   "expireCleanupConfirmMessage": "开启后将立即清理超过 {days} 天的截图图片。\n\n注意：仅清理图片文件，动态、总结等内容会保留。",
   "@expireCleanupConfirmMessage": {
@@ -1430,7 +1244,6 @@
     }
   },
   "expireCleanupConfirmAction": "确认开启",
-
   "desktopMergerTitle": "数据合并工具",
   "desktopMergerDescription": "高效合并多个备份文件",
   "desktopMergerSteps": "1. 选择输出目录（合并后的数据将保存在此目录）\n2. 添加要合并的 ZIP 备份文件\n3. 点击开始合并",
@@ -1461,11 +1274,9 @@
   "desktopMergerStageExtracting": "正在解压...",
   "desktopMergerStageCopying": "正在复制文件...",
   "desktopMergerStageMerging": "正在合并数据库...",
-  "desktopMergerStageMemory": "正在合并记忆数据...",
   "desktopMergerStageFinalizing": "正在完成...",
   "desktopMergerStageProcessing": "正在处理...",
   "desktopMergerStageCompleted": "合并完成",
-
   "desktopMergerLiveStats": "实时统计",
   "desktopMergerProcessingFile": "正在处理: {fileName}",
   "@desktopMergerProcessingFile": {
@@ -1484,10 +1295,8 @@
   "desktopMergerStatSkipped": "跳过重复",
   "desktopMergerStatFiles": "复制文件",
   "desktopMergerStatReused": "复用文件",
-  "desktopMergerStatEvents": "记忆事件",
   "desktopMergerStatTags": "记忆标签",
   "desktopMergerStatEvidence": "记忆证据",
-
   "desktopMergerSummaryTitle": "合并汇总",
   "desktopMergerSummaryTotal": "总计处理 {count} 个文件",
   "@desktopMergerSummaryTotal": {
@@ -1525,7 +1334,6 @@
   "desktopMergerNoData": "无数据变更",
   "desktopMergerExpandAll": "展开全部",
   "desktopMergerCollapseAll": "折叠全部",
-
   "desktopMergerStagePacking": "正在打包 ZIP...",
   "desktopMergerOutputZip": "输出文件",
   "desktopMergerOpenFolder": "打开文件夹",
@@ -1539,9 +1347,7 @@
   "desktopMergerExtractingHint": "正在解压备份文件，大型备份（数万张截图）可能需要几分钟，请耐心等待...",
   "desktopMergerCopyingHint": "正在复制截图文件，跳过已存在的图片...",
   "desktopMergerMergingHint": "正在合并数据库记录，智能去重处理中...",
-  "desktopMergerMemoryHint": "正在合并记忆档案数据...",
   "desktopMergerPackingHint": "正在将合并结果打包为 ZIP 文件...",
-
   "unknownTitle": "未知",
   "unknownTime": "时间未知",
   "empty": "空",

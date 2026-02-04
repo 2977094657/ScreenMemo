@@ -76,18 +76,18 @@
   "refreshPermissionStatus": "Refresh permission status",
   "onboardingPermissionsDesc": "To provide the full experience, please grant the following permissions:",
   "storagePermissionTitle": "Storage permission",
-  "storagePermissionDesc": "Save files to device storage",
+  "storagePermissionDesc": "Save screenshot files to device storage",
   "notificationPermissionTitle": "Notification permission",
   "notificationPermissionDesc": "Show service status notifications",
   "accessibilityPermissionTitle": "Accessibility service",
-  "accessibilityPermissionDesc": "Enable intelligent recognition and analysis",
+  "accessibilityPermissionDesc": "Monitor app switching and take screenshots",
   "usageStatsPermissionTitle": "Usage stats permission",
-  "usageStatsPermissionDesc": "Accurately detect the foreground app",
+  "usageStatsPermissionDesc": "Ensure accurate foreground app detection",
   "batteryOptimizationTitle": "Battery optimization whitelist",
-  "batteryOptimizationDesc": "Keep the capture service stable",
+  "batteryOptimizationDesc": "Keep screenshot service running stably",
   "pleaseCompleteInSystemSettings": "Please complete authorization in system settings, then return to the app",
   "autostartPermissionTitle": "Auto-start permission",
-  "autostartPermissionDesc": "Allow the app to restart in the background",
+  "autostartPermissionDesc": "Allow app to restart in background",
   "permissionsFooterNote": "Permissions persist after granting and can be changed anytime in system settings",
   "grantedLabel": "Granted",
   "authorizeAction": "Authorize",
@@ -196,18 +196,15 @@
       "count": {}
     }
   },
-
   "exportSuccessTitle": "Export complete",
   "exportFileExportedTo": "File exported to:",
   "pathCopiedToast": "Path copied",
   "exportFailedTitle": "Export failed",
   "pleaseTryAgain": "Please try again later",
-
   "importCompleteTitle": "Import complete",
   "dataExtractedTo": "Data extracted to:",
   "importFailedTitle": "Import failed",
   "importFailedCheckZip": "Please check the ZIP file and try again.",
-
   "storageAnalysisPageTitle": "Storage Analysis",
   "storageAnalysisLoadFailed": "Failed to load storage data",
   "storageAnalysisEmptyMessage": "No storage data available",
@@ -266,7 +263,6 @@
     }
   },
   "storageAnalysisOthersFallback": "Others",
-
   "noMediaProjectionNeeded": "Using Accessibility screenshots, no screen recording permission needed",
   "autostartPermissionMarked": "Auto-start permission marked as granted",
   "requestPermissionFailed": "Request permission failed: {error}",
@@ -275,27 +271,12 @@
       "error": {}
     }
   },
-
   "expireCleanupSaved": "Expire cleanup settings saved",
   "dailyNotifyTriggered": "Notification triggered",
   "dailyNotifyTriggerFailed": "Failed to trigger notification or content empty",
-
   "refreshPermissionStatusTooltip": "Refresh permission status",
-  "storagePermissionTitle": "Storage permission",
-  "storagePermissionDesc": "Save screenshot files to device storage",
-  "notificationPermissionTitle": "Notification permission",
-  "notificationPermissionDesc": "Show service status notifications",
-  "accessibilityPermissionTitle": "Accessibility service",
-  "accessibilityPermissionDesc": "Monitor app switching and take screenshots",
-  "usageStatsPermissionTitle": "Usage stats permission",
-  "usageStatsPermissionDesc": "Ensure accurate foreground app detection",
-  "batteryOptimizationTitle": "Battery optimization whitelist",
-  "batteryOptimizationDesc": "Keep screenshot service running stably",
-  "autostartPermissionTitle": "Auto-start permission",
-  "autostartPermissionDesc": "Allow app to restart in background",
   "grantedStatus": "Granted",
   "notGrantedStatus": "Grant",
-
   "privacyModeTitle": "Privacy mode",
   "privacyModeDesc": "Automatically blur sensitive content",
   "homeSortingTitle": "Home sorting",
@@ -362,7 +343,6 @@
   },
   "compressHistoryNothing": "All screenshots already meet the target size.",
   "compressHistoryFailure": "Failed to compress screenshots. Please try again.",
-
   "exportDataTitle": "Export data",
   "exportDataDesc": "Export ZIP to Download/ScreenMemory",
   "importDataTitle": "Import data",
@@ -375,7 +355,6 @@
   "mergeProgressCopying": "Copying screenshot files...",
   "mergeProgressCopyingGeneric": "Copying additional assets...",
   "mergeProgressMergingDb": "Merging database shards...",
-  "mergeProgressMemoryDb": "Merging memory database...",
   "mergeProgressFinalizing": "Finalizing merge...",
   "mergeCompleteTitle": "Merge complete",
   "mergeReportInserted": "New screenshots: {count}",
@@ -396,22 +375,6 @@
   },
   "mergeReportCopied": "Files copied: {count}",
   "@mergeReportCopied": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryEvents": "New memory events: {count}",
-  "@mergeReportMemoryEvents": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "mergeReportMemoryTags": "New memory tags: {count}",
-  "@mergeReportMemoryTags": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -444,7 +407,6 @@
   "recalculateAllFailedTitle": "Recalculation failed",
   "aiAssistantTitle": "AI Assistant",
   "aiAssistantDesc": "Configure AI interface and models, test multi-turn conversations",
-
   "segmentSampleIntervalTitle": "Sample interval (seconds)",
   "segmentSampleIntervalDesc": "Current: {seconds}s",
   "@segmentSampleIntervalDesc": {
@@ -489,14 +451,12 @@
   },
   "dynamicMergeLimitInputHint": "Enter an integer >= 0 (0 = unlimited)",
   "dynamicMergeLimitInvalidError": "Please enter a valid integer >= 0",
-
   "dailyReminderTimeTitle": "Daily summary reminder time",
   "currentTimeLabel": "Current: ",
   "testNotificationTitle": "Test notification",
   "testNotificationDesc": "Trigger \"Daily Summary\" notification now",
   "enableBannerNotificationTitle": "Enable banner/floating notifications",
   "enableBannerNotificationDesc": "Allow notifications to pop up at the top of screen (banner/floating)",
-
   "setIntervalDialogTitle": "Set screenshot interval",
   "intervalSecondsLabel": "Interval (seconds)",
   "intervalInputHint": "Enter an integer between 5-60",
@@ -507,7 +467,6 @@
       "seconds": {}
     }
   },
-
   "setTargetSizeDialogTitle": "Set target size (KB)",
   "targetSizeKbLabel": "Target size (KB)",
   "targetSizeInvalidError": "Please enter a valid integer >= 50",
@@ -517,19 +476,16 @@
       "kb": {}
     }
   },
-
   "setExpireDaysDialogTitle": "Set screenshot expiration days",
   "expireDaysLabel": "Expiration days",
   "expireDaysInputHint": "Enter an integer >= 1",
   "expireDaysInvalidError": "Please enter a valid integer >= 1",
-  
   "expireDaysSavedSuccess": "Set to {days} days",
   "@expireDaysSavedSuccess": {
     "placeholders": {
       "days": {}
     }
   },
-
   "sortTimeNewToOld": "Time (New→Old)",
   "sortTimeOldToNew": "Time (Old→New)",
   "sortSizeLargeToSmall": "Size (Large→Small)",
@@ -537,16 +493,15 @@
   "sortCountManyToFew": "Count (Many→Few)",
   "sortCountFewToMany": "Count (Few→Many)",
   "sortFieldTime": "Time",
-"sortFieldCount": "Count",
-"sortFieldSize": "Size",
-"selectHomeSortingTitle": "Select home sorting",
+  "sortFieldCount": "Count",
+  "sortFieldSize": "Size",
+  "selectHomeSortingTitle": "Select home sorting",
   "currentSortingLabel": "Current: {sorting}",
   "@currentSortingLabel": {
     "placeholders": {
       "sorting": {}
     }
   },
-
   "privacyModeEnabledToast": "Privacy mode enabled",
   "privacyModeDisabledToast": "Privacy mode disabled",
   "screenshotQualitySettingsSaved": "Screenshot quality settings saved",
@@ -556,7 +511,6 @@
       "error": {}
     }
   },
-
   "setReminderTimeTitle": "Set reminder time (24-hour format)",
   "hourLabel": "Hour (0-23)",
   "minuteLabel": "Minute (0-59)",
@@ -570,7 +524,6 @@
       "minute": {}
     }
   },
-
   "reminderScheduleSuccess": "Daily reminder time set to {hour}:{minute}",
   "@reminderScheduleSuccess": {
     "placeholders": {
@@ -585,8 +538,7 @@
     "placeholders": {
       "error": {}
     }
-  }
-,
+  },
   "searchFailedError": "Search failed: {error}",
   "@searchFailedError": {
     "placeholders": {
@@ -663,6 +615,7 @@
       "error": {}
     }
   },
+  "loadMore": "Load more",
   "loadMoreFailedWithError": "Failed to load more: {error}",
   "@loadMoreFailedWithError": {
     "placeholders": {
@@ -690,7 +643,6 @@
       "deleted": {}
     }
   },
-
   "dailySummaryTitle": "Daily Summary {date}",
   "@dailySummaryTitle": {
     "placeholders": {
@@ -727,7 +679,6 @@
   "generateFailed": "Generate failed",
   "noDailySummaryToday": "No summary for today",
   "generateDailySummary": "Generate today's summary",
-
   "statisticsTitle": "Statistics",
   "overviewTitle": "Overview",
   "monitoredApps": "Monitored apps",
@@ -746,10 +697,8 @@
   "usageTrendsTitle": "Usage trends",
   "trendChartTitle": "Trend chart",
   "comingSoon": "Coming soon",
-
   "timelineTitle": "Timeline",
   "pressBackAgainToExit": "Press back again to exit",
-
   "segmentStatusTitle": "Activity",
   "autoWatchingHint": "Auto watching in background…",
   "noEvents": "No events",
@@ -783,22 +732,30 @@
   "mergedOriginalEventsTitle": "Original events ({count})",
   "@mergedOriginalEventsTitle": {
     "description": "Title for the expandable section that contains original events merged into the current event.",
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "mergedOriginalEventTitle": "Original event {index}",
   "@mergedOriginalEventTitle": {
     "description": "Header title for each original event entry inside a merged event.",
-    "placeholders": { "index": {} }
+    "placeholders": {
+      "index": {}
+    }
   },
   "collapse": "Collapse",
   "expandMore": "Expand more",
   "viewImagesCount": "View images ({count})",
   "@viewImagesCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "hideImagesCount": "Hide images ({count})",
   "@hideImagesCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "deleteEventTooltip": "Delete event",
   "confirmDeleteEventMessage": "Delete this event? This will not delete any image files.",
@@ -807,34 +764,23 @@
   "alreadyQueuedOrFailed": "Already queued or failed",
   "retryFailed": "Retry failed",
   "copyResultsTooltip": "Copy results",
-  "generatePersonaArticle": "Generate persona article",
   "articleGenerating": "Generating article...",
   "articleGenerateSuccess": "Article generated successfully",
   "articleGenerateFailed": "Failed to generate article",
-  "articlePreviewTitle": "Persona Article Preview",
   "articleCopySuccess": "Article copied to clipboard",
   "articleLogTitle": "Generation Log",
-  "memoryPersonaHubTitle": "Memory Archive",
-  "memoryTagsEntranceTooltip": "Open tag library",
-  "memoryTagLibraryTitle": "Tag Library",
-  "memoryArticleEmptyPlaceholder": "No persona article yet. Generate one to see full insights.",
-  "memoryPauseActionLabel": "Pause processing",
   "copyPersonaTooltip": "Copy persona summary",
-  "memoryPersonaEmptyPlaceholder": "No persona summary yet. Keep recording events to enrich it.",
-
   "saveImageTooltip": "Save to gallery",
   "saveImageSuccess": "Saved to Gallery",
   "saveImageFailed": "Save failed",
   "requestGalleryPermissionFailed": "Request gallery permission failed",
-
- "aiSystemPromptLanguagePolicy": "Regardless of the language used in the input context (events, screenshot text, or user messages), you must strictly ignore it and always produce output in the application's current language. If the app is set to English, all answers, titles, summaries, tags, structured fields, and error messages must be written in English unless the user explicitly requests another language.",
- "@aiSystemPromptLanguagePolicy": {
-   "description": "System-level language policy prompt enforcing app language over context language"
- },
-
- "aiSettingsTitle": "AI Settings & Test",
- "connectionSettingsTitle": "Connection settings",
- "actionSave": "Save",
+  "aiSystemPromptLanguagePolicy": "Regardless of the language used in the input context (events, screenshot text, or user messages), you must strictly ignore it and always produce output in the application's current language. If the app is set to English, all answers, titles, summaries, tags, structured fields, and error messages must be written in English unless the user explicitly requests another language.",
+  "@aiSystemPromptLanguagePolicy": {
+    "description": "System-level language policy prompt enforcing app language over context language"
+  },
+  "aiSettingsTitle": "AI Settings & Test",
+  "connectionSettingsTitle": "Connection settings",
+  "actionSave": "Save",
   "clearConversation": "Clear conversation",
   "deleteGroup": "Delete group",
   "streamingRequestTitle": "Streaming",
@@ -876,7 +822,6 @@
   "showGroupSelector": "Show group selector",
   "ungroupedSingleConfig": "Ungrouped (single config)",
   "inputMessageHint": "Enter a message",
-
   "saveSuccess": "Saved",
   "savedCurrentGroupToast": "Group saved",
   "savedNormalPromptToast": "Normal prompt saved",
@@ -886,17 +831,23 @@
   "resetToDefaultPromptToast": "Reset to default prompt",
   "resetFailedWithError": "Reset failed: {error}",
   "@resetFailedWithError": {
-    "placeholders": { "error": {} }
+    "placeholders": {
+      "error": {}
+    }
   },
   "clearSuccess": "Cleared",
   "clearFailedWithError": "Clear failed: {error}",
   "@clearFailedWithError": {
-    "placeholders": { "error": {} }
+    "placeholders": {
+      "error": {}
+    }
   },
   "messageCannotBeEmpty": "Message cannot be empty",
   "sendFailedWithError": "Send failed: {error}",
   "@sendFailedWithError": {
-    "placeholders": { "error": {} }
+    "placeholders": {
+      "error": {}
+    }
   },
   "groupSwitchedToUngrouped": "Switched to Ungrouped",
   "groupSwitched": "Group switched",
@@ -908,70 +859,143 @@
   "nameCannotBeEmpty": "Name cannot be empty",
   "renameSuccess": "Renamed",
   "renameFailedWithError": "Rename failed: {error}",
-  "@renameFailedWithError": { "placeholders": { "error": {} } },
+  "@renameFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "groupAddedToast": "Group added",
   "addGroupFailedWithError": "Add group failed: {error}",
-  "@addGroupFailedWithError": { "placeholders": { "error": {} } },
+  "@addGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "groupDeletedToast": "Group deleted",
   "deleteGroupFailedWithError": "Delete group failed: {error}",
-  "@deleteGroupFailedWithError": { "placeholders": { "error": {} } },
+  "@deleteGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "loadGroupFailedWithError": "Load group failed: {error}",
-  "@loadGroupFailedWithError": { "placeholders": { "error": {} } },
+  "@loadGroupFailedWithError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "siteGroupDefaultName": "Site Group {index}",
-  "@siteGroupDefaultName": { "placeholders": { "index": {} } },
+  "@siteGroupDefaultName": {
+    "placeholders": {
+      "index": {}
+    }
+  },
   "defaultLabel": "Default",
   "customLabel": "Custom",
   "normalShortLabel": "Normal:",
   "mergeShortLabel": "Merged:",
   "dailyShortLabel": "Daily:",
   "timeRangeLabel": "Time range: {range}",
-  "@timeRangeLabel": { "placeholders": { "range": {} } },
+  "@timeRangeLabel": {
+    "placeholders": {
+      "range": {}
+    }
+  },
   "statusLabel": "Status: {status}",
-  "@statusLabel": { "placeholders": { "status": {} } },
+  "@statusLabel": {
+    "placeholders": {
+      "status": {}
+    }
+  },
   "samplesTitle": "Samples ({count})",
-  "@samplesTitle": { "placeholders": { "count": {} } },
+  "@samplesTitle": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiResultTitle": "AI Result",
   "modelValueLabel": "Model: {model}",
-  "@modelValueLabel": { "placeholders": { "model": {} } },
+  "@modelValueLabel": {
+    "placeholders": {
+      "model": {}
+    }
+  },
   "tagMergedCopy": "Tag: Merged",
   "categoriesLabel": "Categories: {categories}",
-  "@categoriesLabel": { "placeholders": { "categories": {} } },
+  "@categoriesLabel": {
+    "placeholders": {
+      "categories": {}
+    }
+  },
   "errorLabel": "Error: {error}",
-  "@errorLabel": { "placeholders": { "error": {} } },
+  "@errorLabel": {
+    "placeholders": {
+      "error": {}
+    }
+  },
   "summaryLabel": "Summary: {summary}",
-  "@summaryLabel": { "placeholders": { "summary": {} } },
+  "@summaryLabel": {
+    "placeholders": {
+      "summary": {}
+    }
+  },
   "autostartPermissionNote": "Auto-start permission varies by OEM and cannot be auto-detected. Please choose based on your actual settings.",
   "monthDayTime": "{month}/{day} {hour}:{minute}",
-  "@monthDayTime": { "placeholders": { "month": {}, "day": {}, "hour": {}, "minute": {} } },
+  "@monthDayTime": {
+    "placeholders": {
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
   "yearMonthDayTime": "{year}/{month}/{day} {hour}:{minute}",
-  "@yearMonthDayTime": { "placeholders": { "year": {}, "month": {}, "day": {}, "hour": {}, "minute": {} } },
-
+  "@yearMonthDayTime": {
+    "placeholders": {
+      "year": {},
+      "month": {},
+      "day": {},
+      "hour": {},
+      "minute": {}
+    }
+  },
   "imagesCountLabel": "{count} images",
-  "@imagesCountLabel": { "placeholders": { "count": {} } },
-
+  "@imagesCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "apps": "apps",
   "images": "images",
   "days": "days",
-
   "aiImageTagsTitle": "Image tags",
   "aiVisibleTextTitle": "Visible text",
   "aiImageDescriptionsTitle": "Image descriptions",
-
   "justNow": "Just now",
-
   "minutesAgo": "{minutes} minutes ago",
-  "@minutesAgo": { "placeholders": { "minutes": {} } },
-
+  "@minutesAgo": {
+    "placeholders": {
+      "minutes": {}
+    }
+  },
   "hoursAgo": "{hours} hours ago",
-  "@hoursAgo": { "placeholders": { "hours": {} } },
-
+  "@hoursAgo": {
+    "placeholders": {
+      "hours": {}
+    }
+  },
   "daysAgo": "{days} days ago",
-  "@daysAgo": { "placeholders": { "days": {} } },
-
+  "@daysAgo": {
+    "placeholders": {
+      "days": {}
+    }
+  },
   "searchResultsCount": "{count} images found",
   "@searchResultsCount": {
     "description": "Search results count display",
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "searchFiltersTitle": "Filters",
   "filterByTime": "Time",
@@ -996,7 +1020,6 @@
   "startDate": "Start date",
   "endDate": "End date",
   "noResultsForFilters": "No images match the current filters",
-  
   "openLink": "Open",
   "favoritePageTitle": "Favorites",
   "noFavoritesTitle": "No favorites",
@@ -1009,7 +1032,6 @@
   "favoritesRemoved": "Removed from favorites",
   "operationFailed": "Operation failed",
   "cannotGetAppDir": "Cannot get app directory",
-
   "nsfwSettingsSectionTitle": "NSFW Settings",
   "blockedDomainListTitle": "Blocked Domain List",
   "addDomainPlaceholder": "Enter domain or *.example.com",
@@ -1022,83 +1044,118 @@
   "clearAllRulesMessage": "This will remove all blocked domain rules. This action cannot be undone.",
   "previewAffectsCount": "Will affect {count} images",
   "@previewAffectsCount": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "affectCountLabel": "Affects: {count}",
   "@affectCountLabel": {
-    "placeholders": { "count": {} }
+    "placeholders": {
+      "count": {}
+    }
   },
   "confirmAddRuleTitle": "Confirm add rule",
   "confirmAddRuleMessage": "Add rule: {rule}",
   "@confirmAddRuleMessage": {
-    "placeholders": { "rule": {} }
+    "placeholders": {
+      "rule": {}
+    }
   },
   "ruleAddedToast": "Rule added",
   "ruleRemovedToast": "Rule removed",
   "invalidDomainInputError": "Please enter a valid domain (supports *.example.com)",
-
   "manualMarkNsfw": "Mark as NSFW",
   "manualUnmarkNsfw": "Unmark NSFW",
   "manualMarkSuccess": "Marked as NSFW",
   "manualUnmarkSuccess": "NSFW mark removed",
   "manualMarkFailed": "Operation failed",
-  "nsfwTagLabel": "NSFW"
-  ,
+  "nsfwTagLabel": "NSFW",
   "nsfwBlockedByRulesHint": "Blocked by NSFW rules. Manage in Settings > NSFW domains.",
   "providersTitle": "Providers",
   "actionNew": "New",
   "actionAdd": "Add",
   "noProvidersYetHint": "No providers yet. Tap \"New\" to create one.",
   "confirmDeleteProviderMessage": "Delete provider \"{name}\"? This cannot be undone.",
-  "@confirmDeleteProviderMessage": { "placeholders": { "name": {} } },
-
+  "@confirmDeleteProviderMessage": {
+    "placeholders": {
+      "name": {}
+    }
+  },
   "loadingConversations": "Loading conversations…",
   "noConversations": "No conversations",
   "deleteConversationTitle": "Delete conversation",
   "confirmDeleteConversationMessage": "Delete conversation \"{title}\"?",
-  "@confirmDeleteConversationMessage": { "placeholders": { "title": {} } },
+  "@confirmDeleteConversationMessage": {
+    "placeholders": {
+      "title": {}
+    }
+  },
   "untitledConversationLabel": "Untitled conversation",
-
   "searchProviderPlaceholder": "Search providers",
   "searchModelPlaceholder": "Search models",
   "providerSelectedToast": "Selected provider: {name}",
-  "@providerSelectedToast": { "placeholders": { "name": {} } },
+  "@providerSelectedToast": {
+    "placeholders": {
+      "name": {}
+    }
+  },
   "pleaseSelectProviderFirst": "Please select a provider first",
   "noModelsForProviderHint": "No models available. Refresh on Providers page or add manually.",
   "noModelsDetectedHint": "No models detected. Try Refresh or add manually.",
   "modelSwitchedToast": "Switched model: {model}",
-  "@modelSwitchedToast": { "placeholders": { "model": {} } },
+  "@modelSwitchedToast": {
+    "placeholders": {
+      "model": {}
+    }
+  },
   "providerLabel": "Provider",
   "sendMessageToModelPlaceholder": "Send a message to {model}",
-  "@sendMessageToModelPlaceholder": { "placeholders": { "model": {} } },
+  "@sendMessageToModelPlaceholder": {
+    "placeholders": {
+      "model": {}
+    }
+  },
   "deepThinkingLabel": "Thinking",
   "thinkingInProgress": "Thinking…",
   "requestStoppedInfo": "Request stopped",
   "reasoningLabel": "Reasoning:",
   "answerLabel": "Answer:",
-
   "aiSelfModeEnabledToast": "Personal assistant: conversations use your data context",
-
   "selectModelWithCounts": "Select model ({filtered}/{total})",
-  "@selectModelWithCounts": { "placeholders": { "filtered": {}, "total": {} } },
+  "@selectModelWithCounts": {
+    "placeholders": {
+      "filtered": {},
+      "total": {}
+    }
+  },
   "modelsCountLabel": "Models ({count})",
-  "@modelsCountLabel": { "placeholders": { "count": {} } },
+  "@modelsCountLabel": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "manualAddModelLabel": "Add model manually",
   "inputAndAddModelHint": "Enter and add, e.g. gpt-4o-mini",
   "fetchModelsHint": "Click \"Refresh\" to fetch automatically; if it fails, add model names manually.",
   "interfaceTypeLabel": "Interface type",
   "currentTypeLabel": "Current: {type}",
-  "@currentTypeLabel": { "placeholders": { "type": {} } },
-
+  "@currentTypeLabel": {
+    "placeholders": {
+      "type": {}
+    }
+  },
   "nameRequiredError": "Name is required",
   "nameAlreadyExistsError": "Name already exists",
   "apiKeyRequiredError": "API Key is required",
   "baseUrlRequiredForAzureError": "Base URL required for Azure OpenAI",
   "atLeastOneModelRequiredError": "At least one model is required",
   "modelsUpdatedToast": "Models updated ({count})",
-  "@modelsUpdatedToast": { "placeholders": { "count": {} } },
+  "@modelsUpdatedToast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "fetchModelsFailedHint": "Fetch models failed. You may add manually.",
-
   "useResponseApiLabel": "Use Response API (only official OpenAI supports; third-party services are not recommended)",
   "modelsPathOptionalLabel": "Models Path (optional)",
   "chatPathOptionalLabel": "Chat Path (optional)",
@@ -1112,150 +1169,11 @@
   "geminiRegionToast": "Gemini works only in supported regions. Tap the question mark for details.",
   "baseUrlHintAzure": "Required, e.g. https://{resource}.openai.azure.com",
   "baseUrlHintCustom": "Enter an OpenAI-compatible Base URL",
-
   "createProviderTitle": "New provider",
-  "editProviderTitle": "Edit provider"
-  ,
+  "editProviderTitle": "Edit provider",
   "deletedToast": "Deleted",
-  "providerNotFound": "Provider not found"
-  ,
-  "memoryMenuEntry": "Memory Archive",
-  "memoryCenterTitle": "Memory Archive",
-  "memoryClearAllTooltip": "Clear memory vault",
-  "memoryClearAllConfirmTitle": "Clear Memory Vault",
-  "memoryClearAllConfirmMessage": "This will delete all memory tags, events, and evidence. This action cannot be undone. Continue?",
-  "memoryImportSampleTooltip": "Import 30 items for testing",
-  "memoryImportSampleSuccess": "Imported {count} events for testing",
-  "@memoryImportSampleSuccess": { "placeholders": { "count": {} } },
-  "memoryImportSampleEmpty": "No memory events available to import",
-  "memoryImportSampleFailed": "Import failed: {error}",
-  "@memoryImportSampleFailed": { "placeholders": { "error": {} } },
-  "memoryPauseTooltip": "Pause processing",
-  "memoryPauseSuccess": "Processing paused",
-  "memoryPauseFailed": "Pause failed: {error}",
-  "@memoryPauseFailed": { "placeholders": { "error": {} } },
-  "memoryPendingSectionTitle": "Pending Tags",
-  "memoryConfirmedSectionTitle": "Confirmed Tags",
-  "memoryRecentEventsSectionTitle": "Recent Events",
-  "memoryNoPending": "No pending tags yet",
-  "memoryNoConfirmed": "No confirmed tags yet",
-  "memoryNoEvents": "No related events yet",
-  "memoryConfirmAction": "Mark as confirmed",
-  "memoryStatusPending": "Pending",
-  "memoryStatusConfirmed": "Confirmed",
-  "memoryCategoryIdentity": "Identity",
-  "memoryCategoryRelationship": "Relationship",
-  "memoryCategoryInterest": "Interest",
-  "memoryCategoryBehavior": "Behavior",
-  "memoryCategoryPreference": "Preference",
-  "memoryCategoryOther": "Other",
-  "memoryConfidenceLabel": "Confidence: {value}%",
-  "@memoryConfidenceLabel": { "placeholders": { "value": {} } },
-  "memoryOccurrencesLabel": "Occurrences: {count}",
-  "@memoryOccurrencesLabel": { "placeholders": { "count": {} } },
-  "memoryFirstSeenLabel": "First seen: {date}",
-  "@memoryFirstSeenLabel": { "placeholders": { "date": {} } },
-  "memoryLastSeenLabel": "Last seen: {date}",
-  "@memoryLastSeenLabel": { "placeholders": { "date": {} } },
-  "memoryEvidenceCountLabel": "Evidence: {count}",
-  "@memoryEvidenceCountLabel": { "placeholders": { "count": {} } },
-  "memoryEventContainsContext": "Contains user-related info",
-  "memoryEventNoContext": "No user-related info detected",
-  "memoryEventTimeLabel": "Time: {date}",
-  "@memoryEventTimeLabel": { "placeholders": { "date": {} } },
-  "memoryEventSourceLabel": "Source: {source}",
-  "@memoryEventSourceLabel": { "placeholders": { "source": {} } },
-  "memoryEventTypeLabel": "Type: {type}",
-  "@memoryEventTypeLabel": { "placeholders": { "type": {} } },
-  "memoryProgressIdle": "Waiting for historical events",
-  "memoryProgressRunning": "Processing historical events",
-  "memoryProgressRunningDetail": "{processed}/{total} days processed ({percent}%)",
-  "@memoryProgressRunningDetail": { "placeholders": { "processed": {}, "total": {}, "percent": {} } },
-  "memoryProgressNewTagsDetail": "New tags discovered: {count}",
-  "@memoryProgressNewTagsDetail": { "placeholders": { "count": {} } },
-  "memoryProgressCompleted": "Historical days processed: {total} days in {seconds} seconds",
-  "@memoryProgressCompleted": { "placeholders": { "total": {}, "seconds": {} } },
-  "memoryProgressFailed": "Processing failed: {message}",
-  "@memoryProgressFailed": { "placeholders": { "message": {} } },
-  "memoryProgressFailedEvent": "Failed event: {event}",
-  "@memoryProgressFailedEvent": { "placeholders": { "event": {} } },
-  "memoryProgressPreparing": "Preparing: {stage}",
-  "@memoryProgressPreparing": { "placeholders": { "stage": {} } },
-  "memoryProgressStageSyncSegments": "Syncing screenshot events",
-  "memoryProgressStageSyncChats": "Syncing conversations",
-  "memoryProgressStageDispatch": "Starting historical processing",
-  "memoryRefreshTooltip": "Refresh",
-  "memoryConfirmSuccessToast": "Confirmed tag \"{label}\"",
-  "@memoryConfirmSuccessToast": { "placeholders": { "label": {} } },
-  "memoryConfirmFailedToast": "Failed: {message}",
-  "@memoryConfirmFailedToast": { "placeholders": { "message": {} } },
-  "memorySnapshotUpdated": "Memory snapshot updated",
-  "memoryStartProcessingAction": "Start processing history",
-  "memoryStartProcessingActionShort": "Start processing",
-  "memoryMalformedResponseTitle": "Malformed response detected, processing paused",
-  "memoryMalformedResponseSubtitle": "Response for event {eventId} is missing the \"Current User Summary:\" marker. Review it before resuming.",
-  "@memoryMalformedResponseSubtitle": {
-    "placeholders": {
-      "eventId": {}
-    }
-  },
-  "memoryMalformedResponseSubtitleNoId": "The latest response is missing the \"Current User Summary:\" marker. Review it before resuming.",
-  "memoryMalformedResponseRawLabel": "Raw response:",
-  "memoryDeleteTagAction": "Delete tag",
-  "memoryDeleteTagConfirmTitle": "Delete tag",
-  "memoryDeleteTagConfirmMessage": "Delete tag \"{tagLabel}\"? Associated evidence will be removed.",
-  "@memoryDeleteTagConfirmMessage": {
-    "placeholders": {
-      "tagLabel": {}
-    }
-  },
-  "memoryDeleteTagSuccess": "Tag deleted",
-  "memoryDeleteTagFailed": "Delete failed: {error}",
-  "@memoryDeleteTagFailed": {
-    "placeholders": {
-      "error": {}
-    }
-  },
-  "memoryStatusPendingIndicator": "Pending",
-  "memoryStatusConfirmedIndicator": "Confirmed",
-  "memoryReprocessAction": "Reprocess entire history",
-  "memoryStartProcessingToast": "Historical processing started"
-  ,
-  "memoryLoadMore": "Load more"
-  ,
-  "memoryCenterHeroTitle": "Character dossier",
-  "memoryCenterHeroSubtitle": "An RPG-style card distilled from your personal events",
-  "memoryCenterPendingCountLabel": "Pending: {count}",
-  "@memoryCenterPendingCountLabel": { "placeholders": { "count": {} } },
-  "memoryCenterConfirmedCountLabel": "Confirmed: {count}",
-  "@memoryCenterConfirmedCountLabel": { "placeholders": { "count": {} } },
-  "memoryCenterEventCountLabel": "User-related events: {count}",
-  "@memoryCenterEventCountLabel": { "placeholders": { "count": {} } },
-  "memoryTagDetailTitle": "Tag Detail",
-  "memoryTagDetailRefresh": "Refresh",
-  "memoryTagDetailInfoTitle": "Profile",
-  "memoryTagDetailStatisticsTitle": "Attributes",
-  "memoryTagDetailOccurrences": "Occurrences: {count}",
-  "@memoryTagDetailOccurrences": { "placeholders": { "count": {} } },
-  "memoryTagDetailConfidence": "Confidence: {confidence}",
-  "@memoryTagDetailConfidence": { "placeholders": { "confidence": {} } },
-  "memoryTagDetailFirstSeen": "First seen: {date}",
-  "@memoryTagDetailFirstSeen": { "placeholders": { "date": {} } },
-  "memoryTagDetailLastSeen": "Last seen: {date}",
-  "@memoryTagDetailLastSeen": { "placeholders": { "date": {} } },
-  "memoryTagDetailEvidenceTitle": "Supporting evidence",
-  "memoryTagDetailEvidenceCount": "Total evidence: {count}",
-  "@memoryTagDetailEvidenceCount": { "placeholders": { "count": {} } },
-  "memoryTagDetailNoEvidence": "No evidence recorded yet",
-  "memoryTagDetailLoadFailed": "Failed to load tag data",
-  "memoryEvidenceInferenceLabel": "Inference",
-  "memoryEvidenceNotesLabel": "Notes",
-  "memoryEvidenceNoNotes": "No notes",
-  "memoryEvidenceEventHeading": "Source event",
-  "memoryEvidenceUserEditedBadge": "Edited by user"
-  ,
-  "conversationsSectionTitle": "Conversations"
-  ,
+  "providerNotFound": "Provider not found",
+  "conversationsSectionTitle": "Conversations",
   "displaySectionTitle": "Display",
   "displaySectionDesc": "Theme, privacy mode, NSFW",
   "streamRenderImagesTitle": "Render images during streaming",
@@ -1325,7 +1243,6 @@
     }
   },
   "expireCleanupConfirmAction": "Confirm",
-
   "desktopMergerTitle": "Data Merger Tool",
   "desktopMergerDescription": "Efficiently merge multiple backup files",
   "desktopMergerSteps": "1. Select output directory (merged data will be saved here)\n2. Add ZIP backup files to merge\n3. Click Start Merge",
@@ -1356,11 +1273,9 @@
   "desktopMergerStageExtracting": "Extracting...",
   "desktopMergerStageCopying": "Copying files...",
   "desktopMergerStageMerging": "Merging databases...",
-  "desktopMergerStageMemory": "Merging memory data...",
   "desktopMergerStageFinalizing": "Finalizing...",
   "desktopMergerStageProcessing": "Processing...",
   "desktopMergerStageCompleted": "Merge completed",
-
   "desktopMergerLiveStats": "Live Statistics",
   "desktopMergerProcessingFile": "Processing: {fileName}",
   "@desktopMergerProcessingFile": {
@@ -1379,10 +1294,8 @@
   "desktopMergerStatSkipped": "Skipped Duplicates",
   "desktopMergerStatFiles": "Copied Files",
   "desktopMergerStatReused": "Reused Files",
-  "desktopMergerStatEvents": "Memory Events",
   "desktopMergerStatTags": "Memory Tags",
   "desktopMergerStatEvidence": "Memory Evidence",
-
   "desktopMergerSummaryTitle": "Merge Summary",
   "desktopMergerSummaryTotal": "Processed {count} files in total",
   "@desktopMergerSummaryTotal": {
@@ -1420,7 +1333,6 @@
   "desktopMergerNoData": "No data changes",
   "desktopMergerExpandAll": "Expand All",
   "desktopMergerCollapseAll": "Collapse All",
-
   "desktopMergerStagePacking": "Packing ZIP...",
   "desktopMergerOutputZip": "Output File",
   "desktopMergerOpenFolder": "Open Folder",
@@ -1434,9 +1346,7 @@
   "desktopMergerExtractingHint": "Extracting backup file. Large backups (tens of thousands of screenshots) may take several minutes, please be patient...",
   "desktopMergerCopyingHint": "Copying screenshot files, skipping existing images...",
   "desktopMergerMergingHint": "Merging database records with smart deduplication...",
-  "desktopMergerMemoryHint": "Merging memory archive data...",
   "desktopMergerPackingHint": "Packing merged results into ZIP file...",
-
   "unknownTitle": "Unknown",
   "unknownTime": "Unknown time",
   "empty": "Empty",

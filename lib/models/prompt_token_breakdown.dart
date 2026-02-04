@@ -9,7 +9,6 @@ enum PromptTokenPart {
   toolInstruction('tool_instruction'),
   conversationContext('conversation_context'),
   atomicMemory('atomic_memory'),
-  workingMemory('working_memory'),
   extraSystem('extra_system'),
   historyUser('history_user'),
   historyAssistant('history_assistant'),
@@ -40,8 +39,6 @@ extension PromptTokenPartX on PromptTokenPart {
         return '对话记忆';
       case PromptTokenPart.atomicMemory:
         return '原子记忆';
-      case PromptTokenPart.workingMemory:
-        return '工作记忆';
       case PromptTokenPart.extraSystem:
         return '其他系统信息';
       case PromptTokenPart.historyUser:
@@ -67,8 +64,6 @@ extension PromptTokenPartX on PromptTokenPart {
         return 'Conversation memory';
       case PromptTokenPart.atomicMemory:
         return 'Atomic memory';
-      case PromptTokenPart.workingMemory:
-        return 'Working memory';
       case PromptTokenPart.extraSystem:
         return 'Other system';
       case PromptTokenPart.historyUser:
@@ -95,8 +90,6 @@ extension PromptTokenPartX on PromptTokenPart {
         return const Color(0xFF22C55E); // green-500
       case PromptTokenPart.atomicMemory:
         return const Color(0xFFA855F7); // purple-500
-      case PromptTokenPart.workingMemory:
-        return const Color(0xFFF59E0B); // amber-500
       case PromptTokenPart.extraSystem:
         return const Color(0xFF64748B); // slate-500
       case PromptTokenPart.historyUser:
@@ -110,4 +103,3 @@ extension PromptTokenPartX on PromptTokenPart {
     }
   }
 }
-

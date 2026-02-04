@@ -757,9 +757,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get mergeProgressMergingDb => 'データベースをマージしています…';
 
   @override
-  String get mergeProgressMemoryDb => 'メモリーデータベースをマージしています…';
-
-  @override
   String get mergeProgressFinalizing => 'マージを完了しています…';
 
   @override
@@ -778,16 +775,6 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String mergeReportCopied(int count) {
     return 'コピーしたファイル: $count';
-  }
-
-  @override
-  String mergeReportMemoryEvents(int count) {
-    return '追加された記憶イベント: $count';
-  }
-
-  @override
-  String mergeReportMemoryTags(int count) {
-    return '追加された記憶タグ: $count';
   }
 
   @override
@@ -1172,6 +1159,9 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get loadMore => 'さらに読み込む';
+
+  @override
   String loadMoreFailedWithError(Object error) {
     return 'さらにロードできませんでした: $error';
   }
@@ -1393,9 +1383,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get copyResultsTooltip => '結果をコピー';
 
   @override
-  String get generatePersonaArticle => 'プロフィール記事を生成';
-
-  @override
   String get articleGenerating => '記事を生成中...';
 
   @override
@@ -1405,35 +1392,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get articleGenerateFailed => '記事の生成に失敗しました';
 
   @override
-  String get articlePreviewTitle => 'プロフィール記事プレビュー';
-
-  @override
   String get articleCopySuccess => '記事をクリップボードにコピーしました';
 
   @override
   String get articleLogTitle => '生成ログ';
 
   @override
-  String get memoryPersonaHubTitle => 'メモリーアーカイブ';
-
-  @override
-  String get memoryTagsEntranceTooltip => 'タグライブラリを開く';
-
-  @override
-  String get memoryTagLibraryTitle => 'タグライブラリ';
-
-  @override
-  String get memoryArticleEmptyPlaceholder => 'まだプロフィール記事がありません。生成後にご確認ください。';
-
-  @override
-  String get memoryPauseActionLabel => '解析を一時停止';
-
-  @override
   String get copyPersonaTooltip => 'ユーザー画像をコピー';
-
-  @override
-  String get memoryPersonaEmptyPlaceholder =>
-      'まだユーザー画像がありません。イベントを記録して内容を充実させてください。';
 
   @override
   String get saveImageTooltip => 'ギャラリーに保存';
@@ -2190,342 +2155,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get providerNotFound => 'プロバイダーが見つかりません';
 
   @override
-  String get memoryMenuEntry => 'メモリーアーカイブ';
-
-  @override
-  String get memoryCenterTitle => 'メモリーアーカイブ';
-
-  @override
-  String get memoryClearAllTooltip => '記憶庫を空にする';
-
-  @override
-  String get memoryClearAllConfirmTitle => '記憶庫を空にする';
-
-  @override
-  String get memoryClearAllConfirmMessage =>
-      '記憶庫のタグ・イベント・証拠をすべて削除します。この操作は元に戻せません。続行しますか？';
-
-  @override
-  String get memoryImportSampleTooltip => 'テスト用に30件取り込み';
-
-  @override
-  String memoryImportSampleSuccess(Object count) {
-    return 'テスト用に $count 件のイベントを取り込みました';
-  }
-
-  @override
-  String get memoryImportSampleEmpty => '取り込める記憶イベントがありません';
-
-  @override
-  String memoryImportSampleFailed(Object error) {
-    return '取り込みに失敗しました: $error';
-  }
-
-  @override
-  String get memoryPauseTooltip => '処理を一時停止';
-
-  @override
-  String get memoryPauseSuccess => '解析を一時停止しました';
-
-  @override
-  String memoryPauseFailed(Object error) {
-    return '一時停止に失敗しました: $error';
-  }
-
-  @override
-  String get memoryPendingSectionTitle => '確認待ちのタグ';
-
-  @override
-  String get memoryConfirmedSectionTitle => '確認済みタグ';
-
-  @override
-  String get memoryRecentEventsSectionTitle => '最近のイベント';
-
-  @override
-  String get memoryNoPending => '確認待ちのタグはありません';
-
-  @override
-  String get memoryNoConfirmed => '確認済みのタグはまだありません';
-
-  @override
-  String get memoryNoEvents => '関連するイベントはまだありません';
-
-  @override
-  String get memoryConfirmAction => '確認済みにする';
-
-  @override
-  String get memoryStatusPending => '確認待ち';
-
-  @override
-  String get memoryStatusConfirmed => '確認済み';
-
-  @override
-  String get memoryCategoryIdentity => '本人情報';
-
-  @override
-  String get memoryCategoryRelationship => '関係';
-
-  @override
-  String get memoryCategoryInterest => '興味';
-
-  @override
-  String get memoryCategoryBehavior => '行動';
-
-  @override
-  String get memoryCategoryPreference => '嗜好';
-
-  @override
-  String get memoryCategoryOther => 'その他';
-
-  @override
-  String memoryConfidenceLabel(Object value) {
-    return '確信度：$value%';
-  }
-
-  @override
-  String memoryOccurrencesLabel(Object count) {
-    return '出現回数：$count';
-  }
-
-  @override
-  String memoryFirstSeenLabel(Object date) {
-    return '初検出：$date';
-  }
-
-  @override
-  String memoryLastSeenLabel(Object date) {
-    return '最新検出：$date';
-  }
-
-  @override
-  String memoryEvidenceCountLabel(Object count) {
-    return '証拠：$count 件';
-  }
-
-  @override
-  String get memoryEventContainsContext => 'ユーザー関連の情報を含みます';
-
-  @override
-  String get memoryEventNoContext => 'ユーザー関連の情報は検出されませんでした';
-
-  @override
-  String memoryEventTimeLabel(Object date) {
-    return '時刻：$date';
-  }
-
-  @override
-  String memoryEventSourceLabel(Object source) {
-    return 'ソース：$source';
-  }
-
-  @override
-  String memoryEventTypeLabel(Object type) {
-    return 'タイプ：$type';
-  }
-
-  @override
-  String get memoryProgressIdle => '歴史イベントの処理待ち';
-
-  @override
-  String get memoryProgressRunning => '歴史イベントを解析中';
-
-  @override
-  String memoryProgressRunningDetail(
-    Object processed,
-    Object total,
-    Object percent,
-  ) {
-    return '$processed/$total 日を処理済み（$percent%）';
-  }
-
-  @override
-  String memoryProgressNewTagsDetail(Object count) {
-    return '新しいタグ：$count';
-  }
-
-  @override
-  String memoryProgressCompleted(Object total, Object seconds) {
-    return '歴史イベントの解析完了：合計 $total 日、$seconds 秒';
-  }
-
-  @override
-  String memoryProgressFailed(Object message) {
-    return '解析に失敗しました：$message';
-  }
-
-  @override
-  String memoryProgressFailedEvent(Object event) {
-    return '失敗イベント：$event';
-  }
-
-  @override
-  String memoryProgressPreparing(Object stage) {
-    return '準備中：$stage';
-  }
-
-  @override
-  String get memoryProgressStageSyncSegments => 'スクリーンショットイベントを同期中';
-
-  @override
-  String get memoryProgressStageSyncChats => '会話ログを同期中';
-
-  @override
-  String get memoryProgressStageDispatch => '履歴解析を起動中';
-
-  @override
-  String get memoryRefreshTooltip => '更新';
-
-  @override
-  String memoryConfirmSuccessToast(Object label) {
-    return '「$label」を確認済みにしました';
-  }
-
-  @override
-  String memoryConfirmFailedToast(Object message) {
-    return '操作に失敗しました：$message';
-  }
-
-  @override
-  String get memorySnapshotUpdated => '記憶スナップショットを更新しました';
-
-  @override
-  String get memoryStartProcessingAction => '履歴イベント解析を開始';
-
-  @override
-  String get memoryStartProcessingActionShort => '解析を開始';
-
-  @override
-  String get memoryMalformedResponseTitle => '異常な応答を検出したため解析を一時停止しました';
-
-  @override
-  String memoryMalformedResponseSubtitle(Object eventId) {
-    return 'イベント $eventId の応答に「当前用户描述：」マーカーが含まれていません。確認後に再開してください。';
-  }
-
-  @override
-  String get memoryMalformedResponseSubtitleNoId =>
-      '最新の応答に「当前用户描述：」マーカーが含まれていません。確認後に再開してください。';
-
-  @override
-  String get memoryMalformedResponseRawLabel => '生データ:';
-
-  @override
-  String get memoryDeleteTagAction => 'タグを削除';
-
-  @override
-  String get memoryDeleteTagConfirmTitle => 'タグを削除';
-
-  @override
-  String memoryDeleteTagConfirmMessage(Object tagLabel) {
-    return 'タグ「$tagLabel」を削除しますか？関連する証拠も削除されます。';
-  }
-
-  @override
-  String get memoryDeleteTagSuccess => 'タグを削除しました';
-
-  @override
-  String memoryDeleteTagFailed(Object error) {
-    return '削除に失敗しました: $error';
-  }
-
-  @override
-  String get memoryStatusPendingIndicator => '確認待ち';
-
-  @override
-  String get memoryStatusConfirmedIndicator => '確認済み';
-
-  @override
-  String get memoryReprocessAction => '履歴イベントを再解析';
-
-  @override
-  String get memoryStartProcessingToast => '履歴イベント解析を開始しました';
-
-  @override
-  String get memoryLoadMore => 'さらに読み込む';
-
-  @override
-  String get memoryCenterHeroTitle => 'キャラクタープロフィール';
-
-  @override
-  String get memoryCenterHeroSubtitle => 'イベントから抽出したRPG風の個人情報カード';
-
-  @override
-  String memoryCenterPendingCountLabel(Object count) {
-    return '保留: $count';
-  }
-
-  @override
-  String memoryCenterConfirmedCountLabel(Object count) {
-    return '確定: $count';
-  }
-
-  @override
-  String memoryCenterEventCountLabel(Object count) {
-    return '関連イベント: $count';
-  }
-
-  @override
-  String get memoryTagDetailTitle => 'タグ詳細';
-
-  @override
-  String get memoryTagDetailRefresh => '再読み込み';
-
-  @override
-  String get memoryTagDetailInfoTitle => 'プロフィール';
-
-  @override
-  String get memoryTagDetailStatisticsTitle => '属性';
-
-  @override
-  String memoryTagDetailOccurrences(Object count) {
-    return '出現回数: $count';
-  }
-
-  @override
-  String memoryTagDetailConfidence(Object confidence) {
-    return '確信度: $confidence';
-  }
-
-  @override
-  String memoryTagDetailFirstSeen(Object date) {
-    return '初登場: $date';
-  }
-
-  @override
-  String memoryTagDetailLastSeen(Object date) {
-    return '最終登場: $date';
-  }
-
-  @override
-  String get memoryTagDetailEvidenceTitle => '証拠一覧';
-
-  @override
-  String memoryTagDetailEvidenceCount(Object count) {
-    return '証拠総数: $count';
-  }
-
-  @override
-  String get memoryTagDetailNoEvidence => '証拠がまだありません';
-
-  @override
-  String get memoryTagDetailLoadFailed => 'タグデータの読み込みに失敗しました';
-
-  @override
-  String get memoryEvidenceInferenceLabel => '推論メモ';
-
-  @override
-  String get memoryEvidenceNotesLabel => 'メモ';
-
-  @override
-  String get memoryEvidenceNoNotes => 'メモなし';
-
-  @override
-  String get memoryEvidenceEventHeading => '関連イベント';
-
-  @override
-  String get memoryEvidenceUserEditedBadge => 'ユーザー編集済み';
-
-  @override
   String get conversationsSectionTitle => '会話';
 
   @override
@@ -2747,9 +2376,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get desktopMergerStageMerging => 'データベースを統合中...';
 
   @override
-  String get desktopMergerStageMemory => 'メモリデータを統合中...';
-
-  @override
   String get desktopMergerStageFinalizing => '完了処理中...';
 
   @override
@@ -2782,9 +2408,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get desktopMergerStatReused => '再利用ファイル';
-
-  @override
-  String get desktopMergerStatEvents => 'メモリイベント';
 
   @override
   String get desktopMergerStatTags => 'メモリタグ';
@@ -2864,9 +2487,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get desktopMergerMergingHint => 'データベースレコードを統合中、スマート重複排除処理中...';
-
-  @override
-  String get desktopMergerMemoryHint => 'メモリアーカイブデータを統合中...';
 
   @override
   String get desktopMergerPackingHint => '統合結果をZIPファイルにパッキング中...';

@@ -13,7 +13,6 @@ import 'atomic_memory_service.dart';
 import 'chat_context_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
-import 'memory_bridge_service.dart';
 import 'prompt_budget.dart';
 import 'screenshot_database.dart';
 
@@ -62,9 +61,6 @@ class AIChatService {
   // Per tool message cap, mainly for very large JSON payloads (e.g. segment
   // detail). This is an approximate token budget (bytes/4).
   static const int maxToolMessageTokens = 12000;
-  // MemOS working memory injection (persona + relevant temporal-KG edges).
-  static const int defaultMaxWorkingMemoryPromptTokens = 1400;
-  static const int defaultWorkingMemoryEdgeLimit = 60;
 
   final AISettingsService _settings = AISettingsService.instance;
   final AIRequestGateway _gateway = AIRequestGateway.instance;

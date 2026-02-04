@@ -78,20 +78,17 @@ class _ChatContextSheetBody extends StatefulWidget {
 
 class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
   Future<ChatContextSnapshot>? _future;
-  Future<_PromptUsageEstimate>? _usageFuture;
-  // Cache the last successful snapshot/usage so periodic refresh won't "flash"
+  Future<int>? _globalTokensFuture;
+  // Cache the last successful snapshot/token count so periodic refresh won't "flash"
   // the sheet by resetting FutureBuilder data to null.
   ChatContextSnapshot? _cachedSnapshot;
-  _PromptUsageEstimate? _cachedUsage;
+  int _cachedGlobalTokens = 0;
   Timer? _pollTimer;
   bool _refreshInFlight = false;
   bool _busy = false;
   String _activeModel = '';
   int? _activeModelContextTokens;
   int? _activeModelOutputTokens;
-  bool _wmEnabled = true;
-  int _wmMaxTokens = 1400;
-  int _wmEdgeLimit = 60;
   bool _amEnabled = true;
   bool _amAutoExtract = false;
   int _amMaxTokens = 700;
@@ -127,27 +124,29 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
         })
         .catchError((_) {});
 
-    final Future<_PromptUsageEstimate> usageFuture = snapFuture.then(
-      _estimateCurrentPromptUsage,
-    );
-    usageFuture
-        .then((u) {
-          _cachedUsage = u;
+    final Future<int> globalTokensFuture = ChatContextService.instance
+        .getGlobalPromptTokensTotal();
+    globalTokensFuture
+        .then((v) {
+          _cachedGlobalTokens = v;
         })
         .catchError((_) {});
-    usageFuture.whenComplete(() {
+
+    Future.wait<void>(<Future<void>>[
+      snapFuture.then((_) {}),
+      globalTokensFuture.then((_) {}),
+    ]).whenComplete(() {
       _refreshInFlight = false;
     });
     setState(() {
       _future = snapFuture;
-      _usageFuture = usageFuture;
+      _globalTokensFuture = globalTokensFuture;
     });
   }
 
   void _reload() {
     _refreshSnapshotOnly();
     _loadModelInfo();
-    _loadWorkingMemorySettings();
     _loadAtomicMemorySettings();
   }
 
@@ -184,12 +183,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
   int _promptCapTokensForUi() {
     final String model = _activeModel.trim();
     return AIContextBudgets.forModel(model).promptCapTokens;
-  }
-
-  int _wmMaxTokensCapForUi() {
-    final int cap = _promptCapTokensForUi();
-    // Keep it bounded while still scaling by model prompt cap.
-    return (cap * 0.20).round().clamp(200, 12000);
   }
 
   int _amMaxTokensCapForUi() {
@@ -408,44 +401,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
-  Future<void> _loadWorkingMemorySettings() async {
-    try {
-      final s = AISettingsService.instance;
-      final bool enabled = await s.getWorkingMemoryInjectionEnabled();
-      final int maxTokens = await s.getWorkingMemoryPromptTokens();
-      final int edgeLimit = await s.getWorkingMemoryEdgeLimit();
-      if (!mounted) return;
-      setState(() {
-        _wmEnabled = enabled;
-        _wmMaxTokens = maxTokens;
-        _wmEdgeLimit = edgeLimit;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _setWmEnabled(bool v) async {
-    setState(() => _wmEnabled = v);
-    try {
-      await AISettingsService.instance.setWorkingMemoryInjectionEnabled(v);
-    } catch (_) {}
-  }
-
-  Future<void> _setWmMaxTokens(int v) async {
-    final int next = v.clamp(200, _wmMaxTokensCapForUi());
-    setState(() => _wmMaxTokens = next);
-    try {
-      await AISettingsService.instance.setWorkingMemoryPromptTokens(next);
-    } catch (_) {}
-  }
-
-  Future<void> _setWmEdgeLimit(int v) async {
-    final int next = v.clamp(10, 200);
-    setState(() => _wmEdgeLimit = next);
-    try {
-      await AISettingsService.instance.setWorkingMemoryEdgeLimit(next);
-    } catch (_) {}
-  }
-
   Future<void> _loadAtomicMemorySettings() async {
     try {
       final s = AISettingsService.instance;
@@ -628,14 +583,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                             MapEntry(
                               ChatContextSheet._loc(
                                 context,
-                                '摘要 tokens≈',
-                                'Summary tokens≈',
-                              ),
-                              s.summaryTokens.toString(),
-                            ),
-                            MapEntry(
-                              ChatContextSheet._loc(
-                                context,
                                 '摘要更新时间',
                                 'Summary updated',
                               ),
@@ -670,14 +617,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                             MapEntry(
                               ChatContextSheet._loc(
                                 context,
-                                '上次 prompt tokens≈',
-                                'Last prompt tokens≈',
-                              ),
-                              (s.lastPromptTokens ?? 0).toString(),
-                            ),
-                            MapEntry(
-                              ChatContextSheet._loc(
-                                context,
                                 '上次 prompt 时间',
                                 'Last prompt time',
                               ),
@@ -686,11 +625,7 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                           ],
                         ),
                         const SizedBox(height: AppTheme.spacing3),
-                        _lastPromptUsageCard(context, s),
-                        const SizedBox(height: AppTheme.spacing3),
-                        _promptUsageCard(context, s),
-                        const SizedBox(height: AppTheme.spacing3),
-                        _workingMemoryCard(context),
+                        _globalTokenUsageCard(context),
                         const SizedBox(height: AppTheme.spacing3),
                         _atomicMemoryCard(context),
                         const SizedBox(height: AppTheme.spacing3),
@@ -903,7 +838,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
       PromptTokenPart.toolInstruction,
       PromptTokenPart.conversationContext,
       PromptTokenPart.atomicMemory,
-      PromptTokenPart.workingMemory,
       PromptTokenPart.extraSystem,
       PromptTokenPart.historyUser,
       PromptTokenPart.historyAssistant,
@@ -1038,175 +972,6 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
-  Widget _promptUsageCard(BuildContext context, ChatContextSnapshot _) {
-    final ThemeData theme = Theme.of(context);
-    final NumberFormat nf = NumberFormat.decimalPattern();
-
-    final List<PromptTokenPart> order = <PromptTokenPart>[
-      PromptTokenPart.systemPrompt,
-      PromptTokenPart.toolSchema,
-      PromptTokenPart.toolInstruction,
-      PromptTokenPart.conversationContext,
-      PromptTokenPart.atomicMemory,
-      PromptTokenPart.workingMemory,
-      PromptTokenPart.extraSystem,
-      PromptTokenPart.historyUser,
-      PromptTokenPart.historyAssistant,
-      PromptTokenPart.historyTool,
-      PromptTokenPart.userMessage,
-    ];
-
-    final Future<_PromptUsageEstimate>? f = _usageFuture;
-
-    return FutureBuilder<_PromptUsageEstimate>(
-      future: f,
-      initialData: _cachedUsage,
-      builder: (ctx, snap) {
-        final _PromptUsageEstimate? u = snap.data;
-        final String model = (u?.model ?? _activeModel).trim().isEmpty
-            ? '-'
-            : (u?.model ?? _activeModel).trim();
-        final int? cap0 = u?.contextCapTokens ?? _activeModelContextTokens;
-        final int cap = (cap0 ?? 0).clamp(0, 1 << 30);
-        final int? outTokens = u?.outputCapTokens ?? _activeModelOutputTokens;
-        final String outText = outTokens == null
-            ? ''
-            : ' · out≈${nf.format(outTokens)}';
-
-        final Map<String, int> parts = u?.parts ?? const <String, int>{};
-        final int used = parts.isNotEmpty
-            ? parts.values.fold(0, (a, b) => a + b)
-            : (u?.totalTokens ?? 0);
-        final double ratio = cap > 0 ? (used / cap).clamp(0.0, 1.0) : 0.0;
-
-        final List<SegmentedTokenBarSegment> segments =
-            <SegmentedTokenBarSegment>[
-              for (final part in order)
-                if ((parts[part.key] ?? 0) > 0)
-                  SegmentedTokenBarSegment(
-                    tokens: parts[part.key]!,
-                    color: part.color(theme),
-                  ),
-              if (parts.isEmpty && used > 0)
-                SegmentedTokenBarSegment(
-                  tokens: used,
-                  color: theme.colorScheme.primary,
-                ),
-            ];
-
-        final String capText = cap > 0 ? nf.format(cap) : '-';
-        final String usedText = used > 0 ? nf.format(used) : '-';
-        final String pctText = cap > 0
-            ? '${(ratio * 100).toStringAsFixed(1)}%'
-            : '-';
-        final bool loading =
-            snap.connectionState != ConnectionState.done && u == null;
-
-        return Container(
-          padding: const EdgeInsets.all(AppTheme.spacing3),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(
-              color: theme.colorScheme.outline.withOpacity(0.4),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ChatContextSheet._loc(
-                  context,
-                  '当前对话上下文占用（≈）',
-                  'Current context usage (≈)',
-                ),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacing1),
-              Text(
-                ChatContextSheet._loc(
-                  context,
-                  '用于下一次发送（不含本次输入）',
-                  'For next send (excludes current input).',
-                ),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacing1),
-              Text(
-                ChatContextSheet._loc(context, '模型：$model', 'Model: $model'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacing1),
-              Text(
-                ChatContextSheet._loc(
-                  context,
-                  '已用 $usedText / $capText（$pctText）$outText',
-                  'Used $usedText / $capText ($pctText)$outText',
-                ),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (loading) ...[
-                const SizedBox(height: AppTheme.spacing1),
-                Text(
-                  ChatContextSheet._loc(context, '计算中…', 'Calculating…'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              const SizedBox(height: AppTheme.spacing2),
-              SegmentedTokenBar(
-                totalTokens: cap > 0 ? cap : (used > 0 ? used : 1),
-                segments: segments,
-                height: 12,
-              ),
-              if (parts.isEmpty) ...[
-                const SizedBox(height: AppTheme.spacing2),
-                Text(
-                  ChatContextSheet._loc(
-                    context,
-                    '暂无可用的细分数据',
-                    'No breakdown available.',
-                  ),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ] else ...[
-                const SizedBox(height: AppTheme.spacing2),
-                Wrap(
-                  spacing: AppTheme.spacing2,
-                  runSpacing: AppTheme.spacing1,
-                  children: [
-                    for (final part in order)
-                      if ((parts[part.key] ?? 0) > 0)
-                        _legendItem(
-                          context,
-                          color: part.color(theme),
-                          label: ChatContextSheet._isZh(context)
-                              ? part.labelZh()
-                              : part.labelEn(),
-                          tokens: parts[part.key]!,
-                          total: cap > 0 ? cap : used,
-                        ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _legendItem(
     BuildContext context, {
     required Color color,
@@ -1249,89 +1014,61 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
-  Widget _workingMemoryCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final int wmCap = _wmMaxTokensCapForUi();
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            ChatContextSheet._loc(
-              context,
-              '工作记忆注入（MemOS）',
-              'Working memory injection (MemOS)',
-            ),
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+  Widget _globalTokenUsageCard(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final NumberFormat nf = NumberFormat.decimalPattern();
+
+    final Future<int>? f = _globalTokensFuture;
+
+    return FutureBuilder<int>(
+      future: f,
+      initialData: _cachedGlobalTokens,
+      builder: (ctx, snap) {
+        final int tokens = (snap.data ?? _cachedGlobalTokens)
+            .clamp(0, 1 << 62)
+            .toInt();
+        final bool loading =
+            snap.connectionState != ConnectionState.done && f != null;
+        return Container(
+          padding: const EdgeInsets.all(AppTheme.spacing3),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
           ),
-          const SizedBox(height: AppTheme.spacing2),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  ChatContextSheet._loc(
-                    context,
-                    '启用 <working_memory> 系统消息',
-                    'Enable <working_memory> system message',
-                  ),
-                  style: theme.textTheme.bodySmall,
+              Text(
+                ChatContextSheet._loc(
+                  context,
+                  '全局 token 累计（≈）',
+                  'Global token total (≈)',
+                ),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              Switch(
-                value: _wmEnabled,
-                onChanged: _busy ? null : (v) => _setWmEnabled(v),
+              const SizedBox(height: AppTheme.spacing2),
+              Text(
+                nf.format(tokens),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
+              if (loading) ...[
+                const SizedBox(height: AppTheme.spacing1),
+                Text(
+                  ChatContextSheet._loc(context, '更新中…', 'Updating…'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: AppTheme.spacing1),
-          _stepperRow(
-            context,
-            label: ChatContextSheet._loc(
-              context,
-              'Token 预算（粗估）',
-              'Token budget (approx)',
-            ),
-            valueText: _wmMaxTokens.toString(),
-            onMinus: _busy || _wmMaxTokens <= 200
-                ? null
-                : () => _setWmMaxTokens(_wmMaxTokens - 200),
-            onPlus: _busy || _wmMaxTokens >= wmCap
-                ? null
-                : () => _setWmMaxTokens(_wmMaxTokens + 200),
-          ),
-          const SizedBox(height: AppTheme.spacing1),
-          _stepperRow(
-            context,
-            label: ChatContextSheet._loc(context, '图谱边条数上限', 'Edge limit'),
-            valueText: _wmEdgeLimit.toString(),
-            onMinus: _busy || _wmEdgeLimit <= 10
-                ? null
-                : () => _setWmEdgeLimit(_wmEdgeLimit - 10),
-            onPlus: _busy || _wmEdgeLimit >= 200
-                ? null
-                : () => _setWmEdgeLimit(_wmEdgeLimit + 10),
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Text(
-            ChatContextSheet._loc(
-              context,
-              '提示：这是每次对话请求前的“长期记忆装配”，用于稳定 persona/关系链；过大可能挤占历史上下文。',
-              'Tip: this injects long-term memory before each request (persona/relations). Too large may crowd out chat history.',
-            ),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

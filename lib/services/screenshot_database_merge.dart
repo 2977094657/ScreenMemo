@@ -6,7 +6,6 @@ class MergeReport {
   final int reusedFiles;
   final int insertedScreenshots;
   final int skippedScreenshotDuplicates;
-  final int mergedMemoryEvents;
   final Set<String> affectedPackages;
   final List<String> warnings;
 
@@ -15,7 +14,6 @@ class MergeReport {
     required this.reusedFiles,
     required this.insertedScreenshots,
     required this.skippedScreenshotDuplicates,
-    required this.mergedMemoryEvents,
     required this.affectedPackages,
     required this.warnings,
   });
@@ -30,7 +28,6 @@ class _MergeContext {
   int reusedFiles = 0;
   int insertedScreenshots = 0;
   int skippedScreenshotDuplicates = 0;
-  int mergedMemoryEvents = 0;
 
   MergeReport toReport() {
     return MergeReport(
@@ -38,7 +35,6 @@ class _MergeContext {
       reusedFiles: reusedFiles,
       insertedScreenshots: insertedScreenshots,
       skippedScreenshotDuplicates: skippedScreenshotDuplicates,
-      mergedMemoryEvents: mergedMemoryEvents,
       affectedPackages: affectedPackages,
       warnings: List<String>.from(warnings),
     );
@@ -246,13 +242,6 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       progress: progress,
     );
 
-    await _mergeMemoryDatabase(
-      baseDir: baseDir,
-      stagingOutput: stagingOutput,
-      ctx: ctx,
-      progress: progress,
-    );
-
     await _mergeMetadataDatabase(
       baseDir: baseDir,
       stagingOutput: stagingOutput,
@@ -353,6 +342,10 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       final String name = basename(entry.path);
       final String lowerName = name.toLowerCase();
       if (name == 'screen' || name == 'databases') {
+        continue;
+      }
+      if (lowerName == 'memory_notes') {
+        // Memory archive disabled: ignore imported memory notes.
         continue;
       }
       if (_outputCacheDirNames.contains(lowerName)) {
@@ -626,224 +619,6 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       });
     }
     return result;
-  }
-
-  Future<void> _mergeMemoryDatabase({
-    required Directory baseDir,
-    required Directory stagingOutput,
-    required _MergeContext ctx,
-    void Function(ImportExportProgress progress)? progress,
-  }) async {
-    final File importedMemory = File(
-      join(stagingOutput.path, 'databases', 'memory_backend.db'),
-    );
-    if (!await importedMemory.exists()) {
-      return;
-    }
-
-    final Directory targetDbDir = Directory(
-      join(baseDir.path, 'output', 'databases'),
-    );
-    if (!await targetDbDir.exists()) {
-      await targetDbDir.create(recursive: true);
-    }
-    final File targetMemory = File(join(targetDbDir.path, 'memory_backend.db'));
-
-    if (!await targetMemory.exists()) {
-      Database? importDb;
-      try {
-        importDb = await openDatabase(importedMemory.path, readOnly: true);
-        ctx.mergedMemoryEvents +=
-            Sqflite.firstIntValue(
-              await importDb.rawQuery('SELECT COUNT(*) FROM memory_events'),
-            ) ??
-            0;
-      } catch (e) {
-        ctx.warnings.add('读取记忆数据库失败: $e');
-      } finally {
-        await importDb?.close();
-      }
-
-      await importedMemory.copy(targetMemory.path);
-      ctx.copiedFiles++;
-      await _copyDbSidecar(importedMemory.path, targetMemory.path, '-wal');
-      await _copyDbSidecar(importedMemory.path, targetMemory.path, '-shm');
-      ctx.affectedPackages.add('memory_backend');
-      progress?.call(
-        const ImportExportProgress(
-          value: 0.9,
-          stage: 'merge_memory_database',
-          currentEntry: null,
-        ),
-      );
-      return;
-    }
-
-    Database? importDb;
-    Database? targetDb;
-    try {
-      importDb = await openDatabase(importedMemory.path, readOnly: true);
-      targetDb = await openDatabase(targetMemory.path);
-      final Database importDb0 = importDb;
-      final Database targetDb0 = targetDb;
-
-      await targetDb0.transaction((txn) async {
-        final bool hasEventsTable = await _tableExists(txn, 'memory_events');
-        if (!hasEventsTable) {
-          ctx.warnings.add('记忆数据库缺少 memory_events 表，跳过合并');
-          return;
-        }
-
-        final Set<String> eventCols = await _tryListTableColumns(
-          txn,
-          'memory_events',
-        );
-        final bool hasMetadataTable = await _tableExists(txn, 'memory_metadata');
-        final Set<String> metaCols = hasMetadataTable
-            ? await _tryListTableColumns(txn, 'memory_metadata')
-            : <String>{};
-
-        final Map<int, int> eventIdMap = <int, int>{};
-        final Map<String, int> externalEventMap = <String, int>{};
-        final Map<String, int> compositeEventMap = <String, int>{};
-
-        List<Map<String, Object?>> existingEvents;
-        try {
-          existingEvents = await txn.query(
-            'memory_events',
-            columns: [
-              'id',
-              'external_id',
-              'occurred_at',
-              'source',
-              'type',
-              'content',
-            ],
-          );
-        } catch (_) {
-          existingEvents = await txn.query('memory_events');
-        }
-        int existingEventIndex = 0;
-        for (final Map<String, Object?> row in existingEvents) {
-          existingEventIndex++;
-          final int id = (row['id'] as int?) ?? 0;
-          final String? ext = row['external_id'] as String?;
-          if (ext != null && ext.isNotEmpty) {
-            externalEventMap[ext] = id;
-          }
-          compositeEventMap[_memoryEventKey(row)] = id;
-          if (existingEventIndex % 5000 == 0) {
-            await Future<void>.delayed(Duration.zero);
-          }
-        }
-
-        final List<Map<String, Object?>> importEvents = await importDb0.query(
-          'memory_events',
-          orderBy: 'id ASC',
-        );
-        int importEventIndex = 0;
-        for (final Map<String, Object?> row in importEvents) {
-          importEventIndex++;
-          final int oldId = (row['id'] as int?) ?? 0;
-          if (oldId <= 0) continue;
-          int? resolvedId;
-          final String? ext = row['external_id'] as String?;
-          if (ext != null && ext.isNotEmpty) {
-            resolvedId = externalEventMap[ext];
-          }
-          if (resolvedId == null) {
-            resolvedId = compositeEventMap[_memoryEventKey(row)];
-          }
-          if (resolvedId != null) {
-            eventIdMap[oldId] = resolvedId;
-            if (importEventIndex % 5000 == 0) {
-              await Future<void>.delayed(Duration.zero);
-            }
-            continue;
-          }
-
-          final Map<String, Object?> insertRow =
-              _filterByColumns(row, eventCols)..remove('id');
-          final int newId = await txn.insert('memory_events', insertRow);
-          if (newId > 0) {
-            eventIdMap[oldId] = newId;
-            if (ext != null && ext.isNotEmpty) {
-              externalEventMap[ext] = newId;
-            }
-            compositeEventMap[_memoryEventKey(row)] = newId;
-            ctx.mergedMemoryEvents++;
-          } else if (ext != null && ext.isNotEmpty) {
-            final List<Map<String, Object?>> fallback = await txn.query(
-              'memory_events',
-              columns: ['id'],
-              where: 'external_id = ?',
-              whereArgs: [ext],
-              limit: 1,
-            );
-            if (fallback.isNotEmpty) {
-              final int existingId = (fallback.first['id'] as int?) ?? 0;
-              if (existingId > 0) {
-                eventIdMap[oldId] = existingId;
-              }
-            }
-          }
-          if (importEventIndex % 5000 == 0) {
-            await Future<void>.delayed(Duration.zero);
-          }
-        }
-
-        if (hasMetadataTable &&
-            await _tableExists(importDb0, 'memory_metadata')) {
-          final List<Map<String, Object?>> importMetadata =
-              await importDb0.query(
-            'memory_metadata',
-          );
-          for (final Map<String, Object?> row in importMetadata) {
-            final String? key = row['key'] as String?;
-            if (key == null) continue;
-            final List<Map<String, Object?>> existing = await txn.query(
-              'memory_metadata',
-              where: '`key` = ?',
-              whereArgs: [key],
-              limit: 1,
-            );
-            if (existing.isEmpty) {
-              final Map<String, Object?> insertRow = _filterByColumns(
-                row,
-                metaCols,
-              );
-              await txn.insert('memory_metadata', insertRow);
-            } else {
-              final String? currentValue = existing.first['value'] as String?;
-              final String? incomingValue = row['value'] as String?;
-              if ((currentValue == null || currentValue.isEmpty) &&
-                  (incomingValue != null && incomingValue.isNotEmpty)) {
-                await txn.update(
-                  'memory_metadata',
-                  {'value': incomingValue},
-                  where: '`key` = ?',
-                  whereArgs: [key],
-                );
-              }
-            }
-          }
-        }
-      });
-      ctx.affectedPackages.add('memory_backend');
-    } catch (e) {
-      ctx.warnings.add('合并记忆数据库失败: $e');
-    } finally {
-      await importDb?.close();
-      await targetDb?.close();
-    }
-
-    progress?.call(
-      const ImportExportProgress(
-        value: 0.9,
-        stage: 'merge_memory_database',
-        currentEntry: null,
-      ),
-    );
   }
 
   Future<void> _mergeSingleShard({

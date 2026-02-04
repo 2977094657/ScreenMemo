@@ -457,8 +457,6 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         return Icons.manage_search_rounded;
       case 'search_segments_ocr':
         return Icons.text_snippet_rounded;
-      case 'search_memory_graph':
-        return Icons.hub_rounded;
       case 'get_segment_result':
         return Icons.description_rounded;
       case 'get_segment_samples':

@@ -17,40 +17,6 @@ extension AIChatServicePersistenceExt on AIChatService {
     return const Locale('en');
   }
 
-  Future<String> _buildWorkingMemoryContextMessage(String userMessage) async {
-    try {
-      final bool enabled = await _settings.getWorkingMemoryInjectionEnabled();
-      if (!enabled) return '';
-      final int edgeLimit = await _settings.getWorkingMemoryEdgeLimit();
-      final int maxTokens = await _settings.getWorkingMemoryPromptTokens();
-
-      final Map<String, dynamic> payload = await MemoryBridgeService.instance
-          .buildWorkingMemory(
-            query: userMessage.trim(),
-            edgeLimit: edgeLimit,
-            includeHistoryEdges: false,
-          );
-      final String raw =
-          (payload['working_memory_markdown'] as String?)?.trim() ?? '';
-      if (raw.isEmpty) return '';
-
-      String text = raw;
-      final int tokens = PromptBudget.approxTokensForText(text);
-      if (tokens > maxTokens) {
-        final int maxBytes = maxTokens * PromptBudget.approxBytesPerToken;
-        text = PromptBudget.truncateTextByBytes(
-          text: text,
-          maxBytes: maxBytes,
-          marker: '…working_memory truncated…',
-        ).trim();
-      }
-
-      return ['<working_memory>', text, '</working_memory>'].join('\n').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
   List<AIMessage> _composeMessages({
     required String systemMessage,
     required List<AIMessage> history,
@@ -137,14 +103,6 @@ extension AIChatServicePersistenceExt on AIChatService {
           userMessage: userMessage,
         );
       } catch (_) {}
-      unawaited(
-        MemoryBridgeService.instance.ingestChatMessage(
-          conversationId: cid,
-          role: 'user',
-          content: userMessage,
-          createdAt: user.createdAt,
-        ),
-      );
     } catch (_) {}
 
     if (history.isEmpty) {

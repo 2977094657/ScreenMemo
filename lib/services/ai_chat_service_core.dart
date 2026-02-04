@@ -76,14 +76,6 @@ extension AIChatServiceCoreExt on AIChatService {
         ),
       );
     }
-    if (names.contains('search_memory_graph')) {
-      sb.writeln(
-        _loc(
-          '- 若问题需要“长期记忆/用户画像/关系链”类信息，可调用 search_memory_graph 再回答。',
-          '- For questions about long-term memory / user profile / relationship chains, consider calling search_memory_graph before answering.',
-        ),
-      );
-    }
     if (names.contains('get_images')) {
       sb.writeln(
         _loc(
