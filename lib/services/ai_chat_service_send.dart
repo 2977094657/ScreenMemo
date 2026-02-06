@@ -1,5 +1,184 @@
 part of 'ai_chat_service.dart';
 
+class _ToolUiThinkingPersister {
+  _ToolUiThinkingPersister({
+    required this.cid,
+    required this.displayUserMessage,
+    required this.assistantCreatedAtMs,
+    required this.toolsTitle,
+    required this.settings,
+    String? seededUiThinkingJson,
+  }) : uiThinkingJson = ((seededUiThinkingJson ?? '').trim().isNotEmpty)
+           ? seededUiThinkingJson!.trim()
+           : null;
+
+  final String cid;
+  final String displayUserMessage;
+  final int assistantCreatedAtMs;
+  final String toolsTitle;
+  final AISettingsService settings;
+
+  String? uiThinkingJson;
+
+  final List<Map<String, dynamic>> _payloads = <Map<String, dynamic>>[];
+  Timer? _debounce;
+  Future<void> _flushChain = Future<void>.value();
+  bool _fallbackInserted = false;
+  bool _disposed = false;
+
+  Map<String, dynamic>? _tryDecodePayload(String raw) {
+    final String t = raw.trim();
+    if (t.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(t);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  void handle(AIStreamEvent event) {
+    if (_disposed) return;
+    if (event.kind != 'ui') return;
+    final Map<String, dynamic>? payload = _tryDecodePayload(event.data);
+    if (payload == null) return;
+    final String type = (payload['type'] ?? '').toString().trim();
+    if (type != 'tool_batch_begin' && type != 'tool_call_end') return;
+
+    _payloads.add(payload);
+    uiThinkingJson = patchUiThinkingJsonWithToolUiEvent(
+      uiThinkingJson,
+      payload,
+      assistantCreatedAtMs: assistantCreatedAtMs,
+      toolsTitle: toolsTitle,
+    );
+    _scheduleFlush();
+  }
+
+  void _scheduleFlush() {
+    _debounce?.cancel();
+    // Keep this fairly low-frequency to avoid excessive DB churn while still
+    // making the tool timeline resilient to conversation switches.
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      unawaited(flushNow());
+    });
+  }
+
+  Future<void> flushNow() {
+    _debounce?.cancel();
+    _debounce = null;
+    if (_disposed) return Future<void>.value();
+    if (_payloads.isEmpty) return Future<void>.value();
+
+    final Future<void> next = _flushChain.then((_) async {
+      await _flushOnce();
+    });
+    _flushChain = next.catchError((_) {});
+    return _flushChain;
+  }
+
+  Future<void> _ensurePlaceholderExists(String uiJson) async {
+    final String cidTrim = cid.trim();
+    if (cidTrim.isEmpty) return;
+    final List<AIMessage> existing = await settings.getChatHistoryByCid(
+      cidTrim,
+    );
+    final List<AIMessage> out = List<AIMessage>.from(existing);
+
+    int assistantIdx = -1;
+    for (int i = out.length - 1; i >= 0; i--) {
+      final AIMessage m = out[i];
+      if (m.role != 'assistant') continue;
+      if (m.createdAt.millisecondsSinceEpoch == assistantCreatedAtMs) {
+        assistantIdx = i;
+        break;
+      }
+    }
+
+    if (assistantIdx >= 0) {
+      final AIMessage base = out[assistantIdx];
+      out[assistantIdx] = AIMessage(
+        role: base.role,
+        content: base.content,
+        createdAt: base.createdAt,
+        reasoningContent: base.reasoningContent,
+        reasoningDuration: base.reasoningDuration,
+        uiThinkingJson: uiJson,
+      );
+      await settings.saveChatHistoryByCid(cidTrim, out);
+      return;
+    }
+
+    // Fallback: insert after the matching user message if present.
+    final String userTrim = displayUserMessage.trim();
+    int userIdx = -1;
+    for (int i = out.length - 1; i >= 0; i--) {
+      final AIMessage m = out[i];
+      if (m.role == 'user' && m.content.trim() == userTrim) {
+        userIdx = i;
+        break;
+      }
+    }
+
+    final AIMessage placeholder = AIMessage(
+      role: 'assistant',
+      content: '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(assistantCreatedAtMs),
+      uiThinkingJson: uiJson,
+    );
+
+    if (userIdx >= 0) {
+      out.insert(userIdx + 1, placeholder);
+    } else {
+      if (userTrim.isNotEmpty)
+        out.add(AIMessage(role: 'user', content: userTrim));
+      out.add(placeholder);
+    }
+    await settings.saveChatHistoryByCid(cidTrim, out);
+  }
+
+  Future<void> _flushOnce() async {
+    final String cidTrim = cid.trim();
+    if (cidTrim.isEmpty || assistantCreatedAtMs <= 0) return;
+
+    final String? base = await ScreenshotDatabase.instance
+        .getAiAssistantUiThinkingJson(cidTrim, assistantCreatedAtMs);
+    String? next = base;
+    for (final Map<String, dynamic> p in _payloads) {
+      next = patchUiThinkingJsonWithToolUiEvent(
+        next,
+        p,
+        assistantCreatedAtMs: assistantCreatedAtMs,
+        toolsTitle: toolsTitle,
+      );
+    }
+    final String t = (next ?? '').trim();
+    if (t.isEmpty) return;
+
+    int updated = await ScreenshotDatabase.instance
+        .updateAiAssistantUiThinkingJson(cidTrim, assistantCreatedAtMs, t);
+
+    if (updated <= 0 && !_fallbackInserted) {
+      _fallbackInserted = true;
+      try {
+        await _ensurePlaceholderExists(t);
+      } catch (_) {}
+      updated = await ScreenshotDatabase.instance
+          .updateAiAssistantUiThinkingJson(cidTrim, assistantCreatedAtMs, t);
+    }
+
+    if (updated > 0) {
+      uiThinkingJson = t;
+      settings.notifyChatHistoryChanged(cidTrim);
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _debounce?.cancel();
+    _debounce = null;
+  }
+}
+
 extension AIChatServiceSendExt on AIChatService {
   int _approxMsgTokens(String role, String content) {
     return PromptBudget.approxTokensForMessageJson(
@@ -28,7 +207,8 @@ extension AIChatServiceSendExt on AIChatService {
     required int reservedTokens,
     required int toolsSchemaTokens,
   }) {
-    final int v = budgets.effectivePromptCapTokens - reservedTokens - toolsSchemaTokens;
+    final int v =
+        budgets.effectivePromptCapTokens - reservedTokens - toolsSchemaTokens;
     if (v <= 0) return 0;
     return v.clamp(0, budgets.effectivePromptCapTokens);
   }
@@ -98,7 +278,9 @@ extension AIChatServiceSendExt on AIChatService {
     if (includeHistory && history.isNotEmpty) {
       final int maxTokens =
           (historyMaxTokens ??
-                  AIContextBudgets.forModel(model).historyPromptTokens)
+                  AIContextBudgets.forModelWithPeekOverride(
+                    model,
+                  ).historyPromptTokens)
               .clamp(0, 1 << 30);
       final List<AIMessage> trimmed = PromptBudget.keepTailUnderTokenBudget(
         history,
@@ -250,9 +432,10 @@ extension AIChatServiceSendExt on AIChatService {
     final String modelForBudget = endpoints.isNotEmpty
         ? endpoints.first.model
         : (await _settings.getModel());
-    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
-    final List<AIMessage> history = await _settings.getChatHistory();
+    final AIContextBudgets budgets =
+        await AIContextBudgets.forModelWithOverrides(modelForBudget);
     final String cid = await _settings.getActiveConversationCid();
+    final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
@@ -292,10 +475,7 @@ extension AIChatServiceSendExt on AIChatService {
     if (historyMaxTokens > 0) {
       try {
         final List<AIMessage> full = await _chatContext
-            .loadRecentMessagesForPrompt(
-              cid: cid,
-              maxTokens: historyMaxTokens,
-            );
+            .loadRecentMessagesForPrompt(cid: cid, maxTokens: historyMaxTokens);
         if (full.isNotEmpty) requestHistory = full;
       } catch (_) {}
     }
@@ -310,7 +490,8 @@ extension AIChatServiceSendExt on AIChatService {
 
     // Codex-style: if we are close to the window, compact first, then retry once.
     int tokensApprox =
-        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+        toolsSchemaTokens +
+        PromptBudget.approxTokensForMessagesJson(requestMessages);
     if (tokensApprox >= budgets.autoCompactTriggerTokens) {
       try {
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
@@ -351,7 +532,8 @@ extension AIChatServiceSendExt on AIChatService {
           historyMaxTokens: historyMaxTokens,
         );
         tokensApprox =
-            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+            toolsSchemaTokens +
+            PromptBudget.approxTokensForMessagesJson(requestMessages);
       } catch (_) {}
     }
     try {
@@ -373,11 +555,14 @@ extension AIChatServiceSendExt on AIChatService {
         requestMessages,
       );
       unawaited(
-        _chatContext.recordPromptTokens(
-          cid: cid,
-          tokensApprox: tokensApprox,
-          breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
-        ),
+        _chatContext
+            .recordPromptTokens(
+              cid: cid,
+              tokensApprox: tokensApprox,
+              breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
+            )
+            .then((_) => _settings.notifyContextChanged('chat:prompt_tokens'))
+            .catchError((_) {}),
       );
     } catch (_) {}
     try {
@@ -423,6 +608,7 @@ extension AIChatServiceSendExt on AIChatService {
     unawaited(() async {
       try {
         await _persistConversation(
+          cid: cid,
           history: history,
           userMessage: userMessage,
           assistant: assistant,
@@ -439,6 +625,7 @@ extension AIChatServiceSendExt on AIChatService {
     String userMessage, {
     Duration? timeout,
     String context = 'chat',
+    String? conversationCid,
   }) async {
     try {
       await FlutterLogger.nativeInfo(
@@ -447,12 +634,16 @@ extension AIChatServiceSendExt on AIChatService {
       );
     } catch (_) {}
 
+    final String cid = (conversationCid ?? '').trim().isNotEmpty
+        ? conversationCid!.trim()
+        : await _settings.getActiveConversationCid();
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
-    final List<AIMessage> history = await _settings.getChatHistory();
+    final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
 
     return _startStreamingSession(
+      conversationCid: cid,
       userMessage: userMessage,
       displayUserMessage: userMessage,
       endpoints: endpoints,
@@ -477,6 +668,7 @@ extension AIChatServiceSendExt on AIChatService {
     // only want the service to update the append-only transcript/tool memory.
     bool persistHistoryTail = true,
     String context = 'chat',
+    String? conversationCid,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
     int maxToolIters =
@@ -484,8 +676,38 @@ extension AIChatServiceSendExt on AIChatService {
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
+    int? uiAssistantCreatedAtMs,
   }) async {
     if (tools.isNotEmpty) {
+      final String cid = (conversationCid ?? '').trim().isNotEmpty
+          ? conversationCid!.trim()
+          : (await _settings.getActiveConversationCid()).trim();
+      final int assistantCreatedAtMs = (uiAssistantCreatedAtMs ?? 0);
+      final bool enableTimelinePersist =
+          persistHistory &&
+          persistHistoryTail &&
+          cid.isNotEmpty &&
+          assistantCreatedAtMs > 0;
+      String? seededUi;
+      if (enableTimelinePersist) {
+        try {
+          seededUi = await ScreenshotDatabase.instance
+              .getAiAssistantUiThinkingJson(cid, assistantCreatedAtMs);
+        } catch (_) {
+          seededUi = null;
+        }
+      }
+      final _ToolUiThinkingPersister? timelinePersister = enableTimelinePersist
+          ? _ToolUiThinkingPersister(
+              cid: cid,
+              displayUserMessage: displayUserMessage,
+              assistantCreatedAtMs: assistantCreatedAtMs,
+              toolsTitle: _loc('工具调用', 'Tools'),
+              settings: _settings,
+              seededUiThinkingJson: seededUi,
+            )
+          : null;
+
       // 工具调用采用 tool-loop。模型侧请求支持流式增量输出（content/reasoning），
       // 同时在 tool-loop 过程中持续输出“当前在做什么”的进度事件。
       final StreamController<AIStreamEvent> controller =
@@ -494,6 +716,7 @@ extension AIChatServiceSendExt on AIChatService {
       bool sawContent = false;
       bool sawModelReasoning = false;
       void emitSafe(AIStreamEvent evt) {
+        timelinePersister?.handle(evt);
         if (controller.isClosed) return;
         if (evt.kind == 'content' && evt.data.trim().isNotEmpty) {
           sawContent = true;
@@ -520,14 +743,23 @@ extension AIChatServiceSendExt on AIChatService {
             persistHistory: persistHistory,
             persistHistoryTail: persistHistoryTail,
             context: context,
+            conversationCid: cid,
             toolStartMs: toolStartMs,
             toolEndMs: toolEndMs,
             forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
             emitEvent: emitSafe,
+            uiThinkingJsonProvider: () => timelinePersister?.uiThinkingJson,
           );
       // ignore: discarded_futures
       completed
           .then((AIMessage message) {
+            if (timelinePersister != null) {
+              unawaited(
+                timelinePersister.flushNow().whenComplete(
+                  () => timelinePersister.dispose(),
+                ),
+              );
+            }
             if (controller.isClosed) return;
             final String reasoning = (message.reasoningContent ?? '')
                 .trimRight();
@@ -540,6 +772,13 @@ extension AIChatServiceSendExt on AIChatService {
             unawaited(controller.close());
           })
           .catchError((Object error, StackTrace stackTrace) {
+            if (timelinePersister != null) {
+              unawaited(
+                timelinePersister.flushNow().whenComplete(
+                  () => timelinePersister.dispose(),
+                ),
+              );
+            }
             if (controller.isClosed) return;
             controller.addError(error, stackTrace);
             unawaited(controller.close());
@@ -560,9 +799,13 @@ extension AIChatServiceSendExt on AIChatService {
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
-    final List<AIMessage> history = await _settings.getChatHistory();
+    final String cid = (conversationCid ?? '').trim().isNotEmpty
+        ? conversationCid!.trim()
+        : await _settings.getActiveConversationCid();
+    final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
 
     return _startStreamingSession(
+      conversationCid: cid,
       userMessage: actualUserMessage,
       displayUserMessage: displayUserMessage,
       endpoints: endpoints,
@@ -580,6 +823,7 @@ extension AIChatServiceSendExt on AIChatService {
   }
 
   Future<AIStreamingSession> _startStreamingSession({
+    required String conversationCid,
     required String userMessage,
     required String displayUserMessage,
     required List<AIEndpoint> endpoints,
@@ -592,11 +836,12 @@ extension AIChatServiceSendExt on AIChatService {
     bool persistHistoryTail = true,
     List<String> extraSystemMessages = const <String>[],
   }) async {
-    final String cid = await _settings.getActiveConversationCid();
+    final String cid = conversationCid.trim();
     final String modelForBudget = endpoints.isNotEmpty
         ? endpoints.first.model
         : (await _settings.getModel());
-    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
+    final AIContextBudgets budgets =
+        await AIContextBudgets.forModelWithOverrides(modelForBudget);
 
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
@@ -642,10 +887,7 @@ extension AIChatServiceSendExt on AIChatService {
       // Prefer append-only transcript for prompt history.
       try {
         final List<AIMessage> full = await _chatContext
-            .loadRecentMessagesForPrompt(
-              cid: cid,
-              maxTokens: historyMaxTokens,
-            );
+            .loadRecentMessagesForPrompt(cid: cid, maxTokens: historyMaxTokens);
         if (full.isNotEmpty) {
           effectiveHistory = full;
         } else {
@@ -667,7 +909,8 @@ extension AIChatServiceSendExt on AIChatService {
 
     // If close to the window, compact first, then retry once.
     int tokensApprox =
-        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+        toolsSchemaTokens +
+        PromptBudget.approxTokensForMessagesJson(requestMessages);
     if (context == 'chat' &&
         persistHistory &&
         tokensApprox >= budgets.autoCompactTriggerTokens) {
@@ -720,7 +963,8 @@ extension AIChatServiceSendExt on AIChatService {
           historyMaxTokens: historyMaxTokens,
         );
         tokensApprox =
-            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+            toolsSchemaTokens +
+            PromptBudget.approxTokensForMessagesJson(requestMessages);
       } catch (_) {}
     }
     if (context == 'chat' && persistHistory) {
@@ -741,13 +985,16 @@ extension AIChatServiceSendExt on AIChatService {
           historyMaxTokens: historyMaxTokens,
         );
         unawaited(
-          _chatContext.recordPromptTokens(
-            cid: cid,
-            tokensApprox: PromptBudget.approxTokensForMessagesJson(
-              requestMessages,
-            ),
-            breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
-          ),
+          _chatContext
+              .recordPromptTokens(
+                cid: cid,
+                tokensApprox: PromptBudget.approxTokensForMessagesJson(
+                  requestMessages,
+                ),
+                breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
+              )
+              .then((_) => _settings.notifyContextChanged('chat:prompt_tokens'))
+              .catchError((_) {}),
         );
       } catch (_) {}
       try {
@@ -800,6 +1047,7 @@ extension AIChatServiceSendExt on AIChatService {
         unawaited(() async {
           try {
             await _persistConversation(
+              cid: cid,
               history: history,
               userMessage: displayUserMessage,
               assistant: assistant,
@@ -830,6 +1078,7 @@ extension AIChatServiceSendExt on AIChatService {
     bool persistHistory = true,
     bool persistHistoryTail = true,
     String context = 'chat',
+    String? conversationCid,
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
@@ -847,6 +1096,7 @@ extension AIChatServiceSendExt on AIChatService {
       persistHistory: persistHistory,
       persistHistoryTail: persistHistoryTail,
       context: context,
+      conversationCid: conversationCid,
       toolStartMs: toolStartMs,
       toolEndMs: toolEndMs,
       forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
@@ -867,10 +1117,12 @@ extension AIChatServiceSendExt on AIChatService {
     bool persistHistory = true,
     bool persistHistoryTail = true,
     String context = 'chat',
+    String? conversationCid,
     int? toolStartMs,
     int? toolEndMs,
     bool forceToolFirstIfNoToolCalls = false,
     void Function(AIStreamEvent event)? emitEvent,
+    String? Function()? uiThinkingJsonProvider,
   }) async {
     if (tools.isNotEmpty) {
       _emitProgress(emitEvent, _loc('准备 agent loop…', 'Preparing agent loop…'));
@@ -881,9 +1133,12 @@ extension AIChatServiceSendExt on AIChatService {
     final String modelForBudget = endpoints.isNotEmpty
         ? endpoints.first.model
         : (await _settings.getModel());
-    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
-    final List<AIMessage> history = await _settings.getChatHistory();
-    final String cid = await _settings.getActiveConversationCid();
+    final AIContextBudgets budgets =
+        await AIContextBudgets.forModelWithOverrides(modelForBudget);
+    final String cid = (conversationCid ?? '').trim().isNotEmpty
+        ? conversationCid!.trim()
+        : await _settings.getActiveConversationCid();
+    final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
@@ -935,10 +1190,7 @@ extension AIChatServiceSendExt on AIChatService {
       // Prefer append-only transcript for prompt history.
       try {
         final List<AIMessage> full = await _chatContext
-            .loadRecentMessagesForPrompt(
-              cid: cid,
-              maxTokens: historyMaxTokens,
-            );
+            .loadRecentMessagesForPrompt(cid: cid, maxTokens: historyMaxTokens);
         if (full.isNotEmpty) {
           filteredHistory = full;
         } else {
@@ -964,7 +1216,8 @@ extension AIChatServiceSendExt on AIChatService {
 
     // If close to the window, compact first, then rebuild the prompt once.
     int promptTokensApprox =
-        toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+        toolsSchemaTokens +
+        PromptBudget.approxTokensForMessagesJson(requestMessages);
     if (context == 'chat' &&
         persistHistory &&
         promptTokensApprox >= budgets.autoCompactTriggerTokens) {
@@ -999,10 +1252,7 @@ extension AIChatServiceSendExt on AIChatService {
         if (includeHistory && historyMax2 > 0) {
           try {
             final List<AIMessage> full = await _chatContext
-                .loadRecentMessagesForPrompt(
-                  cid: cid,
-                  maxTokens: historyMax2,
-                );
+                .loadRecentMessagesForPrompt(cid: cid, maxTokens: historyMax2);
             if (full.isNotEmpty) {
               filteredHistory = full;
             } else {
@@ -1026,10 +1276,42 @@ extension AIChatServiceSendExt on AIChatService {
         );
         historyMaxTokensForBreakdown = historyMax2;
         promptTokensApprox =
-            toolsSchemaTokens + PromptBudget.approxTokensForMessagesJson(requestMessages);
+            toolsSchemaTokens +
+            PromptBudget.approxTokensForMessagesJson(requestMessages);
       } catch (_) {}
     }
     if (context == 'chat' && persistHistory) {
+      try {
+        final String modelForPrompt = endpoints.isNotEmpty
+            ? endpoints.first.model
+            : '';
+        final String breakdownJson = _buildPromptBreakdownJson(
+          model: modelForPrompt,
+          systemPrompt: systemPrompt,
+          userMessage: actualUserMessage,
+          history: filteredHistory,
+          includeHistory: includeHistory,
+          tools: tools,
+          toolUsageInstruction: toolUsageInstruction,
+          conversationContextMsg: ctxMsg,
+          atomicMemoryMsg: amMsg,
+          extraSystemMessages: extraSystemMessages,
+          historyMaxTokens: historyMaxTokensForBreakdown,
+        );
+        final int tokensApprox =
+            _approxToolSchemaTokens(tools) +
+            PromptBudget.approxTokensForMessagesJson(requestMessages);
+        unawaited(
+          _chatContext
+              .recordPromptTokens(
+                cid: cid,
+                tokensApprox: tokensApprox,
+                breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
+              )
+              .then((_) => _settings.notifyContextChanged('chat:prompt_tokens'))
+              .catchError((_) {}),
+        );
+      } catch (_) {}
       try {
         final bool amEnabled = await _settings
             .getAtomicMemoryInjectionEnabled();
@@ -1083,11 +1365,16 @@ extension AIChatServiceSendExt on AIChatService {
               _approxToolSchemaTokens(toolsForCall) +
               PromptBudget.approxTokensForMessagesJson(messages);
           unawaited(
-            _chatContext.recordPromptTokens(
-              cid: cid,
-              tokensApprox: tokensApprox,
-              breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
-            ),
+            _chatContext
+                .recordPromptTokens(
+                  cid: cid,
+                  tokensApprox: tokensApprox,
+                  breakdownJson: breakdownJson.isEmpty ? null : breakdownJson,
+                )
+                .then(
+                  (_) => _settings.notifyContextChanged('chat:prompt_tokens'),
+                )
+                .catchError((_) {}),
           );
         } catch (_) {}
       }
@@ -1691,11 +1978,14 @@ extension AIChatServiceSendExt on AIChatService {
       );
     }
 
+    String? uiJson = uiThinkingJsonProvider?.call();
+    uiJson = (uiJson ?? '').trim().isNotEmpty ? uiJson!.trim() : null;
     final AIMessage assistant = AIMessage(
       role: 'assistant',
       content: result.content,
       reasoningContent: result.reasoning,
       reasoningDuration: result.reasoningDuration,
+      uiThinkingJson: uiJson,
     );
 
     if (persistHistory) {
@@ -1703,6 +1993,7 @@ extension AIChatServiceSendExt on AIChatService {
       unawaited(() async {
         try {
           await _persistConversation(
+            cid: cid,
             history: history,
             userMessage: displayUserMessage,
             assistant: assistant,

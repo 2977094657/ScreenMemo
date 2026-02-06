@@ -10,6 +10,21 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         value TEXT
       )
     ''');
+
+    // ai_model_prompt_caps: 全局模型 prompt/context 上限（用户可覆盖）。
+    // - provider-agnostic: 仅按 model_key 匹配，不绑定提供商
+    // - model_key 建议存储为 trim + lowercase 的规范化值
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_model_prompt_caps (
+        model_key TEXT PRIMARY KEY,
+        model_display TEXT,
+        prompt_cap_tokens INTEGER NOT NULL,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_model_prompt_caps_updated ON ai_model_prompt_caps(updated_at DESC)',
+    );
     // ai_messages: 简单会话历史（默认会话：conversation_id='default'）
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ai_messages (
@@ -345,6 +360,60 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     }
   }
 
+  // ===================== Model prompt-cap overrides =====================
+  Future<int?> getAiModelPromptCapTokens(String modelKey) async {
+    final String k = modelKey.trim().toLowerCase();
+    if (k.isEmpty) return null;
+    try {
+      final db = await database;
+      final rows = await db.query(
+        'ai_model_prompt_caps',
+        columns: <String>['prompt_cap_tokens'],
+        where: 'model_key = ?',
+        whereArgs: <Object?>[k],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      final Object? v = rows.first['prompt_cap_tokens'];
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setAiModelPromptCapTokens({
+    required String modelKey,
+    required int promptCapTokens,
+    String? modelDisplay,
+  }) async {
+    final String k = modelKey.trim().toLowerCase();
+    if (k.isEmpty) return;
+    final int cap = promptCapTokens.clamp(256, 1 << 30);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final db = await database;
+      await db.execute(
+        'INSERT OR REPLACE INTO ai_model_prompt_caps(model_key, model_display, prompt_cap_tokens, updated_at) VALUES(?, ?, ?, ?)',
+        <Object?>[k, modelDisplay?.trim(), cap, now],
+      );
+    } catch (_) {}
+  }
+
+  Future<void> deleteAiModelPromptCapTokens(String modelKey) async {
+    final String k = modelKey.trim().toLowerCase();
+    if (k.isEmpty) return;
+    try {
+      final db = await database;
+      await db.delete(
+        'ai_model_prompt_caps',
+        where: 'model_key = ?',
+        whereArgs: <Object?>[k],
+      );
+    } catch (_) {}
+  }
+
   Future<List<Map<String, dynamic>>> getAiMessages(
     String conversationId, {
     int? limit,
@@ -380,7 +449,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       // SQLite 的 OFFSET 语法需要搭配 LIMIT；当仅提供 offset 时用 LIMIT -1。
       final bool hasLimit = limit != null;
       final bool hasOffset = offset != null;
-      final String sql = '''
+      final String sql =
+          '''
 SELECT *
 FROM ai_messages
 WHERE COALESCE(created_at, 0) >= ?
@@ -403,10 +473,7 @@ ${hasOffset ? 'OFFSET ?' : ''}
   }
 
   /// 获取 ai_messages 中出现过的日期列表（按本地时区转换为 yyyy-MM-dd）。
-  Future<List<String>> listAiMessageDays({
-    int? startMs,
-    int? endMs,
-  }) async {
+  Future<List<String>> listAiMessageDays({int? startMs, int? endMs}) async {
     try {
       final db = await database;
       final String where = (startMs != null && endMs != null)
@@ -415,15 +482,12 @@ ${hasOffset ? 'OFFSET ?' : ''}
       final List<dynamic> args = <dynamic>[
         if (startMs != null && endMs != null) ...<dynamic>[startMs, endMs],
       ];
-      final rows = await db.rawQuery(
-        '''
+      final rows = await db.rawQuery('''
 SELECT DISTINCT date(COALESCE(created_at, 0) / 1000, 'unixepoch', 'localtime') AS day
 FROM ai_messages
 $where
 ORDER BY day ASC
-''',
-        args,
-      );
+''', args);
       return rows
           .map((e) => (e['day'] as String?)?.trim() ?? '')
           .where((e) => e.isNotEmpty && e != '1970-01-01')
@@ -453,6 +517,60 @@ ORDER BY day ASC
           .toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// Fetch the persisted `ui_thinking_json` for a specific assistant message.
+  ///
+  /// We identify the message by (conversation_id, role='assistant', created_at)
+  /// so background tool-loop updates can patch the same placeholder bubble even
+  /// after the UI detached.
+  Future<String?> getAiAssistantUiThinkingJson(
+    String conversationId,
+    int createdAtMs,
+  ) async {
+    final String cid = conversationId.trim();
+    if (cid.isEmpty || createdAtMs <= 0) return null;
+    try {
+      final db = await database;
+      final rows = await db.query(
+        'ai_messages',
+        columns: const <String>['ui_thinking_json'],
+        where: 'conversation_id = ? AND role = ? AND created_at = ?',
+        whereArgs: <Object?>[cid, 'assistant', createdAtMs],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      final String? raw = rows.first['ui_thinking_json'] as String?;
+      final String t = (raw ?? '').trim();
+      return t.isEmpty ? null : t;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Update `ui_thinking_json` for a specific assistant message.
+  ///
+  /// Returns the number of updated rows.
+  Future<int> updateAiAssistantUiThinkingJson(
+    String conversationId,
+    int createdAtMs,
+    String uiThinkingJson,
+  ) async {
+    final String cid = conversationId.trim();
+    final String raw = uiThinkingJson.trim();
+    if (cid.isEmpty || createdAtMs <= 0 || raw.isEmpty) return 0;
+    try {
+      final db = await database;
+      final int rows = await db.update(
+        'ai_messages',
+        <String, Object?>{'ui_thinking_json': raw},
+        where: 'conversation_id = ? AND role = ? AND created_at = ?',
+        whereArgs: <Object?>[cid, 'assistant', createdAtMs],
+      );
+      return rows;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -2465,7 +2583,6 @@ ORDER BY day ASC
       return <Map<String, dynamic>>[];
     }
   }
-
 }
 
 Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {

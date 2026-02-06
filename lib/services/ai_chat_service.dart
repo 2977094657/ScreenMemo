@@ -11,10 +11,12 @@ import 'ai_context_budgets.dart';
 import 'ai_settings_service.dart';
 import 'atomic_memory_service.dart';
 import 'chat_context_service.dart';
+import 'chat_history_merge.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
 import 'prompt_budget.dart';
 import 'screenshot_database.dart';
+import 'ui_thinking_json_patcher.dart';
 
 export 'ai_request_gateway.dart'
     show InvalidResponseStartException, InvalidEndpointConfigurationException;

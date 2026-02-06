@@ -50,6 +50,7 @@ extension AIChatServicePersistenceExt on AIChatService {
   }
 
   Future<void> _persistConversation({
+    required String cid,
     required List<AIMessage> history,
     required String userMessage,
     required AIMessage assistant,
@@ -61,20 +62,30 @@ extension AIChatServicePersistenceExt on AIChatService {
   }) async {
     if (!persistHistory) return;
 
-    final AIMessage user = AIMessage(role: 'user', content: userMessage);
     if (persistHistoryTail) {
-      final List<AIMessage> newHistory = <AIMessage>[
-        ...history,
-        user,
-        assistant,
-      ];
-      await _settings.saveChatHistoryActive(newHistory);
+      // Merge into the latest DB history to avoid duplicating the user message
+      // and to preserve UI-persisted `uiThinkingJson` when the chat UI detaches.
+      try {
+        final Map<String, dynamic>? row = await ScreenshotDatabase.instance
+            .getAiConversationByCid(cid);
+        if (row != null) {
+          final List<AIMessage> existing = await _settings.getChatHistoryByCid(
+            cid,
+          );
+          final List<AIMessage> merged = mergeCompletedTurnIntoHistory(
+            existingHistory: existing,
+            userMessage: userMessage,
+            assistantFinal: assistant,
+          );
+          await _settings.saveChatHistoryByCid(cid, merged);
+          _settings.notifyContextChanged('chat:history');
+        }
+      } catch (_) {}
     }
-    await _updateConversationModel(modelUsed);
+    await _updateConversationModel(cid, modelUsed);
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
     try {
-      final String cid = await _settings.getActiveConversationCid();
       // Keep a separate append-only transcript + compacted memory for long chats.
       try {
         await _chatContext.seedFromChatHistoryIfEmpty(
@@ -106,13 +117,12 @@ extension AIChatServicePersistenceExt on AIChatService {
     } catch (_) {}
 
     if (history.isEmpty) {
-      await _renameConversation(conversationTitle ?? userMessage);
+      await _renameConversation(cid, conversationTitle ?? userMessage);
     }
   }
 
-  Future<void> _updateConversationModel(String modelUsed) async {
+  Future<void> _updateConversationModel(String cid, String modelUsed) async {
     try {
-      final String cid = await _settings.getActiveConversationCid();
       final ScreenshotDatabase db = ScreenshotDatabase.instance;
       await db.database.then(
         (storage) => storage.execute(
@@ -123,12 +133,11 @@ extension AIChatServicePersistenceExt on AIChatService {
     } catch (_) {}
   }
 
-  Future<void> _renameConversation(String titleSource) async {
+  Future<void> _renameConversation(String cid, String titleSource) async {
     final String trimmed = titleSource.trim();
     if (trimmed.isEmpty) return;
     final String title = _truncateTitle(trimmed);
     try {
-      final String cid = await _settings.getActiveConversationCid();
       // Do not override a non-empty title (e.g., UI already renamed by intent).
       final Map<String, dynamic>? row = await ScreenshotDatabase.instance
           .getAiConversationByCid(cid);
