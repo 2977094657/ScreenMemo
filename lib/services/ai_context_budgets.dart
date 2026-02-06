@@ -1,4 +1,5 @@
 import '../models/models_dev_limits.dart';
+import 'ai_model_prompt_caps_service.dart';
 
 /// Centralized, model-aware budgeting for prompt/context.
 ///
@@ -69,6 +70,37 @@ class AIContextBudgets {
     final String m = model.trim();
     final int cap = _promptCapTokens(m);
 
+    return _buildBudgets(model: m, promptCapTokens: cap);
+  }
+
+  static AIContextBudgets forModelWithPeekOverride(String model) {
+    final String m = model.trim();
+    final int defaultCap = _promptCapTokens(m);
+    final int cap =
+        (AIModelPromptCapsService.instance.peekOverride(m) ?? defaultCap)
+            .clamp(256, 1 << 30)
+            .toInt();
+
+    return _buildBudgets(model: m, promptCapTokens: cap);
+  }
+
+  static Future<AIContextBudgets> forModelWithOverrides(String model) async {
+    final String m = model.trim();
+    final int defaultCap = _promptCapTokens(m);
+    final int? override = await AIModelPromptCapsService.instance.getOverride(
+      m,
+    );
+    final int cap = (override ?? defaultCap).clamp(256, 1 << 30).toInt();
+
+    return _buildBudgets(model: m, promptCapTokens: cap);
+  }
+
+  static AIContextBudgets _buildBudgets({
+    required String model,
+    required int promptCapTokens,
+  }) {
+    final int cap = promptCapTokens.clamp(256, 1 << 30).toInt();
+
     final int effectiveCap = ((cap * _kEffectiveContextWindowPercent) / 100)
         .floor()
         .clamp(256, 1 << 30);
@@ -80,12 +112,16 @@ class AIContextBudgets {
     final int history = effectiveCap;
     final int toolLoop = effectiveCap;
 
-    final int toolMsg =
-        ((_kToolOutputMaxBytes + 3) ~/ 4).clamp(200, effectiveCap);
+    final int toolMsg = ((_kToolOutputMaxBytes + 3) ~/ 4).clamp(
+      200,
+      effectiveCap,
+    );
 
     // Compaction triggers only when we're close to the window (Codex: 90%).
-    final int autoTrigger =
-        ((cap * _kAutoCompactPercent) / 100).floor().clamp(256, cap);
+    final int autoTrigger = ((cap * _kAutoCompactPercent) / 100).floor().clamp(
+      256,
+      cap,
+    );
 
     // Keep a small recent tail un-compacted so immediate context remains verbatim.
     final int keepUncompacted = 6000.clamp(200, effectiveCap);
@@ -99,7 +135,7 @@ class AIContextBudgets {
     final int summary = _kMaxSummaryTokens.clamp(120, effectiveCap);
 
     return AIContextBudgets(
-      model: m,
+      model: model,
       promptCapTokens: cap,
       effectivePromptCapTokens: effectiveCap,
       historyPromptTokens: history,
@@ -122,6 +158,20 @@ class AIContextBudgets {
       return t.substring(slash + 1).trim();
     }
 
+    String dequalify(String s) {
+      String t = s.trim();
+      final int q = t.indexOf('?');
+      if (q > 0) t = t.substring(0, q).trim();
+      final int hash = t.indexOf('#');
+      if (hash > 0) t = t.substring(0, hash).trim();
+      final int slash = t.lastIndexOf('/');
+      final int colon = t.lastIndexOf(':');
+      if (colon > 0 && colon > slash) {
+        t = t.substring(0, colon).trim();
+      }
+      return t;
+    }
+
     int? deriveInputCap(String name) {
       final int? ctx = ModelsDevModelLimits.contextTokens(name);
       final int? out = ModelsDevModelLimits.outputTokens(name);
@@ -133,13 +183,21 @@ class AIContextBudgets {
     }
 
     final String c = canonicalize(m);
+    final String d = dequalify(m);
+    final String dc = dequalify(c);
     final int? fromLimits =
         ModelsDevModelLimits.inputTokens(m) ??
         ModelsDevModelLimits.inputTokens(c) ??
+        ModelsDevModelLimits.inputTokens(d) ??
+        ModelsDevModelLimits.inputTokens(dc) ??
         deriveInputCap(m) ??
         deriveInputCap(c) ??
+        deriveInputCap(d) ??
+        deriveInputCap(dc) ??
         ModelsDevModelLimits.contextTokens(m) ??
-        ModelsDevModelLimits.contextTokens(c);
+        ModelsDevModelLimits.contextTokens(c) ??
+        ModelsDevModelLimits.contextTokens(d) ??
+        ModelsDevModelLimits.contextTokens(dc);
 
     final int cap = fromLimits ?? _fallbackPromptCapTokens;
     // Defensive clamp to keep math stable even if limits are bogus.

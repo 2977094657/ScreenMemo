@@ -1,4 +1,4 @@
-﻿part of '../ai_settings_page.dart';
+part of '../ai_settings_page.dart';
 
 // Extracted widgets/helpers from ai_settings_page.dart (kept in same library via part).
 
@@ -160,8 +160,9 @@ String _toolChipTextForDisplay(BuildContext context, _ThinkingToolChip chip) {
     toolName: chip.toolName,
     summary: rawSummary,
   );
-  final String baseLabel =
-      chip.label.trim().isEmpty ? chip.toolName : chip.label.trim();
+  final String baseLabel = chip.label.trim().isEmpty
+      ? chip.toolName
+      : chip.label.trim();
   final String normalizedLabel = _coarsenToolLabelForDisplay(baseLabel);
   return summary.isEmpty ? normalizedLabel : '$normalizedLabel · $summary';
 }
@@ -275,8 +276,9 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     final l10n = AppLocalizations.of(context);
     final Color titleColor = _thinkingTextColor;
     final Color subtle = _thinkingTextColor;
-    final String titleText =
-        widget.isLoading ? l10n.thinkingInProgress : l10n.deepThinkingLabel;
+    final String titleText = widget.isLoading
+        ? l10n.thinkingInProgress
+        : l10n.deepThinkingLabel;
     final String fallback = (widget.fallbackReasoning ?? '').trim();
 
     final Duration elapsed = (widget.finishedAt ?? DateTime.now()).difference(
@@ -321,38 +323,7 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         ),
         if (_expanded) ...[
           const SizedBox(height: AppTheme.spacing2),
-          if (widget.events.isEmpty)
-            if (fallback.isNotEmpty)
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 220),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withOpacity(0.04),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                ),
-                child: Scrollbar(
-                  controller: _fallbackScrollController,
-                  child: SingleChildScrollView(
-                    controller: _fallbackScrollController,
-                    physics: const ClampingScrollPhysics(),
-                    child: SelectableText(
-                      fallback,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: subtle,
-                        fontFamily: 'monospace',
-                        height: 1.20,
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            else
-              Text(
-                widget.isLoading ? '…' : '',
-                style: theme.textTheme.bodySmall?.copyWith(color: subtle),
-              )
-          else
+          if (widget.events.isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -364,6 +335,34 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
                   ),
               ],
             ),
+          if (fallback.isNotEmpty) ...[
+            if (widget.events.isNotEmpty)
+              const SizedBox(height: AppTheme.spacing2),
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 220),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              child: Scrollbar(
+                controller: _fallbackScrollController,
+                child: SingleChildScrollView(
+                  controller: _fallbackScrollController,
+                  physics: const ClampingScrollPhysics(),
+                  child: SelectableText(
+                    fallback,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: subtle,
+                      fontFamily: 'monospace',
+                      height: 1.20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ],
     );
@@ -401,7 +400,13 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         fontWeight: FontWeight.w600,
       ),
     );
-    title = _Shimmer(active: e.active, baseColor: titleColor, child: title);
+    // Only shimmer while the block is still loading; stale persisted `active`
+    // flags (e.g. after background completion) should not keep shimmering.
+    title = _Shimmer(
+      active: widget.isLoading && e.active,
+      baseColor: titleColor,
+      child: title,
+    );
 
     final List<Widget> right = <Widget>[title];
     final String sub = (e.subtitle ?? '').trim();
@@ -428,7 +433,9 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
           children: [
             for (int i = 0; i < e.tools.length; i++)
               Padding(
-                padding: EdgeInsets.only(bottom: i == e.tools.length - 1 ? 0 : 6),
+                padding: EdgeInsets.only(
+                  bottom: i == e.tools.length - 1 ? 0 : 6,
+                ),
                 child: _buildToolChip(context, e.tools[i]),
               ),
           ],
@@ -499,16 +506,13 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       ),
       child: _Shimmer(
-        active: chip.active,
+        active: widget.isLoading && chip.active,
         baseColor: fg,
         child: Row(
           mainAxisSize: MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: leading,
-            ),
+            Padding(padding: const EdgeInsets.only(top: 1), child: leading),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -585,7 +589,9 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     final double step = size - overlap;
     final int shownCount = icons.length;
     final double width =
-        size + (shownCount <= 1 ? 0 : (shownCount - 1) * step) + (extraCount > 0 ? step : 0);
+        size +
+        (shownCount <= 1 ? 0 : (shownCount - 1) * step) +
+        (extraCount > 0 ? step : 0);
 
     return SizedBox(
       width: width,
@@ -596,11 +602,7 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
           for (int i = 0; i < shownCount; i++)
             Positioned(
               left: i * step,
-              child: _buildSingleAppIcon(
-                bytes: icons[i],
-                fg: fg,
-                size: size,
-              ),
+              child: _buildSingleAppIcon(bytes: icons[i], fg: fg, size: size),
             ),
           if (extraCount > 0)
             Positioned(
@@ -623,17 +625,8 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     required double size,
   }) {
     final Widget child = bytes != null
-        ? Image.memory(
-            bytes,
-            width: size,
-            height: size,
-            fit: BoxFit.contain,
-          )
-        : Icon(
-            Icons.android,
-            size: size * 0.75,
-            color: fg.withOpacity(0.9),
-          );
+        ? Image.memory(bytes, width: size, height: size, fit: BoxFit.contain)
+        : Icon(Icons.android, size: size * 0.75, color: fg.withOpacity(0.9));
 
     // Display the icon as-is; do not add a background behind it.
     return SizedBox(

@@ -707,17 +707,9 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
   }
 
   void _cancelRequest() {
-    _streamSubscription?.cancel();
-    _streamSubscription = null;
-    if (mounted) {
-      _setState(() {
-        _sending = false;
-        _inStreaming = false;
-        _currentAssistantIndex = null;
-      });
-      _stopDots();
-      UINotifier.info(context, AppLocalizations.of(context).requestStoppedInfo);
-    }
+    _detachStreamingUiForBackground(persistUiState: true);
+    if (!mounted) return;
+    UINotifier.info(context, AppLocalizations.of(context).requestStoppedInfo);
   }
 
   // 载入"对话页(chat)"的提供商/模型选择（独立于动态页）

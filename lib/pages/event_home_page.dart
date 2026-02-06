@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../theme/app_theme.dart';
@@ -35,7 +34,6 @@ class _EventHomePageState extends State<EventHomePage> {
   String? _ctxModel;
   bool _ctxLoading = true;
   StreamSubscription<String>? _ctxChangedSub;
-  Key _chatViewKey = UniqueKey();
 
   // 底部选择面板查询文本持久化，避免键盘收起或重建导致清空
   String _providerQueryText = '';
@@ -46,29 +44,36 @@ class _EventHomePageState extends State<EventHomePage> {
   String? _activeConversationCid;
   bool _convLoading = true;
 
-
- @override
- void initState() {
-   super.initState();
-   _loadChatContextSelection();
-   _loadConversations();
-   _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
-     if ((ctx == 'chat' || ctx == 'chat:cleared') && mounted) {
-       _loadChatContextSelection();
-       _loadConversations();
+  @override
+  void initState() {
+    super.initState();
+    _loadChatContextSelection();
+    _loadConversations();
+    _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
+      if ((ctx == 'chat' ||
+              ctx == 'chat:cleared' ||
+              ctx == 'chat:history') &&
+          mounted) {
+        _loadChatContextSelection();
+        _loadConversations();
       }
       if (ctx == 'chat:deleted' && mounted) {
         // UI 完全清空计时：从收到事件开始到列表空并首次帧绘制
         final sw = Stopwatch()..start();
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           sw.stop();
-          try { await FlutterLogger.nativeInfo('UI', 'EventHome 清空后首帧耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+          try {
+            await FlutterLogger.nativeInfo(
+              'UI',
+              'EventHome 清空后首帧耗时(毫秒)=' + sw.elapsedMilliseconds.toString(),
+            );
+          } catch (_) {}
         });
       }
-   });
-   // 不再需要等待旧的模型加载；直接进入正文视图
-   _loading = false;
- }
+    });
+    // 不再需要等待旧的模型加载；直接进入正文视图
+    _loading = false;
+  }
 
   @override
   void dispose() {
@@ -122,12 +127,22 @@ class _EventHomePageState extends State<EventHomePage> {
       sel ??= await svc.getDefaultProvider();
       sel ??= providers.first;
 
-      String model = (ctxRow != null && (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
+      String model =
+          (ctxRow != null &&
+              (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
           ? (ctxRow['model'] as String).trim()
-          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel).toString().trim();
-      if (model.isEmpty || (sel.models.isNotEmpty && !sel.models.contains(model))) {
-        final String fb = ((sel.extra['active_model'] as String?) ?? sel.defaultModel).toString().trim();
-        model = fb.isNotEmpty ? fb : (sel.models.isNotEmpty ? sel.models.first : model);
+          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
+                .toString()
+                .trim();
+      if (model.isEmpty ||
+          (sel.models.isNotEmpty && !sel.models.contains(model))) {
+        final String fb =
+            ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
+                .toString()
+                .trim();
+        model = fb.isNotEmpty
+            ? fb
+            : (sel.models.isNotEmpty ? sel.models.first : model);
       }
 
       if (mounted) {
@@ -142,56 +157,57 @@ class _EventHomePageState extends State<EventHomePage> {
     }
   }
 
- // —— 会话：加载/新建/切换 ——
- Future<void> _loadConversations() async {
-   try {
-     final list = await _settings.listAiConversations();
-     final active = await _settings.getActiveConversationCid();
-     if (!mounted) return;
-     setState(() {
-       _conversations = list;
-       _activeConversationCid = active;
-       _convLoading = false;
-     });
-   } catch (_) {
-     if (!mounted) return;
-     setState(() => _convLoading = false);
-   }
- }
+  // —— 会话：加载/新建/切换 ——
+  Future<void> _loadConversations() async {
+    try {
+      final list = await _settings.listAiConversations();
+      final active = await _settings.getActiveConversationCid();
+      if (!mounted) return;
+      setState(() {
+        _conversations = list;
+        _activeConversationCid = active;
+        _convLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _convLoading = false);
+    }
+  }
 
- Future<void> _newConversation() async {
-   try {
-    final cid = await _settings.createConversation(title: '');
-     if (!mounted) return;
-    UINotifier.success(context, AppLocalizations.of(context).savedCurrentGroupToast);
-     setState(() {
-       _activeConversationCid = cid;
-       _chatViewKey = UniqueKey();
-     });
-     await _loadConversations();
-   } catch (e) {
-     if (!mounted) return;
-     UINotifier.error(context, 'Create failed: ${e.toString()}');
-   }
- }
+  Future<void> _newConversation() async {
+    try {
+      final cid = await _settings.createConversation(title: '');
+      if (!mounted) return;
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).savedCurrentGroupToast,
+      );
+      setState(() {
+        _activeConversationCid = cid;
+      });
+      await _loadConversations();
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, 'Create failed: ${e.toString()}');
+    }
+  }
 
- Future<void> _switchConversation(String cid) async {
-   try {
-     await _settings.setActiveConversationCid(cid);
-     if (!mounted) return;
-     setState(() {
-       _activeConversationCid = cid;
-       _chatViewKey = UniqueKey();
-     });
-     UINotifier.success(context, '已切换会话');
-     await _loadConversations();
-   } catch (e) {
-     if (!mounted) return;
-     UINotifier.error(context, 'Switch failed: ${e.toString()}');
-   }
- }
+  Future<void> _switchConversation(String cid) async {
+    try {
+      await _settings.setActiveConversationCid(cid);
+      if (!mounted) return;
+      setState(() {
+        _activeConversationCid = cid;
+      });
+      UINotifier.success(context, '已切换会话');
+      await _loadConversations();
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, 'Switch failed: ${e.toString()}');
+    }
+  }
 
- Future<void> _showProviderSheetChat() async {
+  Future<void> _showProviderSheetChat() async {
     final svc = AIProvidersService.instance;
     final list = await svc.listProviders();
     if (!mounted) return;
@@ -202,7 +218,9 @@ class _EventHomePageState extends State<EventHomePage> {
       builder: (ctx) {
         final currentId = _ctxProvider?.id ?? -1;
         // 将控制器移到 StatefulBuilder 外部，并使用持久化文本初始化
-        final TextEditingController queryCtrl = TextEditingController(text: _providerQueryText);
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _providerQueryText,
+        );
         return StatefulBuilder(
           builder: (c, setModalState) {
             return DraggableScrollableSheet(
@@ -217,7 +235,9 @@ class _EventHomePageState extends State<EventHomePage> {
                   final name = p.name.toLowerCase();
                   final type = p.type.toLowerCase();
                   final base = (p.baseUrl ?? '').toString().toLowerCase();
-                  return name.contains(q) || type.contains(q) || base.contains(q);
+                  return name.contains(q) ||
+                      type.contains(q) ||
+                      base.contains(q);
                 }).toList();
                 // 将当前选中的提供商置顶，便于观察
                 final selIdx = filtered.indexWhere((e) => e.id == currentId);
@@ -242,9 +262,13 @@ class _EventHomePageState extends State<EventHomePage> {
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchProviderPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchProviderPlaceholder,
                             isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
@@ -254,7 +278,9 @@ class _EventHomePageState extends State<EventHomePage> {
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
                           ),
                           itemBuilder: (c, i) {
                             final p = filtered[i];
@@ -262,26 +288,51 @@ class _EventHomePageState extends State<EventHomePage> {
                             return ListTile(
                               leading: SvgPicture.asset(
                                 ModelIconUtils.getProviderIconPath(p.type),
-                                width: 20, height: 20,
+                                width: 20,
+                                height: 20,
                               ),
-                              title: Text(p.name, style: Theme.of(c).textTheme.bodyMedium),
-                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              title: Text(
+                                p.name,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.primary,
+                                    )
+                                  : null,
                               onTap: () async {
                                 String model = (_ctxModel ?? '').trim();
                                 final List<String> available = p.models;
-                                if (model.isEmpty || (available.isNotEmpty && !available.contains(model))) {
-                                  String fb = (p.extra['active_model'] as String? ?? p.defaultModel).toString().trim();
-                                  if (fb.isEmpty && available.isNotEmpty) fb = available.first;
+                                if (model.isEmpty ||
+                                    (available.isNotEmpty &&
+                                        !available.contains(model))) {
+                                  String fb =
+                                      (p.extra['active_model'] as String? ??
+                                              p.defaultModel)
+                                          .toString()
+                                          .trim();
+                                  if (fb.isEmpty && available.isNotEmpty)
+                                    fb = available.first;
                                   model = fb;
                                 }
-                                await _settings.setAIContextSelection(context: 'chat', providerId: p.id!, model: model);
+                                await _settings.setAIContextSelection(
+                                  context: 'chat',
+                                  providerId: p.id!,
+                                  model: model,
+                                );
                                 if (mounted) {
                                   setState(() {
                                     _ctxProvider = p;
                                     _ctxModel = model;
                                   });
                                   Navigator.of(ctx).pop();
-                                  UINotifier.success(context, AppLocalizations.of(context).providerSelectedToast(p.name));
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).providerSelectedToast(p.name),
+                                  );
                                 }
                               },
                             );
@@ -302,12 +353,18 @@ class _EventHomePageState extends State<EventHomePage> {
   Future<void> _showModelSheetChat() async {
     final p = _ctxProvider;
     if (p == null) {
-      UINotifier.info(context, AppLocalizations.of(context).pleaseSelectProviderFirst);
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).pleaseSelectProviderFirst,
+      );
       return;
     }
     final models = p.models;
     if (models.isEmpty) {
-      UINotifier.info(context, AppLocalizations.of(context).noModelsForProviderHint);
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).noModelsForProviderHint,
+      );
       return;
     }
     if (!mounted) return;
@@ -318,7 +375,9 @@ class _EventHomePageState extends State<EventHomePage> {
       builder: (ctx) {
         final active = (_ctxModel ?? '').trim();
         // 将控制器移到 StatefulBuilder 外部，并使用持久化文本初始化
-        final TextEditingController queryCtrl = TextEditingController(text: _modelQueryText);
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _modelQueryText,
+        );
         return StatefulBuilder(
           builder: (c, setModalState) {
             return DraggableScrollableSheet(
@@ -357,9 +416,13 @@ class _EventHomePageState extends State<EventHomePage> {
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchModelPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchModelPlaceholder,
                             isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
@@ -369,7 +432,9 @@ class _EventHomePageState extends State<EventHomePage> {
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
                           ),
                           itemBuilder: (c, i) {
                             final m = filtered[i];
@@ -377,16 +442,34 @@ class _EventHomePageState extends State<EventHomePage> {
                             return ListTile(
                               leading: SvgPicture.asset(
                                 ModelIconUtils.getIconPath(m),
-                                width: 20, height: 20,
+                                width: 20,
+                                height: 20,
                               ),
-                              title: Text(m, style: Theme.of(c).textTheme.bodyMedium),
-                              trailing: selected ? Icon(Icons.check_circle, color: Theme.of(c).colorScheme.primary) : null,
+                              title: Text(
+                                m,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.primary,
+                                    )
+                                  : null,
                               onTap: () async {
-                                await _settings.setAIContextSelection(context: 'chat', providerId: p.id!, model: m);
+                                await _settings.setAIContextSelection(
+                                  context: 'chat',
+                                  providerId: p.id!,
+                                  model: m,
+                                );
                                 if (mounted) {
                                   setState(() => _ctxModel = m);
                                   Navigator.of(ctx).pop();
-                                  UINotifier.success(context, AppLocalizations.of(context).modelSwitchedToast(m));
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).modelSwitchedToast(m),
+                                  );
                                 }
                               },
                             );
@@ -459,25 +542,18 @@ class _EventHomePageState extends State<EventHomePage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final titleText = (_model == null || _model!.trim().isEmpty) ? '—' : _model!;
+    final titleText = (_model == null || _model!.trim().isEmpty)
+        ? '—'
+        : _model!;
     final titleWidget = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (_iconAsset != null) ...[
-          SvgPicture.asset(
-            _iconAsset!,
-            width: 18,
-            height: 18,
-          ),
+          SvgPicture.asset(_iconAsset!, width: 18, height: 18),
           const SizedBox(width: 6),
         ],
-        Flexible(
-          child: Text(
-            titleText,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
+        Flexible(child: Text(titleText, overflow: TextOverflow.ellipsis)),
       ],
     );
 
@@ -495,17 +571,9 @@ class _EventHomePageState extends State<EventHomePage> {
           ),
         ),
         title: _buildChatProviderModelAppBarTitle(),
+        bottom: const ChatContextAppBarUsageBar(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.memory_outlined),
-            tooltip: Localizations.localeOf(context)
-                    .languageCode
-                    .toLowerCase()
-                    .startsWith('zh')
-                ? '对话上下文'
-                : 'Conversation context',
-            onPressed: () => ChatContextSheet.show(context),
-          ),
+          const ChatContextAppBarAction(),
           IconButton(
             icon: const Icon(Icons.add_comment_outlined),
             tooltip: '新建会话',
@@ -521,7 +589,10 @@ class _EventHomePageState extends State<EventHomePage> {
               builder: (context, constraints) {
                 final showSidebar = constraints.maxWidth >= 960;
                 if (!showSidebar) {
-                return AISettingsPage(embedded: true, key: _chatViewKey);
+                  return const AISettingsPage(
+                    embedded: true,
+                    key: ValueKey('ai-settings-chat'),
+                  );
                 }
                 final theme = Theme.of(context);
                 return Row(
@@ -553,9 +624,7 @@ class _EventHomePageState extends State<EventHomePage> {
                               ),
                               child: Text(
                                 l10n.aiAssistantTitle,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
+                                style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
                                       fontWeight: FontWeight.w600,
                                       letterSpacing: 0.5,
@@ -578,12 +647,13 @@ class _EventHomePageState extends State<EventHomePage> {
                               title: l10n.clearConversation,
                               onTap: () async {
                                 try {
-                                  await AIChatService.instance.clearConversation();
+                                  await AIChatService.instance
+                                      .clearConversation();
                                   if (mounted) {
-                                    UINotifier.success(context, l10n.clearSuccess);
-                                    setState(() {
-                                      _chatViewKey = UniqueKey();
-                                    });
+                                    UINotifier.success(
+                                      context,
+                                      l10n.clearSuccess,
+                                    );
                                   }
                                 } catch (e) {
                                   if (mounted) {
@@ -603,45 +673,64 @@ class _EventHomePageState extends State<EventHomePage> {
                               ),
                               child: Text(
                                 '对话',
-                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.5,
-                                ),
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.5,
+                                    ),
                               ),
                             ),
                             if (_convLoading)
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-                                child: Text('正在加载会话…', style: Theme.of(context).textTheme.bodySmall),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppTheme.spacing4,
+                                  vertical: AppTheme.spacing1,
+                                ),
+                                child: Text(
+                                  '正在加载会话…',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
                               )
-                            else ...(() {
-                              // 将当前激活会话置顶
-                              final sortedConvs = List<Map<String, dynamic>>.from(_conversations);
-                              sortedConvs.sort((a, b) {
-                                final aCid = (a['cid'] as String?) ?? '';
-                                final bCid = (b['cid'] as String?) ?? '';
-                                if (aCid == (_activeConversationCid ?? '')) return -1;
-                                if (bCid == (_activeConversationCid ?? '')) return 1;
-                                final aTime = (a['updated_at'] as int?) ?? 0;
-                                final bTime = (b['updated_at'] as int?) ?? 0;
-                                return bTime.compareTo(aTime);
-                              });
-                              
-                              return sortedConvs.map((c) {
-                                final cid = (c['cid'] as String?) ?? '';
-                                final title = ((c['title'] as String?) ?? '').trim().isEmpty ? '未命名会话' : (c['title'] as String);
-                                final model = (c['model'] as String?) ?? '';
-                                final isActive = (_activeConversationCid ?? '') == cid;
-                                
-                                return _buildConversationTile(
-                                  context: context,
-                                  cid: cid,
-                                  title: title,
-                                  model: model,
-                                  isActive: isActive,
-                                );
-                              }).toList();
-                            })(),
+                            else
+                              ...(() {
+                                // 将当前激活会话置顶
+                                final sortedConvs =
+                                    List<Map<String, dynamic>>.from(
+                                      _conversations,
+                                    );
+                                sortedConvs.sort((a, b) {
+                                  final aCid = (a['cid'] as String?) ?? '';
+                                  final bCid = (b['cid'] as String?) ?? '';
+                                  if (aCid == (_activeConversationCid ?? ''))
+                                    return -1;
+                                  if (bCid == (_activeConversationCid ?? ''))
+                                    return 1;
+                                  final aTime = (a['updated_at'] as int?) ?? 0;
+                                  final bTime = (b['updated_at'] as int?) ?? 0;
+                                  return bTime.compareTo(aTime);
+                                });
+
+                                return sortedConvs.map((c) {
+                                  final cid = (c['cid'] as String?) ?? '';
+                                  final title =
+                                      ((c['title'] as String?) ?? '')
+                                          .trim()
+                                          .isEmpty
+                                      ? '未命名会话'
+                                      : (c['title'] as String);
+                                  final model = (c['model'] as String?) ?? '';
+                                  final isActive =
+                                      (_activeConversationCid ?? '') == cid;
+
+                                  return _buildConversationTile(
+                                    context: context,
+                                    cid: cid,
+                                    title: title,
+                                    model: model,
+                                    isActive: isActive,
+                                  );
+                                }).toList();
+                              })(),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: AppTheme.spacing4,
@@ -660,7 +749,9 @@ class _EventHomePageState extends State<EventHomePage> {
                               textWeight: FontWeight.w400,
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => ProviderListPage()),
+                                  MaterialPageRoute(
+                                    builder: (_) => ProviderListPage(),
+                                  ),
                                 );
                               },
                             ),
@@ -686,7 +777,12 @@ class _EventHomePageState extends State<EventHomePage> {
                         ),
                       ),
                     ),
-                    Expanded(child: AISettingsPage(embedded: true, key: _chatViewKey)),
+                    Expanded(
+                      child: const AISettingsPage(
+                        embedded: true,
+                        key: ValueKey('ai-settings-chat'),
+                      ),
+                    ),
                   ],
                 );
               },
@@ -805,19 +901,34 @@ class _EventHomePageState extends State<EventHomePage> {
                     try {
                       final sw = Stopwatch()..start();
                       // 乐观更新，避免UI等待数据库事务
-                      final prev = List<Map<String, dynamic>>.from(_conversations);
+                      final prev = List<Map<String, dynamic>>.from(
+                        _conversations,
+                      );
                       setState(() {
-                        _conversations.removeWhere((m) => ((m['cid'] as String?) ?? '') == cid);
+                        _conversations.removeWhere(
+                          (m) => ((m['cid'] as String?) ?? '') == cid,
+                        );
                         if (_activeConversationCid == cid) {
-                          _activeConversationCid = _conversations.isNotEmpty ? (_conversations.first['cid'] as String?) : 'default';
+                          _activeConversationCid = _conversations.isNotEmpty
+                              ? (_conversations.first['cid'] as String?)
+                              : 'default';
                         }
                       });
                       Navigator.of(ctx).pop();
                       final ok = await _settings.deleteConversation(cid);
                       sw.stop();
-                      try { await FlutterLogger.nativeInfo('UI', 'EventHome 删除会话总耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                      try {
+                        await FlutterLogger.nativeInfo(
+                          'UI',
+                          'EventHome 删除会话总耗时(毫秒)=' +
+                              sw.elapsedMilliseconds.toString(),
+                        );
+                      } catch (_) {}
                       if (!ok) {
-                        if (mounted) setState(() { _conversations = prev; });
+                        if (mounted)
+                          setState(() {
+                            _conversations = prev;
+                          });
                         if (mounted) UINotifier.error(context, '删除失败');
                         return;
                       }

@@ -10,12 +10,15 @@ import '../models/models_dev_limits.dart';
 import '../models/prompt_token_breakdown.dart';
 import '../services/ai_chat_service.dart';
 import '../services/ai_context_budgets.dart';
+import '../services/ai_model_prompt_caps_service.dart';
 import '../services/ai_settings_service.dart';
 import '../services/chat_context_service.dart';
 import '../services/locale_service.dart';
 import '../services/prompt_budget.dart';
+import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import 'segmented_token_bar.dart';
+import 'ui_dialog.dart';
 import 'ui_components.dart';
 
 class ChatContextSheet {
@@ -48,7 +51,310 @@ class ChatContextSheet {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => const _ChatContextSheetBody(),
+      builder: (ctx) => const ChatContextPanel(
+        presentation: ChatContextPanelPresentation.bottomSheet,
+      ),
+    );
+  }
+}
+
+enum ChatContextPanelPresentation { bottomSheet, drawer }
+
+/// A right-side drawer wrapper that shows [ChatContextPanel].
+class ChatContextDrawer extends StatelessWidget {
+  const ChatContextDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Drawer(
+      child: ChatContextPanel(
+        presentation: ChatContextPanelPresentation.drawer,
+      ),
+    );
+  }
+}
+
+/// AppBar action that opens the conversation-context bottom sheet when tapped.
+///
+/// The prompt/context usage indicator is shown as a bar under the AppBar (see
+/// [ChatContextAppBarUsageBar]) instead of being overlaid on this icon.
+class ChatContextAppBarAction extends StatelessWidget {
+  const ChatContextAppBarAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: ChatContextSheet._loc(context, '对话上下文', 'Conversation context'),
+      onPressed: () => ChatContextSheet.show(context),
+      icon: const Icon(Icons.memory_outlined),
+    );
+  }
+}
+
+/// A thin progress bar shown under the AppBar to visualize the approximate
+/// prompt/context usage (tokens).
+class ChatContextAppBarUsageBar extends StatefulWidget
+    implements PreferredSizeWidget {
+  const ChatContextAppBarUsageBar({super.key});
+
+  // Match the panel token bars for visual consistency.
+  static const double _barHeight = 6.0;
+
+  @override
+  // Do not increase the AppBar height; we paint this bar by overflowing upward
+  // into the toolbar area (so it visually sits "inside" the AppBar).
+  Size get preferredSize => const Size.fromHeight(0);
+
+  @override
+  State<ChatContextAppBarUsageBar> createState() =>
+      _ChatContextAppBarUsageBarState();
+}
+
+class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
+  StreamSubscription<String>? _sub;
+
+  bool _refreshInFlight = false;
+  int _tokens = 0;
+  int _capTokens = 0;
+  Map<String, int> _parts = const <String, int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _sub = AISettingsService.instance.onContextChanged.listen((_) {
+      _refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _sub = null;
+    super.dispose();
+  }
+
+  static int _toInt(Object? v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static String _fmtCompactInt(int value) {
+    final int v = value.clamp(0, 1 << 62).toInt();
+    if (v < 1000) return v.toString();
+    if (v < 10000) {
+      final String s = (v / 1000).toStringAsFixed(1);
+      return (s.endsWith('.0') ? s.substring(0, s.length - 2) : s) + 'k';
+    }
+    if (v < 1000000) {
+      return '${(v / 1000).round()}k';
+    }
+    final String s = (v / 1000000).toStringAsFixed(1);
+    return (s.endsWith('.0') ? s.substring(0, s.length - 2) : s) + 'm';
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshInFlight) return;
+    _refreshInFlight = true;
+    try {
+      final String cid = await AISettingsService.instance
+          .getActiveConversationCid();
+      final Map<String, dynamic>? row = await ScreenshotDatabase.instance
+          .getAiConversationByCid(cid);
+
+      int tokens = _toInt(row?['last_prompt_tokens']);
+      String model = (row?['model'] as String?)?.trim() ?? '';
+      final String raw =
+          (row?['last_prompt_breakdown_json'] as String?)?.trim() ?? '';
+      final Map<String, int> parts = <String, int>{};
+      if (raw.isNotEmpty) {
+        try {
+          final dynamic decoded = jsonDecode(raw);
+          if (decoded is Map) {
+            final String m = (decoded['model'] ?? '').toString().trim();
+            if (m.isNotEmpty) model = m;
+            final dynamic total = decoded['total_tokens'];
+            if (total is num) tokens = total.toInt();
+            final dynamic p = decoded['parts'];
+            if (p is Map) {
+              for (final entry in p.entries) {
+                final String k = entry.key.toString();
+                final dynamic v = entry.value;
+                if (v is! num) continue;
+                final int t = v.toInt();
+                if (t <= 0) continue;
+                parts[k] = t;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (model.trim().isEmpty) {
+        try {
+          model = (await AISettingsService.instance.getModel()).trim();
+        } catch (_) {
+          model = '';
+        }
+      }
+
+      String activeModel = '';
+      try {
+        activeModel = (await AISettingsService.instance.getModel()).trim();
+      } catch (_) {
+        activeModel = '';
+      }
+
+      final int fallbackCapTokens = AIContextBudgets.forModel(
+        '__unknown__',
+      ).promptCapTokens;
+      final int activeCapTokens = activeModel.isEmpty
+          ? 0
+          : (await AIContextBudgets.forModelWithOverrides(
+              activeModel,
+            )).promptCapTokens;
+      final int promptModelCapTokens = model.trim().isEmpty
+          ? 0
+          : (await AIContextBudgets.forModelWithOverrides(
+              model,
+            )).promptCapTokens;
+      final int? promptModelOverride = model.trim().isEmpty
+          ? null
+          : await AIModelPromptCapsService.instance.getOverride(model);
+      final bool sameModel =
+          model.trim().toLowerCase() == activeModel.trim().toLowerCase();
+      final bool promptLooksFallback =
+          promptModelCapTokens == fallbackCapTokens;
+
+      final int capTokens = (promptModelCapTokens <= 0)
+          ? activeCapTokens
+          : (promptModelOverride != null ||
+                sameModel ||
+                !promptLooksFallback ||
+                activeCapTokens <= 0)
+          ? promptModelCapTokens
+          : activeCapTokens;
+
+      if (!mounted) return;
+      setState(() {
+        _tokens = tokens.clamp(0, 1 << 62).toInt();
+        _capTokens = capTokens.clamp(0, 1 << 30).toInt();
+        _parts = parts;
+      });
+    } catch (_) {
+      // Keep the last known values; the app bar should never crash due to a
+      // transient DB/model lookup failure.
+    } finally {
+      _refreshInFlight = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final String usedText = _fmtCompactInt(_tokens);
+    final String capText = _capTokens > 0 ? _fmtCompactInt(_capTokens) : '—';
+    final String tooltip = ChatContextSheet._loc(
+      context,
+      '对话上下文 · $usedText/$capText',
+      'Conversation context · $usedText/$capText',
+    );
+
+    final int used = _tokens.clamp(0, 1 << 62).toInt();
+    final int cap = _capTokens.clamp(0, 1 << 30).toInt();
+    final int total = cap > 0 ? cap : (used > 0 ? used : 1);
+
+    final List<PromptTokenPart> order = <PromptTokenPart>[
+      PromptTokenPart.systemPrompt,
+      PromptTokenPart.toolSchema,
+      PromptTokenPart.toolInstruction,
+      PromptTokenPart.conversationContext,
+      PromptTokenPart.atomicMemory,
+      PromptTokenPart.extraSystem,
+      PromptTokenPart.historyUser,
+      PromptTokenPart.historyAssistant,
+      PromptTokenPart.historyTool,
+      PromptTokenPart.userMessage,
+    ];
+
+    final int partsSum = order.fold<int>(
+      0,
+      (a, part) => a + (_parts[part.key] ?? 0),
+    );
+    final int remainder = (used - partsSum).clamp(0, 1 << 62).toInt();
+
+    final List<SegmentedTokenBarSegment> segments = <SegmentedTokenBarSegment>[
+      for (final part in order)
+        if ((_parts[part.key] ?? 0) > 0)
+          SegmentedTokenBarSegment(
+            tokens: _parts[part.key]!,
+            color: part.color(theme),
+          ),
+    ];
+    if (segments.isEmpty) {
+      if (used > 0) {
+        segments.add(
+          SegmentedTokenBarSegment(
+            tokens: used,
+            color: theme.colorScheme.primary,
+          ),
+        );
+      }
+    } else if (remainder > 0) {
+      segments.add(
+        SegmentedTokenBarSegment(
+          tokens: remainder,
+          color: theme.colorScheme.primary,
+        ),
+      );
+    }
+
+    // Fill the remaining capacity explicitly as a segment so only the right
+    // side shows the track color (no border/track around the whole bar).
+    final int remainCap = cap > 0 ? (cap - used).clamp(0, cap) : 0;
+    final List<SegmentedTokenBarSegment> barSegments = remainCap > 0
+        ? <SegmentedTokenBarSegment>[
+            ...segments,
+            SegmentedTokenBarSegment(
+              tokens: remainCap,
+              color: theme.colorScheme.surfaceContainerHighest,
+            ),
+          ]
+        : segments;
+
+    return SizedBox(
+      height: 0,
+      child: OverflowBox(
+        alignment: Alignment.bottomLeft,
+        minHeight: ChatContextAppBarUsageBar._barHeight,
+        maxHeight: ChatContextAppBarUsageBar._barHeight,
+        child: Padding(
+          // Keep symmetric gutters like the AppBar content.
+          padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+          child: Tooltip(
+            message: tooltip,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => ChatContextSheet.show(context),
+              child: Transform.translate(
+                // Lift it further into the toolbar area (reduce the large empty gap).
+                offset: const Offset(0, -AppTheme.spacing2),
+                child: SegmentedTokenBar(
+                  totalTokens: total,
+                  segments: barSegments,
+                  height: ChatContextAppBarUsageBar._barHeight,
+                  radius: 999,
+                  backgroundColor: Colors.transparent,
+                  borderColor: Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -69,26 +375,30 @@ class _PromptUsageEstimate {
   final Map<String, int> parts;
 }
 
-class _ChatContextSheetBody extends StatefulWidget {
-  const _ChatContextSheetBody();
+class ChatContextPanel extends StatefulWidget {
+  const ChatContextPanel({
+    super.key,
+    this.presentation = ChatContextPanelPresentation.bottomSheet,
+  });
+
+  final ChatContextPanelPresentation presentation;
 
   @override
-  State<_ChatContextSheetBody> createState() => _ChatContextSheetBodyState();
+  State<ChatContextPanel> createState() => _ChatContextPanelState();
 }
 
-class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
+class _ChatContextPanelState extends State<ChatContextPanel> {
   Future<ChatContextSnapshot>? _future;
-  Future<int>? _globalTokensFuture;
   // Cache the last successful snapshot/token count so periodic refresh won't "flash"
   // the sheet by resetting FutureBuilder data to null.
   ChatContextSnapshot? _cachedSnapshot;
-  int _cachedGlobalTokens = 0;
   Timer? _pollTimer;
   bool _refreshInFlight = false;
   bool _busy = false;
   String _activeModel = '';
   int? _activeModelContextTokens;
   int? _activeModelOutputTokens;
+  String _lastPromptModelForCapOverride = '';
   bool _amEnabled = true;
   bool _amAutoExtract = false;
   int _amMaxTokens = 700;
@@ -121,26 +431,31 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     snapFuture
         .then((s) {
           _cachedSnapshot = s;
+          try {
+            final String raw = s.lastPromptBreakdownJson.trim();
+            if (raw.isEmpty) return;
+            final dynamic decoded = jsonDecode(raw);
+            if (decoded is! Map) return;
+            final String m = (decoded['model'] ?? '').toString().trim();
+            if (m.isEmpty) return;
+            if (m == _lastPromptModelForCapOverride) return;
+            _lastPromptModelForCapOverride = m;
+            unawaited(() async {
+              final int? v = await AIModelPromptCapsService.instance
+                  .getOverride(m);
+              if (!mounted) return;
+              // Only rebuild if we actually have a custom override (otherwise
+              // the default inference stays the same).
+              if (v != null) setState(() {});
+            }());
+          } catch (_) {}
         })
         .catchError((_) {});
-
-    final Future<int> globalTokensFuture = ChatContextService.instance
-        .getGlobalPromptTokensTotal();
-    globalTokensFuture
-        .then((v) {
-          _cachedGlobalTokens = v;
-        })
-        .catchError((_) {});
-
-    Future.wait<void>(<Future<void>>[
-      snapFuture.then((_) {}),
-      globalTokensFuture.then((_) {}),
-    ]).whenComplete(() {
+    snapFuture.whenComplete(() {
       _refreshInFlight = false;
     });
     setState(() {
       _future = snapFuture;
-      _globalTokensFuture = globalTokensFuture;
     });
   }
 
@@ -153,7 +468,9 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
   Future<void> _loadModelInfo() async {
     try {
       final String model = await AISettingsService.instance.getModel();
-      final int ctx = AIContextBudgets.forModel(model).promptCapTokens;
+      final int ctx = (await AIContextBudgets.forModelWithOverrides(
+        model,
+      )).promptCapTokens.clamp(256, 1 << 30).toInt();
       final int? out = ModelsDevModelLimits.outputTokens(model);
       if (!mounted) return;
       setState(() {
@@ -182,7 +499,8 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
 
   int _promptCapTokensForUi() {
     final String model = _activeModel.trim();
-    return AIContextBudgets.forModel(model).promptCapTokens;
+    return _activeModelContextTokens ??
+        AIContextBudgets.forModel(model).promptCapTokens;
   }
 
   int _amMaxTokensCapForUi() {
@@ -459,6 +777,150 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
+  Future<void> _editModelPromptCapDialog(
+    BuildContext context, {
+    required String model,
+    required int fallbackPromptCapTokens,
+  }) async {
+    final String m = model.trim();
+    if (m.isEmpty) return;
+
+    final int? override0 = await AIModelPromptCapsService.instance.getOverride(
+      m,
+    );
+    final bool hasOverride = override0 != null;
+    final int cap0 = (override0 ?? fallbackPromptCapTokens)
+        .clamp(256, 1 << 30)
+        .toInt();
+
+    final TextEditingController ctrl = TextEditingController(text: '$cap0');
+
+    // Keep the dialog open on invalid input.
+    Future<void> save(BuildContext ctx) async {
+      final int? v = int.tryParse(ctrl.text.trim());
+      if (v == null) {
+        UINotifier.error(
+          context,
+          ChatContextSheet._loc(context, '请输入数字', 'Please enter a number.'),
+        );
+        return;
+      }
+      if (v < 256) {
+        UINotifier.error(
+          context,
+          ChatContextSheet._loc(
+            context,
+            '值过小（至少 256）',
+            'Value too small (min 256).',
+          ),
+        );
+        return;
+      }
+
+      await AIModelPromptCapsService.instance.setOverride(m, v);
+      if (mounted) setState(() {});
+      if (!ctx.mounted) return;
+      Navigator.of(ctx).pop();
+      UINotifier.success(
+        context,
+        ChatContextSheet._loc(context, '已保存', 'Saved'),
+      );
+    }
+
+    Future<void> clear(BuildContext ctx) async {
+      await AIModelPromptCapsService.instance.clearOverride(m);
+      if (mounted) setState(() {});
+      if (!ctx.mounted) return;
+      Navigator.of(ctx).pop();
+      UINotifier.success(
+        context,
+        ChatContextSheet._loc(context, '已清除', 'Cleared'),
+      );
+    }
+
+    await showUIDialog<void>(
+      context: context,
+      title: ChatContextSheet._loc(
+        context,
+        '设置模型最大 token',
+        'Set model max tokens',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            ChatContextSheet._loc(context, '模型', 'Model'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Text(
+            m,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: InputDecoration(
+              labelText: ChatContextSheet._loc(
+                context,
+                '最大 token（prompt）',
+                'Max tokens (prompt)',
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            hasOverride
+                ? ChatContextSheet._loc(
+                    context,
+                    '当前为自定义值（可清除恢复默认推断）',
+                    'Custom value is set (you can clear to restore defaults).',
+                  )
+                : ChatContextSheet._loc(
+                    context,
+                    '未设置自定义值（当前为默认推断）',
+                    'No custom value (using defaults).',
+                  ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      actions: <UIDialogAction<void>>[
+        UIDialogAction<void>(
+          text: ChatContextSheet._loc(context, '取消', 'Cancel'),
+        ),
+        if (hasOverride)
+          UIDialogAction<void>(
+            text: ChatContextSheet._loc(context, '清除', 'Clear'),
+            style: UIDialogActionStyle.destructive,
+            closeOnPress: false,
+            onPressed: clear,
+          ),
+        UIDialogAction<void>(
+          text: ChatContextSheet._loc(context, '保存', 'Save'),
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: save,
+        ),
+      ],
+    );
+  }
+
   Future<void> _run({
     required Future<void> Function() action,
     required String okTextZh,
@@ -488,18 +950,25 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bool isDrawer =
+        widget.presentation == ChatContextPanelPresentation.drawer;
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
-      minChildSize: 0.45,
-      maxChildSize: 0.95,
-      expand: false,
+      initialChildSize: isDrawer ? 1.0 : 0.75,
+      minChildSize: isDrawer ? 1.0 : 0.45,
+      maxChildSize: isDrawer ? 1.0 : 0.95,
+      expand: isDrawer,
       builder: (sheetCtx, ctrl) {
         return UISheetSurface(
+          safeAreaTop: isDrawer,
           child: Column(
             children: [
-              const SizedBox(height: AppTheme.spacing3),
-              const UISheetHandle(),
-              const SizedBox(height: AppTheme.spacing2),
+              if (!isDrawer) ...[
+                const SizedBox(height: AppTheme.spacing3),
+                const UISheetHandle(),
+                const SizedBox(height: AppTheme.spacing2),
+              ] else ...[
+                const SizedBox(height: AppTheme.spacing2),
+              ],
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppTheme.spacing4,
@@ -523,6 +992,12 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                       onPressed: _busy ? null : _reload,
                       icon: const Icon(Icons.refresh_rounded),
                     ),
+                    if (isDrawer)
+                      IconButton(
+                        tooltip: ChatContextSheet._loc(context, '关闭', 'Close'),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                   ],
                 ),
               ),
@@ -625,7 +1100,7 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
                           ],
                         ),
                         const SizedBox(height: AppTheme.spacing3),
-                        _globalTokenUsageCard(context),
+                        _conversationTokenUsageCard(context, s),
                         const SizedBox(height: AppTheme.spacing3),
                         _atomicMemoryCard(context),
                         const SizedBox(height: AppTheme.spacing3),
@@ -806,7 +1281,12 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
           final String m = (decoded['model'] ?? '').toString().trim();
           if (m.isNotEmpty) {
             model = m;
-            maxTokens = AIContextBudgets.forModel(m).promptCapTokens;
+            final int fallbackCap = AIContextBudgets.forModel(
+              m,
+            ).promptCapTokens;
+            final int? override = AIModelPromptCapsService.instance
+                .peekOverride(m);
+            maxTokens = override ?? fallbackCap;
             outTokens = ModelsDevModelLimits.outputTokens(m);
           }
           final dynamic total = decoded['total_tokens'];
@@ -830,7 +1310,7 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
         ? parts.values.fold(0, (a, b) => a + b)
         : totalTokens;
     final int cap = (maxTokens ?? 0).clamp(0, 1 << 30);
-    final double ratio = cap > 0 ? (used / cap).clamp(0.0, 1.0) : 0.0;
+    final double ratio = cap > 0 ? (used / cap).clamp(0.0, 999.0) : 0.0;
 
     final List<PromptTokenPart> order = <PromptTokenPart>[
       PromptTokenPart.systemPrompt,
@@ -900,11 +1380,36 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
             ),
           ),
           const SizedBox(height: AppTheme.spacing1),
-          Text(
-            ChatContextSheet._loc(context, '模型：$model', 'Model: $model'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(context, '模型：$model', 'Model: $model'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: ChatContextSheet._loc(context, '设置上限', 'Set cap'),
+                onPressed: model.trim().isEmpty
+                    ? null
+                    : () => _editModelPromptCapDialog(
+                        context,
+                        model: model,
+                        fallbackPromptCapTokens: AIContextBudgets.forModel(
+                          model,
+                        ).promptCapTokens,
+                      ),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppTheme.spacing1),
           Text(
@@ -1014,61 +1519,232 @@ class _ChatContextSheetBodyState extends State<_ChatContextSheetBody> {
     );
   }
 
-  Widget _globalTokenUsageCard(BuildContext context) {
+  Widget _conversationTokenUsageCard(
+    BuildContext context,
+    ChatContextSnapshot s,
+  ) {
     final ThemeData theme = Theme.of(context);
     final NumberFormat nf = NumberFormat.decimalPattern();
 
-    final Future<int>? f = _globalTokensFuture;
+    String model = _activeModel;
+    int fallbackCapTokens = (_activeModelContextTokens ?? 0)
+        .clamp(0, 1 << 30)
+        .toInt();
 
-    return FutureBuilder<int>(
-      future: f,
-      initialData: _cachedGlobalTokens,
-      builder: (ctx, snap) {
-        final int tokens = (snap.data ?? _cachedGlobalTokens)
-            .clamp(0, 1 << 62)
+    final List<PromptTokenPart> order = <PromptTokenPart>[
+      PromptTokenPart.systemPrompt,
+      PromptTokenPart.toolSchema,
+      PromptTokenPart.toolInstruction,
+      PromptTokenPart.conversationContext,
+      PromptTokenPart.atomicMemory,
+      PromptTokenPart.extraSystem,
+      PromptTokenPart.historyUser,
+      PromptTokenPart.historyAssistant,
+      PromptTokenPart.historyTool,
+      PromptTokenPart.userMessage,
+    ];
+
+    final Map<String, int> parts = <String, int>{};
+    int tokens = (s.lastPromptTokens ?? 0).clamp(0, 1 << 62).toInt();
+
+    final String raw = s.lastPromptBreakdownJson.trim();
+    if (raw.isNotEmpty) {
+      try {
+        final dynamic decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final String m = (decoded['model'] ?? '').toString().trim();
+          if (m.isNotEmpty) {
+            model = m;
+            fallbackCapTokens = AIContextBudgets.forModel(m).promptCapTokens;
+          }
+          final dynamic total = decoded['total_tokens'];
+          if (total is num) tokens = total.toInt();
+          final dynamic p = decoded['parts'];
+          if (p is Map) {
+            for (final entry in p.entries) {
+              final String k = entry.key.toString();
+              final dynamic v = entry.value;
+              if (v is! num) continue;
+              final int t = v.toInt();
+              if (t <= 0) continue;
+              parts[k] = t;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    final int capTokens =
+        (AIModelPromptCapsService.instance.peekOverride(model) ??
+                fallbackCapTokens)
+            .clamp(0, 1 << 30)
             .toInt();
-        final bool loading =
-            snap.connectionState != ConnectionState.done && f != null;
-        return Container(
-          padding: const EdgeInsets.all(AppTheme.spacing3),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+    final double ratio = capTokens > 0
+        ? (tokens / capTokens).clamp(0.0, 999.0)
+        : 0.0;
+
+    // No breakdown recorded (older rows / failures): keep totals consistent.
+    if (parts.isEmpty && tokens > 0) {
+      parts[PromptTokenPart.extraSystem.key] = tokens;
+    }
+
+    final int partsSum = order.fold<int>(
+      0,
+      (a, part) => a + (parts[part.key] ?? 0),
+    );
+    final int remainder = (tokens - partsSum).clamp(0, 1 << 62).toInt();
+
+    final List<SegmentedTokenBarSegment> segments = <SegmentedTokenBarSegment>[
+      for (final part in order)
+        if ((parts[part.key] ?? 0) > 0)
+          SegmentedTokenBarSegment(
+            tokens: parts[part.key]!,
+            color: part.color(theme),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ChatContextSheet._loc(
-                  context,
-                  '全局 token 累计（≈）',
-                  'Global token total (≈)',
-                ),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: AppTheme.spacing2),
-              Text(
-                nf.format(tokens),
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              if (loading) ...[
-                const SizedBox(height: AppTheme.spacing1),
-                Text(
-                  ChatContextSheet._loc(context, '更新中…', 'Updating…'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
+    ];
+    if (segments.isEmpty) {
+      if (tokens > 0) {
+        segments.add(
+          SegmentedTokenBarSegment(
+            tokens: tokens,
+            color: theme.colorScheme.primary,
           ),
         );
-      },
+      }
+    } else if (remainder > 0) {
+      segments.add(
+        SegmentedTokenBarSegment(
+          tokens: remainder,
+          color: theme.colorScheme.primary,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  ChatContextSheet._loc(
+                    context,
+                    '当前对话 token（≈）',
+                    'Current conversation tokens (≈)',
+                  ),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: ChatContextSheet._loc(context, '设置上限', 'Set cap'),
+                onPressed: model.trim().isEmpty
+                    ? null
+                    : () => _editModelPromptCapDialog(
+                        context,
+                        model: model,
+                        fallbackPromptCapTokens: AIContextBudgets.forModel(
+                          model,
+                        ).promptCapTokens,
+                      ),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            nf.format(tokens),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (tokens > 0 && capTokens > 0) ...[
+            const SizedBox(height: AppTheme.spacing1),
+            Text(
+              ChatContextSheet._loc(
+                context,
+                '已用 ${nf.format(tokens)} / ${nf.format(capTokens)}（${(ratio * 100).toStringAsFixed(1)}%） · 模型：$model',
+                'Used ${nf.format(tokens)} / ${nf.format(capTokens)} (${(ratio * 100).toStringAsFixed(1)}%) · Model: $model',
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ] else if (model.trim().isNotEmpty) ...[
+            const SizedBox(height: AppTheme.spacing1),
+            Text(
+              ChatContextSheet._loc(context, '模型：$model', 'Model: $model'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (tokens <= 0) ...[
+            const SizedBox(height: AppTheme.spacing1),
+            Text(
+              ChatContextSheet._loc(
+                context,
+                '暂无记录（发送一次消息后会写入）',
+                'No record yet (written after you send a message).',
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: AppTheme.spacing2),
+            SegmentedTokenBar(
+              totalTokens: capTokens > 0
+                  ? capTokens
+                  : (tokens > 0 ? tokens : 1),
+              segments: segments,
+              height: 12,
+            ),
+            if (parts.isNotEmpty || remainder > 0) ...[
+              const SizedBox(height: AppTheme.spacing2),
+              Wrap(
+                spacing: AppTheme.spacing2,
+                runSpacing: AppTheme.spacing1,
+                children: [
+                  for (final part in order)
+                    if ((parts[part.key] ?? 0) > 0)
+                      _legendItem(
+                        context,
+                        color: part.color(theme),
+                        label: ChatContextSheet._isZh(context)
+                            ? part.labelZh()
+                            : part.labelEn(),
+                        tokens: parts[part.key]!,
+                        total: tokens,
+                      ),
+                  if (remainder > 0)
+                    _legendItem(
+                      context,
+                      color: theme.colorScheme.primary,
+                      label: ChatContextSheet._loc(context, '其他', 'Other'),
+                      tokens: remainder,
+                      total: tokens,
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
     );
   }
 

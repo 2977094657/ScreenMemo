@@ -96,7 +96,20 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
               // Only show legacy fallback reasoning while the block is still loading.
               // For completed turns, prefer the structured timeline events; avoid
               // dumping internal logs on restore.
-              final String? fallbackReasoning = (i == 0 && b.isLoading)
+              final bool showStreamingFallbackReasoning =
+                  i == 0 &&
+                  b.isLoading &&
+                  (_reasoningByIndex[index] ?? '').trim().isNotEmpty;
+              final bool showCompletedFallbackReasoning =
+                  _showAgentProgressLogs &&
+                  i == 0 &&
+                  !b.isLoading &&
+                  m.content.trim().isEmpty &&
+                  (m.reasoningContent ?? '').trim().isNotEmpty;
+              final bool showFallbackReasoning =
+                  showStreamingFallbackReasoning ||
+                  showCompletedFallbackReasoning;
+              final String? fallbackReasoning = showFallbackReasoning
                   ? (_reasoningByIndex[index] ?? m.reasoningContent)
                   : null;
               children.add(
@@ -110,7 +123,9 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                     finishedAt: b.finishedAt,
                     events: b.events,
                     fallbackReasoning: fallbackReasoning,
-                    autoCloseOnFinish: true,
+                    autoCloseOnFinish:
+                        !(m.content.trim().isEmpty &&
+                            (fallbackReasoning ?? '').trim().isNotEmpty),
                   ),
                 ),
               );
@@ -128,8 +143,8 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                       fg: fg,
                       // Only the last segment is actively streaming; completed
                       // segments should render as final Markdown immediately.
-                      isCurrentStreaming: isCurrentStreaming &&
-                          (i == segs.length - 1),
+                      isCurrentStreaming:
+                          isCurrentStreaming && (i == segs.length - 1),
                     ),
                   ),
                 );
@@ -201,6 +216,31 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                       tooltip: AppLocalizations.of(context).actionCopy,
                     ),
                     const SizedBox(width: 4),
+                    if (m.role == 'assistant')
+                      IconButton(
+                        onPressed: () async {
+                          try {
+                            await _showGatewayLogsDialog(index);
+                          } catch (_) {}
+                        },
+                        constraints: const BoxConstraints.tightFor(
+                          width: 24,
+                          height: 24,
+                        ),
+                        padding: const EdgeInsets.all(0),
+                        visualDensity: const VisualDensity(
+                          horizontal: -4,
+                          vertical: -4,
+                        ),
+                        splashRadius: 16,
+                        iconSize: 16,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        icon: const Icon(Icons.receipt_long_rounded),
+                        tooltip: _isZhLocale() ? '请求/响应日志' : 'Logs',
+                      ),
+                    if (m.role == 'assistant') const SizedBox(width: 4),
                   ],
                 ),
               ),

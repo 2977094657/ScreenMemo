@@ -107,13 +107,20 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     try {
       if (_loadingAllInFlight) {
         _uiPerf.log('loadAll.skip', detail: 'reentry');
+        _loadAllQueued = true;
         return; // 防止重入触发的重复加载
       }
       _loadingAllInFlight = true;
+      final int epoch = ++_loadAllEpoch;
       // 并行预取，避免串行等待造成的累计时延
       final Future<List<AISiteGroup>> fGroups = _settings.listSiteGroups();
       final Future<int?> fActiveId = _settings.getActiveGroupId();
-      final Future<List<AIMessage>> fHistory = _settings.getChatHistory();
+      // Capture the active conversation CID once so chat history stays consistent
+      // even if the user switches conversations while other settings are loading.
+      final Future<String> fChatCid = _settings.getActiveConversationCid();
+      final Future<List<AIMessage>> fHistory = fChatCid.then(
+        (cid) => _settings.getChatHistoryByCid(cid),
+      );
       final Future<bool> fStreamEnabled = _settings.getStreamEnabled();
       final Future<String?> fSegPrompt = _settings.getPromptSegment();
       final Future<String?> fMergePrompt = _settings.getPromptMerge();
@@ -156,6 +163,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
 
       // 收集其余预取结果
       final List<AIMessage> history = await fHistory;
+      final String chatCid = (await fChatCid).trim();
       final bool streamEnabled = await fStreamEnabled;
       final bool renderImgs = await _settings.getRenderImagesDuringStreaming();
       final String? segPrompt = await fSegPrompt;
@@ -188,9 +196,25 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         }
       }
 
+      // If the active conversation has changed while we were loading, skip
+      // applying stale results. A queued _loadAll() (triggered by ctx change)
+      // will run immediately after this one completes.
+      final String currentCid = (_activeConversationCid ?? '').trim();
+      if (currentCid.isNotEmpty &&
+          chatCid.isNotEmpty &&
+          currentCid != chatCid) {
+        _uiPerf.log(
+          'loadAll.skip',
+          detail:
+              'staleConversation capturedCid=$chatCid currentCid=$currentCid ms=${sw.elapsedMilliseconds}',
+        );
+        return;
+      }
+
       if (!mounted) return;
       _perfLoggedMarkdownMsgKeys.clear();
       _setState(() {
+        _activeConversationCid = chatCid.isEmpty ? null : chatCid;
         _groups = groups;
         _activeGroupId = activeId;
 
@@ -207,8 +231,10 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           _modelController.text = model;
         }
 
-        // 分批填充消息，降低单帧构建压力
-        _messages = <AIMessage>[];
+        // Apply the full history in one shot so returning to the page shows the
+        // latest assistant turn immediately (batch microtasks can starve frames
+        // and delay UI updates on route/app switches).
+        _messages = List<AIMessage>.from(history);
         _clarifyState = null;
         _attachmentsByIndex.clear();
         _evidenceResolvedByMsgKey.clear();
@@ -239,38 +265,13 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         'loadAll.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
       );
-      if (mounted) {
-        // 将消息分批追加到列表，避免一次性构建大量 Markdown
-        const int batch = 24;
-        for (int i = 0; i < history.length; i += batch) {
-          final int end = (i + batch > history.length)
-              ? history.length
-              : (i + batch);
-          final List<AIMessage> slice = history.sublist(i, end);
-          final bool isLast = end >= history.length;
-          final int startIdx = i;
-          final int endIdx = end;
-          // 逐批在微任务中追加，释放主帧
-          scheduleMicrotask(() {
-            if (!mounted) return;
-            _setState(() {
-              _messages.addAll(slice);
-            });
-            _uiPerf.log(
-              'history.append',
-              detail:
-                  'ms=${sw.elapsedMilliseconds} range=$startIdx-$endIdx total=${history.length}',
-            );
-            if (isLast) {
-              _scrollToBottom(animated: true);
-              _uiPerf.log(
-                'history.append.done',
-                detail: 'ms=${sw.elapsedMilliseconds} total=${history.length}',
-              );
-            }
-          });
-        }
-      }
+      // Keep chat anchored at the bottom only when the user is already near the
+      // bottom. Do it after layout so maxScrollExtent is valid.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || epoch != _loadAllEpoch) return;
+        if (!_stickToBottom) return;
+        _scrollToBottom(animated: false);
+      });
       // 记录 UI 填充耗时（数据到状态）
       try {
         await FlutterLogger.nativeInfo(
@@ -286,6 +287,13 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         });
     } finally {
       _loadingAllInFlight = false;
+      if (_loadAllQueued) {
+        _loadAllQueued = false;
+        scheduleMicrotask(() {
+          if (!mounted) return;
+          unawaited(_loadAll());
+        });
+      }
     }
     // 首帧绘制完成耗时（状态更新到绘制）
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -831,9 +839,33 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
   }
 
   Future<void> _enqueueChatHistorySave(List<AIMessage> messages) {
+    final int epoch = _chatHistoryWriteEpoch;
+    final String cid = (_inFlightConversationCid ?? '').trim();
+    if (cid.isNotEmpty) {
+      return _enqueueChatHistorySaveByCid(cid, messages);
+    }
     final Future<void> next = _chatHistorySaveChain.then((_) async {
+      if (epoch != _chatHistoryWriteEpoch) return;
       try {
         await _settings.saveChatHistoryActive(messages);
+      } catch (_) {}
+    });
+    // Keep the chain alive even if a write fails.
+    _chatHistorySaveChain = next.catchError((_) {});
+    return _chatHistorySaveChain;
+  }
+
+  Future<void> _enqueueChatHistorySaveByCid(
+    String conversationCid,
+    List<AIMessage> messages,
+  ) {
+    final int epoch = _chatHistoryWriteEpoch;
+    final String cid = conversationCid.trim();
+    if (cid.isEmpty) return Future<void>.value();
+    final Future<void> next = _chatHistorySaveChain.then((_) async {
+      if (epoch != _chatHistoryWriteEpoch) return;
+      try {
+        await _settings.saveChatHistoryByCid(cid, messages);
       } catch (_) {}
     });
     // Keep the chain alive even if a write fails.
@@ -893,6 +925,10 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     bool bullet = true,
   }) {
     if (!mounted) return;
+    if (!_showAgentProgressLogs) return;
+    // If the send/stream UI has been detached (conversation/page switch), do not
+    // mutate any UI state from background continuations.
+    if (!_sending && !_inStreaming) return;
     final int? idx = assistantIndex ?? _currentAssistantIndex;
     if (idx == null || idx < 0 || idx >= _messages.length) return;
     final String t = message.trim();
@@ -907,6 +943,272 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     _markInFlightHistoryDirty();
   }
 
+  void _clearGatewayLogsForAssistant(int assistantIndex) {
+    _setState(() {
+      _gatewayLogsByIndex.remove(assistantIndex);
+    });
+  }
+
+  void _appendGatewayLogLine(int assistantIndex, String line) {
+    final String t = line.trimRight();
+    if (t.isEmpty) return;
+
+    // Best-effort: mirror to file for easier troubleshooting.
+    try {
+      final _GatewayLogFileWriter? w =
+          _gatewayLogWritersByIndex[assistantIndex];
+      w?.writeLine(t);
+    } catch (_) {}
+
+    const int maxChars = 200000; // keep last ~200KB per assistant turn
+    _setState(() {
+      final String prev = _gatewayLogsByIndex[assistantIndex] ?? '';
+      String next = prev + t + '\n';
+      if (next.length > maxChars) {
+        next = next.substring(next.length - maxChars);
+      }
+      _gatewayLogsByIndex[assistantIndex] = next;
+    });
+  }
+
+  void _handleGatewayLogUiEvent(
+    int assistantIndex,
+    Map<String, dynamic> payload,
+  ) {
+    final int atMs = (payload['at'] is int)
+        ? (payload['at'] as int)
+        : DateTime.now().millisecondsSinceEpoch;
+    // Avoid DateFormat allocation on every SSE chunk.
+    final DateTime dt = DateTime.fromMillisecondsSinceEpoch(atMs);
+    final String ts =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}.${dt.millisecond.toString().padLeft(3, '0')}';
+    final String prefix = '[$ts] ';
+    final dynamic line = payload['line'];
+    if (line is String && line.isNotEmpty) {
+      _appendGatewayLogLine(assistantIndex, prefix + line);
+    }
+    final dynamic extra = payload['extra'];
+    if (extra != null) {
+      try {
+        _appendGatewayLogLine(
+          assistantIndex,
+          prefix + 'extra=' + jsonEncode(extra),
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _startGatewayLogsFileMirrorIfNeeded(
+    int assistantIndex, {
+    required String conversationCid,
+    required String userInput,
+  }) async {
+    if (_gatewayLogWritersByIndex.containsKey(assistantIndex)) return;
+
+    try {
+      final String ts = DateFormat(
+        'yyyyMMdd_HHmmss_SSS',
+      ).format(DateTime.now());
+      String? baseDirPath;
+      try {
+        baseDirPath = await FlutterLogger.getTodayLogsDir();
+      } catch (_) {
+        baseDirPath = null;
+      }
+      Directory baseDir = Directory.systemTemp;
+      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+        baseDir = Directory(baseDirPath.trim());
+      }
+      final String sep = Platform.pathSeparator;
+      final Directory outDir = Directory(
+        baseDir.path + sep + 'ai_gateway_logs',
+      );
+      await outDir.create(recursive: true);
+      final File f = File(
+        outDir.path +
+            sep +
+            'ai_gateway_stream_' +
+            ts +
+            '_msg' +
+            assistantIndex.toString() +
+            '.log',
+      );
+      final _GatewayLogFileWriter writer = _GatewayLogFileWriter(f);
+      _gatewayLogWritersByIndex[assistantIndex] = writer;
+      _gatewayLogFilePathByIndex[assistantIndex] = f.path;
+
+      writer.writeLine('=== AI Gateway Stream Logs ===');
+      writer.writeLine('time=' + DateTime.now().toIso8601String());
+      if (conversationCid.trim().isNotEmpty) {
+        writer.writeLine('cid=' + conversationCid.trim());
+      }
+      writer.writeLine('assistant_index=' + assistantIndex.toString());
+      writer.writeLine('user_len=' + userInput.length.toString());
+      final String preview = userInput.length > 800
+          ? (userInput.substring(0, 800) + '…')
+          : userInput;
+      writer.writeLine('user_preview=' + preview.replaceAll('\n', '\\n'));
+      writer.writeLine('');
+    } catch (_) {}
+  }
+
+  Future<void> _stopGatewayLogsFileMirror(int assistantIndex) async {
+    try {
+      final _GatewayLogFileWriter? w = _gatewayLogWritersByIndex.remove(
+        assistantIndex,
+      );
+      if (w != null) {
+        await w.close();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showGatewayLogsDialog(int assistantIndex) async {
+    String currentLogs() =>
+        (_gatewayLogsByIndex[assistantIndex] ?? '').trimRight();
+    final String logs = currentLogs();
+    final String? logFilePath = _gatewayLogFilePathByIndex[assistantIndex];
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final ThemeData theme = Theme.of(context);
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final String header =
+            (logFilePath != null && logFilePath.trim().isNotEmpty)
+            ? ('log_file=' + logFilePath.trim() + '\n\n')
+            : '';
+        return AlertDialog(
+          title: Text(_isZhLocale() ? '请求/响应日志' : 'Request/Response Logs'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant,
+                    width: 1,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      (header + logs).trim().isEmpty
+                          ? (_isZhLocale() ? '（暂无日志）' : '(No logs yet)')
+                          : (header + logs).trimRight(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () async {
+                try {
+                  await Clipboard.setData(ClipboardData(text: currentLogs()));
+                  if (mounted) {
+                    UINotifier.success(dialogContext, l10n.copySuccess);
+                  }
+                } catch (_) {}
+              },
+              child: Text(l10n.actionCopy),
+            ),
+            if (logFilePath != null && logFilePath.trim().isNotEmpty)
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await Clipboard.setData(
+                      ClipboardData(text: logFilePath.trim()),
+                    );
+                    if (mounted) {
+                      UINotifier.success(dialogContext, l10n.copySuccess);
+                    }
+                  } catch (_) {}
+                },
+                child: Text(_isZhLocale() ? '复制路径' : 'Copy path'),
+              ),
+            TextButton(
+              onPressed: () async {
+                final String text = currentLogs();
+                if (text.trim().isEmpty) return;
+                try {
+                  final String ts = DateFormat(
+                    'yyyyMMdd_HHmmss',
+                  ).format(DateTime.now());
+                  String? baseDirPath;
+                  try {
+                    baseDirPath = await FlutterLogger.getTodayLogsDir();
+                  } catch (_) {
+                    baseDirPath = null;
+                  }
+                  Directory baseDir = Directory.systemTemp;
+                  if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+                    baseDir = Directory(baseDirPath.trim());
+                  }
+                  final String sep = Platform.pathSeparator;
+                  final Directory outDir = Directory(
+                    baseDir.path + sep + 'ai_gateway_logs',
+                  );
+                  await outDir.create(recursive: true);
+                  final File f = File(
+                    outDir.path +
+                        sep +
+                        'ai_gateway_' +
+                        ts +
+                        '_msg' +
+                        assistantIndex.toString() +
+                        '.log',
+                  );
+                  await f.writeAsString(text + '\n', flush: true);
+                  try {
+                    await Clipboard.setData(ClipboardData(text: f.path));
+                  } catch (_) {}
+                  if (mounted) {
+                    UINotifier.success(
+                      dialogContext,
+                      _isZhLocale()
+                          ? ('已保存到：' + f.path)
+                          : ('Saved to: ' + f.path),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    UINotifier.error(
+                      dialogContext,
+                      _isZhLocale()
+                          ? ('保存失败：' + e.toString())
+                          : ('Save failed: ' + e.toString()),
+                    );
+                  }
+                }
+              },
+              child: Text(_isZhLocale() ? '保存到文件' : 'Save to file'),
+            ),
+            TextButton(
+              onPressed: () {
+                _setState(() => _gatewayLogsByIndex.remove(assistantIndex));
+                Navigator.of(dialogContext).pop();
+              },
+              child: Text(_isZhLocale() ? '清空' : 'Clear'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(_isZhLocale() ? '关闭' : 'Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   String _formatIntentSubtitle(IntentResult intent) {
     // Only show the intent summary; hide date/time range noise.
     return intent.intentSummary.trim();
@@ -919,14 +1221,21 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     return t.substring(0, 30) + '...';
   }
 
-  void _renameActiveConversationTo(String titleSource) {
+  void _renameActiveConversationTo(
+    String titleSource, {
+    String? conversationCid,
+  }) {
     final String t = _truncateConversationTitle(titleSource);
     if (t.isEmpty) return;
+    final String fixedCid = (conversationCid ?? _inFlightConversationCid ?? '')
+        .trim();
     unawaited(() async {
       try {
-        final String cid = await _settings.getActiveConversationCid();
-        if (cid.trim().isEmpty) return;
-        await _settings.renameConversation(cid.trim(), t);
+        final String cid = fixedCid.isNotEmpty
+            ? fixedCid
+            : (await _settings.getActiveConversationCid()).trim();
+        if (cid.isEmpty) return;
+        await _settings.renameConversation(cid, t);
       } catch (_) {}
     }());
   }

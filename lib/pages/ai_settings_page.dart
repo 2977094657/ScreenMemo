@@ -137,6 +137,57 @@ class _ThinkingBlock {
   bool get isLoading => finishedAt == null;
 }
 
+/// Writes chat request/response logs to a dedicated file while streaming.
+///
+/// This is intentionally lightweight (best-effort) so logging can't break the
+/// UI flow when storage is unavailable.
+class _GatewayLogFileWriter {
+  _GatewayLogFileWriter(this.file) {
+    _sink = file.openWrite(mode: FileMode.append);
+  }
+
+  final File file;
+  late final IOSink _sink;
+  Timer? _flushTimer;
+  bool _closed = false;
+
+  void write(String text) {
+    if (_closed || text.isEmpty) return;
+    try {
+      _sink.write(text);
+      _scheduleFlush();
+    } catch (_) {}
+  }
+
+  void writeLine(String line) {
+    if (line.isEmpty) return;
+    write(line.endsWith('\n') ? line : (line + '\n'));
+  }
+
+  void _scheduleFlush() {
+    if (_flushTimer != null) return;
+    _flushTimer = Timer(const Duration(milliseconds: 250), () {
+      _flushTimer = null;
+      try {
+        unawaited(_sink.flush().catchError((_) {}));
+      } catch (_) {}
+    });
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    try {
+      await _sink.flush();
+    } catch (_) {}
+    try {
+      await _sink.close();
+    } catch (_) {}
+  }
+}
+
 /// AI 设置与测试页面：配置 OpenAI 兼容接口并进行多轮聊天测试
 class AISettingsPage extends StatefulWidget {
   final bool embedded;
@@ -187,6 +238,9 @@ class _AISettingsPageState extends State<AISettingsPage>
   // Serialize history persistence so a slow in-flight save can't overwrite the
   // final post-processed content after streaming finishes.
   Future<void> _chatHistorySaveChain = Future<void>.value();
+  // Monotonic token to invalidate queued history writes (e.g. when the UI is
+  // detached on conversation/page switch).
+  int _chatHistoryWriteEpoch = 0;
 
   List<AIMessage> _messages = <AIMessage>[];
   bool _loading = true;
@@ -194,6 +248,17 @@ class _AISettingsPageState extends State<AISettingsPage>
   bool _sending = false;
   bool _streamEnabled = true;
   StreamSubscription<AIStreamEvent>? _streamSubscription;
+  // Conversation CID captured at the moment a streaming turn starts.
+  // Used to prevent persistence/UI updates from "jumping" after a conversation switch.
+  String? _inFlightConversationCid;
+  // The active conversation CID that the chat list currently represents.
+  // Used to make "send" stable even if the user switches conversations mid-request.
+  String? _activeConversationCid;
+  // Monotonic token for the currently active send/stream loop. Changing this
+  // detaches the UI from an in-flight background request.
+  int _sendEpoch = 0;
+  int _activeSendEpoch = 0;
+  Completer<void>? _streamLoopCompleter;
   bool _connExpanded = false;
   bool _groupSelectorVisible = true;
   bool _promptExpanded = false;
@@ -205,8 +270,17 @@ class _AISettingsPageState extends State<AISettingsPage>
   // 实时"思考过程"内容（仅当前流式过程显示）
   String _thinkingText = '';
   bool _showThinkingContent = false;
+  // Hide internal stage/progress logs in chat UI by default.
+  final bool _showAgentProgressLogs = false;
   // 每条助手消息的思考内容缓存（索引 -> 文本）
   final Map<int, String> _reasoningByIndex = <int, String>{};
+  // 每条助手消息的网关请求/响应调试日志（索引 -> 文本，便于复制排查流式协议/解析问题）
+  final Map<int, String> _gatewayLogsByIndex = <int, String>{};
+  // 可选：将网关日志实时镜像到文件（索引 -> writer/path）。
+  // 主要用于排查 SSE/字段兼容问题（例如仅有 reasoning_content 而无 content）。
+  final Map<int, _GatewayLogFileWriter> _gatewayLogWritersByIndex =
+      <int, _GatewayLogFileWriter>{};
+  final Map<int, String> _gatewayLogFilePathByIndex = <int, String>{};
   // 每条助手消息的最终思考耗时（索引 -> 时长）
   final Map<int, Duration> _reasoningDurationByIndex = <int, Duration>{};
   // 当前流式助手消息的索引
@@ -272,6 +346,7 @@ class _AISettingsPageState extends State<AISettingsPage>
   StreamSubscription<String>? _ctxChangedSub;
   Timer? _ctxDebounceTimer;
   bool _loadingAllInFlight = false;
+  bool _loadAllQueued = false;
   // 底部弹窗查询输入持久化，避免键盘开合导致重建清空
   String _providerQueryText = '';
   String _modelQueryText = '';
@@ -288,6 +363,11 @@ class _AISettingsPageState extends State<AISettingsPage>
   // 分组相关状态
   List<AISiteGroup> _groups = <AISiteGroup>[];
   int? _activeGroupId;
+
+  // 流式进行中时，延迟执行的 chat 上下文刷新（避免打断 UI 追加）
+  bool _pendingChatReload = false;
+  // _loadAll() 的批量追加任务防串台标记
+  int _loadAllEpoch = 0;
 
   void _setState(VoidCallback fn) => setState(fn);
 
@@ -311,25 +391,131 @@ class _AISettingsPageState extends State<AISettingsPage>
     _loadChatContextSelection();
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (!mounted) return;
+      if (ctx == 'chat:history' || ctx.startsWith('chat:history:')) {
+        final String activeCid = (_activeConversationCid ?? '').trim();
+        if (ctx.startsWith('chat:history:')) {
+          final String cid = ctx.substring('chat:history:'.length).trim();
+          // If the update is for a different conversation than what we're
+          // currently showing, ignore it to avoid unnecessary reloads.
+          if (cid.isNotEmpty && activeCid.isNotEmpty && cid != activeCid) {
+            return;
+          }
+        }
+        // Background completion may persist into DB after the chat UI was
+        // detached (conversation/page switch). Reload the active conversation so
+        // the final answer + thinking timeline shows up without a manual refresh.
+        if (_sending || _inStreaming) return;
+        _ctxDebounceTimer?.cancel();
+        _ctxDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+          if (!mounted) return;
+          _loadAll();
+        });
+        return;
+      }
       if (ctx == 'chat' || ctx == 'chat:deleted' || ctx == 'chat:cleared') {
+        final bool isDeletedOrCleared =
+            (ctx == 'chat:deleted' || ctx == 'chat:cleared');
+        // When the active conversation changes mid-stream, detach the UI from the
+        // in-flight request and immediately reload the new conversation.
+        if (_sending || _inStreaming) {
+          _detachStreamingUiForBackground(
+            persistUiState: !isDeletedOrCleared,
+            // Keep the persisted thinking block "loading" so returning to the
+            // conversation can still show it as in-progress while the request
+            // completes in background.
+            finishThinkingBlock: false,
+          );
+        }
+        // When switching conversations (normal 'chat' event), clear the chat UI
+        // immediately so we don't keep showing the old conversation while the
+        // async reload is still in flight. (`chat` is also emitted for model
+        // changes, so we only clear if the active CID actually changed.)
+        if (ctx == 'chat') {
+          unawaited(() async {
+            String newCid = '';
+            try {
+              newCid = (await _settings.getActiveConversationCid()).trim();
+            } catch (_) {
+              newCid = '';
+            }
+            if (!mounted) return;
+            final String oldCid = (_activeConversationCid ?? '').trim();
+            if (newCid.isNotEmpty && newCid != oldCid) {
+              // Best-effort: close any in-flight gateway log writers before
+              // wiping UI state so file descriptors are not leaked.
+              try {
+                final writers = List<_GatewayLogFileWriter>.from(
+                  _gatewayLogWritersByIndex.values,
+                );
+                _gatewayLogWritersByIndex.clear();
+                _gatewayLogFilePathByIndex.clear();
+                for (final w in writers) {
+                  unawaited(w.close());
+                }
+              } catch (_) {}
+              _setState(() {
+                _activeConversationCid = newCid;
+                _loading = true;
+                _messages = <AIMessage>[];
+                _attachmentsByIndex.clear();
+                _evidenceResolvedByMsgKey.clear();
+                _evidenceResolveFutures.clear();
+                _evidenceScreenshotByPath.clear();
+                _evidenceNsfwRequestedPaths.clear();
+                _evidenceNsfwPreloadFuture = null;
+                _reasoningByIndex.clear();
+                _gatewayLogsByIndex.clear();
+                _reasoningDurationByIndex.clear();
+                _thinkingBlocksByIndex.clear();
+                _contentSegmentsByIndex.clear();
+                _nextContentStartsNewSegmentByIndex.clear();
+                _currentAssistantIndex = null;
+                _inStreaming = false;
+                _sending = false;
+                _clarifyState = null;
+              });
+              _stopInFlightHistoryPersistence();
+              _stopDots();
+            } else if (oldCid.isEmpty && newCid.isNotEmpty) {
+              // Keep the cached CID in sync for stable "send" semantics.
+              _activeConversationCid = newCid;
+            }
+          }());
+        }
         // 若是删除事件，先立即清空当前对话UI，避免等待重载造成的"空白延迟"
         if (ctx == 'chat:deleted' || ctx == 'chat:cleared') {
+          // Close any open log writers tied to the previous conversation.
+          try {
+            final writers = List<_GatewayLogFileWriter>.from(
+              _gatewayLogWritersByIndex.values,
+            );
+            _gatewayLogWritersByIndex.clear();
+            _gatewayLogFilePathByIndex.clear();
+            for (final w in writers) {
+              unawaited(w.close());
+            }
+          } catch (_) {}
           setState(() {
             _messages = <AIMessage>[];
             _attachmentsByIndex.clear();
+            _evidenceResolvedByMsgKey.clear();
+            _evidenceResolveFutures.clear();
             _evidenceScreenshotByPath.clear();
             _evidenceNsfwRequestedPaths.clear();
             _evidenceNsfwPreloadFuture = null;
             _reasoningByIndex.clear();
+            _gatewayLogsByIndex.clear();
             _reasoningDurationByIndex.clear();
             _thinkingBlocksByIndex.clear();
             _contentSegmentsByIndex.clear();
             _nextContentStartsNewSegmentByIndex.clear();
             _currentAssistantIndex = null;
             _inStreaming = false;
+            _sending = false;
             _clarifyState = null;
           });
           _stopInFlightHistoryPersistence();
+          _stopDots();
         }
         // 去抖 250ms 合并多次事件，避免重复重载
         _ctxDebounceTimer?.cancel();
@@ -344,6 +530,16 @@ class _AISettingsPageState extends State<AISettingsPage>
 
   @override
   void dispose() {
+    // If we are leaving the page mid-stream, detach the UI and persist a
+    // snapshot so background completion can still land in DB. Keep the thinking
+    // block "loading" so restoring the conversation doesn't look stuck.
+    if (_sending || _inStreaming) {
+      _detachStreamingUiForBackground(
+        persistUiState: true,
+        setUiStopped: false,
+        finishThinkingBlock: false,
+      );
+    }
     _baseUrlController.dispose();
     _apiKeyController.dispose();
     _modelController.dispose();
@@ -357,8 +553,105 @@ class _AISettingsPageState extends State<AISettingsPage>
     _inFlightSaveTimer?.cancel();
     _ctxDebounceTimer?.cancel();
     _ctxChangedSub?.cancel();
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    try {
+      final writers = List<_GatewayLogFileWriter>.from(
+        _gatewayLogWritersByIndex.values,
+      );
+      _gatewayLogWritersByIndex.clear();
+      for (final w in writers) {
+        unawaited(w.close());
+      }
+    } catch (_) {}
+    _gatewayLogFilePathByIndex.clear();
     _uiPerf.dispose();
     super.dispose();
+  }
+
+  void _cancelStreamUiSubscription() {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
+    final c = _streamLoopCompleter;
+    if (c != null && !c.isCompleted) {
+      c.complete();
+    }
+    _streamLoopCompleter = null;
+  }
+
+  void _detachStreamingUiForBackground({
+    required bool persistUiState,
+    bool setUiStopped = true,
+    bool finishThinkingBlock = true,
+  }) {
+    // Bump the epoch so any in-flight stream callbacks are ignored.
+    _activeSendEpoch = 0;
+    // Invalidate any queued UI history writes from this request so they can't
+    // overwrite later service-level persistence after a conversation/page switch.
+    _chatHistoryWriteEpoch++;
+    final int? idx = _currentAssistantIndex;
+    final String cid = (_inFlightConversationCid ?? '').trim();
+
+    // Stop UI stream consumption; the underlying request may continue.
+    _cancelStreamUiSubscription();
+    _stopDots();
+    _stopInFlightHistoryPersistence();
+    // Stop mirroring gateway logs to file once the UI detaches.
+    try {
+      final writers = List<_GatewayLogFileWriter>.from(
+        _gatewayLogWritersByIndex.values,
+      );
+      _gatewayLogWritersByIndex.clear();
+      for (final w in writers) {
+        unawaited(w.close());
+      }
+    } catch (_) {}
+
+    // Optionally mark the active thinking block finished. When detaching due to
+    // a page/conversation switch we keep it "loading" so restore can still
+    // reflect in-progress background generation.
+    if (finishThinkingBlock &&
+        idx != null &&
+        idx >= 0 &&
+        idx < _messages.length) {
+      _finishActiveThinkingBlock(idx);
+    }
+
+    // Snapshot the current UI messages immediately. The caller may clear/replace
+    // `_messages` right after detaching (e.g. conversation switch), so the
+    // async persistence task must not read live mutable state.
+    final List<AIMessage>? snapshotForPersist =
+        (persistUiState && cid.isNotEmpty)
+        ? _mergeReasoningForPersistence(List<AIMessage>.from(_messages))
+        : null;
+
+    if (snapshotForPersist != null) {
+      // Avoid resurrecting deleted conversations: only persist if the row exists.
+      final List<AIMessage> snapshot = snapshotForPersist;
+      unawaited(() async {
+        try {
+          final row = await ScreenshotDatabase.instance.getAiConversationByCid(
+            cid,
+          );
+          if (row == null) return;
+          await _enqueueChatHistorySaveByCid(cid, snapshot);
+        } catch (_) {}
+      }());
+    }
+
+    // Clear local streaming flags so the UI isn't stuck in "thinking" state.
+    if (mounted && setUiStopped) {
+      setState(() {
+        _sending = false;
+        _inStreaming = false;
+        _currentAssistantIndex = null;
+      });
+    } else {
+      _sending = false;
+      _inStreaming = false;
+      _currentAssistantIndex = null;
+    }
+    _inFlightConversationCid = null;
   }
 
   _ThinkingEvent? _findEvent(
@@ -470,12 +763,9 @@ class _AISettingsPageState extends State<AISettingsPage>
         title: Text(AppLocalizations.of(context).aiSettingsTitle),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
+        bottom: const ChatContextAppBarUsageBar(),
         actions: [
-          IconButton(
-            tooltip: _isZhLocale() ? '对话上下文' : 'Conversation context',
-            onPressed: () => ChatContextSheet.show(context),
-            icon: const Icon(Icons.memory_outlined),
-          ),
+          const ChatContextAppBarAction(),
           IconButton(
             tooltip: _showPerfOverlay
                 ? 'Hide perf overlay'

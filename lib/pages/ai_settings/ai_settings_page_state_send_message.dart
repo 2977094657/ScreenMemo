@@ -1,5 +1,33 @@
 part of '../ai_settings_page.dart';
 
+bool _isInternalReasoningProgressLine(String line) {
+  final String t = line.trimLeft();
+  if (t.isEmpty) return true;
+  final String lower = t.toLowerCase();
+  return t.startsWith('- ') ||
+      t.startsWith('分析查询意图') ||
+      t.startsWith('阶段') ||
+      t.startsWith('开始处理本次请求') ||
+      lower.startsWith('start handling request') ||
+      lower.startsWith('phase ') ||
+      lower.startsWith('stage ') ||
+      lower.startsWith('analyze intent') ||
+      lower.startsWith('calling intent model');
+}
+
+String _filterReasoningChunkForUi(String raw) {
+  if (raw.trim().isEmpty) return '';
+  final List<String> kept = <String>[];
+  for (final String line in raw.split('\n')) {
+    if (_isInternalReasoningProgressLine(line)) continue;
+    kept.add(line);
+  }
+  if (kept.isEmpty) return '';
+  String out = kept.join('\n');
+  if (raw.endsWith('\n')) out += '\n';
+  return out;
+}
+
 extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
   Future<void> _sendMessage() async {
     if (_sending) return;
@@ -14,9 +42,25 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
     _setState(() {
       _sending = true;
     });
+
+    final int sendEpoch = ++_sendEpoch;
+    _activeSendEpoch = sendEpoch;
+    final String initialCid = (_activeConversationCid ?? '').trim();
+    String requestCid = initialCid;
     try {
+      if (requestCid.isEmpty) {
+        requestCid = await _settings.getActiveConversationCid();
+      }
+      requestCid = requestCid.trim();
+      _inFlightConversationCid = requestCid.isEmpty ? null : requestCid;
+      void setStateIfActive(VoidCallback fn) {
+        if (!mounted) return;
+        if (_activeSendEpoch != sendEpoch) return;
+        _setState(fn);
+      }
+
       // 先本地追加用户消息，提升即时反馈
-      _setState(() {
+      setStateIfActive(() {
         _messages = List<AIMessage>.from(_messages)
           ..add(AIMessage(role: 'user', content: text));
       });
@@ -28,7 +72,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
         final int assistantIdx = _messages.length;
         QueryContextPack? ctxPackForRewrite;
         final DateTime createdAt = DateTime.now();
-        _setState(() {
+        setStateIfActive(() {
           _inStreaming = true;
           _thinkingText = '';
           _showThinkingContent = false; // 默认折叠
@@ -39,22 +83,45 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             );
           _currentAssistantIndex = assistantIdx;
           _reasoningByIndex[assistantIdx] = '';
+          _gatewayLogsByIndex.remove(assistantIdx);
           _reasoningDurationByIndex.remove(assistantIdx);
 
           final _ThinkingBlock first = _ThinkingBlock(createdAt: createdAt);
-          first.events.add(
-            _ThinkingEvent(
-              type: _ThinkingEventType.intent,
-              title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
-              icon: Icons.search_outlined,
-              active: true,
-            ),
-          );
+          if (_showAgentProgressLogs) {
+            first.events.add(
+              _ThinkingEvent(
+                type: _ThinkingEventType.intent,
+                title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                icon: Icons.search_outlined,
+                active: true,
+              ),
+            );
+          }
           _thinkingBlocksByIndex[assistantIdx] = <_ThinkingBlock>[first];
           _contentSegmentsByIndex[assistantIdx] = <String>[];
           _nextContentStartsNewSegmentByIndex[assistantIdx] = true;
         });
         _markInFlightHistoryDirty();
+        // Mirror gateway logs to a dedicated file (best-effort) so it's easier
+        // to copy/paste full request/response traces when debugging streaming.
+        try {
+          await _startGatewayLogsFileMirrorIfNeeded(
+            assistantIdx,
+            conversationCid: requestCid,
+            userInput: text,
+          );
+        } catch (_) {}
+        // Persist the placeholder bubble immediately so background tool-loop
+        // updates (after a conversation/page switch) can reliably patch the
+        // same assistant row by created_at.
+        unawaited(() async {
+          try {
+            final List<AIMessage> merged = _mergeReasoningForPersistence(
+              List<AIMessage>.from(_messages),
+            );
+            await _enqueueChatHistorySave(merged);
+          } catch (_) {}
+        }());
         _startDots();
         _scheduleAutoScroll();
         _scheduleReasoningPreviewScroll();
@@ -69,17 +136,6 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             'ChatFlow',
             'phase1 intent begin text="${text.length > 200 ? (text.substring(0, 200) + '…') : text}"',
           );
-          _setState(() {
-            final lastIdx = _messages.length - 1;
-            final last = _messages[lastIdx];
-            if (last.role == 'assistant') {
-              _messages[lastIdx] = AIMessage(
-                role: 'assistant',
-                content: '1/4 分析用户意图…',
-                createdAt: last.createdAt,
-              );
-            }
-          });
           _appendAgentLog(
             _isZhLocale() ? '阶段 1/4：意图分析' : 'Phase 1/4: intent analysis',
             bullet: false,
@@ -343,7 +399,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                   ? '本轮进入本地澄清/候选回复：不进行上下文检索与回答生成'
                   : 'Local clarification/candidates: skip context retrieval and answering',
             );
-            _setState(() {
+            setStateIfActive(() {
               final lastIdx = _messages.length - 1;
               final last = _messages[lastIdx];
               if (last.role == 'assistant') {
@@ -361,6 +417,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             // 本地澄清/候选不走流式网络请求
             _stopDots();
             session = null;
+            unawaited(_stopGatewayLogsFileMirror(assistantIdx));
           } else {
             final IntentResult resolvedIntent = intent!;
             final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
@@ -388,34 +445,26 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                     ? '意图已确认：${resolvedIntent.intentSummary}（无需时间窗/上下文检索）'
                     : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
               );
-              _setState(() {
-                final List<_ThinkingBlock>? blocks =
-                    _thinkingBlocksByIndex[assistantIdx];
-                if (blocks == null || blocks.isEmpty) return;
-                final _ThinkingBlock b = blocks.last;
-                _upsertEvent(
-                  b,
-                  type: _ThinkingEventType.intent,
-                  title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
-                  icon: Icons.search_outlined,
-                  active: false,
-                  subtitle: _formatIntentSubtitle(resolvedIntent),
-                );
-              });
-              _renameActiveConversationTo(resolvedIntent.intentSummary);
-              _setState(() {
-                final lastIdx = _messages.length - 1;
-                final last = _messages[lastIdx];
-                if (last.role == 'assistant') {
-                  _messages[lastIdx] = AIMessage(
-                    role: 'assistant',
-                    content: _isZhLocale()
-                        ? '1/4 意图: ${resolvedIntent.intentSummary}\n\n2/4 无需上下文\n\n3/4 生成回答…'
-                        : '1/4 Intent: ${resolvedIntent.intentSummary}\n\n2/4 No context needed\n\n3/4 Generating answer…',
-                    createdAt: last.createdAt,
+              if (_showAgentProgressLogs) {
+                setStateIfActive(() {
+                  final List<_ThinkingBlock>? blocks =
+                      _thinkingBlocksByIndex[assistantIdx];
+                  if (blocks == null || blocks.isEmpty) return;
+                  final _ThinkingBlock b = blocks.last;
+                  _upsertEvent(
+                    b,
+                    type: _ThinkingEventType.intent,
+                    title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                    icon: Icons.search_outlined,
+                    active: false,
+                    subtitle: _formatIntentSubtitle(resolvedIntent),
                   );
-                }
-              });
+                });
+              }
+              _renameActiveConversationTo(
+                resolvedIntent.intentSummary,
+                conversationCid: requestCid,
+              );
               _appendAgentLog(
                 _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
                 bullet: false,
@@ -425,11 +474,13 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 text,
                 text,
                 includeHistory: true,
-                // UI persists a post-processed version (e.g. evidence tag rewrites).
-                // Prevent service-level tail persistence from overwriting UI history.
-                persistHistoryTail: false,
+                // Persist the tail at service-level so background completion (after
+                // conversation/page switch) still lands in the original CID.
+                persistHistoryTail: true,
                 tools: AIChatService.defaultChatTools(),
                 toolChoice: 'auto',
+                conversationCid: requestCid,
+                uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
               );
             } else {
               await FlutterLogger.nativeInfo(
@@ -443,57 +494,27 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               );
 
               // 显示意图摘要与时间窗
-              _setState(() {
-                final lastIdx = _messages.length - 1;
-                final last = _messages[lastIdx];
-                if (last.role == 'assistant') {
-                  final start = DateTime.fromMillisecondsSinceEpoch(
-                    resolvedIntent.startMs,
-                  );
-                  final end = DateTime.fromMillisecondsSinceEpoch(
-                    resolvedIntent.endMs,
-                  );
-                  String two(int v) => v.toString().padLeft(2, '0');
-                  String ymd(DateTime d) =>
-                      '${d.year}-${two(d.month)}-${two(d.day)}';
-                  final String dateLine =
-                      (start.year == end.year &&
-                          start.month == end.month &&
-                          start.day == end.day)
-                      ? '日期: ' + ymd(start)
-                      : '日期: ' + ymd(start) + ' → ' + ymd(end);
-                  final String range =
-                      '${two(start.hour)}:${two(start.minute)}-${two(end.hour)}:${two(end.minute)}';
-                  final updated =
-                      '1/4 意图: ${resolvedIntent.intentSummary}\n' +
-                      dateLine +
-                      '\n时间: ' +
-                      range +
-                      ' (' +
-                      resolvedIntent.timezone +
-                      ')\n\n2/4 查找上下文…';
-                  _messages[lastIdx] = AIMessage(
-                    role: 'assistant',
-                    content: updated,
-                    createdAt: last.createdAt,
-                  );
-                }
-
-                final List<_ThinkingBlock>? blocks =
-                    _thinkingBlocksByIndex[assistantIdx];
-                if (blocks != null && blocks.isNotEmpty) {
-                  final _ThinkingBlock b = blocks.last;
-                  _upsertEvent(
-                    b,
-                    type: _ThinkingEventType.intent,
-                    title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
-                    icon: Icons.search_outlined,
-                    active: false,
-                    subtitle: _formatIntentSubtitle(resolvedIntent),
-                  );
-                }
-              });
-              _renameActiveConversationTo(resolvedIntent.intentSummary);
+              if (_showAgentProgressLogs) {
+                setStateIfActive(() {
+                  final List<_ThinkingBlock>? blocks =
+                      _thinkingBlocksByIndex[assistantIdx];
+                  if (blocks != null && blocks.isNotEmpty) {
+                    final _ThinkingBlock b = blocks.last;
+                    _upsertEvent(
+                      b,
+                      type: _ThinkingEventType.intent,
+                      title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                      icon: Icons.search_outlined,
+                      active: false,
+                      subtitle: _formatIntentSubtitle(resolvedIntent),
+                    );
+                  }
+                });
+              }
+              _renameActiveConversationTo(
+                resolvedIntent.intentSummary,
+                conversationCid: requestCid,
+              );
 
               // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
               await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
@@ -623,7 +644,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                       ? '查询本地数据库并组装上下文…'
                       : 'Querying local DB and assembling context…',
                 );
-                _setState(() {
+                setStateIfActive(() {
                   final _ThinkingBlock b = _ensureThinkingBlock(assistantIdx);
                   final DateTime ds = DateTime.fromMillisecondsSinceEpoch(
                     preloadStartMs,
@@ -663,7 +684,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                       ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
                       : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
                 );
-                _setState(() {
+                setStateIfActive(() {
                   final List<_ThinkingBlock>? blocks =
                       _thinkingBlocksByIndex[assistantIdx];
                   if (blocks == null || blocks.isEmpty) return;
@@ -702,19 +723,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                     ? '证据图片：预加载文件名/路径 ${attachments.length} 条（不预加载像素；需要看原图像素再用 get_images）'
                     : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
               );
-              _setState(() {
+              setStateIfActive(() {
                 _attachmentsByIndex[assistantIdx] = attachments;
-                final lastIdx = _messages.length - 1;
-                final last = _messages[lastIdx];
-                if (last.role == 'assistant') {
-                  final updated =
-                      '2/4 查找上下文完成${reuse ? '（复用上一轮）' : ''}：事件 ${ctxPack.events.length}${windowed ? '（预加载 7 天窗口）' : ''}\n\n3/4 生成回答…';
-                  _messages[lastIdx] = AIMessage(
-                    role: 'assistant',
-                    content: updated,
-                    createdAt: last.createdAt,
-                  );
-                }
               });
               _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
 
@@ -763,69 +773,253 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 finalQuery,
                 includeHistory: resolvedIntent.skipContext,
                 extraSystemMessages: extraSystemMessages,
-                // UI persists a post-processed version (e.g. evidence tag rewrites).
-                // Prevent service-level tail persistence from overwriting UI history.
-                persistHistoryTail: false,
+                // Persist the tail at service-level so background completion (after
+                // conversation/page switch) still lands in the original CID.
+                persistHistoryTail: true,
                 tools: chatTools,
                 toolChoice: 'auto',
                 forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
+                conversationCid: requestCid,
+                uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
               );
             }
           }
 
           if (session != null) {
-            await for (final AIStreamEvent evt in session!.stream) {
-              if (!mounted) return;
-              final int? idx = _currentAssistantIndex;
+            // UI might have been detached (conversation/page switch) while we were
+            // still preparing the streaming session. Let the service complete in
+            // background without attaching stream listeners.
+            if (_activeSendEpoch != sendEpoch) {
+              unawaited(session!.completed.catchError((_) {}));
+              return;
+            }
+            final Completer<void> streamDone = Completer<void>();
+            _streamLoopCompleter = streamDone;
 
-              // UI 事件（工具调用等）：不作为正文输出，单独驱动“思考块”渲染。
-              if (evt.kind == 'ui') {
-                if (idx != null) {
-                  final Map<String, dynamic>? payload = _tryParseJsonMap(
-                    evt.data,
-                  );
-                  if (payload != null) {
-                    _setState(() => _handleAiUiEvent(idx, payload));
+            // Ensure cancel() can stop UI updates immediately (conversation/page switch).
+            final sub0 = _streamSubscription;
+            if (sub0 != null) {
+              try {
+                await sub0.cancel();
+              } catch (_) {}
+              _streamSubscription = null;
+            }
+
+            _streamSubscription = session!.stream.listen(
+              (AIStreamEvent evt) {
+                if (!mounted) return;
+                // UI is detached from this in-flight request; ignore further deltas.
+                if (_activeSendEpoch != sendEpoch) return;
+
+                final int? idx = _currentAssistantIndex;
+
+                // UI 事件（工具调用等）：不作为正文输出，单独驱动“思考块”渲染。
+                if (evt.kind == 'ui') {
+                  if (idx != null) {
+                    final Map<String, dynamic>? payload = _tryParseJsonMap(
+                      evt.data,
+                    );
+                    if (payload != null) {
+                      final String t =
+                          (payload['type'] as String?)?.trim() ?? '';
+                      if (t == 'gateway_log') {
+                        _handleGatewayLogUiEvent(idx, payload);
+                        // Debug logs are out-of-band; do not drive scrolling/persistence.
+                        return;
+                      } else {
+                        _setState(() => _handleAiUiEvent(idx, payload));
+                      }
+                      _scheduleAutoScroll();
+                      _markInFlightHistoryDirty();
+                    }
+                  }
+                  return;
+                }
+
+                // 将模型返回的 reasoning / 过程性文本展示到“思考过程”面板，避免长时间无正文时看起来卡住。
+                if (evt.kind == 'reasoning') {
+                  final String reasoningDelta = _showAgentProgressLogs
+                      ? evt.data
+                      : _filterReasoningChunkForUi(evt.data);
+                  if (idx != null && reasoningDelta.trim().isNotEmpty) {
+                    _setState(() {
+                      _thinkingText += reasoningDelta;
+                      _reasoningByIndex[idx] =
+                          (_reasoningByIndex[idx] ?? '') + reasoningDelta;
+                    });
                     _scheduleAutoScroll();
+                    _scheduleReasoningPreviewScroll();
                     _markInFlightHistoryDirty();
                   }
+                  return;
                 }
-                continue;
-              }
-
-              // 禁止将模型 reasoning / 过程性文本放入“思考块”或正文（只展示结构化事件）。
-              if (evt.kind == 'reasoning') {
-                continue;
-              }
-              // 正文增量（首 token 到来时先清空阶段状态，再开始写入最终答案）
-              _setState(() {
-                final lastIdx = _messages.length - 1;
-                final last = _messages[lastIdx];
-                if (last.role == 'assistant') {
-                  final String base = _replaceAssistantContentOnNextToken
-                      ? ''
-                      : last.content;
-                  String incoming = evt.data;
-                  final updated = AIMessage(
-                    role: 'assistant',
-                    content: base + incoming,
-                    createdAt: last.createdAt, // 保留初始创建时间以准确计算思考耗时
-                  );
-                  final newList = List<AIMessage>.from(_messages);
-                  newList[lastIdx] = updated;
-                  _messages = newList;
-                  _replaceAssistantContentOnNextToken = false;
-
-                  if (idx != null && incoming.isNotEmpty) {
-                    _finishActiveThinkingBlock(idx);
-                    _appendContentChunk(idx, incoming);
+                // 正文增量（首 token 到来时先清空阶段状态，再开始写入最终答案）
+                _setState(() {
+                  final int? currentIdx = _currentAssistantIndex;
+                  final int fallbackIdx = _messages.length - 1;
+                  final int targetIdx =
+                      (currentIdx != null &&
+                          currentIdx >= 0 &&
+                          currentIdx < _messages.length)
+                      ? currentIdx
+                      : fallbackIdx;
+                  if (targetIdx < 0 || targetIdx >= _messages.length) {
+                    return;
                   }
+                  final AIMessage target = _messages[targetIdx];
+                  if (target.role == 'assistant') {
+                    final String base = _replaceAssistantContentOnNextToken
+                        ? ''
+                        : target.content;
+                    final String incoming = evt.data;
+                    final updated = AIMessage(
+                      role: 'assistant',
+                      content: base + incoming,
+                      createdAt: target.createdAt, // 保留初始创建时间以准确计算思考耗时
+                    );
+                    final newList = List<AIMessage>.from(_messages);
+                    newList[targetIdx] = updated;
+                    _messages = newList;
+                    _replaceAssistantContentOnNextToken = false;
+
+                    if (currentIdx != null && incoming.isNotEmpty) {
+                      _finishActiveThinkingBlock(currentIdx);
+                      _appendContentChunk(currentIdx, incoming);
+                    }
+                  }
+                });
+                _scheduleAutoScroll();
+                _markInFlightHistoryDirty();
+              },
+              onError: (Object error, StackTrace st) {
+                // If the UI has been detached, do not surface errors here.
+                if (_activeSendEpoch != sendEpoch) {
+                  if (!streamDone.isCompleted) streamDone.complete();
+                  return;
+                }
+                if (!streamDone.isCompleted) {
+                  streamDone.completeError(error, st);
+                }
+              },
+              onDone: () {
+                if (!streamDone.isCompleted) streamDone.complete();
+              },
+            );
+
+            try {
+              await streamDone.future;
+            } finally {
+              if (_streamLoopCompleter == streamDone) {
+                _streamLoopCompleter = null;
+              }
+              final sub1 = _streamSubscription;
+              if (sub1 != null) {
+                try {
+                  await sub1.cancel();
+                } catch (_) {}
+              }
+              _streamSubscription = null;
+            }
+
+            // If the UI has been detached (conversation/page switch), do not touch
+            // state/persistence further; let the service complete in background.
+            if (!mounted || _activeSendEpoch != sendEpoch) {
+              unawaited(_stopGatewayLogsFileMirror(assistantIdx));
+              unawaited(session!.completed.catchError((_) {}));
+              return;
+            }
+
+            final AIMessage completed = await session!.completed;
+            // Add an explicit UI summary line to logs (helps diagnose cases where
+            // providers only return `reasoning_content` and leave `content` empty).
+            try {
+              _appendGatewayLogLine(
+                assistantIdx,
+                '[UI] completed contentLen=${completed.content.length} reasoningLen=${(completed.reasoningContent ?? '').length}',
+              );
+            } catch (_) {}
+
+            // Safety net: some providers/models only emit Responses/ChatCompletions "done" events
+            // (or we may filter out empty deltas). If we never saw any content token, replace the
+            // phase placeholder with the final completed content so the UI doesn't look "stuck".
+            if (_replaceAssistantContentOnNextToken &&
+                completed.content.trim().isNotEmpty) {
+              _setState(() {
+                final int? currentIdx = _currentAssistantIndex;
+                final int fallbackIdx = _messages.length - 1;
+                final int targetIdx =
+                    (currentIdx != null &&
+                        currentIdx >= 0 &&
+                        currentIdx < _messages.length)
+                    ? currentIdx
+                    : fallbackIdx;
+                if (targetIdx < 0 || targetIdx >= _messages.length) {
+                  return;
+                }
+                final AIMessage target = _messages[targetIdx];
+                if (target.role != 'assistant') return;
+
+                final updated = AIMessage(
+                  role: 'assistant',
+                  content: completed.content,
+                  createdAt: target.createdAt,
+                  reasoningContent: target.reasoningContent,
+                  reasoningDuration: target.reasoningDuration,
+                  uiThinkingJson: target.uiThinkingJson,
+                );
+                final newList = List<AIMessage>.from(_messages);
+                newList[targetIdx] = updated;
+                _messages = newList;
+                _replaceAssistantContentOnNextToken = false;
+
+                if (currentIdx != null && completed.content.isNotEmpty) {
+                  _finishActiveThinkingBlock(currentIdx);
+                  _appendContentChunk(currentIdx, completed.content);
                 }
               });
               _scheduleAutoScroll();
               _markInFlightHistoryDirty();
             }
-            await session!.completed;
+
+            // Stream providers may emit overlapping terminal events; ensure the final
+            // assistant bubble always converges to completed.content exactly.
+            if (completed.content.trim().isNotEmpty) {
+              _setState(() {
+                final int? currentIdx = _currentAssistantIndex;
+                final int fallbackIdx = _messages.length - 1;
+                final int targetIdx =
+                    (currentIdx != null &&
+                        currentIdx >= 0 &&
+                        currentIdx < _messages.length)
+                    ? currentIdx
+                    : fallbackIdx;
+                if (targetIdx < 0 || targetIdx >= _messages.length) {
+                  return;
+                }
+                final AIMessage target = _messages[targetIdx];
+                if (target.role != 'assistant') return;
+                if (target.content == completed.content) return;
+
+                final updated = AIMessage(
+                  role: 'assistant',
+                  content: completed.content,
+                  createdAt: target.createdAt,
+                  reasoningContent: target.reasoningContent,
+                  reasoningDuration: target.reasoningDuration,
+                  uiThinkingJson: target.uiThinkingJson,
+                );
+                final newList = List<AIMessage>.from(_messages);
+                newList[targetIdx] = updated;
+                _messages = newList;
+
+                if (currentIdx != null) {
+                  _contentSegmentsByIndex[currentIdx] = <String>[completed.content];
+                  _nextContentStartsNewSegmentByIndex[currentIdx] = false;
+                }
+              });
+              _scheduleAutoScroll();
+              _markInFlightHistoryDirty();
+            }
             // 成功路径：更新"上一轮"缓存
             if (ctxPackForRewrite != null &&
                 intent != null &&
@@ -833,6 +1027,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               _lastCtxPack = ctxPackForRewrite;
               _lastIntent = intent;
             }
+            unawaited(_stopGatewayLogsFileMirror(assistantIdx));
           }
         } catch (e) {
           try {
@@ -841,7 +1036,11 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               'error ' + e.toString(),
             );
           } catch (_) {}
+          unawaited(_stopGatewayLogsFileMirror(assistantIdx));
           if (!mounted) return;
+          // UI might have been detached (conversation/page switch). Do not touch
+          // state; let the service complete/persist in background.
+          if (_activeSendEpoch != sendEpoch) rethrow;
           final String errorMessage;
           if (e is InvalidResponseStartException) {
             final String preview = e.receivedPreview.isEmpty
@@ -857,7 +1056,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           } else {
             errorMessage = e.toString();
           }
-          _setState(() {
+          setStateIfActive(() {
             _inStreaming = false;
             if (_messages.isNotEmpty && _messages.last.role == 'assistant') {
               final newList = List<AIMessage>.from(_messages);
@@ -876,6 +1075,9 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           _scheduleAutoScroll();
           rethrow;
         }
+        // UI might have been detached by a conversation/page switch while the
+        // request continues in background.
+        if (_activeSendEpoch != sendEpoch) return;
         if (mounted) {
           _setState(() {
             _inStreaming = false;
@@ -960,7 +1162,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 _nextContentStartsNewSegmentByIndex.clear();
               });
             }
-            await _enqueueChatHistorySave(merged);
+            await _enqueueChatHistorySaveByCid(requestCid, merged);
           } catch (_) {
             try {
               final QueryContextPack? pack = ctxPackForRewrite;
@@ -1020,14 +1222,14 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
-              await _enqueueChatHistorySave(toSave);
+              await _enqueueChatHistorySaveByCid(requestCid, toSave);
             } catch (_) {}
           }
         }
       } else {
         // 非流式：仍按阶段流程，最后一次性替换为最终答案
         final int assistantIdx = _messages.length;
-        _setState(() {
+        setStateIfActive(() {
           _thinkingText = '';
           _reasoningByIndex[assistantIdx] = '';
           _reasoningDurationByIndex.remove(assistantIdx);
@@ -1035,7 +1237,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             ..add(
               AIMessage(
                 role: 'assistant',
-                content: '1/4 分析用户意图…',
+                content: '',
                 createdAt: DateTime.now(),
               ),
             );
@@ -1319,13 +1521,14 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           }
 
           if (localOnlyResponse) {
+            if (_activeSendEpoch != sendEpoch) return;
             _appendAgentLog(
               _isZhLocale()
                   ? '本轮进入本地澄清/候选回复：不进行上下文检索与回答生成'
                   : 'Local clarification/candidates: skip context retrieval and answering',
               assistantIndex: assistantIdx,
             );
-            _setState(() {
+            setStateIfActive(() {
               final lastIdx = _messages.length - 1;
               final last = _messages[lastIdx];
               _messages[lastIdx] = AIMessage(
@@ -1339,7 +1542,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
-              await _enqueueChatHistorySave(toSave);
+              await _enqueueChatHistorySaveByCid(requestCid, toSave);
             } catch (_) {}
             return;
           }
@@ -1372,18 +1575,10 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                   : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
               assistantIndex: assistantIdx,
             );
-            _renameActiveConversationTo(resolvedIntent.intentSummary);
-            _setState(() {
-              final lastIdx = _messages.length - 1;
-              final last = _messages[lastIdx];
-              _messages[lastIdx] = AIMessage(
-                role: 'assistant',
-                content: _isZhLocale()
-                    ? '1/4 意图: ${resolvedIntent.intentSummary}\n\n2/4 无需上下文\n\n3/4 生成回答…'
-                    : '1/4 Intent: ${resolvedIntent.intentSummary}\n\n2/4 No context needed\n\n3/4 Generating answer…',
-                createdAt: last.createdAt,
-              );
-            });
+            _renameActiveConversationTo(
+              resolvedIntent.intentSummary,
+              conversationCid: requestCid,
+            );
             _appendAgentLog(
               _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
               assistantIndex: assistantIdx,
@@ -1394,18 +1589,23 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               text,
               text,
               includeHistory: true,
-              // UI persists a post-processed version (e.g. evidence tag rewrites).
-              // Prevent service-level tail persistence from overwriting UI history.
-              persistHistoryTail: false,
+              // Persist tail at service-level so leaving/switching won't lose the result.
+              persistHistoryTail: true,
               tools: AIChatService.defaultChatTools(),
               toolChoice: 'auto',
+              conversationCid: requestCid,
               emitEvent: (evt) {
                 if (!mounted) return;
+                if (_activeSendEpoch != sendEpoch) return;
                 if (evt.kind != 'reasoning') return;
-                _setState(() {
-                  _thinkingText += evt.data;
+                final String reasoningDelta = _showAgentProgressLogs
+                    ? evt.data
+                    : _filterReasoningChunkForUi(evt.data);
+                if (reasoningDelta.trim().isEmpty) return;
+                setStateIfActive(() {
+                  _thinkingText += reasoningDelta;
                   _reasoningByIndex[assistantIdx] =
-                      (_reasoningByIndex[assistantIdx] ?? '') + evt.data;
+                      (_reasoningByIndex[assistantIdx] ?? '') + reasoningDelta;
                 });
                 _scheduleAutoScroll();
                 _scheduleReasoningPreviewScroll();
@@ -1418,8 +1618,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                   : 'Model responded (${swAnswer.elapsedMilliseconds}ms)',
               assistantIndex: assistantIdx,
             );
-            if (!mounted) return;
-            _setState(() {
+            if (!mounted || _activeSendEpoch != sendEpoch) return;
+            setStateIfActive(() {
               final lastIdx = _messages.length - 1;
               _messages[lastIdx] = AIMessage(
                 role: 'assistant',
@@ -1432,7 +1632,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
-              await _enqueueChatHistorySave(toSave);
+              await _enqueueChatHistorySaveByCid(requestCid, toSave);
             } catch (_) {}
             return;
           }
@@ -1447,24 +1647,10 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
             assistantIndex: assistantIdx,
           );
-          _renameActiveConversationTo(resolvedIntent.intentSummary);
-          final start = DateTime.fromMillisecondsSinceEpoch(
-            resolvedIntent.startMs,
+          _renameActiveConversationTo(
+            resolvedIntent.intentSummary,
+            conversationCid: requestCid,
           );
-          final end = DateTime.fromMillisecondsSinceEpoch(resolvedIntent.endMs);
-          String two(int v) => v.toString().padLeft(2, '0');
-          final String range =
-              '${two(start.hour)}:${two(start.minute)}-${two(end.hour)}:${two(end.minute)}';
-          _setState(() {
-            final lastIdx = _messages.length - 1;
-            final last = _messages[lastIdx];
-            _messages[lastIdx] = AIMessage(
-              role: 'assistant',
-              content:
-                  '1/4 意图: ${resolvedIntent.intentSummary}\n时间: $range (${resolvedIntent.timezone})\n\n2/4 查找上下文…',
-              createdAt: last.createdAt,
-            );
-          });
 
           await FlutterLogger.nativeInfo(
             'ChatFlow',
@@ -1645,20 +1831,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
             assistantIndex: assistantIdx,
           );
-          _setState(() {
+          setStateIfActive(() {
             _attachmentsByIndex[assistantIdx] = attachments;
-            final lastIdx = _messages.length - 1;
-            final last = _messages[lastIdx];
-            _messages[lastIdx] = AIMessage(
-              role: 'assistant',
-              content:
-                  '2/4 查找上下文完成' +
-                  (reuse ? '（复用上一轮）' : '') +
-                  '：事件 ${ctxPack.events.length}' +
-                  (windowed ? '（预加载 7 天窗口）' : '') +
-                  '\n\n3/4 生成回答…',
-              createdAt: last.createdAt,
-            );
           });
           _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
 
@@ -1708,19 +1882,24 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             finalQuery,
             includeHistory: resolvedIntent.skipContext,
             extraSystemMessages: extraSystemMessages,
-            // UI persists a post-processed version (e.g. evidence tag rewrites).
-            // Prevent service-level tail persistence from overwriting UI history.
-            persistHistoryTail: false,
+            // Persist tail at service-level so leaving/switching won't lose the result.
+            persistHistoryTail: true,
             tools: chatTools,
             toolChoice: 'auto',
             forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
+            conversationCid: requestCid,
             emitEvent: (evt) {
               if (!mounted) return;
+              if (_activeSendEpoch != sendEpoch) return;
               if (evt.kind != 'reasoning') return;
-              _setState(() {
-                _thinkingText += evt.data;
+              final String reasoningDelta = _showAgentProgressLogs
+                  ? evt.data
+                  : _filterReasoningChunkForUi(evt.data);
+              if (reasoningDelta.trim().isEmpty) return;
+              setStateIfActive(() {
+                _thinkingText += reasoningDelta;
                 _reasoningByIndex[assistantIdx] =
-                    (_reasoningByIndex[assistantIdx] ?? '') + evt.data;
+                    (_reasoningByIndex[assistantIdx] ?? '') + reasoningDelta;
               });
               _scheduleAutoScroll();
               _scheduleReasoningPreviewScroll();
@@ -1734,8 +1913,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             assistantIndex: assistantIdx,
           );
           final String content = assistant.content;
-          if (!mounted) return;
-          _setState(() {
+          if (!mounted || _activeSendEpoch != sendEpoch) return;
+          setStateIfActive(() {
             // 用最终答案替换占位
             final lastIdx = _messages.length - 1;
             // 如复用上一轮上下文，则在正文前加一行提示
@@ -1771,10 +1950,10 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                   reasoningDuration: m.reasoningDuration,
                   uiThinkingJson: m.uiThinkingJson,
                 );
-                if (mounted) _setState(() => _messages = toSave);
+                setStateIfActive(() => _messages = toSave);
               }
             }
-            await _enqueueChatHistorySave(toSave);
+            await _enqueueChatHistorySaveByCid(requestCid, toSave);
           } catch (_) {}
           // 成功路径：更新"上一轮"缓存
           _lastCtxPack = ctxPack;
@@ -1786,8 +1965,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               'error(non-stream) ' + e.toString(),
             );
           } catch (_) {}
-          if (!mounted) return;
-          _setState(() {
+          if (!mounted || _activeSendEpoch != sendEpoch) return;
+          setStateIfActive(() {
             final lastIdx = _messages.length - 1;
             _messages[lastIdx] = AIMessage(
               role: 'error',
@@ -1798,6 +1977,8 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       }
     } catch (e) {
       if (!mounted) return;
+      // This send has been detached (conversation/page switch). Ignore errors here.
+      if (_activeSendEpoch != sendEpoch) return;
       // 将错误显示为一条"错误"气泡，便于区分样式
       _setState(() {
         _inStreaming = false;
@@ -1821,10 +2002,26 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
         AppLocalizations.of(context).sendFailedWithError(e.toString()),
       );
     } finally {
-      if (mounted)
+      final bool stillActive = (_activeSendEpoch == sendEpoch);
+      if (stillActive) {
+        _activeSendEpoch = 0;
+        _inFlightConversationCid = null;
+        _cancelStreamUiSubscription();
+      }
+      if (mounted && stillActive) {
         _setState(() {
           _sending = false;
         });
+        if (_pendingChatReload) {
+          _pendingChatReload = false;
+          unawaited(() async {
+            await _loadChatContextSelection();
+            await _loadAll();
+          }());
+        }
+      } else if (stillActive) {
+        _pendingChatReload = false;
+      }
     }
   }
 

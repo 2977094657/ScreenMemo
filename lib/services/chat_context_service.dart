@@ -41,6 +41,21 @@ class ChatContextSnapshot {
   final int fullMessageCount;
 }
 
+/// Aggregate prompt-token stats across all conversations.
+///
+/// Note: this is based on the last recorded prompt snapshot per conversation
+/// (`ai_conversations.last_prompt_*`), so it's an approximate "global usage"
+/// view, not a billing-accurate counter.
+class GlobalPromptTokenStats {
+  const GlobalPromptTokenStats({
+    required this.totalTokens,
+    required this.parts,
+  });
+
+  final int totalTokens;
+  final Map<String, int> parts;
+}
+
 /// Conversation context system inspired by Codex:
 /// - Stores a rolling summary + compact tool-memory per conversation (cid)
 /// - Maintains an append-only transcript for safe compaction
@@ -104,6 +119,84 @@ class ChatContextService {
     } catch (_) {}
   }
 
+  Future<int> getGlobalPromptTokensTotal() async {
+    try {
+      final storage = await _db.database;
+      final rows = await storage.rawQuery(
+        'SELECT SUM(COALESCE(last_prompt_tokens, 0)) AS c FROM ai_conversations',
+      );
+      if (rows.isEmpty) return 0;
+      return _toInt(rows.first['c']);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<GlobalPromptTokenStats> getGlobalPromptTokensStats() async {
+    int totalTokens = 0;
+    final Map<String, int> parts = <String, int>{};
+
+    try {
+      final storage = await _db.database;
+      final rows = await storage.query(
+        'ai_conversations',
+        columns: <String>['last_prompt_tokens', 'last_prompt_breakdown_json'],
+      );
+
+      for (final Map<String, Object?> row in rows) {
+        int rowTotal = _toInt(row['last_prompt_tokens']);
+
+        final String raw =
+            (row['last_prompt_breakdown_json'] as String?)?.trim() ?? '';
+
+        Map? decodedMap;
+        if (raw.isNotEmpty) {
+          try {
+            final dynamic decoded = jsonDecode(raw);
+            if (decoded is Map) decodedMap = decoded;
+          } catch (_) {}
+        }
+
+        // Prefer the breakdown's `total_tokens` so the total matches parts.
+        if (decodedMap != null) {
+          final dynamic t = decodedMap['total_tokens'];
+          if (t is num) rowTotal = t.toInt();
+        }
+
+        if (rowTotal <= 0) continue;
+        totalTokens += rowTotal;
+
+        if (decodedMap == null) {
+          // No breakdown: keep totals consistent under a generic bucket.
+          parts['extra_system'] = (parts['extra_system'] ?? 0) + rowTotal;
+          continue;
+        }
+
+        int rowPartsSum = 0;
+        final dynamic p = decodedMap['parts'];
+        if (p is Map) {
+          for (final entry in p.entries) {
+            final String k = entry.key.toString();
+            final dynamic v = entry.value;
+            if (v is! num) continue;
+            final int t = v.toInt();
+            if (t <= 0) continue;
+            parts[k] = (parts[k] ?? 0) + t;
+            rowPartsSum += t;
+          }
+        }
+
+        // Partial breakdown: put the remainder into a generic bucket.
+        final int diff = rowTotal - rowPartsSum;
+        if (diff > 0) {
+          parts['extra_system'] = (parts['extra_system'] ?? 0) + diff;
+        }
+      }
+    } catch (_) {}
+
+    return GlobalPromptTokenStats(totalTokens: totalTokens, parts: parts);
+  }
+
   Future<ChatContextSnapshot> getSnapshot({String? cid}) async {
     final String resolvedCid = (cid == null || cid.trim().isEmpty)
         ? await _settings.getActiveConversationCid()
@@ -126,8 +219,8 @@ class ChatContextService {
     if (row != null) {
       summary = (row['summary'] as String?)?.trim() ?? '';
       summaryUpdatedAtMs = row['summary_updated_at'] as int?;
-      summaryTokens0 = _toInt(row['summary_tokens']) ?? 0;
-      compactionCount = _toInt(row['compaction_count']) ?? 0;
+      summaryTokens0 = _toInt(row['summary_tokens']);
+      compactionCount = _toInt(row['compaction_count']);
       lastCompactionReason = (row['last_compaction_reason'] as String?)?.trim();
       toolMemoryJson = (row['tool_memory_json'] as String?)?.trim() ?? '';
       toolMemoryUpdatedAtMs = row['tool_memory_updated_at'] as int?;
@@ -296,7 +389,7 @@ class ChatContextService {
       if (raw != null && raw.trim().isNotEmpty) {
         final dynamic v = jsonDecode(raw);
         if (v is Map) {
-          parsed = Map<String, dynamic>.from(v as Map);
+          parsed = Map<String, dynamic>.from(v);
         }
       }
     } catch (_) {}
@@ -310,7 +403,7 @@ class ChatContextService {
       if (it is! Map) continue;
       final String sig = (it['sig'] ?? '').toString();
       if (sig.isEmpty) continue;
-      bySig[sig] = Map<String, dynamic>.from(it as Map);
+      bySig[sig] = Map<String, dynamic>.from(it);
     }
 
     for (final MapEntry<String, Map<String, dynamic>> e
@@ -449,7 +542,8 @@ class ChatContextService {
     final String modelForBudget = endpoints.first.model.trim().isNotEmpty
         ? endpoints.first.model
         : (await _settings.getModel());
-    final AIContextBudgets budgets = AIContextBudgets.forModel(modelForBudget);
+    final AIContextBudgets budgets =
+        await AIContextBudgets.forModelWithOverrides(modelForBudget);
 
     final int totalTokens = _approxTokensForFullMessages(msgs);
     // Codex-style: compact only when we are close to the model context window.
@@ -555,7 +649,7 @@ class ChatContextService {
         <Object?>[cid],
       );
       if (rows.isEmpty) return 0;
-      return _toInt(rows.first['c']) ?? 0;
+      return _toInt(rows.first['c']);
     } catch (_) {
       return 0;
     }
@@ -582,7 +676,7 @@ class ChatContextService {
       if (last.isNotEmpty) {
         final String lr = (last.first['role'] as String?) ?? '';
         final String lc = (last.first['content'] as String?) ?? '';
-        final int lt = _toInt(last.first['created_at']) ?? 0;
+        final int lt = _toInt(last.first['created_at']);
         if (lr == role && lc == text && (createdAtMs - lt).abs() <= 8000) {
           return;
         }
