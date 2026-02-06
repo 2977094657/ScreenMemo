@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
+import 'openai_responses_extract.dart';
 
 /// 统一的网关事件类型
 class AIGatewayEventKind {
@@ -50,13 +51,10 @@ class AIToolCall {
   final String argumentsJson;
 
   Map<String, dynamic> toOpenAIToolCallJson() => <String, dynamic>{
-        'id': id,
-        'type': 'function',
-        'function': <String, dynamic>{
-          'name': name,
-          'arguments': argumentsJson,
-        },
-      };
+    'id': id,
+    'type': 'function',
+    'function': <String, dynamic>{'name': name, 'arguments': argumentsJson},
+  };
 }
 
 /// 网关流式会话，包含事件流与最终结果
@@ -64,8 +62,8 @@ class AIGatewayStreamingSession {
   AIGatewayStreamingSession({
     required Stream<AIGatewayEvent> stream,
     required Future<AIGatewayResult> completed,
-  })  : stream = stream,
-        completed = completed;
+  }) : stream = stream,
+       completed = completed;
 
   final Stream<AIGatewayEvent> stream;
   final Future<AIGatewayResult> completed;
@@ -170,7 +168,8 @@ class AIRequestGateway {
     Object? toolChoice,
   }) {
     if (endpoints.isEmpty) {
-      final StreamController<AIGatewayEvent> empty = StreamController<AIGatewayEvent>();
+      final StreamController<AIGatewayEvent> empty =
+          StreamController<AIGatewayEvent>();
       empty.close();
       return AIGatewayStreamingSession(
         stream: empty.stream,
@@ -180,7 +179,8 @@ class AIRequestGateway {
       );
     }
 
-    final StreamController<AIGatewayEvent> controller = StreamController<AIGatewayEvent>();
+    final StreamController<AIGatewayEvent> controller =
+        StreamController<AIGatewayEvent>();
     final Completer<AIGatewayResult> completer = Completer<AIGatewayResult>();
 
     () async {
@@ -293,7 +293,9 @@ class AIRequestGateway {
         }
       }
       if (!completer.isCompleted) {
-        completer.completeError(lastError ?? Exception('No valid AI endpoint available'));
+        completer.completeError(
+          lastError ?? Exception('No valid AI endpoint available'),
+        );
       }
       if (!controller.isClosed) {
         if (lastError != null) {
@@ -329,12 +331,16 @@ class AIRequestGateway {
     }
 
     if (isGoogle) {
-      final String method = stream ? 'streamGenerateContent' : 'generateContent';
+      final String method = stream
+          ? 'streamGenerateContent'
+          : 'generateContent';
       Uri uri = baseUri.resolve(
         '/v1beta/models/${Uri.encodeComponent(endpoint.model)}:$method',
       );
       if (stream) {
-        uri = uri.replace(queryParameters: const <String, String>{'alt': 'sse'});
+        uri = uri.replace(
+          queryParameters: const <String, String>{'alt': 'sse'},
+        );
       }
       final Map<String, dynamic> payload = _buildGooglePayload(messages);
       final Map<String, String> headers = <String, String>{
@@ -348,22 +354,33 @@ class AIRequestGateway {
         body: jsonEncode(payload),
         isGoogle: true,
         hasTools: false,
+        useResponsesApi: false,
       );
     }
 
-    final Uri uri = _buildEndpointUriFromBase(baseUri, endpoint.chatPath);
-    final Map<String, dynamic> payload = <String, dynamic>{
-      'model': endpoint.model,
-      'messages': messages.map((AIMessage m) => m.toJson()).toList(),
-      'temperature': _defaultTemperature,
-      'stream': stream,
-    };
-    if (tools.isNotEmpty) {
-      payload['tools'] = tools;
-      if (toolChoice != null) {
-        payload['tool_choice'] = toolChoice;
-      }
-    }
+    final bool useResponsesApi = _shouldUseResponsesApi(
+      endpoint: endpoint,
+      baseUri: baseUri,
+      tools: tools,
+    );
+    final Uri uri = useResponsesApi
+        ? _buildResponsesUriFromBase(baseUri, endpoint.chatPath)
+        : _buildEndpointUriFromBase(baseUri, endpoint.chatPath);
+    final Map<String, dynamic> payload = useResponsesApi
+        ? _buildResponsesPayload(
+            endpoint: endpoint,
+            messages: messages,
+            stream: stream,
+            tools: tools,
+            toolChoice: toolChoice,
+          )
+        : _buildChatCompletionsPayload(
+            endpoint: endpoint,
+            messages: messages,
+            stream: stream,
+            tools: tools,
+            toolChoice: toolChoice,
+          );
     final Map<String, String> headers = <String, String>{
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $apiKey',
@@ -375,6 +392,7 @@ class AIRequestGateway {
       body: jsonEncode(payload),
       isGoogle: false,
       hasTools: tools.isNotEmpty,
+      useResponsesApi: useResponsesApi,
     );
   }
 
@@ -398,16 +416,323 @@ class AIRequestGateway {
     }
     final Map<String, dynamic> payload = <String, dynamic>{
       'contents': contents,
-      'generationConfig': <String, dynamic>{
-        'temperature': _defaultTemperature,
-      },
+      'generationConfig': <String, dynamic>{'temperature': _defaultTemperature},
     };
     if (systemParts.isNotEmpty) {
-      payload['system_instruction'] = <String, dynamic>{
-        'parts': systemParts,
-      };
+      payload['system_instruction'] = <String, dynamic>{'parts': systemParts};
     }
     return payload;
+  }
+
+  Map<String, dynamic> _buildChatCompletionsPayload({
+    required AIEndpoint endpoint,
+    required List<AIMessage> messages,
+    required bool stream,
+    required List<Map<String, dynamic>> tools,
+    required Object? toolChoice,
+  }) {
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'model': endpoint.model,
+      'messages': messages.map((AIMessage m) => m.toJson()).toList(),
+      'temperature': _defaultTemperature,
+      'stream': stream,
+    };
+    if (tools.isNotEmpty) {
+      payload['tools'] = tools;
+      if (toolChoice != null) {
+        payload['tool_choice'] = toolChoice;
+      }
+    }
+    return payload;
+  }
+
+  Map<String, dynamic> _buildResponsesPayload({
+    required AIEndpoint endpoint,
+    required List<AIMessage> messages,
+    required bool stream,
+    required List<Map<String, dynamic>> tools,
+    required Object? toolChoice,
+  }) {
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'model': endpoint.model,
+      'input': _buildResponsesInputItems(messages),
+      'temperature': _defaultTemperature,
+      'stream': stream,
+    };
+    if (tools.isNotEmpty) {
+      payload['tools'] = _normalizeResponsesTools(tools);
+      final Object? normalizedToolChoice = _normalizeResponsesToolChoice(
+        toolChoice,
+      );
+      if (normalizedToolChoice != null) {
+        payload['tool_choice'] = normalizedToolChoice;
+      }
+    }
+    return payload;
+  }
+
+  List<Map<String, dynamic>> _buildResponsesInputItems(
+    List<AIMessage> messages,
+  ) {
+    final List<Map<String, dynamic>> items = <Map<String, dynamic>>[];
+    int syntheticCallSeq = 0;
+
+    for (final AIMessage message in messages) {
+      final String role = message.role.trim().toLowerCase();
+
+      if (role == 'tool') {
+        final String callId = (message.toolCallId ?? '').trim();
+        if (callId.isNotEmpty) {
+          items.add(<String, dynamic>{
+            'type': 'function_call_output',
+            'call_id': callId,
+            'output': message.content,
+          });
+        } else {
+          final List<Map<String, dynamic>> fallbackParts =
+              _buildResponsesContentParts(
+                role: 'user',
+                content: message.content,
+                apiContent: message.apiContent,
+              );
+          if (fallbackParts.isNotEmpty) {
+            items.add(<String, dynamic>{
+              'role': 'user',
+              'content': fallbackParts,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (role == 'assistant' &&
+          message.toolCalls != null &&
+          message.toolCalls!.isNotEmpty) {
+        final List<Map<String, dynamic>> assistantParts =
+            _buildResponsesContentParts(
+              role: 'assistant',
+              content: message.content,
+              apiContent: message.apiContent,
+            );
+        if (assistantParts.isNotEmpty) {
+          items.add(<String, dynamic>{
+            'role': 'assistant',
+            'content': assistantParts,
+          });
+        }
+
+        for (final Map<String, dynamic> tc in message.toolCalls!) {
+          final Map<String, dynamic> map = Map<String, dynamic>.from(tc);
+          final String id = ((map['id'] as String?) ?? '').trim().isNotEmpty
+              ? (map['id'] as String).trim()
+              : 'call_fallback_${++syntheticCallSeq}';
+
+          String name = '';
+          Object? argumentsRaw;
+          final dynamic fnRaw = map['function'];
+          if (fnRaw is Map) {
+            final Map<String, dynamic> fn = Map<String, dynamic>.from(
+              fnRaw as Map,
+            );
+            name = ((fn['name'] as String?) ?? '').trim();
+            argumentsRaw = fn['arguments'];
+          }
+          name = name.isNotEmpty
+              ? name
+              : ((map['name'] as String?) ?? '').trim();
+          argumentsRaw ??= map['arguments'];
+          if (name.isEmpty) continue;
+
+          final String arguments = _stringifyJsonLike(argumentsRaw);
+          items.add(<String, dynamic>{
+            'type': 'function_call',
+            'call_id': id,
+            'name': name,
+            'arguments': arguments.isEmpty ? '{}' : arguments,
+          });
+        }
+        continue;
+      }
+
+      final String normalizedRole =
+          role == 'assistant' || role == 'system' || role == 'developer'
+          ? role
+          : 'user';
+      final List<Map<String, dynamic>> parts = _buildResponsesContentParts(
+        role: normalizedRole,
+        content: message.content,
+        apiContent: message.apiContent,
+      );
+      if (parts.isEmpty) continue;
+      items.add(<String, dynamic>{'role': normalizedRole, 'content': parts});
+    }
+
+    return items;
+  }
+
+  List<Map<String, dynamic>> _buildResponsesContentParts({
+    required String role,
+    required String content,
+    required Object? apiContent,
+  }) {
+    final List<Map<String, dynamic>> parts = <Map<String, dynamic>>[];
+    final bool assistant = role == 'assistant';
+
+    if (apiContent is List) {
+      for (final dynamic raw in apiContent) {
+        if (raw is! Map) continue;
+        final Map<String, dynamic> map = Map<String, dynamic>.from(raw as Map);
+        final String type = (map['type'] as String? ?? '').trim().toLowerCase();
+
+        if (type == 'text') {
+          final String text = (map['text'] as String?) ?? '';
+          if (text.isNotEmpty) {
+            parts.add(<String, dynamic>{
+              'type': assistant ? 'output_text' : 'input_text',
+              'text': text,
+            });
+          }
+          continue;
+        }
+
+        if (type == 'input_text' ||
+            type == 'output_text' ||
+            type == 'refusal') {
+          if (assistant && (type == 'output_text' || type == 'refusal')) {
+            parts.add(map);
+          } else if (!assistant && type == 'input_text') {
+            parts.add(map);
+          }
+          continue;
+        }
+
+        if (!assistant && (type == 'image_url' || type == 'input_image')) {
+          String url = '';
+          final dynamic imageObj = map['image_url'];
+          if (imageObj is String) {
+            url = imageObj;
+          } else if (imageObj is Map) {
+            final Map<String, dynamic> imageMap = Map<String, dynamic>.from(
+              imageObj as Map,
+            );
+            url =
+                (imageMap['url'] as String?) ??
+                (imageMap['image_url'] as String?) ??
+                '';
+          } else {
+            url = (map['url'] as String?) ?? '';
+          }
+          if (url.isNotEmpty) {
+            parts.add(<String, dynamic>{
+              'type': 'input_image',
+              'image_url': url,
+            });
+          }
+        }
+      }
+    }
+
+    if (parts.isEmpty && content.isNotEmpty) {
+      parts.add(<String, dynamic>{
+        'type': assistant ? 'output_text' : 'input_text',
+        'text': content,
+      });
+    }
+
+    return parts;
+  }
+
+  List<Map<String, dynamic>> _normalizeResponsesTools(
+    List<Map<String, dynamic>> tools,
+  ) {
+    final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
+    for (final Map<String, dynamic> raw in tools) {
+      final Map<String, dynamic> map = Map<String, dynamic>.from(raw);
+      final String type = (map['type'] as String? ?? '').trim().toLowerCase();
+      if (type != 'function') {
+        out.add(map);
+        continue;
+      }
+
+      final dynamic fnRaw = map['function'];
+      if (fnRaw is Map) {
+        final Map<String, dynamic> fn = Map<String, dynamic>.from(fnRaw as Map);
+        final String name = (fn['name'] as String? ?? '').trim();
+        if (name.isEmpty) continue;
+        out.add(<String, dynamic>{
+          'type': 'function',
+          'name': name,
+          if ((fn['description'] as String?)?.trim().isNotEmpty == true)
+            'description': (fn['description'] as String).trim(),
+          if (fn['parameters'] != null) 'parameters': fn['parameters'],
+          if (fn['strict'] != null) 'strict': fn['strict'],
+        });
+        continue;
+      }
+
+      final String name = (map['name'] as String? ?? '').trim();
+      if (name.isEmpty) continue;
+      out.add(<String, dynamic>{
+        'type': 'function',
+        'name': name,
+        if ((map['description'] as String?)?.trim().isNotEmpty == true)
+          'description': (map['description'] as String).trim(),
+        if (map['parameters'] != null) 'parameters': map['parameters'],
+        if (map['strict'] != null) 'strict': map['strict'],
+      });
+    }
+    return out;
+  }
+
+  Object? _normalizeResponsesToolChoice(Object? toolChoice) {
+    if (toolChoice == null) return null;
+    if (toolChoice is! Map) return toolChoice;
+
+    final Map<String, dynamic> map = Map<String, dynamic>.from(
+      toolChoice as Map,
+    );
+    final String type = (map['type'] as String? ?? '').trim().toLowerCase();
+    if (type != 'function') {
+      return map;
+    }
+
+    String name = (map['name'] as String? ?? '').trim();
+    final dynamic fnRaw = map['function'];
+    if (name.isEmpty && fnRaw is Map) {
+      final Map<String, dynamic> fn = Map<String, dynamic>.from(fnRaw as Map);
+      name = (fn['name'] as String? ?? '').trim();
+    }
+    if (name.isEmpty) return map;
+    return <String, dynamic>{'type': 'function', 'name': name};
+  }
+
+  bool _shouldUseResponsesApi({
+    required AIEndpoint endpoint,
+    required Uri baseUri,
+    required List<Map<String, dynamic>> tools,
+  }) {
+    if (endpoint.useResponseApi) return true;
+    if (_isResponsesPath(endpoint.chatPath)) return true;
+    if (tools.isEmpty) return false;
+
+    final String model = endpoint.model.trim().toLowerCase();
+    if (model.startsWith('gpt-5')) return true;
+
+    final String host = baseUri.host.toLowerCase();
+    if (host.contains('codex-api') || host.contains('packycode')) {
+      return true;
+    }
+    return false;
+  }
+
+  String _stringifyJsonLike(Object? value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
+    }
   }
 
   Future<_GatewayAggregate> _performNonStreaming({
@@ -417,6 +742,54 @@ class AIRequestGateway {
     String? logContext,
     StreamController<AIGatewayEvent>? controller,
   }) async {
+    String clip(String s, int maxLen) {
+      if (s.length <= maxLen) return s;
+      if (maxLen <= 32) {
+        return s.substring(0, maxLen) + '…(len=${s.length})';
+      }
+      final int head = maxLen ~/ 2;
+      final int tail = maxLen - head;
+      return s.substring(0, head) +
+          '…(truncated,len=${s.length})…' +
+          s.substring(s.length - tail);
+    }
+
+    Map<String, String> maskHeaders(Map<String, String> headers) {
+      final Map<String, String> out = <String, String>{};
+      headers.forEach((String k, String v) {
+        final String key = k.toLowerCase();
+        if (key == 'authorization') {
+          out[k] = v.startsWith('Bearer ') ? 'Bearer ***' : '***';
+          return;
+        }
+        if (key == 'x-goog-api-key' || key == 'api-key' || key == 'x-api-key') {
+          out[k] = '***';
+          return;
+        }
+        out[k] = v;
+      });
+      return out;
+    }
+
+    void emitUiLog(String line, {Object? extra}) {
+      if (controller == null) return;
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'type': 'gateway_log',
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'line': line,
+      };
+      if (extra != null) payload['extra'] = extra;
+      try {
+        controller.add(AIGatewayEvent('ui', jsonEncode(payload)));
+      } catch (_) {}
+    }
+
+    emitUiLog(
+      'REQ POST ${prepared.uri} stream=0 google=${prepared.isGoogle ? 1 : 0} bodyLen=${prepared.body.length}',
+    );
+    emitUiLog('REQ headers', extra: maskHeaders(prepared.headers));
+    emitUiLog('REQ body', extra: clip(prepared.body, 12000));
+
     try {
       await FlutterLogger.nativeDebug(
         'AI',
@@ -424,13 +797,22 @@ class AIRequestGateway {
       );
     } catch (_) {}
 
-    final Future<http.Response> future =
-        http.post(prepared.uri, headers: prepared.headers, body: prepared.body);
+    final Future<http.Response> future = http.post(
+      prepared.uri,
+      headers: prepared.headers,
+      body: prepared.body,
+    );
     final http.Response response = timeout == null
         ? await future
         : await future.timeout(timeout);
 
+    emitUiLog(
+      'RESP status=${response.statusCode} contentType=${response.headers['content-type'] ?? ''} bodyLen=${response.body.length}',
+      extra: <String, dynamic>{'headers': response.headers},
+    );
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      emitUiLog('RESP error body', extra: clip(response.body, 12000));
       throw Exception(
         'Request failed: ${response.statusCode} ${response.body}',
       );
@@ -449,16 +831,15 @@ class AIRequestGateway {
         responseStartMarker,
         parsed.content,
       );
+      emitUiLog(
+        'PARSED google contentLen=${sanitized.length} reasoningLen=${(parsed.reasoning ?? '').length}',
+      );
       if (parsed.reasoning != null && parsed.reasoning!.isNotEmpty) {
-        controller?.add(AIGatewayEvent(
-          AIGatewayEventKind.reasoning,
-          parsed.reasoning!,
-        ));
+        controller?.add(
+          AIGatewayEvent(AIGatewayEventKind.reasoning, parsed.reasoning!),
+        );
       }
-      controller?.add(AIGatewayEvent(
-        AIGatewayEventKind.content,
-        sanitized,
-      ));
+      controller?.add(AIGatewayEvent(AIGatewayEventKind.content, sanitized));
       return _GatewayAggregate(
         content: sanitized,
         reasoning: parsed.reasoning,
@@ -470,20 +851,16 @@ class AIRequestGateway {
     final bool hasToolCalls = parsed.toolCalls.isNotEmpty;
     final String sanitized = hasToolCalls
         ? _trimLeadingIgnorable(parsed.content)
-        : _stripResponseStart(
-            responseStartMarker,
-            parsed.content,
-          );
+        : _stripResponseStart(responseStartMarker, parsed.content);
+    emitUiLog(
+      'PARSED openai contentLen=${sanitized.length} toolCalls=${parsed.toolCalls.length} reasoningLen=${(parsed.reasoning ?? '').length}',
+    );
     if (parsed.reasoning != null && parsed.reasoning!.isNotEmpty) {
-      controller?.add(AIGatewayEvent(
-        AIGatewayEventKind.reasoning,
-        parsed.reasoning!,
-      ));
+      controller?.add(
+        AIGatewayEvent(AIGatewayEventKind.reasoning, parsed.reasoning!),
+      );
     }
-    controller?.add(AIGatewayEvent(
-      AIGatewayEventKind.content,
-      sanitized,
-    ));
+    controller?.add(AIGatewayEvent(AIGatewayEventKind.content, sanitized));
     return _GatewayAggregate(
       content: sanitized,
       toolCalls: parsed.toolCalls,
@@ -500,19 +877,145 @@ class AIRequestGateway {
     StreamController<AIGatewayEvent>? controller,
   }) async {
     final http.Client client = http.Client();
-    final _ResponseStartFilter startFilter = _ResponseStartFilter(responseStartMarker);
+    final _ResponseStartFilter startFilter = _ResponseStartFilter(
+      responseStartMarker,
+    );
     final _ThinkStreamFilter thinkFilter = _ThinkStreamFilter();
-    final _ToolCallAccumulator toolAccumulator = _ToolCallAccumulator(_newFallbackToolCallId);
+    final _ToolCallAccumulator toolAccumulator = _ToolCallAccumulator(
+      _newFallbackToolCallId,
+    );
     final StringBuffer contentBuffer = StringBuffer();
     final StringBuffer reasoningBuffer = StringBuffer();
     final DateTime reasoningStart = DateTime.now();
     String googleLastContent = '';
     String googleLastThought = '';
+    // Responses API streaming sometimes sends cumulative text in *.done events.
+    // Track per output/content index so we can emit only the missing delta.
+    final Map<String, String> responsesLastOutputText = <String, String>{};
+    final Map<String, String> responsesLastReasoningText = <String, String>{};
+    final Map<String, String> responsesLastReasoningSummaryText =
+        <String, String>{};
+    // Some providers only emit output items (e.g. response.output_item.done) instead of
+    // output_text deltas. Also track tool-call args so we can feed toolAccumulator with deltas.
+    final Map<String, String> responsesLastToolArgs = <String, String>{};
+    final Map<String, String> responsesToolCallCanonicalIdByItemId =
+        <String, String>{};
+    final Map<String, String> responsesToolCallNameById = <String, String>{};
+    int responsesToolCallSeq = 0;
+    final Map<String, int> responsesToolCallIndexById = <String, int>{};
+    final Set<String> responsesTerminalOutputTextSeen = <String>{};
+    String responsesFinalOutputText = '';
+    final RegExp responsesThinkTagRe = RegExp(r'</?think>');
+
+    String responsesKey(
+      Map<String, dynamic> json, {
+      String primaryIndex = 'output_index',
+      String secondaryIndex = 'content_index',
+    }) {
+      final dynamic a = json[primaryIndex];
+      final dynamic b = json[secondaryIndex];
+      if (a is int && b is int) return '$a:$b';
+      if (a is int) return '$a';
+      if (b is int) return '$b';
+      return '0';
+    }
+
+    int toolIndexForCallId(String callId) {
+      return responsesToolCallIndexById.putIfAbsent(
+        callId,
+        () => responsesToolCallSeq++,
+      );
+    }
+
+    void rememberResponsesFinalOutputText(String text) {
+      if (text.isEmpty) return;
+      String normalized = text.replaceAll(responsesThinkTagRe, '');
+      normalized = _stripResponseStart(responseStartMarker, normalized).trimRight();
+      if (normalized.isEmpty) return;
+      if (normalized.length >= responsesFinalOutputText.length) {
+        responsesFinalOutputText = normalized;
+      }
+    }
+
+    void emitContentDelta(String delta) {
+      if (delta.isEmpty) return;
+      final _ThinkStreamFilterResult r = thinkFilter.process(delta);
+      if (r.visibleDelta.isNotEmpty) {
+        final String? sanitized = startFilter.process(r.visibleDelta);
+        if (sanitized != null && sanitized.isNotEmpty) {
+          contentBuffer.write(sanitized);
+          controller?.add(
+            AIGatewayEvent(AIGatewayEventKind.content, sanitized),
+          );
+        }
+      }
+      if (r.reasoningDelta.isNotEmpty) {
+        reasoningBuffer.write(r.reasoningDelta);
+        controller?.add(
+          AIGatewayEvent(AIGatewayEventKind.reasoning, r.reasoningDelta),
+        );
+      }
+    }
+
+    void emitReasoningDelta(String delta) {
+      if (delta.isEmpty) return;
+      reasoningBuffer.write(delta);
+      controller?.add(AIGatewayEvent(AIGatewayEventKind.reasoning, delta));
+    }
+
+    String clip(String s, int maxLen) {
+      if (s.length <= maxLen) return s;
+      if (maxLen <= 32) {
+        return s.substring(0, maxLen) + '…(len=${s.length})';
+      }
+      final int head = maxLen ~/ 2;
+      final int tail = maxLen - head;
+      return s.substring(0, head) +
+          '…(truncated,len=${s.length})…' +
+          s.substring(s.length - tail);
+    }
+
+    Map<String, String> maskHeaders(Map<String, String> headers) {
+      final Map<String, String> out = <String, String>{};
+      headers.forEach((String k, String v) {
+        final String key = k.toLowerCase();
+        if (key == 'authorization') {
+          out[k] = v.startsWith('Bearer ') ? 'Bearer ***' : '***';
+          return;
+        }
+        if (key == 'x-goog-api-key' || key == 'api-key' || key == 'x-api-key') {
+          out[k] = '***';
+          return;
+        }
+        out[k] = v;
+      });
+      return out;
+    }
+
+    void emitUiLog(String line, {Object? extra}) {
+      if (controller == null) return;
+      final Map<String, dynamic> payload = <String, dynamic>{
+        'type': 'gateway_log',
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'line': line,
+      };
+      if (extra != null) {
+        payload['extra'] = extra;
+      }
+      try {
+        controller.add(AIGatewayEvent('ui', jsonEncode(payload)));
+      } catch (_) {}
+    }
 
     try {
       final http.Request request = http.Request('POST', prepared.uri)
         ..headers.addAll(prepared.headers)
         ..body = prepared.body;
+      emitUiLog(
+        'REQ POST ${prepared.uri} stream=1 google=${prepared.isGoogle ? 1 : 0} bodyLen=${prepared.body.length}',
+      );
+      emitUiLog('REQ headers', extra: maskHeaders(prepared.headers));
+      emitUiLog('REQ body', extra: clip(prepared.body, 12000));
       try {
         await FlutterLogger.nativeDebug(
           'AI',
@@ -520,11 +1023,18 @@ class AIRequestGateway {
         );
       } catch (_) {}
       final Future<http.StreamedResponse> sendFuture = client.send(request);
-      final http.StreamedResponse streamed =
-          timeout == null ? await sendFuture : await sendFuture.timeout(timeout);
+      final http.StreamedResponse streamed = timeout == null
+          ? await sendFuture
+          : await sendFuture.timeout(timeout);
+
+      emitUiLog(
+        'RESP status=${streamed.statusCode} contentType=${streamed.headers['content-type'] ?? ''}',
+        extra: <String, dynamic>{'headers': streamed.headers},
+      );
 
       if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
         final http.Response failure = await http.Response.fromStream(streamed);
+        emitUiLog('RESP error body', extra: clip(failure.body, 12000));
         throw Exception(
           'Request failed: ${streamed.statusCode} ${failure.body}',
         );
@@ -533,6 +1043,10 @@ class AIRequestGateway {
       String buffer = '';
       bool done = false;
       bool sawData = false;
+      String lastSseEvent = '';
+      String currentSseEvent = '';
+      String pendingData = '';
+      int pendingDataLines = 0;
       final Stream<String> decoded = timeout == null
           ? streamed.stream.transform(utf8.decoder)
           : streamed.stream.transform(utf8.decoder).timeout(timeout);
@@ -543,22 +1057,96 @@ class AIRequestGateway {
           if (idx == -1) break;
           final String line = buffer.substring(0, idx).trimRight();
           buffer = buffer.substring(idx + 1);
-          if (line.isEmpty) continue;
-          if (!line.startsWith('data:')) continue;
-          final String data = line.substring(5).trim();
-          if (data == '[DONE]') {
-            done = true;
-            buffer = '';
-            break;
+
+          // SSE frame delimiter: a blank line terminates the current event.
+          if (line.isEmpty) {
+            if (pendingData.isNotEmpty) {
+              emitUiLog(
+                'SSE jsonDecode failed (lines=$pendingDataLines)',
+                extra: clip(pendingData, 4000),
+              );
+              pendingData = '';
+              pendingDataLines = 0;
+            }
+            currentSseEvent = '';
+            continue;
           }
-          if (data.isNotEmpty) {
+          if (line.startsWith('event:')) {
+            final String ev = line.substring(6).trim();
+            currentSseEvent = ev;
+            lastSseEvent = ev;
+            emitUiLog('SSE event', extra: ev);
+            continue;
+          }
+          if (line.startsWith('id:') ||
+              line.startsWith('retry:') ||
+              line.startsWith(':')) {
+            // Keep these for debugging proxy/relay behavior.
+            emitUiLog('SSE meta', extra: line);
+            continue;
+          }
+          if (!line.startsWith('data:')) continue;
+
+          // Per SSE spec, strip a single leading space after ":" (if present).
+          String dataLine = line.substring(5);
+          if (dataLine.startsWith(' ')) {
+            dataLine = dataLine.substring(1);
+          }
+          // `line` is already trimRight()'d; keep as-is otherwise.
+          if (dataLine.isNotEmpty) {
             sawData = true;
           }
+          emitUiLog('SSE data', extra: clip(dataLine, 4000));
+
+          if (pendingData.isEmpty) {
+            pendingData = dataLine;
+          } else {
+            pendingData += '\n' + dataLine;
+          }
+          pendingDataLines += 1;
+
+          if (pendingData.trim() == '[DONE]') {
+            done = true;
+            buffer = '';
+            pendingData = '';
+            pendingDataLines = 0;
+            break;
+          }
+
+          // Some relays pretty-print JSON over multiple data lines. Try decode
+          // incrementally; if it fails, wait for more data lines and only log
+          // on frame end.
           Map<String, dynamic> json;
           try {
-            json = jsonDecode(data) as Map<String, dynamic>;
+            final dynamic decoded = jsonDecode(pendingData);
+            if (decoded is! Map) {
+              emitUiLog(
+                'SSE decoded non-map',
+                extra: decoded.runtimeType.toString(),
+              );
+              pendingData = '';
+              pendingDataLines = 0;
+              continue;
+            }
+            json = Map<String, dynamic>.from(decoded as Map);
           } catch (_) {
             continue;
+          }
+
+          // Decoded one full JSON payload; clear pending to allow the next one
+          // (even within the same SSE frame).
+          pendingData = '';
+          pendingDataLines = 0;
+
+          // Some relays may put the event type in the SSE "event:" line instead of JSON.
+          final String fallbackEvent = currentSseEvent.isNotEmpty
+              ? currentSseEvent
+              : lastSseEvent;
+          if (fallbackEvent.isNotEmpty) {
+            final dynamic t = json['type'];
+            if (t is! String || t.trim().isEmpty) {
+              json['type'] = fallbackEvent;
+            }
           }
 
           if (prepared.isGoogle) {
@@ -581,18 +1169,19 @@ class AIRequestGateway {
                   final String? sanitized = startFilter.process(r.visibleDelta);
                   if (sanitized != null && sanitized.isNotEmpty) {
                     contentBuffer.write(sanitized);
-                    controller?.add(AIGatewayEvent(
-                      AIGatewayEventKind.content,
-                      sanitized,
-                    ));
+                    controller?.add(
+                      AIGatewayEvent(AIGatewayEventKind.content, sanitized),
+                    );
                   }
                 }
                 if (r.reasoningDelta.isNotEmpty) {
                   reasoningBuffer.write(r.reasoningDelta);
-                  controller?.add(AIGatewayEvent(
-                    AIGatewayEventKind.reasoning,
-                    r.reasoningDelta,
-                  ));
+                  controller?.add(
+                    AIGatewayEvent(
+                      AIGatewayEventKind.reasoning,
+                      r.reasoningDelta,
+                    ),
+                  );
                 }
               }
             }
@@ -610,10 +1199,9 @@ class AIRequestGateway {
                   incoming: chunk.thought,
                 );
                 reasoningBuffer.write(delta);
-                controller?.add(AIGatewayEvent(
-                  AIGatewayEventKind.reasoning,
-                  delta,
-                ));
+                controller?.add(
+                  AIGatewayEvent(AIGatewayEventKind.reasoning, delta),
+                );
               }
             }
             continue;
@@ -621,41 +1209,319 @@ class AIRequestGateway {
 
           final dynamic type = json['type'];
           if (type is String) {
+            emitUiLog('EVENT type=$type');
             if (type == 'response.completed') {
+              emitUiLog(
+                'EVENT completed',
+                extra: json['response'] ?? json['usage'] ?? '',
+              );
               done = true;
               continue;
             }
-            if (type == 'response.reasoning_summary_text.delta') {
-              final dynamic delta = json['delta'];
-              if (delta is String && delta.isNotEmpty) {
-                reasoningBuffer.write(delta);
-                controller?.add(AIGatewayEvent(
-                  AIGatewayEventKind.reasoning,
-                  delta,
-                ));
+            if (type == 'response.reasoning_summary_text.delta' ||
+                type == 'response.reasoning_summary_text.done') {
+              final dynamic chunk = json['delta'] ?? json['text'];
+              if (chunk is String && chunk.isNotEmpty) {
+                final String key = responsesKey(
+                  json,
+                  secondaryIndex: 'summary_index',
+                );
+                final String prev =
+                    responsesLastReasoningSummaryText[key] ?? '';
+                final String delta = _deltaFromPossiblyCumulative(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                responsesLastReasoningSummaryText[key] = _updateCumulativeProbe(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                emitUiLog(
+                  'EVENT reasoning_summary deltaLen=${delta.length} key=$key',
+                );
+                emitReasoningDelta(delta);
+              }
+              continue;
+            }
+            if (type == 'response.reasoning_text.delta' ||
+                type == 'response.reasoning_text.done') {
+              final dynamic chunk = json['delta'] ?? json['text'];
+              if (chunk is String && chunk.isNotEmpty) {
+                final String key = responsesKey(
+                  json,
+                  secondaryIndex: 'content_index',
+                );
+                final String prev = responsesLastReasoningText[key] ?? '';
+                final String delta = _deltaFromPossiblyCumulative(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                responsesLastReasoningText[key] = _updateCumulativeProbe(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                emitUiLog('EVENT reasoning deltaLen=${delta.length} key=$key');
+                emitReasoningDelta(delta);
               }
               continue;
             }
             if (type == 'response.output_text.delta') {
-              final dynamic delta = json['delta'];
-              if (delta is String && delta.isNotEmpty) {
-                final _ThinkStreamFilterResult r = thinkFilter.process(delta);
-                if (r.visibleDelta.isNotEmpty) {
-                  final String? sanitized = startFilter.process(r.visibleDelta);
-                  if (sanitized != null && sanitized.isNotEmpty) {
-                    contentBuffer.write(sanitized);
-                    controller?.add(AIGatewayEvent(
-                      AIGatewayEventKind.content,
-                      sanitized,
-                    ));
+              final dynamic chunk = json['delta'];
+              if (chunk is String && chunk.isNotEmpty) {
+                final String key = responsesKey(
+                  json,
+                  secondaryIndex: 'content_index',
+                );
+                final String prev = responsesLastOutputText[key] ?? '';
+                final String delta = _deltaFromPossiblyCumulative(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                responsesLastOutputText[key] = _updateCumulativeProbe(
+                  previous: prev,
+                  incoming: chunk,
+                );
+                emitUiLog(
+                  'EVENT output_text deltaLen=${delta.length} key=$key',
+                );
+                emitContentDelta(delta);
+              }
+              continue;
+            }
+            if (type == 'response.output_text.done') {
+              final dynamic chunk = json['text'] ?? json['delta'];
+              if (chunk is String && chunk.isNotEmpty) {
+                final String key = responsesKey(
+                  json,
+                  secondaryIndex: 'content_index',
+                );
+                final String prev = responsesLastOutputText[key] ?? '';
+                final String delta = _deltaFromTerminalFull(
+                  previous: prev,
+                  fullText: chunk,
+                );
+                responsesLastOutputText[key] = chunk;
+                responsesTerminalOutputTextSeen.add(key);
+                emitUiLog(
+                  'EVENT output_text.done fullLen=${chunk.length} prevLen=${prev.length} deltaLen=${delta.length} key=$key',
+                );
+                emitContentDelta(delta);
+                rememberResponsesFinalOutputText(chunk);
+              }
+              continue;
+            }
+            if (type == 'response.output_item.added' ||
+                type == 'response.output_item.done') {
+              final dynamic itemRaw = json['item'];
+              if (itemRaw is Map) {
+                final Map<String, dynamic> item = Map<String, dynamic>.from(
+                  itemRaw as Map,
+                );
+                final String itemType = (item['type'] as String?) ?? '';
+
+                if (itemType == 'message') {
+                  String fullText = extractResponsesMessageOutputText(item);
+                  if (fullText.isNotEmpty) {
+                    // Best-effort normalization to improve dedupe when the stream also emits
+                    // output_text deltas or when the model includes <think> tags.
+                    fullText = fullText.replaceAll(responsesThinkTagRe, '');
+                    fullText = _stripResponseStart(
+                      responseStartMarker,
+                      fullText,
+                    );
+                    rememberResponsesFinalOutputText(fullText);
+
+                    final String already = contentBuffer.toString();
+                    if (already.isNotEmpty) {
+                      if (fullText.startsWith(already)) {
+                        final String delta = fullText.substring(already.length);
+                        emitUiLog(
+                          'EVENT output_item.message fullLen=${fullText.length} alreadyLen=${already.length} deltaLen=${delta.length} (dedupe=buffer)',
+                        );
+                        emitContentDelta(delta);
+                      } else {
+                        emitUiLog(
+                          'EVENT output_item.message fullLen=${fullText.length} alreadyLen=${already.length} (dedupe-miss)',
+                          extra: clip(fullText, 4000),
+                        );
+                      }
+                    } else {
+                      final String itemId =
+                          ((item['id'] as String?) ??
+                                  (json['item_id'] as String?) ??
+                                  (json['itemId'] as String?) ??
+                                  '')
+                              .trim();
+                      final String key = itemId.isNotEmpty
+                          ? 'msg:$itemId'
+                          : 'msg:${responsesKey(json, secondaryIndex: 'content_index')}';
+                      final String prev = responsesLastOutputText[key] ?? '';
+                      final String delta = _deltaFromPossiblyCumulative(
+                        previous: prev,
+                        incoming: fullText,
+                      );
+                      responsesLastOutputText[key] = _updateCumulativeProbe(
+                        previous: prev,
+                        incoming: fullText,
+                      );
+                      emitUiLog(
+                        'EVENT output_item.message fullLen=${fullText.length} prevLen=${prev.length} deltaLen=${delta.length} key=$key',
+                      );
+                      emitContentDelta(delta);
+                    }
                   }
+                  continue;
                 }
-                if (r.reasoningDelta.isNotEmpty) {
-                  reasoningBuffer.write(r.reasoningDelta);
-                  controller?.add(AIGatewayEvent(
-                    AIGatewayEventKind.reasoning,
-                    r.reasoningDelta,
-                  ));
+
+                if (itemType == 'reasoning') {
+                  final String fullReasoning = extractResponsesReasoningText(item);
+                  if (fullReasoning.isNotEmpty) {
+                    final String itemId =
+                        ((item['id'] as String?) ??
+                                (json['item_id'] as String?) ??
+                                (json['itemId'] as String?) ??
+                                '')
+                            .trim();
+                    final String key = itemId.isNotEmpty
+                        ? 'reason:$itemId'
+                        : 'reason:${responsesKey(json, secondaryIndex: 'summary_index')}';
+                    final String prev = responsesLastReasoningText[key] ?? '';
+                    final String delta = _deltaFromPossiblyCumulative(
+                      previous: prev,
+                      incoming: fullReasoning,
+                    );
+                    responsesLastReasoningText[key] = _updateCumulativeProbe(
+                      previous: prev,
+                      incoming: fullReasoning,
+                    );
+                    emitUiLog(
+                      'EVENT output_item.reasoning fullLen=${fullReasoning.length} prevLen=${prev.length} deltaLen=${delta.length} key=$key',
+                    );
+                    emitReasoningDelta(delta);
+                  }
+                  continue;
+                }
+
+                final ResponsesFunctionCallItem? fc =
+                    extractResponsesFunctionCallItem(item);
+                if (fc != null) {
+                  final String itemId =
+                      ((item['id'] as String?) ??
+                              (json['item_id'] as String?) ??
+                              (json['itemId'] as String?) ??
+                              '')
+                          .trim();
+                  if (itemId.isNotEmpty) {
+                    responsesToolCallCanonicalIdByItemId[itemId] = fc.callId;
+                  }
+                  responsesToolCallNameById[fc.callId] = fc.name;
+
+                  final String prev = responsesLastToolArgs[fc.callId] ?? '';
+                  final String argsDelta = _deltaFromPossiblyCumulative(
+                    previous: prev,
+                    incoming: fc.arguments,
+                  );
+                  responsesLastToolArgs[fc.callId] = _updateCumulativeProbe(
+                    previous: prev,
+                    incoming: fc.arguments,
+                  );
+                  emitUiLog(
+                    'EVENT output_item.function_call id=${fc.callId} name=${fc.name} argsDeltaLen=${argsDelta.length}',
+                  );
+
+                  final int idx = toolIndexForCallId(fc.callId);
+                  toolAccumulator.ingestChatDelta(<String, dynamic>{
+                    'tool_calls': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'index': idx,
+                        'id': fc.callId,
+                        'function': <String, dynamic>{
+                          'name': fc.name,
+                          if (argsDelta.isNotEmpty) 'arguments': argsDelta,
+                        },
+                      },
+                    ],
+                  });
+                }
+              }
+              continue;
+            }
+            if (type == 'response.function_call_arguments.delta') {
+              final String argsDelta = (json['delta'] as String?) ?? '';
+              if (argsDelta.isNotEmpty) {
+                final String itemId =
+                    ((json['item_id'] as String?) ??
+                            (json['itemId'] as String?) ??
+                            '')
+                        .trim();
+                String callId =
+                    ((json['call_id'] as String?) ??
+                            (json['callId'] as String?) ??
+                            '')
+                        .trim();
+                if (callId.isEmpty && itemId.isNotEmpty) {
+                  callId =
+                      responsesToolCallCanonicalIdByItemId[itemId] ?? itemId;
+                }
+                if (callId.isNotEmpty) {
+                  emitUiLog(
+                    'EVENT function_call_arguments.delta callId=$callId deltaLen=${argsDelta.length}',
+                  );
+                  responsesLastToolArgs[callId] =
+                      (responsesLastToolArgs[callId] ?? '') + argsDelta;
+                  final int idx = toolIndexForCallId(callId);
+                  final String name = responsesToolCallNameById[callId] ?? '';
+                  toolAccumulator.ingestChatDelta(<String, dynamic>{
+                    'tool_calls': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'index': idx,
+                        'id': callId,
+                        'function': <String, dynamic>{
+                          if (name.isNotEmpty) 'name': name,
+                          'arguments': argsDelta,
+                        },
+                      },
+                    ],
+                  });
+                }
+              }
+              continue;
+            }
+            if (type == 'response.function_call_arguments.done') {
+              continue;
+            }
+            if (type == 'response.content_part.done') {
+              // Some relays may only emit content parts. Treat output_text parts as content.
+              final dynamic part = json['part'];
+              if (part is Map) {
+                final Map<String, dynamic> p = Map<String, dynamic>.from(
+                  part as Map,
+                );
+                final String partType = (p['type'] as String?) ?? '';
+                final String txt = (p['text'] as String?) ?? '';
+                if (partType == 'output_text' && txt.isNotEmpty) {
+                  final String key = responsesKey(
+                    json,
+                    secondaryIndex: 'content_index',
+                  );
+                  rememberResponsesFinalOutputText(txt);
+                  if (responsesTerminalOutputTextSeen.contains(key)) {
+                    emitUiLog(
+                      'EVENT content_part.done skipped key=$key reason=seen_terminal',
+                    );
+                  } else {
+                    final String prev = responsesLastOutputText[key] ?? '';
+                    final String delta = _deltaFromTerminalFull(
+                      previous: prev,
+                      fullText: txt,
+                    );
+                    responsesLastOutputText[key] = txt;
+                    responsesTerminalOutputTextSeen.add(key);
+                    emitUiLog(
+                      'EVENT content_part.done fullLen=${txt.length} prevLen=${prev.length} deltaLen=${delta.length} key=$key',
+                    );
+                    emitContentDelta(delta);
+                  }
                 }
               }
               continue;
@@ -667,43 +1533,50 @@ class AIRequestGateway {
             final dynamic first = choices.first;
             if (first is Map<String, dynamic>) {
               final dynamic finishReason = first['finish_reason'];
-              if (finishReason is String && finishReason.isNotEmpty && finishReason != 'null') {
+              if (finishReason is String &&
+                  finishReason.isNotEmpty &&
+                  finishReason != 'null') {
                 done = true;
               }
               final dynamic delta = first['delta'];
               if (delta is Map<String, dynamic>) {
                 toolAccumulator.ingestChatDelta(delta);
-                final dynamic reasoningPart = delta['reasoning_content'] ??
-                    (delta['reasoning'] is Map
-                        ? (delta['reasoning']['content'])
-                        : null) ??
+                final dynamic reasoningField = delta['reasoning'];
+                final dynamic reasoningPart =
+                    delta['reasoning_content'] ??
+                    delta['reasoningContent'] ??
+                    (reasoningField is Map
+                        ? (reasoningField['content'] ?? reasoningField['text'])
+                        : (reasoningField is String ? reasoningField : null)) ??
                     delta['thinking'];
                 if (reasoningPart is String && reasoningPart.isNotEmpty) {
                   reasoningBuffer.write(reasoningPart);
-                  controller?.add(AIGatewayEvent(
-                    AIGatewayEventKind.reasoning,
-                    reasoningPart,
-                  ));
+                  controller?.add(
+                    AIGatewayEvent(AIGatewayEventKind.reasoning, reasoningPart),
+                  );
                 }
                 final dynamic part = delta['content'];
                 if (part is String && part.isNotEmpty) {
                   final _ThinkStreamFilterResult r = thinkFilter.process(part);
                   if (r.visibleDelta.isNotEmpty) {
-                    final String? sanitized = startFilter.process(r.visibleDelta);
+                    final String? sanitized = startFilter.process(
+                      r.visibleDelta,
+                    );
                     if (sanitized != null && sanitized.isNotEmpty) {
                       contentBuffer.write(sanitized);
-                      controller?.add(AIGatewayEvent(
-                        AIGatewayEventKind.content,
-                        sanitized,
-                      ));
+                      controller?.add(
+                        AIGatewayEvent(AIGatewayEventKind.content, sanitized),
+                      );
                     }
                   }
                   if (r.reasoningDelta.isNotEmpty) {
                     reasoningBuffer.write(r.reasoningDelta);
-                    controller?.add(AIGatewayEvent(
-                      AIGatewayEventKind.reasoning,
-                      r.reasoningDelta,
-                    ));
+                    controller?.add(
+                      AIGatewayEvent(
+                        AIGatewayEventKind.reasoning,
+                        r.reasoningDelta,
+                      ),
+                    );
                   }
                 }
               }
@@ -723,20 +1596,26 @@ class AIRequestGateway {
       final String trailing = thinkFilter.finalize();
       if (trailing.isNotEmpty) {
         reasoningBuffer.write(trailing);
-        controller?.add(AIGatewayEvent(
-          AIGatewayEventKind.reasoning,
-          trailing,
-        ));
+        controller?.add(AIGatewayEvent(AIGatewayEventKind.reasoning, trailing));
       }
       startFilter.ensureCompleted();
 
-      final String cleanedContent = contentBuffer
-          .toString()
-          .replaceAll(RegExp(r'</?think>'), '');
+      String cleanedContent = contentBuffer.toString().replaceAll(
+        RegExp(r'</?think>'),
+        '',
+      );
+      if (responsesFinalOutputText.isNotEmpty) {
+        emitUiLog(
+          'EVENT content reconcile streamLen=${cleanedContent.length} finalLen=${responsesFinalOutputText.length}',
+        );
+        cleanedContent = responsesFinalOutputText;
+      }
       final List<AIToolCall> toolCalls = toolAccumulator.finalize();
       final String reasoningText = reasoningBuffer.toString();
-      final Duration? reasoningDuration =
-          reasoningText.isEmpty ? null : DateTime.now().difference(reasoningStart);
+      final Duration? reasoningDuration = reasoningText.isEmpty
+          ? null
+          : DateTime.now().difference(reasoningStart);
+
       return _GatewayAggregate(
         content: cleanedContent,
         toolCalls: toolCalls,
@@ -776,14 +1655,19 @@ class AIRequestGateway {
           final Map<String, dynamic>? fn = it['function'] is Map
               ? (it['function'] as Map).cast<String, dynamic>()
               : null;
-          final String name = fn?['name']?.toString() ?? (it['name']?.toString() ?? '');
-          final String args = fn?['arguments']?.toString() ?? (it['arguments']?.toString() ?? '');
+          final String name =
+              fn?['name']?.toString() ?? (it['name']?.toString() ?? '');
+          final String args =
+              fn?['arguments']?.toString() ??
+              (it['arguments']?.toString() ?? '');
           if (name.trim().isNotEmpty) {
-            toolCalls.add(AIToolCall(
-              id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
-              name: name.trim(),
-              argumentsJson: args,
-            ));
+            toolCalls.add(
+              AIToolCall(
+                id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
+                name: name.trim(),
+                argumentsJson: args,
+              ),
+            );
           }
         } else if (type == 'message') {
           final dynamic cont = it['content'];
@@ -830,11 +1714,13 @@ class AIRequestGateway {
         final String name = (fn?['name'] as String?) ?? '';
         final String args = (fn?['arguments'] as String?) ?? '';
         if (name.trim().isEmpty) continue;
-        toolCalls.add(AIToolCall(
-          id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
-          name: name.trim(),
-          argumentsJson: args,
-        ));
+        toolCalls.add(
+          AIToolCall(
+            id: id.trim().isEmpty ? _newFallbackToolCallId() : id.trim(),
+            name: name.trim(),
+            argumentsJson: args,
+          ),
+        );
       }
     } else {
       final dynamic fc = message['function_call'];
@@ -843,18 +1729,22 @@ class AIRequestGateway {
         final String name = (fn['name'] as String?) ?? '';
         final String args = (fn['arguments'] as String?) ?? '';
         if (name.trim().isNotEmpty) {
-          toolCalls.add(AIToolCall(
-            id: 'function_call',
-            name: name.trim(),
-            argumentsJson: args,
-          ));
+          toolCalls.add(
+            AIToolCall(
+              id: 'function_call',
+              name: name.trim(),
+              argumentsJson: args,
+            ),
+          );
         }
       }
     }
-    final String? reasoning = ((message['reasoning_content'] as String?) ??
-            (message['reasoning'] as String?) ??
-            (message['thinking'] as String?))
-        ?.trim();
+    final String? reasoning =
+        ((message['reasoning_content'] as String?) ??
+                (message['reasoning'] as String?) ??
+                (message['thinking'] as String?))
+            ?.trim();
+
     return _OpenAIResponse(
       content: content,
       toolCalls: toolCalls,
@@ -868,7 +1758,8 @@ class AIRequestGateway {
     if (candidates == null || candidates.isEmpty) {
       throw Exception('Empty candidates');
     }
-    final Map<String, dynamic>? first = candidates.first as Map<String, dynamic>?;
+    final Map<String, dynamic>? first =
+        candidates.first as Map<String, dynamic>?;
     if (first == null) {
       throw Exception('Invalid candidate');
     }
@@ -904,7 +1795,54 @@ class AIRequestGateway {
 
   bool _isGoogleBase(Uri baseUri) {
     final String host = baseUri.host.toLowerCase();
-    return host.contains('googleapis.com') || host.contains('generativelanguage');
+    return host.contains('googleapis.com') ||
+        host.contains('generativelanguage');
+  }
+
+  bool _isResponsesPath(String path) {
+    final String p = path.trim().toLowerCase();
+    if (p.isEmpty) return false;
+    return p.endsWith('/responses') ||
+        p.contains('/responses?') ||
+        p == 'responses';
+  }
+
+  Uri _buildResponsesUriFromBase(Uri baseUri, String path) {
+    String trimmedPath = path.trim();
+    if (trimmedPath.isEmpty) {
+      return baseUri.resolve('/v1/responses');
+    }
+
+    if (_isResponsesPath(trimmedPath)) {
+      final String effectivePath = trimmedPath.startsWith('/')
+          ? trimmedPath
+          : '/$trimmedPath';
+      return baseUri.resolve(effectivePath);
+    }
+
+    final String normalized = trimmedPath.startsWith('/')
+        ? trimmedPath
+        : '/$trimmedPath';
+    final RegExp chatCompletions = RegExp(
+      r'/chat/completions(?:$|\?)',
+      caseSensitive: false,
+    );
+    if (chatCompletions.hasMatch(normalized)) {
+      final String replaced = normalized.replaceFirst(
+        chatCompletions,
+        '/responses',
+      );
+      return baseUri.resolve(replaced);
+    }
+
+    final int lastSlash = normalized.lastIndexOf('/');
+    final String prefix = lastSlash >= 0
+        ? normalized.substring(0, lastSlash)
+        : '';
+    final String versionPrefix = prefix.toLowerCase().endsWith('/v1')
+        ? prefix
+        : '/v1';
+    return baseUri.resolve('$versionPrefix/responses');
   }
 
   Uri _buildEndpointUriFromBase(Uri baseUri, String path) {
@@ -1003,10 +1941,7 @@ class _OpenAIResponse {
 }
 
 class _GoogleResponse {
-  const _GoogleResponse({
-    required this.content,
-    this.reasoning,
-  });
+  const _GoogleResponse({required this.content, this.reasoning});
 
   final String content;
   final String? reasoning;
@@ -1019,6 +1954,7 @@ class _PreparedRequest {
     required this.body,
     required this.isGoogle,
     required this.hasTools,
+    required this.useResponsesApi,
   });
 
   final Uri uri;
@@ -1026,13 +1962,11 @@ class _PreparedRequest {
   final String body;
   final bool isGoogle;
   final bool hasTools;
+  final bool useResponsesApi;
 }
 
 class _GoogleStreamParts {
-  const _GoogleStreamParts({
-    required this.content,
-    required this.thought,
-  });
+  const _GoogleStreamParts({required this.content, required this.thought});
 
   final String content;
   final String thought;
@@ -1045,10 +1979,16 @@ _GoogleStreamParts _extractGoogleStreamParts(Map<String, dynamic> json) {
   }
   final dynamic first = candidates.first;
   if (first is! Map) return const _GoogleStreamParts(content: '', thought: '');
-  final Map<String, dynamic> candidate = Map<String, dynamic>.from(first as Map);
+  final Map<String, dynamic> candidate = Map<String, dynamic>.from(
+    first as Map,
+  );
   final dynamic content = candidate['content'];
-  if (content is! Map) return const _GoogleStreamParts(content: '', thought: '');
-  final Map<String, dynamic> contentMap = Map<String, dynamic>.from(content as Map);
+  if (content is! Map) {
+    return const _GoogleStreamParts(content: '', thought: '');
+  }
+  final Map<String, dynamic> contentMap = Map<String, dynamic>.from(
+    content as Map,
+  );
   final dynamic parts = contentMap['parts'];
   if (parts is! List || parts.isEmpty) {
     return const _GoogleStreamParts(content: '', thought: '');
@@ -1104,6 +2044,18 @@ String _updateCumulativeProbe({
   return previous + incoming;
 }
 
+String _deltaFromTerminalFull({
+  required String previous,
+  required String fullText,
+}) {
+  if (fullText.isEmpty) return '';
+  if (previous.isEmpty) return fullText;
+  if (fullText.startsWith(previous)) {
+    return fullText.substring(previous.length);
+  }
+  return fullText;
+}
+
 class _ToolCallDraft {
   _ToolCallDraft(this.index);
 
@@ -1120,15 +2072,13 @@ class _ToolCallDraft {
     final Map<String, dynamic>? fn = chunk['function'] is Map
         ? Map<String, dynamic>.from(chunk['function'] as Map)
         : null;
-    final String namePart = (fn?['name'] as String?) ??
-        (chunk['name'] as String?) ??
-        '';
+    final String namePart =
+        (fn?['name'] as String?) ?? (chunk['name'] as String?) ?? '';
     if (namePart.trim().isNotEmpty) {
       name = namePart.trim();
     }
-    final String argsPart = (fn?['arguments'] as String?) ??
-        (chunk['arguments'] as String?) ??
-        '';
+    final String argsPart =
+        (fn?['arguments'] as String?) ?? (chunk['arguments'] as String?) ?? '';
     if (argsPart.isNotEmpty) {
       arguments.write(argsPart);
     }
@@ -1157,20 +2107,29 @@ class _ToolCallAccumulator {
       for (int i = 0; i < toolCalls.length; i += 1) {
         final dynamic raw = toolCalls[i];
         if (raw is! Map) continue;
-        final Map<String, dynamic> chunk = Map<String, dynamic>.from(raw as Map);
+        final Map<String, dynamic> chunk = Map<String, dynamic>.from(
+          raw as Map,
+        );
         final dynamic idxRaw = chunk['index'];
         final int idx = idxRaw is int ? idxRaw : i;
-        final _ToolCallDraft draft =
-            _drafts.putIfAbsent(idx, () => _ToolCallDraft(idx));
+        final _ToolCallDraft draft = _drafts.putIfAbsent(
+          idx,
+          () => _ToolCallDraft(idx),
+        );
         draft.mergeFromChunk(chunk);
       }
     }
 
-    final dynamic functionCall = delta['function_call'] ?? delta['functionCall'];
+    final dynamic functionCall =
+        delta['function_call'] ?? delta['functionCall'];
     if (functionCall is Map) {
-      final Map<String, dynamic> chunk = Map<String, dynamic>.from(functionCall as Map);
-      final _ToolCallDraft draft =
-          _drafts.putIfAbsent(0, () => _ToolCallDraft(0));
+      final Map<String, dynamic> chunk = Map<String, dynamic>.from(
+        functionCall as Map,
+      );
+      final _ToolCallDraft draft = _drafts.putIfAbsent(
+        0,
+        () => _ToolCallDraft(0),
+      );
       draft.mergeFromChunk(chunk);
     }
   }
@@ -1312,4 +2271,3 @@ String _trimLeadingIgnorable(String text) {
   if (index == 0) return text;
   return text.substring(index);
 }
-

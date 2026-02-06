@@ -67,6 +67,7 @@ class AIEndpoint {
   final String? apiKey;
   final String model;
   final String chatPath; // 基于 Provider 的可配置路径，默认 /v1/chat/completions
+  final bool useResponseApi; // OpenAI Responses API 兼容模式
 
   AIEndpoint({
     required this.groupId,
@@ -74,6 +75,7 @@ class AIEndpoint {
     required this.apiKey,
     required this.model,
     this.chatPath = '/v1/chat/completions',
+    this.useResponseApi = false,
   });
 }
 
@@ -88,6 +90,31 @@ class AISettingsService {
   final StreamController<String> _ctxChangedController =
       StreamController<String>.broadcast();
   Stream<String> get onContextChanged => _ctxChangedController.stream;
+
+  /// Broadcast a context-change event.
+  ///
+  /// Note: keep payloads as small strings so listeners can cheaply filter.
+  void notifyContextChanged(String context) {
+    try {
+      _ctxChangedController.add(context);
+    } catch (_) {}
+  }
+
+  /// Broadcast that a specific conversation's persisted chat history changed.
+  ///
+  /// This is used for background tool-loop updates where we want the active
+  /// chat UI (if it is currently showing the same conversation) to refresh,
+  /// without forcing unrelated conversations to reload.
+  void notifyChatHistoryChanged(String conversationCid) {
+    final String cid = conversationCid.trim();
+    if (cid.isEmpty) {
+      notifyContextChanged('chat:history');
+      return;
+    }
+    try {
+      _ctxChangedController.add('chat:history:$cid');
+    } catch (_) {}
+  }
 
   // 存储键名（SQLite ai_settings 表）
   static const String _keyBaseUrl = 'base_url';
@@ -144,7 +171,9 @@ class AISettingsService {
   Future<int> _promptCapTokensForBudget() async {
     try {
       final String model = await getModel();
-      return AIContextBudgets.forModel(model).promptCapTokens;
+      final AIContextBudgets budgets =
+          await AIContextBudgets.forModelWithOverrides(model);
+      return budgets.promptCapTokens;
     } catch (_) {
       return AIContextBudgets.forModel(_defaultModel).promptCapTokens;
     }
@@ -602,6 +631,7 @@ class AISettingsService {
                   apiKey: apiKey,
                   model: model,
                   chatPath: '/v1/chat/completions',
+                  useResponseApi: false,
                 ),
               ];
             }
@@ -701,6 +731,7 @@ class AISettingsService {
         apiKey: apiKey,
         model: model,
         chatPath: chatPath,
+        useResponseApi: pSelected.useResponseApi,
       ),
     ];
   }
@@ -784,9 +815,11 @@ class AISettingsService {
     } catch (_) {}
     if (ok) {
       // 若删除的是当前激活，则选择最新一条或 default
+      bool deletedWasActive = false;
       try {
         final active = await getActiveConversationCid();
         if (active == cid) {
+          deletedWasActive = true;
           final rows = await db.listAiConversations(limit: 1, offset: 0);
           if (rows.isNotEmpty) {
             final nextCid = (rows.first['cid'] as String?) ?? 'default';
@@ -796,13 +829,18 @@ class AISettingsService {
           }
         }
       } catch (_) {}
-      try {
-        _ctxChangedController.add('chat');
-      } catch (_) {}
-      // 广播删除事件，供 UI 进行“立即清空并计时到首帧完成”
-      try {
-        _ctxChangedController.add('chat:deleted');
-      } catch (_) {}
+      // - 非激活会话删除：仅通知刷新列表（chat）
+      // - 激活会话删除：setActiveConversationCid() 已广播 chat，这里仅额外广播 chat:deleted
+      if (!deletedWasActive) {
+        try {
+          _ctxChangedController.add('chat');
+        } catch (_) {}
+      } else {
+        // 广播删除事件，供 UI 进行“立即清空并计时到首帧完成”
+        try {
+          _ctxChangedController.add('chat:deleted');
+        } catch (_) {}
+      }
     }
     return ok;
   }
@@ -819,23 +857,60 @@ class AISettingsService {
       conversationCid,
       limit: _maxHistoryMessages,
     );
-    return rows
-        .map(
-          (e) => AIMessage(
-            role: (e['role'] as String?) ?? 'user',
-            content: (e['content'] as String?) ?? '',
-            createdAt: DateTime.fromMillisecondsSinceEpoch(
-              (e['created_at'] as int?) ??
-                  DateTime.now().millisecondsSinceEpoch,
-            ),
-            reasoningContent: (e['reasoning_content'] as String?),
-            reasoningDuration: ((e['reasoning_duration_ms'] as int?) != null)
-                ? Duration(milliseconds: (e['reasoning_duration_ms'] as int))
-                : null,
-            uiThinkingJson: (e['ui_thinking_json'] as String?),
-          ),
-        )
-        .toList();
+
+    String sanitizeEphemeralChatStatusContent({
+      required String role,
+      required String content,
+    }) {
+      // Older builds persisted internal "phase 1/4 ... 3/4 ..." placeholders
+      // into ai_messages. When a conversation is restored (e.g. after switching
+      // pages/conversations), those placeholders can show up as the assistant
+      // answer. They are UI-only progress text and should not participate in
+      // rendering nor prompt history.
+      if (role.trim() != 'assistant') return content;
+      final String t = content.trim();
+      if (t.isEmpty) return content;
+      final bool hasPhaseMarker = RegExp(
+        r'(^|\n)\s*(?:[123]/4|Phase [123]/4|阶段 [123]/4)',
+      ).hasMatch(t);
+      if (!hasPhaseMarker) return content;
+
+      final String lower = t.toLowerCase();
+      final bool looksLikeStatus =
+          t.contains('分析用户意图') ||
+          t.contains('查找上下文') ||
+          t.contains('生成回答') ||
+          t.contains('无需上下文') ||
+          t.contains('意图:') ||
+          lower.contains('intent:') ||
+          lower.contains('building context') ||
+          lower.contains('generating answer') ||
+          lower.contains('no context needed');
+      if (!looksLikeStatus) return content;
+
+      return '';
+    }
+
+    return rows.map((e) {
+      final String role = (e['role'] as String?) ?? 'user';
+      final String contentRaw = (e['content'] as String?) ?? '';
+      final String content = sanitizeEphemeralChatStatusContent(
+        role: role,
+        content: contentRaw,
+      );
+      return AIMessage(
+        role: role,
+        content: content,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(
+          (e['created_at'] as int?) ?? DateTime.now().millisecondsSinceEpoch,
+        ),
+        reasoningContent: (e['reasoning_content'] as String?),
+        reasoningDuration: ((e['reasoning_duration_ms'] as int?) != null)
+            ? Duration(milliseconds: (e['reasoning_duration_ms'] as int))
+            : null,
+        uiThinkingJson: (e['ui_thinking_json'] as String?),
+      );
+    }).toList();
   }
 
   Future<void> saveChatHistory(List<AIMessage> messages) async {
