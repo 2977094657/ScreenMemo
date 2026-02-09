@@ -745,14 +745,28 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     try {
       // 尝试为查看器补充本段 AI 结构化结果（用于图片标签/描述等增强信息）
       String? aiStructuredJson;
+      int? segmentIdForViewer;
+      Map<String, dynamic>? aiResultSnapshot;
       try {
         final int segId = samples.isNotEmpty
             ? ((samples.first['segment_id'] as int?) ?? 0)
             : 0;
         if (segId > 0) {
+          segmentIdForViewer = segId;
           final Map<String, dynamic>? result = await _db.getSegmentResult(
             segId,
           );
+          if (result != null) {
+            aiResultSnapshot = <String, dynamic>{
+              'segment_id': result['segment_id'] ?? segId,
+              'ai_provider': result['ai_provider'],
+              'ai_model': result['ai_model'],
+              'output_text': result['output_text'],
+              'structured_json': result['structured_json'],
+              'categories': result['categories'],
+              'created_at': result['created_at'],
+            };
+          }
           final String raw =
               (result?['structured_json'] as String?)?.toString() ?? '';
           if (raw.trim().isNotEmpty) aiStructuredJson = raw;
@@ -832,6 +846,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           'appName': app.appName,
           'appInfo': app,
           'multiApp': true,
+          if (segmentIdForViewer != null) 'segmentId': segmentIdForViewer,
+          if (aiResultSnapshot != null) 'aiResult': aiResultSnapshot,
           if (aiStructuredJson != null) 'aiStructuredJson': aiStructuredJson,
         },
       );

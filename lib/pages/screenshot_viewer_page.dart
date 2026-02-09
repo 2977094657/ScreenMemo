@@ -48,6 +48,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   final Map<String, String> _aiDescByFile = <String, String>{};
   final Map<String, String> _aiDescRangeByFile = <String, String>{};
 
+  // 动态级 AI 响应上下文（用于排障查看原始响应）
+  int? _segmentId;
+  Map<String, dynamic>? _segmentAiResult;
+  bool _loadingAiResult = false;
+
   // 已揭示的 NSFW 图片（本会话内）
   final Set<int> _revealedIds = <int>{};
   final Set<String> _revealedPaths = <String>{};
@@ -206,6 +211,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       _pageController = PageController(initialPage: _currentIndex);
       _initialized = true;
 
+      // 尝试解析来自动态页的 AI 结果快照（用于“AI响应抽屉”）
+      _initSegmentAiContext(args);
+
       // 尝试解析来自动态页的结构化 JSON（用于图片标签/描述展示）
       _initAiMeta(args);
       // 若未携带结构化 JSON（或部分缺失），则从主库 ai_image_meta 回填，用于全局复用
@@ -253,6 +261,82 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     final normalized = path.replaceAll('\\', '/');
     final idx = normalized.lastIndexOf('/');
     return idx >= 0 ? normalized.substring(idx + 1) : normalized;
+  }
+
+  void _initSegmentAiContext(Map<String, dynamic> args) {
+    _segmentId = null;
+    _segmentAiResult = null;
+
+    try {
+      final dynamic rawSegmentId = args['segmentId'];
+      if (rawSegmentId is int && rawSegmentId > 0) {
+        _segmentId = rawSegmentId;
+      } else if (rawSegmentId is String) {
+        final int? parsed = int.tryParse(rawSegmentId.trim());
+        if (parsed != null && parsed > 0) _segmentId = parsed;
+      }
+    } catch (_) {}
+
+    try {
+      final dynamic rawResult = args['aiResult'];
+      if (rawResult is Map) {
+        final Map<String, dynamic> m = Map<String, dynamic>.from(rawResult as Map);
+        if (_segmentId == null) {
+          final dynamic sid = m['segment_id'];
+          if (sid is int && sid > 0) {
+            _segmentId = sid;
+          } else if (sid is String) {
+            final int? parsed = int.tryParse(sid.trim());
+            if (parsed != null && parsed > 0) _segmentId = parsed;
+          }
+        }
+        _segmentAiResult = m;
+      }
+    } catch (_) {}
+
+    if (_segmentAiResult == null) {
+      try {
+        final dynamic raw = args['aiStructuredJson'];
+        String structured = '';
+        if (raw is String) {
+          structured = raw.trim();
+        } else if (raw is Map) {
+          structured = jsonEncode(raw);
+        }
+        if (structured.isNotEmpty) {
+          _segmentAiResult = <String, dynamic>{
+            if (_segmentId != null) 'segment_id': _segmentId,
+            'structured_json': structured,
+          };
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _ensureSegmentAiResultLoaded() async {
+    if (_loadingAiResult) return;
+    if (_segmentAiResult != null && _segmentAiResult!.isNotEmpty) return;
+    final int? sid = _segmentId;
+    if (sid == null || sid <= 0) return;
+    _loadingAiResult = true;
+    try {
+      final Map<String, dynamic>? row =
+          await ScreenshotDatabase.instance.getSegmentResult(sid);
+      if (row == null || row.isEmpty) return;
+      _segmentAiResult = <String, dynamic>{
+        'segment_id': row['segment_id'] ?? sid,
+        'ai_provider': row['ai_provider'],
+        'ai_model': row['ai_model'],
+        'output_text': row['output_text'],
+        'structured_json': row['structured_json'],
+        'categories': row['categories'],
+        'created_at': row['created_at'],
+      };
+      if (mounted) setState(() {});
+    } catch (_) {
+    } finally {
+      _loadingAiResult = false;
+    }
   }
 
   void _initAiMeta(Map<String, dynamic> args) {
@@ -733,6 +817,244 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     );
   }
 
+  String _formatAiCreatedAt(dynamic value) {
+    final int? ms = value is int ? value : int.tryParse(value?.toString() ?? '');
+    if (ms == null || ms <= 0) return '';
+    try {
+      return _formatDateTime(DateTime.fromMillisecondsSinceEpoch(ms));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _prettyJsonOrRaw(String input) {
+    final String raw = input.trim();
+    if (raw.isEmpty) return '';
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      const encoder = JsonEncoder.withIndent('  ');
+      return encoder.convert(decoded);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  Future<void> _showSegmentAiResponseDrawer() async {
+    await _ensureSegmentAiResultLoaded();
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context);
+    final Map<String, dynamic>? row = _segmentAiResult;
+    final String segmentIdText =
+        ((_segmentId ?? row?['segment_id'])?.toString() ?? '').trim();
+    final String providerText = (row?['ai_provider'] as String?)?.trim() ?? '';
+    final String modelText = (row?['ai_model'] as String?)?.trim() ?? '';
+    final String categoriesText = (row?['categories'] as String?)?.trim() ?? '';
+    final String outputText = (row?['output_text'] as String?)?.trim() ?? '';
+    final String structuredRaw =
+        (row?['structured_json'] as String?)?.trim() ?? '';
+    final String structuredPretty = _prettyJsonOrRaw(structuredRaw);
+    final String createdAtText = _formatAiCreatedAt(row?['created_at']);
+
+    final bool hasAny =
+        segmentIdText.isNotEmpty ||
+        providerText.isNotEmpty ||
+        modelText.isNotEmpty ||
+        createdAtText.isNotEmpty ||
+        outputText.isNotEmpty ||
+        structuredPretty.isNotEmpty ||
+        categoriesText.isNotEmpty;
+
+    String buildCopyText() {
+      if (!hasAny) return '';
+      final List<String> parts = <String>[];
+      parts.add('AI Response');
+      if (segmentIdText.isNotEmpty) parts.add('segment_id: $segmentIdText');
+      if (providerText.isNotEmpty) parts.add('provider: $providerText');
+      if (modelText.isNotEmpty) parts.add('model: $modelText');
+      if (createdAtText.isNotEmpty) parts.add('created_at: $createdAtText');
+      if (categoriesText.isNotEmpty) {
+        parts.add('categories:\n$categoriesText');
+      }
+      if (outputText.isNotEmpty) {
+        parts.add('output_text:\n$outputText');
+      }
+      if (structuredPretty.isNotEmpty) {
+        parts.add('structured_json:\n$structuredPretty');
+      }
+      return parts.join('\n\n').trim();
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, ctrl) {
+            return UISheetSurface(
+              child: Column(
+                children: [
+                  const SizedBox(height: AppTheme.spacing3),
+                  const UISheetHandle(),
+                  const SizedBox(height: AppTheme.spacing3),
+                  Expanded(
+                    child: ListView(
+                      controller: ctrl,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTheme.spacing4,
+                        0,
+                        AppTheme.spacing4,
+                        AppTheme.spacing6,
+                      ),
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.auto_awesome_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'AI Response',
+                                style: Theme.of(ctx).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: l10n.copyResultsTooltip,
+                              icon: const Icon(
+                                Icons.copy_all_outlined,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: !hasAny
+                                  ? null
+                                  : () async {
+                                      final String text = buildCopyText();
+                                      if (text.trim().isEmpty) return;
+                                      try {
+                                        await Clipboard.setData(
+                                          ClipboardData(text: text),
+                                        );
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(l10n.copySuccess),
+                                          ),
+                                        );
+                                      } catch (_) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(l10n.copyFailed),
+                                          ),
+                                        );
+                                      }
+                                    },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        if (!hasAny)
+                          Text(
+                            '当前无动态 AI 响应上下文或未生成结果。',
+                            style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.mutedForeground,
+                                ),
+                          ),
+                        if (hasAny) ...[
+                          if (segmentIdText.isNotEmpty ||
+                              providerText.isNotEmpty ||
+                              modelText.isNotEmpty ||
+                              createdAtText.isNotEmpty) ...[
+                            Text(
+                              'Meta',
+                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (segmentIdText.isNotEmpty)
+                              SelectableText(
+                                'segment_id: $segmentIdText',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            if (providerText.isNotEmpty)
+                              SelectableText(
+                                'provider: $providerText',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            if (modelText.isNotEmpty)
+                              SelectableText(
+                                'model: $modelText',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            if (createdAtText.isNotEmpty)
+                              SelectableText(
+                                'created_at: $createdAtText',
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (categoriesText.isNotEmpty) ...[
+                            Text(
+                              'categories',
+                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              categoriesText,
+                              style: Theme.of(ctx).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (outputText.isNotEmpty) ...[
+                            Text(
+                              'output_text',
+                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              outputText,
+                              style: Theme.of(ctx).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (structuredPretty.isNotEmpty) ...[
+                            Text(
+                              'structured_json',
+                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              structuredPretty,
+                              style: Theme.of(ctx).textTheme.bodyMedium,
+                            ),
+                          ],
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     // Android：恢复状态栏
@@ -1027,6 +1349,11 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
               ),
               iconTheme: const IconThemeData(color: Colors.white),
               actions: [
+                IconButton(
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  onPressed: _showSegmentAiResponseDrawer,
+                  tooltip: 'AI Response',
+                ),
                 IconButton(
                   icon: const Icon(Icons.download_outlined),
                   onPressed: _saveCurrentToGallery,
