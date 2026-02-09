@@ -14,6 +14,7 @@ import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../services/ai_settings_service.dart';
 import '../services/ai_chat_service.dart';
+import '../services/chat_context_service.dart';
 import '../widgets/ui_dialog.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/ai_providers_service.dart';
@@ -243,6 +244,12 @@ class _AISettingsPageState extends State<AISettingsPage>
   int _chatHistoryWriteEpoch = 0;
 
   List<AIMessage> _messages = <AIMessage>[];
+
+  // —— Full transcript paging (UI) ——
+  static const int _fullHistoryPageSize = 200;
+  int? _olderBeforeId;
+  bool _olderHasMore = false;
+  bool _olderLoading = false;
   bool _loading = true;
   bool _saving = false;
   bool _sending = false;
@@ -457,6 +464,9 @@ class _AISettingsPageState extends State<AISettingsPage>
                 _activeConversationCid = newCid;
                 _loading = true;
                 _messages = <AIMessage>[];
+                _olderBeforeId = null;
+                _olderHasMore = false;
+                _olderLoading = false;
                 _attachmentsByIndex.clear();
                 _evidenceResolvedByMsgKey.clear();
                 _evidenceResolveFutures.clear();
@@ -497,6 +507,9 @@ class _AISettingsPageState extends State<AISettingsPage>
           } catch (_) {}
           setState(() {
             _messages = <AIMessage>[];
+            _olderBeforeId = null;
+            _olderHasMore = false;
+            _olderLoading = false;
             _attachmentsByIndex.clear();
             _evidenceResolvedByMsgKey.clear();
             _evidenceResolveFutures.clear();

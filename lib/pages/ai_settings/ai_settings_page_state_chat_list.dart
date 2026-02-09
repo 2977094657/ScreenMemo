@@ -576,10 +576,37 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                 );
             _stickToBottom =
                 distanceToBottom <= _AISettingsPageState._autoScrollProximity;
+
+            // Scroll-to-top: load older full-transcript pages (best-effort).
+            if (metrics.pixels <= 80.0 &&
+                _olderHasMore &&
+                !_olderLoading &&
+                !_inStreaming &&
+                !_sending) {
+              unawaited(_loadOlderPage());
+            }
             return false;
           },
           child: list,
         ),
+        if (_olderLoading)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (!_stickToBottom)
           Positioned(
             right: 12,

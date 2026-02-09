@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../services/ai_context_budgets.dart';
 import '../services/ai_model_prompt_caps_service.dart';
 import '../services/ai_settings_service.dart';
 import '../services/chat_context_service.dart';
+import '../services/flutter_logger.dart';
 import '../services/locale_service.dart';
 import '../services/prompt_budget.dart';
 import '../services/screenshot_database.dart';
@@ -59,6 +61,8 @@ class ChatContextSheet {
 }
 
 enum ChatContextPanelPresentation { bottomSheet, drawer }
+
+enum _ConversationExportAction { copy, save }
 
 /// A right-side drawer wrapper that shows [ChatContextPanel].
 class ChatContextDrawer extends StatelessWidget {
@@ -169,7 +173,31 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
       final String raw =
           (row?['last_prompt_breakdown_json'] as String?)?.trim() ?? '';
       final Map<String, int> parts = <String, int>{};
-      if (raw.isNotEmpty) {
+      bool usedEvent = false;
+
+      try {
+        final List<PromptUsageEvent> events = await ChatContextService.instance
+            .listPromptUsageEvents(cid: cid, limit: 1);
+        if (events.isNotEmpty) {
+          final PromptUsageEvent event = events.first;
+          tokens = event.resolvedPromptTokens;
+          model = event.model.trim().isNotEmpty ? event.model.trim() : model;
+          final dynamic p = event.breakdown['parts'];
+          if (p is Map) {
+            for (final entry in p.entries) {
+              final String k = entry.key.toString();
+              final dynamic v = entry.value;
+              if (v is! num) continue;
+              final int t = v.toInt();
+              if (t <= 0) continue;
+              parts[k] = t;
+            }
+          }
+          usedEvent = true;
+        }
+      } catch (_) {}
+
+      if (!usedEvent && raw.isNotEmpty) {
         try {
           final dynamic decoded = jsonDecode(raw);
           if (decoded is Map) {
@@ -375,6 +403,20 @@ class _PromptUsageEstimate {
   final Map<String, int> parts;
 }
 
+class _ConversationExportPayload {
+  const _ConversationExportPayload({
+    required this.snapshot,
+    required this.messages,
+    required this.trimEvents,
+    required this.text,
+  });
+
+  final ChatContextSnapshot snapshot;
+  final List<AIMessage> messages;
+  final List<ChatContextEvent> trimEvents;
+  final String text;
+}
+
 class ChatContextPanel extends StatefulWidget {
   const ChatContextPanel({
     super.key,
@@ -388,11 +430,18 @@ class ChatContextPanel extends StatefulWidget {
 }
 
 class _ChatContextPanelState extends State<ChatContextPanel> {
+  static const int _trimEventsDefaultLimit = 50;
+  static const int _trimEventsMaxLimit = 200;
+
   Future<ChatContextSnapshot>? _future;
   // Cache the last successful snapshot/token count so periodic refresh won't "flash"
   // the sheet by resetting FutureBuilder data to null.
   ChatContextSnapshot? _cachedSnapshot;
+  List<ChatContextEvent> _cachedTrimEvents = const <ChatContextEvent>[];
+  PromptUsageEvent? _cachedLatestUsage;
   Timer? _pollTimer;
+  StreamSubscription<String>? _ctxSub;
+  Timer? _ctxDebounce;
   bool _refreshInFlight = false;
   bool _busy = false;
   String _activeModel = '';
@@ -408,8 +457,20 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   void initState() {
     super.initState();
     _reload();
-    // Keep it "near real-time" while the sheet is open (e.g. tool-loop updates).
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+    _ctxSub = AISettingsService.instance.onContextChanged.listen((String evt) {
+      if (!mounted) return;
+      // Fast-path: prompt usage is recorded per request (including tool-loop
+      // iterations) and broadcasts `chat:prompt_tokens`.
+      if (evt != 'chat:prompt_tokens') return;
+      _ctxDebounce?.cancel();
+      _ctxDebounce = Timer(const Duration(milliseconds: 200), () {
+        if (!mounted) return;
+        if (_busy || _refreshInFlight) return;
+        _refreshSnapshotOnly();
+      });
+    });
+    // Fallback polling in case we miss a broadcast (keep overhead low).
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 5000), (_) {
       if (!mounted) return;
       if (_busy || _refreshInFlight) return;
       _refreshSnapshotOnly();
@@ -420,6 +481,10 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   void dispose() {
     _pollTimer?.cancel();
     _pollTimer = null;
+    _ctxSub?.cancel();
+    _ctxSub = null;
+    _ctxDebounce?.cancel();
+    _ctxDebounce = null;
     super.dispose();
   }
 
@@ -431,6 +496,35 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
     snapFuture
         .then((s) {
           _cachedSnapshot = s;
+          unawaited(() async {
+            try {
+              final List<ChatContextEvent> events = await ChatContextService
+                  .instance
+                  .listRecentContextEvents(
+                    cid: s.cid,
+                    type: 'prompt_trim',
+                    limit: _trimEventsDefaultLimit,
+                  );
+              if (!mounted) return;
+              setState(() {
+                _cachedTrimEvents = events;
+              });
+            } catch (_) {}
+            try {
+              final List<PromptUsageEvent> usageEvents =
+                  await ChatContextService.instance.listPromptUsageEvents(
+                    cid: s.cid,
+                    limit: 1,
+                  );
+              final PromptUsageEvent? latest = usageEvents.isEmpty
+                  ? null
+                  : usageEvents.first;
+              if (!mounted) return;
+              setState(() {
+                _cachedLatestUsage = latest;
+              });
+            } catch (_) {}
+          }());
           try {
             final String raw = s.lastPromptBreakdownJson.trim();
             if (raw.isEmpty) return;
@@ -777,6 +871,356 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
     );
   }
 
+  String _sanitizeCidForFileName(String cid) {
+    final String t = cid.trim();
+    if (t.isEmpty) return 'conversation';
+    final String safe = t.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+    if (safe.isEmpty) return 'conversation';
+    return safe.length <= 64 ? safe : safe.substring(0, 64);
+  }
+
+  String _formatRoleForExport(String role) {
+    final String v = role.trim().toLowerCase();
+    if (v == 'assistant') return 'Assistant';
+    return 'User';
+  }
+
+  String _buildConversationExportText({
+    required ChatContextSnapshot snapshot,
+    required List<AIMessage> messages,
+    required List<ChatContextEvent> trimEvents,
+    required DateTime exportedAt,
+  }) {
+    final String summary = snapshot.summary.trim();
+    final String ts = DateFormat('yyyy-MM-dd HH:mm:ss').format(exportedAt);
+
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('=== Chat Transcript Export ===');
+    sb.writeln('${ChatContextSheet._loc(context, '导出时间', 'Export time')}: $ts');
+    sb.writeln('conversation_id: ${snapshot.cid}');
+    sb.writeln(
+      '${ChatContextSheet._loc(context, '消息数量', 'Message count')}: ${messages.length}',
+    );
+    sb.writeln(
+      '${ChatContextSheet._loc(context, '压缩次数', 'Compactions')}: ${snapshot.compactionCount}',
+    );
+
+    if (summary.isNotEmpty) {
+      sb.writeln();
+      sb.writeln(
+        '--- ${ChatContextSheet._loc(context, '对话摘要（压缩）', 'Conversation summary (compacted)')} ---',
+      );
+      sb.writeln(summary);
+    }
+
+    if (messages.isNotEmpty) {
+      sb.writeln();
+      sb.writeln(
+        '--- ${ChatContextSheet._loc(context, '逐条对话', 'Messages')} ---',
+      );
+      for (int i = 0; i < messages.length; i++) {
+        final AIMessage m = messages[i];
+        final String index = (i + 1).toString().padLeft(4, '0');
+        final String lineTs = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).format(m.createdAt.toLocal());
+        sb.writeln('[$index] $lineTs [${_formatRoleForExport(m.role)}]');
+        sb.writeln(m.content);
+        if (i < messages.length - 1) sb.writeln();
+      }
+    }
+
+    if (trimEvents.isNotEmpty) {
+      sb.writeln();
+      sb.writeln('--- Context Trim Events ---');
+      for (final ChatContextEvent e in trimEvents) {
+        final String tsLine = DateFormat(
+          'yyyy-MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(e.createdAtMs).toLocal());
+        final String stage = e.stage.isEmpty ? '-' : e.stage;
+        final String kind = e.kind.isEmpty ? '-' : e.kind;
+        final String reason = e.reason.isEmpty ? '-' : e.reason;
+        sb.writeln(
+          '[$tsLine] stage=$stage kind=$kind tokens=${e.beforeTokens}->${e.afterTokens} dropped=${e.droppedTokens} reason=$reason',
+        );
+      }
+    }
+
+    return sb.toString().trimRight();
+  }
+
+  Future<_ConversationExportPayload?>
+  _prepareConversationExportPayload() async {
+    final ChatContextSnapshot snapshot = await ChatContextService.instance
+        .getSnapshot();
+    final List<AIMessage> messages = await ChatContextService.instance
+        .loadMessagesForExport(cid: snapshot.cid);
+    final List<ChatContextEvent> trimEvents = await ChatContextService.instance
+        .listRecentContextEvents(
+          cid: snapshot.cid,
+          type: 'prompt_trim',
+          limit: _trimEventsDefaultLimit,
+        );
+    final String summary = snapshot.summary.trim();
+    if (summary.isEmpty && messages.isEmpty && trimEvents.isEmpty) return null;
+    final String text = _buildConversationExportText(
+      snapshot: snapshot,
+      messages: messages,
+      trimEvents: trimEvents,
+      exportedAt: DateTime.now(),
+    );
+    if (text.trim().isEmpty) return null;
+    return _ConversationExportPayload(
+      snapshot: snapshot,
+      messages: messages,
+      trimEvents: trimEvents,
+      text: text,
+    );
+  }
+
+  String _trimEventTitle(ChatContextEvent event) {
+    final String stage = event.stage.isEmpty ? 'chat' : event.stage;
+    final String kind = event.kind.isEmpty ? 'trim' : event.kind;
+    return '$stage · $kind';
+  }
+
+  String _trimEventSubtitle(ChatContextEvent event) {
+    final NumberFormat nf = NumberFormat.decimalPattern();
+    final String tokens =
+        '${nf.format(event.beforeTokens)} → ${nf.format(event.afterTokens)}';
+    final String dropped = nf.format(event.droppedTokens);
+    final String reason = event.reason.isEmpty ? '-' : event.reason;
+    return ChatContextSheet._loc(
+      context,
+      'tokens: $tokens，丢弃: $dropped，原因: $reason',
+      'tokens: $tokens, dropped: $dropped, reason: $reason',
+    );
+  }
+
+  String _trimEventRawLine(ChatContextEvent event) {
+    final NumberFormat nf = NumberFormat.decimalPattern();
+    final String time = ChatContextSheet._fmtTs(event.createdAtMs);
+    final String stage = event.stage.isEmpty ? '-' : event.stage;
+    final String kind = event.kind.isEmpty ? '-' : event.kind;
+    final String reason = event.reason.isEmpty ? '-' : event.reason;
+    return '[$time] stage=$stage kind=$kind tokens=${nf.format(event.beforeTokens)}->${nf.format(event.afterTokens)} dropped=${nf.format(event.droppedTokens)} reason=$reason';
+  }
+
+  Future<void> _copyTrimEvent(ChatContextEvent event) async {
+    await Clipboard.setData(ClipboardData(text: _trimEventRawLine(event)));
+    if (!mounted) return;
+    UINotifier.success(
+      context,
+      ChatContextSheet._loc(context, '已复制事件', 'Event copied'),
+    );
+  }
+
+  Widget _trimEventsCard(BuildContext context, List<ChatContextEvent> events) {
+    final ThemeData theme = Theme.of(context);
+    final List<ChatContextEvent> shown = events.length > _trimEventsMaxLimit
+        ? events.sublist(0, _trimEventsMaxLimit)
+        : events;
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ChatContextSheet._loc(context, 'Token 裁剪事件', 'Token trim events'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Text(
+            ChatContextSheet._loc(
+              context,
+              '显示最近 ${shown.length} 条（默认 50，最多 200）',
+              'Showing latest ${shown.length} events (default 50, max 200)',
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          if (shown.isEmpty)
+            Text(
+              ChatContextSheet._loc(
+                context,
+                '暂无 token 丢弃事件',
+                'No token trim events yet.',
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            ...shown.map(
+              (e) => Container(
+                margin: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                padding: const EdgeInsets.all(AppTheme.spacing2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withOpacity(0.25),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _trimEventTitle(e),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: ChatContextSheet._loc(
+                            context,
+                            '复制事件',
+                            'Copy event',
+                          ),
+                          icon: const Icon(Icons.copy_rounded, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _copyTrimEvent(e),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      _trimEventSubtitle(e),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      ChatContextSheet._loc(
+                        context,
+                        '时间：${ChatContextSheet._fmtTs(e.createdAtMs)}',
+                        'Time: ${ChatContextSheet._fmtTs(e.createdAtMs)}',
+                      ),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _copyConversationTranscript() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final _ConversationExportPayload? payload =
+          await _prepareConversationExportPayload();
+      if (payload == null) {
+        if (!mounted) return;
+        UINotifier.success(
+          context,
+          ChatContextSheet._loc(context, '暂无可导出内容', 'No exportable content.'),
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: payload.text));
+      if (!mounted) return;
+      UINotifier.success(
+        context,
+        ChatContextSheet._loc(context, '已复制当前会话', 'Conversation copied'),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(
+        context,
+        ChatContextSheet._loc(context, '复制失败：$e', 'Copy failed: $e'),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveConversationTranscriptToFile() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final _ConversationExportPayload? payload =
+          await _prepareConversationExportPayload();
+      if (payload == null) {
+        if (!mounted) return;
+        UINotifier.success(
+          context,
+          ChatContextSheet._loc(context, '暂无可导出内容', 'No exportable content.'),
+        );
+        return;
+      }
+
+      String? baseDirPath;
+      try {
+        baseDirPath = await FlutterLogger.getTodayLogsDir();
+      } catch (_) {
+        baseDirPath = null;
+      }
+
+      Directory baseDir = Directory.systemTemp;
+      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+        baseDir = Directory(baseDirPath.trim());
+      }
+
+      final String sep = Platform.pathSeparator;
+      final Directory outDir = Directory(
+        baseDir.path + sep + 'ai_chat_exports',
+      );
+      await outDir.create(recursive: true);
+
+      final String ts = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final String fileName =
+          'chat_transcript_${_sanitizeCidForFileName(payload.snapshot.cid)}_$ts.txt';
+      final File f = File(outDir.path + sep + fileName);
+      await f.writeAsString(payload.text + '\n', flush: true);
+
+      try {
+        await Clipboard.setData(ClipboardData(text: f.path));
+      } catch (_) {}
+
+      if (!mounted) return;
+      UINotifier.success(
+        context,
+        ChatContextSheet._loc(context, '已保存到：${f.path}', 'Saved to: ${f.path}'),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(
+        context,
+        ChatContextSheet._loc(context, '保存失败：$e', 'Save failed: $e'),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _onExportActionSelected(_ConversationExportAction action) async {
+    switch (action) {
+      case _ConversationExportAction.copy:
+        await _copyConversationTranscript();
+        break;
+      case _ConversationExportAction.save:
+        await _saveConversationTranscriptToFile();
+        break;
+    }
+  }
+
   Future<void> _editModelPromptCapDialog(
     BuildContext context, {
     required String model,
@@ -992,6 +1436,39 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                       onPressed: _busy ? null : _reload,
                       icon: const Icon(Icons.refresh_rounded),
                     ),
+                    PopupMenuButton<_ConversationExportAction>(
+                      tooltip: ChatContextSheet._loc(
+                        context,
+                        '导出当前会话',
+                        'Export conversation',
+                      ),
+                      enabled: !_busy,
+                      onSelected: _onExportActionSelected,
+                      itemBuilder: (ctx) =>
+                          <PopupMenuEntry<_ConversationExportAction>>[
+                            PopupMenuItem<_ConversationExportAction>(
+                              value: _ConversationExportAction.copy,
+                              child: Text(
+                                ChatContextSheet._loc(
+                                  context,
+                                  '复制当前会话',
+                                  'Copy conversation',
+                                ),
+                              ),
+                            ),
+                            PopupMenuItem<_ConversationExportAction>(
+                              value: _ConversationExportAction.save,
+                              child: Text(
+                                ChatContextSheet._loc(
+                                  context,
+                                  '保存到文件',
+                                  'Save to file',
+                                ),
+                              ),
+                            ),
+                          ],
+                      icon: const Icon(Icons.ios_share_outlined),
+                    ),
                     if (isDrawer)
                       IconButton(
                         tooltip: ChatContextSheet._loc(context, '关闭', 'Close'),
@@ -1032,6 +1509,8 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                     final String toolMemPretty = ChatContextSheet._prettyJson(
                       s.toolMemoryJson,
                     );
+                    final List<ChatContextEvent> trimEvents = _cachedTrimEvents;
+                    final PromptUsageEvent? latestUsage = _cachedLatestUsage;
 
                     return ListView(
                       controller: ctrl,
@@ -1100,7 +1579,13 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                           ],
                         ),
                         const SizedBox(height: AppTheme.spacing3),
-                        _conversationTokenUsageCard(context, s),
+                        _conversationTokenUsageCard(
+                          context,
+                          s,
+                          latestUsage: latestUsage,
+                        ),
+                        const SizedBox(height: AppTheme.spacing3),
+                        _trimEventsCard(context, trimEvents),
                         const SizedBox(height: AppTheme.spacing3),
                         _atomicMemoryCard(context),
                         const SizedBox(height: AppTheme.spacing3),
@@ -1521,12 +2006,13 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
 
   Widget _conversationTokenUsageCard(
     BuildContext context,
-    ChatContextSnapshot s,
-  ) {
+    ChatContextSnapshot s, {
+    PromptUsageEvent? latestUsage,
+  }) {
     final ThemeData theme = Theme.of(context);
     final NumberFormat nf = NumberFormat.decimalPattern();
 
-    String model = _activeModel;
+    String model = (latestUsage?.model ?? '').trim();
     int fallbackCapTokens = (_activeModelContextTokens ?? 0)
         .clamp(0, 1 << 30)
         .toInt();
@@ -1545,7 +2031,26 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
     ];
 
     final Map<String, int> parts = <String, int>{};
-    int tokens = (s.lastPromptTokens ?? 0).clamp(0, 1 << 62).toInt();
+    final int promptUsed =
+        (latestUsage?.resolvedPromptTokens ?? (s.lastPromptTokens ?? 0))
+            .clamp(0, 1 << 62)
+            .toInt();
+
+    void applyPartsFromMap(Object? p) {
+      if (p is! Map) return;
+      for (final entry in p.entries) {
+        final String k = entry.key.toString();
+        final dynamic v = entry.value;
+        if (v is! num) continue;
+        final int t = v.toInt();
+        if (t <= 0) continue;
+        parts[k] = t;
+      }
+    }
+
+    try {
+      applyPartsFromMap((latestUsage?.breakdown)?['parts']);
+    } catch (_) {}
 
     final String raw = s.lastPromptBreakdownJson.trim();
     if (raw.isNotEmpty) {
@@ -1553,25 +2058,17 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
         final dynamic decoded = jsonDecode(raw);
         if (decoded is Map) {
           final String m = (decoded['model'] ?? '').toString().trim();
-          if (m.isNotEmpty) {
+          if (model.trim().isEmpty && m.isNotEmpty) {
             model = m;
             fallbackCapTokens = AIContextBudgets.forModel(m).promptCapTokens;
           }
-          final dynamic total = decoded['total_tokens'];
-          if (total is num) tokens = total.toInt();
-          final dynamic p = decoded['parts'];
-          if (p is Map) {
-            for (final entry in p.entries) {
-              final String k = entry.key.toString();
-              final dynamic v = entry.value;
-              if (v is! num) continue;
-              final int t = v.toInt();
-              if (t <= 0) continue;
-              parts[k] = t;
-            }
-          }
+          if (parts.isEmpty) applyPartsFromMap(decoded['parts']);
         }
       } catch (_) {}
+    }
+
+    if (model.trim().isEmpty) {
+      model = _activeModel.trim();
     }
 
     final int capTokens =
@@ -1579,20 +2076,59 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                 fallbackCapTokens)
             .clamp(0, 1 << 30)
             .toInt();
-    final double ratio = capTokens > 0
-        ? (tokens / capTokens).clamp(0.0, 999.0)
-        : 0.0;
 
     // No breakdown recorded (older rows / failures): keep totals consistent.
-    if (parts.isEmpty && tokens > 0) {
-      parts[PromptTokenPart.extraSystem.key] = tokens;
+    if (parts.isEmpty && promptUsed > 0) {
+      parts[PromptTokenPart.extraSystem.key] = promptUsed;
     }
 
-    final int partsSum = order.fold<int>(
+    final int partsAll = parts.values.fold<int>(0, (a, b) => a + b);
+    final int partsSumKnown = order.fold<int>(
       0,
       (a, part) => a + (parts[part.key] ?? 0),
     );
-    final int remainder = (tokens - partsSum).clamp(0, 1 << 62).toInt();
+    final int remainder = (partsAll - partsSumKnown).clamp(0, 1 << 62).toInt();
+    final int gap = (promptUsed - partsAll).clamp(0, 1 << 62).toInt();
+    final int legendTotal = (partsAll > promptUsed ? partsAll : promptUsed)
+        .clamp(1, 1 << 62)
+        .toInt();
+
+    final List<({int tokens, Color color, String label, int tie})> legendItems =
+        <({int tokens, Color color, String label, int tie})>[];
+    int legendTie = 0;
+    for (final part in order) {
+      final int t = (parts[part.key] ?? 0).clamp(0, 1 << 62).toInt();
+      if (t <= 0) continue;
+      legendItems.add((
+        tokens: t,
+        color: part.color(theme),
+        label: ChatContextSheet._isZh(context)
+            ? part.labelZh()
+            : part.labelEn(),
+        tie: legendTie++,
+      ));
+    }
+    if (remainder > 0) {
+      legendItems.add((
+        tokens: remainder,
+        color: theme.colorScheme.primary,
+        label: ChatContextSheet._loc(context, '其他', 'Other'),
+        tie: legendTie++,
+      ));
+    }
+    if (gap > 0) {
+      legendItems.add((
+        tokens: gap,
+        color: theme.colorScheme.secondary,
+        label: ChatContextSheet._loc(context, '估算差异', 'Estimation gap'),
+        tie: legendTie++,
+      ));
+    }
+    legendItems.sort((a, b) {
+      final int byTokens = b.tokens.compareTo(a.tokens);
+      if (byTokens != 0) return byTokens;
+      return a.tie.compareTo(b.tie);
+    });
 
     final List<SegmentedTokenBarSegment> segments = <SegmentedTokenBarSegment>[
       for (final part in order)
@@ -1601,24 +2137,41 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
             tokens: parts[part.key]!,
             color: part.color(theme),
           ),
-    ];
-    if (segments.isEmpty) {
-      if (tokens > 0) {
-        segments.add(
-          SegmentedTokenBarSegment(
-            tokens: tokens,
-            color: theme.colorScheme.primary,
-          ),
-        );
-      }
-    } else if (remainder > 0) {
-      segments.add(
+      if (remainder > 0)
         SegmentedTokenBarSegment(
           tokens: remainder,
           color: theme.colorScheme.primary,
         ),
+    ];
+    if (segments.isEmpty) {
+      if (promptUsed > 0) {
+        segments.add(
+          SegmentedTokenBarSegment(
+            tokens: promptUsed,
+            color: theme.colorScheme.primary,
+          ),
+        );
+      }
+    }
+    if (gap > 0) {
+      segments.add(
+        SegmentedTokenBarSegment(
+          tokens: gap,
+          color: theme.colorScheme.secondary,
+        ),
       );
     }
+
+    final String modelText = model.trim().isEmpty ? '-' : model.trim();
+    final String usageSummary = ChatContextSheet._loc(
+      context,
+      capTokens > 0
+          ? '模型：$modelText · 当前 token：${nf.format(promptUsed)}（${((promptUsed / capTokens) * 100).toStringAsFixed(1)}%）/ ${nf.format(capTokens)}'
+          : '模型：$modelText · 当前 token：${nf.format(promptUsed)}',
+      capTokens > 0
+          ? 'Model: $modelText · Current tokens: ${nf.format(promptUsed)} (${((promptUsed / capTokens) * 100).toStringAsFixed(1)}%) / ${nf.format(capTokens)}'
+          : 'Model: $modelText · Current tokens: ${nf.format(promptUsed)}',
+    );
 
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
@@ -1634,11 +2187,7 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
             children: [
               Expanded(
                 child: Text(
-                  ChatContextSheet._loc(
-                    context,
-                    '当前对话 token（≈）',
-                    'Current conversation tokens (≈)',
-                  ),
+                  ChatContextSheet._loc(context, 'token用量', 'Token usage'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -1667,33 +2216,12 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
           ),
           const SizedBox(height: AppTheme.spacing2),
           Text(
-            nf.format(tokens),
+            nf.format(promptUsed),
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w800,
             ),
           ),
-          if (tokens > 0 && capTokens > 0) ...[
-            const SizedBox(height: AppTheme.spacing1),
-            Text(
-              ChatContextSheet._loc(
-                context,
-                '已用 ${nf.format(tokens)} / ${nf.format(capTokens)}（${(ratio * 100).toStringAsFixed(1)}%） · 模型：$model',
-                'Used ${nf.format(tokens)} / ${nf.format(capTokens)} (${(ratio * 100).toStringAsFixed(1)}%) · Model: $model',
-              ),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ] else if (model.trim().isNotEmpty) ...[
-            const SizedBox(height: AppTheme.spacing1),
-            Text(
-              ChatContextSheet._loc(context, '模型：$model', 'Model: $model'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          if (tokens <= 0) ...[
+          if (promptUsed <= 0) ...[
             const SizedBox(height: AppTheme.spacing1),
             Text(
               ChatContextSheet._loc(
@@ -1706,38 +2234,34 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
               ),
             ),
           ] else ...[
+            const SizedBox(height: AppTheme.spacing1),
+            Text(
+              usageSummary,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
             const SizedBox(height: AppTheme.spacing2),
             SegmentedTokenBar(
               totalTokens: capTokens > 0
                   ? capTokens
-                  : (tokens > 0 ? tokens : 1),
+                  : (promptUsed > 0 ? promptUsed : 1),
               segments: segments,
               height: 12,
             ),
-            if (parts.isNotEmpty || remainder > 0) ...[
+            if (parts.isNotEmpty || remainder > 0 || gap > 0) ...[
               const SizedBox(height: AppTheme.spacing2),
               Wrap(
                 spacing: AppTheme.spacing2,
                 runSpacing: AppTheme.spacing1,
                 children: [
-                  for (final part in order)
-                    if ((parts[part.key] ?? 0) > 0)
-                      _legendItem(
-                        context,
-                        color: part.color(theme),
-                        label: ChatContextSheet._isZh(context)
-                            ? part.labelZh()
-                            : part.labelEn(),
-                        tokens: parts[part.key]!,
-                        total: tokens,
-                      ),
-                  if (remainder > 0)
+                  for (final it in legendItems)
                     _legendItem(
                       context,
-                      color: theme.colorScheme.primary,
-                      label: ChatContextSheet._loc(context, '其他', 'Other'),
-                      tokens: remainder,
-                      total: tokens,
+                      color: it.color,
+                      label: it.label,
+                      tokens: it.tokens,
+                      total: legendTotal,
                     ),
                 ],
               ),
@@ -1745,6 +2269,168 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _conversationUsageTotalsCard(
+    BuildContext context,
+    PromptUsageTotals totals,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final NumberFormat nf = NumberFormat.decimalPattern();
+    final String coverageText =
+        '${(totals.usageCoverage * 100).toStringAsFixed(1)}%';
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ChatContextSheet._loc(context, '本会话累计', 'Conversation totals'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Wrap(
+            spacing: AppTheme.spacing2,
+            runSpacing: AppTheme.spacing2,
+            children: [
+              _metricChip(
+                context,
+                ChatContextSheet._loc(context, '输入', 'Prompt'),
+                nf.format(totals.promptTokens),
+              ),
+              _metricChip(
+                context,
+                ChatContextSheet._loc(context, '输出', 'Completion'),
+                nf.format(totals.completionTokens),
+              ),
+              _metricChip(
+                context,
+                ChatContextSheet._loc(context, '总计', 'Total'),
+                nf.format(totals.totalTokens),
+              ),
+              _metricChip(
+                context,
+                ChatContextSheet._loc(context, '调用数', 'Calls'),
+                nf.format(totals.eventsCount),
+              ),
+              _metricChip(
+                context,
+                ChatContextSheet._loc(context, 'usage 覆盖', 'Usage coverage'),
+                coverageText,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _promptUsageEventsCard(
+    BuildContext context,
+    List<PromptUsageEvent> events,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final NumberFormat nf = NumberFormat.decimalPattern();
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ChatContextSheet._loc(context, '每次请求明细', 'Per-request details'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          if (events.isEmpty)
+            Text(
+              ChatContextSheet._loc(
+                context,
+                '暂无请求明细。',
+                'No request events yet.',
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            ...events.take(20).map((PromptUsageEvent event) {
+              final String source = event.hasUsage ? 'usage' : 'estimate';
+              final String flags = <String>[
+                if (event.strictFullAttempted)
+                  ChatContextSheet._loc(context, 'strict', 'strict'),
+                if (event.fallbackTriggered)
+                  ChatContextSheet._loc(context, 'fallback', 'fallback'),
+                if (event.isToolLoop)
+                  ChatContextSheet._loc(context, 'tool', 'tool'),
+              ].join(' · ');
+              final String model = event.model.trim().isEmpty
+                  ? '-'
+                  : event.model.trim();
+              final String line =
+                  '${ChatContextSheet._fmtTs(event.createdAtMs)} · $model · '
+                  'prompt=${nf.format(event.resolvedPromptTokens)} · '
+                  '$source · '
+                  'tools=${event.toolsCount}';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+                child: Container(
+                  padding: const EdgeInsets.all(AppTheme.spacing2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withOpacity(0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(line, style: theme.textTheme.bodySmall),
+                      if (flags.isNotEmpty)
+                        Text(
+                          flags,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricChip(BuildContext context, String label, String value) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing2,
+        vertical: AppTheme.spacing1,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
+      ),
+      child: Text('$label: $value', style: theme.textTheme.bodySmall),
     );
   }
 

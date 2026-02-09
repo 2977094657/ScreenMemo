@@ -118,8 +118,14 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       // Capture the active conversation CID once so chat history stays consistent
       // even if the user switches conversations while other settings are loading.
       final Future<String> fChatCid = _settings.getActiveConversationCid();
-      final Future<List<AIMessage>> fHistory = fChatCid.then(
+      final Future<List<AIMessage>> fTailHistory = fChatCid.then(
         (cid) => _settings.getChatHistoryByCid(cid),
+      );
+      final Future<FullMessagesPage> fFullPage = fChatCid.then(
+        (cid) => ChatContextService.instance.loadFullMessagesPage(
+          cid: cid,
+          limit: _AISettingsPageState._fullHistoryPageSize,
+        ),
       );
       final Future<bool> fStreamEnabled = _settings.getStreamEnabled();
       final Future<String?> fSegPrompt = _settings.getPromptSegment();
@@ -162,7 +168,149 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       );
 
       // 收集其余预取结果
-      final List<AIMessage> history = await fHistory;
+      final List<AIMessage> tailHistory = await fTailHistory;
+      final FullMessagesPage firstPage = await fFullPage;
+
+      bool uiThinkingHasUnfinishedBlocks(String raw) {
+        final String t = raw.trim();
+        if (t.isEmpty) return false;
+        try {
+          final Object? decoded = jsonDecode(t);
+          if (decoded is! Map) return false;
+          final Map<String, dynamic> obj = Map<String, dynamic>.from(decoded);
+          final int ver = (obj['v'] is num) ? (obj['v'] as num).toInt() : 0;
+          if (ver != 2) return false;
+          final Object? blocks0 = obj['blocks'];
+          if (blocks0 is! List) return false;
+          for (final b0 in blocks0) {
+            if (b0 is! Map) continue;
+            final Map<String, dynamic> b = Map<String, dynamic>.from(b0);
+            final Object? finished = b['finished_at'];
+            if (finished == null) return true;
+            final int fin = (finished is num)
+                ? finished.toInt()
+                : int.tryParse('$finished') ?? 0;
+            if (fin <= 0) return true;
+          }
+        } catch (_) {
+          return false;
+        }
+        return false;
+      }
+
+      List<AIMessage> mergeUiHistory({
+        required List<AIMessage> full,
+        required List<AIMessage> tail,
+      }) {
+        if (full.isEmpty) return List<AIMessage>.from(tail);
+
+        int metaScore(AIMessage m) {
+          int score = 0;
+          final String r = (m.reasoningContent ?? '').trim();
+          if (r.isNotEmpty) score += 100000 + r.length;
+          final String ui = (m.uiThinkingJson ?? '').trim();
+          if (ui.isNotEmpty) score += 1000 + ui.length;
+          final int d = m.reasoningDuration?.inMilliseconds ?? 0;
+          if (d > 0) score += 1;
+          return score;
+        }
+
+        final Set<int> usedTailIdx = <int>{};
+        final List<AIMessage> merged = <AIMessage>[];
+
+        for (final AIMessage m in full) {
+          final int at = m.createdAt.millisecondsSinceEpoch;
+          int? matchedIdx;
+
+          for (int i = 0; i < tail.length; i++) {
+            if (usedTailIdx.contains(i)) continue;
+            final AIMessage t = tail[i];
+            if (t.role != m.role) continue;
+            if (t.createdAt.millisecondsSinceEpoch != at) continue;
+            matchedIdx = i;
+            break;
+          }
+
+          if (matchedIdx == null && m.role == 'assistant') {
+            final String contentSig = m.content.trim();
+            if (contentSig.isNotEmpty) {
+              int bestIdx = -1;
+              int bestDiff = 1 << 30;
+              for (int i = 0; i < tail.length; i++) {
+                if (usedTailIdx.contains(i)) continue;
+                final AIMessage t = tail[i];
+                if (t.role != 'assistant') continue;
+                if (t.content.trim() != contentSig) continue;
+                final int diff = (t.createdAt.millisecondsSinceEpoch - at)
+                    .abs();
+                if (diff < bestDiff) {
+                  bestDiff = diff;
+                  bestIdx = i;
+                }
+              }
+              if (bestIdx >= 0 && bestDiff <= 2 * 60 * 1000) {
+                matchedIdx = bestIdx;
+              }
+            }
+          }
+
+          if (matchedIdx == null) {
+            merged.add(m);
+            continue;
+          }
+
+          usedTailIdx.add(matchedIdx);
+          final AIMessage t = tail[matchedIdx];
+          final AIMessage patched = metaScore(t) <= 0
+              ? m
+              : AIMessage(
+                  role: m.role,
+                  content: m.content,
+                  createdAt: t.createdAt,
+                  reasoningContent: t.reasoningContent,
+                  reasoningDuration: t.reasoningDuration,
+                  uiThinkingJson: t.uiThinkingJson,
+                );
+          merged.add(patched);
+        }
+
+        for (int i = 0; i < tail.length; i++) {
+          if (usedTailIdx.contains(i)) continue;
+          final AIMessage t = tail[i];
+          final String role = t.role.trim();
+          if (role.isEmpty) continue;
+
+          if (role != 'user' && role != 'assistant') {
+            merged.add(t);
+            continue;
+          }
+
+          if (role == 'assistant') {
+            final String ui = (t.uiThinkingJson ?? '').trim();
+            if (t.content.trim().isEmpty ||
+                (ui.isNotEmpty && uiThinkingHasUnfinishedBlocks(ui))) {
+              merged.add(t);
+            }
+          }
+        }
+
+        final List<AIMessage> cleaned = <AIMessage>[];
+        for (final AIMessage m in merged) {
+          if (m.role == 'user' &&
+              cleaned.isNotEmpty &&
+              cleaned.last.role == 'user' &&
+              cleaned.last.content.trim() == m.content.trim()) {
+            continue;
+          }
+          cleaned.add(m);
+        }
+        return cleaned;
+      }
+
+      final List<AIMessage> history = mergeUiHistory(
+        full: firstPage.messages,
+        tail: tailHistory,
+      );
       final String chatCid = (await fChatCid).trim();
       final bool streamEnabled = await fStreamEnabled;
       final bool renderImgs = await _settings.getRenderImagesDuringStreaming();
@@ -172,7 +320,7 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       _uiPerf.log(
         'loadAll.history.done',
         detail:
-            'ms=${sw.elapsedMilliseconds} history=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
+            'ms=${sw.elapsedMilliseconds} tail=${tailHistory.length} fullPage=${firstPage.messages.length} merged=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
       );
 
       // 回填历史消息的深度思考内容与耗时（索引映射到消息）
@@ -235,6 +383,9 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         // latest assistant turn immediately (batch microtasks can starve frames
         // and delay UI updates on route/app switches).
         _messages = List<AIMessage>.from(history);
+        _olderBeforeId = firstPage.nextBeforeId;
+        _olderHasMore = firstPage.hasMore;
+        _olderLoading = false;
         _clarifyState = null;
         _attachmentsByIndex.clear();
         _evidenceResolvedByMsgKey.clear();
@@ -304,6 +455,104 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           'AISettings._loadAll first-frame ms=' +
               sw.elapsedMilliseconds.toString(),
         );
+      } catch (_) {}
+    });
+  }
+
+  void _shiftIndexKeyedCaches(int delta) {
+    if (delta == 0) return;
+
+    void shiftMap<V>(Map<int, V> m) {
+      if (m.isEmpty) return;
+      final List<MapEntry<int, V>> entries = m.entries.toList(growable: false);
+      m.clear();
+      for (final e in entries) {
+        m[e.key + delta] = e.value;
+      }
+    }
+
+    shiftMap<String>(_reasoningByIndex);
+    shiftMap<String>(_gatewayLogsByIndex);
+    shiftMap<_GatewayLogFileWriter>(_gatewayLogWritersByIndex);
+    shiftMap<String>(_gatewayLogFilePathByIndex);
+    shiftMap<Duration>(_reasoningDurationByIndex);
+    shiftMap<List<_ThinkingBlock>>(_thinkingBlocksByIndex);
+    shiftMap<List<String>>(_contentSegmentsByIndex);
+    shiftMap<bool>(_nextContentStartsNewSegmentByIndex);
+    shiftMap<List<EvidenceImageAttachment>>(_attachmentsByIndex);
+
+    if (_currentAssistantIndex != null) {
+      _currentAssistantIndex = _currentAssistantIndex! + delta;
+    }
+  }
+
+  Future<void> _loadOlderPage() async {
+    if (_olderLoading) return;
+    if (!_olderHasMore) return;
+    if (_sending || _inStreaming) return;
+    final String cid = (_activeConversationCid ?? '').trim();
+    if (cid.isEmpty) return;
+    final int epoch = _loadAllEpoch;
+    final int? beforeId = _olderBeforeId;
+    if (beforeId == null || beforeId <= 0) return;
+
+    final ScrollController c = _chatScrollController;
+    final double oldPixels = c.hasClients ? c.position.pixels : 0.0;
+    final double oldMax = c.hasClients ? c.position.maxScrollExtent : 0.0;
+
+    _setState(() => _olderLoading = true);
+
+    FullMessagesPage page;
+    try {
+      page = await ChatContextService.instance.loadFullMessagesPage(
+        cid: cid,
+        beforeId: beforeId,
+        limit: _AISettingsPageState._fullHistoryPageSize,
+      );
+    } catch (_) {
+      page = const FullMessagesPage(
+        messages: <AIMessage>[],
+        nextBeforeId: null,
+        hasMore: false,
+      );
+    }
+
+    if (!mounted) return;
+    final String currentCid = (_activeConversationCid ?? '').trim();
+    if (currentCid.isEmpty || currentCid != cid || epoch != _loadAllEpoch) {
+      _setState(() => _olderLoading = false);
+      return;
+    }
+    if (page.messages.isEmpty) {
+      _setState(() {
+        _olderLoading = false;
+        _olderBeforeId = null;
+        _olderHasMore = false;
+      });
+      return;
+    }
+
+    final List<AIMessage> older = page.messages;
+    _setState(() {
+      _shiftIndexKeyedCaches(older.length);
+      _messages = <AIMessage>[...older, ..._messages];
+      _olderBeforeId = page.nextBeforeId;
+      _olderHasMore = page.hasMore;
+      _olderLoading = false;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!c.hasClients) return;
+      final double newMax = c.position.maxScrollExtent;
+      final double delta = newMax - oldMax;
+      if (delta <= 0) return;
+      final double target = (oldPixels + delta).clamp(
+        c.position.minScrollExtent,
+        c.position.maxScrollExtent,
+      );
+      try {
+        c.jumpTo(target);
       } catch (_) {}
     });
   }
@@ -744,6 +993,9 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       if (!mounted) return;
       _setState(() {
         _messages = <AIMessage>[];
+        _olderBeforeId = null;
+        _olderHasMore = false;
+        _olderLoading = false;
         _attachmentsByIndex.clear();
         _evidenceResolvedByMsgKey.clear();
         _evidenceResolveFutures.clear();

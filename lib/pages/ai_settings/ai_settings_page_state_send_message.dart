@@ -771,7 +771,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               session = await _chat.sendMessageStreamedV2WithDisplayOverride(
                 text,
                 finalQuery,
-                includeHistory: resolvedIntent.skipContext,
+                includeHistory: true,
                 extraSystemMessages: extraSystemMessages,
                 // Persist the tail at service-level so background completion (after
                 // conversation/page switch) still lands in the original CID.
@@ -1880,7 +1880,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           final assistant = await _chat.sendMessageWithDisplayOverride(
             text,
             finalQuery,
-            includeHistory: resolvedIntent.skipContext,
+            includeHistory: true,
             extraSystemMessages: extraSystemMessages,
             // Persist tail at service-level so leaving/switching won't lose the result.
             persistHistoryTail: true,
