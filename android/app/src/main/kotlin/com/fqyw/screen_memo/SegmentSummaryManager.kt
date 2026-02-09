@@ -790,12 +790,6 @@ object SegmentSummaryManager {
                 val samplesOrdered = samples.sortedBy { it.captureTime }
                 val effSamples = if (samplesOrdered.size > effectiveCap) evenPick(samplesOrdered, effectiveCap) else samplesOrdered
 
-                // 聚合应用与时间片，组织提示（仅使用实际送入的 effSamples）
-                val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
-                for (s in effSamples) {
-                    byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
-                }
-
                 // 依据应用语言注入"语言强制策略"并选择对应提示词（支持 _zh/_en 与旧键回退）
                 val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
                 val sysLang = try { java.util.Locale.getDefault().language?.lowercase() } catch (_: Exception) { "en" } ?: "en"
@@ -902,19 +896,26 @@ object SegmentSummaryManager {
                 // 构造描述（仅时间点与应用，不包含OCR文本）
                 val sb = StringBuilder()
                 val timeRangeLabel = getStringByLang(ctx, effectiveLang, R.string.label_time_range_zh, R.string.label_time_range_en, R.string.label_time_range_ja, R.string.label_time_range_ko)
-                val appLabel = getStringByLang(ctx, effectiveLang, R.string.label_app_zh, R.string.label_app_en, R.string.label_app_ja, R.string.label_app_ko)
                 val shotLabel = getStringByLang(ctx, effectiveLang, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, R.string.label_screenshot_at_ja, R.string.label_screenshot_at_ko)
-                val fileLabel = getStringByLang(ctx, effectiveLang, R.string.label_file_zh, R.string.label_file_en, R.string.label_file_ja, R.string.label_file_ko)
+                val imageIndexLabel = when (effectiveLang) {
+                    "zh" -> "图片索引（仅使用序号引用图片）"
+                    "ja" -> "画像インデックス（画像参照は番号のみ）"
+                    "ko" -> "이미지 인덱스(번호로만 참조)"
+                    else -> "Image index list (reference by number only)"
+                }
+                val orderedForPrompt = effSamples.sortedBy { it.captureTime }
 
                 sb.append(timeRangeLabel).append(fmt(seg.startTime)).append(" - ").append(fmt(seg.endTime)).append('\n')
                 sb.append(header).append('\n')
-                for ((pkg, list) in byApp) {
-                    list.sortBy { it.captureTime }
-                    val name = list.firstOrNull()?.appName ?: pkg
-                    sb.append(appLabel).append(name).append(" (").append(pkg).append(")\n")
-                    for (s in list) {
-                        sb.append(shotLabel).append(fmt(s.captureTime)).append(fileLabel).append(File(s.filePath).name).append('\n')
-                    }
+                sb.append(imageIndexLabel).append('\n')
+                for ((idx, s) in orderedForPrompt.withIndex()) {
+                    val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
+                    sb.append(shotLabel)
+                        .append("[#").append(idx + 1).append("] ")
+                        .append(fmt(s.captureTime))
+                        .append(" | ")
+                        .append(appDisplay)
+                        .append('\n')
                 }
 
                 val prompt = sb.toString()
@@ -938,6 +939,7 @@ object SegmentSummaryManager {
                     outputToSave = patched.first
                     structuredToSave = patched.second
                 }
+                structuredToSave = normalizeImageRefsToFilenames(structuredToSave, effSamples)
                 mergeOutputText = outputToSave
                 mergeStructuredJson = structuredToSave
                 SegmentDatabaseHelper.saveResult(
@@ -1072,55 +1074,55 @@ object SegmentSummaryManager {
                 if (isZhForRule) {
                     """
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进整体总结。
-- 如需逐图说明，请使用 described_images[] 列出这些被描述的图片（长度≤上述上限）；每项：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
-- key_actions[].ref_image 必须复用 content_groups[].representative_images 中已选择的文件名，不得新增超出上限的图片引用。
+- 如需逐图说明，请使用 described_images[] 列出这些被描述的图片（长度≤上述上限）；每项：{file:"图片序号字符串", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
+- key_actions[].ref_image 必须复用 content_groups[].representative_images 中已选择的图片序号，不得新增超出上限的图片引用。
 """.trim()
                 } else {
                     """
 - Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
-- If you describe any individual images, list them in described_images[] (length <= the cap); each item: {file:"filename", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason"}.
-- key_actions[].ref_image MUST reuse filenames chosen in content_groups[].representative_images and MUST NOT exceed the cap.
+- If you describe any individual images, list them in described_images[] (length <= the cap); each item: {file:"image index string", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason"}.
+- key_actions[].ref_image MUST reuse image indexes chosen in content_groups[].representative_images and MUST NOT exceed the cap.
 """.trim()
                 }
             } else {
                 if (isZhForRule) {
                     """
 - 仅对不超过总数三分之一的代表性图片进行文字描述（向下取整，允许0张）；例如本次共 ${totalImagesToSend} 张，最多描述 ${maxDescImages} 张；其余图片不要逐图描述，请合并进摘要。
-- 仅使用 described_images[] 列出这些"被文字描述"的单张图片，数组长度<=上述上限；每项结构：{file:"文件名", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
-- key_actions[].ref_image 必须复用 described_images[] 中的文件名，不得新增超出上限的图片引用。
+- 仅使用 described_images[] 列出这些"被文字描述"的单张图片，数组长度<=上述上限；每项结构：{file:"图片序号字符串", ref_time:"HH:mm:ss", app:"应用名", summary:"(Markdown) 单图关键信息与选择理由"}。
+- key_actions[].ref_image 必须复用 described_images[] 中的图片序号，不得新增超出上限的图片引用。
 """.trim()
                 } else {
                     """
 - Provide textual descriptions for at most one-third of the images (floor; may be 0). For example, ${totalImagesToSend} images -> at most ${maxDescImages}. Do not narrate the rest image-by-image; integrate them into the summary.
-- Use described_images[] ONLY to list the individually described images, length <= the cap; each item: {file:"filename", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason for the single image"}.
-- key_actions[].ref_image MUST reuse filenames in described_images[] and MUST NOT exceed the cap.
+- Use described_images[] ONLY to list the individually described images, length <= the cap; each item: {file:"image index string", ref_time:"HH:mm:ss", app:"App", summary:"(Markdown) key info and selection reason for the single image"}.
+- key_actions[].ref_image MUST reuse image indexes in described_images[] and MUST NOT exceed the cap.
 """.trim()
                 }
             }
             val dynamicImageRule = when (effectiveLangForRule) {
                 "zh" -> """
- - 本次共 ${totalImagesToSend} 张图片。必须输出 image_tags[]，长度必须等于 ${totalImagesToSend}，且 file 必须与输入文件名完全一致（只写文件名，不写路径）。tags 必须为中文本地化标签；如涉及成人/裸露/性暗示等，请额外添加英文统一标签 "nsfw"（必须小写）。除 "nsfw" 外不要输出英文标签。
- - 必须输出 image_descriptions[] 覆盖所有图片：每项 {from_file:"文件名", to_file:"文件名", description:"至少6句自然语言（尽可能 8-12 句）"}；允许将连续且内容高度一致的图片合并为一段（例如连续聊天截图），用 from_file/to_file 表示范围；确保所有文件名被覆盖且不重复。
+ - 本次共 ${totalImagesToSend} 张图片。请按输入顺序将图片编号为 1..${totalImagesToSend}。必须输出 image_tags[]，长度必须等于 ${totalImagesToSend}，且 file 必须填写"图片序号字符串"（例如 "1"），不要填写文件名或路径。tags 必须为中文本地化标签；如涉及成人/裸露/性暗示等，请额外添加英文统一标签 "nsfw"（必须小写）。除 "nsfw" 外不要输出英文标签。
+ - 必须输出 image_descriptions[] 覆盖所有图片：每项 {from_file:"图片序号字符串", to_file:"图片序号字符串", description:"至少6句自然语言（尽可能 8-12 句）"}；允许将连续且内容高度一致的图片合并为一段（例如连续聊天截图），用 from_file/to_file 表示范围；确保所有图片序号被覆盖且不重复。
  - 为了便于后续检索/语义搜索：description 必须尽可能详尽、多角度描述画面（场景/界面布局/关键元素/可能的操作与意图/状态变化等），并覆盖尽可能多的可检索关键词/实体（应用/页面/功能/人物/地点/商品/流程等）。不要逐字抄写可见文字，也不要输出“可见文字：...”这类字段。每条 description 末尾必须追加 1 行：`关键词：...`（尽可能多、尽可能具体，可包含同义词/拆词/中英缩写；关键词建议至少 20 个，用 `、` 分隔）。
- - key_actions[].ref_image 必须引用本次输入的文件名之一（只能是文件名）。
+ - key_actions[].ref_image 必须引用本次输入的图片序号之一（字符串）。
  """.trim()
                 "ja" -> """
- - 今回は画像が ${totalImagesToSend} 枚です。image_tags[] を必ず出力し、要素数は ${totalImagesToSend} と同じにしてください。file は入力にあるファイル名と完全一致（パス禁止）。tags は日本語のローカライズタグを使用し、成人/露出/性的示唆などがある場合は英語の統一タグ "nsfw"(小文字) を追加してください。"nsfw" 以外は英語タグを出力しないでください。
- - image_descriptions[] で全画像をカバーしてください。各要素: {from_file:"ファイル名", to_file:"ファイル名", description:"自然言語で6文以上（可能なら 8-12 文）"}。内容がほぼ同じ連続画像（例: チャットの連続スクショ）は 1 つにまとめ、from_file/to_file で範囲を表現してください。全ファイル名が重複なく必ず含まれるようにしてください。
+ - 今回は画像が ${totalImagesToSend} 枚です。入力順に 1..${totalImagesToSend} で番号付けしてください。image_tags[] を必ず出力し、要素数は ${totalImagesToSend} と同じにしてください。file にはファイル名ではなく「画像番号の文字列」（例: "1"）を入れてください。tags は日本語のローカライズタグを使用し、成人/露出/性的示唆などがある場合は英語の統一タグ "nsfw"(小文字) を追加してください。"nsfw" 以外は英語タグを出力しないでください。
+ - image_descriptions[] で全画像をカバーしてください。各要素: {from_file:"画像番号文字列", to_file:"画像番号文字列", description:"自然言語で6文以上（可能なら 8-12 文）"}。内容がほぼ同じ連続画像（例: チャットの連続スクショ）は 1 つにまとめ、from_file/to_file で範囲を表現してください。全画像番号が重複なく必ず含まれるようにしてください。
  - 検索しやすくするため、description はできるだけ詳細に多角度で記述し（場面/レイアウト/主要要素/想定される操作や意図/状態変化など）、具体的な固有名詞/キーワード（アプリ/画面/機能/人物/場所/商品/ワークフロー等）をできるだけ多く含めてください。画面上の文字の書き起こしは不要で、`表示文字：...` のような欄も出力しないでください。各 description の末尾に必ず 1 行 `キーワード：...` を追加してください（できるだけ多く、同義語/分割語/略語も可；目安として 20 個以上）。
- - key_actions[].ref_image は今回入力したファイル名のいずれかを参照してください（ファイル名のみ）。
+ - key_actions[].ref_image は今回入力した画像番号のいずれかを参照してください（文字列）。
  """.trim()
                 "ko" -> """
- - 이번 요청에는 이미지가 ${totalImagesToSend}장 있습니다. image_tags[]를 반드시 출력하고 길이는 ${totalImagesToSend}와 같아야 합니다. file은 입력 파일명과 완전히 일치해야 하며(경로 금지), tags는 한국어 로컬라이즈 태그를 사용하세요. 성인/노출/성적 암시 등이 있으면 영어 통일 태그 "nsfw"(소문자)를 추가하세요. "nsfw" 외에는 영어 태그를 출력하지 마세요.
- - image_descriptions[]로 모든 이미지를 커버하세요. 각 항목: {from_file:"파일명", to_file:"파일명", description:"자연어 6문장 이상(가능하면 8-12문장)"}. 내용이 거의 동일한 연속 이미지(예: 연속 채팅 캡처)는 1개로 묶고 from_file/to_file로 범위를 표시하세요. 모든 파일명이 중복 없이 반드시 포함되도록 하세요.
+ - 이번 요청에는 이미지가 ${totalImagesToSend}장 있습니다. 입력 순서대로 1..${totalImagesToSend} 번호를 사용하세요. image_tags[]를 반드시 출력하고 길이는 ${totalImagesToSend}와 같아야 합니다. file에는 파일명이 아니라 "이미지 번호 문자열"(예: "1")을 넣으세요. tags는 한국어 로컬라이즈 태그를 사용하세요. 성인/노출/성적 암시 등이 있으면 영어 통일 태그 "nsfw"(소문자)를 추가하세요. "nsfw" 외에는 영어 태그를 출력하지 마세요.
+ - image_descriptions[]로 모든 이미지를 커버하세요. 각 항목: {from_file:"이미지 번호 문자열", to_file:"이미지 번호 문자열", description:"자연어 6문장 이상(가능하면 8-12문장)"}. 내용이 거의 동일한 연속 이미지(예: 연속 채팅 캡처)는 1개로 묶고 from_file/to_file로 범위를 표시하세요. 모든 이미지 번호가 중복 없이 반드시 포함되도록 하세요.
  - 검색/시맨틱 검색을 위해 description을 가능한 한 상세하고 다각도로 작성하세요(상황/레이아웃/핵심 요소/가능한 행동·의도/상태 변화 등). 구체적인 키워드/개체(앱/화면/기능/인물/장소/상품/워크플로 등)를 최대한 많이 포함하세요. 화면 글자 전사는 필요 없으며 `보이는 글자：...` 같은 항목도 출력하지 마세요. 각 description 끝에 반드시 1줄 `키워드：...`를 추가하세요(가능한 한 많이, 동의어/분해어/약어 포함 가능; 최소 20개 권장).
- - key_actions[].ref_image는 이번 입력 파일명 중 하나를 참조해야 합니다(파일명만).
+ - key_actions[].ref_image는 이번 입력 이미지 번호 중 하나를 참조해야 합니다(문자열).
  """.trim()
                 else -> """
- - This request includes ${totalImagesToSend} images. You MUST output image_tags[] with exactly ${totalImagesToSend} items. Each item's file must exactly match the input filename (filename only, no path). tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
- - You MUST output image_descriptions[] covering ALL images. Each item: {from_file:"filename", to_file:"filename", description:"at least 6 natural language sentences (aim for 8-12 if reasonable)"}. You may merge highly similar consecutive images (e.g., continuous chat screenshots) into one description group and use from_file/to_file to denote the range. Ensure every filename is covered exactly once (no missing, no duplicates).
+ - This request includes ${totalImagesToSend} images. Number them by input order as 1..${totalImagesToSend}. You MUST output image_tags[] with exactly ${totalImagesToSend} items, and each item's file MUST be an image index string (e.g., "1"), not a filename/path. tags must be localized to the prompt language; if the image contains adult/nudity/sexual content, add the unified English tag "nsfw" (lowercase). Do not output other English tags besides "nsfw" when the prompt language is not English.
+ - You MUST output image_descriptions[] covering ALL images. Each item: {from_file:"image index string", to_file:"image index string", description:"at least 6 natural language sentences (aim for 8-12 if reasonable)"}. You may merge highly similar consecutive images (e.g., continuous chat screenshots) into one description group and use from_file/to_file to denote the range. Ensure every image index is covered exactly once (no missing, no duplicates).
  - For retrieval/semantic search, each description must be detailed and multi-angle (scene/layout/key elements/likely action & intent/state changes) and include as many concrete searchable keywords/entities as possible (app/page/feature/people/places/product/workflow, etc.). Do NOT transcribe long on-screen text and do NOT output a separate "Visible text" field/section. Append exactly ONE final line to each description: `Keywords: ...` (many items; include synonyms/split-words/abbreviations when helpful; aim for 20+ keywords).
- - key_actions[].ref_image MUST reference one of the input filenames (filename only).
+ - key_actions[].ref_image MUST reference one of the input image indexes (string).
  """.trim()
             }
 
@@ -1505,28 +1507,107 @@ object SegmentSummaryManager {
                                                 payloadError = err.toString()
                                                 break
                                             }
-                                            val choices = obj.optJSONArray("choices") ?: continue
-                                            if (choices.length() == 0) continue
-                                            val c0 = choices.optJSONObject(0) ?: continue
-                                            val delta = c0.optJSONObject("delta") ?: continue
-                                            val piece = delta.optString("content")
-                                            if (piece.isNotBlank()) {
-                                                aggregated.append(piece)
+                                            val eventType = obj.optString("type")
+                                            if (eventType.isNotBlank()) {
+                                                when (eventType) {
+                                                    "response.output_text.delta" -> {
+                                                        val deltaText = obj.optString("delta")
+                                                        if (deltaText.isNotBlank()) {
+                                                            aggregated.append(deltaText)
+                                                        }
+                                                    }
+                                                    "response.output_text.done" -> {
+                                                        reconcileTerminalContent(
+                                                            aggregated,
+                                                            obj.optString("text"),
+                                                        )
+                                                    }
+                                                    "response.content_part.done" -> {
+                                                        val part = obj.optJSONObject("part")
+                                                        if (part != null) {
+                                                            val partType = part.optString("type")
+                                                            if (partType == "output_text" ||
+                                                                partType == "text"
+                                                            ) {
+                                                                reconcileTerminalContent(
+                                                                    aggregated,
+                                                                    extractTextFromContentNode(part),
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    "response.output_item.done" -> {
+                                                        val item = obj.optJSONObject("item")
+                                                        if (item != null && item.optString("type") == "message") {
+                                                            reconcileTerminalContent(
+                                                                aggregated,
+                                                                extractTextFromContentNode(item.opt("content")),
+                                                            )
+                                                        }
+                                                    }
+                                                    "response.completed" -> {
+                                                        val responseObj = obj.optJSONObject("response")
+                                                        if (responseObj != null) {
+                                                            reconcileTerminalContent(
+                                                                aggregated,
+                                                                extractTextFromResponsesOutput(
+                                                                    responseObj.optJSONArray("output"),
+                                                                ),
+                                                            )
+                                                        }
+                                                    }
+                                                    "response.reasoning_text.delta",
+                                                    "response.reasoning_summary_text.delta" -> {
+                                                        appendReasoningPiece(
+                                                            aggregatedReasoning,
+                                                            obj.optString("delta"),
+                                                        )
+                                                    }
+                                                    "response.reasoning_text.done",
+                                                    "response.reasoning_summary_text.done" -> {
+                                                        appendReasoningPiece(
+                                                            aggregatedReasoning,
+                                                            obj.optString("text"),
+                                                        )
+                                                    }
+                                                }
                                             }
-                                            // Some OpenAI-compatible relays/models stream "thinking" into
-                                            // `reasoning_content` (or `reasoning`) and leave `content` empty.
-                                            // Keep it as a fallback so the caller doesn't end up with empty output.
-                                            val reasoningPiece =
-                                                delta.optString("reasoning_content").ifBlank {
-                                                    delta.optString("reasoning")
+
+                                            val choices = obj.optJSONArray("choices")
+                                            if (choices != null && choices.length() > 0) {
+                                                val c0 = choices.optJSONObject(0)
+                                                if (c0 != null) {
+                                                    val delta = c0.optJSONObject("delta")
+                                                    if (delta != null) {
+                                                        val piece = extractTextFromContentNode(
+                                                            delta.opt("content"),
+                                                        )
+                                                        if (piece.isNotBlank()) {
+                                                            aggregated.append(piece)
+                                                        }
+
+                                                        val reasoningPiece = pickNonEmpty(
+                                                            delta.optString("reasoning_content"),
+                                                            delta.optString("reasoning"),
+                                                            extractTextFromContentNode(delta.opt("reasoning")),
+                                                            delta.optString("thinking"),
+                                                        )
+                                                        appendReasoningPiece(
+                                                            aggregatedReasoning,
+                                                            reasoningPiece,
+                                                        )
+                                                    }
+
+                                                    val doneMessage = c0.optJSONObject("message")
+                                                    if (doneMessage != null) {
+                                                        reconcileTerminalContent(
+                                                            aggregated,
+                                                            extractTextFromContentNode(
+                                                                doneMessage.opt("content"),
+                                                            ),
+                                                        )
+                                                    }
                                                 }
-                                            if (reasoningPiece.isNotBlank()) {
-                                                if (aggregatedReasoning.isNotEmpty() &&
-                                                    aggregatedReasoning[aggregatedReasoning.length - 1] != '\n' &&
-                                                    reasoningPiece.firstOrNull() != '\n') {
-                                                    aggregatedReasoning.append('\n')
-                                                }
-                                                aggregatedReasoning.append(reasoningPiece)
                                             }
                                         } catch (_: Exception) {
                                             // ignore malformed event chunk
@@ -1543,10 +1624,14 @@ object SegmentSummaryManager {
                                     try { OutputFileLogger.error(ctx, TAG, "AI 成功(200)但响应体为错误(OpenAI)：body=${truncateForLog(respText, 800)}") } catch (_: Exception) {}
                                     finished = true
                                 } else {
-                                    outputText = if (aggregated.isNotEmpty()) {
-                                        aggregated.toString()
-                                    } else {
-                                        aggregatedReasoning.toString()
+                                    outputText = aggregated.toString()
+                                    if (outputText.isBlank() && aggregatedReasoning.isNotBlank()) {
+                                        try {
+                                            FileLogger.w(
+                                                TAG,
+                                                "OpenAI 流式仅收到 reasoning，正文为空（已不再将 reasoning 作为正文回退）",
+                                            )
+                                        } catch (_: Exception) {}
                                     }
                                     finished = true
                                 }
@@ -1997,9 +2082,13 @@ object SegmentSummaryManager {
         //    => Flutter 侧可通过 splitMergedEventSummaryParts(summary) 展示原始事件列表
         val prevOriginalSummaries = extractOriginalSummaryPartsForMerge(prevRes.first, prevRes.second)
         val curOriginalSummaries = extractOriginalSummaryPartsForMerge(curOutputText, curStructured)
+        val mergedStructuredNormalizedByAiOrder = normalizeImageRefsToFilenames(
+            merged.third,
+            mergedAiSamples
+        )
         val mergedPatched = attachOriginalSummariesToMergedResult(
             mergedOutputText = merged.second,
-            mergedStructuredJson = merged.third,
+            mergedStructuredJson = mergedStructuredNormalizedByAiOrder,
             prevOriginals = prevOriginalSummaries,
             curOriginals = curOriginalSummaries
         )
@@ -2167,6 +2256,10 @@ object SegmentSummaryManager {
             curStructuredJson = curStructured,
             curSamples = curSamples
         ) ?: mergedStructuredForSave
+        val mergedStructuredFinal = normalizeImageRefsToFilenames(
+            mergedStructuredWithImages,
+            mergedAiSamples
+        ) ?: mergedStructuredWithImages
         // 覆写当前段的结果（保持上一个不变），并标记上一个段状态为 completed-merged 可选
         SegmentDatabaseHelper.saveResult(
             ctx,
@@ -2174,7 +2267,7 @@ object SegmentSummaryManager {
             provider = "gemini",
             model = merged.first,
             outputText = mergedOutputTextForSave,
-            structuredJson = mergedStructuredWithImages,
+            structuredJson = mergedStructuredFinal,
             categories = mergedCategoriesForSave
         )
         // 将合并后的图片标签/描述写入全局可复用表（按 file_path），避免合并事件在查看器/语义搜索中丢失图片元数据
@@ -2183,7 +2276,7 @@ object SegmentSummaryManager {
                 ctx,
                 segmentId = cur.id,
                 samples = mergedSamplesForUi,
-                structuredJson = mergedStructuredWithImages,
+                structuredJson = mergedStructuredFinal,
                 lang = null
             )
         } catch (_: Exception) {}
@@ -2223,6 +2316,276 @@ object SegmentSummaryManager {
         val sj = structuredJson?.trim()
         if (sj.isNullOrEmpty() || sj.equals("null", ignoreCase = true)) return null
         return try { JSONObject(sj) } catch (_: Exception) { null }
+    }
+
+    private data class ImageRefResolution(
+        val value: String?,
+        val numericLike: Boolean
+    )
+
+    private fun resolveImageRefValue(raw: Any?, indexToFile: List<String>): ImageRefResolution {
+        if (raw == null) return ImageRefResolution(value = null, numericLike = false)
+        if (raw is Number) {
+            val idx = raw.toInt()
+            return if (idx in 1..indexToFile.size) {
+                ImageRefResolution(value = indexToFile[idx - 1], numericLike = true)
+            } else {
+                ImageRefResolution(value = null, numericLike = true)
+            }
+        }
+
+        val text = raw.toString().trim()
+        if (text.isEmpty()) return ImageRefResolution(value = "", numericLike = false)
+        val m = Regex("^#?(\\d+)$").matchEntire(text)
+        if (m != null) {
+            val idx = m.groupValues.getOrNull(1)?.toIntOrNull()
+            return if (idx != null && idx in 1..indexToFile.size) {
+                ImageRefResolution(value = indexToFile[idx - 1], numericLike = true)
+            } else {
+                ImageRefResolution(value = null, numericLike = true)
+            }
+        }
+        return ImageRefResolution(value = text, numericLike = false)
+    }
+
+    private fun normalizeImageRefsToFilenames(
+        structuredJson: String?,
+        samples: List<SegmentDatabaseHelper.Sample>
+    ): String? {
+        val sj = structuredJson?.trim()
+        if (sj.isNullOrEmpty() || sj.equals("null", ignoreCase = true)) return structuredJson
+        if (samples.isEmpty()) return structuredJson
+
+        val root = try {
+            JSONObject(sj)
+        } catch (_: Exception) {
+            return structuredJson
+        }
+
+        val ordered = samples.sortedBy { it.captureTime }
+        val indexToFile = ArrayList<String>(ordered.size)
+        for (s in ordered) {
+            val name = try { File(s.filePath).name } catch (_: Exception) { "" }
+            if (name.isNotEmpty()) indexToFile.add(name)
+        }
+        if (indexToFile.isEmpty()) return structuredJson
+
+        var changed = false
+
+        fun logInvalid(field: String, raw: Any?) {
+            try {
+                FileLogger.w(
+                    TAG,
+                    "normalizeImageRefs: invalid image index field=$field raw=${raw?.toString() ?: "null"} max=${indexToFile.size}"
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        fun normalizeSingleRef(obj: JSONObject, key: String, fieldLabel: String): Boolean {
+            if (!obj.has(key)) return false
+            val raw = obj.opt(key)
+            val resolved = resolveImageRefValue(raw, indexToFile)
+            if (resolved.numericLike) {
+                val mapped = resolved.value
+                if (mapped.isNullOrBlank()) {
+                    obj.remove(key)
+                    logInvalid(fieldLabel, raw)
+                    return true
+                }
+                if (obj.optString(key, "") != mapped) {
+                    obj.put(key, mapped)
+                    return true
+                }
+                return false
+            }
+
+            val keep = resolved.value?.trim().orEmpty()
+            if (keep.isEmpty()) return false
+            if (obj.optString(key, "") != keep) {
+                obj.put(key, keep)
+                return true
+            }
+            return false
+        }
+
+        fun resolveBoundary(
+            obj: JSONObject,
+            primaryKey: String,
+            aliasKeys: List<String>,
+            fieldLabel: String
+        ): String? {
+            val keys = ArrayList<String>(1 + aliasKeys.size)
+            keys.add(primaryKey)
+            keys.addAll(aliasKeys)
+
+            var hasAny = false
+            var raw: Any? = null
+            for (k in keys) {
+                if (obj.has(k)) {
+                    hasAny = true
+                    raw = obj.opt(k)
+                    break
+                }
+            }
+            if (!hasAny) return null
+
+            val resolved = resolveImageRefValue(raw, indexToFile)
+            if (resolved.numericLike && resolved.value.isNullOrBlank()) {
+                logInvalid(fieldLabel, raw)
+                return ""
+            }
+            val out = resolved.value?.trim().orEmpty()
+            if (out.isEmpty()) return ""
+
+            if (obj.optString(primaryKey, "") != out) {
+                obj.put(primaryKey, out)
+                changed = true
+            }
+            for (k in aliasKeys) {
+                if (obj.has(k)) {
+                    obj.remove(k)
+                    changed = true
+                }
+            }
+            return out
+        }
+
+        run {
+            val arr = root.optJSONArray("image_tags")
+            if (arr != null) {
+                val out = JSONArray()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val hadFile = obj.has("file")
+                    if (normalizeSingleRef(obj, "file", "image_tags[$i].file")) changed = true
+                    if (hadFile && !obj.has("file")) {
+                        changed = true
+                        continue
+                    }
+                    out.put(obj)
+                }
+                if (out.length() != arr.length()) {
+                    root.put("image_tags", out)
+                    changed = true
+                }
+            }
+        }
+
+        run {
+            val arr = root.optJSONArray("image_descriptions")
+            if (arr != null) {
+                val out = JSONArray()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val hasBoundary = obj.has("from_file") || obj.has("from") || obj.has("start") ||
+                        obj.has("to_file") || obj.has("to") || obj.has("end")
+                    if (!hasBoundary) {
+                        out.put(obj)
+                        continue
+                    }
+
+                    val from = resolveBoundary(
+                        obj,
+                        primaryKey = "from_file",
+                        aliasKeys = listOf("from", "start"),
+                        fieldLabel = "image_descriptions[$i].from_file"
+                    )
+                    val to = resolveBoundary(
+                        obj,
+                        primaryKey = "to_file",
+                        aliasKeys = listOf("to", "end"),
+                        fieldLabel = "image_descriptions[$i].to_file"
+                    )
+
+                    val a = if (!from.isNullOrEmpty()) from else to
+                    val b = if (!to.isNullOrEmpty()) to else from
+                    if (a.isNullOrEmpty() || b.isNullOrEmpty()) {
+                        changed = true
+                        continue
+                    }
+
+                    if (obj.optString("from_file", "") != a) {
+                        obj.put("from_file", a)
+                        changed = true
+                    }
+                    if (obj.optString("to_file", "") != b) {
+                        obj.put("to_file", b)
+                        changed = true
+                    }
+                    out.put(obj)
+                }
+
+                if (out.length() != arr.length()) {
+                    root.put("image_descriptions", out)
+                    changed = true
+                }
+            }
+        }
+
+        run {
+            val arr = root.optJSONArray("described_images")
+            if (arr != null) {
+                val out = JSONArray()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val hadFile = obj.has("file")
+                    if (normalizeSingleRef(obj, "file", "described_images[$i].file")) changed = true
+                    if (hadFile && !obj.has("file")) {
+                        changed = true
+                        continue
+                    }
+                    out.put(obj)
+                }
+                if (out.length() != arr.length()) {
+                    root.put("described_images", out)
+                    changed = true
+                }
+            }
+        }
+
+        run {
+            val arr = root.optJSONArray("key_actions")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    if (normalizeSingleRef(obj, "ref_image", "key_actions[$i].ref_image")) changed = true
+                }
+            }
+        }
+
+        run {
+            val arr = root.optJSONArray("content_groups")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val reps = obj.optJSONArray("representative_images") ?: continue
+                    val out = JSONArray()
+                    for (j in 0 until reps.length()) {
+                        val raw = reps.opt(j)
+                        val resolved = resolveImageRefValue(raw, indexToFile)
+                        val mapped = resolved.value?.trim().orEmpty()
+                        if (resolved.numericLike && mapped.isEmpty()) {
+                            logInvalid("content_groups[$i].representative_images[$j]", raw)
+                            changed = true
+                            continue
+                        }
+                        if (mapped.isEmpty()) {
+                            changed = true
+                            continue
+                        }
+                        if (raw?.toString()?.trim() != mapped) {
+                            changed = true
+                        }
+                        out.put(mapped)
+                    }
+                    if (out.length() != reps.length()) changed = true
+                    obj.put("representative_images", out)
+                }
+            }
+        }
+
+        return if (changed) root.toString() else structuredJson
     }
 
     private fun readStringList(obj: JSONObject?, key: String): List<String> {
@@ -2914,8 +3277,7 @@ object SegmentSummaryManager {
         maxAttachedImages: Int? = null,
         forced: Boolean = false
     ): String {
-        val byApp = LinkedHashMap<String, MutableList<SegmentDatabaseHelper.Sample>>()
-        for (s in samples) byApp.getOrPut(s.appPackageName) { ArrayList() }.add(s)
+        val orderedForPrompt = samples.sortedBy { it.captureTime }
 
         // 依据应用语言注入"语言强制策略"并选择合并提示词（支持 _zh/_en 与旧键回退）
         val langOpt = try { ctx.getSharedPreferences("FlutterSharedPreferences", android.content.Context.MODE_PRIVATE).getString("flutter.locale_option", "system") } catch (_: Exception) { "system" }
@@ -2949,8 +3311,8 @@ object SegmentSummaryManager {
             "- 为尽可能保留信息，可在 Markdown 中使用无序/有序列表、加粗/斜体与内联代码高亮（但不要使用代码块）；\n" +
             "以 JSON 输出以下字段（与普通事件保持一致，不要省略字段名）：apps[], categories[], timeline[], key_actions[], content_groups[], overall_summary；\n" +
             "字段约定：\n" +
-            "key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"应用名\",\"ref_image\":\"文件名\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"简要说明（避免敏感信息）\",\"confidence\":0.0}],\n" +
-            "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"文件名1\",\"文件名2\"],\"summary\":\"本组内容的Markdown要点\"}],\n" +
+            "key_actions[]: [{\"type\":\"pay|login|register|permission_grant|oauth_authorize|purchase|bind_account|unbind_account|captcha|biometric|other\",\"app\":\"应用名\",\"ref_image\":\"图片序号字符串\",\"ref_time\":\"HH:mm:ss\",\"detail\":\"简要说明（避免敏感信息）\",\"confidence\":0.0}],\n" +
+            "content_groups[]: [{\"group_type\":\"article|video|page|playlist|feed\",\"title\":\"可为空\",\"app\":\"应用名\",\"start_time\":\"HH:mm:ss\",\"end_time\":\"HH:mm:ss\",\"image_count\":1,\"representative_images\":[\"图片序号字符串1\",\"图片序号字符串2\"],\"summary\":\"本组内容的Markdown要点\"}],\n" +
             "timeline[]: [{\"time\":\"HH:mm:ss\",\"app\":\"应用名\",\"action\":\"浏览|观看|聊天|购物|搜索|编辑|游戏|设置|下载|分享|其他\",\"summary\":\"一句话行为（可用简短Markdown强调）\"}],\n" +
             "overall_summary: \"开头为无标题的一段总结，随后使用Markdown小节与要点，保留多事件合并后的关键信息\"；\n" +
             "仅输出一个 JSON 对象，不要附加解释或 JSON 外的 Markdown；所有展示性内容（含后续小节）请写入 overall_summary 字段的 Markdown"
@@ -3006,9 +3368,13 @@ object SegmentSummaryManager {
         val sb = StringBuilder()
         val titleLabel = getStringByLang(ctx, effectiveLang, R.string.title_merged_event_summary_zh, R.string.title_merged_event_summary_en, R.string.title_merged_event_summary_ja, R.string.title_merged_event_summary_ko)
         val timeRangeLabel = getStringByLang(ctx, effectiveLang, R.string.label_time_range_zh, R.string.label_time_range_en, R.string.label_time_range_ja, R.string.label_time_range_ko)
-        val appLabel = getStringByLang(ctx, effectiveLang, R.string.label_app_zh, R.string.label_app_en, R.string.label_app_ja, R.string.label_app_ko)
         val shotLabel = getStringByLang(ctx, effectiveLang, R.string.label_screenshot_at_zh, R.string.label_screenshot_at_en, R.string.label_screenshot_at_ja, R.string.label_screenshot_at_ko)
-        val fileLabel = getStringByLang(ctx, effectiveLang, R.string.label_file_zh, R.string.label_file_en, R.string.label_file_ja, R.string.label_file_ko)
+        val imageIndexLabel = when (effectiveLang) {
+            "zh" -> "图片索引（仅使用序号引用图片）"
+            "ja" -> "画像インデックス（画像参照は番号のみ）"
+            "ko" -> "이미지 인덱스(번호로만 참조)"
+            else -> "Image index list (reference by number only)"
+        }
 
         sb.append(titleLabel).append('\n')
             .append(timeRangeLabel).append(fmt(a.startTime)).append(" - ").append(fmt(b.endTime)).append('\n')
@@ -3032,13 +3398,15 @@ object SegmentSummaryManager {
                 sb.append(forcedNote).append('\n').append('\n')
             }
         }
-        for ((pkg, list) in byApp) {
-            list.sortBy { it.captureTime }
-            val name = list.firstOrNull()?.appName ?: pkg
-            sb.append(appLabel).append(name).append(" (").append(pkg).append(")\n")
-            for (s in list) {
-                sb.append(shotLabel).append(fmt(s.captureTime)).append(fileLabel).append(File(s.filePath).name).append('\n')
-            }
+        sb.append(imageIndexLabel).append('\n')
+        for ((idx, s) in orderedForPrompt.withIndex()) {
+            val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
+            sb.append(shotLabel)
+                .append("[#").append(idx + 1).append("] ")
+                .append(fmt(s.captureTime))
+                .append(" | ")
+                .append(appDisplay)
+                .append('\n')
         }
         if (textOnlyDescriptions.isNotEmpty()) {
             val label = when (effectiveLang) {
@@ -3047,7 +3415,7 @@ object SegmentSummaryManager {
             }
             sb.append('\n').append(label).append('\n')
             for (e in textOnlyDescriptions) {
-                sb.append("- ").append(e.from).append(" - ").append(e.to).append(": ").append(e.description).append('\n')
+                sb.append("- ").append(e.description).append('\n')
             }
         }
         return sb.toString()
@@ -3239,6 +3607,86 @@ object SegmentSummaryManager {
             BitmapFactory.decodeFile(filePath, opts)
             opts.outWidth <= 0 || opts.outHeight <= 0
         } catch (_: Exception) { true }
+    }
+
+    private fun appendReasoningPiece(buffer: StringBuilder, piece: String?) {
+        val raw = piece ?: ""
+        if (raw.trim().isEmpty()) return
+        if (buffer.isNotEmpty() &&
+            buffer[buffer.length - 1] != '\n' &&
+            raw.firstOrNull() != '\n'
+        ) {
+            buffer.append('\n')
+        }
+        buffer.append(raw)
+    }
+
+    private fun extractTextFromContentNode(node: Any?): String {
+        return when (node) {
+            null -> ""
+            is String -> node
+            is JSONObject -> {
+                val direct = node.optString("text")
+                if (direct.isNotBlank()) {
+                    direct
+                } else {
+                    pickNonEmpty(
+                        extractTextFromContentNode(node.opt("content")),
+                        extractTextFromContentNode(node.opt("parts")),
+                    )
+                }
+            }
+            is JSONArray -> {
+                val out = StringBuilder()
+                for (i in 0 until node.length()) {
+                    val t = extractTextFromContentNode(node.opt(i))
+                    if (t.isNotEmpty()) out.append(t)
+                }
+                out.toString()
+            }
+            else -> ""
+        }
+    }
+
+    private fun extractTextFromResponsesOutput(output: JSONArray?): String {
+        if (output == null || output.length() == 0) return ""
+        val out = StringBuilder()
+        for (i in 0 until output.length()) {
+            val item = output.optJSONObject(i) ?: continue
+            when (item.optString("type")) {
+                "message" -> {
+                    val text = extractTextFromContentNode(item.opt("content"))
+                    if (text.isNotEmpty()) out.append(text)
+                }
+                "output_text", "text" -> {
+                    val text = item.optString("text")
+                    if (text.isNotEmpty()) out.append(text)
+                }
+            }
+        }
+        return out.toString()
+    }
+
+    private fun reconcileTerminalContent(buffer: StringBuilder, fullCandidate: String?) {
+        val full = fullCandidate ?: ""
+        if (full.trim().isEmpty()) return
+        val current = buffer.toString()
+        if (current.isEmpty()) {
+            buffer.append(full)
+            return
+        }
+        if (full.startsWith(current)) {
+            buffer.setLength(0)
+            buffer.append(full)
+            return
+        }
+        if (current.startsWith(full)) {
+            return
+        }
+        if (full.length > current.length) {
+            buffer.setLength(0)
+            buffer.append(full)
+        }
     }
 
     private fun extractJsonBlocks(text: String): Pair<String?, String?> {
