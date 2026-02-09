@@ -41,6 +41,18 @@ class ChatContextSnapshot {
   final int fullMessageCount;
 }
 
+class FullMessagesPage {
+  const FullMessagesPage({
+    required this.messages,
+    required this.nextBeforeId,
+    required this.hasMore,
+  });
+
+  final List<AIMessage> messages;
+  final int? nextBeforeId;
+  final bool hasMore;
+}
+
 /// Aggregate prompt-token stats across all conversations.
 ///
 /// Note: this is based on the last recorded prompt snapshot per conversation
@@ -56,6 +68,128 @@ class GlobalPromptTokenStats {
   final Map<String, int> parts;
 }
 
+class ChatContextEvent {
+  const ChatContextEvent({
+    required this.id,
+    required this.conversationId,
+    required this.type,
+    required this.createdAtMs,
+    required this.payload,
+  });
+
+  final int id;
+  final String conversationId;
+  final String type;
+  final int createdAtMs;
+  final Map<String, dynamic> payload;
+
+  String get stage => (payload['stage'] ?? '').toString().trim();
+  String get kind => (payload['kind'] ?? '').toString().trim();
+  int get beforeTokens => _toInt(payload['before_tokens']);
+  int get afterTokens => _toInt(payload['after_tokens']);
+  int get droppedTokens => _toInt(payload['dropped_tokens']);
+  int get droppedMessages => _toInt(payload['dropped_messages']);
+  int get droppedChunks => _toInt(payload['dropped_chunks']);
+  bool get truncatedOldest => _toBool(payload['truncated_oldest']);
+  String get reason => (payload['reason'] ?? '').toString().trim();
+  String get model => (payload['model'] ?? '').toString().trim();
+
+  static int _toInt(Object? v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static bool _toBool(Object? v) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    final String s = (v ?? '').toString().trim().toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes' || s == 'y';
+  }
+}
+
+class PromptUsageEvent {
+  const PromptUsageEvent({
+    required this.id,
+    required this.conversationId,
+    required this.model,
+    required this.promptEstBefore,
+    required this.promptEstSent,
+    required this.usagePromptTokens,
+    required this.usageCompletionTokens,
+    required this.usageTotalTokens,
+    required this.usageSource,
+    required this.isToolLoop,
+    required this.includeHistory,
+    required this.toolsCount,
+    required this.strictFullAttempted,
+    required this.fallbackTriggered,
+    required this.breakdown,
+    required this.createdAtMs,
+  });
+
+  final int id;
+  final String conversationId;
+  final String model;
+  final int? promptEstBefore;
+  final int? promptEstSent;
+  final int? usagePromptTokens;
+  final int? usageCompletionTokens;
+  final int? usageTotalTokens;
+  final String usageSource;
+  final bool isToolLoop;
+  final bool includeHistory;
+  final int toolsCount;
+  final bool strictFullAttempted;
+  final bool fallbackTriggered;
+  final Map<String, dynamic> breakdown;
+  final int createdAtMs;
+
+  bool get hasUsage =>
+      usagePromptTokens != null ||
+      usageCompletionTokens != null ||
+      usageTotalTokens != null;
+
+  int get resolvedPromptTokens =>
+      usagePromptTokens ?? promptEstSent ?? promptEstBefore ?? 0;
+
+  int get resolvedCompletionTokens {
+    if (usageCompletionTokens != null) return usageCompletionTokens!;
+    final dynamic v = breakdown['completion_estimate'];
+    if (v is num) return v.toInt();
+    return int.tryParse((v ?? '').toString()) ?? 0;
+  }
+
+  int get resolvedTotalTokens {
+    if (usageTotalTokens != null) return usageTotalTokens!;
+    final dynamic v = breakdown['total_estimate'];
+    if (v is num) return v.toInt();
+    final int maybe = int.tryParse((v ?? '').toString()) ?? 0;
+    if (maybe > 0) return maybe;
+    return resolvedPromptTokens + resolvedCompletionTokens;
+  }
+}
+
+class PromptUsageTotals {
+  const PromptUsageTotals({
+    required this.eventsCount,
+    required this.usageBackedCount,
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+  });
+
+  final int eventsCount;
+  final int usageBackedCount;
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
+
+  double get usageCoverage =>
+      eventsCount <= 0 ? 0 : (usageBackedCount / eventsCount);
+}
+
 /// Conversation context system inspired by Codex:
 /// - Stores a rolling summary + compact tool-memory per conversation (cid)
 /// - Maintains an append-only transcript for safe compaction
@@ -63,6 +197,9 @@ class GlobalPromptTokenStats {
 class ChatContextService {
   ChatContextService._internal();
   static final ChatContextService instance = ChatContextService._internal();
+
+  static const int fullMessagesPageSize = 200;
+  static const int rawTranscriptPageSize = 200;
 
   static const int maxSummaryTokens = 1200;
   static const int autoCompactTriggerTokens = 9000;
@@ -117,6 +254,508 @@ class ChatContextService {
         'created_at': now,
       });
     } catch (_) {}
+  }
+
+  Future<void> appendRawTranscriptMessages({
+    required String cid,
+    required List<AIMessage> messages,
+  }) async {
+    final String resolvedCid = cid.trim();
+    if (resolvedCid.isEmpty || messages.isEmpty) return;
+    try {
+      final storage = await _db.database;
+      await storage.transaction((txn) async {
+        for (final AIMessage message in messages) {
+          final String role = message.role.trim();
+          if (role.isEmpty) continue;
+          final String content = message.content;
+          String? apiContentJson;
+          String? toolCallsJson;
+          if (message.apiContent != null) {
+            try {
+              apiContentJson = jsonEncode(message.apiContent);
+            } catch (_) {}
+          }
+          if (message.toolCalls != null && message.toolCalls!.isNotEmpty) {
+            try {
+              toolCallsJson = jsonEncode(message.toolCalls);
+            } catch (_) {}
+          }
+          final int createdAtMs = message.createdAt.millisecondsSinceEpoch;
+          await txn.insert('ai_messages_raw', <String, Object?>{
+            'conversation_id': resolvedCid,
+            'role': role,
+            'content': content,
+            'api_content_json': apiContentJson,
+            'tool_calls_json': toolCallsJson,
+            'tool_call_id': (message.toolCallId ?? '').trim().isEmpty
+                ? null
+                : message.toolCallId!.trim(),
+            'created_at': createdAtMs > 0
+                ? createdAtMs
+                : DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<List<AIMessage>> loadRawTranscriptForPrompt({
+    String? cid,
+    int maxTokens = 0,
+    int maxRows = 8000,
+  }) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+    final int hardLimit = maxRows.clamp(40, 20000);
+    try {
+      final storage = await _db.database;
+
+      int tokens = 0;
+      int totalRows = 0;
+      int? beforeId;
+      final List<AIMessage> desc = <AIMessage>[];
+
+      while (totalRows < hardLimit && (maxTokens <= 0 || tokens < maxTokens)) {
+        final int chunk = (hardLimit - totalRows)
+            .clamp(1, ChatContextService.rawTranscriptPageSize)
+            .toInt();
+        final String where = beforeId == null
+            ? 'conversation_id = ?'
+            : 'conversation_id = ? AND id < ?';
+        final List<Object?> args = beforeId == null
+            ? <Object?>[resolvedCid]
+            : <Object?>[resolvedCid, beforeId];
+        final List<Map<String, Object?>> rowsDesc = await storage.query(
+          'ai_messages_raw',
+          columns: const <String>[
+            'id',
+            'role',
+            'content',
+            'api_content_json',
+            'tool_calls_json',
+            'tool_call_id',
+            'created_at',
+          ],
+          where: where,
+          whereArgs: args,
+          orderBy: 'id DESC',
+          limit: chunk,
+        );
+        if (rowsDesc.isEmpty) break;
+
+        totalRows += rowsDesc.length;
+        beforeId = _toInt(rowsDesc.last['id']);
+
+        for (final Map<String, Object?> row in rowsDesc) {
+          final String role = (row['role'] as String?)?.trim() ?? '';
+          if (role.isEmpty) continue;
+          final String content = (row['content'] as String?) ?? '';
+
+          Object? apiContent;
+          final String apiRaw = (row['api_content_json'] as String?) ?? '';
+          if (apiRaw.trim().isNotEmpty) {
+            try {
+              apiContent = jsonDecode(apiRaw);
+            } catch (_) {
+              apiContent = null;
+            }
+          }
+
+          List<Map<String, dynamic>>? toolCalls;
+          final String toolCallsRaw = (row['tool_calls_json'] as String?) ?? '';
+          if (toolCallsRaw.trim().isNotEmpty) {
+            try {
+              final dynamic decoded = jsonDecode(toolCallsRaw);
+              if (decoded is List) {
+                toolCalls = decoded
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e))
+                    .toList(growable: false);
+              }
+            } catch (_) {
+              toolCalls = null;
+            }
+          }
+
+          final String? toolCallId =
+              (row['tool_call_id'] as String?)?.trim().isNotEmpty == true
+              ? (row['tool_call_id'] as String?)!.trim()
+              : null;
+          final int createdAt = _toInt(row['created_at']);
+          final AIMessage msg = AIMessage(
+            role: role,
+            content: content,
+            apiContent: apiContent,
+            toolCalls: toolCalls,
+            toolCallId: toolCallId,
+            createdAt: createdAt > 0
+                ? DateTime.fromMillisecondsSinceEpoch(createdAt)
+                : null,
+          );
+          desc.add(msg);
+          if (maxTokens > 0) {
+            tokens += PromptBudget.approxTokensForMessageJson(msg);
+          }
+        }
+
+        if (rowsDesc.length < chunk) break;
+      }
+
+      if (desc.isEmpty) return const <AIMessage>[];
+      final List<AIMessage> msgs = desc.reversed.toList(growable: false);
+      if (maxTokens <= 0) return msgs;
+      return PromptBudget.keepTailUnderTokenBudget(msgs, maxTokens: maxTokens);
+    } catch (_) {
+      return const <AIMessage>[];
+    }
+  }
+
+  /// Page the append-only transcript table (`ai_messages_full`) by row ID.
+  ///
+  /// - Returns messages in chronological order (oldest -> newest) within the page.
+  /// - Uses keyset pagination (`beforeId`) to fetch older rows without offset scans.
+  Future<FullMessagesPage> loadFullMessagesPage({
+    String? cid,
+    int? beforeId,
+    int limit = ChatContextService.fullMessagesPageSize,
+  }) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+    final int lim = limit.clamp(1, 1000);
+    final int? before = (beforeId ?? 0) > 0 ? beforeId : null;
+    try {
+      final storage = await _db.database;
+      final String where = before == null
+          ? 'conversation_id = ?'
+          : 'conversation_id = ? AND id < ?';
+      final List<Object?> args = before == null
+          ? <Object?>[resolvedCid]
+          : <Object?>[resolvedCid, before];
+      final List<Map<String, Object?>> rowsDesc = await storage.query(
+        'ai_messages_full',
+        columns: const <String>['id', 'role', 'content', 'created_at'],
+        where: where,
+        whereArgs: args,
+        orderBy: 'id DESC',
+        limit: lim + 1,
+      );
+      if (rowsDesc.isEmpty) {
+        return const FullMessagesPage(
+          messages: <AIMessage>[],
+          nextBeforeId: null,
+          hasMore: false,
+        );
+      }
+
+      final bool hasMore = rowsDesc.length > lim;
+      final List<Map<String, Object?>> kept = hasMore
+          ? rowsDesc.sublist(0, lim)
+          : rowsDesc;
+      final int? nextBeforeId = hasMore ? _toInt(kept.last['id']) : null;
+
+      final List<AIMessage> msgs = kept.reversed
+          .map((Map<String, Object?> row) {
+            final String role = (row['role'] as String?)?.trim() ?? '';
+            if (role != 'user' && role != 'assistant') return null;
+            final String content = (row['content'] as String?) ?? '';
+            if (content.trim().isEmpty) return null;
+            final int createdAt = _toInt(row['created_at']);
+            return AIMessage(
+              role: role,
+              content: content,
+              createdAt: createdAt > 0
+                  ? DateTime.fromMillisecondsSinceEpoch(createdAt)
+                  : null,
+            );
+          })
+          .whereType<AIMessage>()
+          .toList(growable: false);
+
+      return FullMessagesPage(
+        messages: msgs,
+        nextBeforeId: nextBeforeId,
+        hasMore: hasMore,
+      );
+    } catch (_) {
+      return const FullMessagesPage(
+        messages: <AIMessage>[],
+        nextBeforeId: null,
+        hasMore: false,
+      );
+    }
+  }
+
+  Future<void> recordPromptUsageEvent({
+    required String cid,
+    String? model,
+    int? promptEstBefore,
+    int? promptEstSent,
+    int? usagePromptTokens,
+    int? usageCompletionTokens,
+    int? usageTotalTokens,
+    required bool isToolLoop,
+    required bool includeHistory,
+    required int toolsCount,
+    required bool strictFullAttempted,
+    required bool fallbackTriggered,
+    String? breakdownJson,
+    int? createdAtMs,
+  }) async {
+    final String resolvedCid = cid.trim();
+    if (resolvedCid.isEmpty) return;
+    try {
+      final storage = await _db.database;
+      final bool hasUsage =
+          usagePromptTokens != null ||
+          usageCompletionTokens != null ||
+          usageTotalTokens != null;
+      await storage.insert('ai_prompt_usage_events', <String, Object?>{
+        'conversation_id': resolvedCid,
+        'model': (model ?? '').trim().isEmpty ? null : model!.trim(),
+        'prompt_est_before': promptEstBefore,
+        'prompt_est_sent': promptEstSent,
+        'usage_prompt_tokens': usagePromptTokens,
+        'usage_completion_tokens': usageCompletionTokens,
+        'usage_total_tokens': usageTotalTokens,
+        'usage_source': hasUsage ? 'usage' : 'estimate',
+        'is_tool_loop': isToolLoop ? 1 : 0,
+        'include_history': includeHistory ? 1 : 0,
+        'tools_count': toolsCount < 0 ? 0 : toolsCount,
+        'strict_full_attempted': strictFullAttempted ? 1 : 0,
+        'fallback_triggered': fallbackTriggered ? 1 : 0,
+        'breakdown_json': (breakdownJson ?? '').trim().isEmpty
+            ? null
+            : breakdownJson!.trim(),
+        'created_at': createdAtMs ?? DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (_) {}
+  }
+
+  Future<List<PromptUsageEvent>> listPromptUsageEvents({
+    String? cid,
+    int limit = 100,
+  }) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+    final int lim = limit.clamp(1, 500);
+    try {
+      final storage = await _db.database;
+      final List<Map<String, Object?>> rows = await storage.query(
+        'ai_prompt_usage_events',
+        columns: <String>[
+          'id',
+          'conversation_id',
+          'model',
+          'prompt_est_before',
+          'prompt_est_sent',
+          'usage_prompt_tokens',
+          'usage_completion_tokens',
+          'usage_total_tokens',
+          'usage_source',
+          'is_tool_loop',
+          'include_history',
+          'tools_count',
+          'strict_full_attempted',
+          'fallback_triggered',
+          'breakdown_json',
+          'created_at',
+        ],
+        where: 'conversation_id = ?',
+        whereArgs: <Object?>[resolvedCid],
+        orderBy: 'id DESC',
+        limit: lim,
+      );
+      return rows
+          .map((Map<String, Object?> row) {
+            final String raw = (row['breakdown_json'] as String?)?.trim() ?? '';
+            Map<String, dynamic> breakdown = <String, dynamic>{};
+            if (raw.isNotEmpty) {
+              try {
+                final dynamic decoded = jsonDecode(raw);
+                if (decoded is Map) {
+                  breakdown = Map<String, dynamic>.from(decoded);
+                }
+              } catch (_) {}
+            }
+            return PromptUsageEvent(
+              id: _toInt(row['id']),
+              conversationId:
+                  (row['conversation_id'] as String?) ?? resolvedCid,
+              model: (row['model'] as String?)?.trim() ?? '',
+              promptEstBefore: row['prompt_est_before'] == null
+                  ? null
+                  : _toInt(row['prompt_est_before']),
+              promptEstSent: row['prompt_est_sent'] == null
+                  ? null
+                  : _toInt(row['prompt_est_sent']),
+              usagePromptTokens: row['usage_prompt_tokens'] == null
+                  ? null
+                  : _toInt(row['usage_prompt_tokens']),
+              usageCompletionTokens: row['usage_completion_tokens'] == null
+                  ? null
+                  : _toInt(row['usage_completion_tokens']),
+              usageTotalTokens: row['usage_total_tokens'] == null
+                  ? null
+                  : _toInt(row['usage_total_tokens']),
+              usageSource: (row['usage_source'] as String?)?.trim() ?? '',
+              isToolLoop: _toInt(row['is_tool_loop']) != 0,
+              includeHistory: _toInt(row['include_history']) != 0,
+              toolsCount: _toInt(row['tools_count']),
+              strictFullAttempted: _toInt(row['strict_full_attempted']) != 0,
+              fallbackTriggered: _toInt(row['fallback_triggered']) != 0,
+              breakdown: breakdown,
+              createdAtMs: _toInt(row['created_at']),
+            );
+          })
+          .toList(growable: false);
+    } catch (_) {
+      return const <PromptUsageEvent>[];
+    }
+  }
+
+  Future<PromptUsageTotals> getConversationPromptUsageTotals({
+    String? cid,
+  }) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+    try {
+      final storage = await _db.database;
+      final List<Map<String, Object?>> rows = await storage.query(
+        'ai_prompt_usage_events',
+        columns: <String>[
+          'prompt_est_before',
+          'prompt_est_sent',
+          'usage_prompt_tokens',
+          'usage_completion_tokens',
+          'usage_total_tokens',
+          'breakdown_json',
+        ],
+        where: 'conversation_id = ?',
+        whereArgs: <Object?>[resolvedCid],
+      );
+      if (rows.isEmpty) {
+        return const PromptUsageTotals(
+          eventsCount: 0,
+          usageBackedCount: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+        );
+      }
+      int usageBacked = 0;
+      int prompt = 0;
+      int completion = 0;
+      int total = 0;
+      for (final Map<String, Object?> row in rows) {
+        final int? usagePrompt = row['usage_prompt_tokens'] == null
+            ? null
+            : _toInt(row['usage_prompt_tokens']);
+        final int? usageCompletion = row['usage_completion_tokens'] == null
+            ? null
+            : _toInt(row['usage_completion_tokens']);
+        final int? usageTotal = row['usage_total_tokens'] == null
+            ? null
+            : _toInt(row['usage_total_tokens']);
+        if (usagePrompt != null ||
+            usageCompletion != null ||
+            usageTotal != null) {
+          usageBacked += 1;
+        }
+
+        final int promptResolved =
+            usagePrompt ??
+            (row['prompt_est_sent'] == null
+                ? (row['prompt_est_before'] == null
+                      ? 0
+                      : _toInt(row['prompt_est_before']))
+                : _toInt(row['prompt_est_sent']));
+
+        int completionResolved = usageCompletion ?? 0;
+        int totalResolved = usageTotal ?? 0;
+
+        if (usageCompletion == null || usageTotal == null) {
+          final String breakdownRaw =
+              (row['breakdown_json'] as String?)?.trim() ?? '';
+          if (breakdownRaw.isNotEmpty) {
+            try {
+              final dynamic decoded = jsonDecode(breakdownRaw);
+              if (decoded is Map) {
+                final dynamic c = decoded['completion_estimate'];
+                if (completionResolved <= 0 && c is num) {
+                  completionResolved = c.toInt();
+                }
+                final dynamic t = decoded['total_estimate'];
+                if (totalResolved <= 0 && t is num) {
+                  totalResolved = t.toInt();
+                }
+              }
+            } catch (_) {}
+          }
+        }
+        if (totalResolved <= 0) {
+          totalResolved = promptResolved + completionResolved;
+        }
+
+        prompt += promptResolved;
+        completion += completionResolved;
+        total += totalResolved;
+      }
+      return PromptUsageTotals(
+        eventsCount: rows.length,
+        usageBackedCount: usageBacked,
+        promptTokens: prompt,
+        completionTokens: completion,
+        totalTokens: total,
+      );
+    } catch (_) {
+      return const PromptUsageTotals(
+        eventsCount: 0,
+        usageBackedCount: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      );
+    }
+  }
+
+  Future<void> logPromptTrimEvent({
+    required String cid,
+    required String stage,
+    required String kind,
+    required int beforeTokens,
+    required int afterTokens,
+    int droppedMessages = 0,
+    int droppedChunks = 0,
+    bool truncatedOldest = false,
+    String reason = '',
+    String model = '',
+  }) async {
+    final int before = beforeTokens.clamp(0, 1 << 62).toInt();
+    final int after = afterTokens.clamp(0, 1 << 62).toInt();
+    final int dropped = (before - after).clamp(0, 1 << 62).toInt();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await logContextEvent(
+      cid: cid,
+      type: 'prompt_trim',
+      payload: <String, dynamic>{
+        'stage': stage.trim().isEmpty ? 'chat' : stage.trim(),
+        'kind': kind.trim().isEmpty ? 'trim' : kind.trim(),
+        'before_tokens': before,
+        'after_tokens': after,
+        'dropped_tokens': dropped,
+        'dropped_messages': droppedMessages.clamp(0, 1 << 30),
+        'dropped_chunks': droppedChunks.clamp(0, 1 << 30),
+        'truncated_oldest': truncatedOldest,
+        if (reason.trim().isNotEmpty) 'reason': reason.trim(),
+        if (model.trim().isNotEmpty) 'model': model.trim(),
+        'created_at_ms': now,
+      },
+    );
   }
 
   Future<int> getGlobalPromptTokensTotal() async {
@@ -251,6 +890,64 @@ class ChatContextService {
     );
   }
 
+  Future<List<ChatContextEvent>> listRecentContextEvents({
+    String? cid,
+    int limit = 50,
+    String? type,
+  }) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+    final int lim = (limit <= 0 ? 50 : limit).clamp(1, 200);
+    try {
+      final storage = await _db.database;
+      final String where = type == null || type.trim().isEmpty
+          ? 'conversation_id = ?'
+          : 'conversation_id = ? AND type = ?';
+      final List<Object?> args = type == null || type.trim().isEmpty
+          ? <Object?>[resolvedCid]
+          : <Object?>[resolvedCid, type.trim()];
+      final List<Map<String, Object?>> rows = await storage.query(
+        'ai_context_events',
+        columns: <String>[
+          'id',
+          'conversation_id',
+          'type',
+          'payload_json',
+          'created_at',
+        ],
+        where: where,
+        whereArgs: args,
+        orderBy: 'id DESC',
+        limit: lim,
+      );
+      return rows
+          .map((row) {
+            final String payloadRaw =
+                (row['payload_json'] as String?)?.trim() ?? '';
+            Map<String, dynamic> payload = <String, dynamic>{};
+            if (payloadRaw.isNotEmpty) {
+              try {
+                final dynamic decoded = jsonDecode(payloadRaw);
+                if (decoded is Map) {
+                  payload = Map<String, dynamic>.from(decoded);
+                }
+              } catch (_) {}
+            }
+            return ChatContextEvent(
+              id: _toInt(row['id']),
+              conversationId: (row['conversation_id'] as String?) ?? '',
+              type: (row['type'] as String?)?.trim() ?? 'event',
+              createdAtMs: _toInt(row['created_at']),
+              payload: payload,
+            );
+          })
+          .toList(growable: false);
+    } catch (_) {
+      return const <ChatContextEvent>[];
+    }
+  }
+
   /// Build a single system message that injects compacted conversation memory.
   /// Return empty string if there is nothing to inject.
   Future<String> buildSystemContextMessage({String? cid}) async {
@@ -310,43 +1007,116 @@ class ChatContextService {
   Future<List<AIMessage>> loadRecentMessagesForPrompt({
     String? cid,
     required int maxTokens,
-    int maxRows = 240,
+    int maxRows = 4000,
   }) async {
     final String resolvedCid = (cid == null || cid.trim().isEmpty)
         ? await _settings.getActiveConversationCid()
         : cid.trim();
     if (maxTokens <= 0) return const <AIMessage>[];
-    final int lim = maxRows.clamp(20, 1000);
+    final int hardLimit = maxRows.clamp(20, 20000);
     try {
       final storage = await _db.database;
-      final rowsDesc = await storage.query(
-        'ai_messages_full',
-        columns: <String>['role', 'content', 'created_at'],
-        where: 'conversation_id = ?',
-        whereArgs: <Object?>[resolvedCid],
-        orderBy: 'id DESC',
-        limit: lim,
-      );
-      final List<AIMessage> msgs = rowsDesc.reversed
-          .map((r) {
-            final String role = (r['role'] as String?) ?? 'user';
-            if (role != 'user' && role != 'assistant') return null;
-            final String content = (r['content'] as String?) ?? '';
-            if (content.trim().isEmpty) return null;
-            final int createdAt = _toInt(r['created_at']);
-            return AIMessage(
-              role: role,
-              content: content,
-              createdAt: createdAt > 0
-                  ? DateTime.fromMillisecondsSinceEpoch(createdAt)
-                  : null,
-            );
-          })
-          .whereType<AIMessage>()
-          .toList();
 
-      if (msgs.isEmpty) return const <AIMessage>[];
+      int tokens = 0;
+      int totalRows = 0;
+      int? beforeId;
+      final List<AIMessage> desc = <AIMessage>[];
+
+      while (totalRows < hardLimit && tokens < maxTokens) {
+        final int chunk = (hardLimit - totalRows)
+            .clamp(1, ChatContextService.fullMessagesPageSize)
+            .toInt();
+        final String where = beforeId == null
+            ? 'conversation_id = ?'
+            : 'conversation_id = ? AND id < ?';
+        final List<Object?> args = beforeId == null
+            ? <Object?>[resolvedCid]
+            : <Object?>[resolvedCid, beforeId];
+        final List<Map<String, Object?>> rowsDesc = await storage.query(
+          'ai_messages_full',
+          columns: const <String>['id', 'role', 'content', 'created_at'],
+          where: where,
+          whereArgs: args,
+          orderBy: 'id DESC',
+          limit: chunk,
+        );
+        if (rowsDesc.isEmpty) break;
+
+        totalRows += rowsDesc.length;
+        beforeId = _toInt(rowsDesc.last['id']);
+
+        for (final Map<String, Object?> row in rowsDesc) {
+          final String role = (row['role'] as String?)?.trim() ?? '';
+          if (role != 'user' && role != 'assistant') continue;
+          final String content = (row['content'] as String?) ?? '';
+          if (content.trim().isEmpty) continue;
+          final int createdAt = _toInt(row['created_at']);
+          final AIMessage msg = AIMessage(
+            role: role,
+            content: content,
+            createdAt: createdAt > 0
+                ? DateTime.fromMillisecondsSinceEpoch(createdAt)
+                : null,
+          );
+          desc.add(msg);
+          tokens += PromptBudget.approxTokensForMessageJson(msg);
+          if (tokens >= maxTokens) break;
+        }
+
+        if (rowsDesc.length < chunk) break;
+      }
+
+      if (desc.isEmpty) return const <AIMessage>[];
+      final List<AIMessage> msgs = desc.reversed.toList(growable: false);
       return PromptBudget.keepTailUnderTokenBudget(msgs, maxTokens: maxTokens);
+    } catch (_) {
+      return const <AIMessage>[];
+    }
+  }
+
+  /// Load restorable conversation messages for export/debug.
+  ///
+  /// - Prefer append-only transcript (`ai_messages_full`) in chronological order.
+  /// - Fall back to UI tail history for older installs where the full transcript
+  ///   may still be empty.
+  Future<List<AIMessage>> loadMessagesForExport({String? cid}) async {
+    final String resolvedCid = (cid == null || cid.trim().isEmpty)
+        ? await _settings.getActiveConversationCid()
+        : cid.trim();
+
+    try {
+      final List<_FullMsg> full = await _loadFullMessages(resolvedCid);
+      if (full.isNotEmpty) {
+        return full
+            .where((m) {
+              final String role = m.role.trim();
+              return (role == 'user' || role == 'assistant') &&
+                  m.content.trim().isNotEmpty;
+            })
+            .map(
+              (m) => AIMessage(
+                role: m.role,
+                content: m.content,
+                createdAt: m.createdAtMs > 0
+                    ? DateTime.fromMillisecondsSinceEpoch(m.createdAtMs)
+                    : null,
+              ),
+            )
+            .toList(growable: false);
+      }
+    } catch (_) {}
+
+    try {
+      final List<AIMessage> tail = await _settings.getChatHistoryByCid(
+        resolvedCid,
+      );
+      return tail
+          .where((m) {
+            final String role = m.role.trim();
+            return (role == 'user' || role == 'assistant') &&
+                m.content.trim().isNotEmpty;
+          })
+          .toList(growable: false);
     } catch (_) {
       return const <AIMessage>[];
     }
@@ -356,19 +1126,24 @@ class ChatContextService {
     required String cid,
     required String userMessage,
     required String assistantMessage,
+    int? userCreatedAtMs,
+    int? assistantCreatedAtMs,
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
+    final int userAt = (userCreatedAtMs ?? 0) > 0 ? userCreatedAtMs! : now;
+    final int assistantAt =
+        (assistantCreatedAtMs ?? 0) > 0 ? assistantCreatedAtMs! : now;
     await _appendFullMessageDedup(
       cid,
       role: 'user',
       content: userMessage,
-      createdAtMs: now,
+      createdAtMs: userAt,
     );
     await _appendFullMessageDedup(
       cid,
       role: 'assistant',
       content: assistantMessage,
-      createdAtMs: now,
+      createdAtMs: assistantAt,
     );
   }
 
@@ -517,6 +1292,20 @@ class ChatContextService {
         try {
           await txn.delete(
             'ai_context_events',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[resolvedCid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_messages_raw',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[resolvedCid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_prompt_usage_events',
             where: 'conversation_id = ?',
             whereArgs: <Object?>[resolvedCid],
           );

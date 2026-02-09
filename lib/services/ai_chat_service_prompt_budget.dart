@@ -108,7 +108,11 @@ extension AIChatServicePromptBudgetExt on AIChatService {
   List<AIMessage> _replaceImageMessagesWithPlaceholder(
     List<AIMessage> messages, {
     required bool keepMostRecent,
+    String cid = '',
+    String stage = 'tool_loop_image',
+    String model = '',
   }) {
+    final int beforeTokens = _approxTokensForToolLoopMessages(messages);
     int lastIdx = -1;
     for (int i = messages.length - 1; i >= 0; i--) {
       final AIMessage m = messages[i];
@@ -120,17 +124,36 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     if (lastIdx < 0) return messages;
 
     bool changed = false;
+    int replaced = 0;
     final List<AIMessage> out = List<AIMessage>.from(messages);
     for (int i = 0; i < out.length; i++) {
       if (keepMostRecent && i == lastIdx) continue;
       final AIMessage m = out[i];
       if (m.role != 'user' || !_apiContentHasImageParts(m.apiContent)) continue;
       changed = true;
+      replaced += 1;
       out[i] = AIMessage(
         role: 'user',
         content: _imageMessagePlaceholderText(m),
         createdAt: m.createdAt,
       );
+    }
+    if (changed && cid.trim().isNotEmpty) {
+      final int afterTokens = _approxTokensForToolLoopMessages(out);
+      if (afterTokens < beforeTokens) {
+        unawaited(
+          _chatContext.logPromptTrimEvent(
+            cid: cid,
+            stage: stage,
+            kind: 'image_placeholder',
+            beforeTokens: beforeTokens,
+            afterTokens: afterTokens,
+            droppedMessages: replaced,
+            reason: keepMostRecent ? 'keep_latest_image' : 'replace_all_images',
+            model: model,
+          ),
+        );
+      }
     }
     return changed ? out : messages;
   }
@@ -139,6 +162,7 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     String content, {
     required int maxToolMessageTokens,
   }) {
+    if (maxToolMessageTokens <= 0) return content;
     if (content.trim().isEmpty) return content;
     final int maxBytes =
         maxToolMessageTokens * PromptBudget.approxBytesPerToken;
@@ -202,8 +226,14 @@ extension AIChatServicePromptBudgetExt on AIChatService {
   List<AIMessage> _compactToolMessagesForPrompt(
     List<AIMessage> toolMsgs, {
     required int maxToolMessageTokens,
+    String cid = '',
+    String stage = 'tool_result_compact',
+    String model = '',
   }) {
+    if (maxToolMessageTokens <= 0) return toolMsgs;
+    final int beforeTokens = _approxTokensForToolLoopMessages(toolMsgs);
     bool changed = false;
+    int compactedMessages = 0;
     final List<AIMessage> out = <AIMessage>[];
     for (final m in toolMsgs) {
       if (m.role == 'tool') {
@@ -211,7 +241,10 @@ extension AIChatServicePromptBudgetExt on AIChatService {
           m.content,
           maxToolMessageTokens: maxToolMessageTokens,
         );
-        if (compacted != m.content) changed = true;
+        if (compacted != m.content) {
+          changed = true;
+          compactedMessages += 1;
+        }
         out.add(
           AIMessage(
             role: 'tool',
@@ -222,6 +255,23 @@ extension AIChatServicePromptBudgetExt on AIChatService {
         );
       } else {
         out.add(m);
+      }
+    }
+    if (changed && cid.trim().isNotEmpty) {
+      final int afterTokens = _approxTokensForToolLoopMessages(out);
+      if (afterTokens < beforeTokens) {
+        unawaited(
+          _chatContext.logPromptTrimEvent(
+            cid: cid,
+            stage: stage,
+            kind: 'tool_result_compact',
+            beforeTokens: beforeTokens,
+            afterTokens: afterTokens,
+            droppedMessages: compactedMessages,
+            reason: 'max_tool_message_tokens:$maxToolMessageTokens',
+            model: model,
+          ),
+        );
       }
     }
     return changed ? out : toolMsgs;
@@ -263,6 +313,9 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     required AIMessage pinnedUser,
     required int maxPromptTokens,
     required void Function(AIStreamEvent event)? emitEvent,
+    String cid = '',
+    String stage = 'tool_loop_budget',
+    String model = '',
   }) {
     int totalTokens = _approxTokensForToolLoopMessages(messages);
     if (totalTokens <= maxPromptTokens) return messages;
@@ -270,6 +323,7 @@ extension AIChatServicePromptBudgetExt on AIChatService {
     final int before = totalTokens;
     int droppedHistory = 0;
     int droppedChunks = 0;
+    bool truncatedOldest = false;
 
     List<AIMessage> working = List<AIMessage>.from(messages);
 
@@ -330,10 +384,27 @@ extension AIChatServicePromptBudgetExt on AIChatService {
           toolCallId: m.toolCallId,
           apiContent: m.apiContent,
         );
+        truncatedOldest = true;
       }
     }
 
     final int after = _approxTokensForToolLoopMessages(working);
+    if (cid.trim().isNotEmpty && after < before) {
+      unawaited(
+        _chatContext.logPromptTrimEvent(
+          cid: cid,
+          stage: stage,
+          kind: 'tool_loop_budget',
+          beforeTokens: before,
+          afterTokens: after,
+          droppedMessages: droppedHistory,
+          droppedChunks: droppedChunks,
+          truncatedOldest: truncatedOldest,
+          reason: 'max_prompt_tokens',
+          model: model,
+        ),
+      );
+    }
     _emitProgress(
       emitEvent,
       _loc(

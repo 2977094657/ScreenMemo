@@ -81,4 +81,13 @@ class AIChatService {
   static const int maxOcrToolTimeSpanMs =
       0; // 0 = unlimited (do NOT cap OCR tools)
   static const int maxSemanticToolTimeSpanMs = 365 * 24 * 60 * 60 * 1000;
+
+  static bool includeHistoryEffective({
+    required String context,
+    required bool includeHistory,
+    required bool persistHistory,
+  }) {
+    if (includeHistory) return true;
+    return context == 'chat' && persistHistory;
+  }
 }

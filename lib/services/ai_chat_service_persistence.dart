@@ -56,12 +56,15 @@ extension AIChatServicePersistenceExt on AIChatService {
     required AIMessage assistant,
     required String modelUsed,
     required Map<String, Map<String, dynamic>> toolSignatureDigests,
+    List<AIMessage> rawTurnTranscript = const <AIMessage>[],
     bool persistHistory = true,
     bool persistHistoryTail = true,
     String? conversationTitle,
   }) async {
     if (!persistHistory) return;
 
+    List<AIMessage>? mergedTail;
+    bool didSaveTail = false;
     if (persistHistoryTail) {
       // Merge into the latest DB history to avoid duplicating the user message
       // and to preserve UI-persisted `uiThinkingJson` when the chat UI detaches.
@@ -78,11 +81,41 @@ extension AIChatServicePersistenceExt on AIChatService {
             assistantFinal: assistant,
           );
           await _settings.saveChatHistoryByCid(cid, merged);
-          _settings.notifyContextChanged('chat:history');
+          mergedTail = merged;
+          didSaveTail = true;
         }
       } catch (_) {}
     }
     await _updateConversationModel(cid, modelUsed);
+
+    final List<AIMessage> historyForContext = mergedTail ?? history;
+    final String userTrim = userMessage.trim();
+    int? userAtMs;
+    int? assistantAtMs;
+    if (userTrim.isNotEmpty && historyForContext.isNotEmpty) {
+      try {
+        int userIdx = -1;
+        for (int i = historyForContext.length - 1; i >= 0; i--) {
+          final AIMessage m = historyForContext[i];
+          if (m.role == 'user' && m.content.trim() == userTrim) {
+            userIdx = i;
+            break;
+          }
+        }
+        if (userIdx >= 0) {
+          userAtMs = historyForContext[userIdx].createdAt.millisecondsSinceEpoch;
+          for (int j = userIdx + 1; j < historyForContext.length; j++) {
+            final String r = historyForContext[j].role;
+            if (r == 'assistant') {
+              assistantAtMs =
+                  historyForContext[j].createdAt.millisecondsSinceEpoch;
+              break;
+            }
+            if (r == 'user') break;
+          }
+        }
+      } catch (_) {}
+    }
 
     // Best-effort: ingest user chat into local memory backend (async, non-blocking).
     try {
@@ -96,6 +129,8 @@ extension AIChatServicePersistenceExt on AIChatService {
           cid: cid,
           userMessage: userMessage,
           assistantMessage: assistant.content,
+          userCreatedAtMs: userAtMs,
+          assistantCreatedAtMs: assistantAtMs,
         );
         if (toolSignatureDigests.isNotEmpty) {
           await _chatContext.mergeToolDigests(
@@ -103,6 +138,15 @@ extension AIChatServicePersistenceExt on AIChatService {
             signatureDigests: toolSignatureDigests,
           );
         }
+        final List<AIMessage> rawToAppend = <AIMessage>[
+          AIMessage(role: 'user', content: userMessage),
+          ...rawTurnTranscript,
+          AIMessage(role: 'assistant', content: assistant.content),
+        ];
+        await _chatContext.appendRawTranscriptMessages(
+          cid: cid,
+          messages: rawToAppend,
+        );
         _chatContext.scheduleAutoCompact(
           cid: cid,
           reason: toolSignatureDigests.isNotEmpty ? 'tool_loop' : 'turn',
@@ -118,6 +162,11 @@ extension AIChatServicePersistenceExt on AIChatService {
 
     if (history.isEmpty) {
       await _renameConversation(cid, conversationTitle ?? userMessage);
+    }
+    if (didSaveTail) {
+      try {
+        _settings.notifyContextChanged('chat:history');
+      } catch (_) {}
     }
   }
 

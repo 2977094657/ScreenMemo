@@ -29,6 +29,9 @@ class AIGatewayResult {
     this.toolCalls = const <AIToolCall>[],
     this.reasoning,
     this.reasoningDuration,
+    this.usagePromptTokens,
+    this.usageCompletionTokens,
+    this.usageTotalTokens,
   });
 
   final String content;
@@ -36,6 +39,9 @@ class AIGatewayResult {
   final List<AIToolCall> toolCalls;
   final String? reasoning;
   final Duration? reasoningDuration;
+  final int? usagePromptTokens;
+  final int? usageCompletionTokens;
+  final int? usageTotalTokens;
 }
 
 /// OpenAI function-calling tool call (Chat Completions compatible)
@@ -117,6 +123,9 @@ class AIRequestGateway {
             reasoning: aggregate.reasoning,
             reasoningDuration: aggregate.reasoningDuration,
             modelUsed: endpoint.model,
+            usagePromptTokens: aggregate.usage?.promptTokens,
+            usageCompletionTokens: aggregate.usage?.completionTokens,
+            usageTotalTokens: aggregate.usage?.totalTokens,
           );
         } catch (e) {
           lastError = e is Exception ? e : Exception(e.toString());
@@ -149,6 +158,9 @@ class AIRequestGateway {
           reasoning: aggregate.reasoning,
           reasoningDuration: aggregate.reasoningDuration,
           modelUsed: endpoint.model,
+          usagePromptTokens: aggregate.usage?.promptTokens,
+          usageCompletionTokens: aggregate.usage?.completionTokens,
+          usageTotalTokens: aggregate.usage?.totalTokens,
         );
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
@@ -220,6 +232,9 @@ class AIRequestGateway {
                 reasoning: aggregate.reasoning,
                 reasoningDuration: aggregate.reasoningDuration,
                 modelUsed: endpoint.model,
+                usagePromptTokens: aggregate.usage?.promptTokens,
+                usageCompletionTokens: aggregate.usage?.completionTokens,
+                usageTotalTokens: aggregate.usage?.totalTokens,
               ),
             );
           }
@@ -272,6 +287,9 @@ class AIRequestGateway {
                   reasoning: aggregate.reasoning,
                   reasoningDuration: aggregate.reasoningDuration,
                   modelUsed: endpoint.model,
+                  usagePromptTokens: aggregate.usage?.promptTokens,
+                  usageCompletionTokens: aggregate.usage?.completionTokens,
+                  usageTotalTokens: aggregate.usage?.totalTokens,
                 ),
               );
             }
@@ -844,6 +862,7 @@ class AIRequestGateway {
         content: sanitized,
         reasoning: parsed.reasoning,
         reasoningDuration: null,
+        usage: parsed.usage,
       );
     }
 
@@ -866,6 +885,7 @@ class AIRequestGateway {
       toolCalls: parsed.toolCalls,
       reasoning: parsed.reasoning,
       reasoningDuration: null,
+      usage: parsed.usage,
     );
   }
 
@@ -906,6 +926,7 @@ class AIRequestGateway {
     final Set<String> responsesTerminalOutputTextSeen = <String>{};
     String responsesFinalOutputText = '';
     final RegExp responsesThinkTagRe = RegExp(r'</?think>');
+    _UsageSnapshot? usageSnapshot;
 
     String responsesKey(
       Map<String, dynamic> json, {
@@ -1151,6 +1172,7 @@ class AIRequestGateway {
 
           if (prepared.isGoogle) {
             final _GoogleStreamParts chunk = _extractGoogleStreamParts(json);
+            usageSnapshot = _extractUsageSnapshotFromAny(json) ?? usageSnapshot;
 
             // Visible content parts (thought=false). Still run through the <think> filter for
             // OpenAI-compatible relays that embed tags in plain text.
@@ -1210,6 +1232,15 @@ class AIRequestGateway {
           final dynamic type = json['type'];
           if (type is String) {
             emitUiLog('EVENT type=$type');
+            usageSnapshot = _extractUsageSnapshotFromAny(json) ?? usageSnapshot;
+            if (type == 'response.completed') {
+              final dynamic resp0 = json['response'];
+              if (resp0 is Map) {
+                usageSnapshot =
+                    _extractUsageSnapshotFromAny(Map<String, dynamic>.from(resp0)) ??
+                    usageSnapshot;
+              }
+            }
             if (type == 'response.completed') {
               emitUiLog(
                 'EVENT completed',
@@ -1529,6 +1560,7 @@ class AIRequestGateway {
           }
 
           final dynamic choices = json['choices'];
+          usageSnapshot = _extractUsageSnapshotFromAny(json) ?? usageSnapshot;
           if (choices is List && choices.isNotEmpty) {
             final dynamic first = choices.first;
             if (first is Map<String, dynamic>) {
@@ -1555,8 +1587,8 @@ class AIRequestGateway {
                     AIGatewayEvent(AIGatewayEventKind.reasoning, reasoningPart),
                   );
                 }
-                final dynamic part = delta['content'];
-                if (part is String && part.isNotEmpty) {
+                final String part = _extractOpenAIChatText(delta['content']);
+                if (part.isNotEmpty) {
                   final _ThinkStreamFilterResult r = thinkFilter.process(part);
                   if (r.visibleDelta.isNotEmpty) {
                     final String? sanitized = startFilter.process(
@@ -1621,6 +1653,7 @@ class AIRequestGateway {
         toolCalls: toolCalls,
         reasoning: reasoningText.isEmpty ? null : reasoningText,
         reasoningDuration: reasoningDuration,
+        usage: usageSnapshot,
       );
     } finally {
       client.close();
@@ -1629,6 +1662,7 @@ class AIRequestGateway {
 
   _OpenAIResponse _parseOpenAIResponse(String body) {
     final Map<String, dynamic> data = jsonDecode(body) as Map<String, dynamic>;
+    final _UsageSnapshot? usage = _extractUsageSnapshotFromAny(data);
     if (data['output'] is List) {
       final List<dynamic> outs = (data['output'] as List).cast<dynamic>();
       final StringBuffer cbuf = StringBuffer();
@@ -1687,6 +1721,7 @@ class AIRequestGateway {
         content: content,
         toolCalls: toolCalls,
         reasoning: reasoning.isEmpty ? null : reasoning,
+        usage: usage,
       );
     }
 
@@ -1700,7 +1735,7 @@ class AIRequestGateway {
     if (message == null) {
       throw Exception('Invalid response');
     }
-    final String content = (message['content'] as String?) ?? '';
+    final String content = _extractOpenAIChatText(message['content']);
     final List<AIToolCall> toolCalls = <AIToolCall>[];
     final dynamic toolCallsRaw = message['tool_calls'];
     if (toolCallsRaw is List) {
@@ -1749,11 +1784,13 @@ class AIRequestGateway {
       content: content,
       toolCalls: toolCalls,
       reasoning: reasoning?.isEmpty == true ? null : reasoning,
+      usage: usage,
     );
   }
 
   _GoogleResponse _parseGoogleResponse(String body) {
     final Map<String, dynamic> data = jsonDecode(body) as Map<String, dynamic>;
+    final _UsageSnapshot? usage = _extractUsageSnapshotFromAny(data);
     final List<dynamic>? candidates = data['candidates'] as List<dynamic>?;
     if (candidates == null || candidates.isEmpty) {
       throw Exception('Empty candidates');
@@ -1790,6 +1827,7 @@ class AIRequestGateway {
     return _GoogleResponse(
       content: content.toString(),
       reasoning: reasoning.isEmpty ? null : reasoning.toString(),
+      usage: usage,
     );
   }
 
@@ -1920,12 +1958,14 @@ class _GatewayAggregate {
     this.toolCalls = const <AIToolCall>[],
     this.reasoning,
     this.reasoningDuration,
+    this.usage,
   });
 
   final String content;
   final List<AIToolCall> toolCalls;
   final String? reasoning;
   final Duration? reasoningDuration;
+  final _UsageSnapshot? usage;
 }
 
 class _OpenAIResponse {
@@ -1933,18 +1973,36 @@ class _OpenAIResponse {
     required this.content,
     this.toolCalls = const <AIToolCall>[],
     this.reasoning,
+    this.usage,
   });
 
   final String content;
   final List<AIToolCall> toolCalls;
   final String? reasoning;
+  final _UsageSnapshot? usage;
 }
 
 class _GoogleResponse {
-  const _GoogleResponse({required this.content, this.reasoning});
+  const _GoogleResponse({required this.content, this.reasoning, this.usage});
 
   final String content;
   final String? reasoning;
+  final _UsageSnapshot? usage;
+}
+
+class _UsageSnapshot {
+  const _UsageSnapshot({
+    this.promptTokens,
+    this.completionTokens,
+    this.totalTokens,
+  });
+
+  final int? promptTokens;
+  final int? completionTokens;
+  final int? totalTokens;
+
+  bool get isEmpty =>
+      promptTokens == null && completionTokens == null && totalTokens == null;
 }
 
 class _PreparedRequest {
@@ -2012,6 +2070,101 @@ _GoogleStreamParts _extractGoogleStreamParts(Map<String, dynamic> json) {
     content: contentOut.toString(),
     thought: thoughtOut.toString(),
   );
+}
+
+_UsageSnapshot? _extractUsageSnapshotFromAny(Map<String, dynamic> json) {
+  final _UsageSnapshot? direct = _usageFromObject(json['usage']);
+  if (direct != null && !direct.isEmpty) return direct;
+
+  final _UsageSnapshot? usageMetadata = _usageFromObject(json['usageMetadata']);
+  if (usageMetadata != null && !usageMetadata.isEmpty) return usageMetadata;
+
+  final dynamic resp0 = json['response'];
+  if (resp0 is Map) {
+    final Map<String, dynamic> resp = Map<String, dynamic>.from(resp0);
+    final _UsageSnapshot? fromRespUsage = _usageFromObject(resp['usage']);
+    if (fromRespUsage != null && !fromRespUsage.isEmpty) return fromRespUsage;
+    final _UsageSnapshot? fromRespUsageMeta = _usageFromObject(
+      resp['usageMetadata'],
+    );
+    if (fromRespUsageMeta != null && !fromRespUsageMeta.isEmpty) {
+      return fromRespUsageMeta;
+    }
+  }
+
+  return null;
+}
+
+_UsageSnapshot? _usageFromObject(Object? raw) {
+  if (raw is! Map) return null;
+  final Map<String, dynamic> map = Map<String, dynamic>.from(raw);
+
+  int? intFromKey(String key) {
+    final dynamic v = map[key];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
+  int? firstOf(List<String> keys) {
+    for (final String key in keys) {
+      final int? v = intFromKey(key);
+      if (v != null) return v;
+    }
+    return null;
+  }
+
+  int? fromNested(String parentKey, List<String> keys) {
+    final dynamic parent0 = map[parentKey];
+    if (parent0 is! Map) return null;
+    final Map<String, dynamic> parent = Map<String, dynamic>.from(parent0);
+    for (final String key in keys) {
+      final dynamic v = parent[key];
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) {
+        final int? parsed = int.tryParse(v.trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  final int? prompt =
+      firstOf(<String>[
+        'prompt_tokens',
+        'input_tokens',
+        'inputTokens',
+        'promptTokenCount',
+      ]) ??
+      fromNested('input_tokens_details', <String>['total']) ??
+      fromNested('inputTokensDetails', <String>['total']);
+
+  final int? completion =
+      firstOf(<String>[
+        'completion_tokens',
+        'output_tokens',
+        'outputTokens',
+        'candidatesTokenCount',
+        'completionTokenCount',
+      ]) ??
+      fromNested('output_tokens_details', <String>['total']) ??
+      fromNested('outputTokensDetails', <String>['total']);
+
+  int? total = firstOf(<String>[
+    'total_tokens',
+    'totalTokens',
+    'totalTokenCount',
+  ]);
+  total ??= (prompt != null && completion != null) ? (prompt + completion) : null;
+
+  final _UsageSnapshot snapshot = _UsageSnapshot(
+    promptTokens: prompt,
+    completionTokens: completion,
+    totalTokens: total,
+  );
+  return snapshot.isEmpty ? null : snapshot;
 }
 
 String _deltaFromPossiblyCumulative({
@@ -2148,6 +2301,38 @@ class _ToolCallAccumulator {
     }
     return out;
   }
+}
+
+String _extractOpenAIChatText(dynamic node) {
+  if (node == null) return '';
+  if (node is String) return node;
+  if (node is Map) {
+    final Map<String, dynamic> map = Map<String, dynamic>.from(node as Map);
+    final String type = (map['type'] as String?) ?? '';
+    final String text = (map['text'] as String?) ?? '';
+    if (text.isNotEmpty) {
+      if (type.isEmpty ||
+          type == 'text' ||
+          type == 'output_text' ||
+          type == 'input_text') {
+        return text;
+      }
+    }
+    final String fromContent = _extractOpenAIChatText(map['content']);
+    if (fromContent.isNotEmpty) return fromContent;
+    final String fromParts = _extractOpenAIChatText(map['parts']);
+    if (fromParts.isNotEmpty) return fromParts;
+    return '';
+  }
+  if (node is List) {
+    final StringBuffer out = StringBuffer();
+    for (final dynamic item in node) {
+      final String piece = _extractOpenAIChatText(item);
+      if (piece.isNotEmpty) out.write(piece);
+    }
+    return out.toString();
+  }
+  return '';
 }
 
 class _ThinkStreamFilterResult {

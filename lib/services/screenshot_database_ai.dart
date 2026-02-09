@@ -86,6 +86,50 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       'CREATE INDEX IF NOT EXISTS idx_ai_messages_full_conv ON ai_messages_full(conversation_id, id)',
     );
 
+    // Raw prompt transcript (strict-full context): keeps cross-turn tool protocol
+    // messages and multimodal/api-content fields for replay.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_messages_raw (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT,
+        api_content_json TEXT,
+        tool_calls_json TEXT,
+        tool_call_id TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_messages_raw_conv ON ai_messages_raw(conversation_id, id)',
+    );
+
+    // Per-request prompt usage events (chat only): supports detailed timeline +
+    // conversation cumulative statistics.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_prompt_usage_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        model TEXT,
+        prompt_est_before INTEGER,
+        prompt_est_sent INTEGER,
+        usage_prompt_tokens INTEGER,
+        usage_completion_tokens INTEGER,
+        usage_total_tokens INTEGER,
+        usage_source TEXT,
+        is_tool_loop INTEGER NOT NULL DEFAULT 0,
+        include_history INTEGER NOT NULL DEFAULT 1,
+        tools_count INTEGER NOT NULL DEFAULT 0,
+        strict_full_attempted INTEGER NOT NULL DEFAULT 0,
+        fallback_triggered INTEGER NOT NULL DEFAULT 0,
+        breakdown_json TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_prompt_usage_events_conv ON ai_prompt_usage_events(conversation_id, id)',
+    );
+
     // Context/compaction diagnostics (lightweight rollout log).
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ai_context_events (
@@ -645,7 +689,21 @@ ORDER BY day ASC
         } catch (_) {}
         try {
           await txn.delete(
+            'ai_messages_raw',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[conversationId],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
             'ai_context_events',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[conversationId],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_prompt_usage_events',
             where: 'conversation_id = ?',
             whereArgs: <Object?>[conversationId],
           );
@@ -877,7 +935,21 @@ ORDER BY day ASC
         } catch (_) {}
         try {
           await txn.delete(
+            'ai_messages_raw',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[cid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
             'ai_context_events',
+            where: 'conversation_id = ?',
+            whereArgs: <Object?>[cid],
+          );
+        } catch (_) {}
+        try {
+          await txn.delete(
+            'ai_prompt_usage_events',
             where: 'conversation_id = ?',
             whereArgs: <Object?>[cid],
           );
@@ -1746,6 +1818,53 @@ ORDER BY day ASC
           .where((e) => e.isNotEmpty)
           .toSet()
           .toList(growable: false);
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
+  /// 列出“有动态总结”的应用显示名（去重）。
+  ///
+  /// 口径：
+  /// - 仅统计全局段落（global），并排除已被合并的子段。
+  /// - 仅包含存在有效总结结果的段落（output_text / structured_json 任一非空且非 "null"）。
+  /// - 应用名优先取 segment_samples.app_name；为空时回退 app_registry.app_name。
+  Future<List<String>> listAppDisplayNamesWithSegmentSummaries({
+    int limit = 200,
+  }) async {
+    final int safeLimit = limit.clamp(1, 500).toInt();
+    try {
+      final db = await database;
+      const String sql = '''
+        SELECT DISTINCT
+          COALESCE(NULLIF(TRIM(ss.app_name), ''), NULLIF(TRIM(ar.app_name), '')) AS app_name
+        FROM segments s
+        JOIN segment_results r ON r.segment_id = s.id
+        JOIN segment_samples ss ON ss.segment_id = s.id
+        LEFT JOIN app_registry ar ON ar.app_package_name = ss.app_package_name
+        WHERE s.merged_into_id IS NULL
+          AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
+          AND (
+            (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('','null'))
+            OR
+            (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('','null'))
+          )
+          AND COALESCE(NULLIF(TRIM(ss.app_name), ''), NULLIF(TRIM(ar.app_name), '')) IS NOT NULL
+        ORDER BY LOWER(app_name) COLLATE NOCASE ASC
+        LIMIT ?
+      ''';
+      final List<Map<String, Object?>> rows = await db.rawQuery(sql, <Object?>[
+        safeLimit,
+      ]);
+      final List<String> out = <String>[];
+      final Set<String> dedup = <String>{};
+      for (final Map<String, Object?> row in rows) {
+        final String name = (row['app_name'] as String?)?.trim() ?? '';
+        if (name.isEmpty) continue;
+        final String key = name.toLowerCase();
+        if (dedup.add(key)) out.add(name);
+      }
+      return out;
     } catch (_) {
       return <String>[];
     }

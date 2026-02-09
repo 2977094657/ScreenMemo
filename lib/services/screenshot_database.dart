@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 28,
+          version: 29,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 28,
+          version: 29,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 28,
+          version: 29,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 28,
+        version: 29,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -859,6 +859,56 @@ class ScreenshotDatabase {
       try {
         await db.execute(
           'ALTER TABLE ai_conversations ADD COLUMN last_prompt_breakdown_json TEXT',
+        );
+      } catch (_) {}
+    }
+
+    // v29: raw transcript + per-request prompt usage events.
+    if (oldVersion < 29) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS ai_messages_raw (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT,
+            api_content_json TEXT,
+            tool_calls_json TEXT,
+            tool_call_id TEXT,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_ai_messages_raw_conv ON ai_messages_raw(conversation_id, id)',
+        );
+      } catch (_) {}
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS ai_prompt_usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            model TEXT,
+            prompt_est_before INTEGER,
+            prompt_est_sent INTEGER,
+            usage_prompt_tokens INTEGER,
+            usage_completion_tokens INTEGER,
+            usage_total_tokens INTEGER,
+            usage_source TEXT,
+            is_tool_loop INTEGER NOT NULL DEFAULT 0,
+            include_history INTEGER NOT NULL DEFAULT 1,
+            tools_count INTEGER NOT NULL DEFAULT 0,
+            strict_full_attempted INTEGER NOT NULL DEFAULT 0,
+            fallback_triggered INTEGER NOT NULL DEFAULT 0,
+            breakdown_json TEXT,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_ai_prompt_usage_events_conv ON ai_prompt_usage_events(conversation_id, id)',
         );
       } catch (_) {}
     }

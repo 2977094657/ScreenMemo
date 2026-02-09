@@ -53,7 +53,8 @@ class PromptBudget {
     required int maxTokens,
     bool allowTruncateOldestKept = true,
   }) {
-    if (maxTokens <= 0 || messages.isEmpty) return messages;
+    if (messages.isEmpty) return messages;
+    if (maxTokens <= 0) return const <AIMessage>[];
 
     int remaining = maxTokens;
     final List<AIMessage> pickedRev = <AIMessage>[];
@@ -70,12 +71,34 @@ class PromptBudget {
       if (remaining <= 0) break;
 
       // Truncate the oldest kept message to fit the remaining budget and stop.
-      final int budgetBytes = remaining * approxBytesPerToken;
-      final String truncated = truncateTextByBytes(
+      final String marker = _formatTruncationMarker(remaining);
+      final int fixedTokens = approxTokensForMessageJson(
+        AIMessage(role: m.role, content: marker),
+      );
+      if (fixedTokens > remaining) break;
+
+      int budgetBytes =
+          (remaining - fixedTokens).clamp(0, 1 << 30) * approxBytesPerToken;
+      String truncated = truncateTextByBytes(
         text: m.content,
         maxBytes: budgetBytes,
-        marker: _formatTruncationMarker(remaining),
+        marker: marker,
       );
+      int truncatedTokens = approxTokensForMessageJson(
+        AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
+      );
+      while (truncatedTokens > remaining && budgetBytes > 0) {
+        budgetBytes = (budgetBytes - approxBytesPerToken).clamp(0, 1 << 30);
+        truncated = truncateTextByBytes(
+          text: m.content,
+          maxBytes: budgetBytes,
+          marker: marker,
+        );
+        truncatedTokens = approxTokensForMessageJson(
+          AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
+        );
+      }
+      if (truncatedTokens > remaining) break;
       pickedRev.add(
         AIMessage(role: m.role, content: truncated, createdAt: m.createdAt),
       );
