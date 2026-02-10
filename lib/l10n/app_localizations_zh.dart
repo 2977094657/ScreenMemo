@@ -1674,6 +1674,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aiResultTitle => 'AI 结果';
 
   @override
+  String get aiResultAutoRetriedHint => '该结果曾自动重试 1 次，以修复不完整的 AI 输出。';
+
+  @override
+  String get aiResultAutoRetryFailedHint => '自动重试后仍失败，请手动点击重生成。';
+
+  @override
   String modelValueLabel(Object model) {
     return 'Model：$model';
   }

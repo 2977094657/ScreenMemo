@@ -915,6 +915,8 @@
     }
   },
   "aiResultTitle": "AI 结果",
+  "aiResultAutoRetriedHint": "该结果曾自动重试 1 次，以修复不完整的 AI 输出。",
+  "aiResultAutoRetryFailedHint": "自动重试后仍失败，请手动点击重生成。",
   "modelValueLabel": "Model：{model}",
   "@modelValueLabel": {
     "placeholders": {

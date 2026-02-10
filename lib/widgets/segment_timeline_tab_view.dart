@@ -545,6 +545,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     } catch (_) {}
 
     final String? keyAction = _extractKeyActionDetail(structured);
+    final int aiRetryCount = _aiRetryCount(structured);
+    final bool aiRetryFailed = _aiNeedsManualRetry(structured);
+    final String aiRetryMsg = _aiRetryMessage(context, structured);
     final List<String> categories = _extractCategories(resultMeta, structured);
     final String computedSummary = _extractOverallSummary(
       resultMeta,
@@ -660,6 +663,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
               context,
               label: timeLabel,
               keyActionDetail: keyAction,
+              aiRetried: aiRetryCount > 0,
+              aiRetryFailed: aiRetryFailed,
+              aiRetryMessage: aiRetryMsg,
             ),
             const SizedBox(height: 4),
             Column(
@@ -988,6 +994,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     BuildContext context, {
     required String label,
     String? keyActionDetail,
+    bool aiRetried = false,
+    bool aiRetryFailed = false,
+    String? aiRetryMessage,
   }) {
     final Color actionColor = AppTheme.warning;
     return Column(
@@ -995,8 +1004,36 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       children: [
         SizedBox(
           height: 22,
-          child: Center(
-            child: Text(label, style: DefaultTextStyle.of(context).style),
+          child: Stack(
+            children: [
+              Center(
+                child: Text(label, style: DefaultTextStyle.of(context).style),
+              ),
+              if (aiRetried)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Tooltip(
+                    message: (aiRetryMessage ?? '').trim().isNotEmpty
+                        ? aiRetryMessage!
+                        : (aiRetryFailed
+                              ? AppLocalizations.of(
+                                  context,
+                                ).aiResultAutoRetryFailedHint
+                              : AppLocalizations.of(
+                                  context,
+                                ).aiResultAutoRetriedHint),
+                    child: Icon(
+                      aiRetryFailed
+                          ? Icons.error_outline_rounded
+                          : Icons.info_outline_rounded,
+                      size: 16,
+                      color: aiRetryFailed
+                          ? Theme.of(context).colorScheme.error
+                          : AppTheme.warning,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         if (keyActionDetail != null && keyActionDetail.trim().isNotEmpty)
@@ -1006,9 +1043,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
               child: _buildMarkdownBody(
                 context,
                 keyActionDetail,
-                DefaultTextStyle.of(
-                  context,
-                ).style.copyWith(color: actionColor),
+                DefaultTextStyle.of(context).style.copyWith(color: actionColor),
               ),
             ),
           ),
@@ -1329,8 +1364,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
             chipHeight * _tagMaxVisibleRows +
             _tagGridMainAxisSpacing * (_tagMaxVisibleRows - 1);
         final theme = Theme.of(context);
-        final Color hintColor =
-            theme.colorScheme.onSurfaceVariant.withOpacity(0.45);
+        final Color hintColor = theme.colorScheme.onSurfaceVariant.withOpacity(
+          0.45,
+        );
 
         // 最多显示两行，超过则在内部滚动，并用视觉提示提醒可滚动（无文字）。
         return SizedBox(
@@ -1790,5 +1826,57 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     if (v is String && v.trim().isNotEmpty) return v.trim();
     final out = (result?['output_text'] as String?)?.trim() ?? '';
     return out.toLowerCase() == 'null' ? '' : out;
+  }
+
+  Map<String, dynamic>? _extractAiRetryMeta(Map<String, dynamic>? sj) {
+    if (sj == null) return null;
+    final dynamic raw = sj['_meta'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      try {
+        return Map<String, dynamic>.from(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  int _aiRetryCount(Map<String, dynamic>? sj) {
+    final meta = _extractAiRetryMeta(sj);
+    if (meta == null) return 0;
+    final dynamic raw = meta['retry_count'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim()) ?? 0;
+    return 0;
+  }
+
+  bool _aiNeedsManualRetry(Map<String, dynamic>? sj) {
+    final meta = _extractAiRetryMeta(sj);
+    if (meta == null) return false;
+    final dynamic raw = meta['needs_manual_retry'];
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final v = raw.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return false;
+  }
+
+  String _aiRetryMessage(BuildContext context, Map<String, dynamic>? sj) {
+    final l10n = AppLocalizations.of(context);
+    final meta = _extractAiRetryMeta(sj);
+    if (meta == null) return '';
+    final String raw = (meta['retry_message'] as String?)?.trim() ?? '';
+    if (raw.isNotEmpty) return raw;
+    if (_aiNeedsManualRetry(sj)) {
+      return l10n.aiResultAutoRetryFailedHint;
+    }
+    if (_aiRetryCount(sj) > 0) {
+      return l10n.aiResultAutoRetriedHint;
+    }
+    return '';
   }
 }

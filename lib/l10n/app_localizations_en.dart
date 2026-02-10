@@ -1732,6 +1732,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aiResultTitle => 'AI Result';
 
   @override
+  String get aiResultAutoRetriedHint =>
+      'This result was automatically retried once to recover an incomplete AI response.';
+
+  @override
+  String get aiResultAutoRetryFailedHint =>
+      'Automatic retry still failed. Please tap regenerate to retry manually.';
+
+  @override
   String modelValueLabel(Object model) {
     return 'Model: $model';
   }

@@ -3108,6 +3108,18 @@ abstract class AppLocalizations {
   /// **'AI Result'**
   String get aiResultTitle;
 
+  /// No description provided for @aiResultAutoRetriedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This result was automatically retried once to recover an incomplete AI response.'**
+  String get aiResultAutoRetriedHint;
+
+  /// No description provided for @aiResultAutoRetryFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic retry still failed. Please tap regenerate to retry manually.'**
+  String get aiResultAutoRetryFailedHint;
+
   /// No description provided for @modelValueLabel.
   ///
   /// In en, this message translates to:

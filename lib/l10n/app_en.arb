@@ -914,6 +914,8 @@
     }
   },
   "aiResultTitle": "AI Result",
+  "aiResultAutoRetriedHint": "This result was automatically retried once to recover an incomplete AI response.",
+  "aiResultAutoRetryFailedHint": "Automatic retry still failed. Please tap regenerate to retry manually.",
   "modelValueLabel": "Model: {model}",
   "@modelValueLabel": {
     "placeholders": {

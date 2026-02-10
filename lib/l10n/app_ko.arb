@@ -909,6 +909,8 @@
     }
   },
   "aiResultTitle": "AI 결과",
+  "aiResultAutoRetriedHint": "불완전한 AI 응답을 복구하기 위해 이 결과는 자동으로 1회 재시도되었습니다.",
+  "aiResultAutoRetryFailedHint": "자동 재시도에도 실패했습니다. 수동으로 다시 생성해 주세요.",
   "modelValueLabel": "모델: {model}",
   "@modelValueLabel": {
     "placeholders": {

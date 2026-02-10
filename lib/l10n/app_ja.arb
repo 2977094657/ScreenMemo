@@ -909,6 +909,8 @@
     }
   },
   "aiResultTitle": "AIの結果",
+  "aiResultAutoRetriedHint": "この結果は不完全なAI応答を補うために自動で1回再試行されました。",
+  "aiResultAutoRetryFailedHint": "自動再試行でも失敗しました。手動で再生成してください。",
   "modelValueLabel": "モデル：{model}",
   "@modelValueLabel": {
     "placeholders": {

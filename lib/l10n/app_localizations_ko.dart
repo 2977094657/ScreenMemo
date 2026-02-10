@@ -1686,6 +1686,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get aiResultTitle => 'AI 결과';
 
   @override
+  String get aiResultAutoRetriedHint =>
+      '불완전한 AI 응답을 복구하기 위해 이 결과는 자동으로 1회 재시도되었습니다.';
+
+  @override
+  String get aiResultAutoRetryFailedHint => '자동 재시도에도 실패했습니다. 수동으로 다시 생성해 주세요.';
+
+  @override
   String modelValueLabel(Object model) {
     return '모델: $model';
   }
