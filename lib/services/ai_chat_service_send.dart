@@ -190,6 +190,35 @@ extension AIChatServiceSendExt on AIChatService {
     );
   }
 
+  bool _retrievalPayloadHasPagingSignal(Map<String, dynamic> payload) {
+    final dynamic paging = payload['paging'];
+    if (paging is Map && paging.isNotEmpty) return true;
+
+    final dynamic span = payload['time_span_limit'];
+    if (span is Map && _toBool(span['clamped'])) return true;
+
+    final dynamic guard = payload['time_guard'];
+    if (guard is Map && _toBool(guard['clamped'])) return true;
+
+    final dynamic warnings = payload['warnings'];
+    if (warnings is List) {
+      for (final dynamic w in warnings) {
+        final String s = w.toString().toLowerCase();
+        if (s.contains('paging.prev') ||
+            s.contains('paging.next') ||
+            s.contains('clamped') ||
+            s.contains('裁剪')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool debugRetrievalPayloadHasPagingSignal(Map<String, dynamic> payload) {
+    return _retrievalPayloadHasPagingSignal(payload);
+  }
+
   bool _shouldTryStrictFullContext({
     required String context,
     required bool persistHistory,
@@ -2362,6 +2391,7 @@ extension AIChatServiceSendExt on AIChatService {
     bool hadAnyRetrievalHit = false;
     String lastRetrievalTool = '';
     int lastRetrievalCount = -1;
+    bool lastRetrievalHasPagingSignal = false;
     final Map<String, Map<String, dynamic>> signatureDigests =
         <String, Map<String, dynamic>>{};
     int consecutiveEmptyRetrievalBatches = 0;
@@ -2470,6 +2500,9 @@ extension AIChatServiceSendExt on AIChatService {
             if (count > 0) batchRetrievalHits += 1;
             lastRetrievalTool = tool;
             lastRetrievalCount = count;
+            lastRetrievalHasPagingSignal = _retrievalPayloadHasPagingSignal(
+              obj,
+            );
             if (count > 0) hadAnyRetrievalHit = true;
           }
         }
@@ -2522,12 +2555,12 @@ extension AIChatServiceSendExt on AIChatService {
               '进展护栏：已连续多次检索仍无结果/无新信息（多次 count=0）。\n'
                   '请停止继续调用工具（避免陷入循环），改为：\n'
                   '1) 基于现有信息给出最佳努力答复，并明确哪些结论缺少证据；\n'
-                  '2) 向用户提出 2–4 个最关键的澄清问题（例如对方昵称/平台/更精确时间段/关键词/事件细节），以便下一轮检索更有针对性。\n'
+                  '2) 只有在硬阻塞（权限/数据源/输入冲突）时，才向用户询问 1 个最关键补充线索；非硬阻塞不要连续追问。\n'
                   '禁止编造证据或臆造 [evidence: ...]。',
               'Progress guard: repeated searches are yielding no new information (multiple count=0).\n'
                   'Stop calling tools (avoid loops). Instead:\n'
                   '1) Give a best-effort answer from what you have, clearly stating what lacks evidence.\n'
-                  '2) Ask the user 2–4 high-signal clarification questions (nickname/platform/time window/keywords/details) so the next search can succeed.\n'
+                  '2) Ask at most ONE key follow-up only on hard blockers (permissions/data source/conflicting inputs); avoid multi-question clarification loops.\n'
                   'Do not fabricate evidence or [evidence: ...].',
             ),
           ),
@@ -2647,13 +2680,13 @@ extension AIChatServiceSendExt on AIChatService {
                     '在输出最终答复前，请按以下流程继续：\n'
                     '1) 至少再调用 2 次检索类工具（search_segments / search_screenshots_ocr / search_ai_image_meta），并更换关键词（拆词/同义词/英文）。\n'
                     '2) 若本次查询范围较大，请调整 start_local/end_local 覆盖不同时间段，或使用 offset/limit 分页获取更多结果；若工具返回 paging.prev/paging.next，也可使用它们继续。\n'
-                    '3) 若多次检索仍为空，请不要给“很失望”的结论；先向用户确认：是否确定平台/关键词/时间范围无误，并询问可补充的线索（UP 主名/视频标题词/头像/栏目名等）。\n'
+                    '3) 若多次检索仍为空，先给出“已覆盖范围/未覆盖范围/证据缺口”，仅在硬阻塞时允许询问 1 条关键线索。\n'
                     '确认后再给最终答复；不要臆造证据或 [evidence: ...]。',
                 'Note: the last retrieval returned count=0, so you must not conclude “not found” yet.\n'
                     'Before answering, do ALL of the following:\n'
                     '1) Make at least 2 more retrieval calls (search_segments / search_screenshots_ocr / search_ai_image_meta) with alternative keywords (split words / synonyms / English).\n'
                     '2) If the overall range is large, adjust start_local/end_local to cover different windows or page via offset/limit; if the tool returns paging.prev/paging.next you may use them as well.\n'
-                    '3) If results are still empty, ask the user to confirm assumptions (platform/keywords/time range) and request more clues instead of giving a flat negative conclusion.\n'
+                    '3) If still empty, report covered scope / uncovered scope / evidence gaps first; ask at most ONE key follow-up only on hard blockers.\n'
                     'Do not fabricate evidence or [evidence: ...].',
               ),
             ),
@@ -2727,6 +2760,114 @@ extension AIChatServiceSendExt on AIChatService {
           _loc(
             '继续检索重试后模型已响应：tool_calls=${result.toolCalls.length}（${retryReq.elapsedMilliseconds}ms）',
             'Continued-search retry responded: tool_calls=${result.toolCalls.length} (${retryReq.elapsedMilliseconds}ms)',
+          ),
+        );
+        working = List<AIMessage>.from(retryMessages);
+      }
+
+      final bool shouldForceAutoPagingRetry =
+          tools.isNotEmpty &&
+          hasRetrievalTools &&
+          !forcedEmptySearchRetry &&
+          forceToolFirstIfNoToolCalls &&
+          result.toolCalls.isEmpty &&
+          lastRetrievalHasPagingSignal &&
+          _contentLooksLikeClarificationStop(result.content);
+      if (shouldForceAutoPagingRetry) {
+        forcedEmptySearchRetry = true;
+        _emitProgress(
+          emitEvent,
+          _loc(
+            '检测到可继续翻页但模型准备停机追问；触发自动翻页覆盖重试…',
+            'Paging is available but model is stopping for clarification; forcing an auto-paging retry…',
+          ),
+        );
+
+        List<AIMessage> retryMessages = List<AIMessage>.from(working)
+          ..add(
+            AIMessage(
+              role: 'user',
+              content: _loc(
+                '当前检索结果仍可继续扩展（存在 paging/clamped 提示）。\n'
+                    '请不要先向用户提问；先继续自动翻页覆盖范围并补充证据。\n'
+                    '输出时请明确：已覆盖范围、未覆盖范围、下一步计划。\n'
+                    '仅当出现硬阻塞（权限/数据源缺失/输入冲突）时，才允许询问 1 个关键问题。',
+                'Current retrieval can still be expanded (paging/clamped hints present).\n'
+                    'Do not ask the user first; continue auto-paging to expand coverage and gather evidence.\n'
+                    'In your answer, state covered scope, uncovered scope, and next steps.\n'
+                    'Only ask ONE key question on hard blockers (permission/data source/input conflict).',
+              ),
+            ),
+          );
+
+        final Stopwatch retryReq = Stopwatch()..start();
+        Timer? retryHeartbeatStarter;
+        Timer? retryHeartbeatTicker;
+        if (emitEvent != null) {
+          retryHeartbeatStarter = Timer(const Duration(seconds: 12), () {
+            retryHeartbeatTicker = Timer.periodic(const Duration(seconds: 10), (
+              _,
+            ) {
+              final int secs = retryReq.elapsed.inSeconds;
+              if (secs <= 0) return;
+              _emitProgress(
+                emitEvent,
+                _loc(
+                  '等待模型响应中… 已等待 ${secs}s',
+                  'Waiting for model… ${secs}s elapsed',
+                ),
+              );
+            });
+          });
+        }
+        try {
+          retryMessages = _replaceImageMessagesWithPlaceholder(
+            retryMessages,
+            keepMostRecent: true,
+            cid: cid,
+            stage: 'tool_loop_auto_paging_retry_image',
+            model: modelForBudget,
+          );
+          retryMessages = _enforceToolLoopPromptBudget(
+            retryMessages,
+            pinnedUser: pinnedUserMessage,
+            maxPromptTokens: _toolLoopBudgetTokensForPrompt(
+              budgets: budgets,
+              toolsSchemaTokens: toolsSchemaTokens,
+            ),
+            emitEvent: emitEvent,
+            cid: cid,
+            stage: 'tool_loop_auto_paging_retry_budget',
+            model: modelForBudget,
+          );
+          result = await callModel(
+            messages: retryMessages,
+            toolsForCall: tools,
+            toolChoiceForCall: toolChoice,
+            preferStreaming: true,
+            trimStage: 'tool_loop_auto_paging_retry_call',
+            isToolLoop: true,
+          );
+        } finally {
+          retryHeartbeatStarter?.cancel();
+          retryHeartbeatTicker?.cancel();
+          retryReq.stop();
+        }
+        retryMessages = _replaceImageMessagesWithPlaceholder(
+          retryMessages,
+          keepMostRecent: false,
+          cid: cid,
+          stage: 'tool_loop_auto_paging_retry_post_image',
+          model: modelForBudget,
+        );
+        if (result.toolCalls.isEmpty) {
+          result = _maybeCoerceToolCallsFromText(result, tools);
+        }
+        _emitProgress(
+          emitEvent,
+          _loc(
+            '自动翻页覆盖重试后模型已响应：tool_calls=${result.toolCalls.length}（${retryReq.elapsedMilliseconds}ms）',
+            'Auto-paging retry responded: tool_calls=${result.toolCalls.length} (${retryReq.elapsedMilliseconds}ms)',
           ),
         );
         working = List<AIMessage>.from(retryMessages);

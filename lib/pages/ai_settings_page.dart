@@ -316,8 +316,6 @@ class _AISettingsPageState extends State<AISettingsPage>
   final Map<String, Future<Map<String, String>>> _evidenceResolveFutures =
       <String, Future<Map<String, String>>>{};
   bool _evidenceRebuildScheduled = false;
-  // 上一轮个人助手使用的上下文包（用于后续消息在 AI 判定时可复用）
-  QueryContextPack? _lastCtxPack;
   // 上一轮意图结果（用于为下一轮提供 prev hint）
   IntentResult? _lastIntent;
   // 澄清推进：当时间缺失/范围过大时，先温和追问 + 再做探测检索候选

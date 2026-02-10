@@ -1,4 +1,4 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServiceToolingExt on AIChatService {
   String _formatLocalDateTimeForTool(int epochMs) {
@@ -129,7 +129,9 @@ extension AIChatServiceToolingExt on AIChatService {
       final int sid = _toInt(obj['segment_id']) ?? 0;
       final int count = _toInt(obj['count']) ?? 0;
       // UI label already contains the requested limit; surface actual returned count.
-      return sid > 0 ? _loc('返回 $count 条', 'returned $count') : _loc('返回 $count 条', 'returned $count');
+      return sid > 0
+          ? _loc('返回 $count 条', 'returned $count')
+          : _loc('返回 $count 条', 'returned $count');
     }
     final int count = _toInt(obj['count']) ?? -1;
     if (count >= 0) {
@@ -173,7 +175,7 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'search_segments',
         'description':
-            'List/search local segments (动态) by local date/time range and optional keyword (+ optional app filter by app NAME). Use start_local/end_local as human-readable local date/time strings (YYYY-MM-DD or YYYY-MM-DD HH:mm). The app will convert them to epoch ms internally. Do NOT provide epoch milliseconds. List mode is capped to 7 days per call; AI mode is capped to 365 days per call (larger windows will be clamped with paging hints). OCR mode has no per-call time limit; use start_local/end_local to constrain when needed.',
+            'List/search local segments (动态) by local date/time range and optional keyword (+ optional app filter by app NAME). Use start_local/end_local as human-readable local date/time strings (YYYY-MM-DD or YYYY-MM-DD HH:mm). The app will convert them to epoch ms internally. Do NOT provide epoch milliseconds. IMPORTANT: when query is empty, this runs in list mode (7-day cap per call). For wide ranges (e.g., full year), continue with paging.prev/paging.next to cover all windows. AI mode is capped to 365 days per call (larger windows will be clamped with paging hints). OCR mode has no per-call time limit; use start_local/end_local to constrain when needed.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -575,7 +577,9 @@ extension AIChatServiceToolingExt on AIChatService {
     final List<String> out = <String>[];
     final dynamic raw = args.containsKey('app_package_names')
         ? args['app_package_names']
-        : (args.containsKey('app_package_name') ? args['app_package_name'] : null);
+        : (args.containsKey('app_package_name')
+              ? args['app_package_name']
+              : null);
     if (raw is List) {
       for (final v in raw) {
         final String t = v?.toString().trim() ?? '';
@@ -589,7 +593,9 @@ extension AIChatServiceToolingExt on AIChatService {
     return uniq;
   }
 
-  Future<List<String>> _resolveAppPackagesFromArgs(Map<String, dynamic> args) async {
+  Future<List<String>> _resolveAppPackagesFromArgs(
+    Map<String, dynamic> args,
+  ) async {
     // IMPORTANT: only accept human app display names for filtering.
     // Some models hallucinate package names; ignoring package filters is safer.
     final List<String> appNames = _normalizeAppNamesArg(args);
@@ -807,5 +813,4 @@ extension AIChatServiceToolingExt on AIChatService {
     }
     return out;
   }
-
 }

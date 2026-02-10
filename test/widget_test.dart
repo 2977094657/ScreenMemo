@@ -32,8 +32,8 @@ void main() {
     final svc = IntentAnalysisService.instance;
     final r = await svc.analyze('测试一个不明确的查询');
     expect(r.intentSummary.isNotEmpty, true);
-    expect(r.hasValidRange, true);
-    expect(r.sqlFill.containsKey('segments_between'), true);
+    expect(r.hasValidRange, false);
+    expect(r.sqlFill.containsKey('segments_between'), false);
   }, timeout: const Timeout(Duration(seconds: 90)));
 
   test('WeeklySummaryService sanitizeWeeklyRows removes overlapping weeks', () {

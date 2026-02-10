@@ -1,4 +1,4 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServiceCoreExt on AIChatService {
   String _buildToolUsageInstruction(List<Map<String, dynamic>> tools) {
@@ -75,6 +75,24 @@ extension AIChatServiceCoreExt on AIChatService {
           '- Count/how-many questions: prefer tool-provided total_count/has_more (e.g. search_screenshots_ocr). Do NOT split time windows just to count (unless has_more=true and you need to page for more examples).',
         ),
       );
+      sb.writeln(
+        _loc(
+          '- 相对时间默认解析：按自然时间段理解并先执行检索，不要先反问用户。',
+          '- Relative time defaults: interpret as calendar periods and run retrieval first; do not ask the user first.',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- 大范围检索若返回 paging.prev/paging.next 或 clamped 提示，优先自动翻页继续覆盖；仅在硬阻塞时才向用户提 1 个关键问题。',
+          '- For wide-range retrieval, if tools return paging.prev/paging.next or clamped hints, auto-page first to expand coverage; ask at most ONE key question only on hard blockers.',
+        ),
+      );
+      sb.writeln(
+        _loc(
+          '- 非硬阻塞场景不要把选择题/确认题直接抛给用户；先给已覆盖范围、未覆盖范围与下一步计划。',
+          '- In non-blocking scenarios, avoid pushing choice/confirmation questions to the user; first provide covered scope, uncovered scope, and next steps.',
+        ),
+      );
     }
     if (names.contains('get_images')) {
       sb.writeln(
@@ -118,22 +136,7 @@ extension AIChatServiceCoreExt on AIChatService {
   bool _contentLooksLikeHardNoResultsConclusion(String content) {
     final String t = content.trim();
     if (t.isEmpty) return false;
-
-    // If it already asks the user for confirmation/details, do not treat it as
-    // a hard conclusion.
     final String low = t.toLowerCase();
-    final bool asksUser =
-        t.contains('?') ||
-        t.contains('？') ||
-        t.contains('请确认') ||
-        t.contains('请问') ||
-        t.contains('能否') ||
-        t.contains('是否') ||
-        low.contains('are you sure') ||
-        low.contains('could you') ||
-        low.contains('can you') ||
-        low.contains('please confirm');
-    if (asksUser) return false;
 
     if (low.contains('no data for the specified date/time window')) return true;
 
@@ -173,6 +176,57 @@ extension AIChatServiceCoreExt on AIChatService {
     return false;
   }
 
+  bool _contentLooksLikeClarificationStop(String content) {
+    final String t = content.trim();
+    if (t.isEmpty) return false;
+    final String low = t.toLowerCase();
+
+    final bool asks =
+        t.contains('?') ||
+        t.contains('？') ||
+        t.contains('请确认') ||
+        t.contains('请问') ||
+        t.contains('能否') ||
+        t.contains('是否') ||
+        t.contains('先确认') ||
+        t.contains('你选') ||
+        t.contains('你回复') ||
+        t.contains('还需要确认') ||
+        t.contains('补充') ||
+        low.contains('please confirm') ||
+        low.contains('could you') ||
+        low.contains('can you') ||
+        low.contains('which one') ||
+        low.contains('do you mean') ||
+        low.contains('need to confirm') ||
+        low.contains('please provide');
+    if (!asks) return false;
+
+    final bool hasCoverageOrExecution =
+        t.contains('已覆盖') ||
+        t.contains('未覆盖') ||
+        t.contains('继续翻页') ||
+        t.contains('paging.prev') ||
+        t.contains('paging.next') ||
+        t.contains('下一步') ||
+        low.contains('covered') ||
+        low.contains('uncovered') ||
+        low.contains('paging.prev') ||
+        low.contains('paging.next') ||
+        low.contains('next step');
+
+    // Clarification-heavy response with no concrete execution/coverage signal.
+    return !hasCoverageOrExecution;
+  }
+
+  bool debugContentLooksLikeHardNoResultsConclusion(String content) {
+    return _contentLooksLikeHardNoResultsConclusion(content);
+  }
+
+  bool debugContentLooksLikeClarificationStop(String content) {
+    return _contentLooksLikeClarificationStop(content);
+  }
+
   Set<String> _extractToolNames(List<Map<String, dynamic>> tools) {
     final Set<String> out = <String>{};
     for (final t in tools) {
@@ -184,5 +238,4 @@ extension AIChatServiceCoreExt on AIChatService {
     }
     return out;
   }
-
 }

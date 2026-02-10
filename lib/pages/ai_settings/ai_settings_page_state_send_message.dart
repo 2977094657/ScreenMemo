@@ -70,7 +70,6 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
       if (_streamEnabled) {
         // 追加一个空的助手消息作为占位，并进入"思考中"可视化状态
         final int assistantIdx = _messages.length;
-        QueryContextPack? ctxPackForRewrite;
         final DateTime createdAt = DateTime.now();
         setStateIfActive(() {
           _inStreaming = true;
@@ -146,8 +145,6 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           bool localOnlyResponse = false;
           String localAssistantText = '';
           AIStreamingSession? session;
-          late QueryContextPack ctxPack;
-          bool reuse = false;
 
           // 0) 如果处于澄清流程且用户选择取消，则结束本次查找
           if (_clarifyState != null && _isCancelMessage(text)) {
@@ -293,88 +290,16 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             }
           }
 
-          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则自动补全默认范围继续检索
+          // 3) 缺少有效时间窗：不再自动补全默认范围，后续由模型在工具调用中自行决定/调整
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.hasValidRange &&
               !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
-                  ? '未解析到有效时间窗：尝试复用上一轮，否则使用默认范围继续检索…'
-                  : 'No valid time range: try reuse previous; otherwise use a default range…',
+                  ? '未解析到固定时间窗：不自动补全。后续由模型按需调用工具并自行调整 start_local/end_local。'
+                  : 'No fixed time range parsed: skip auto-fill. Let the model call tools and adjust start_local/end_local as needed.',
             );
-            final bool hasPreviousWindow =
-                (_lastIntent != null && _lastIntent!.hasValidRange) ||
-                (_lastCtxPack != null) ||
-                (QueryContextService.instance.lastPack != null);
-            final bool canReusePrevious =
-                hasPreviousWindow && intent!.skipContext;
-            if (canReusePrevious) {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '尝试复用上一轮时间窗…'
-                    : 'Trying to reuse previous time window…',
-              );
-              int? fbStart;
-              int? fbEnd;
-              if (_lastIntent != null && _lastIntent!.hasValidRange) {
-                fbStart = _lastIntent!.startMs;
-                fbEnd = _lastIntent!.endMs;
-              } else if (_lastCtxPack != null) {
-                fbStart = _lastCtxPack!.startMs;
-                fbEnd = _lastCtxPack!.endMs;
-              } else if (QueryContextService.instance.lastPack != null) {
-                final p = QueryContextService.instance.lastPack!;
-                fbStart = p.startMs;
-                fbEnd = p.endMs;
-              }
-              if (fbStart != null && fbEnd != null && fbEnd >= fbStart) {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '已复用上一轮时间窗：[$fbStart-$fbEnd]'
-                      : 'Reused previous window: [$fbStart-$fbEnd]',
-                );
-                intent = IntentResult(
-                  intent: intent!.intent,
-                  intentSummary: intent!.intentSummary.isNotEmpty
-                      ? intent!.intentSummary
-                      : '复用上一轮时间窗',
-                  startMs: fbStart,
-                  endMs: fbEnd,
-                  timezone: intent!.timezone,
-                  apps: intent!.apps,
-                  keywords: intent!.keywords,
-                  sqlFill: intent!.sqlFill,
-                  skipContext: true,
-                  errorCode: intent!.errorCode,
-                  errorMessage: intent!.errorMessage,
-                );
-              } else {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '复用失败：没有可用的上一轮范围，将使用默认时间范围继续检索'
-                      : 'Reuse failed: no previous window; using a default time range',
-                );
-                intent = _applyDefaultTimeRange(intent!);
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
-                      : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
-                );
-              }
-            } else {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '没有可复用的上一轮范围：将使用默认时间范围继续检索'
-                    : 'No reusable previous window: using a default time range',
-              );
-              intent = _applyDefaultTimeRange(intent!);
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
-                    : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
-              );
-            }
           }
 
           // 4) 时间范围过大且缺少线索：不追问，直接继续检索（必要时由模型通过工具分页/扩展范围）
@@ -420,369 +345,63 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             unawaited(_stopGatewayLogsFileMirror(assistantIdx));
           } else {
             final IntentResult resolvedIntent = intent!;
-            final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
 
             // 清理澄清状态，避免污染下一轮
-            if (_clarifyState != null &&
-                (noContext || resolvedIntent.hasValidRange)) {
-              if (noContext) {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '检测到非检索问题：退出澄清流程'
-                      : 'Non-retrieval intent: exiting clarification flow',
-                );
-              }
+            if (_clarifyState != null) {
+              _appendAgentLog(
+                _isZhLocale()
+                    ? '当前不预设固定时间窗：退出澄清流程'
+                    : 'No fixed time range preset: exiting clarification flow',
+              );
               _clarifyState = null;
             }
 
-            if (noContext) {
-              await FlutterLogger.nativeInfo(
-                'ChatFlow',
-                'phase1 intent ok (no-context) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
-              );
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '意图已确认：${resolvedIntent.intentSummary}（无需时间窗/上下文检索）'
-                    : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
-              );
-              if (_showAgentProgressLogs) {
-                setStateIfActive(() {
-                  final List<_ThinkingBlock>? blocks =
-                      _thinkingBlocksByIndex[assistantIdx];
-                  if (blocks == null || blocks.isEmpty) return;
-                  final _ThinkingBlock b = blocks.last;
-                  _upsertEvent(
-                    b,
-                    type: _ThinkingEventType.intent,
-                    title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
-                    icon: Icons.search_outlined,
-                    active: false,
-                    subtitle: _formatIntentSubtitle(resolvedIntent),
-                  );
-                });
-              }
-              _renameActiveConversationTo(
-                resolvedIntent.intentSummary,
-                conversationCid: requestCid,
-              );
-              _appendAgentLog(
-                _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
-                bullet: false,
-              );
-              _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
-              session = await _chat.sendMessageStreamedV2WithDisplayOverride(
-                text,
-                text,
-                includeHistory: true,
-                // Persist the tail at service-level so background completion (after
-                // conversation/page switch) still lands in the original CID.
-                persistHistoryTail: true,
-                tools: AIChatService.defaultChatTools(),
-                toolChoice: 'auto',
-                conversationCid: requestCid,
-                uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
-              );
-            } else {
-              await FlutterLogger.nativeInfo(
-                'ChatFlow',
-                'phase1 intent ok range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}] summary=${resolvedIntent.intentSummary} apps=${resolvedIntent.apps.length}',
-              );
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '意图已确认：${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]'
-                    : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
-              );
-
-              // 显示意图摘要与时间窗
-              if (_showAgentProgressLogs) {
-                setStateIfActive(() {
-                  final List<_ThinkingBlock>? blocks =
-                      _thinkingBlocksByIndex[assistantIdx];
-                  if (blocks != null && blocks.isNotEmpty) {
-                    final _ThinkingBlock b = blocks.last;
-                    _upsertEvent(
-                      b,
-                      type: _ThinkingEventType.intent,
-                      title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
-                      icon: Icons.search_outlined,
-                      active: false,
-                      subtitle: _formatIntentSubtitle(resolvedIntent),
-                    );
-                  }
-                });
-              }
-              _renameActiveConversationTo(
-                resolvedIntent.intentSummary,
-                conversationCid: requestCid,
-              );
-
-              // 阶段 2/4：查找上下文（若 AI 判定可复用上一轮上下文，则跳过新的检索）
-              await FlutterLogger.nativeInfo('ChatFlow', '阶段2 上下文开始');
-              _appendAgentLog(
-                _isZhLocale() ? '阶段 2/4：查找上下文' : 'Phase 2/4: building context',
-                bullet: false,
-              );
-              final String ctxAction = (resolvedIntent.contextAction)
-                  .trim()
-                  .toLowerCase();
-              reuse =
-                  resolvedIntent.skipContext &&
-                  ctxAction == 'reuse' &&
-                  (_lastCtxPack != null ||
-                      QueryContextService.instance.lastPack != null);
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '复用上一轮上下文：' + (reuse ? '是' : '否')
-                    : 'Reuse previous context: ' + (reuse ? 'yes' : 'no'),
-              );
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '上下文策略：' + ctxAction
-                    : 'Context action: ' + ctxAction,
-              );
-              if (resolvedIntent.skipContext && !reuse) {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '意图模型建议不复用缓存上下文，将重新检索/翻页以获取更多证据。'
-                      : 'Intent model suggests not reusing cached context; will refresh/page for more evidence.',
-                );
-              }
-
-              // 不限制上下文事件数量；预加载少量证据图片“文件名/路径”（不预加载像素）。
-              // 目的：让模型可以直接引用 filename（而不是臆造），从而在 UI 中稳定渲染图片证据。
-              const int maxEvents = 0;
-              // 证据图片：预加载文件名/路径（不预加载像素）；段内最多 15 张，总计最多 360 张（并尽量在段落间均匀分配）。
-              const int maxImagesTotal = 360;
-              const int maxImagesPerEvent = 15;
-
-              // 当范围超过 7 天时，按周预加载（避免提示词过大导致超时/输入上限）。
-              final int fullStartMs = resolvedIntent.startMs;
-              final int fullEndMs = resolvedIntent.endMs;
-              int preloadStartMs = fullStartMs;
-              int preloadEndMs = fullEndMs;
-              final bool windowed =
-                  (fullEndMs - fullStartMs) > AIChatService.maxToolTimeSpanMs;
-              if (windowed) {
-                preloadEndMs = fullEndMs;
-                preloadStartMs = fullEndMs - AIChatService.maxToolTimeSpanMs;
-                if (preloadStartMs < fullStartMs) preloadStartMs = fullStartMs;
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '时间范围较大：上下文按周分页，本次预加载 7 天窗口 range=[$preloadStartMs-$preloadEndMs]'
-                      : 'Large time range: paging context by week; preloading a 7-day window range=[$preloadStartMs-$preloadEndMs]',
-                );
-              }
-
-              // When the intent model asks to page within a multi-week range, move the
-              // 7-day preload window accordingly instead of repeatedly using the same week.
-              if (windowed &&
-                  !reuse &&
-                  (ctxAction == 'page_prev' || ctxAction == 'page_next')) {
-                final QueryContextPack? prevPack =
-                    (_lastCtxPack ?? QueryContextService.instance.lastPack);
-                if (prevPack != null &&
-                    prevPack.startMs >= fullStartMs &&
-                    prevPack.endMs <= fullEndMs) {
-                  if (ctxAction == 'page_prev' &&
-                      prevPack.startMs > fullStartMs) {
-                    final int prevEnd0 = prevPack.startMs - 1;
-                    int nextEndMs = prevEnd0;
-                    if (nextEndMs < fullStartMs) nextEndMs = fullStartMs;
-                    int nextStartMs =
-                        nextEndMs - AIChatService.maxToolTimeSpanMs;
-                    if (nextStartMs < fullStartMs) nextStartMs = fullStartMs;
-                    if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                    preloadStartMs = nextStartMs;
-                    preloadEndMs = nextEndMs;
-                    _appendAgentLog(
-                      _isZhLocale()
-                          ? '自动翻页：加载上一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                          : 'Auto paging: load previous week range=[$preloadStartMs-$preloadEndMs]',
-                    );
-                  } else if (ctxAction == 'page_next' &&
-                      prevPack.endMs < fullEndMs) {
-                    final int nextStart0 = prevPack.endMs + 1;
-                    int nextStartMs = nextStart0;
-                    if (nextStartMs > fullEndMs) nextStartMs = fullEndMs;
-                    int nextEndMs =
-                        nextStartMs + AIChatService.maxToolTimeSpanMs;
-                    if (nextEndMs > fullEndMs) nextEndMs = fullEndMs;
-                    if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                    preloadStartMs = nextStartMs;
-                    preloadEndMs = nextEndMs;
-                    _appendAgentLog(
-                      _isZhLocale()
-                          ? '自动翻页：加载下一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                          : 'Auto paging: load next week range=[$preloadStartMs-$preloadEndMs]',
-                    );
-                  } else {
-                    _appendAgentLog(
-                      _isZhLocale()
-                          ? '已到达可翻页边界（或窗口无变化），将按当前周继续检索。'
-                          : 'Reached paging boundary (or no window change); continue with current window.',
-                    );
-                  }
-                } else {
-                  _appendAgentLog(
-                    _isZhLocale()
-                        ? '无可用缓存窗口用于翻页，将按当前周继续检索。'
-                        : 'No cached window for paging; continue with current window.',
-                  );
-                }
-              }
-
-              if (reuse) {
-                _appendAgentLog(
-                  _isZhLocale() ? '使用缓存上下文包' : 'Using cached context pack',
-                );
-                ctxPack =
-                    (_lastCtxPack ?? QueryContextService.instance.lastPack!);
-                ctxPackForRewrite = ctxPack;
-              } else {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '查询本地数据库并组装上下文…'
-                      : 'Querying local DB and assembling context…',
-                );
-                setStateIfActive(() {
-                  final _ThinkingBlock b = _ensureThinkingBlock(assistantIdx);
-                  final DateTime ds = DateTime.fromMillisecondsSinceEpoch(
-                    preloadStartMs,
-                  );
-                  final DateTime de = DateTime.fromMillisecondsSinceEpoch(
-                    preloadEndMs,
-                  );
-                  String two(int v) => v.toString().padLeft(2, '0');
-                  String ymd(DateTime d) =>
-                      '${d.year}-${two(d.month)}-${two(d.day)}';
-                  String hm(DateTime d) => '${two(d.hour)}:${two(d.minute)}';
-                  String dt(DateTime d) => '${ymd(d)} ${hm(d)}';
-                  _upsertEvent(
-                    b,
-                    type: _ThinkingEventType.status,
-                    title: _isZhLocale() ? '搜索' : 'Search',
-                    icon: Icons.manage_search_outlined,
-                    active: true,
-                    subtitle: _isZhLocale()
-                        ? '${dt(ds)} 至 ${dt(de)} 的事件'
-                        : '${dt(ds)} to ${dt(de)}',
-                  );
-                });
-                final Stopwatch swCtx = Stopwatch()..start();
-                ctxPack = await QueryContextService.instance.buildContext(
-                  startMs: preloadStartMs,
-                  endMs: preloadEndMs,
-                  maxEvents: maxEvents,
-                  maxImagesTotal: maxImagesTotal,
-                  maxImagesPerEvent: maxImagesPerEvent,
-                  includeImages: true,
-                );
-                ctxPackForRewrite = ctxPack;
-                swCtx.stop();
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
-                      : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
-                );
-                setStateIfActive(() {
-                  final List<_ThinkingBlock>? blocks =
-                      _thinkingBlocksByIndex[assistantIdx];
-                  if (blocks == null || blocks.isEmpty) return;
-                  for (final e in blocks.last.events) {
-                    if (e.type == _ThinkingEventType.status &&
-                        e.title == (_isZhLocale() ? '搜索' : 'Search')) {
-                      e.active = false;
-                    }
-                  }
-                });
-              }
-              await FlutterLogger.nativeInfo(
-                'ChatFlow',
-                'phase2 context ok events=${ctxPack.events.length} reuse=${reuse ? 1 : 0}',
-              );
-              // 缓存上下文（页面内缓存与服务级缓存），便于紧邻多轮对话复用
-              _lastCtxPack = ctxPack;
-              try {
-                QueryContextService.instance.setLastPack(ctxPack);
-              } catch (_) {}
-              // 证据图片像素不预加载；仅预加载少量文件名/路径，供 UI 渲染与模型引用。
-              final List<EvidenceImageAttachment> attachments = (() {
-                final Set<String> seen = <String>{};
-                final List<EvidenceImageAttachment> out =
-                    <EvidenceImageAttachment>[];
-                for (final ev in ctxPack.events) {
-                  for (final a in ev.keyImages) {
-                    if (a.path.isEmpty) continue;
-                    if (seen.add(a.path)) out.add(a);
-                  }
-                }
-                return out;
-              })();
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '证据图片：预加载文件名/路径 ${attachments.length} 条（不预加载像素；需要看原图像素再用 get_images）'
-                    : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
-              );
+            await FlutterLogger.nativeInfo(
+              'ChatFlow',
+              'phase1 intent ok (no-preset-window) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
+            );
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '意图已确认：${resolvedIntent.intentSummary}（不预设时间窗，由模型按需检索）'
+                  : 'Intent confirmed: ${resolvedIntent.intentSummary} (no preset time window; model retrieves as needed)',
+            );
+            if (_showAgentProgressLogs) {
               setStateIfActive(() {
-                _attachmentsByIndex[assistantIdx] = attachments;
+                final List<_ThinkingBlock>? blocks =
+                    _thinkingBlocksByIndex[assistantIdx];
+                if (blocks == null || blocks.isEmpty) return;
+                final _ThinkingBlock b = blocks.last;
+                _upsertEvent(
+                  b,
+                  type: _ThinkingEventType.intent,
+                  title: _isZhLocale() ? '分析查询意图' : 'Analyze intent',
+                  icon: Icons.search_outlined,
+                  active: false,
+                  subtitle: _formatIntentSubtitle(resolvedIntent),
+                );
               });
-              _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
-
-              // 生成最终提示词（包含上下文包的精简文本）
-              final String finalQuery = _buildFinalQuestion(
-                userQuestionForFinal,
-                ctxPack,
-                fullStartMs: fullStartMs,
-                fullEndMs: fullEndMs,
-              );
-              final int finalQueryTokens = PromptBudget.approxTokensForText(
-                finalQuery,
-              );
-              await FlutterLogger.nativeDebug(
-                'ChatFlow',
-                'phase3 finalQueryLen=${finalQuery.length} approxTokens=$finalQueryTokens',
-              );
-              _appendAgentLog(
-                _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
-                bullet: false,
-              );
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '生成最终提示词：len=${finalQuery.length} tokens≈$finalQueryTokens'
-                    : 'Final prompt: len=${finalQuery.length} tokens≈$finalQueryTokens',
-              );
-              _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
-
-              // 使用"显示内容与实际发送内容分离"的新流式接口：
-              final List<String> extraSystemMessages = <String>[
-                _buildNowContextSystemMessage(),
-              ];
-              final List<Map<String, dynamic>> chatTools =
-                  AIChatService.defaultChatTools();
-              final bool forceToolFirstIfNoToolCalls =
-                  ctxPack.events.isEmpty ||
-                  resolvedIntent.intent == 'keyword_lookup' ||
-                  resolvedIntent.keywords.isNotEmpty;
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '调用模型并启用工具：tools=${chatTools.length} tool_choice=auto'
-                    : 'Calling model with tools: tools=${chatTools.length} tool_choice=auto',
-              );
-              session = await _chat.sendMessageStreamedV2WithDisplayOverride(
-                text,
-                finalQuery,
-                includeHistory: true,
-                extraSystemMessages: extraSystemMessages,
-                // Persist the tail at service-level so background completion (after
-                // conversation/page switch) still lands in the original CID.
-                persistHistoryTail: true,
-                tools: chatTools,
-                toolChoice: 'auto',
-                forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
-                conversationCid: requestCid,
-                uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
-              );
             }
+            _renameActiveConversationTo(
+              resolvedIntent.intentSummary,
+              conversationCid: requestCid,
+            );
+            _appendAgentLog(
+              _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
+              bullet: false,
+            );
+            _replaceAssistantContentOnNextToken = true; // 首个 token 到来时清空阶段状态
+            session = await _chat.sendMessageStreamedV2WithDisplayOverride(
+              text,
+              text,
+              includeHistory: true,
+              // Persist the tail at service-level so background completion (after
+              // conversation/page switch) still lands in the original CID.
+              persistHistoryTail: true,
+              tools: AIChatService.defaultChatTools(),
+              toolChoice: 'auto',
+              conversationCid: requestCid,
+              uiAssistantCreatedAtMs: createdAt.millisecondsSinceEpoch,
+            );
           }
 
           if (session != null) {
@@ -1021,10 +640,7 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
               _markInFlightHistoryDirty();
             }
             // 成功路径：更新"上一轮"缓存
-            if (ctxPackForRewrite != null &&
-                intent != null &&
-                intent!.hasValidRange) {
-              _lastCtxPack = ctxPackForRewrite;
+            if (intent != null) {
               _lastIntent = intent;
             }
             unawaited(_stopGatewayLogsFileMirror(assistantIdx));
@@ -1096,60 +712,6 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           _scheduleAutoScroll();
           // 结束后合并深度思考内容并持久化
           try {
-            final QueryContextPack? pack = ctxPackForRewrite;
-            if (pack != null &&
-                assistantIdx >= 0 &&
-                assistantIdx < _messages.length &&
-                _messages[assistantIdx].role == 'assistant') {
-              // Keep segment boundaries stable by rewriting per segment first.
-              final List<String>? segs0 = _contentSegmentsByIndex[assistantIdx];
-              if (segs0 != null && segs0.isNotEmpty) {
-                final List<String> segs1 = <String>[];
-                for (final s in segs0) {
-                  segs1.add(
-                    await _rewriteNumericEvidenceTagsToFilenames(
-                      s,
-                      ctxPack: pack,
-                    ),
-                  );
-                }
-                _contentSegmentsByIndex[assistantIdx] = segs1;
-                final String joined = segs1.join('');
-                final AIMessage m0 = _messages[assistantIdx];
-                if (joined != m0.content) {
-                  final List<AIMessage> tmp = List<AIMessage>.from(_messages);
-                  tmp[assistantIdx] = AIMessage(
-                    role: m0.role,
-                    content: joined,
-                    createdAt: m0.createdAt,
-                    reasoningContent: m0.reasoningContent,
-                    reasoningDuration: m0.reasoningDuration,
-                    uiThinkingJson: m0.uiThinkingJson,
-                  );
-                  _messages = tmp;
-                }
-              } else {
-                final AIMessage m0 = _messages[assistantIdx];
-                final String rewritten =
-                    await _rewriteNumericEvidenceTagsToFilenames(
-                      m0.content,
-                      ctxPack: pack,
-                    );
-                if (rewritten != m0.content) {
-                  final List<AIMessage> tmp = List<AIMessage>.from(_messages);
-                  tmp[assistantIdx] = AIMessage(
-                    role: m0.role,
-                    content: rewritten,
-                    createdAt: m0.createdAt,
-                    reasoningContent: m0.reasoningContent,
-                    reasoningDuration: m0.reasoningDuration,
-                    uiThinkingJson: m0.uiThinkingJson,
-                  );
-                  _messages = tmp;
-                }
-              }
-            }
-
             final List<AIMessage> merged = _mergeReasoningForPersistence(
               List<AIMessage>.from(_messages),
             );
@@ -1165,60 +727,6 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             await _enqueueChatHistorySaveByCid(requestCid, merged);
           } catch (_) {
             try {
-              final QueryContextPack? pack = ctxPackForRewrite;
-              if (pack != null &&
-                  assistantIdx >= 0 &&
-                  assistantIdx < _messages.length &&
-                  _messages[assistantIdx].role == 'assistant') {
-                final List<String>? segs0 =
-                    _contentSegmentsByIndex[assistantIdx];
-                if (segs0 != null && segs0.isNotEmpty) {
-                  final List<String> segs1 = <String>[];
-                  for (final s in segs0) {
-                    segs1.add(
-                      await _rewriteNumericEvidenceTagsToFilenames(
-                        s,
-                        ctxPack: pack,
-                      ),
-                    );
-                  }
-                  _contentSegmentsByIndex[assistantIdx] = segs1;
-                  final String joined = segs1.join('');
-                  final AIMessage m0 = _messages[assistantIdx];
-                  if (joined != m0.content) {
-                    final List<AIMessage> tmp = List<AIMessage>.from(_messages);
-                    tmp[assistantIdx] = AIMessage(
-                      role: m0.role,
-                      content: joined,
-                      createdAt: m0.createdAt,
-                      reasoningContent: m0.reasoningContent,
-                      reasoningDuration: m0.reasoningDuration,
-                      uiThinkingJson: m0.uiThinkingJson,
-                    );
-                    _messages = tmp;
-                  }
-                } else {
-                  final AIMessage m0 = _messages[assistantIdx];
-                  final String rewritten =
-                      await _rewriteNumericEvidenceTagsToFilenames(
-                        m0.content,
-                        ctxPack: pack,
-                      );
-                  if (rewritten != m0.content) {
-                    final List<AIMessage> tmp = List<AIMessage>.from(_messages);
-                    tmp[assistantIdx] = AIMessage(
-                      role: m0.role,
-                      content: rewritten,
-                      createdAt: m0.createdAt,
-                      reasoningContent: m0.reasoningContent,
-                      reasoningDuration: m0.reasoningDuration,
-                      uiThinkingJson: m0.uiThinkingJson,
-                    );
-                    _messages = tmp;
-                  }
-                }
-              }
-
               final List<AIMessage> toSave = _mergeReasoningForPersistence(
                 List<AIMessage>.from(_messages),
               );
@@ -1412,95 +920,17 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
             }
           }
 
-          // 3) 缺少有效时间窗：优先在“续问”场景复用上一轮，否则自动补全默认范围继续检索
+          // 3) 缺少有效时间窗：不再自动补全默认范围，后续由模型在工具调用中自行决定/调整
           if (!localOnlyResponse &&
               intent != null &&
               !intent!.hasValidRange &&
               !_intentAllowsNoTimeRange(intent!)) {
             _appendAgentLog(
               _isZhLocale()
-                  ? '未解析到有效时间窗：尝试复用上一轮，否则使用默认范围继续检索…'
-                  : 'No valid time range: try reuse previous; otherwise use a default range…',
+                  ? '未解析到固定时间窗：不自动补全。后续由模型按需调用工具并自行调整 start_local/end_local。'
+                  : 'No fixed time range parsed: skip auto-fill. Let the model call tools and adjust start_local/end_local as needed.',
               assistantIndex: assistantIdx,
             );
-            final bool hasPreviousWindow =
-                (_lastIntent != null && _lastIntent!.hasValidRange) ||
-                (_lastCtxPack != null) ||
-                (QueryContextService.instance.lastPack != null);
-            final bool canReusePrevious =
-                hasPreviousWindow && intent!.skipContext;
-            if (canReusePrevious) {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '尝试复用上一轮时间窗…'
-                    : 'Trying to reuse previous time window…',
-                assistantIndex: assistantIdx,
-              );
-              int? fbStart;
-              int? fbEnd;
-              if (_lastIntent != null && _lastIntent!.hasValidRange) {
-                fbStart = _lastIntent!.startMs;
-                fbEnd = _lastIntent!.endMs;
-              } else if (_lastCtxPack != null) {
-                fbStart = _lastCtxPack!.startMs;
-                fbEnd = _lastCtxPack!.endMs;
-              } else if (QueryContextService.instance.lastPack != null) {
-                final p = QueryContextService.instance.lastPack!;
-                fbStart = p.startMs;
-                fbEnd = p.endMs;
-              }
-              if (fbStart != null && fbEnd != null && fbEnd >= fbStart) {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '已复用上一轮时间窗：[$fbStart-$fbEnd]'
-                      : 'Reused previous window: [$fbStart-$fbEnd]',
-                  assistantIndex: assistantIdx,
-                );
-                intent = IntentResult(
-                  intent: intent!.intent,
-                  intentSummary: intent!.intentSummary.isNotEmpty
-                      ? intent!.intentSummary
-                      : '复用上一轮时间窗',
-                  startMs: fbStart,
-                  endMs: fbEnd,
-                  timezone: intent!.timezone,
-                  apps: intent!.apps,
-                  keywords: intent!.keywords,
-                  sqlFill: intent!.sqlFill,
-                  skipContext: true,
-                  errorCode: intent!.errorCode,
-                  errorMessage: intent!.errorMessage,
-                );
-              } else {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '复用失败：没有可用的上一轮范围，将使用默认时间范围继续检索'
-                      : 'Reuse failed: no previous window; using a default time range',
-                  assistantIndex: assistantIdx,
-                );
-                intent = _applyDefaultTimeRange(intent!);
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
-                      : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
-                  assistantIndex: assistantIdx,
-                );
-              }
-            } else {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '没有可复用的上一轮范围：将使用默认时间范围继续检索'
-                    : 'No reusable previous window: using a default time range',
-                assistantIndex: assistantIdx,
-              );
-              intent = _applyDefaultTimeRange(intent!);
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '已自动补全默认时间范围：range=[${intent!.startMs}-${intent!.endMs}]'
-                    : 'Auto-filled default time range: range=[${intent!.startMs}-${intent!.endMs}]',
-                assistantIndex: assistantIdx,
-              );
-            }
           }
 
           // 4) 时间范围过大且缺少线索：不追问，直接继续检索（必要时由模型通过工具分页/扩展范围）
@@ -1548,345 +978,46 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
           }
 
           final IntentResult resolvedIntent = intent!;
-          final bool noContext = _intentAllowsNoTimeRange(resolvedIntent);
 
           // 清理澄清状态，避免污染下一轮
-          if (_clarifyState != null &&
-              (noContext || resolvedIntent.hasValidRange)) {
-            if (noContext) {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '检测到非检索问题：退出澄清流程'
-                    : 'Non-retrieval intent: exiting clarification flow',
-                assistantIndex: assistantIdx,
-              );
-            }
+          if (_clarifyState != null) {
+            _appendAgentLog(
+              _isZhLocale()
+                  ? '当前不预设固定时间窗：退出澄清流程'
+                  : 'No fixed time range preset: exiting clarification flow',
+              assistantIndex: assistantIdx,
+            );
             _clarifyState = null;
-          }
-
-          if (noContext) {
-            await FlutterLogger.nativeInfo(
-              'ChatFlow',
-              'phase1 intent ok (no-context, non-stream) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
-            );
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '意图已确认：${resolvedIntent.intentSummary}（无需时间窗/上下文检索）'
-                  : 'Intent confirmed: ${resolvedIntent.intentSummary} (no time/context needed)',
-              assistantIndex: assistantIdx,
-            );
-            _renameActiveConversationTo(
-              resolvedIntent.intentSummary,
-              conversationCid: requestCid,
-            );
-            _appendAgentLog(
-              _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
-              assistantIndex: assistantIdx,
-              bullet: false,
-            );
-            final Stopwatch swAnswer = Stopwatch()..start();
-            final assistant = await _chat.sendMessageWithDisplayOverride(
-              text,
-              text,
-              includeHistory: true,
-              // Persist tail at service-level so leaving/switching won't lose the result.
-              persistHistoryTail: true,
-              tools: AIChatService.defaultChatTools(),
-              toolChoice: 'auto',
-              conversationCid: requestCid,
-              emitEvent: (evt) {
-                if (!mounted) return;
-                if (_activeSendEpoch != sendEpoch) return;
-                if (evt.kind != 'reasoning') return;
-                final String reasoningDelta = _showAgentProgressLogs
-                    ? evt.data
-                    : _filterReasoningChunkForUi(evt.data);
-                if (reasoningDelta.trim().isEmpty) return;
-                setStateIfActive(() {
-                  _thinkingText += reasoningDelta;
-                  _reasoningByIndex[assistantIdx] =
-                      (_reasoningByIndex[assistantIdx] ?? '') + reasoningDelta;
-                });
-                _scheduleAutoScroll();
-                _scheduleReasoningPreviewScroll();
-              },
-            );
-            swAnswer.stop();
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '模型已响应（${swAnswer.elapsedMilliseconds}ms）'
-                  : 'Model responded (${swAnswer.elapsedMilliseconds}ms)',
-              assistantIndex: assistantIdx,
-            );
-            if (!mounted || _activeSendEpoch != sendEpoch) return;
-            setStateIfActive(() {
-              final lastIdx = _messages.length - 1;
-              _messages[lastIdx] = AIMessage(
-                role: 'assistant',
-                content: assistant.content,
-                createdAt: _messages[lastIdx].createdAt,
-              );
-            });
-            _scheduleAutoScroll();
-            try {
-              final List<AIMessage> toSave = _mergeReasoningForPersistence(
-                List<AIMessage>.from(_messages),
-              );
-              await _enqueueChatHistorySaveByCid(requestCid, toSave);
-            } catch (_) {}
-            return;
           }
 
           await FlutterLogger.nativeInfo(
             'ChatFlow',
-            'phase1 intent ok range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}] summary=${resolvedIntent.intentSummary}',
+            'phase1 intent ok (no-preset-window, non-stream) intent=${resolvedIntent.intent} summary=${resolvedIntent.intentSummary}',
           );
           _appendAgentLog(
             _isZhLocale()
-                ? '意图已确认：${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]'
-                : 'Intent confirmed: ${resolvedIntent.intentSummary} range=[${resolvedIntent.startMs}-${resolvedIntent.endMs}]',
+                ? '意图已确认：${resolvedIntent.intentSummary}（不预设时间窗，由模型按需检索）'
+                : 'Intent confirmed: ${resolvedIntent.intentSummary} (no preset time window; model retrieves as needed)',
             assistantIndex: assistantIdx,
           );
           _renameActiveConversationTo(
             resolvedIntent.intentSummary,
             conversationCid: requestCid,
           );
-
-          await FlutterLogger.nativeInfo(
-            'ChatFlow',
-            'phase2 context(begin, non-stream)',
-          );
-          _appendAgentLog(
-            _isZhLocale() ? '阶段 2/4：查找上下文' : 'Phase 2/4: building context',
-            assistantIndex: assistantIdx,
-            bullet: false,
-          );
-          final String ctxAction = (resolvedIntent.contextAction)
-              .trim()
-              .toLowerCase();
-          final bool reuse =
-              resolvedIntent.skipContext &&
-              ctxAction == 'reuse' &&
-              (_lastCtxPack != null ||
-                  QueryContextService.instance.lastPack != null);
-          _appendAgentLog(
-            _isZhLocale()
-                ? '复用上一轮上下文：' + (reuse ? '是' : '否')
-                : 'Reuse previous context: ' + (reuse ? 'yes' : 'no'),
-            assistantIndex: assistantIdx,
-          );
-          _appendAgentLog(
-            _isZhLocale()
-                ? '上下文策略：' + ctxAction
-                : 'Context action: ' + ctxAction,
-            assistantIndex: assistantIdx,
-          );
-          if (resolvedIntent.skipContext && !reuse) {
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '意图模型建议不复用缓存上下文，将重新检索/翻页以获取更多证据。'
-                  : 'Intent model suggests not reusing cached context; will refresh/page for more evidence.',
-              assistantIndex: assistantIdx,
-            );
-          }
-
-          // 不限制上下文事件数量；预加载少量证据图片“文件名/路径”（不预加载像素）。
-          // 目的：让模型可以直接引用 filename（而不是臆造），从而在 UI 中稳定渲染图片证据。
-          const int maxEvents = 0;
-          // 证据图片：预加载文件名/路径（不预加载像素）；段内最多 15 张，总计最多 360 张（并尽量在段落间均匀分配）。
-          const int maxImagesTotal = 360;
-          const int maxImagesPerEvent = 15;
-
-          // 当范围超过 7 天时，按周预加载（避免提示词过大导致超时/输入上限）。
-          final int fullStartMs = resolvedIntent.startMs;
-          final int fullEndMs = resolvedIntent.endMs;
-          int preloadStartMs = fullStartMs;
-          int preloadEndMs = fullEndMs;
-          final bool windowed =
-              (fullEndMs - fullStartMs) > AIChatService.maxToolTimeSpanMs;
-          if (windowed) {
-            preloadEndMs = fullEndMs;
-            preloadStartMs = fullEndMs - AIChatService.maxToolTimeSpanMs;
-            if (preloadStartMs < fullStartMs) preloadStartMs = fullStartMs;
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '时间范围较大：上下文按周分页，本次预加载 7 天窗口 range=[$preloadStartMs-$preloadEndMs]'
-                  : 'Large time range: paging context by week; preloading a 7-day window range=[$preloadStartMs-$preloadEndMs]',
-              assistantIndex: assistantIdx,
-            );
-          }
-
-          if (windowed &&
-              !reuse &&
-              (ctxAction == 'page_prev' || ctxAction == 'page_next')) {
-            final QueryContextPack? prevPack =
-                (_lastCtxPack ?? QueryContextService.instance.lastPack);
-            if (prevPack != null &&
-                prevPack.startMs >= fullStartMs &&
-                prevPack.endMs <= fullEndMs) {
-              if (ctxAction == 'page_prev' && prevPack.startMs > fullStartMs) {
-                final int prevEnd0 = prevPack.startMs - 1;
-                int nextEndMs = prevEnd0;
-                if (nextEndMs < fullStartMs) nextEndMs = fullStartMs;
-                int nextStartMs = nextEndMs - AIChatService.maxToolTimeSpanMs;
-                if (nextStartMs < fullStartMs) nextStartMs = fullStartMs;
-                if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                preloadStartMs = nextStartMs;
-                preloadEndMs = nextEndMs;
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '自动翻页：加载上一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                      : 'Auto paging: load previous week range=[$preloadStartMs-$preloadEndMs]',
-                  assistantIndex: assistantIdx,
-                );
-              } else if (ctxAction == 'page_next' &&
-                  prevPack.endMs < fullEndMs) {
-                final int nextStart0 = prevPack.endMs + 1;
-                int nextStartMs = nextStart0;
-                if (nextStartMs > fullEndMs) nextStartMs = fullEndMs;
-                int nextEndMs = nextStartMs + AIChatService.maxToolTimeSpanMs;
-                if (nextEndMs > fullEndMs) nextEndMs = fullEndMs;
-                if (nextStartMs > nextEndMs) nextStartMs = nextEndMs;
-                preloadStartMs = nextStartMs;
-                preloadEndMs = nextEndMs;
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '自动翻页：加载下一周上下文 range=[$preloadStartMs-$preloadEndMs]'
-                      : 'Auto paging: load next week range=[$preloadStartMs-$preloadEndMs]',
-                  assistantIndex: assistantIdx,
-                );
-              } else {
-                _appendAgentLog(
-                  _isZhLocale()
-                      ? '已到达可翻页边界（或窗口无变化），将按当前周继续检索。'
-                      : 'Reached paging boundary (or no window change); continue with current window.',
-                  assistantIndex: assistantIdx,
-                );
-              }
-            } else {
-              _appendAgentLog(
-                _isZhLocale()
-                    ? '无可用缓存窗口用于翻页，将按当前周继续检索。'
-                    : 'No cached window for paging; continue with current window.',
-                assistantIndex: assistantIdx,
-              );
-            }
-          }
-
-          final QueryContextPack ctxPack;
-          if (reuse) {
-            _appendAgentLog(
-              _isZhLocale() ? '使用缓存上下文包' : 'Using cached context pack',
-              assistantIndex: assistantIdx,
-            );
-            ctxPack = (_lastCtxPack ?? QueryContextService.instance.lastPack!);
-          } else {
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '查询本地数据库并组装上下文…'
-                  : 'Querying local DB and assembling context…',
-              assistantIndex: assistantIdx,
-            );
-            final Stopwatch swCtx = Stopwatch()..start();
-            ctxPack = await QueryContextService.instance.buildContext(
-              startMs: preloadStartMs,
-              endMs: preloadEndMs,
-              maxEvents: maxEvents,
-              maxImagesTotal: maxImagesTotal,
-              maxImagesPerEvent: maxImagesPerEvent,
-              includeImages: true,
-            );
-            swCtx.stop();
-            _appendAgentLog(
-              _isZhLocale()
-                  ? '上下文组装完成：events=${ctxPack.events.length}（${swCtx.elapsedMilliseconds}ms）'
-                  : 'Context ready: events=${ctxPack.events.length} (${swCtx.elapsedMilliseconds}ms)',
-              assistantIndex: assistantIdx,
-            );
-          }
-          await FlutterLogger.nativeInfo(
-            'ChatFlow',
-            'phase2 context ok events=${ctxPack.events.length} reuse=${reuse ? 1 : 0}',
-          );
-          // 缓存上下文，便于下一轮复用
-          _lastCtxPack = ctxPack;
-          try {
-            QueryContextService.instance.setLastPack(ctxPack);
-          } catch (_) {}
-          final List<EvidenceImageAttachment> attachments = (() {
-            final Set<String> seen = <String>{};
-            final List<EvidenceImageAttachment> out =
-                <EvidenceImageAttachment>[];
-            for (final ev in ctxPack.events) {
-              for (final a in ev.keyImages) {
-                if (a.path.isEmpty) continue;
-                if (seen.add(a.path)) out.add(a);
-              }
-            }
-            return out;
-          })();
-          _appendAgentLog(
-            _isZhLocale()
-                ? '证据图片：预加载文件名/路径 ${attachments.length} 条（不预加载像素；需要看原图像素再用 get_images）'
-                : 'Evidence images: preloaded filenames/paths ${attachments.length} (pixels not preloaded; use get_images when you must see pixels)',
-            assistantIndex: assistantIdx,
-          );
-          setStateIfActive(() {
-            _attachmentsByIndex[assistantIdx] = attachments;
-          });
-          _scheduleEvidenceNsfwPreload(attachments.map((a) => a.path));
-
-          final finalQuery = _buildFinalQuestion(
-            userQuestionForFinal,
-            ctxPack,
-            fullStartMs: fullStartMs,
-            fullEndMs: fullEndMs,
-          );
-          final int finalQueryTokens = PromptBudget.approxTokensForText(
-            finalQuery,
-          );
-          await FlutterLogger.nativeDebug(
-            'ChatFlow',
-            'phase3 finalQueryLen=${finalQuery.length} approxTokens=$finalQueryTokens (non-stream)',
-          );
           _appendAgentLog(
             _isZhLocale() ? '阶段 3/4：生成回答' : 'Phase 3/4: generating answer',
             assistantIndex: assistantIdx,
             bullet: false,
           );
-          _appendAgentLog(
-            _isZhLocale()
-                ? '生成最终提示词：len=${finalQuery.length} tokens≈$finalQueryTokens'
-                : 'Final prompt: len=${finalQuery.length} tokens≈$finalQueryTokens',
-            assistantIndex: assistantIdx,
-          );
-          // 非流式：拿到回复后直接写入最终答案（证据图片在渲染时按 basename 解析）
-          final List<String> extraSystemMessages = <String>[
-            _buildNowContextSystemMessage(),
-          ];
-          final List<Map<String, dynamic>> chatTools =
-              AIChatService.defaultChatTools();
-          final bool forceToolFirstIfNoToolCalls =
-              ctxPack.events.isEmpty ||
-              resolvedIntent.intent == 'keyword_lookup' ||
-              resolvedIntent.keywords.isNotEmpty;
-          _appendAgentLog(
-            _isZhLocale()
-                ? '调用模型并启用工具：tools=${chatTools.length} tool_choice=auto'
-                : 'Calling model with tools: tools=${chatTools.length} tool_choice=auto',
-            assistantIndex: assistantIdx,
-          );
           final Stopwatch swAnswer = Stopwatch()..start();
           final assistant = await _chat.sendMessageWithDisplayOverride(
             text,
-            finalQuery,
+            text,
             includeHistory: true,
-            extraSystemMessages: extraSystemMessages,
             // Persist tail at service-level so leaving/switching won't lose the result.
             persistHistoryTail: true,
-            tools: chatTools,
+            tools: AIChatService.defaultChatTools(),
             toolChoice: 'auto',
-            forceToolFirstIfNoToolCalls: forceToolFirstIfNoToolCalls,
             conversationCid: requestCid,
             emitEvent: (evt) {
               if (!mounted) return;
@@ -1912,52 +1043,24 @@ extension _AISettingsPageStateSendMessageExt on _AISettingsPageState {
                 : 'Model responded (${swAnswer.elapsedMilliseconds}ms)',
             assistantIndex: assistantIdx,
           );
-          final String content = assistant.content;
           if (!mounted || _activeSendEpoch != sendEpoch) return;
           setStateIfActive(() {
-            // 用最终答案替换占位
             final lastIdx = _messages.length - 1;
-            // 如复用上一轮上下文，则在正文前加一行提示
-            final String finalContent =
-                (reuse ? '（已复用上一轮上下文）\n\n' : '') + content;
             _messages[lastIdx] = AIMessage(
               role: 'assistant',
-              content: finalContent,
+              content: assistant.content,
               createdAt: _messages[lastIdx].createdAt,
             );
-            _inStreaming = false;
           });
-          // 覆写历史：合并深度思考内容
+          _scheduleAutoScroll();
+          _lastIntent = resolvedIntent;
           try {
-            List<AIMessage> toSave = _mergeReasoningForPersistence(
+            final List<AIMessage> toSave = _mergeReasoningForPersistence(
               List<AIMessage>.from(_messages),
             );
-            if (assistantIdx >= 0 &&
-                assistantIdx < toSave.length &&
-                toSave[assistantIdx].role == 'assistant') {
-              final AIMessage m = toSave[assistantIdx];
-              String rewritten = await _rewriteNumericEvidenceTagsToFilenames(
-                m.content,
-                ctxPack: ctxPack,
-              );
-              if (rewritten != m.content) {
-                toSave = List<AIMessage>.from(toSave);
-                toSave[assistantIdx] = AIMessage(
-                  role: m.role,
-                  content: rewritten,
-                  createdAt: m.createdAt,
-                  reasoningContent: m.reasoningContent,
-                  reasoningDuration: m.reasoningDuration,
-                  uiThinkingJson: m.uiThinkingJson,
-                );
-                setStateIfActive(() => _messages = toSave);
-              }
-            }
             await _enqueueChatHistorySaveByCid(requestCid, toSave);
           } catch (_) {}
-          // 成功路径：更新"上一轮"缓存
-          _lastCtxPack = ctxPack;
-          _lastIntent = resolvedIntent;
+          return;
         } catch (e) {
           try {
             await FlutterLogger.nativeError(

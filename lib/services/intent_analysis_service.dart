@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/widgets.dart';
 import 'ai_chat_service.dart';
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
@@ -123,17 +122,7 @@ class IntentAnalysisService {
     } catch (_) {}
 
     final Map<String, dynamic> json = _safeExtractJson(resp.content);
-    IntentResult result = _mapToResult(json, now, tzReadable);
-    final IntentResult fixed = _maybeFixRelativeRange(userText, result, now);
-    if (fixed.startMs != result.startMs || fixed.endMs != result.endMs) {
-      try {
-        await FlutterLogger.nativeWarn(
-          'Intent',
-          'range corrected by heuristic: [${result.startMs}-${result.endMs}] -> [${fixed.startMs}-${fixed.endMs}] user="${_clip(userText, 80)}"',
-        );
-      } catch (_) {}
-      result = fixed;
-    }
+    final IntentResult result = _mapToResult(json, now, tzReadable);
     try {
       await FlutterLogger.nativeInfo(
         'Intent',
@@ -144,32 +133,15 @@ class IntentAnalysisService {
   }
 
   IntentResult _fallbackResult(DateTime now, String tzReadable) {
-    final DateTime end = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      23,
-      59,
-      59,
-      999,
-    );
-    final DateTime start = end.subtract(const Duration(days: 6));
-    final int startMs = start.millisecondsSinceEpoch;
-    final int endMs = end.millisecondsSinceEpoch;
     return IntentResult(
-      intent: 'time_range_query',
-      intentSummary: '默认查询最近一周（未配置 AI 或请求失败）',
-      startMs: startMs,
-      endMs: endMs,
+      intent: 'other',
+      intentSummary: '意图解析服务不可用（不预设时间窗）',
+      startMs: 0,
+      endMs: 0,
       timezone: tzReadable,
       apps: const <String>[],
       keywords: const <String>[],
-      sqlFill: <String, dynamic>{
-        'segments_between': <String, dynamic>{
-          'start_ms': startMs,
-          'end_ms': endMs,
-        },
-      },
+      sqlFill: <String, dynamic>{},
       skipContext: false,
       contextAction: 'refresh',
       userWantsProceed: false,
@@ -182,10 +154,10 @@ class IntentAnalysisService {
       'You are an intent parser that outputs STRICT JSON only. No explanations.',
       'Current local datetime: ${now.toIso8601String()}',
       'Timezone: $tzName ($tzReadable).',
-      'Return a FIXED schema. For retrieval intents you MUST output explicit local datetimes; for intent="other" (non-retrieval), leave start_local/end_local empty.',
+      'Return a FIXED schema. start_local/end_local are OPTIONAL: provide them when confidently inferred, otherwise leave them empty and let downstream tools decide the search window.',
       'If the query mentions a calendar date (e.g., "10月10日"/"10月10号"/"2025年10月10日"), resolve to exact start_local and end_local in ISO-8601 with timezone offset (e.g., 2025-10-10T00:00:00+08:00).',
-      'If the query mentions parts of day (上午/下午/晚上/今晚), map them to exact ranges using local time semantics: 上午=08:00–12:00, 下午=12:00–18:00, 晚上/今晚=18:00–24:00.',
-      'If the query requires a time range but the time period is ambiguous/missing, DO NOT default to today. Instead, set an error object and leave start_local/end_local empty.',
+      'If the query mentions parts of day, map them to exact local ranges.',
+      'If the query requires a time range but the time period is ambiguous/missing, DO NOT default to the current day. Instead, set an error object and leave start_local/end_local empty.',
       'Always respond in one JSON object with keys specified below.',
     ].join('\n');
   }
@@ -234,10 +206,10 @@ class IntentAnalysisService {
         lines.add('Previous intent summary (CN): ' + prev.summary.trim());
       }
       lines.add(
-        'If this query is a follow-up within the previous context window (or a subset like narrowing by app), set "skip_context" = true, and you MUST copy the exact ISO datetimes from "Previous context window ISO(local)" into start_local and end_local.',
+        'If this query is a follow-up within the previous context window (or a subset like narrowing by app), set "skip_context" = true; you MAY copy those exact ISO datetimes into start_local/end_local when appropriate.',
       );
       lines.add(
-        'If this is NOT a follow-up, set skip_context=false and compute a new start_local/end_local explicitly (do NOT default to today).',
+        'If this is NOT a follow-up, set skip_context=false. You MAY compute start_local/end_local when confident, but do NOT default to the current day when uncertain.',
       );
     }
     lines.addAll(<String>[
@@ -258,9 +230,9 @@ class IntentAnalysisService {
       '}',
       'Rules:',
       '- 若 intent=other（非检索/非回顾屏幕记录，如：通用对话/闲聊/功能咨询/设置问题），start_local/end_local 必须留空，且不要返回 MISSING_DATE。',
-      '- 仅当 intent 需要时间范围（time_range_query/app_time_range_query/keyword_lookup）时，才必须返回 start_local 与 end_local（ISO-8601，含偏移）；禁止默认到“今天”。',
-      '- 若 intent 需要时间范围，但用户未给出可解析的日期/时间或存在歧义，请仅返回 error，并保持 start_local/end_local 为空。',
-      '- 若用户说“今天/昨天/今晚”等相对时间，也要换算为本地具体日期时间并填入。',
+      '- 对任意 intent，start_local/end_local 都是可选字段：仅在你有把握时填写（ISO-8601，含偏移）。不确定时请留空，不要默认到“当前日期”。',
+      '- 当日期/时间存在歧义或信息不足时，可返回 error 并保持 start_local/end_local 为空。',
+      '- 若用户使用相对时间表达，也要换算为本地具体日期时间并填入。',
       '- intent_summary 必须为中文。',
       '- 若为上一轮时间窗内的续问，合理设置 skip_context=true。',
       '- context_action 用于指导“上下文包”的复用/刷新/翻页（由你判断；不要依赖固定关键词）。',
@@ -293,275 +265,6 @@ class IntentAnalysisService {
       if (j is Map<String, dynamic>) return j;
     } catch (_) {}
     return <String, dynamic>{};
-  }
-
-  /// 将中文时间段文本转换为 [startMs, endMs]（endMs 为包含端点，毫秒）
-  List<int> _computeRangeFromTimePeriod(String? period, DateTime now) {
-    if (period == null) return const <int>[0, 0];
-    final String p = period.trim();
-    if (p.isEmpty) return const <int>[0, 0];
-
-    DateTime start;
-    DateTime end;
-
-    // 基于本地时间的“今天/昨天”等计算
-    DateTime startOfDay(DateTime d) =>
-        DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
-    DateTime endOfDay(DateTime d) =>
-        DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
-
-    final String low = p.toLowerCase();
-
-    // 显式中文日期（如：10月10日/10月10号/2025年10月10日，支持 上午/下午/晚上）
-    final List<int> explicit = _parseExplicitChineseDate(p, now);
-    if (explicit.isNotEmpty &&
-        explicit[0] > 0 &&
-        explicit[1] > 0 &&
-        explicit[1] >= explicit[0]) {
-      return explicit;
-    }
-
-    // 明确列出的口语映射
-    if (low.contains('今天上午')) {
-      start = DateTime(now.year, now.month, now.day, 8, 0, 0, 0, 0);
-      end = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        12,
-        0,
-        0,
-        0,
-        0,
-      ).subtract(const Duration(milliseconds: 1));
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('今天下午')) {
-      start = DateTime(now.year, now.month, now.day, 12, 0, 0, 0, 0);
-      end = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        18,
-        0,
-        0,
-        0,
-        0,
-      ).subtract(const Duration(milliseconds: 1));
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('今天晚上') || low == '今晚') {
-      start = DateTime(now.year, now.month, now.day, 18, 0, 0, 0, 0);
-      end = endOfDay(now);
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('昨天')) {
-      final DateTime y = now.subtract(const Duration(days: 1));
-      start = startOfDay(y);
-      end = endOfDay(y);
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('最近一周') || low.contains('最近7天')) {
-      start = now.subtract(const Duration(days: 7));
-      end = now;
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('最近一月') ||
-        low.contains('最近一个月') ||
-        low.contains('近一月') ||
-        low.contains('近一个月') ||
-        low.contains('最近30天') ||
-        low.contains('近30天')) {
-      start = now.subtract(const Duration(days: 30));
-      end = now;
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('最近三天') || low.contains('最近3天')) {
-      start = now.subtract(const Duration(days: 3));
-      end = now;
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('最近24小时') || low.contains('最近二十四小时')) {
-      start = now.subtract(const Duration(hours: 24));
-      end = now;
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-    if (low.contains('今天') || low == '今日') {
-      start = startOfDay(now);
-      end = endOfDay(now);
-      return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
-    }
-
-    return const <int>[0, 0];
-  }
-
-  IntentResult _maybeFixRelativeRange(
-    String userText,
-    IntentResult result,
-    DateTime now,
-  ) {
-    if (result.hasError || !result.hasValidRange) return result;
-    // Only apply to relative-time phrases; do not touch explicit dates.
-    final String t = userText.trim().toLowerCase();
-    if (t.isEmpty) return result;
-    if (RegExp(r'[12]\d{3}\s*年|\d{1,2}\s*月\s*\d{1,2}').hasMatch(t)) {
-      return result;
-    }
-
-    String? period;
-    if (t.contains('最近一月') ||
-        t.contains('最近一个月') ||
-        t.contains('近一月') ||
-        t.contains('近一个月') ||
-        t.contains('最近30天') ||
-        t.contains('近30天')) {
-      period = '最近一个月';
-    } else if (t.contains('最近一周') || t.contains('最近7天')) {
-      period = '最近一周';
-    } else if (t.contains('最近三天') || t.contains('最近3天')) {
-      period = '最近三天';
-    } else if (t.contains('最近24小时') || t.contains('最近二十四小时')) {
-      period = '最近24小时';
-    } else if (t.contains('昨天')) {
-      period = '昨天';
-    } else if (t.contains('今天') || t == '今日') {
-      period = '今天';
-    }
-    if (period == null) return result;
-
-    final List<int> expected = _computeRangeFromTimePeriod(period, now);
-    if (expected.length < 2 || expected[0] <= 0 || expected[1] <= 0)
-      return result;
-
-    final int expStart = expected[0];
-    final int expEnd = expected[1];
-    final int gotStart = result.startMs;
-    final int gotEnd = result.endMs;
-
-    // If model output is clearly out-of-bounds (e.g. "last month" but returned ~1 year),
-    // clamp to a sane window.
-    final int gotSpan = (gotEnd > 0 && gotStart > 0)
-        ? (gotEnd - gotStart).abs()
-        : 0;
-    final int maxSpan = (period == '最近一个月')
-        ? const Duration(days: 45).inMilliseconds
-        : const Duration(days: 14).inMilliseconds;
-    final bool spanTooLarge = gotSpan > maxSpan;
-
-    final int nowMs = now.millisecondsSinceEpoch;
-    final bool endFarFromNow =
-        gotEnd > 0 &&
-        (gotEnd - nowMs).abs() > const Duration(days: 3).inMilliseconds;
-
-    if (!spanTooLarge && !endFarFromNow) return result;
-
-    return IntentResult(
-      intent: result.intent,
-      intentSummary: result.intentSummary,
-      startMs: expStart,
-      endMs: expEnd,
-      timezone: result.timezone,
-      apps: result.apps,
-      keywords: result.keywords,
-      sqlFill: result.sqlFill,
-      skipContext: result.skipContext,
-      contextAction: result.contextAction,
-      userWantsProceed: result.userWantsProceed,
-      errorCode: result.errorCode,
-      errorMessage: result.errorMessage,
-    );
-  }
-
-  /// 解析显式中文日期：
-  /// - 10月10日 / 10月10号
-  /// - 2025年10月10日
-  /// 可选带时段：上午/下午/晚上（与“今天上午/下午/晚上”的时间划分一致）
-  List<int> _parseExplicitChineseDate(String text, DateTime now) {
-    // 注意：这里使用原始字符串(r'...')，不要对正则中的反斜杠做二次转义
-    // 正确写法示例：\d -> 在原始字符串中写成 \d，而不是 \\\\d
-    final RegExp reYmd = RegExp(
-      r'(?:([12]\d{3})年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*(?:[日号])?',
-    );
-    final Match? m = reYmd.firstMatch(text);
-    if (m == null) {
-      return const <int>[0, 0];
-    }
-
-    int year = now.year;
-    try {
-      final String? y = m.group(1);
-      if (y != null && y.isNotEmpty) year = int.parse(y);
-    } catch (_) {}
-
-    int month;
-    int day;
-    try {
-      month = int.parse(m.group(2)!);
-      day = int.parse(m.group(3)!);
-    } catch (_) {
-      return const <int>[0, 0];
-    }
-
-    DateTime startOfDay(DateTime d) =>
-        DateTime(d.year, d.month, d.day, 0, 0, 0, 0, 0);
-    DateTime endOfDay(DateTime d) =>
-        DateTime(d.year, d.month, d.day, 23, 59, 59, 999, 0);
-
-    late final DateTime base;
-    try {
-      base = DateTime(year, month, day, 0, 0, 0, 0, 0);
-      if (base.year != year || base.month != month || base.day != day) {
-        return const <int>[0, 0];
-      }
-    } catch (_) {
-      return const <int>[0, 0];
-    }
-
-    final bool isMorning = text.contains('上午') || text.contains('早上');
-    final bool isAfternoon = text.contains('下午');
-    final bool isEvening =
-        text.contains('晚上') ||
-        text.contains('晚间') ||
-        text.contains('夜里') ||
-        text.contains('夜间') ||
-        text.contains('夜晚') ||
-        text.contains('傍晚');
-
-    DateTime start;
-    DateTime end;
-    if (isMorning) {
-      start = DateTime(base.year, base.month, base.day, 8, 0, 0, 0, 0);
-      end = DateTime(
-        base.year,
-        base.month,
-        base.day,
-        12,
-        0,
-        0,
-        0,
-        0,
-      ).subtract(const Duration(milliseconds: 1));
-    } else if (isAfternoon) {
-      start = DateTime(base.year, base.month, base.day, 12, 0, 0, 0, 0);
-      end = DateTime(
-        base.year,
-        base.month,
-        base.day,
-        18,
-        0,
-        0,
-        0,
-        0,
-      ).subtract(const Duration(milliseconds: 1));
-    } else if (isEvening) {
-      start = DateTime(base.year, base.month, base.day, 18, 0, 0, 0, 0);
-      end = endOfDay(base);
-    } else {
-      start = startOfDay(base);
-      end = endOfDay(base);
-    }
-
-    return <int>[start.millisecondsSinceEpoch, end.millisecondsSinceEpoch];
   }
 
   IntentResult _mapToResult(

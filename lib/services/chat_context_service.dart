@@ -1131,8 +1131,9 @@ class ChatContextService {
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int userAt = (userCreatedAtMs ?? 0) > 0 ? userCreatedAtMs! : now;
-    final int assistantAt =
-        (assistantCreatedAtMs ?? 0) > 0 ? assistantCreatedAtMs! : now;
+    final int assistantAt = (assistantCreatedAtMs ?? 0) > 0
+        ? assistantCreatedAtMs!
+        : now;
     await _appendFullMessageDedup(
       cid,
       role: 'user',
@@ -1716,7 +1717,10 @@ class ChatContextService {
 
     final bool zh = _isZhLocale();
     final String label = zh ? '最近工具记忆（摘要）' : 'Recent tool memory (digest)';
-    final List<String> lines = <String>[label + ':'];
+    final String note = zh
+        ? '说明：以下是历史工具记录摘要，不是当前这轮对话的硬约束。'
+        : 'Note: the following are digests of historical tool calls, not hard constraints for the current turn.';
+    final List<String> lines = <String>[label + ':', note];
     int shown = 0;
     for (final dynamic it in items.reversed) {
       if (it is! Map) continue;
@@ -1740,26 +1744,13 @@ class ChatContextService {
       'query',
       'mode',
       'app_package_name',
-      'start_local',
-      'end_local',
       'limit',
       'offset',
       'count',
-      'warnings',
-      'paging',
-      'results',
     ];
     for (final k in keep) {
       if (!digest.containsKey(k)) continue;
       out[k] = digest[k];
-    }
-    // Results can still be big; trim here.
-    final dynamic results = out['results'];
-    if (results is List && results.length > 8) {
-      out['results'] = <dynamic>[
-        ...results.take(6),
-        '…omitted ${results.length - 6}…',
-      ];
     }
     return out;
   }

@@ -1696,25 +1696,6 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     return false;
   }
 
-  IntentResult _applyDefaultTimeRange(IntentResult intent, {int days = 30}) {
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    int startMs = nowMs - Duration(days: days).inMilliseconds;
-    if (startMs < 0) startMs = 0;
-    return IntentResult(
-      intent: intent.intent,
-      intentSummary: intent.intentSummary,
-      startMs: startMs,
-      endMs: nowMs,
-      timezone: intent.timezone,
-      apps: intent.apps,
-      keywords: intent.keywords,
-      sqlFill: intent.sqlFill,
-      skipContext: false,
-      contextAction: 'refresh',
-      userWantsProceed: true,
-    );
-  }
-
   String _fmtWindowShort(int startMs, int endMs) {
     if (startMs <= 0 || endMs <= 0) return '';
     final DateTime ds = DateTime.fromMillisecondsSinceEpoch(startMs);
