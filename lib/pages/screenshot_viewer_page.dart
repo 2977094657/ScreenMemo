@@ -280,7 +280,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     try {
       final dynamic rawResult = args['aiResult'];
       if (rawResult is Map) {
-        final Map<String, dynamic> m = Map<String, dynamic>.from(rawResult as Map);
+        final Map<String, dynamic> m = Map<String, dynamic>.from(
+          rawResult as Map,
+        );
         if (_segmentId == null) {
           final dynamic sid = m['segment_id'];
           if (sid is int && sid > 0) {
@@ -320,8 +322,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
     if (sid == null || sid <= 0) return;
     _loadingAiResult = true;
     try {
-      final Map<String, dynamic>? row =
-          await ScreenshotDatabase.instance.getSegmentResult(sid);
+      final Map<String, dynamic>? row = await ScreenshotDatabase.instance
+          .getSegmentResult(sid);
       if (row == null || row.isEmpty) return;
       _segmentAiResult = <String, dynamic>{
         'segment_id': row['segment_id'] ?? sid,
@@ -818,7 +820,9 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
   }
 
   String _formatAiCreatedAt(dynamic value) {
-    final int? ms = value is int ? value : int.tryParse(value?.toString() ?? '');
+    final int? ms = value is int
+        ? value
+        : int.tryParse(value?.toString() ?? '');
     if (ms == null || ms <= 0) return '';
     try {
       return _formatDateTime(DateTime.fromMillisecondsSinceEpoch(ms));
@@ -836,6 +840,139 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
       return encoder.convert(decoded);
     } catch (_) {
       return raw;
+    }
+  }
+
+  String _formatExportFileTimestamp(DateTime dt) {
+    return '${dt.year.toString().padLeft(4, '0')}'
+        '${dt.month.toString().padLeft(2, '0')}'
+        '${dt.day.toString().padLeft(2, '0')}_'
+        '${dt.hour.toString().padLeft(2, '0')}'
+        '${dt.minute.toString().padLeft(2, '0')}'
+        '${dt.second.toString().padLeft(2, '0')}';
+  }
+
+  String _sanitizeFileNamePart(String input, {String fallback = 'unknown'}) {
+    final String trimmed = input.trim();
+    if (trimmed.isEmpty) return fallback;
+    final String sanitized = trimmed.replaceAll(
+      RegExp(r'[^a-zA-Z0-9._-]+'),
+      '_',
+    );
+    return sanitized.isEmpty ? fallback : sanitized;
+  }
+
+  Map<String, dynamic> _buildSegmentAiExportJsonPayload({
+    required String segmentIdText,
+    required String providerText,
+    required String modelText,
+    required String categoriesText,
+    required String outputText,
+    required String structuredRaw,
+    required dynamic createdAt,
+    required DateTime exportedAt,
+  }) {
+    dynamic structuredJson;
+    final String structuredTrimmed = structuredRaw.trim();
+    if (structuredTrimmed.isNotEmpty) {
+      try {
+        structuredJson = jsonDecode(structuredTrimmed);
+      } catch (_) {
+        structuredJson = structuredTrimmed;
+      }
+    }
+
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'segment_id': segmentIdText,
+      'ai_provider': providerText,
+      'ai_model': modelText,
+      'categories': categoriesText,
+      'output_text': outputText,
+      'structured_json': structuredJson,
+      'created_at': createdAt,
+      'created_at_formatted': _formatAiCreatedAt(createdAt),
+      'exported_at': exportedAt.toIso8601String(),
+    };
+
+    payload.removeWhere(
+      (_, value) => value == null || (value is String && value.trim().isEmpty),
+    );
+    return payload;
+  }
+
+  Future<void> _exportSegmentAiResponseToJson({
+    required String segmentIdText,
+    required String providerText,
+    required String modelText,
+    required String categoriesText,
+    required String outputText,
+    required String structuredRaw,
+    required dynamic createdAt,
+  }) async {
+    try {
+      String? baseDirPath;
+      try {
+        baseDirPath = await FlutterLogger.getTodayLogsDir();
+      } catch (_) {
+        baseDirPath = null;
+      }
+
+      Directory baseDir = Directory.systemTemp;
+      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+        baseDir = Directory(baseDirPath.trim());
+      }
+
+      final String sep = Platform.pathSeparator;
+      final Directory outDir = Directory(
+        '${baseDir.path}${sep}ai_response_exports',
+      );
+      await outDir.create(recursive: true);
+
+      final DateTime now = DateTime.now();
+      final String fileName =
+          'segment_ai_response_${_sanitizeFileNamePart(segmentIdText)}_${_formatExportFileTimestamp(now)}.json';
+      final File outFile = File(outDir.path + sep + fileName);
+
+      final Map<String, dynamic> payload = _buildSegmentAiExportJsonPayload(
+        segmentIdText: segmentIdText,
+        providerText: providerText,
+        modelText: modelText,
+        categoriesText: categoriesText,
+        outputText: outputText,
+        structuredRaw: structuredRaw,
+        createdAt: createdAt,
+        exportedAt: now,
+      );
+      final String jsonText = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(payload);
+      await outFile.writeAsString('$jsonText\n', flush: true);
+
+      try {
+        await Clipboard.setData(ClipboardData(text: outFile.path));
+      } catch (_) {}
+
+      // ignore: unawaited_futures
+      FlutterLogger.info('UI.查看器-AI响应导出JSON 成功 path=${outFile.path}');
+      if (!mounted) return;
+      final bool isZh = Localizations.localeOf(
+        context,
+      ).languageCode.toLowerCase().startsWith('zh');
+      UINotifier.success(
+        context,
+        isZh ? '已导出 JSON：${outFile.path}' : 'JSON exported: ${outFile.path}',
+      );
+    } catch (e) {
+      // ignore: unawaited_futures
+      FlutterLogger.error('UI.查看器-AI响应导出JSON 失败: $e');
+      if (!mounted) return;
+      final bool isZh = Localizations.localeOf(
+        context,
+      ).languageCode.toLowerCase().startsWith('zh');
+      UINotifier.error(
+        context,
+        isZh ? '导出 JSON 失败：$e' : 'JSON export failed: $e',
+      );
     }
   }
 
@@ -924,6 +1061,27 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                               ),
                             ),
                             IconButton(
+                              tooltip: '${l10n.actionExport} JSON',
+                              icon: const Icon(
+                                Icons.save_alt_outlined,
+                                size: 18,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: !hasAny
+                                  ? null
+                                  : () async {
+                                      await _exportSegmentAiResponseToJson(
+                                        segmentIdText: segmentIdText,
+                                        providerText: providerText,
+                                        modelText: modelText,
+                                        categoriesText: categoriesText,
+                                        outputText: outputText,
+                                        structuredRaw: structuredRaw,
+                                        createdAt: row?['created_at'],
+                                      );
+                                    },
+                            ),
+                            IconButton(
                               tooltip: l10n.copyResultsTooltip,
                               icon: const Icon(
                                 Icons.copy_all_outlined,
@@ -940,16 +1098,18 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                                           ClipboardData(text: text),
                                         );
                                         if (!mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(l10n.copySuccess),
                                           ),
                                         );
                                       } catch (_) {
                                         if (!mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(l10n.copyFailed),
                                           ),
@@ -964,8 +1124,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           Text(
                             '当前无动态 AI 响应上下文或未生成结果。',
                             style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                                  color: AppTheme.mutedForeground,
-                                ),
+                              color: AppTheme.mutedForeground,
+                            ),
                           ),
                         if (hasAny) ...[
                           if (segmentIdText.isNotEmpty ||
@@ -974,9 +1134,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                               createdAtText.isNotEmpty) ...[
                             Text(
                               'Meta',
-                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              style: Theme.of(ctx).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
                             if (segmentIdText.isNotEmpty)
@@ -1004,9 +1163,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           if (categoriesText.isNotEmpty) ...[
                             Text(
                               'categories',
-                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              style: Theme.of(ctx).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
                             SelectableText(
@@ -1018,9 +1176,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           if (outputText.isNotEmpty) ...[
                             Text(
                               'output_text',
-                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              style: Theme.of(ctx).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
                             SelectableText(
@@ -1032,9 +1189,8 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                           if (structuredPretty.isNotEmpty) ...[
                             Text(
                               'structured_json',
-                              style: Theme.of(ctx).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              style: Theme.of(ctx).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 8),
                             SelectableText(
