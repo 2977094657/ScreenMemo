@@ -178,6 +178,81 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await _createAtomicMemoriesFts(db);
     await _backfillAtomicMemoriesFts(db);
 
+    // Global, cross-conversation user memory (profile + atomic facts/rules/habits + evidence).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_memory_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        user_markdown TEXT,
+        auto_markdown TEXT,
+        user_updated_at INTEGER,
+        auto_updated_at INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_memory_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,           -- rule | fact | habit
+        memory_key TEXT,              -- optional stable key for upserts (e.g. user.language)
+        content TEXT NOT NULL,        -- atomic, durable restatement
+        content_hash TEXT NOT NULL,   -- stable hash for de-dup (computed in Dart)
+        keywords_json TEXT,           -- optional JSON array of keywords
+        confidence REAL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        user_edited INTEGER NOT NULL DEFAULT 0,
+        first_seen_at INTEGER,
+        last_seen_at INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_user_memory_items_kind ON user_memory_items(kind, pinned DESC, updated_at DESC, id DESC)',
+    );
+    try {
+      await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_memory_items_key ON user_memory_items(memory_key) WHERE memory_key IS NOT NULL AND TRIM(memory_key) != ''",
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_memory_items_hash ON user_memory_items(content_hash)',
+      );
+    } catch (_) {}
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_memory_evidence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memory_item_id INTEGER NOT NULL,
+        source_type TEXT NOT NULL,          -- segment | chat | daily_summary | weekly_summary | morning_insights
+        source_id TEXT NOT NULL,            -- e.g. segment:123
+        evidence_filenames_json TEXT,       -- optional JSON array of basenames (max ~5)
+        start_time INTEGER,
+        end_time INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        UNIQUE(memory_item_id, source_type, source_id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_user_memory_evidence_item ON user_memory_evidence(memory_item_id, created_at DESC, id DESC)',
+    );
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_memory_index_state (
+        source TEXT PRIMARY KEY,
+        status TEXT NOT NULL,               -- idle | running | paused | error | done
+        cursor_json TEXT,
+        stats_json TEXT,
+        started_at INTEGER,
+        finished_at INTEGER,
+        updated_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        error TEXT
+      )
+    ''');
+    await _createUserMemoryItemsFts(db);
+    await _backfillUserMemoryItemsFts(db);
+
     // 首次升级/创建时，将 ai_messages 中的会话ID迁移为显式会话条目，并初始化激活会话
     try {
       await _migrateLegacyConversations(db);
@@ -299,6 +374,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         output_text TEXT,
         structured_json TEXT,
         categories TEXT,
+        raw_request TEXT,
+        raw_response TEXT,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
@@ -1286,13 +1363,25 @@ ORDER BY day ASC
   }
 
   // ======= 段落查询接口 =======
+  /// Root segments are those not merged into another segment.
+  ///
+  /// Historical/edge cases we need to tolerate:
+  /// - Some DBs may store "no merged target" as 0 instead of NULL.
+  /// - Users may delete a root segment, leaving children with a stale merged_into_id.
+  ///   In that case we treat those rows as roots again so the UI/search won't go empty.
+  String _segmentsRootWhere([String? alias]) {
+    final String p = (alias == null || alias.isEmpty) ? '' : '$alias.';
+    return '(${p}merged_into_id IS NULL OR ${p}merged_into_id <= 0 OR NOT EXISTS (SELECT 1 FROM segments t WHERE t.id = ${p}merged_into_id))';
+  }
+
   Future<Map<String, dynamic>?> getActiveSegment() async {
     final db = await database;
     try {
       // 兜底：若某段已产出总结（segment_results 有内容）但 status 仍是 collecting，
       // 不应在 UI 顶部继续显示“进行中”（常见于原生链路合并/网络卡住导致状态未及时落库）。
+      // Avoid LOWER(TRIM(..)) on large TEXT values; it can be very expensive and may OOM on some devices.
       const String noSummaryCond =
-          "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
+          "r.segment_id IS NULL OR ((r.output_text IS NULL OR (LENGTH(r.output_text) <= 256 AND LOWER(TRIM(r.output_text)) IN ('','null'))) AND (r.structured_json IS NULL OR (LENGTH(r.structured_json) <= 256 AND LOWER(TRIM(r.structured_json)) IN ('','null'))))";
       final rows = await db.rawQuery(
         '''
         SELECT s.*
@@ -1322,7 +1411,7 @@ ORDER BY day ASC
       final rows = await db.query(
         'segments',
         where:
-            "merged_into_id IS NULL AND (segment_kind IS NULL OR segment_kind = 'global')",
+            "${_segmentsRootWhere()} AND (segment_kind IS NULL OR segment_kind = 'global')",
         orderBy: 'id DESC',
         limit: limit,
         offset: offset,
@@ -1335,74 +1424,79 @@ ORDER BY day ASC
 
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
   /// - has_summary: 0 表示无总结；1 表示已有总结
-  /// - 仅返回“至少有一张样本图片”的事件，避免前端渲染后再隐藏导致滚动抖动
+  /// - 默认仅返回“至少有一张样本图片”的事件（避免前端渲染后再隐藏导致滚动抖动）
+  ///   - requireSamples=false 时允许返回“样本数为 0”的段落（用于故障排查/降级展示）
   /// - 可选按 start_time 进行时间范围过滤（用于“动态”页按日期窗口增量加载）
   /// - 可选按 appPackageName / appPackageNames 过滤（按 segment_samples.app_package_name）。
   Future<List<Map<String, dynamic>>> listSegmentsEx({
     int limit = 50,
     int offset = 0,
     bool onlyNoSummary = false,
+    bool requireSamples = true,
     int? startMillis,
     int? endMillis,
     List<String>? appPackageNames,
     String? appPackageName,
   }) async {
     final db = await database;
-    try {
-      int safeOffset = offset;
-      if (safeOffset < 0) safeOffset = 0;
+    int safeOffset = offset;
+    if (safeOffset < 0) safeOffset = 0;
 
-      const String noSummaryCond =
-          "r.segment_id IS NULL OR ((r.output_text IS NULL OR LOWER(TRIM(r.output_text)) IN ('','null')) AND (r.structured_json IS NULL OR LOWER(TRIM(r.structured_json)) IN ('','null')))";
-      const String hasSamplesCond =
-          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
-      // 组合 WHERE 子句
-      final List<String> whereClauses = <String>[
-        's.merged_into_id IS NULL',
-        "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
-      ];
-      final List<Object?> params = <Object?>[];
+    // Avoid LOWER(TRIM(..)) on huge TEXT blobs (can cause CursorWindow/oom when scanning many rows).
+    const String noSummaryCond =
+        "r.segment_id IS NULL OR ((r.output_text IS NULL OR (LENGTH(r.output_text) <= 256 AND LOWER(TRIM(r.output_text)) IN ('','null'))) AND (r.structured_json IS NULL OR (LENGTH(r.structured_json) <= 256 AND LOWER(TRIM(r.structured_json)) IN ('','null'))))";
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
 
-      List<String> pkgs = (appPackageNames ?? const <String>[])
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toSet()
-          .toList();
-      if (pkgs.isEmpty) {
-        final String single = (appPackageName ?? '').trim();
-        if (single.isNotEmpty) pkgs = <String>[single];
-      }
-      pkgs.sort();
-      if (pkgs.length > 30) {
-        pkgs = pkgs.take(30).toList(growable: false);
-      }
+    // 组合 WHERE 子句
+    final List<String> whereClauses = <String>[
+      _segmentsRootWhere('s'),
+      "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+    ];
+    final List<Object?> whereParams = <Object?>[];
 
-      if (pkgs.isNotEmpty) {
-        final String placeholders = List.filled(pkgs.length, '?').join(',');
-        whereClauses.add(
-          "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id AND ss.app_package_name IN ($placeholders))",
-        );
-        params.addAll(pkgs);
-      } else {
-        whereClauses.add(hasSamplesCond);
-      }
+    List<String> pkgs = (appPackageNames ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (pkgs.isEmpty) {
+      final String single = (appPackageName ?? '').trim();
+      if (single.isNotEmpty) pkgs = <String>[single];
+    }
+    pkgs.sort();
+    if (pkgs.length > 30) {
+      pkgs = pkgs.take(30).toList(growable: false);
+    }
 
-      if (startMillis != null) {
-        whereClauses.add('s.start_time >= ?');
-        params.add(startMillis);
-      }
-      if (endMillis != null) {
-        whereClauses.add('s.start_time <= ?');
-        params.add(endMillis);
-      }
-      if (onlyNoSummary) {
-        whereClauses.add('(' + noSummaryCond + ')');
-      }
-      final String whereSql = whereClauses.isEmpty
-          ? ''
-          : ('WHERE ' + whereClauses.join(' AND '));
-      final String sql =
-          '''
+    if (pkgs.isNotEmpty) {
+      final String placeholders = List.filled(pkgs.length, '?').join(',');
+      whereClauses.add(
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id AND ss.app_package_name IN ($placeholders))",
+      );
+      whereParams.addAll(pkgs);
+    } else if (requireSamples) {
+      whereClauses.add(hasSamplesCond);
+    }
+
+    if (startMillis != null) {
+      whereClauses.add('s.start_time >= ?');
+      whereParams.add(startMillis);
+    }
+    if (endMillis != null) {
+      whereClauses.add('s.start_time <= ?');
+      whereParams.add(endMillis);
+    }
+    if (onlyNoSummary) {
+      whereClauses.add('(' + noSummaryCond + ')');
+    }
+
+    final String whereSql = whereClauses.isEmpty
+        ? ''
+        : ('WHERE ' + whereClauses.join(' AND '));
+
+    final String sql =
+        '''
         SELECT
           s.*,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
@@ -1421,12 +1515,94 @@ ORDER BY day ASC
         ORDER BY s.start_time DESC, s.id DESC
         LIMIT ? OFFSET ?
       ''';
-      params.add(limit);
-      params.add(safeOffset);
+
+    try {
+      final List<Object?> params = <Object?>[
+        ...whereParams,
+        limit,
+        safeOffset,
+      ];
       final rows = await db.rawQuery(sql, params);
       return rows.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeError(
+          'DB',
+          'listSegmentsEx failed err=${e.toString()} onlyNoSummary=$onlyNoSummary requireSamples=$requireSamples startMillis=${startMillis?.toString() ?? 'null'} endMillis=${endMillis?.toString() ?? 'null'} limit=$limit offset=$offset',
+        );
+      } catch (_) {}
+
+      // Fallback: Some Android devices/DB states can hit CursorWindow/row-too-big errors when
+      // selecting large TEXT columns (output_text / structured_json) across many rows.
+      // Retry with truncated result columns so the timeline won't go empty.
+      try {
+        const int maxOutputTextChars = 4096;
+        const int maxStructuredJsonChars = 16384;
+        const int maxCategoriesChars = 4096;
+        final String fallbackSql =
+            '''
+        SELECT
+          s.*,
+          CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
+          (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count,
+          COALESCE(
+            NULLIF(TRIM(s.app_packages), ''),
+            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+          ) AS app_packages_display,
+          SUBSTR(r.output_text, 1, ?) AS output_text,
+          CASE
+            WHEN r.structured_json IS NULL THEN NULL
+            -- Small JSON blobs are safe to return whole (keeps key_actions/image_tags usable on UI).
+            WHEN LENGTH(r.structured_json) <= ? THEN r.structured_json
+            -- For large JSON, return a window around overall_summary so the timeline can still show the summary
+            -- without fetching megabytes into CursorWindow.
+            ELSE SUBSTR(
+              r.structured_json,
+              MAX(1, INSTR(r.structured_json, '"overall_summary"')),
+              ?
+            )
+          END AS structured_json,
+          SUBSTR(r.categories, 1, ?) AS categories,
+          CASE WHEN r.output_text IS NOT NULL AND LENGTH(r.output_text) > ? THEN 1 ELSE 0 END AS output_text_truncated,
+          CASE WHEN r.structured_json IS NOT NULL AND LENGTH(r.structured_json) > ? THEN 1 ELSE 0 END AS structured_json_truncated,
+          CASE WHEN r.categories IS NOT NULL AND LENGTH(r.categories) > ? THEN 1 ELSE 0 END AS categories_truncated
+        FROM segments s
+        LEFT JOIN segment_results r ON r.segment_id = s.id
+        $whereSql
+        ORDER BY s.start_time DESC, s.id DESC
+        LIMIT ? OFFSET ?
+      ''';
+
+        final List<Object?> fallbackParams = <Object?>[
+          // Placeholders appear in SELECT first (SUBSTR), then WHERE, then LIMIT/OFFSET.
+          maxOutputTextChars,
+          maxStructuredJsonChars,
+          maxStructuredJsonChars,
+          maxCategoriesChars,
+          maxOutputTextChars,
+          maxStructuredJsonChars,
+          maxCategoriesChars,
+          ...whereParams,
+          limit,
+          safeOffset,
+        ];
+        final rows = await db.rawQuery(fallbackSql, fallbackParams);
+        try {
+          await FlutterLogger.nativeWarn(
+            'DB',
+            'listSegmentsEx fallback used (truncated result columns) limit=$limit offset=$offset',
+          );
+        } catch (_) {}
+        return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+      } catch (e2) {
+        try {
+          await FlutterLogger.nativeError(
+            'DB',
+            'listSegmentsEx fallback failed err=${e2.toString()}',
+          );
+        } catch (_) {}
+        return <Map<String, dynamic>>[];
+      }
     }
   }
 
@@ -1835,14 +2011,14 @@ ORDER BY day ASC
     final int safeLimit = limit.clamp(1, 500).toInt();
     try {
       final db = await database;
-      const String sql = '''
+      final String sql = '''
         SELECT DISTINCT
           COALESCE(NULLIF(TRIM(ss.app_name), ''), NULLIF(TRIM(ar.app_name), '')) AS app_name
         FROM segments s
         JOIN segment_results r ON r.segment_id = s.id
         JOIN segment_samples ss ON ss.segment_id = s.id
         LEFT JOIN app_registry ar ON ar.app_package_name = ss.app_package_name
-        WHERE s.merged_into_id IS NULL
+        WHERE ${_segmentsRootWhere('s')}
           AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
           AND (
             (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('','null'))
@@ -2090,7 +2266,7 @@ ORDER BY day ASC
       final List<String> baseFilters = <String>[];
       final List<Object?> baseArgs = <Object?>[];
 
-      baseFilters.add('s.merged_into_id IS NULL');
+      baseFilters.add(_segmentsRootWhere('s'));
       if (startMillis != null) {
         baseFilters.add('s.start_time >= ?');
         baseArgs.add(startMillis);
@@ -2258,7 +2434,7 @@ ORDER BY day ASC
       final List<String> baseFilters = <String>[];
       final List<Object?> baseArgs = <Object?>[];
 
-      baseFilters.add('s.merged_into_id IS NULL');
+      baseFilters.add(_segmentsRootWhere('s'));
       if (startMillis != null) {
         baseFilters.add('s.start_time >= ?');
         baseArgs.add(startMillis);
@@ -2362,6 +2538,47 @@ ORDER BY day ASC
     final db = await database;
     try {
       await db.transaction((txn) async {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+
+        // If the user deletes a root segment that other segments were merged into,
+        // those children become "orphaned" and would disappear from the UI if we
+        // only query merged_into_id IS NULL. Unmerge them back to roots.
+        try {
+          await txn.update(
+            'segments',
+            {'merged_into_id': null, 'updated_at': now},
+            where: 'merged_into_id = ?',
+            whereArgs: [segmentId],
+          );
+        } catch (_) {
+          try {
+            await txn.update(
+              'segments',
+              {'merged_into_id': null},
+              where: 'merged_into_id = ?',
+              whereArgs: [segmentId],
+            );
+          } catch (_) {}
+        }
+        // Clear stale merge_prev_id pointers so "force merge" won't reference a deleted row.
+        try {
+          await txn.update(
+            'segments',
+            {'merge_prev_id': null, 'updated_at': now},
+            where: 'merge_prev_id = ?',
+            whereArgs: [segmentId],
+          );
+        } catch (_) {
+          try {
+            await txn.update(
+              'segments',
+              {'merge_prev_id': null},
+              where: 'merge_prev_id = ?',
+              whereArgs: [segmentId],
+            );
+          } catch (_) {}
+        }
+
         // 先抓取该段落关联的图片路径：即使 ai_image_meta.segment_id 被后续流程覆盖，
         // 也能按 file_path 兜底清理，避免“图片描述/标签”残留在查看器/搜索中。
         final List<String> sampleFilePaths = <String>[];
@@ -2638,7 +2855,7 @@ ORDER BY day ASC
           r.categories
         FROM segments s
         JOIN segment_results r ON r.segment_id = s.id
-        WHERE s.merged_into_id IS NULL
+        WHERE ${_segmentsRootWhere('s')}
           AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
           AND s.start_time >= ? AND s.start_time <= ?
         ORDER BY s.start_time ASC
@@ -2681,7 +2898,7 @@ ORDER BY day ASC
           r.categories
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
-        WHERE s.merged_into_id IS NULL
+        WHERE ${_segmentsRootWhere('s')}
           AND (s.segment_kind IS NULL OR s.segment_kind = 'global')
           AND s.start_time <= ? AND s.end_time >= ?
           AND EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)
@@ -2899,6 +3116,63 @@ Future<void> _backfillAtomicMemoriesFts(DatabaseExecutor db) async {
   } catch (e) {
     try {
       FlutterLogger.nativeWarn('DB', '回填 ai_atomic_memories_fts 失败：$e');
+    } catch (_) {}
+  }
+}
+
+/// Create FTS5 index for user_memory_items (global user memory).
+Future<void> _createUserMemoryItemsFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      CREATE VIRTUAL TABLE IF NOT EXISTS user_memory_items_fts USING fts5(
+        memory_key,
+        content,
+        keywords_json,
+        content='user_memory_items',
+        content_rowid='rowid'
+      )
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS user_memory_items_ai AFTER INSERT ON user_memory_items BEGIN
+        INSERT INTO user_memory_items_fts(rowid, memory_key, content, keywords_json)
+        VALUES (NEW.rowid, NEW.memory_key, NEW.content, NEW.keywords_json);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS user_memory_items_ad AFTER DELETE ON user_memory_items BEGIN
+        INSERT INTO user_memory_items_fts(user_memory_items_fts, rowid, memory_key, content, keywords_json)
+        VALUES ('delete', OLD.rowid, OLD.memory_key, OLD.content, OLD.keywords_json);
+      END
+    ''');
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS user_memory_items_au AFTER UPDATE ON user_memory_items BEGIN
+        INSERT INTO user_memory_items_fts(user_memory_items_fts, rowid, memory_key, content, keywords_json)
+        VALUES ('delete', OLD.rowid, OLD.memory_key, OLD.content, OLD.keywords_json);
+        INSERT INTO user_memory_items_fts(rowid, memory_key, content, keywords_json)
+        VALUES (NEW.rowid, NEW.memory_key, NEW.content, NEW.keywords_json);
+      END
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', 'FTS5（user_memory_items）不支持：$e');
+    } catch (_) {}
+  }
+}
+
+/// Backfill existing rows into user_memory_items_fts.
+Future<void> _backfillUserMemoryItemsFts(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      INSERT OR IGNORE INTO user_memory_items_fts(rowid, memory_key, content, keywords_json)
+      SELECT rowid, memory_key, content, keywords_json FROM user_memory_items
+      WHERE
+        (content IS NOT NULL AND TRIM(content) != '')
+        OR (memory_key IS NOT NULL AND TRIM(memory_key) != '')
+        OR (keywords_json IS NOT NULL AND TRIM(keywords_json) != '')
+    ''');
+  } catch (e) {
+    try {
+      FlutterLogger.nativeWarn('DB', '回填 user_memory_items_fts 失败：$e');
     } catch (_) {}
   }
 }

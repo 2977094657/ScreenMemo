@@ -111,7 +111,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 29,
+          version: 31,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +149,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 29,
+          version: 31,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +182,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 29,
+          version: 31,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +209,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 29,
+        version: 31,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -489,6 +489,13 @@ class ScreenshotDatabase {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Public helper for feature-gated code paths that need to check if a table
+  /// exists (e.g. optional FTS virtual tables).
+  Future<bool> tableExists(String tableName) async {
+    final Database db = await database;
+    return _tableExists(db, tableName);
   }
 
   /// 更新指定截图记录的文件大小（通过 gid + 包名精确定位）。
@@ -910,6 +917,114 @@ class ScreenshotDatabase {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_ai_prompt_usage_events_conv ON ai_prompt_usage_events(conversation_id, id)',
         );
+      } catch (_) {}
+    }
+
+    // v30: Persist per-segment AI request/response traces (debugging).
+    if (oldVersion < 30) {
+      try {
+        await db.execute(
+          'ALTER TABLE segment_results ADD COLUMN raw_request TEXT',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'ALTER TABLE segment_results ADD COLUMN raw_response TEXT',
+        );
+      } catch (_) {}
+    }
+
+    // v31: Global, cross-conversation user memory (profile + items + evidence + index state).
+    if (oldVersion < 31) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS user_memory_profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            user_markdown TEXT,
+            auto_markdown TEXT,
+            user_updated_at INTEGER,
+            auto_updated_at INTEGER,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+          )
+        ''');
+      } catch (_) {}
+
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS user_memory_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            memory_key TEXT,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            keywords_json TEXT,
+            confidence REAL,
+            pinned INTEGER NOT NULL DEFAULT 0,
+            user_edited INTEGER NOT NULL DEFAULT 0,
+            first_seen_at INTEGER,
+            last_seen_at INTEGER,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+            updated_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_user_memory_items_kind ON user_memory_items(kind, pinned DESC, updated_at DESC, id DESC)',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          "CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_memory_items_key ON user_memory_items(memory_key) WHERE memory_key IS NOT NULL AND TRIM(memory_key) != ''",
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_memory_items_hash ON user_memory_items(content_hash)',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS user_memory_evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            memory_item_id INTEGER NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            evidence_filenames_json TEXT,
+            start_time INTEGER,
+            end_time INTEGER,
+            created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+            UNIQUE(memory_item_id, source_type, source_id)
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_user_memory_evidence_item ON user_memory_evidence(memory_item_id, created_at DESC, id DESC)',
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS user_memory_index_state (
+            source TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            cursor_json TEXT,
+            stats_json TEXT,
+            started_at INTEGER,
+            finished_at INTEGER,
+            updated_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+            error TEXT
+          )
+        ''');
+      } catch (_) {}
+
+      try {
+        await _createUserMemoryItemsFts(db);
+      } catch (_) {}
+      try {
+        await _backfillUserMemoryItemsFts(db);
       } catch (_) {}
     }
   }

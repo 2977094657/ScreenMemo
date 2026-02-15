@@ -19,6 +19,7 @@ object SegmentDatabaseHelper {
     private const val TAG = "SegmentDB"
     private const val MASTER_DB_DIR_RELATIVE = "output/databases"
     private const val MASTER_DB_FILE_NAME = "screenshot_memo.db"
+    private const val SHARDS_DIR_RELATIVE = "output/databases/shards"
 
     data class Segment(
         val id: Long,
@@ -83,6 +84,54 @@ object SegmentDatabaseHelper {
 
     // Debug/diagnostic helper: expose resolved master DB path for Flutter.
     fun debugResolveMasterDbPath(context: Context): String? = resolveMasterDbPath(context)
+
+    private fun sanitizePackageName(packageName: String): String {
+        // Keep consistent with ScreenshotDatabaseHelper and Flutter side.
+        return packageName.replace(Regex("[^\\w]"), "_")
+    }
+
+    /**
+     * Resolve the expected shard DB absolute path under the app internal files dir.
+     *
+     * IMPORTANT:
+     * - We intentionally do NOT create directories/files here.
+     * - shard_registry.db_path can become stale after import/restore/migration since it's absolute.
+     */
+    private fun resolveShardDbPath(context: Context, packageName: String, year: Int): String? {
+        return try {
+            val base = context.filesDir.absolutePath
+            val shardsRoot = File(base, SHARDS_DIR_RELATIVE)
+            val sanitized = sanitizePackageName(packageName)
+            val file = File(
+                File(File(shardsRoot, sanitized), "$year"),
+                "smm_${sanitized}_${year}.db"
+            )
+            file.absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun chooseExistingShardDbPath(
+        context: Context,
+        packageName: String,
+        year: Int,
+        registryDbPath: String?
+    ): String? {
+        val reg = registryDbPath?.trim().orEmpty()
+        val computed = resolveShardDbPath(context, packageName, year)
+        val candidates = ArrayList<String>(2)
+        if (reg.isNotEmpty()) candidates.add(reg)
+        if (!computed.isNullOrBlank() && computed != reg) candidates.add(computed)
+
+        for (p in candidates) {
+            try {
+                val f = File(p)
+                if (f.exists() && f.isFile) return p
+            } catch (_: Exception) {}
+        }
+        return null
+    }
 
     /** 按ID读取段落 */
     fun getSegmentById(context: Context, id: Long): Segment? {
@@ -189,8 +238,8 @@ object SegmentDatabaseHelper {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_segment_samples_app_seg ON segment_samples(app_package_name, segment_id)")
 
-            db.execSQL(
-                """
+                db.execSQL(
+                    """
                 CREATE TABLE IF NOT EXISTS segment_results (
                   segment_id INTEGER PRIMARY KEY,
                   ai_provider TEXT,
@@ -198,14 +247,19 @@ object SegmentDatabaseHelper {
                   output_text TEXT,
                   structured_json TEXT,
                   categories TEXT,
+                  raw_request TEXT,
+                  raw_response TEXT,
                   created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
                 )
                 """.trimIndent()
-            )
+                )
+                // vNext: per-segment request/response traces for debugging.
+                try { db.execSQL("ALTER TABLE segment_results ADD COLUMN raw_request TEXT") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE segment_results ADD COLUMN raw_response TEXT") } catch (_: Exception) {}
 
-            // AI 图片元数据表：按 file_path 存储标签/自然语言描述（可跨页面复用）
-            db.execSQL(
-                """
+                // AI 图片元数据表：按 file_path 存储标签/自然语言描述（可跨页面复用）
+                db.execSQL(
+                    """
                 CREATE TABLE IF NOT EXISTS ai_image_meta (
                   file_path TEXT PRIMARY KEY,
                   tags_json TEXT,
@@ -504,7 +558,9 @@ object SegmentDatabaseHelper {
         model: String,
         outputText: String,
         structuredJson: String?,
-        categories: String?
+        categories: String?,
+        rawRequest: String? = null,
+        rawResponse: String? = null
     ) {
         var db: SQLiteDatabase? = null
         try {
@@ -524,6 +580,8 @@ object SegmentDatabaseHelper {
                 put("output_text", outputText)
                 if (!structuredJson.isNullOrBlank()) put("structured_json", structuredJson)
                 if (!categories.isNullOrBlank()) put("categories", categories)
+                if (!rawRequest.isNullOrBlank()) put("raw_request", rawRequest)
+                if (!rawResponse.isNullOrBlank()) put("raw_response", rawResponse)
             }
             db.insertWithOnConflict("segment_results", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
         } catch (_: Exception) {
@@ -736,10 +794,16 @@ object SegmentDatabaseHelper {
                     val sy = java.util.Calendar.getInstance().apply { timeInMillis = startMillis }.get(java.util.Calendar.YEAR)
                     val ey = java.util.Calendar.getInstance().apply { timeInMillis = endMillis }.get(java.util.Calendar.YEAR)
                     if (year < sy || year > ey) continue
+                    val resolvedDbPath = chooseExistingShardDbPath(context, pkg, year, dbPath) ?: continue
 
                     var shard: SQLiteDatabase? = null
                     try {
-                        shard = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
+                        // DO NOT CREATE_IF_NECESSARY here; it can create empty DBs and hide stale paths.
+                        shard = SQLiteDatabase.openDatabase(
+                            resolvedDbPath,
+                            null,
+                            SQLiteDatabase.OPEN_READONLY
+                        )
                         // 遍历所有月份
                         for (m in 1..12) {
                             val table = monthTableName(year, m)
@@ -830,13 +894,14 @@ object SegmentDatabaseHelper {
                     val year = cur.getInt(0)
                     val dbPath = cur.getString(1)
                     if (year < sy || year > ey) continue
+                    val resolvedDbPath = chooseExistingShardDbPath(context, pkg, year, dbPath) ?: continue
 
                     var shard: SQLiteDatabase? = null
                     try {
                         shard = SQLiteDatabase.openDatabase(
-                            dbPath,
+                            resolvedDbPath,
                             null,
-                            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY
+                            SQLiteDatabase.OPEN_READONLY
                         )
                         for (m in 1..12) {
                             val table = monthTableName(year, m)
@@ -901,12 +966,13 @@ object SegmentDatabaseHelper {
                 while (cur.moveToNext()) {
                     val year = cur.getInt(0)
                     val dbPath = cur.getString(1)
+                    val resolvedDbPath = chooseExistingShardDbPath(context, pkg, year, dbPath) ?: continue
                     var shard: SQLiteDatabase? = null
                     try {
                         shard = SQLiteDatabase.openDatabase(
-                            dbPath,
+                            resolvedDbPath,
                             null,
-                            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY
+                            SQLiteDatabase.OPEN_READONLY
                         )
                         var yearMin: Long? = null
                         for (m in 1..12) {
@@ -959,12 +1025,18 @@ object SegmentDatabaseHelper {
                 val sy = java.util.Calendar.getInstance().apply { timeInMillis = startMillis }.get(java.util.Calendar.YEAR)
                 val ey = java.util.Calendar.getInstance().apply { timeInMillis = endMillis }.get(java.util.Calendar.YEAR)
                 while (cur.moveToNext()) {
+                    val pkg = cur.getString(0)
                     val year = cur.getInt(1)
                     if (year < sy || year > ey) continue
                     val dbPath = cur.getString(2)
+                    val resolvedDbPath = chooseExistingShardDbPath(context, pkg, year, dbPath) ?: continue
                     var shard: SQLiteDatabase? = null
                     try {
-                        shard = SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.CREATE_IF_NECESSARY)
+                        shard = SQLiteDatabase.openDatabase(
+                            resolvedDbPath,
+                            null,
+                            SQLiteDatabase.OPEN_READONLY
+                        )
                         // 遍历所有月份
                         for (m in 1..12) {
                             val table = monthTableName(year, m)

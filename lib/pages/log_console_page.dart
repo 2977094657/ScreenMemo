@@ -132,6 +132,68 @@ class _LogConsolePageState extends State<LogConsolePage> {
     );
   }
 
+  Future<void> _copyOne(TalkerData e) async {
+    try {
+      final text = _buildExportText([e]);
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) _toast('已复制');
+    } catch (_) {
+      if (mounted) _toast('复制失败');
+    }
+  }
+
+  Future<void> _showDetail(TalkerData e) async {
+    final theme = Theme.of(context);
+    final text = _buildExportText([e]).trimRight();
+    final visible = text.isEmpty ? '(empty)' : text;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('日志详情'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SizedBox(
+              width: double.maxFinite,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant,
+                    width: 1,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      visible,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: text.isEmpty ? null : () => _copyOne(e),
+              child: const Text('复制'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _copyAll() async {
     try {
       final text = _buildExportText(_getFilteredLogs());
@@ -276,14 +338,9 @@ class _LogConsolePageState extends State<LogConsolePage> {
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
+                    onTap: () => _showDetail(e),
                     onLongPress: () async {
-                      try {
-                        final text = _buildExportText([e]);
-                        await Clipboard.setData(ClipboardData(text: text));
-                        if (context.mounted) _toast('已复制该条日志');
-                      } catch (_) {
-                        if (context.mounted) _toast('复制失败');
-                      }
+                      await _copyOne(e);
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -323,6 +380,11 @@ class _LogConsolePageState extends State<LogConsolePage> {
                                     ),
                                   ],
                                 ),
+                              ),
+                              IconButton(
+                                tooltip: '复制',
+                                icon: const Icon(Icons.copy, size: 18),
+                                onPressed: () => _copyOne(e),
                               ),
                             ],
                           ),

@@ -84,6 +84,26 @@ class AIRequestGateway {
   static const double _defaultTemperature = 0.2;
   int _fallbackToolCallSeq = 0;
   String _newFallbackToolCallId() => 'toolu_fallback_${++_fallbackToolCallSeq}';
+  int _traceSeq = 0;
+  String _newTraceId() =>
+      'trace_${DateTime.now().millisecondsSinceEpoch}_${++_traceSeq}';
+
+  int _countInputImages(List<AIMessage> messages) {
+    int count = 0;
+    for (final AIMessage m in messages) {
+      final Object? api = m.apiContent;
+      if (api is! List) continue;
+      for (final dynamic raw in api) {
+        if (raw is! Map) continue;
+        final Map<String, dynamic> map = Map<String, dynamic>.from(raw as Map);
+        final String type = (map['type'] as String? ?? '').trim().toLowerCase();
+        if (type == 'image_url' || type == 'input_image') {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  }
 
   Future<AIGatewayResult> complete({
     required List<AIEndpoint> endpoints,
@@ -98,6 +118,8 @@ class AIRequestGateway {
     if (endpoints.isEmpty) {
       throw Exception('No AI endpoints configured');
     }
+    final int imagesCount = _countInputImages(messages);
+    final int toolsCount = tools.length;
     Exception? lastError;
     for (final AIEndpoint endpoint in endpoints) {
       // Try streaming first (when allowed), then fall back to non-streaming for
@@ -112,10 +134,13 @@ class AIRequestGateway {
             toolChoice: toolChoice,
           );
           final _GatewayAggregate aggregate = await _performStreaming(
+            endpoint: endpoint,
             prepared: prepared,
             responseStartMarker: responseStartMarker,
             timeout: timeout,
             logContext: logContext,
+            imagesCount: imagesCount,
+            toolsCount: toolsCount,
           );
           return AIGatewayResult(
             content: aggregate.content,
@@ -147,10 +172,13 @@ class AIRequestGateway {
           toolChoice: toolChoice,
         );
         final _GatewayAggregate aggregate = await _performNonStreaming(
+          endpoint: endpoint,
           prepared: prepared,
           responseStartMarker: responseStartMarker,
           timeout: timeout,
           logContext: logContext,
+          imagesCount: imagesCount,
+          toolsCount: toolsCount,
         );
         return AIGatewayResult(
           content: aggregate.content,
@@ -191,6 +219,9 @@ class AIRequestGateway {
       );
     }
 
+    final int imagesCount = _countInputImages(messages);
+    final int toolsCount = tools.length;
+
     final StreamController<AIGatewayEvent> controller =
         StreamController<AIGatewayEvent>();
     final Completer<AIGatewayResult> completer = Completer<AIGatewayResult>();
@@ -218,11 +249,14 @@ class AIRequestGateway {
           );
 
           final _GatewayAggregate aggregate = await _performStreaming(
+            endpoint: endpoint,
             prepared: prepared,
             responseStartMarker: responseStartMarker,
             timeout: timeout,
             logContext: logContext,
             controller: proxy,
+            imagesCount: imagesCount,
+            toolsCount: toolsCount,
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -273,11 +307,14 @@ class AIRequestGateway {
               toolChoice: toolChoice,
             );
             final _GatewayAggregate aggregate = await _performNonStreaming(
+              endpoint: endpoint,
               prepared: prepared,
               responseStartMarker: responseStartMarker,
               timeout: timeout,
               logContext: logContext,
               controller: controller,
+              imagesCount: imagesCount,
+              toolsCount: toolsCount,
             );
             if (!completer.isCompleted) {
               completer.complete(
@@ -416,21 +453,101 @@ class AIRequestGateway {
 
   Map<String, dynamic> _buildGooglePayload(List<AIMessage> messages) {
     final List<Map<String, dynamic>> contents = <Map<String, dynamic>>[];
-    final List<Map<String, String>> systemParts = <Map<String, String>>[];
+    final List<Map<String, dynamic>> systemParts = <Map<String, dynamic>>[];
     for (final AIMessage m in messages) {
-      final String text = m.content.trim();
-      if (text.isEmpty) continue;
       if (m.role == 'system') {
-        systemParts.add(<String, String>{'text': text});
+        final String text = m.content.trim();
+        if (text.isNotEmpty) {
+          systemParts.add(<String, dynamic>{'text': text});
+        }
         continue;
       }
       final String role = m.role == 'assistant' ? 'model' : 'user';
-      contents.add(<String, dynamic>{
-        'role': role,
-        'parts': <Map<String, String>>[
-          <String, String>{'text': text},
-        ],
-      });
+      final List<Map<String, dynamic>> parts = <Map<String, dynamic>>[];
+
+      final Object? api = m.apiContent;
+      if (api is List) {
+        for (final dynamic raw in api) {
+          if (raw is! Map) continue;
+          final Map<String, dynamic> map = Map<String, dynamic>.from(
+            raw as Map,
+          );
+          final String type = (map['type'] as String? ?? '')
+              .trim()
+              .toLowerCase();
+
+          if (type == 'text' || type == 'input_text' || type == 'output_text') {
+            final String txt = (map['text'] as String?)?.toString() ?? '';
+            final String t = txt.trim();
+            if (t.isNotEmpty) {
+              parts.add(<String, dynamic>{'text': t});
+            }
+            continue;
+          }
+
+          if (type == 'image_url' || type == 'input_image') {
+            String url = '';
+            final dynamic imageObj = map['image_url'] ?? map['imageUrl'];
+            if (imageObj is String) {
+              url = imageObj;
+            } else if (imageObj is Map) {
+              final Map<String, dynamic> imageMap = Map<String, dynamic>.from(
+                imageObj as Map,
+              );
+              url =
+                  (imageMap['url'] as String?) ??
+                  (imageMap['image_url'] as String?) ??
+                  (imageMap['imageUrl'] as String?) ??
+                  '';
+            } else {
+              url = (map['url'] as String?) ?? '';
+            }
+            url = url.trim();
+            if (url.isEmpty) continue;
+
+            // data:<mime>;base64,<payload>
+            if (url.startsWith('data:')) {
+              final int semi = url.indexOf(';');
+              final int comma = url.indexOf(',');
+              if (semi > 5 && comma > semi) {
+                final String mime = url.substring(5, semi).trim();
+                final String meta = url
+                    .substring(semi + 1, comma)
+                    .trim()
+                    .toLowerCase();
+                final String payload = url.substring(comma + 1).trim();
+                if (meta.contains('base64') && payload.isNotEmpty) {
+                  parts.add(<String, dynamic>{
+                    'inline_data': <String, dynamic>{
+                      'mime_type': mime.isEmpty
+                          ? 'application/octet-stream'
+                          : mime,
+                      'data': payload,
+                    },
+                  });
+                }
+              }
+              continue;
+            }
+
+            // Best-effort: treat as file uri (may not work for all providers).
+            parts.add(<String, dynamic>{
+              'file_data': <String, dynamic>{
+                'mime_type': 'application/octet-stream',
+                'file_uri': url,
+              },
+            });
+            continue;
+          }
+        }
+      }
+
+      final String text = m.content.trim();
+      if (parts.isEmpty && text.isNotEmpty) {
+        parts.add(<String, dynamic>{'text': text});
+      }
+      if (parts.isEmpty) continue;
+      contents.add(<String, dynamic>{'role': role, 'parts': parts});
     }
     final Map<String, dynamic> payload = <String, dynamic>{
       'contents': contents,
@@ -754,11 +871,14 @@ class AIRequestGateway {
   }
 
   Future<_GatewayAggregate> _performNonStreaming({
+    required AIEndpoint endpoint,
     required _PreparedRequest prepared,
     required String responseStartMarker,
     Duration? timeout,
     String? logContext,
     StreamController<AIGatewayEvent>? controller,
+    int imagesCount = 0,
+    int toolsCount = 0,
   }) async {
     String clip(String s, int maxLen) {
       if (s.length <= maxLen) return s;
@@ -789,6 +909,29 @@ class AIRequestGateway {
       return out;
     }
 
+    String redactDataUrls(String s) {
+      // Keep the data url prefix but remove the actual base64 payload to avoid
+      // exploding logs and leaking user screenshots into text logs.
+      const String needle = 'base64,';
+      int i = 0;
+      final StringBuffer out = StringBuffer();
+      while (true) {
+        final int idx = s.indexOf(needle, i);
+        if (idx < 0) {
+          out.write(s.substring(i));
+          break;
+        }
+        final int payloadStart = idx + needle.length;
+        int end = s.indexOf('"', payloadStart);
+        if (end < 0) end = s.length;
+        final int payloadLen = (end - payloadStart).clamp(0, 1 << 30);
+        out.write(s.substring(i, payloadStart));
+        out.write('<base64 len=$payloadLen>');
+        i = end;
+      }
+      return out.toString();
+    }
+
     void emitUiLog(String line, {Object? extra}) {
       if (controller == null) return;
       final Map<String, dynamic> payload = <String, dynamic>{
@@ -802,11 +945,42 @@ class AIRequestGateway {
       } catch (_) {}
     }
 
+    final String traceId = _newTraceId();
+    final Stopwatch sw = Stopwatch()..start();
+
+    final String apiType = prepared.isGoogle
+        ? 'google.generateContent'
+        : (prepared.useResponsesApi
+              ? 'openai.responses'
+              : 'openai.chat.completions');
+    final String providerName = (endpoint.providerName ?? '').trim();
+    final String providerType = (endpoint.providerType ?? '').trim();
+    final String providerIdText = endpoint.providerId == null
+        ? ''
+        : endpoint.providerId.toString();
+
     emitUiLog(
       'REQ POST ${prepared.uri} stream=0 google=${prepared.isGoogle ? 1 : 0} bodyLen=${prepared.body.length}',
     );
     emitUiLog('REQ headers', extra: maskHeaders(prepared.headers));
     emitUiLog('REQ body', extra: clip(prepared.body, 12000));
+
+    try {
+      final String body = clip(redactDataUrls(prepared.body), 12000);
+      final String reqText = [
+        'REQ $traceId',
+        'POST ${prepared.uri}',
+        'ctx=${(logContext ?? '').trim()} api=$apiType stream=0',
+        if (providerName.isNotEmpty || providerType.isNotEmpty)
+          'provider=${providerName.isEmpty ? '-' : providerName}'
+              '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+              ' type=${providerType.isEmpty ? '-' : providerType}',
+        'model=${endpoint.model} tools=$toolsCount images=$imagesCount',
+        'headers=${jsonEncode(maskHeaders(prepared.headers))}',
+        'body=$body',
+      ].join('\n');
+      await FlutterLogger.nativeDebug('AITrace', reqText);
+    } catch (_) {}
 
     try {
       await FlutterLogger.nativeDebug(
@@ -823,11 +997,29 @@ class AIRequestGateway {
     final http.Response response = timeout == null
         ? await future
         : await future.timeout(timeout);
+    sw.stop();
 
     emitUiLog(
       'RESP status=${response.statusCode} contentType=${response.headers['content-type'] ?? ''} bodyLen=${response.body.length}',
       extra: <String, dynamic>{'headers': response.headers},
     );
+
+    try {
+      final String body = clip(redactDataUrls(response.body), 12000);
+      final String respText = [
+        'RESP $traceId',
+        '${response.statusCode} ${prepared.uri}',
+        'ctx=${(logContext ?? '').trim()} api=$apiType stream=0 tookMs=${sw.elapsedMilliseconds}',
+        if (providerName.isNotEmpty || providerType.isNotEmpty)
+          'provider=${providerName.isEmpty ? '-' : providerName}'
+              '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+              ' type=${providerType.isEmpty ? '-' : providerType}',
+        'model=${endpoint.model} bodyLen=${response.body.length}',
+        'headers=${jsonEncode(response.headers)}',
+        'body=$body',
+      ].join('\n');
+      await FlutterLogger.nativeDebug('AITrace', respText);
+    } catch (_) {}
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       emitUiLog('RESP error body', extra: clip(response.body, 12000));
@@ -890,11 +1082,14 @@ class AIRequestGateway {
   }
 
   Future<_GatewayAggregate> _performStreaming({
+    required AIEndpoint endpoint,
     required _PreparedRequest prepared,
     required String responseStartMarker,
     Duration? timeout,
     String? logContext,
     StreamController<AIGatewayEvent>? controller,
+    int imagesCount = 0,
+    int toolsCount = 0,
   }) async {
     final http.Client client = http.Client();
     final _ResponseStartFilter startFilter = _ResponseStartFilter(
@@ -951,7 +1146,10 @@ class AIRequestGateway {
     void rememberResponsesFinalOutputText(String text) {
       if (text.isEmpty) return;
       String normalized = text.replaceAll(responsesThinkTagRe, '');
-      normalized = _stripResponseStart(responseStartMarker, normalized).trimRight();
+      normalized = _stripResponseStart(
+        responseStartMarker,
+        normalized,
+      ).trimRight();
       if (normalized.isEmpty) return;
       if (normalized.length >= responsesFinalOutputText.length) {
         responsesFinalOutputText = normalized;
@@ -1013,6 +1211,29 @@ class AIRequestGateway {
       return out;
     }
 
+    String redactDataUrls(String s) {
+      // Keep the data url prefix but remove the actual base64 payload to avoid
+      // exploding logs and leaking user screenshots into text logs.
+      const String needle = 'base64,';
+      int i = 0;
+      final StringBuffer out = StringBuffer();
+      while (true) {
+        final int idx = s.indexOf(needle, i);
+        if (idx < 0) {
+          out.write(s.substring(i));
+          break;
+        }
+        final int payloadStart = idx + needle.length;
+        int end = s.indexOf('"', payloadStart);
+        if (end < 0) end = s.length;
+        final int payloadLen = (end - payloadStart).clamp(0, 1 << 30);
+        out.write(s.substring(i, payloadStart));
+        out.write('<base64 len=$payloadLen>');
+        i = end;
+      }
+      return out.toString();
+    }
+
     void emitUiLog(String line, {Object? extra}) {
       if (controller == null) return;
       final Map<String, dynamic> payload = <String, dynamic>{
@@ -1028,6 +1249,20 @@ class AIRequestGateway {
       } catch (_) {}
     }
 
+    final String traceId = _newTraceId();
+    final Stopwatch sw = Stopwatch()..start();
+
+    final String apiType = prepared.isGoogle
+        ? 'google.streamGenerateContent'
+        : (prepared.useResponsesApi
+              ? 'openai.responses'
+              : 'openai.chat.completions');
+    final String providerName = (endpoint.providerName ?? '').trim();
+    final String providerType = (endpoint.providerType ?? '').trim();
+    final String providerIdText = endpoint.providerId == null
+        ? ''
+        : endpoint.providerId.toString();
+
     try {
       final http.Request request = http.Request('POST', prepared.uri)
         ..headers.addAll(prepared.headers)
@@ -1037,6 +1272,24 @@ class AIRequestGateway {
       );
       emitUiLog('REQ headers', extra: maskHeaders(prepared.headers));
       emitUiLog('REQ body', extra: clip(prepared.body, 12000));
+
+      try {
+        final String body = clip(redactDataUrls(prepared.body), 12000);
+        final String reqText = [
+          'REQ $traceId',
+          'POST ${prepared.uri}',
+          'ctx=${(logContext ?? '').trim()} api=$apiType stream=1',
+          if (providerName.isNotEmpty || providerType.isNotEmpty)
+            'provider=${providerName.isEmpty ? '-' : providerName}'
+                '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                ' type=${providerType.isEmpty ? '-' : providerType}',
+          'model=${endpoint.model} tools=$toolsCount images=$imagesCount',
+          'headers=${jsonEncode(maskHeaders(prepared.headers))}',
+          'body=$body',
+        ].join('\n');
+        await FlutterLogger.nativeDebug('AITrace', reqText);
+      } catch (_) {}
+
       try {
         await FlutterLogger.nativeDebug(
           'AI',
@@ -1047,6 +1300,21 @@ class AIRequestGateway {
       final http.StreamedResponse streamed = timeout == null
           ? await sendFuture
           : await sendFuture.timeout(timeout);
+
+      try {
+        final String respText = [
+          'RESP $traceId',
+          '${streamed.statusCode} ${prepared.uri}',
+          'ctx=${(logContext ?? '').trim()} api=$apiType stream=1',
+          if (providerName.isNotEmpty || providerType.isNotEmpty)
+            'provider=${providerName.isEmpty ? '-' : providerName}'
+                '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                ' type=${providerType.isEmpty ? '-' : providerType}',
+          'model=${endpoint.model}',
+          'headers=${jsonEncode(streamed.headers)}',
+        ].join('\n');
+        await FlutterLogger.nativeDebug('AITrace', respText);
+      } catch (_) {}
 
       emitUiLog(
         'RESP status=${streamed.statusCode} contentType=${streamed.headers['content-type'] ?? ''}',
@@ -1237,7 +1505,9 @@ class AIRequestGateway {
               final dynamic resp0 = json['response'];
               if (resp0 is Map) {
                 usageSnapshot =
-                    _extractUsageSnapshotFromAny(Map<String, dynamic>.from(resp0)) ??
+                    _extractUsageSnapshotFromAny(
+                      Map<String, dynamic>.from(resp0),
+                    ) ??
                     usageSnapshot;
               }
             }
@@ -1405,7 +1675,9 @@ class AIRequestGateway {
                 }
 
                 if (itemType == 'reasoning') {
-                  final String fullReasoning = extractResponsesReasoningText(item);
+                  final String fullReasoning = extractResponsesReasoningText(
+                    item,
+                  );
                   if (fullReasoning.isNotEmpty) {
                     final String itemId =
                         ((item['id'] as String?) ??
@@ -1647,6 +1919,20 @@ class AIRequestGateway {
       final Duration? reasoningDuration = reasoningText.isEmpty
           ? null
           : DateTime.now().difference(reasoningStart);
+      sw.stop();
+
+      try {
+        final String summary = [
+          'STREAM_DONE $traceId',
+          'ctx=${(logContext ?? '').trim()} api=$apiType tookMs=${sw.elapsedMilliseconds}',
+          if (providerName.isNotEmpty || providerType.isNotEmpty)
+            'provider=${providerName.isEmpty ? '-' : providerName}'
+                '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                ' type=${providerType.isEmpty ? '-' : providerType}',
+          'model=${endpoint.model} contentLen=${cleanedContent.length} reasoningLen=${reasoningText.length} toolCalls=${toolCalls.length}',
+        ].join('\n');
+        await FlutterLogger.nativeDebug('AITrace', summary);
+      } catch (_) {}
 
       return _GatewayAggregate(
         content: cleanedContent,
@@ -1655,6 +1941,22 @@ class AIRequestGateway {
         reasoningDuration: reasoningDuration,
         usage: usageSnapshot,
       );
+    } catch (e) {
+      sw.stop();
+      try {
+        final String err = [
+          'STREAM_ERR $traceId',
+          'ctx=${(logContext ?? '').trim()} api=$apiType tookMs=${sw.elapsedMilliseconds}',
+          if (providerName.isNotEmpty || providerType.isNotEmpty)
+            'provider=${providerName.isEmpty ? '-' : providerName}'
+                '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                ' type=${providerType.isEmpty ? '-' : providerType}',
+          'model=${endpoint.model}',
+          'error=$e',
+        ].join('\n');
+        await FlutterLogger.nativeWarn('AITrace', err);
+      } catch (_) {}
+      rethrow;
     } finally {
       client.close();
     }
@@ -1691,9 +1993,9 @@ class AIRequestGateway {
               : null;
           final String name =
               fn?['name']?.toString() ?? (it['name']?.toString() ?? '');
-          final String args =
-              fn?['arguments']?.toString() ??
-              (it['arguments']?.toString() ?? '');
+          final Object? argsRaw =
+              (fn != null ? fn['arguments'] : null) ?? it['arguments'];
+          final String args = _stringifyJsonLike(argsRaw);
           if (name.trim().isNotEmpty) {
             toolCalls.add(
               AIToolCall(
@@ -1747,7 +2049,7 @@ class AIRequestGateway {
             ? Map<String, dynamic>.from(map['function'] as Map)
             : null;
         final String name = (fn?['name'] as String?) ?? '';
-        final String args = (fn?['arguments'] as String?) ?? '';
+        final String args = _stringifyJsonLike(fn?['arguments']);
         if (name.trim().isEmpty) continue;
         toolCalls.add(
           AIToolCall(
@@ -1762,7 +2064,7 @@ class AIRequestGateway {
       if (fc is Map) {
         final Map<String, dynamic> fn = Map<String, dynamic>.from(fc as Map);
         final String name = (fn['name'] as String?) ?? '';
-        final String args = (fn['arguments'] as String?) ?? '';
+        final String args = _stringifyJsonLike(fn['arguments']);
         if (name.trim().isNotEmpty) {
           toolCalls.add(
             AIToolCall(
@@ -2157,7 +2459,9 @@ _UsageSnapshot? _usageFromObject(Object? raw) {
     'totalTokens',
     'totalTokenCount',
   ]);
-  total ??= (prompt != null && completion != null) ? (prompt + completion) : null;
+  total ??= (prompt != null && completion != null)
+      ? (prompt + completion)
+      : null;
 
   final _UsageSnapshot snapshot = _UsageSnapshot(
     promptTokens: prompt,

@@ -922,13 +922,13 @@ object SegmentSummaryManager {
                 try { FileLogger.i(TAG, "finish：调用 AI images=${effSamples.size}/${samples.size} seg=${seg.id}") } catch (_: Exception) {}
                 val result = callGeminiWithImages(ctx, seg, effSamples, prompt)
                 try {
-                    FileLogger.i(TAG, "finish：AI 模型=${result.first} 输出长度=${result.second.length}")
-                    val preview = truncateForLog(result.second, 3000)
+                    FileLogger.i(TAG, "finish：AI 模型=${result.model} 输出长度=${result.outputText.length}")
+                    val preview = truncateForLog(result.outputText, 3000)
                     FileLogger.i(TAG, "AI响应预览: ${preview}")
                 } catch (_: Exception) {}
                 // 将合并需要的摘要提前缓存；合并任务放到 finally 之后异步执行，避免阻塞完成清理。
-                var outputToSave = result.second
-                var structuredToSave = result.third
+                var outputToSave = result.outputText
+                var structuredToSave = result.structuredJson
                 if (preservedOriginalSummaries.isNotEmpty()) {
                     val patched = attachOriginalSummariesToMergedResult(
                         mergedOutputText = outputToSave,
@@ -946,10 +946,12 @@ object SegmentSummaryManager {
                     ctx,
                     seg.id,
                     provider = "gemini",
-                    model = result.first,
+                    model = result.model,
                     outputText = outputToSave,
                     structuredJson = structuredToSave,
-                    categories = result.fourth
+                    categories = result.categories,
+                    rawRequest = result.rawRequest,
+                    rawResponse = result.rawResponse
                 )
                 // 将图片标签/描述写入全局可复用表（按 file_path）
                 try {
@@ -976,10 +978,31 @@ object SegmentSummaryManager {
                     val body = if (idx >= 0) msg.substring(idx) else msg
                     val previewLine = "AI error: " + body
                     var modelName = "unknown"
+                    var baseUrl = ""
                     try {
                         val cfg = AISettingsNative.readConfig(ctx)
                         if (cfg.model.isNotBlank()) modelName = cfg.model
+                        baseUrl = cfg.baseUrl
                     } catch (_: Exception) {}
+                    val reqTrace: String? = try {
+                        val sbReq = StringBuilder()
+                        sbReq.append("=== AI Request (exception) ===").append('\n')
+                        if (baseUrl.trim().isNotEmpty()) {
+                            sbReq.append("base_url=").append(baseUrl.trim()).append('\n')
+                        }
+                        sbReq.append("model=").append(modelName).append('\n')
+                        sbReq.append("segment_id=").append(seg.id).append('\n')
+                        sbReq.append("note=prompt not captured (exception before trace persisted)").append('\n')
+                        sbReq.toString().trimEnd()
+                    } catch (_: Exception) { null }
+                    val respTrace: String? = try {
+                        val sbResp = StringBuilder()
+                        sbResp.append("=== AI Response (exception) ===").append('\n')
+                        sbResp.append("message=").append(msg).append('\n')
+                        sbResp.append('\n')
+                        sbResp.append(e.stackTraceToString())
+                        sbResp.toString().trimEnd()
+                    } catch (_: Exception) { msg }
                     var outText = previewLine
                     var outStructured: String? = null
                     if (preservedOriginalSummaries.isNotEmpty()) {
@@ -999,7 +1022,9 @@ object SegmentSummaryManager {
                         model = modelName,
                         outputText = outText,
                         structuredJson = outStructured,
-                        categories = null
+                        categories = null,
+                        rawRequest = reqTrace,
+                        rawResponse = respTrace
                     )
                 } catch (_: Exception) {}
             } finally {
@@ -1020,7 +1045,16 @@ object SegmentSummaryManager {
         }
     }
 
-    // 返回 (model, outputText, structuredJson, categories)
+    private data class AiCallResult(
+        val model: String,
+        val outputText: String,
+        val structuredJson: String?,
+        val categories: String?,
+        val rawRequest: String?,
+        val rawResponse: String?
+    )
+
+    // 返回 (model, outputText, structuredJson, categories, rawRequest, rawResponse)
     private fun callGeminiWithImages(
         ctx: Context,
         seg: SegmentDatabaseHelper.Segment,
@@ -1031,7 +1065,7 @@ object SegmentSummaryManager {
         maxImagesOverride: Int? = null,
         allowJsonAutoRetry: Boolean = true,
         jsonRetryCount: Int = 0
-    ): Quad<String, String, String?, String?> {
+    ): AiCallResult {
         val cfg = AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
         val client = OkHttpClientFactory.newBuilder(ctx)
@@ -1200,9 +1234,52 @@ object SegmentSummaryManager {
             OutputFileLogger.info(ctx, TAG, "AI 提示词完整内容结束 <<<")
         } catch (_: Exception) {}
 
-        if (isGoogle) {
+        val url = if (isGoogle) {
             // Gemini SSE: POST {base}/v1beta/models/{model}:streamGenerateContent?alt=sse
-            val url = "$base/v1beta/models/$model:streamGenerateContent?alt=sse"
+            "$base/v1beta/models/$model:streamGenerateContent?alt=sse"
+        } else {
+            // OpenAI 兼容 REST: POST {base}/v1/chat/completions
+            "$base/v1/chat/completions"
+        }
+        fun buildRequestTrace(): String {
+            val sb = StringBuilder()
+            sb.append("=== AI Request ===").append('\n')
+            sb.append("provider=").append(if (isGoogle) "google" else "openai-compat").append('\n')
+            sb.append("url=").append(url).append('\n')
+            sb.append("model=").append(model).append('\n')
+            sb.append("segment_id=").append(seg.id).append('\n')
+            sb.append("is_merge=").append(isMerge).append('\n')
+            sb.append("prompt_len=").append(textLenWithRule).append('\n')
+            sb.append("images_attached=").append(effSamples.size).append('\n')
+            sb.append("images_total=").append(samples.size).append('\n')
+            sb.append("images_bytes_total=").append(totalImageBytes).append('\n')
+            sb.append("missing_images=").append(missingImages).append('\n')
+            sb.append('\n')
+            sb.append("prompt:").append('\n')
+            sb.append(promptWithRule).append('\n')
+            sb.append('\n')
+            sb.append("images:").append('\n')
+            for ((idx, s) in effSamples.withIndex()) {
+                val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
+                val fileName = try { File(s.filePath).name } catch (_: Exception) { "" }
+                val size = try {
+                    val f = File(s.filePath)
+                    if (f.exists()) f.length() else 0L
+                } catch (_: Exception) { 0L }
+                sb.append("#").append(idx + 1)
+                    .append(" time=").append(fmt(s.captureTime))
+                    .append(" app=").append(appDisplay)
+                    .append(" file=").append(fileName)
+                    .append(" path=").append(s.filePath)
+                    .append(" mime=").append(guessMime(s.filePath))
+                    .append(" bytes=").append(size)
+                    .append('\n')
+            }
+            return sb.toString().trimEnd()
+        }
+        val rawRequestTrace: String? = try { buildRequestTrace() } catch (_: Exception) { null }
+
+        if (isGoogle) {
             try { FileLogger.i(TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { FileLogger.i(TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
@@ -1442,11 +1519,11 @@ object SegmentSummaryManager {
                 model = model,
                 outputText = outputText,
                 structured = structured,
-                categories = cats
+                categories = cats,
+                rawRequest = rawRequestTrace,
+                rawResponse = respText
             )
         } else {
-            // OpenAI 兼容 REST: POST {base}/v1/chat/completions
-            val url = "$base/v1/chat/completions"
             try { FileLogger.i(TAG, "AI 请求(OpenAI兼容)：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { FileLogger.i(TAG, "AI 请求(OpenAI兼容)：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
             try { OutputFileLogger.info(ctx, TAG, "AI 请求(OpenAI兼容)：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
@@ -1767,7 +1844,9 @@ object SegmentSummaryManager {
                 model = model,
                 outputText = outputText,
                 structured = structured,
-                categories = cats
+                categories = cats,
+                rawRequest = rawRequestTrace,
+                rawResponse = respText
             )
         }
     }
@@ -2005,7 +2084,7 @@ object SegmentSummaryManager {
                 injectDynamicRules = false,
                 maxImagesOverride = decisionMaxAiImages
             )
-            val decisionText = decide.second
+            val decisionText = decide.outputText
             var decisionJson: String? = null
             var decisionReason: String? = null
             val same: Boolean = try {
@@ -2099,10 +2178,10 @@ object SegmentSummaryManager {
             SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
             return
         }
-        try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.second.length}") } catch (_: Exception) {}
+        try { FileLogger.i(TAG, "merge: merged summary saved for seg=${cur.id} outputSize=${merged.outputText.length}") } catch (_: Exception) {}
         // 将"合并后的 AI 输出"落盘
         try {
-            val preview2 = truncateForLog(merged.second, 3000)
+            val preview2 = truncateForLog(merged.outputText, 3000)
             FileLogger.i(TAG, "merged summary preview: ${preview2}")
         } catch (_: Exception) {}
 
@@ -2113,18 +2192,18 @@ object SegmentSummaryManager {
         val prevOriginalSummaries = extractOriginalSummaryPartsForMerge(prevRes.first, prevRes.second)
         val curOriginalSummaries = extractOriginalSummaryPartsForMerge(curOutputText, curStructured)
         val mergedStructuredNormalizedByAiOrder = normalizeImageRefsToFilenames(
-            merged.third,
+            merged.structuredJson,
             mergedAiSamples
         )
         val mergedPatched = attachOriginalSummariesToMergedResult(
-            mergedOutputText = merged.second,
+            mergedOutputText = merged.outputText,
             mergedStructuredJson = mergedStructuredNormalizedByAiOrder,
             prevOriginals = prevOriginalSummaries,
             curOriginals = curOriginalSummaries
         )
         var mergedOutputTextForSave = mergedPatched.first
         var mergedStructuredForSave = mergedPatched.second
-        var mergedCategoriesForSave: String? = merged.fourth
+        var mergedCategoriesForSave: String? = merged.categories
         val prevCategoriesFromDb: String? = try { SegmentDatabaseHelper.getSegmentResult(ctx, prev.id)?.categories } catch (_: Exception) { null }
         val curCategoriesFromDb: String? = try { SegmentDatabaseHelper.getSegmentResult(ctx, cur.id)?.categories } catch (_: Exception) { null }
 
@@ -2295,10 +2374,12 @@ object SegmentSummaryManager {
             ctx,
             cur.id,
             provider = "gemini",
-            model = merged.first,
+            model = merged.model,
             outputText = mergedOutputTextForSave,
             structuredJson = mergedStructuredFinal,
-            categories = mergedCategoriesForSave
+            categories = mergedCategoriesForSave,
+            rawRequest = merged.rawRequest,
+            rawResponse = merged.rawResponse
         )
         // 将合并后的图片标签/描述写入全局可复用表（按 file_path），避免合并事件在查看器/语义搜索中丢失图片元数据
         try {
@@ -3743,6 +3824,17 @@ object SegmentSummaryManager {
         val retryMessage: String
     )
 
+    private fun readSegmentsJsonAutoRetryMax(ctx: Context): Int {
+        return try {
+            val raw = AISettingsNative.readSettingValue(ctx, "segments_json_auto_retry_max")?.trim()
+            val parsed = raw?.toIntOrNull()
+            val v = parsed ?: 1
+            v.coerceIn(0, 5)
+        } catch (_: Exception) {
+            1
+        }
+    }
+
     private fun finalizeAiResultJson(
         ctx: Context,
         seg: SegmentDatabaseHelper.Segment,
@@ -3756,8 +3848,10 @@ object SegmentSummaryManager {
         model: String,
         outputText: String,
         structured: String?,
-        categories: String?
-    ): Quad<String, String, String?, String?> {
+        categories: String?,
+        rawRequest: String?,
+        rawResponse: String?
+    ): AiCallResult {
         val parsedStructured = parseStructuredJsonObject(structured)
         if (parsedStructured != null) {
             val withMeta = applyJsonFixMeta(
@@ -3770,7 +3864,14 @@ object SegmentSummaryManager {
                 )
             )
             val cats = pickNonEmpty(categories, withMeta.optJSONArray("categories")?.toString())
-            return Quad(model, outputText, withMeta.toString(), if (cats.isNotEmpty()) cats else null)
+            return AiCallResult(
+                model = model,
+                outputText = outputText,
+                structuredJson = withMeta.toString(),
+                categories = if (cats.isNotEmpty()) cats else null,
+                rawRequest = rawRequest,
+                rawResponse = rawResponse
+            )
         }
 
         val repaired = repairStructuredJson(outputText)
@@ -3787,12 +3888,20 @@ object SegmentSummaryManager {
                     )
                 )
                 val cats = pickNonEmpty(categories, withMeta.optJSONArray("categories")?.toString())
-                return Quad(model, outputText, withMeta.toString(), if (cats.isNotEmpty()) cats else null)
+                return AiCallResult(
+                    model = model,
+                    outputText = outputText,
+                    structuredJson = withMeta.toString(),
+                    categories = if (cats.isNotEmpty()) cats else null,
+                    rawRequest = rawRequest,
+                    rawResponse = rawResponse
+                )
             } catch (_: Exception) {
             }
         }
 
-        if (allowJsonAutoRetry && jsonRetryCount < 1) {
+        val maxAutoRetry = readSegmentsJsonAutoRetryMax(ctx)
+        if (allowJsonAutoRetry && maxAutoRetry > 0 && jsonRetryCount < maxAutoRetry) {
             try {
                 FileLogger.w(TAG, "structured_json 无法解析，触发自动重试 seg=${seg.id}")
             } catch (_: Exception) {
@@ -3806,7 +3915,7 @@ object SegmentSummaryManager {
                 isMerge = isMerge,
                 injectDynamicRules = injectDynamicRules,
                 maxImagesOverride = maxImagesOverride,
-                allowJsonAutoRetry = false,
+                allowJsonAutoRetry = allowJsonAutoRetry,
                 jsonRetryCount = jsonRetryCount + 1
             )
         }
@@ -3821,7 +3930,14 @@ object SegmentSummaryManager {
                 retryMessage = "自动重试后仍未获得完整结构化结果，请手动重试。"
             )
         )
-        return Quad(model, outputText, fallback.toString(), categories)
+        return AiCallResult(
+            model = model,
+            outputText = outputText,
+            structuredJson = fallback.toString(),
+            categories = categories,
+            rawRequest = rawRequest,
+            rawResponse = rawResponse
+        )
     }
 
     private fun applyJsonFixMeta(root: JSONObject, meta: JsonFixMeta): JSONObject {

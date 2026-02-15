@@ -63,6 +63,10 @@ class AISiteGroup {
 /// 发送请求所需的端点（可为分组，也可为“未分组”单站点）
 class AIEndpoint {
   final int? groupId; // null 表示使用未分组（ai_settings）；负数表示 ProviderID 映射
+  // Provider 元信息（用于日志与调试展示）。
+  final int? providerId;
+  final String? providerName;
+  final String? providerType;
   final String baseUrl;
   final String? apiKey;
   final String model;
@@ -71,6 +75,9 @@ class AIEndpoint {
 
   AIEndpoint({
     required this.groupId,
+    this.providerId,
+    this.providerName,
+    this.providerType,
     required this.baseUrl,
     required this.apiKey,
     required this.model,
@@ -133,6 +140,10 @@ class AISettingsService {
   static const String _keyAtomicMemoryPromptTokens =
       'atomic_memory_prompt_tokens';
   static const String _keyAtomicMemoryMaxItems = 'atomic_memory_max_items';
+  static const String _keyUserMemoryInjectionEnabled =
+      'user_memory_injection_enabled';
+  static const String _keyUserMemoryPromptTokens = 'user_memory_prompt_tokens';
+  static const String _keyUserMemoryMaxItems = 'user_memory_max_items';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
   static const String _keyPromptSegmentExtraZh = 'prompt_segment_extra_zh';
@@ -145,6 +156,9 @@ class AISettingsService {
   static const String _keyPromptMorningExtraEn = 'prompt_morning_extra_en';
   static const String _keyPromptWeeklyExtraZh = 'prompt_weekly_extra_zh';
   static const String _keyPromptWeeklyExtraEn = 'prompt_weekly_extra_en';
+  // Dynamic (segments) - structured_json 解析失败时的自动重试次数（原生侧也会读取）
+  static const String _keySegmentsJsonAutoRetryMax =
+      'segments_json_auto_retry_max';
 
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
@@ -153,17 +167,23 @@ class AISettingsService {
   // Prompt budgets should scale with the active model's prompt/context window.
   // Ratios are derived from the old fixed defaults (tuned around ~32k prompt cap).
   static const double _defaultAtomicMemoryPromptTokensRatio = 700.0 / 32000.0;
+  static const double _defaultUserMemoryPromptTokensRatio = 1200.0 / 32000.0;
 
   // Hard safety caps (we still want scaling, but avoid absurd token budgets on
   // ultra-large context models).
   static const int _atomicMemoryPromptTokensAbsMax = 8000;
+  static const int _userMemoryPromptTokensAbsMax = 12000;
 
   // Max budget as a percentage of prompt cap.
   static const double _atomicMemoryPromptTokensMaxRatio = 0.15;
+  static const double _userMemoryPromptTokensMaxRatio = 0.10;
 
   static const int _atomicMemoryPromptTokensMin = 100;
+  static const int _userMemoryPromptTokensMin = 200;
 
   static const int _defaultAtomicMemoryMaxItems = 24;
+  static const int _defaultUserMemoryMaxItems = 24;
+  static const int _defaultSegmentsJsonAutoRetryMax = 1;
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
   static const int _maxHistoryMessages = 40;
@@ -210,6 +230,30 @@ class AISettingsService {
     return value.clamp(
       _atomicMemoryPromptTokensMin,
       _maxAtomicMemoryTokensForCap(cap),
+    );
+  }
+
+  static int _maxUserMemoryTokensForCap(int cap) {
+    return _capByPct(
+      cap,
+      _userMemoryPromptTokensMaxRatio,
+      min: _userMemoryPromptTokensMin,
+      absMax: _userMemoryPromptTokensAbsMax,
+    );
+  }
+
+  static int _defaultUserMemoryTokensForCap(int cap) {
+    final int suggested = (cap * _defaultUserMemoryPromptTokensRatio).round();
+    return suggested.clamp(
+      _userMemoryPromptTokensMin,
+      _maxUserMemoryTokensForCap(cap),
+    );
+  }
+
+  static int _clampUserMemoryTokens(int value, int cap) {
+    return value.clamp(
+      _userMemoryPromptTokensMin,
+      _maxUserMemoryTokensForCap(cap),
     );
   }
 
@@ -319,6 +363,72 @@ class AISettingsService {
     final db = ScreenshotDatabase.instance;
     final int v = value.clamp(5, 80);
     await db.setAiSetting(_keyAtomicMemoryMaxItems, v.toString());
+  }
+
+  // ========== 全局用户记忆注入（跨会话 UserMemory） ==========
+
+  Future<bool> getUserMemoryInjectionEnabled() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyUserMemoryInjectionEnabled);
+    if (v == null || v.isEmpty) return true; // 默认开启（若无数据则不注入）
+    final s = v.toLowerCase();
+    return s == '1' || s == 'true' || s == 'yes';
+  }
+
+  Future<void> setUserMemoryInjectionEnabled(bool enabled) async {
+    final db = ScreenshotDatabase.instance;
+    await db.setAiSetting(_keyUserMemoryInjectionEnabled, enabled ? '1' : '0');
+  }
+
+  Future<int> getUserMemoryPromptTokens() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyUserMemoryPromptTokens);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int cap = await _promptCapTokensForBudget();
+    final int raw = parsed ?? _defaultUserMemoryTokensForCap(cap);
+    return _clampUserMemoryTokens(raw, cap);
+  }
+
+  Future<void> setUserMemoryPromptTokens(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int cap = await _promptCapTokensForBudget();
+    final int v = _clampUserMemoryTokens(value, cap);
+    await db.setAiSetting(_keyUserMemoryPromptTokens, v.toString());
+  }
+
+  Future<int> getUserMemoryMaxItems() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keyUserMemoryMaxItems);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int raw = parsed ?? _defaultUserMemoryMaxItems;
+    return raw.clamp(5, 120);
+  }
+
+  Future<void> setUserMemoryMaxItems(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(5, 120);
+    await db.setAiSetting(_keyUserMemoryMaxItems, v.toString());
+  }
+
+  // ========== 动态（segments）自动重试 ==========
+
+  /// When native fails to parse structured_json for a segment result, it can
+  /// auto-retry the call with a stricter "JSON-only" prompt.
+  ///
+  /// - 0 disables auto retry.
+  /// - Default: 1.
+  Future<int> getSegmentsJsonAutoRetryMax() async {
+    final db = ScreenshotDatabase.instance;
+    final v = await db.getAiSetting(_keySegmentsJsonAutoRetryMax);
+    final int? parsed = int.tryParse((v ?? '').trim());
+    final int raw = parsed ?? _defaultSegmentsJsonAutoRetryMax;
+    return raw.clamp(0, 5);
+  }
+
+  Future<void> setSegmentsJsonAutoRetryMax(int value) async {
+    final db = ScreenshotDatabase.instance;
+    final int v = value.clamp(0, 5);
+    await db.setAiSetting(_keySegmentsJsonAutoRetryMax, v.toString());
   }
 
   // ========== 分组管理（v6 起移除 legacy，统一使用提供商+上下文） ==========
@@ -627,6 +737,9 @@ class AISettingsService {
               return <AIEndpoint>[
                 AIEndpoint(
                   groupId: -1,
+                  providerId: null,
+                  providerName: 'segments(native)',
+                  providerType: 'native',
                   baseUrl: baseUrl.isEmpty ? _defaultBaseUrl : baseUrl,
                   apiKey: apiKey,
                   model: model,
@@ -643,11 +756,36 @@ class AISettingsService {
 
     // 读取上下文选择：优先 ai_contexts(context)，否则默认提供商，否则列表首项
     final db = ScreenshotDatabase.instance;
-    final ctx = await db.getAIContext(context);
+    Map<String, dynamic>? ctx = await db.getAIContext(context);
+
+    // Best-effort bootstrap: if "memory" context is unset, seed it from the
+    // active chat context so global memory uses the same provider/model by
+    // default (only once).
+    if (ctx == null && context == 'memory') {
+      try {
+        final Map<String, dynamic>? chatCtx = await db.getAIContext('chat');
+        if (chatCtx != null && chatCtx['provider_id'] is int) {
+          final int pid = chatCtx['provider_id'] as int;
+          final String chatModel = (chatCtx['model'] as String?)?.trim() ?? '';
+          final String seedModel = chatModel.isNotEmpty
+              ? chatModel
+              : (await getModel());
+          await db.setAIContext(
+            context: 'memory',
+            providerId: pid,
+            model: seedModel.trim().isEmpty ? _defaultModel : seedModel.trim(),
+          );
+          ctx = await db.getAIContext('memory');
+        }
+      } catch (_) {}
+    }
     AIProvider? pSelected;
-    if (ctx != null && ctx['provider_id'] is int) {
+    final int? ctxProviderId = (ctx != null && ctx['provider_id'] is int)
+        ? (ctx['provider_id'] as int)
+        : null;
+    if (ctxProviderId != null) {
       pSelected = providers.firstWhere(
-        (p) => (p.id ?? -1) == (ctx['provider_id'] as int),
+        (p) => (p.id ?? -1) == ctxProviderId,
         orElse: () => providers.first,
       );
     }
@@ -656,9 +794,11 @@ class AISettingsService {
         providers.first;
 
     // 解析模型：上下文显式 -> extra.active_model -> default_model -> models.first -> 默认
-    String model =
-        (ctx != null && (ctx['model'] as String?)?.trim().isNotEmpty == true)
-        ? (ctx['model'] as String).trim()
+    final String ctxModel = (ctx == null)
+        ? ''
+        : ((ctx['model'] as String?)?.trim() ?? '');
+    String model = ctxModel.isNotEmpty
+        ? ctxModel
         : (pSelected.extra['active_model'] as String? ?? pSelected.defaultModel)
               .toString()
               .trim();
@@ -727,6 +867,9 @@ class AISettingsService {
     return <AIEndpoint>[
       AIEndpoint(
         groupId: groupId,
+        providerId: pSelected.id,
+        providerName: pSelected.name,
+        providerType: pSelected.type,
         baseUrl: baseUrl,
         apiKey: apiKey,
         model: model,
