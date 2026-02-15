@@ -7,6 +7,7 @@ import 'chat_context_service.dart';
 import 'flutter_logger.dart';
 import 'prompt_budget.dart';
 import 'screenshot_database.dart';
+import 'user_memory_service.dart';
 
 class AtomicMemoryService {
   AtomicMemoryService._internal();
@@ -122,8 +123,11 @@ class AtomicMemoryService {
       final int maxTokens = await _settings.getAtomicMemoryPromptTokens();
       final int maxItems = await _settings.getAtomicMemoryMaxItems();
 
-      final List<_AtomicMemoryRow> rules =
-          await _loadRecent(kind: 'rule', cid: cid, limit: 50);
+      final List<_AtomicMemoryRow> rules = await _loadRecent(
+        kind: 'rule',
+        cid: cid,
+        limit: 50,
+      );
       final List<_AtomicMemoryRow> facts = await _searchOrRecentFacts(
         cid: cid,
         query: query,
@@ -190,12 +194,15 @@ class AtomicMemoryService {
     required String cid,
     required String userMessage,
   }) {
-    _serialized[cid] = (_serialized[cid] ?? Future<void>.value()).then((_) async {
-      final bool enabled = await _settings.getAtomicMemoryAutoExtractEnabled();
-      if (!enabled) return;
-      if (!_shouldExtractFromUserMessage(userMessage)) return;
-      await _extractAndUpsert(cid: cid, userMessage: userMessage);
-    }).catchError((_) {});
+    _serialized[cid] = (_serialized[cid] ?? Future<void>.value())
+        .then((_) async {
+          final bool enabled = await _settings
+              .getAtomicMemoryAutoExtractEnabled();
+          if (!enabled) return;
+          if (!_shouldExtractFromUserMessage(userMessage)) return;
+          await _extractAndUpsert(cid: cid, userMessage: userMessage);
+        })
+        .catchError((_) {});
   }
 
   Future<void> _extractAndUpsert({
@@ -204,8 +211,10 @@ class AtomicMemoryService {
   }) async {
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     try {
-      final List<_AtomicMemoryRow> existing =
-          await _loadRecentAny(cid: cid, limit: 20);
+      final List<_AtomicMemoryRow> existing = await _loadRecentAny(
+        cid: cid,
+        limit: 20,
+      );
 
       final String system = _extractionSystemPrompt();
       final String user = _extractionUserPrompt(
@@ -252,13 +261,19 @@ class AtomicMemoryService {
       } catch (_) {}
     } catch (e) {
       try {
-        await FlutterLogger.nativeWarn('AI', 'atomic_memory_extract failed: $e');
+        await FlutterLogger.nativeWarn(
+          'AI',
+          'atomic_memory_extract failed: $e',
+        );
       } catch (_) {}
     }
   }
 
   String _extractionSystemPrompt() {
-    final String today = DateTime.now().toLocal().toIso8601String().substring(0, 10);
+    final String today = DateTime.now().toLocal().toIso8601String().substring(
+      0,
+      10,
+    );
     return [
       'You are an information extraction assistant.',
       'Extract durable, user-specific "atomic memories" (facts or rules) from the user message.',
@@ -285,7 +300,9 @@ class AtomicMemoryService {
     required List<_AtomicMemoryRow> existing,
   }) {
     final StringBuffer sb = StringBuffer();
-    sb.writeln('Existing atomic memories (avoid duplication, update by key when appropriate):');
+    sb.writeln(
+      'Existing atomic memories (avoid duplication, update by key when appropriate):',
+    );
     sb.writeln('<<<');
     if (existing.isEmpty) {
       sb.writeln('(empty)');
@@ -362,7 +379,8 @@ class AtomicMemoryService {
         continue;
       }
       if (it is! Map) continue;
-      final String kindRaw = (it['kind'] as String?)?.trim().toLowerCase() ?? '';
+      final String kindRaw =
+          (it['kind'] as String?)?.trim().toLowerCase() ?? '';
       final String kind = kindRaw == 'rule' ? 'rule' : 'fact';
       final String? key = (it['key'] as String?)?.trim();
       final String content = (it['content'] as String?)?.trim() ?? '';
@@ -418,8 +436,12 @@ class AtomicMemoryService {
         final String hash = _fnv1a64Hex(content);
         if (hash.isEmpty) continue;
 
-        final String? key = (it.key ?? '').trim().isEmpty ? null : it.key!.trim();
-        final String? keywordsJson = it.keywords.isEmpty ? null : jsonEncode(it.keywords);
+        final String? key = (it.key ?? '').trim().isEmpty
+            ? null
+            : it.key!.trim();
+        final String? keywordsJson = it.keywords.isEmpty
+            ? null
+            : jsonEncode(it.keywords);
         final double? confidence = it.confidence;
 
         // Prefer key-based upsert when present.
@@ -477,6 +499,32 @@ class AtomicMemoryService {
         } catch (_) {}
       }
     });
+
+    // Best-effort: also sync durable atomic memories into the global user memory
+    // store so new conversations can benefit immediately.
+    try {
+      if (items.isNotEmpty) {
+        final List<ExtractedUserMemoryItem> global = items
+            .map(
+              (e) => ExtractedUserMemoryItem(
+                kind: (e.kind == 'rule') ? 'rule' : 'fact',
+                key: e.key,
+                content: e.content,
+                keywords: e.keywords,
+                confidence: e.confidence,
+                evidenceFilenames: const <String>[],
+              ),
+            )
+            .toList(growable: false);
+        await UserMemoryService.instance.upsertExtractedItems(
+          items: global,
+          evidence: UserMemoryUpsertEvidenceParams(
+            sourceType: 'chat',
+            sourceId: 'chat:cid=$cid#ts=$now',
+          ),
+        );
+      }
+    } catch (_) {}
 
     return _UpsertStats(inserted: inserted, updated: updated, touched: touched);
   }

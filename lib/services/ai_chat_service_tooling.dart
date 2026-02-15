@@ -374,6 +374,62 @@ extension AIChatServiceToolingExt on AIChatService {
         },
       },
     },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'memory_search',
+        'description':
+            'Search the user memory system (global profile + global memory items + daily/weekly/morning summaries). Use this BEFORE answering questions about user preferences/habits/identity/long-term constraints/past decisions. Returns snippet + a stable path you can use with memory_get.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'query': <String, dynamic>{
+              'type': 'string',
+              'description': 'Search query.',
+            },
+            'limit': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Max results (1-20). Default 10.',
+            },
+            'sources': <String, dynamic>{
+              'type': 'array',
+              'items': <String, dynamic>{'type': 'string'},
+              'description':
+                  'Optional sources filter. Values: profile | items | daily | weekly | morning. Default: all.',
+            },
+          },
+          'required': <String>['query'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'memory_get',
+        'description':
+            'Get full text (or a line slice) for a memory path returned by memory_search. Always prefer memory_search first.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'path': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'One of: profile:user | profile:auto | item:<id> | daily:<YYYY-MM-DD> | weekly:<YYYY-MM-DD> | morning:<YYYY-MM-DD>.',
+            },
+            'from': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Optional 1-based start line number.',
+            },
+            'lines': <String, dynamic>{
+              'type': 'integer',
+              'description':
+                  'Optional number of lines to return (default 80, max 400).',
+            },
+          },
+          'required': <String>['path'],
+        },
+      },
+    },
   ];
 
   String _detectImageMimeByExt(String path) {

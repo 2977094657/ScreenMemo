@@ -426,6 +426,7 @@ extension AIChatServiceSendExt on AIChatService {
     required AIContextBudgets budgets,
     required String toolUsageInstruction,
     required String conversationContextMsg,
+    required String userMemoryMsg,
     required String atomicMemoryMsg,
     required List<String> extraSystemMessages,
   }) async {
@@ -434,11 +435,13 @@ extension AIChatServiceSendExt on AIChatService {
 
     final String toolInst = toolUsageInstruction.trim();
     final String ctx = conversationContextMsg.trim();
+    final String um = userMemoryMsg.trim();
     final String am = atomicMemoryMsg.trim();
 
     if (toolInst.isNotEmpty) extras.add(toolInst);
 
     if (ctx.isNotEmpty) optional.add(ctx);
+    if (um.isNotEmpty) optional.add(um);
     if (am.isNotEmpty) optional.add(am);
     for (final String s in extraSystemMessages) {
       final String t = s.trim();
@@ -650,6 +653,7 @@ extension AIChatServiceSendExt on AIChatService {
     required List<Map<String, dynamic>> tools,
     String toolUsageInstruction = '',
     String conversationContextMsg = '',
+    String userMemoryMsg = '',
     String atomicMemoryMsg = '',
     List<String> extraSystemMessages = const <String>[],
     int? historyMaxTokens,
@@ -675,6 +679,7 @@ extension AIChatServiceSendExt on AIChatService {
 
     addExtra('tool_instruction', toolUsageInstruction);
     addExtra('conversation_context', conversationContextMsg);
+    addExtra('user_memory', userMemoryMsg);
     addExtra('atomic_memory', atomicMemoryMsg);
     for (final String s in extraSystemMessages) {
       addExtra('extra_system', s);
@@ -780,6 +785,8 @@ extension AIChatServiceSendExt on AIChatService {
         if (trimmed.contains('<conversation_context>')) {
           parts['conversation_context'] =
               (parts['conversation_context'] ?? 0) + t;
+        } else if (trimmed.contains('<user_memory>')) {
+          parts['user_memory'] = (parts['user_memory'] ?? 0) + t;
         } else if (trimmed.contains('<atomic_memory>')) {
           parts['atomic_memory'] = (parts['atomic_memory'] ?? 0) + t;
         } else if (_looksLikeToolUsageInstruction(trimmed)) {
@@ -864,6 +871,12 @@ extension AIChatServiceSendExt on AIChatService {
     try {
       ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
     } catch (_) {}
+    String umMsg = '';
+    try {
+      umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
+        query: userMessage.trim(),
+      );
+    } catch (_) {}
     String amMsg = '';
     try {
       amMsg = await AtomicMemoryService.instance
@@ -885,6 +898,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       toolUsageInstruction: '',
       conversationContextMsg: ctxMsg,
+      userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -972,6 +986,23 @@ extension AIChatServiceSendExt on AIChatService {
         tokensApprox >= budgets.autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
+        // openclaw-style: refresh long-term memory before we compact the chat context.
+        try {
+          final UserMemoryProfile p = await UserMemoryService.instance
+              .getProfile();
+          final bool userEmpty = p.userMarkdown.trim().isEmpty;
+          final int nowMs = DateTime.now().millisecondsSinceEpoch;
+          final int lastAuto = p.autoUpdatedAtMs ?? 0;
+          final bool stale =
+              lastAuto <= 0 ||
+              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
+          if (userEmpty && stale) {
+            await UserMemoryService.instance.refreshAutoProfile();
+            umMsg = await UserMemoryService.instance
+                .buildUserMemoryContextMessage(query: userMessage.trim());
+          }
+        } catch (_) {}
+
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Rebuild context message (summary likely changed) and recompute budgets.
         ctxMsg = '';
@@ -989,6 +1020,7 @@ extension AIChatServiceSendExt on AIChatService {
           budgets: budgets,
           toolUsageInstruction: '',
           conversationContextMsg: ctxMsg,
+          userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -1046,6 +1078,7 @@ extension AIChatServiceSendExt on AIChatService {
         includeHistory: true,
         tools: const <Map<String, dynamic>>[],
         conversationContextMsg: ctxMsg,
+        userMemoryMsg: umMsg,
         atomicMemoryMsg: amMsg,
         historyMaxTokens: historyMaxTokens,
       );
@@ -1367,11 +1400,17 @@ extension AIChatServiceSendExt on AIChatService {
         : const <AIMessage>[];
     List<String> effectiveExtras = <String>[];
     String ctxMsg = '';
+    String umMsg = '';
     String amMsg = '';
     String summaryAppsMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+      } catch (_) {}
+      try {
+        umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
+          query: userMessage.trim(),
+        );
       } catch (_) {}
       try {
         amMsg = await AtomicMemoryService.instance
@@ -1397,6 +1436,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       toolUsageInstruction: '',
       conversationContextMsg: ctxMsg,
+      userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -1498,6 +1538,23 @@ extension AIChatServiceSendExt on AIChatService {
         tokensApprox >= budgets.autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
+        // openclaw-style: refresh long-term memory before we compact the chat context.
+        try {
+          final UserMemoryProfile p = await UserMemoryService.instance
+              .getProfile();
+          final bool userEmpty = p.userMarkdown.trim().isEmpty;
+          final int nowMs = DateTime.now().millisecondsSinceEpoch;
+          final int lastAuto = p.autoUpdatedAtMs ?? 0;
+          final bool stale =
+              lastAuto <= 0 ||
+              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
+          if (userEmpty && stale) {
+            await UserMemoryService.instance.refreshAutoProfile();
+            umMsg = await UserMemoryService.instance
+                .buildUserMemoryContextMessage(query: userMessage.trim());
+          }
+        } catch (_) {}
+
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Refresh only the context message + history tail; keep AM/WM stable.
         final List<String> extras2 = <String>[];
@@ -1517,6 +1574,7 @@ extension AIChatServiceSendExt on AIChatService {
           budgets: budgets,
           toolUsageInstruction: '',
           conversationContextMsg: ctxMsg,
+          userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -1589,6 +1647,7 @@ extension AIChatServiceSendExt on AIChatService {
           includeHistory: includeHistoryEffective,
           tools: const <Map<String, dynamic>>[],
           conversationContextMsg: ctxMsg,
+          userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: effectiveExtras,
           historyMaxTokens: historyMaxTokens,
@@ -1780,11 +1839,17 @@ extension AIChatServiceSendExt on AIChatService {
       toolUsageInstruction = _buildToolUsageInstruction(tools);
     }
     String ctxMsg = '';
+    String umMsg = '';
     String amMsg = '';
     String summaryAppsMsg = '';
     if (context == 'chat' && persistHistory) {
       try {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
+      } catch (_) {}
+      try {
+        umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
+          query: actualUserMessage.trim(),
+        );
       } catch (_) {}
       try {
         amMsg = await AtomicMemoryService.instance
@@ -1809,6 +1874,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       toolUsageInstruction: toolUsageInstruction,
       conversationContextMsg: ctxMsg,
+      userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -1906,6 +1972,23 @@ extension AIChatServiceSendExt on AIChatService {
         promptTokensApprox >= budgets.autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
+        // openclaw-style: refresh long-term memory before we compact the chat context.
+        try {
+          final UserMemoryProfile p = await UserMemoryService.instance
+              .getProfile();
+          final bool userEmpty = p.userMarkdown.trim().isEmpty;
+          final int nowMs = DateTime.now().millisecondsSinceEpoch;
+          final int lastAuto = p.autoUpdatedAtMs ?? 0;
+          final bool stale =
+              lastAuto <= 0 ||
+              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
+          if (userEmpty && stale) {
+            await UserMemoryService.instance.refreshAutoProfile();
+            umMsg = await UserMemoryService.instance
+                .buildUserMemoryContextMessage(query: actualUserMessage.trim());
+          }
+        } catch (_) {}
+
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Refresh ctx message and history tail; keep tool instruction + AM/WM stable.
         final List<String> extras2 = <String>[];
@@ -1924,6 +2007,7 @@ extension AIChatServiceSendExt on AIChatService {
           budgets: budgets,
           toolUsageInstruction: toolUsageInstruction,
           conversationContextMsg: ctxMsg,
+          userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
@@ -2002,6 +2086,7 @@ extension AIChatServiceSendExt on AIChatService {
           tools: tools,
           toolUsageInstruction: toolUsageInstruction,
           conversationContextMsg: ctxMsg,
+          userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: effectiveExtras,
           historyMaxTokens: historyMaxTokensForBreakdown,

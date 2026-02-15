@@ -1,6 +1,21 @@
-﻿part of 'ai_chat_service.dart';
+part of 'ai_chat_service.dart';
 
 extension AIChatServiceToolExecExt on AIChatService {
+  List<String> _decodeStringListJsonTool(String raw) {
+    final String t = raw.trim();
+    if (t.isEmpty) return const <String>[];
+    try {
+      final dynamic v = jsonDecode(t);
+      if (v is List) {
+        return v
+            .map((e) => e?.toString().trim() ?? '')
+            .where((s) => s.isNotEmpty)
+            .toList(growable: false);
+      }
+    } catch (_) {}
+    return const <String>[];
+  }
+
   Future<List<AIMessage>> _executeGetImagesTool(AIToolCall call) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final dynamic raw = args['filenames'];
@@ -133,6 +148,408 @@ extension AIChatServiceToolExecExt on AIChatService {
     return <AIMessage>[toolResult, userImages];
   }
 
+  Future<List<AIMessage>> _executeMemorySearchTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String query = (args['query'] ?? '').toString().trim();
+    if (query.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'memory_search',
+            'error': 'missing_query',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    final int limit = (_toInt(args['limit']) ?? 10).clamp(1, 20);
+
+    final Set<String> sources = <String>{};
+    final dynamic rawSources = args['sources'];
+    if (rawSources is List) {
+      for (final dynamic s in rawSources) {
+        final String v = (s ?? '').toString().trim().toLowerCase();
+        if (v.isEmpty) continue;
+        sources.add(v);
+      }
+    }
+    if (sources.isEmpty) {
+      sources.addAll(const <String>{
+        'profile',
+        'items',
+        'daily',
+        'weekly',
+        'morning',
+      });
+    }
+
+    String clip(String text, {int maxBytes = 1200}) {
+      final String t = text.trim();
+      if (t.isEmpty) return '';
+      return PromptBudget.truncateTextByBytes(
+        text: t,
+        maxBytes: maxBytes,
+        marker: '…',
+      );
+    }
+
+    final List<Map<String, dynamic>> results = <Map<String, dynamic>>[];
+
+    if (sources.contains('profile') && results.length < limit) {
+      try {
+        final profile = await UserMemoryService.instance.getProfile();
+        final String userMd = profile.userMarkdown.trim();
+        final String autoMd = profile.autoMarkdown.trim();
+
+        if (userMd.isNotEmpty) {
+          results.add(<String, dynamic>{
+            'path': 'profile:user',
+            'source': 'profile',
+            'title': 'User profile',
+            'snippet': clip(userMd),
+            'updated_at': profile.userUpdatedAtMs,
+          });
+        }
+        final String qLow = query.toLowerCase();
+        final bool wantsAuto =
+            userMd.isEmpty ||
+            (autoMd.isNotEmpty &&
+                (autoMd.toLowerCase().contains(qLow) &&
+                    !userMd.toLowerCase().contains(qLow)));
+        if (wantsAuto && autoMd.isNotEmpty && results.length < limit) {
+          results.add(<String, dynamic>{
+            'path': 'profile:auto',
+            'source': 'profile',
+            'title': 'Auto profile',
+            'snippet': clip(autoMd),
+            'updated_at': profile.autoUpdatedAtMs,
+          });
+        }
+      } catch (_) {}
+    }
+
+    if (sources.contains('items') && results.length < limit) {
+      final int remaining = (limit - results.length).clamp(0, 200);
+      try {
+        final List<UserMemoryItem> items = await UserMemoryService.instance
+            .searchItems(query, limit: remaining, offset: 0);
+        final db = await ScreenshotDatabase.instance.database;
+        for (final UserMemoryItem it in items) {
+          if (results.length >= limit) break;
+          final List<String> evidence = <String>[];
+          try {
+            final rows = await db.query(
+              'user_memory_evidence',
+              columns: const <String>['evidence_filenames_json'],
+              where: 'memory_item_id = ?',
+              whereArgs: <Object?>[it.id],
+              orderBy: 'created_at DESC, id DESC',
+              limit: 2,
+            );
+            for (final r in rows) {
+              final String raw =
+                  (r['evidence_filenames_json'] as String?) ?? '';
+              for (final String f in _decodeStringListJsonTool(raw)) {
+                if (evidence.length >= 5) break;
+                if (!evidence.contains(f)) evidence.add(f);
+              }
+            }
+          } catch (_) {}
+
+          results.add(<String, dynamic>{
+            'path': 'item:${it.id}',
+            'source': 'items',
+            'title': it.kind,
+            'snippet': clip(it.content),
+            if (evidence.isNotEmpty) 'evidence': evidence,
+            'updated_at': it.updatedAtMs,
+          });
+        }
+      } catch (_) {}
+    }
+
+    final bool wantsSearchDocs =
+        sources.contains('daily') ||
+        sources.contains('weekly') ||
+        sources.contains('morning');
+    if (wantsSearchDocs && results.length < limit) {
+      final Set<String> idxSources = <String>{};
+      final Set<String> docTypes = <String>{};
+      if (sources.contains('daily')) {
+        idxSources.add(kSearchIndexSourceDailySummaries);
+        docTypes.add(kSearchDocTypeDailySummary);
+      }
+      if (sources.contains('weekly')) {
+        idxSources.add(kSearchIndexSourceWeeklySummaries);
+        docTypes.add(kSearchDocTypeWeeklySummary);
+      }
+      if (sources.contains('morning')) {
+        idxSources.add(kSearchIndexSourceMorningInsights);
+        docTypes.add(kSearchDocTypeMorningInsights);
+      }
+      try {
+        if (idxSources.isNotEmpty) {
+          await ScreenshotDatabase.instance.syncSearchIndex(
+            sources: idxSources,
+          );
+        }
+      } catch (_) {}
+      try {
+        final int remaining = (limit - results.length).clamp(0, 200);
+        final List<Map<String, dynamic>> docs = await ScreenshotDatabase
+            .instance
+            .searchSearchDocsByText(
+              query,
+              docTypes: docTypes.isEmpty ? null : docTypes,
+              limit: remaining,
+              offset: 0,
+            );
+        for (final Map<String, dynamic> d in docs) {
+          if (results.length >= limit) break;
+          final String type = (d['doc_type'] as String?)?.trim() ?? '';
+          final String dateKey = (d['date_key'] as String?)?.trim() ?? '';
+          final String title = (d['title'] as String?)?.trim() ?? '';
+          final String content = (d['content'] as String?)?.trim() ?? '';
+          final int? updatedAt = _toInt(d['updated_at']);
+
+          String? path;
+          String? source;
+          if (type == kSearchDocTypeDailySummary && dateKey.isNotEmpty) {
+            path = 'daily:$dateKey';
+            source = 'daily';
+          } else if (type == kSearchDocTypeWeeklySummary &&
+              dateKey.isNotEmpty) {
+            path = 'weekly:$dateKey';
+            source = 'weekly';
+          } else if (type == kSearchDocTypeMorningInsights &&
+              dateKey.isNotEmpty) {
+            path = 'morning:$dateKey';
+            source = 'morning';
+          }
+          if (path == null || source == null) continue;
+
+          results.add(<String, dynamic>{
+            'path': path,
+            'source': source,
+            'title': title.isNotEmpty ? title : type,
+            'snippet': clip(content),
+            'updated_at': updatedAt,
+          });
+        }
+      } catch (_) {}
+    }
+
+    return <AIMessage>[
+      AIMessage(
+        role: 'tool',
+        content: jsonEncode(<String, dynamic>{
+          'tool': 'memory_search',
+          'query': query,
+          'count': results.length,
+          'results': results,
+          'note':
+              'Use memory_get(path) to fetch full text or more lines. For global memory items, you may cite [memory: item:<id>] and use evidence filenames when available.',
+        }),
+        toolCallId: call.id,
+      ),
+    ];
+  }
+
+  Future<List<AIMessage>> _executeMemoryGetTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String path = (args['path'] ?? '').toString().trim();
+    if (path.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'memory_get',
+            'error': 'missing_path',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    int fromLine = _toInt(args['from']) ?? 1;
+    if (fromLine < 1) fromLine = 1;
+    int lines = _toInt(args['lines']) ?? 80;
+    lines = lines.clamp(1, 400);
+
+    String text = '';
+    final Map<String, dynamic> meta = <String, dynamic>{};
+
+    try {
+      final UserMemoryPath parsed = UserMemoryPath.parse(path);
+      switch (parsed.kind) {
+        case UserMemoryPathKind.profileUser:
+        case UserMemoryPathKind.profileAuto:
+          final profile = await UserMemoryService.instance.getProfile();
+          final bool isUser = parsed.kind == UserMemoryPathKind.profileUser;
+          text = isUser ? profile.userMarkdown : profile.autoMarkdown;
+          meta['source'] = 'profile';
+          meta['variant'] = isUser ? 'user' : 'auto';
+          meta['updated_at'] = isUser
+              ? profile.userUpdatedAtMs
+              : profile.autoUpdatedAtMs;
+          break;
+        case UserMemoryPathKind.item:
+          final int id = parsed.itemId ?? 0;
+          if (id <= 0) throw Exception('invalid_item_id');
+          final db = await ScreenshotDatabase.instance.database;
+          final rows = await db.query(
+            'user_memory_items',
+            where: 'id = ?',
+            whereArgs: <Object?>[id],
+            limit: 1,
+          );
+          if (rows.isEmpty) throw Exception('not_found');
+          final r = rows.first;
+          text = (r['content'] as String?)?.trim() ?? '';
+          meta['source'] = 'items';
+          meta['id'] = id;
+          meta['kind'] = (r['kind'] as String?)?.trim() ?? '';
+          meta['memory_key'] = (r['memory_key'] as String?)?.trim();
+          meta['pinned'] = _toBool(r['pinned']);
+          meta['user_edited'] = _toBool(r['user_edited']);
+          meta['updated_at'] = _toInt(r['updated_at']);
+          meta['confidence'] = r['confidence'];
+          final String kwRaw = (r['keywords_json'] as String?) ?? '';
+          final List<String> kws = _decodeStringListJsonTool(kwRaw);
+          if (kws.isNotEmpty) meta['keywords'] = kws;
+
+          final List<String> evidence = <String>[];
+          try {
+            final evRows = await db.query(
+              'user_memory_evidence',
+              columns: const <String>[
+                'source_type',
+                'source_id',
+                'evidence_filenames_json',
+                'created_at',
+              ],
+              where: 'memory_item_id = ?',
+              whereArgs: <Object?>[id],
+              orderBy: 'created_at DESC, id DESC',
+              limit: 8,
+            );
+            for (final ev in evRows) {
+              final String raw =
+                  (ev['evidence_filenames_json'] as String?) ?? '';
+              for (final String f in _decodeStringListJsonTool(raw)) {
+                if (evidence.length >= 5) break;
+                if (!evidence.contains(f)) evidence.add(f);
+              }
+              if (evidence.length >= 5) break;
+            }
+          } catch (_) {}
+          if (evidence.isNotEmpty) meta['evidence'] = evidence;
+          break;
+        case UserMemoryPathKind.daily:
+          final String dateKey = parsed.dateKey ?? '';
+          final row = await ScreenshotDatabase.instance.getDailySummary(
+            dateKey,
+          );
+          text = (row?['output_text'] as String?)?.trim() ?? '';
+          meta['source'] = 'daily';
+          meta['date_key'] = dateKey;
+          meta['created_at'] = row?['created_at'];
+          meta['ai_provider'] = row?['ai_provider'];
+          meta['ai_model'] = row?['ai_model'];
+          break;
+        case UserMemoryPathKind.weekly:
+          final String dateKey = parsed.dateKey ?? '';
+          final row = await ScreenshotDatabase.instance.getWeeklySummary(
+            dateKey,
+          );
+          text = (row?['output_text'] as String?)?.trim() ?? '';
+          meta['source'] = 'weekly';
+          meta['week_start_date'] = dateKey;
+          meta['week_end_date'] = row?['week_end_date'];
+          meta['created_at'] = row?['created_at'];
+          meta['ai_provider'] = row?['ai_provider'];
+          meta['ai_model'] = row?['ai_model'];
+          break;
+        case UserMemoryPathKind.morning:
+          final String dateKey = parsed.dateKey ?? '';
+          final row = await ScreenshotDatabase.instance.getMorningInsights(
+            dateKey,
+          );
+          final String rawResponse =
+              (row?['raw_response'] as String?)?.trim() ?? '';
+          if (rawResponse.isNotEmpty) {
+            text = rawResponse;
+          } else {
+            // Prefer the rendered markdown from search_docs if available.
+            try {
+              await ScreenshotDatabase.instance.syncSearchIndex(
+                sources: <String>{kSearchIndexSourceMorningInsights},
+              );
+            } catch (_) {}
+            try {
+              final db = await ScreenshotDatabase.instance.database;
+              final docRows = await db.query(
+                'search_docs',
+                columns: const <String>['content'],
+                where: 'doc_key = ?',
+                whereArgs: <Object?>['morning:$dateKey'],
+                limit: 1,
+              );
+              if (docRows.isNotEmpty) {
+                text = (docRows.first['content'] as String?)?.trim() ?? '';
+              }
+            } catch (_) {}
+            if (text.trim().isEmpty) {
+              text = (row?['tips_json'] as String?)?.trim() ?? '';
+            }
+          }
+          meta['source'] = 'morning';
+          meta['date_key'] = dateKey;
+          meta['source_date_key'] = row?['source_date_key'];
+          meta['created_at'] = row?['created_at'];
+          break;
+        case UserMemoryPathKind.unknown:
+          throw Exception('unknown_path');
+      }
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'memory_get',
+            'path': path,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    final String sliced = UserMemoryService.sliceLines(
+      text,
+      fromLine: fromLine,
+      lines: lines,
+      maxLines: 400,
+    );
+
+    return <AIMessage>[
+      AIMessage(
+        role: 'tool',
+        content: jsonEncode(<String, dynamic>{
+          'tool': 'memory_get',
+          'path': path,
+          'from': fromLine,
+          'lines': lines,
+          'text': sliced,
+          'meta': meta,
+        }),
+        toolCallId: call.id,
+      ),
+    ];
+  }
+
   Future<List<AIMessage>> _executeListSegmentsTool(
     AIToolCall call, {
     int? toolStartMs,
@@ -237,17 +654,16 @@ extension AIChatServiceToolExecExt on AIChatService {
     return <AIMessage>[
       AIMessage(
         role: 'tool',
-          content: jsonEncode(<String, dynamic>{
-            'tool': 'list_segments',
-            if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
-            if (appPackageNames.length == 1)
-              'app_package_name': appPackageNames.single,
-            if (appPackageNames.length > 1)
-              'app_package_names': appPackageNames,
-            'start_local': _formatLocalDateTimeForTool(s),
-            'end_local': _formatLocalDateTimeForTool(e),
-            'time_span_limit': <String, dynamic>{
-              'max_span_ms': AIChatService.maxToolTimeSpanMs,
+        content: jsonEncode(<String, dynamic>{
+          'tool': 'list_segments',
+          if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
+          if (appPackageNames.length == 1)
+            'app_package_name': appPackageNames.single,
+          if (appPackageNames.length > 1) 'app_package_names': appPackageNames,
+          'start_local': _formatLocalDateTimeForTool(s),
+          'end_local': _formatLocalDateTimeForTool(e),
+          'time_span_limit': <String, dynamic>{
+            'max_span_ms': AIChatService.maxToolTimeSpanMs,
             'max_span_days':
                 (AIChatService.maxToolTimeSpanMs /
                         const Duration(days: 1).inMilliseconds)
@@ -296,8 +712,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] as String?)?.trim() ?? '';
     final List<String> requestedAppNames = _normalizeAppNamesArg(args);
-    final List<String> requestedAppPackages =
-        await _resolveAppPackagesFromArgs(args);
+    final List<String> requestedAppPackages = await _resolveAppPackagesFromArgs(
+      args,
+    );
     final bool onlyNoSummary = _toBool(args['only_no_summary']);
     final int? reqStartMs =
         _parseLocalDateTimeToEpochMs(args['start_local'], isEnd: false) ??
@@ -647,19 +1064,18 @@ extension AIChatServiceToolExecExt on AIChatService {
             endMillis: e,
           );
         }
-        final List<List<ScreenshotRecord>> perApp = await Future.wait(
-          <Future<List<ScreenshotRecord>>>[
-            for (final pkg in pkgs)
-              ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
-                pkg,
-                query,
-                limit: shotFetch,
-                offset: 0,
-                startMillis: s,
-                endMillis: e,
-              ),
-          ],
-        );
+        final List<List<ScreenshotRecord>> perApp =
+            await Future.wait(<Future<List<ScreenshotRecord>>>[
+              for (final pkg in pkgs)
+                ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+                  pkg,
+                  query,
+                  limit: shotFetch,
+                  offset: 0,
+                  startMillis: s,
+                  endMillis: e,
+                ),
+            ]);
         final Map<String, ScreenshotRecord> uniq = <String, ScreenshotRecord>{};
         for (final list in perApp) {
           for (final r in list) {
@@ -818,7 +1234,7 @@ extension AIChatServiceToolExecExt on AIChatService {
         FROM segments s
         LEFT JOIN segment_results r ON r.segment_id = s.id
         WHERE s.id IN ($placeholders)
-          AND s.merged_into_id IS NULL
+          AND (s.merged_into_id IS NULL OR s.merged_into_id <= 0 OR NOT EXISTS (SELECT 1 FROM segments t WHERE t.id = s.merged_into_id))
       ''';
       final List<Map<String, Object?>> rows = await db.rawQuery(sql, chunk);
       for (final r in rows) {
@@ -1164,19 +1580,18 @@ extension AIChatServiceToolExecExt on AIChatService {
       final int pageEnd = offset + limit;
       int perAppFetch = (pageEnd * 2).clamp(200, 5000);
       if (perAppFetch < limit) perAppFetch = limit;
-      final List<List<ScreenshotRecord>> perApp = await Future.wait(
-        <Future<List<ScreenshotRecord>>>[
-          for (final pkg in pkgs)
-            ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
-              pkg,
-              query,
-              limit: perAppFetch,
-              offset: 0,
-              startMillis: s,
-              endMillis: e,
-            ),
-        ],
-      );
+      final List<List<ScreenshotRecord>> perApp =
+          await Future.wait(<Future<List<ScreenshotRecord>>>[
+            for (final pkg in pkgs)
+              ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
+                pkg,
+                query,
+                limit: perAppFetch,
+                offset: 0,
+                startMillis: s,
+                endMillis: e,
+              ),
+          ]);
       final Map<String, ScreenshotRecord> uniq = <String, ScreenshotRecord>{};
       for (final list in perApp) {
         for (final r in list) {
@@ -1233,24 +1648,23 @@ extension AIChatServiceToolExecExt on AIChatService {
             endMillis: e,
           );
         } else if (effectiveAppPackageNames.length == 1) {
-          totalCount = await ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
-            effectiveAppPackageNames.single,
-            query,
-            startMillis: s,
-            endMillis: e,
-          );
+          totalCount = await ScreenshotDatabase.instance
+              .countScreenshotsByOcrForApp(
+                effectiveAppPackageNames.single,
+                query,
+                startMillis: s,
+                endMillis: e,
+              );
         } else {
-          final List<int> parts = await Future.wait(
-            <Future<int>>[
-              for (final pkg in effectiveAppPackageNames)
-                ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
-                  pkg,
-                  query,
-                  startMillis: s,
-                  endMillis: e,
-                ),
-            ],
-          );
+          final List<int> parts = await Future.wait(<Future<int>>[
+            for (final pkg in effectiveAppPackageNames)
+              ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
+                pkg,
+                query,
+                startMillis: s,
+                endMillis: e,
+              ),
+          ]);
           totalCount = parts.fold<int>(0, (a, b) => a + b);
         }
       }
@@ -1514,6 +1928,10 @@ extension AIChatServiceToolExecExt on AIChatService {
     switch (call.name) {
       case 'get_images':
         return _executeGetImagesTool(call);
+      case 'memory_search':
+        return _executeMemorySearchTool(call);
+      case 'memory_get':
+        return _executeMemoryGetTool(call);
       case 'search_segments':
         return _executeSearchSegmentsTool(
           call,
@@ -1549,5 +1967,4 @@ extension AIChatServiceToolExecExt on AIChatService {
         ];
     }
   }
-
 }

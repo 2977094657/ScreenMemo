@@ -4,6 +4,7 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/theme_service.dart';
 import '../pages/provider_list_page.dart';
 import '../pages/prompt_manager_page.dart';
+import '../pages/user_memory_page.dart';
 import '../theme/app_theme.dart';
 import '../services/ai_settings_service.dart';
 import '../utils/model_icon_utils.dart';
@@ -90,9 +91,9 @@ class AppSideDrawer extends StatelessWidget {
               isFirst: false,
               onTap: () {
                 Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => ProviderListPage()),
-                );
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => ProviderListPage()));
               },
             ),
             // 提示词管理
@@ -103,15 +104,30 @@ class AppSideDrawer extends StatelessWidget {
               isFirst: false,
               onTap: () {
                 Navigator.of(context).pop();
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => PromptManagerPage()));
+              },
+            ),
+            _buildMenuItem(
+              context: context,
+              icon: Icons.psychology_alt_outlined,
+              title: '记忆 / Memory',
+              isFirst: false,
+              onTap: () {
+                Navigator.of(context).pop();
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => PromptManagerPage()),
+                  MaterialPageRoute(builder: (_) => const UserMemoryPage()),
                 );
               },
             ),
             // —— 对话分割 + 会话列表 ——
             const SizedBox(height: AppTheme.spacing2),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing2),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing2,
+              ),
               child: Text(
                 t.conversationsSectionTitle,
                 style: theme.textTheme.titleSmall?.copyWith(
@@ -128,25 +144,44 @@ class AppSideDrawer extends StatelessWidget {
               builder: (ctx, snap) {
                 if (snap.connectionState != ConnectionState.done) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-                    child: Text(t.loadingConversations, style: Theme.of(ctx).textTheme.bodySmall),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                      vertical: AppTheme.spacing1,
+                    ),
+                    child: Text(
+                      t.loadingConversations,
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
                   );
                 }
                 if (!snap.hasData) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-                    child: Text(t.noConversations, style: Theme.of(ctx).textTheme.bodySmall),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                      vertical: AppTheme.spacing1,
+                    ),
+                    child: Text(
+                      t.noConversations,
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
                   );
                 }
-                final list = (snap.data![0] as List).cast<Map<String, dynamic>>();
+                final list = (snap.data![0] as List)
+                    .cast<Map<String, dynamic>>();
                 final active = (snap.data![1] as String?) ?? '';
                 if (list.isEmpty) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4, vertical: AppTheme.spacing1),
-                    child: Text(t.noConversations, style: Theme.of(ctx).textTheme.bodySmall),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                      vertical: AppTheme.spacing1,
+                    ),
+                    child: Text(
+                      t.noConversations,
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
                   );
                 }
-                
+
                 // 将当前激活会话置顶
                 final sortedList = List<Map<String, dynamic>>.from(list);
                 sortedList.sort((a, b) {
@@ -159,15 +194,17 @@ class AppSideDrawer extends StatelessWidget {
                   final bTime = (b['updated_at'] as int?) ?? 0;
                   return bTime.compareTo(aTime);
                 });
-                
+
                 return Column(
                   children: sortedList.map((c) {
                     final cid = (c['cid'] as String?) ?? '';
                     final rawTitle = (c['title'] as String?) ?? '';
-                    final title = rawTitle.trim().isEmpty ? t.untitledConversationLabel : rawTitle;
+                    final title = rawTitle.trim().isEmpty
+                        ? t.untitledConversationLabel
+                        : rawTitle;
                     final model = (c['model'] as String?) ?? '';
                     final isActive = active == cid;
-                    
+
                     return _buildConversationItem(
                       context: context,
                       cid: cid,
@@ -194,7 +231,7 @@ class AppSideDrawer extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
@@ -253,7 +290,7 @@ class AppSideDrawer extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final t = AppLocalizations.of(context);
-    
+
     return Container(
       decoration: BoxDecoration(
         color: isActive
@@ -290,15 +327,28 @@ class AppSideDrawer extends StatelessWidget {
                     Navigator.of(ctx).pop();
                     // 触发重建（数据源来自 FutureBuilder，不做本地列表回滚）
                     (context as Element).markNeedsBuild();
-                    final ok = await AISettingsService.instance.deleteConversation(cid);
+                    final ok = await AISettingsService.instance
+                        .deleteConversation(cid);
                     sw.stop();
-                    try { await FlutterLogger.nativeInfo('UI', 'SideDrawer 删除对话总耗时(毫秒)='+sw.elapsedMilliseconds.toString()); } catch (_) {}
+                    try {
+                      await FlutterLogger.nativeInfo(
+                        'UI',
+                        'SideDrawer 删除对话总耗时(毫秒)=' +
+                            sw.elapsedMilliseconds.toString(),
+                      );
+                    } catch (_) {}
                     // 记录“完全清空”耗时：从删除返回到FutureBuilder下一次完成的时间
                     final sw2 = Stopwatch()..start();
                     // 触发一次 rebuild 后，在下一帧读取列表为空的时刻打印
                     WidgetsBinding.instance.addPostFrameCallback((_) async {
                       sw2.stop();
-                      try { await FlutterLogger.nativeInfo('UI', 'SideDrawer 清空后首帧耗时(毫秒)='+sw2.elapsedMilliseconds.toString()); } catch (_) {}
+                      try {
+                        await FlutterLogger.nativeInfo(
+                          'UI',
+                          'SideDrawer 清空后首帧耗时(毫秒)=' +
+                              sw2.elapsedMilliseconds.toString(),
+                        );
+                      } catch (_) {}
                     });
                     if (!ok) {
                       UINotifier.error(context, t.deleteFailed);
@@ -307,7 +357,10 @@ class AppSideDrawer extends StatelessWidget {
                       UINotifier.success(context, t.deletedToast);
                     }
                   } catch (e) {
-                    UINotifier.error(ctx, t.deleteFailedWithError(e.toString()));
+                    UINotifier.error(
+                      ctx,
+                      t.deleteFailedWithError(e.toString()),
+                    );
                   }
                 },
               ),
