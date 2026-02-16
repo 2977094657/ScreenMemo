@@ -841,14 +841,13 @@ class AIRequestGateway {
     return <String, dynamic>{'type': 'function', 'name': name};
   }
 
-  bool _shouldUseResponsesApi({
+bool _shouldUseResponsesApi({
     required AIEndpoint endpoint,
     required Uri baseUri,
     required List<Map<String, dynamic>> tools,
   }) {
     if (endpoint.useResponseApi) return true;
     if (_isResponsesPath(endpoint.chatPath)) return true;
-    if (tools.isEmpty) return false;
 
     final String model = endpoint.model.trim().toLowerCase();
     if (model.startsWith('gpt-5')) return true;
@@ -857,6 +856,7 @@ class AIRequestGateway {
     if (host.contains('codex-api') || host.contains('packycode')) {
       return true;
     }
+    if (tools.isEmpty) return false;
     return false;
   }
 

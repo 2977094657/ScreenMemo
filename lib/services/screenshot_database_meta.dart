@@ -1977,10 +1977,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? minSize,
     int? maxSize,
     bool matchAllTerms = true,
+    bool rankByRelevance = false,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
     final db = await database; // 主库
     try {
-      final String q = query.trim();
+      final AdvancedSearchQuery? adv = queryAdvanced;
+      final String q0 = query.trim();
+      final String q = (adv != null) ? adv.toPlainText() : q0;
       if (q.isEmpty) return <ScreenshotRecord>[];
 
       final Map<String, String> appNameCache = <String, String>{};
@@ -2054,21 +2059,16 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               await _ensureMonthFts(shardDb, y, m);
             } catch (_) {}
 
-            // 构建 FTS MATCH 字符串（简单 AND + 前缀）
-            String buildMatch(String text) {
-              final parts = text
-                  .split(RegExp(r"\s+"))
-                  .where((e) => e.isNotEmpty)
-                  .toList();
-              if (parts.isEmpty) return text;
-              // 限制最多5个词，避免过长查询
-              final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-              return limited
-                  .map((w) => (w.replaceAll('"', '')) + '*')
-                  .join(matchAllTerms ? ' AND ' : ' OR ');
-            }
-
-            final String match = buildMatch(q);
+            final String match = ScreenshotDatabase._buildFtsMatchQuery(
+              q,
+              maxTerms: 5,
+              matchAllTerms: matchAllTerms,
+              prefix: true,
+              allowAdvanced: allowAdvanced,
+            );
+            final String matchEff = (adv != null)
+                ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+                : match;
 
             // 组合 SQL：fts JOIN 主表并应用过滤
             final String fts = '${t}_fts';
@@ -2077,7 +2077,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
             if (!ftsExists) {
               throw StateError('FTS not available for table ' + t);
             }
-            final List<Object?> args = <Object?>[match];
+            final List<Object?> args = <Object?>[matchEff];
             final List<String> filters = <String>['m.is_deleted = 0'];
             if (startMillis != null || endMillis != null) {
               final int s = startMillis ?? 0;
@@ -2100,7 +2100,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               args.add(maxSize);
             }
 
-            final sql =
+            final String sqlTime =
                 'SELECT m.* FROM ' +
                 t +
                 ' m JOIN ' +
@@ -2112,10 +2112,32 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
                 filters.join(' AND ') +
                 ' ' +
                 'ORDER BY m.capture_time DESC LIMIT ?';
-            args.add(perTableLimit);
+            final String sqlRank =
+                'SELECT m.*, bm25(' +
+                fts +
+                ') AS fts_rank FROM ' +
+                t +
+                ' m JOIN ' +
+                fts +
+                ' f ON f.rowid = m.id ' +
+                'WHERE ' +
+                fts +
+                ' MATCH ? AND ' +
+                filters.join(' AND ') +
+                ' ' +
+                'ORDER BY fts_rank ASC, m.capture_time DESC LIMIT ?';
 
-            List<Map<String, Object?>> maps = await (shardDb as Database)
-                .rawQuery(sql, args);
+            args.add(perTableLimit);
+            List<Map<String, Object?>> maps;
+            if (rankByRelevance) {
+              try {
+                maps = await (shardDb as Database).rawQuery(sqlRank, args);
+              } catch (_) {
+                maps = await (shardDb as Database).rawQuery(sqlTime, args);
+              }
+            } else {
+              maps = await (shardDb as Database).rawQuery(sqlTime, args);
+            }
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = pkg;
@@ -2130,6 +2152,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       rows.sort((a, b) {
+        if (rankByRelevance) {
+          final double ra =
+              (a['fts_rank'] as num?)?.toDouble() ?? double.infinity;
+          final double rb =
+              (b['fts_rank'] as num?)?.toDouble() ?? double.infinity;
+          if (ra != rb) return ra.compareTo(rb);
+        }
         final int ta = (a['capture_time'] as int?) ?? 0;
         final int tb = (b['capture_time'] as int?) ?? 0;
         return tb.compareTo(ta);
@@ -2156,10 +2185,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? minSize,
     int? maxSize,
     bool matchAllTerms = true,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
     final db = await database; // 主库
     try {
-      final String q = query.trim();
+      final AdvancedSearchQuery? adv = queryAdvanced;
+      final String q0 = query.trim();
+      final String q = (adv != null) ? adv.toPlainText() : q0;
       if (q.isEmpty) return 0;
 
       // 时间范围转换为年月集合（用于限缩扫描表）
@@ -2173,20 +2206,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         );
       }
 
-      // 构建 MATCH 字符串
-      String buildMatch(String text) {
-        final parts = text
-            .split(RegExp(r"\s+"))
-            .where((e) => e.isNotEmpty)
-            .toList();
-        if (parts.isEmpty) return text;
-        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-        return limited
-            .map((w) => (w.replaceAll('"', '')) + '*')
-            .join(matchAllTerms ? ' AND ' : ' OR ');
-      }
-
-      final String match = buildMatch(q);
+      final String match = (adv != null)
+          ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+          : ScreenshotDatabase._buildFtsMatchQuery(
+              q,
+              maxTerms: 5,
+              matchAllTerms: matchAllTerms,
+              prefix: true,
+              allowAdvanced: allowAdvanced,
+            );
 
       int total = 0;
       final shards = await db.query(
@@ -2280,10 +2308,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? minSize,
     int? maxSize,
     bool matchAllTerms = true,
+    bool rankByRelevance = false,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
     final db = await database; // 主库
     try {
-      final String q = query.trim();
+      final AdvancedSearchQuery? adv = queryAdvanced;
+      final String q0 = query.trim();
+      final String q = (adv != null) ? adv.toPlainText() : q0;
       if (q.isEmpty) return <ScreenshotRecord>[];
 
       String appName = appPackageName;
@@ -2349,26 +2382,23 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               await _ensureMonthFts(shardDb, y, m);
             } catch (_) {}
 
-            String buildMatch(String text) {
-              final parts = text
-                  .split(RegExp(r"\s+"))
-                  .where((e) => e.isNotEmpty)
-                  .toList();
-              if (parts.isEmpty) return text;
-              final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-              return limited
-                  .map((w) => (w.replaceAll('"', '')) + '*')
-                  .join(matchAllTerms ? ' AND ' : ' OR ');
-            }
-
-            final String match = buildMatch(q);
+            final String match = ScreenshotDatabase._buildFtsMatchQuery(
+              q,
+              maxTerms: 5,
+              matchAllTerms: matchAllTerms,
+              prefix: true,
+              allowAdvanced: allowAdvanced,
+            );
+            final String matchEff = (adv != null)
+                ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+                : match;
 
             final String fts = '${t}_fts';
             final bool ftsExists = await _tableExists(shardDb, fts);
             if (!ftsExists) {
               throw StateError('FTS not available for table ' + t);
             }
-            final List<Object?> args = <Object?>[match];
+            final List<Object?> args = <Object?>[matchEff];
             final List<String> filters = <String>['m.is_deleted = 0'];
             if (startMillis != null || endMillis != null) {
               final int s = startMillis ?? 0;
@@ -2390,7 +2420,7 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
               filters.add('m.file_size <= ?');
               args.add(maxSize);
             }
-            final sql =
+            final String sqlTime =
                 'SELECT m.* FROM ' +
                 t +
                 ' m JOIN ' +
@@ -2402,10 +2432,32 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
                 filters.join(' AND ') +
                 ' ' +
                 'ORDER BY m.capture_time DESC LIMIT ?';
+            final String sqlRank =
+                'SELECT m.*, bm25(' +
+                fts +
+                ') AS fts_rank FROM ' +
+                t +
+                ' m JOIN ' +
+                fts +
+                ' f ON f.rowid = m.id ' +
+                'WHERE ' +
+                fts +
+                ' MATCH ? AND ' +
+                filters.join(' AND ') +
+                ' ' +
+                'ORDER BY fts_rank ASC, m.capture_time DESC LIMIT ?';
             args.add(perTableLimit);
 
-            List<Map<String, Object?>> maps = await (shardDb as Database)
-                .rawQuery(sql, args);
+            List<Map<String, Object?>> maps;
+            if (rankByRelevance) {
+              try {
+                maps = await (shardDb as Database).rawQuery(sqlRank, args);
+              } catch (_) {
+                maps = await (shardDb as Database).rawQuery(sqlTime, args);
+              }
+            } else {
+              maps = await (shardDb as Database).rawQuery(sqlTime, args);
+            }
             for (final mapp in maps) {
               final full = Map<String, dynamic>.from(mapp);
               full['app_package_name'] = appPackageName;
@@ -2420,6 +2472,13 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       }
 
       rows.sort((a, b) {
+        if (rankByRelevance) {
+          final double ra =
+              (a['fts_rank'] as num?)?.toDouble() ?? double.infinity;
+          final double rb =
+              (b['fts_rank'] as num?)?.toDouble() ?? double.infinity;
+          if (ra != rb) return ra.compareTo(rb);
+        }
         final int ta = (a['capture_time'] as int?) ?? 0;
         final int tb = (b['capture_time'] as int?) ?? 0;
         return tb.compareTo(ta);
@@ -2446,10 +2505,14 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     int? endMillis,
     int? minSize,
     int? maxSize,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
     final db = await database; // 主库
     try {
-      final String q = query.trim();
+      final AdvancedSearchQuery? adv = queryAdvanced;
+      final String q0 = query.trim();
+      final String q = (adv != null) ? adv.toPlainText() : q0;
       if (q.isEmpty) return 0;
 
       List<List<int>>? ymFilter;
@@ -2462,17 +2525,15 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         );
       }
 
-      String buildMatch(String text) {
-        final parts = text
-            .split(RegExp(r"\s+"))
-            .where((e) => e.isNotEmpty)
-            .toList();
-        if (parts.isEmpty) return text;
-        final limited = parts.length > 5 ? parts.sublist(0, 5) : parts;
-        return limited.map((w) => (w.replaceAll('"', '')) + '*').join(' AND ');
-      }
-
-      final String match = buildMatch(q);
+      final String match = (adv != null)
+          ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+          : ScreenshotDatabase._buildFtsMatchQuery(
+              q,
+              maxTerms: 5,
+              matchAllTerms: true,
+              prefix: true,
+              allowAdvanced: allowAdvanced,
+            );
 
       int total = 0;
       final years = await _listShardYearsForApp(appPackageName);

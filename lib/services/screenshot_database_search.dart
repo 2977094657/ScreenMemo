@@ -191,7 +191,8 @@ Future<void> _createSearchDocsFts(DatabaseExecutor db) async {
         tags,
         app_name,
         content='search_docs',
-        content_rowid='rowid'
+        content_rowid='rowid',
+        prefix='2 3 4'
       )
     ''');
 
@@ -220,6 +221,49 @@ Future<void> _createSearchDocsFts(DatabaseExecutor db) async {
       FlutterLogger.nativeWarn('DB', 'FTS5（search_docs）不支持：$e');
     } catch (_) {}
   }
+}
+
+Future<void> _backfillSearchDocsFts(DatabaseExecutor db) async {
+  try {
+    // Rebuild from the content table (search_docs).
+    await db.execute("INSERT INTO search_docs_fts(search_docs_fts) VALUES('rebuild')");
+  } catch (_) {
+    // Best-effort fallback when rebuild is not supported for some reason.
+    try {
+      await db.execute('''
+        INSERT OR IGNORE INTO search_docs_fts(rowid, title, content, tags, app_name)
+        SELECT rowid, title, content, tags, app_name FROM search_docs
+      ''');
+    } catch (_) {}
+  }
+}
+
+/// v33 migration: search_docs_fts needs to be recreated so new FTS5 options
+/// (e.g. prefix indexes) take effect even if the virtual table already exists.
+Future<void> _recreateSearchDocsFtsWithPrefix(DatabaseExecutor db) async {
+  Future<void> dropTrigger(String name) async {
+    try {
+      await db.execute('DROP TRIGGER IF EXISTS $name');
+    } catch (_) {}
+  }
+
+  try {
+    await dropTrigger('search_docs_ai');
+    await dropTrigger('search_docs_ad');
+    await dropTrigger('search_docs_au');
+  } catch (_) {}
+
+  try {
+    await db.execute('DROP TABLE IF EXISTS search_docs_fts');
+  } catch (_) {}
+
+  try {
+    await _createSearchDocsFts(db);
+  } catch (_) {}
+
+  try {
+    await _backfillSearchDocsFts(db);
+  } catch (_) {}
 }
 
 extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
@@ -593,9 +637,13 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
     int? offset,
     int? startMillis,
     int? endMillis,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
     final db = await database;
-    final String q = query.trim();
+    final AdvancedSearchQuery? adv = queryAdvanced;
+    final String q0 = query.trim();
+    final String q = (adv != null) ? adv.toPlainText() : q0;
     if (q.isEmpty) return <Map<String, dynamic>>[];
 
     final int fetchLimit = (limit ?? 50).clamp(1, 50);
@@ -605,16 +653,6 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
     bool isLikelyCjkNoSpaces() {
       if (q.contains(' ')) return false;
       return RegExp(r'[\u4e00-\u9fff]').hasMatch(q);
-    }
-
-    String buildMatch(String text) {
-      final parts = text
-          .split(RegExp(r'\s+'))
-          .where((e) => e.isNotEmpty)
-          .toList();
-      if (parts.isEmpty) return text;
-      final limited = parts.length > 6 ? parts.sublist(0, 6) : parts;
-      return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
     }
 
     List<Object?> _buildTypeArgs(List<String> filters) {
@@ -632,16 +670,103 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
     }
 
     Future<List<Map<String, dynamic>>> runLike() async {
-      final String likeTerm = '%$q%';
-      final List<Object?> args = <Object?>[
-        likeTerm,
-        likeTerm,
-        likeTerm,
-        likeTerm,
-      ];
-      final List<String> filters = <String>[
-        '(d.title LIKE ? OR d.content LIKE ? OR d.tags LIKE ? OR d.app_name LIKE ?)',
-      ];
+      bool addLikeTermClause(
+        String term,
+        List<Object?> args,
+        List<String> clauses,
+      ) {
+        final String t = term.trim();
+        if (t.isEmpty) return false;
+        final String likeTerm = '%$t%';
+        args.addAll(<Object?>[likeTerm, likeTerm, likeTerm, likeTerm]);
+        clauses.add(
+          '(d.title LIKE ? OR d.content LIKE ? OR d.tags LIKE ? OR d.app_name LIKE ?)',
+        );
+        return true;
+      }
+
+      final List<Object?> args = <Object?>[];
+      final List<String> filters = <String>[];
+
+      if (adv != null) {
+        final AdvancedSearchLikeQuery like = adv.toLikeSpec(
+          maxGroups: 10,
+          maxTokensPerGroup: 6,
+        );
+
+        for (final phrase in like.mustPhrases) {
+          addLikeTermClause(phrase, args, filters);
+        }
+        for (final group in like.mustGroups) {
+          for (final tok in group) {
+            addLikeTermClause(tok, args, filters);
+          }
+        }
+
+        final List<String> anyClauses = <String>[];
+        final List<Object?> anyArgs = <Object?>[];
+        for (final phrase in like.anyPhrases) {
+          final List<String> pClauses = <String>[];
+          final List<Object?> pArgs = <Object?>[];
+          if (addLikeTermClause(phrase, pArgs, pClauses)) {
+            anyClauses.add(pClauses.single);
+            anyArgs.addAll(pArgs);
+          }
+        }
+        for (final group in like.anyGroups) {
+          final List<String> gClauses = <String>[];
+          final List<Object?> gArgs = <Object?>[];
+          for (final tok in group) {
+            final List<String> tClauses = <String>[];
+            final List<Object?> tArgs = <Object?>[];
+            if (addLikeTermClause(tok, tArgs, tClauses)) {
+              gClauses.add(tClauses.single);
+              gArgs.addAll(tArgs);
+            }
+          }
+          if (gClauses.isNotEmpty) {
+            anyClauses.add(
+              gClauses.length == 1
+                  ? gClauses.single
+                  : '(${gClauses.join(' AND ')})',
+            );
+            anyArgs.addAll(gArgs);
+          }
+        }
+        if (anyClauses.isNotEmpty) {
+          filters.add(
+            anyClauses.length == 1
+                ? anyClauses.single
+                : '(${anyClauses.join(' OR ')})',
+          );
+          args.addAll(anyArgs);
+        }
+
+        for (final group in like.notGroups) {
+          final List<String> gClauses = <String>[];
+          final List<Object?> gArgs = <Object?>[];
+          for (final tok in group) {
+            final List<String> tClauses = <String>[];
+            final List<Object?> tArgs = <Object?>[];
+            if (addLikeTermClause(tok, tArgs, tClauses)) {
+              gClauses.add(tClauses.single);
+              gArgs.addAll(tArgs);
+            }
+          }
+          if (gClauses.isNotEmpty) {
+            final String inner = gClauses.length == 1
+                ? gClauses.single
+                : '(${gClauses.join(' AND ')})';
+            filters.add('NOT ($inner)');
+            args.addAll(gArgs);
+          }
+        }
+      } else {
+        // Simple: one substring across all fields.
+        addLikeTermClause(q, args, filters);
+      }
+
+      if (filters.isEmpty) return <Map<String, dynamic>>[];
       args.addAll(_buildTypeArgs(filters));
       if (startMillis != null) {
         filters.add('(d.start_time IS NULL OR d.start_time >= ?)');
@@ -667,7 +792,15 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
       final bool ftsExists = await _tableExists(db, 'search_docs_fts');
       if (!ftsExists) return <Map<String, dynamic>>[];
 
-      final String match = buildMatch(q);
+      final String match = (adv != null)
+          ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+          : ScreenshotDatabase._buildFtsMatchQuery(
+              q,
+              maxTerms: 6,
+              matchAllTerms: true,
+              prefix: true,
+              allowAdvanced: allowAdvanced,
+            );
       final List<Object?> args = <Object?>[match];
       final List<String> filters = <String>[];
       args.addAll(_buildTypeArgs(filters));
@@ -689,7 +822,7 @@ extension ScreenshotDatabaseSearchIndex on ScreenshotDatabase {
         JOIN search_docs d ON d.rowid = fts.rowid
         WHERE search_docs_fts MATCH ?
           $extraWhere
-        ORDER BY bm25(search_docs_fts) ASC, d.updated_at DESC
+        ORDER BY bm25(search_docs_fts, 5.0, 1.0, 3.0, 2.0) ASC, d.updated_at DESC
         LIMIT ? OFFSET ?
       ''';
       final rows = await (db as Database).rawQuery(sql, args);

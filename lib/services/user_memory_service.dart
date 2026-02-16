@@ -679,11 +679,29 @@ class UserMemoryService {
     int offset = 0,
     String? kind,
     bool? pinned,
+    bool allowAdvanced = true,
+    AdvancedSearchQuery? queryAdvanced,
   }) async {
-    final String q = query.trim();
+    final AdvancedSearchQuery? adv = queryAdvanced;
+    final String q0 = query.trim();
+    final String q = (adv != null) ? adv.toPlainText() : q0;
     if (q.isEmpty) return const <UserMemoryItem>[];
     final int lim = limit.clamp(1, 200);
     final int off = offset < 0 ? 0 : offset;
+
+    bool looksAdvancedFts(String text) {
+      final String t = text.trim();
+      if (t.isEmpty) return false;
+      if (t.contains('"') ||
+          t.contains('(') ||
+          t.contains(')') ||
+          t.contains(':') ||
+          t.contains('^') ||
+          t.contains('*')) {
+        return true;
+      }
+      return RegExp(r'\b(and|or|not|near)\b', caseSensitive: false).hasMatch(t);
+    }
 
     String buildMatch(String text) {
       final parts = text
@@ -692,7 +710,15 @@ class UserMemoryService {
           .toList();
       if (parts.isEmpty) return text;
       final limited = parts.length > 6 ? parts.sublist(0, 6) : parts;
-      return limited.map((w) => '${w.replaceAll('"', '')}*').join(' AND ');
+      final List<String> tokens = <String>[];
+      for (String w in limited) {
+        w = w.replaceAll(RegExp(r'["():^*:]+'), '').trim();
+        if (w.isEmpty) continue;
+        if (!w.endsWith('*')) w = '$w*';
+        tokens.add(w);
+      }
+      if (tokens.isEmpty) return text;
+      return tokens.join(' AND ');
     }
 
     final List<String> filters = <String>[];
@@ -713,7 +739,9 @@ class UserMemoryService {
       final storage = await _db.database;
       final bool ftsExists = await _db.tableExists('user_memory_items_fts');
       if (!ftsExists) return const <UserMemoryItem>[];
-      final String match = buildMatch(q);
+      final String match = (adv != null)
+          ? adv.toFtsMatch(maxGroups: 10, maxTokensPerGroup: 6)
+          : ((allowAdvanced && looksAdvancedFts(q)) ? q : buildMatch(q));
       final rows = await storage.rawQuery(
         '''
         SELECT m.id, m.kind, m.memory_key, m.content, m.pinned, m.user_edited, m.updated_at, m.confidence
@@ -721,7 +749,7 @@ class UserMemoryService {
         JOIN user_memory_items m ON m.rowid = fts.rowid
         WHERE user_memory_items_fts MATCH ?
           $extraWhere
-        ORDER BY bm25(user_memory_items_fts) ASC, m.pinned DESC, m.updated_at DESC, m.id DESC
+        ORDER BY m.pinned DESC, bm25(user_memory_items_fts, 4.0, 1.0, 3.0) ASC, COALESCE(m.confidence, 0) DESC, m.updated_at DESC, m.id DESC
         LIMIT ? OFFSET ?
         ''',
         <Object?>[match, ...args, lim, off],
@@ -746,11 +774,104 @@ class UserMemoryService {
 
     Future<List<UserMemoryItem>> runLike() async {
       final storage = await _db.database;
-      final String like = '%$q%';
-      final List<String> where = <String>[
-        '(m.content LIKE ? OR m.memory_key LIKE ? OR m.keywords_json LIKE ?)',
-        ...filters,
-      ];
+      bool addLikeTermClause(
+        String term,
+        List<Object?> args,
+        List<String> clauses,
+      ) {
+        final String t = term.trim();
+        if (t.isEmpty) return false;
+        final String likeTerm = '%$t%';
+        args.addAll(<Object?>[likeTerm, likeTerm, likeTerm]);
+        clauses.add(
+          '(m.content LIKE ? OR m.memory_key LIKE ? OR m.keywords_json LIKE ?)',
+        );
+        return true;
+      }
+
+      final List<Object?> likeArgs = <Object?>[];
+      final List<String> likeFilters = <String>[];
+
+      if (adv != null) {
+        final AdvancedSearchLikeQuery like = adv.toLikeSpec(
+          maxGroups: 10,
+          maxTokensPerGroup: 6,
+        );
+
+        for (final phrase in like.mustPhrases) {
+          addLikeTermClause(phrase, likeArgs, likeFilters);
+        }
+        for (final group in like.mustGroups) {
+          for (final tok in group) {
+            addLikeTermClause(tok, likeArgs, likeFilters);
+          }
+        }
+
+        final List<String> anyClauses = <String>[];
+        final List<Object?> anyArgs = <Object?>[];
+        for (final phrase in like.anyPhrases) {
+          final List<String> pClauses = <String>[];
+          final List<Object?> pArgs = <Object?>[];
+          if (addLikeTermClause(phrase, pArgs, pClauses)) {
+            anyClauses.add(pClauses.single);
+            anyArgs.addAll(pArgs);
+          }
+        }
+        for (final group in like.anyGroups) {
+          final List<String> gClauses = <String>[];
+          final List<Object?> gArgs = <Object?>[];
+          for (final tok in group) {
+            final List<String> tClauses = <String>[];
+            final List<Object?> tArgs = <Object?>[];
+            if (addLikeTermClause(tok, tArgs, tClauses)) {
+              gClauses.add(tClauses.single);
+              gArgs.addAll(tArgs);
+            }
+          }
+          if (gClauses.isNotEmpty) {
+            anyClauses.add(
+              gClauses.length == 1
+                  ? gClauses.single
+                  : '(${gClauses.join(' AND ')})',
+            );
+            anyArgs.addAll(gArgs);
+          }
+        }
+        if (anyClauses.isNotEmpty) {
+          likeFilters.add(
+            anyClauses.length == 1
+                ? anyClauses.single
+                : '(${anyClauses.join(' OR ')})',
+          );
+          likeArgs.addAll(anyArgs);
+        }
+
+        for (final group in like.notGroups) {
+          final List<String> gClauses = <String>[];
+          final List<Object?> gArgs = <Object?>[];
+          for (final tok in group) {
+            final List<String> tClauses = <String>[];
+            final List<Object?> tArgs = <Object?>[];
+            if (addLikeTermClause(tok, tArgs, tClauses)) {
+              gClauses.add(tClauses.single);
+              gArgs.addAll(tArgs);
+            }
+          }
+          if (gClauses.isNotEmpty) {
+            final String inner = gClauses.length == 1
+                ? gClauses.single
+                : '(${gClauses.join(' AND ')})';
+            likeFilters.add('NOT ($inner)');
+            likeArgs.addAll(gArgs);
+          }
+        }
+      } else {
+        addLikeTermClause(q, likeArgs, likeFilters);
+      }
+
+      if (likeFilters.isEmpty) return const <UserMemoryItem>[];
+
+      final List<String> where = <String>[...likeFilters, ...filters];
       final rows = await storage.rawQuery(
         '''
         SELECT m.id, m.kind, m.memory_key, m.content, m.pinned, m.user_edited, m.updated_at, m.confidence
@@ -759,7 +880,7 @@ class UserMemoryService {
         ORDER BY m.pinned DESC, m.updated_at DESC, m.id DESC
         LIMIT ? OFFSET ?
         ''',
-        <Object?>[like, like, like, ...args, lim, off],
+        <Object?>[...likeArgs, ...args, lim, off],
       );
       return rows
           .map((r) {

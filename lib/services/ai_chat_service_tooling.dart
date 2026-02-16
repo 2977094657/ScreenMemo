@@ -182,7 +182,67 @@ extension AIChatServiceToolingExt on AIChatService {
             'query': <String, dynamic>{
               'type': 'string',
               'description':
-                  'Optional keyword. If omitted, list segments in the time range.',
+                  'Optional keyword (plain text). Do NOT write SQLite FTS operators (quotes, AND/OR/NOT, NEAR, parentheses, "*", col:term). The app will build a safe query internally. If omitted, list segments in the time range.',
+            },
+            'query_advanced': <String, dynamic>{
+              'type': 'object',
+              'description':
+                  'Optional structured advanced query (recommended for complex boolean/proximity search). Use this instead of writing raw FTS syntax in query.',
+              'properties': <String, dynamic>{
+                'must': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'All of these keyword groups must match (AND).',
+                },
+                'any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description':
+                      'At least one of these keyword groups must match (OR group).',
+                },
+                'must_not': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description':
+                      'Exclude results matching these keyword groups (best-effort).',
+                },
+                'phrases': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'All of these phrases must match.',
+                },
+                'phrases_any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'At least one of these phrases must match.',
+                },
+                'near': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{
+                    'type': 'object',
+                    'properties': <String, dynamic>{
+                      'terms': <String, dynamic>{
+                        'type': 'array',
+                        'items': <String, dynamic>{'type': 'string'},
+                        'description':
+                            'Terms that should appear near each other.',
+                      },
+                      'distance': <String, dynamic>{
+                        'type': 'integer',
+                        'description':
+                            'Optional max distance for NEAR (1-50).',
+                      },
+                    },
+                    'required': <String>['terms'],
+                  },
+                  'description': 'Proximity constraints (FTS5 NEAR).',
+                },
+                'prefix': <String, dynamic>{
+                  'type': 'boolean',
+                  'description':
+                      'Whether to use prefix matching for keyword tokens (default true).',
+                },
+              },
             },
             'start_local': <String, dynamic>{
               'type': 'string',
@@ -287,7 +347,58 @@ extension AIChatServiceToolingExt on AIChatService {
           'properties': <String, dynamic>{
             'query': <String, dynamic>{
               'type': 'string',
-              'description': 'OCR query.',
+              'description':
+                  'OCR query (plain text keywords). Optional if query_advanced is provided. Do NOT write SQLite FTS operators (quotes, AND/OR/NOT, NEAR, parentheses, "*", col:term). The app will build a safe query internally.',
+            },
+            'query_advanced': <String, dynamic>{
+              'type': 'object',
+              'description':
+                  'Optional structured advanced query (recommended for complex boolean/proximity search). Provide either query or query_advanced. Use this instead of writing raw FTS syntax in query.',
+              'properties': <String, dynamic>{
+                'must': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'All of these keyword groups must match (AND).',
+                },
+                'any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description':
+                      'At least one of these keyword groups must match (OR group).',
+                },
+                'must_not': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description':
+                      'Exclude results matching these keyword groups (best-effort).',
+                },
+                'phrases': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'All of these phrases must match.',
+                },
+                'phrases_any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                  'description': 'At least one of these phrases must match.',
+                },
+                'near': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{
+                    'type': 'object',
+                    'properties': <String, dynamic>{
+                      'terms': <String, dynamic>{
+                        'type': 'array',
+                        'items': <String, dynamic>{'type': 'string'},
+                      },
+                      'distance': <String, dynamic>{'type': 'integer'},
+                    },
+                    'required': <String>['terms'],
+                  },
+                  'description': 'Proximity constraints (FTS5 NEAR).',
+                },
+                'prefix': <String, dynamic>{'type': 'boolean'},
+              },
             },
             'start_local': <String, dynamic>{
               'type': 'string',
@@ -319,7 +430,7 @@ extension AIChatServiceToolingExt on AIChatService {
               'description': 'Offset for pagination (>=0).',
             },
           },
-          'required': <String>['query'],
+          'required': const <String>[],
         },
       },
     },
@@ -334,7 +445,50 @@ extension AIChatServiceToolingExt on AIChatService {
           'properties': <String, dynamic>{
             'query': <String, dynamic>{
               'type': 'string',
-              'description': 'Keyword query for tags/description.',
+              'description':
+                  'Keyword query for tags/description (plain text). Optional if query_advanced is provided. Do NOT write SQLite FTS operators (quotes, AND/OR/NOT, NEAR, parentheses, "*", col:term). The app will build a safe query internally.',
+            },
+            'query_advanced': <String, dynamic>{
+              'type': 'object',
+              'description':
+                  'Optional structured advanced query (recommended for complex boolean/proximity search). Provide either query or query_advanced. Use this instead of writing raw FTS syntax in query.',
+              'properties': <String, dynamic>{
+                'must': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'must_not': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'phrases': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'phrases_any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'near': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{
+                    'type': 'object',
+                    'properties': <String, dynamic>{
+                      'terms': <String, dynamic>{
+                        'type': 'array',
+                        'items': <String, dynamic>{'type': 'string'},
+                      },
+                      'distance': <String, dynamic>{'type': 'integer'},
+                    },
+                    'required': <String>['terms'],
+                  },
+                },
+                'prefix': <String, dynamic>{'type': 'boolean'},
+              },
             },
             'start_local': <String, dynamic>{
               'type': 'string',
@@ -370,7 +524,7 @@ extension AIChatServiceToolingExt on AIChatService {
               'description': 'Offset for pagination (>=0).',
             },
           },
-          'required': <String>['query'],
+          'required': const <String>[],
         },
       },
     },
@@ -385,7 +539,50 @@ extension AIChatServiceToolingExt on AIChatService {
           'properties': <String, dynamic>{
             'query': <String, dynamic>{
               'type': 'string',
-              'description': 'Search query.',
+              'description':
+                  'Search query (plain text). Optional if query_advanced is provided. Do NOT write SQLite FTS operators (quotes, AND/OR/NOT, NEAR, parentheses, "*", col:term). The app will build a safe query internally.',
+            },
+            'query_advanced': <String, dynamic>{
+              'type': 'object',
+              'description':
+                  'Optional structured advanced query (recommended for complex boolean/proximity search). Provide either query or query_advanced. Use this instead of writing raw FTS syntax in query.',
+              'properties': <String, dynamic>{
+                'must': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'must_not': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'phrases': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'phrases_any': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{'type': 'string'},
+                },
+                'near': <String, dynamic>{
+                  'type': 'array',
+                  'items': <String, dynamic>{
+                    'type': 'object',
+                    'properties': <String, dynamic>{
+                      'terms': <String, dynamic>{
+                        'type': 'array',
+                        'items': <String, dynamic>{'type': 'string'},
+                      },
+                      'distance': <String, dynamic>{'type': 'integer'},
+                    },
+                    'required': <String>['terms'],
+                  },
+                },
+                'prefix': <String, dynamic>{'type': 'boolean'},
+              },
             },
             'limit': <String, dynamic>{
               'type': 'integer',
@@ -398,7 +595,7 @@ extension AIChatServiceToolingExt on AIChatService {
                   'Optional sources filter. Values: profile | items | daily | weekly | morning. Default: all.',
             },
           },
-          'required': <String>['query'],
+          'required': const <String>[],
         },
       },
     },

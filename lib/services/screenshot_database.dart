@@ -19,6 +19,7 @@ part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
 part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
+part 'screenshot_database_query.dart';
 
 /// 截屏数据库服务
 class ScreenshotDatabase {
@@ -111,7 +112,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 31,
+          version: 33,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -149,7 +150,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 31,
+          version: 33,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -182,7 +183,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 31,
+          version: 33,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -209,7 +210,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 31,
+        version: 33,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -496,6 +497,58 @@ class ScreenshotDatabase {
   Future<bool> tableExists(String tableName) async {
     final Database db = await database;
     return _tableExists(db, tableName);
+  }
+
+  static bool _looksLikeAdvancedFtsQuery(String query) {
+    final String t = query.trim();
+    if (t.isEmpty) return false;
+    // Heuristic: if the query already contains FTS operators/syntax, do not
+    // rewrite it (e.g. phrase, OR/NOT, NEAR, parentheses, column filters).
+    if (t.contains('"') ||
+        t.contains('(') ||
+        t.contains(')') ||
+        t.contains(':') ||
+        t.contains('^') ||
+        t.contains('*')) {
+      return true;
+    }
+    return RegExp(r'\b(and|or|not|near)\b', caseSensitive: false).hasMatch(t);
+  }
+
+  static String _buildFtsMatchQuery(
+    String query, {
+    int maxTerms = 6,
+    bool matchAllTerms = true,
+    bool prefix = true,
+    bool allowAdvanced = true,
+  }) {
+    final String q = query.trim();
+    if (q.isEmpty) return '';
+    if (allowAdvanced && _looksLikeAdvancedFtsQuery(q)) return q;
+
+    final List<String> parts = q
+        .split(RegExp(r'\s+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+    if (parts.isEmpty) return q;
+
+    final List<String> limited = parts.length > maxTerms
+        ? parts.sublist(0, maxTerms)
+        : parts;
+    final String joiner = matchAllTerms ? ' AND ' : ' OR ';
+
+    final List<String> tokens = <String>[];
+    for (String w in limited) {
+      // Strip common FTS operator characters in simple mode to avoid
+      // accidental syntax errors (e.g. column filters "col:term").
+      w = w.replaceAll(RegExp(r'["():^*:]+'), '').trim();
+      if (w.isEmpty) continue;
+      if (prefix && !w.endsWith('*')) w = '$w*';
+      tokens.add(w);
+    }
+    if (tokens.isEmpty) return q;
+    return tokens.join(joiner);
   }
 
   /// 更新指定截图记录的文件大小（通过 gid + 包名精确定位）。
@@ -1025,6 +1078,20 @@ class ScreenshotDatabase {
       } catch (_) {}
       try {
         await _backfillUserMemoryItemsFts(db);
+      } catch (_) {}
+    }
+
+    // v32: Recreate AI-related FTS tables with prefix indexes (faster prefix queries).
+    if (oldVersion < 32) {
+      try {
+        await _recreateAiFtsTablesWithPrefix(db);
+      } catch (_) {}
+    }
+
+    // v33: Recreate search_docs_fts so new options (e.g. prefix indexes) take effect.
+    if (oldVersion < 33) {
+      try {
+        await _recreateSearchDocsFtsWithPrefix(db);
       } catch (_) {}
     }
   }

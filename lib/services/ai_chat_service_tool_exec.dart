@@ -151,7 +151,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   Future<List<AIMessage>> _executeMemorySearchTool(AIToolCall call) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] ?? '').toString().trim();
-    if (query.isEmpty) {
+    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
+      args['query_advanced'],
+    );
+    final String queryText =
+        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -212,12 +217,52 @@ extension AIChatServiceToolExecExt on AIChatService {
             'updated_at': profile.userUpdatedAtMs,
           });
         }
-        final String qLow = query.toLowerCase();
+
+        final List<String> hints = <String>[];
+        if (queryAdv != null) {
+          void addTokensFromTerms(List<String> terms) {
+            for (final String t in terms) {
+              for (final String tok in t.split(RegExp(r'\s+'))) {
+                final String w = tok.trim().toLowerCase();
+                if (w.isEmpty) continue;
+                if (!hints.contains(w)) hints.add(w);
+                if (hints.length >= 6) return;
+              }
+              if (hints.length >= 6) return;
+            }
+          }
+
+          addTokensFromTerms(queryAdv.must);
+          addTokensFromTerms(queryAdv.any);
+          addTokensFromTerms(queryAdv.phrases);
+          addTokensFromTerms(queryAdv.phrasesAny);
+          for (final AdvancedSearchNearClause n in queryAdv.near) {
+            addTokensFromTerms(n.terms);
+            if (hints.length >= 6) break;
+          }
+        }
+        if (hints.isEmpty) {
+          for (final String tok in queryText.split(RegExp(r'\s+'))) {
+            final String w = tok.trim().toLowerCase();
+            if (w.isEmpty) continue;
+            if (!hints.contains(w)) hints.add(w);
+            if (hints.length >= 6) break;
+          }
+        }
+
+        bool containsAnyHint(String text) {
+          final String t = text.toLowerCase();
+          for (final String h in hints) {
+            if (h.isEmpty) continue;
+            if (t.contains(h)) return true;
+          }
+          return false;
+        }
+
         final bool wantsAuto =
             userMd.isEmpty ||
             (autoMd.isNotEmpty &&
-                (autoMd.toLowerCase().contains(qLow) &&
-                    !userMd.toLowerCase().contains(qLow)));
+                (containsAnyHint(autoMd) && !containsAnyHint(userMd)));
         if (wantsAuto && autoMd.isNotEmpty && results.length < limit) {
           results.add(<String, dynamic>{
             'path': 'profile:auto',
@@ -234,7 +279,13 @@ extension AIChatServiceToolExecExt on AIChatService {
       final int remaining = (limit - results.length).clamp(0, 200);
       try {
         final List<UserMemoryItem> items = await UserMemoryService.instance
-            .searchItems(query, limit: remaining, offset: 0);
+            .searchItems(
+              queryText,
+              limit: remaining,
+              offset: 0,
+              allowAdvanced: false,
+              queryAdvanced: queryAdv,
+            );
         final db = await ScreenshotDatabase.instance.database;
         for (final UserMemoryItem it in items) {
           if (results.length >= limit) break;
@@ -301,10 +352,12 @@ extension AIChatServiceToolExecExt on AIChatService {
         final List<Map<String, dynamic>> docs = await ScreenshotDatabase
             .instance
             .searchSearchDocsByText(
-              query,
+              queryText,
               docTypes: docTypes.isEmpty ? null : docTypes,
               limit: remaining,
               offset: 0,
+              allowAdvanced: false,
+              queryAdvanced: queryAdv,
             );
         for (final Map<String, dynamic> d in docs) {
           if (results.length >= limit) break;
@@ -346,7 +399,8 @@ extension AIChatServiceToolExecExt on AIChatService {
         role: 'tool',
         content: jsonEncode(<String, dynamic>{
           'tool': 'memory_search',
-          'query': query,
+          'query': queryText,
+          if (queryAdv != null) 'query_advanced': args['query_advanced'],
           'count': results.length,
           'results': results,
           'note':
@@ -711,6 +765,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   }) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] as String?)?.trim() ?? '';
+    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
+      args['query_advanced'],
+    );
+    final bool hasQuery = query.isNotEmpty || queryAdv != null;
+    final String queryText =
+        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
     final List<String> requestedAppNames = _normalizeAppNamesArg(args);
     final List<String> requestedAppPackages = await _resolveAppPackagesFromArgs(
       args,
@@ -727,11 +787,11 @@ extension AIChatServiceToolExecExt on AIChatService {
     if (mode.isEmpty) mode = 'auto';
     if (mode != 'auto' && mode != 'ai' && mode != 'ocr') mode = 'auto';
 
-    final int maxSpanMs = query.isEmpty
-        ? AIChatService.maxToolTimeSpanMs
-        : (mode == 'ocr'
+    final int maxSpanMs = hasQuery
+        ? (mode == 'ocr'
               ? AIChatService.maxOcrToolTimeSpanMs
-              : AIChatService.maxSemanticToolTimeSpanMs);
+              : AIChatService.maxSemanticToolTimeSpanMs)
+        : AIChatService.maxToolTimeSpanMs;
     final bool requestedTooWide =
         maxSpanMs > 0 &&
         (reqStartMs != null &&
@@ -741,7 +801,7 @@ extension AIChatServiceToolExecExt on AIChatService {
             (reqEndMs - reqStartMs).abs() > maxSpanMs);
 
     // If query is omitted, behave like "list segments in time range".
-    if (query.isEmpty) {
+    if (!hasQuery) {
       final List<AIMessage> msgs = await _executeListSegmentsTool(
         call,
         toolStartMs: toolStartMs,
@@ -774,7 +834,8 @@ extension AIChatServiceToolExecExt on AIChatService {
       final Map<String, dynamic> payload = _safeJsonObject(msgs.first.content);
       payload['tool'] = 'search_segments';
       payload['mode'] = 'ocr';
-      payload['query'] = query;
+      payload['query'] = queryText;
+      if (queryAdv != null) payload['query_advanced'] = args['query_advanced'];
       payload['only_no_summary'] = onlyNoSummary;
       return <AIMessage>[
         AIMessage(
@@ -830,7 +891,7 @@ extension AIChatServiceToolExecExt on AIChatService {
     bool appFilterRelaxed = false;
     List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
         .searchSegmentsByText(
-          query,
+          queryText,
           limit: limit,
           offset: offset,
           startMillis: s,
@@ -838,15 +899,19 @@ extension AIChatServiceToolExecExt on AIChatService {
           appPackageNames: effectiveAppPackageNames.isEmpty
               ? null
               : effectiveAppPackageNames,
+          allowAdvanced: false,
+          queryAdvanced: queryAdv,
         );
     if (rows.isEmpty && requestedAppPackageNames.isNotEmpty) {
       rows = await ScreenshotDatabase.instance.searchSegmentsByText(
-        query,
+        queryText,
         limit: limit,
         offset: offset,
         startMillis: s,
         endMillis: e,
         appPackageNames: null,
+        allowAdvanced: false,
+        queryAdvanced: queryAdv,
       );
       if (rows.isNotEmpty) {
         appFilterRelaxed = true;
@@ -907,7 +972,8 @@ extension AIChatServiceToolExecExt on AIChatService {
       final Map<String, dynamic> payload = _safeJsonObject(msgs.first.content);
       payload['tool'] = 'search_segments';
       payload['mode'] = 'ocr_fallback';
-      payload['query'] = query;
+      payload['query'] = queryText;
+      if (queryAdv != null) payload['query_advanced'] = args['query_advanced'];
       payload['only_no_summary'] = onlyNoSummary;
       return <AIMessage>[
         AIMessage(
@@ -924,7 +990,8 @@ extension AIChatServiceToolExecExt on AIChatService {
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_segments',
           'mode': mode == 'ai' ? 'ai' : 'auto_ai',
-          'query': query,
+          'query': queryText,
+          if (queryAdv != null) 'query_advanced': args['query_advanced'],
           if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
           if (effectiveAppPackageNames.isNotEmpty)
             'app_package_names': effectiveAppPackageNames,
@@ -984,7 +1051,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   }) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
+    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
+      args['query_advanced'],
+    );
+    final String queryText =
+        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -1047,21 +1119,27 @@ extension AIChatServiceToolExecExt on AIChatService {
       Future<List<ScreenshotRecord>> searchForPkgs(List<String> pkgs) async {
         if (pkgs.isEmpty) {
           return await ScreenshotDatabase.instance.searchScreenshotsByOcr(
-            query,
+            queryText,
             limit: shotFetch,
             offset: 0,
             startMillis: s,
             endMillis: e,
+            rankByRelevance: true,
+            allowAdvanced: false,
+            queryAdvanced: queryAdv,
           );
         }
         if (pkgs.length == 1) {
           return await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
             pkgs.single,
-            query,
+            queryText,
             limit: shotFetch,
             offset: 0,
             startMillis: s,
             endMillis: e,
+            rankByRelevance: true,
+            allowAdvanced: false,
+            queryAdvanced: queryAdv,
           );
         }
         final List<List<ScreenshotRecord>> perApp =
@@ -1069,11 +1147,14 @@ extension AIChatServiceToolExecExt on AIChatService {
               for (final pkg in pkgs)
                 ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
                   pkg,
-                  query,
+                  queryText,
                   limit: shotFetch,
                   offset: 0,
                   startMillis: s,
                   endMillis: e,
+                  rankByRelevance: true,
+                  allowAdvanced: false,
+                  queryAdvanced: queryAdv,
                 ),
             ]);
         final Map<String, ScreenshotRecord> uniq = <String, ScreenshotRecord>{};
@@ -1333,7 +1414,8 @@ extension AIChatServiceToolExecExt on AIChatService {
         role: 'tool',
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_segments_ocr',
-          'query': query,
+          'query': queryText,
+          if (queryAdv != null) 'query_advanced': args['query_advanced'],
           if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
           if (effectiveAppPackageNames.isNotEmpty)
             'app_package_names': effectiveAppPackageNames,
@@ -1503,7 +1585,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   }) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
+    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
+      args['query_advanced'],
+    );
+    final String queryText =
+        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -1559,21 +1646,27 @@ extension AIChatServiceToolExecExt on AIChatService {
     Future<List<ScreenshotRecord>> searchForPkgs(List<String> pkgs) async {
       if (pkgs.isEmpty) {
         return await ScreenshotDatabase.instance.searchScreenshotsByOcr(
-          query,
+          queryText,
           limit: limit,
           offset: offset,
           startMillis: s,
           endMillis: e,
+          rankByRelevance: true,
+          allowAdvanced: false,
+          queryAdvanced: queryAdv,
         );
       }
       if (pkgs.length == 1) {
         return await ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
           pkgs.single,
-          query,
+          queryText,
           limit: limit,
           offset: offset,
           startMillis: s,
           endMillis: e,
+          rankByRelevance: true,
+          allowAdvanced: false,
+          queryAdvanced: queryAdv,
         );
       }
 
@@ -1585,23 +1678,37 @@ extension AIChatServiceToolExecExt on AIChatService {
             for (final pkg in pkgs)
               ScreenshotDatabase.instance.searchScreenshotsByOcrForApp(
                 pkg,
-                query,
+                queryText,
                 limit: perAppFetch,
                 offset: 0,
                 startMillis: s,
                 endMillis: e,
+                rankByRelevance: true,
+                allowAdvanced: false,
+                queryAdvanced: queryAdv,
               ),
           ]);
       final Map<String, ScreenshotRecord> uniq = <String, ScreenshotRecord>{};
+      final Map<String, int> bestRank = <String, int>{};
       for (final list in perApp) {
-        for (final r in list) {
+        for (int i = 0; i < list.length; i++) {
+          final r = list[i];
           final String fp = r.filePath.trim();
           if (fp.isEmpty) continue;
-          uniq[fp] = r;
+          final int? prev = bestRank[fp];
+          if (prev == null || i < prev) {
+            bestRank[fp] = i;
+            uniq[fp] = r;
+          }
         }
       }
       final List<ScreenshotRecord> merged = uniq.values.toList();
-      merged.sort((a, b) => b.captureTime.compareTo(a.captureTime));
+      merged.sort((a, b) {
+        final int ra = bestRank[a.filePath.trim()] ?? (1 << 30);
+        final int rb = bestRank[b.filePath.trim()] ?? (1 << 30);
+        if (ra != rb) return ra.compareTo(rb);
+        return b.captureTime.compareTo(a.captureTime);
+      });
 
       if (offset >= merged.length) return <ScreenshotRecord>[];
       final int end = (offset + limit) > merged.length
@@ -1643,26 +1750,32 @@ extension AIChatServiceToolExecExt on AIChatService {
       } else {
         if (effectiveAppPackageNames.isEmpty) {
           totalCount = await ScreenshotDatabase.instance.countScreenshotsByOcr(
-            query,
+            queryText,
             startMillis: s,
             endMillis: e,
+            allowAdvanced: false,
+            queryAdvanced: queryAdv,
           );
         } else if (effectiveAppPackageNames.length == 1) {
           totalCount = await ScreenshotDatabase.instance
               .countScreenshotsByOcrForApp(
                 effectiveAppPackageNames.single,
-                query,
+                queryText,
                 startMillis: s,
                 endMillis: e,
+                allowAdvanced: false,
+                queryAdvanced: queryAdv,
               );
         } else {
           final List<int> parts = await Future.wait(<Future<int>>[
             for (final pkg in effectiveAppPackageNames)
               ScreenshotDatabase.instance.countScreenshotsByOcrForApp(
                 pkg,
-                query,
+                queryText,
                 startMillis: s,
                 endMillis: e,
+                allowAdvanced: false,
+                queryAdvanced: queryAdv,
               ),
           ]);
           totalCount = parts.fold<int>(0, (a, b) => a + b);
@@ -1680,7 +1793,8 @@ extension AIChatServiceToolExecExt on AIChatService {
         role: 'tool',
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_screenshots_ocr',
-          'query': query,
+          'query': queryText,
+          if (queryAdv != null) 'query_advanced': args['query_advanced'],
           if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
           if (effectiveAppPackageNames.isNotEmpty)
             'app_package_names': effectiveAppPackageNames,
@@ -1717,7 +1831,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   }) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final String query = (args['query'] as String?)?.trim() ?? '';
-    if (query.isEmpty) {
+    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
+      args['query_advanced'],
+    );
+    final String queryText =
+        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -1792,7 +1911,7 @@ extension AIChatServiceToolExecExt on AIChatService {
     bool appFilterRelaxed = false;
     List<Map<String, dynamic>> rows = await ScreenshotDatabase.instance
         .searchAiImageMetaByText(
-          query,
+          queryText,
           limit: limit,
           offset: offset,
           startMillis: s,
@@ -1801,16 +1920,20 @@ extension AIChatServiceToolExecExt on AIChatService {
           appPackageNames: effectiveAppPackageNames.isEmpty
               ? null
               : effectiveAppPackageNames,
+          allowAdvanced: false,
+          queryAdvanced: queryAdv,
         );
     if (rows.isEmpty && requestedAppPackageNames.isNotEmpty) {
       rows = await ScreenshotDatabase.instance.searchAiImageMetaByText(
-        query,
+        queryText,
         limit: limit,
         offset: offset,
         startMillis: s,
         endMillis: e,
         includeNsfw: includeNsfw,
         appPackageNames: null,
+        allowAdvanced: false,
+        queryAdvanced: queryAdv,
       );
       if (rows.isNotEmpty) {
         appFilterRelaxed = true;
@@ -1867,7 +1990,8 @@ extension AIChatServiceToolExecExt on AIChatService {
         role: 'tool',
         content: jsonEncode(<String, dynamic>{
           'tool': 'search_ai_image_meta',
-          'query': query,
+          'query': queryText,
+          if (queryAdv != null) 'query_advanced': args['query_advanced'],
           if (requestedAppNames.isNotEmpty) 'app_names': requestedAppNames,
           if (effectiveAppPackageNames.isNotEmpty)
             'app_package_names': effectiveAppPackageNames,
