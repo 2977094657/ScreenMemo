@@ -97,6 +97,8 @@ class _SettingsPageState extends State<SettingsPage>
   int _segmentDurationMin = 5; // 以分钟显示，最小1分钟
   // AI 请求最小间隔（秒）
   int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
+  // 动态(segments) structured_json 解析失败时的自动重试次数（0=关闭）
+  int _segmentsJsonAutoRetryMax = 1; // 默认 1
   // 动态合并限制（分钟；0 表示不限制）
   int _dynamicMergeMaxSpanMin = 180; // 默认 3h
   int _dynamicMergeMaxGapMin = 60; // 默认 1h
@@ -223,6 +225,7 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadSegmentSettings());
         unawaited(_loadDynamicMergeLimits());
         unawaited(_loadAiRequestInterval());
+        unawaited(_loadSegmentsJsonAutoRetryMax());
         break;
       case _SettingsSubPage.dailyReminder:
         unawaited(_loadDailyNotifySettings());
@@ -1892,6 +1895,7 @@ class _SettingsPageState extends State<SettingsPage>
                 _buildDynamicMergeMaxGapItem(context),
                 _buildDynamicMergeMaxImagesItem(context),
                 _buildAiRequestIntervalItem(context),
+                _buildSegmentsJsonAutoRetryMaxItem(context),
               ],
             ),
           ],
@@ -2368,6 +2372,79 @@ class _SettingsPageState extends State<SettingsPage>
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
             onPressed: _showAiRequestIntervalDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(AppLocalizations.of(context).actionSet),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== 动态(segments) structured_json 自动重试次数 =====
+  Widget _buildSegmentsJsonAutoRetryMaxItem(BuildContext context) {
+    final bool isZh = (() {
+      try {
+        return Localizations.localeOf(
+          context,
+        ).languageCode.toLowerCase().startsWith('zh');
+      } catch (_) {
+        return true;
+      }
+    })();
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(top: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.autorenew_outlined,
+              color: Theme.of(context).colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isZh ? '自动重试次数' : 'Auto Retry Times',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isZh
+                      ? 'structured_json 解析失败时自动重试（0=关闭，默认1）。当前：$_segmentsJsonAutoRetryMax'
+                      : 'Auto retry when structured_json fails to parse (0=off, default 1). Current: $_segmentsJsonAutoRetryMax',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _showSegmentsJsonAutoRetryMaxDialog,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
@@ -2999,6 +3076,103 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  void _showSegmentsJsonAutoRetryMaxDialog() {
+    final bool isZh = (() {
+      try {
+        return Localizations.localeOf(
+          context,
+        ).languageCode.toLowerCase().startsWith('zh');
+      } catch (_) {
+        return true;
+      }
+    })();
+
+    final TextEditingController controller = TextEditingController(
+      text: _segmentsJsonAutoRetryMax.toString(),
+    );
+
+    showUIDialog<void>(
+      context: context,
+      title: isZh ? '自动重试次数' : 'Auto Retry Times',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            isZh
+                ? '当动态摘要 structured_json 解析失败时，自动重试次数（0=关闭，默认1）。'
+                : 'Auto retry times when segment structured_json fails to parse (0=off, default 1).',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          _numberField(controller, hint: isZh ? '次数（0-5）' : 'Times (0-5)'),
+        ],
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).resetToDefault,
+          style: UIDialogActionStyle.destructive,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            const int v = 1;
+            try {
+              await AISettingsService.instance.setSegmentsJsonAutoRetryMax(v);
+              if (mounted) {
+                setState(() {
+                  _segmentsJsonAutoRetryMax = v;
+                });
+              }
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop();
+                UINotifier.success(
+                  ctx,
+                  isZh ? '已恢复默认：$v' : 'Reset to default: $v',
+                );
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                UINotifier.error(ctx, isZh ? '保存失败：$e' : 'Save failed: $e');
+              }
+            }
+          },
+        ),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final parsed = int.tryParse(controller.text.trim());
+            if (parsed == null) {
+              UINotifier.error(ctx, isZh ? '请输入数字' : 'Please enter a number.');
+              return;
+            }
+            final v = parsed.clamp(0, 5);
+            try {
+              await AISettingsService.instance.setSegmentsJsonAutoRetryMax(v);
+              if (mounted) {
+                setState(() {
+                  _segmentsJsonAutoRetryMax = v;
+                });
+              }
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop();
+                UINotifier.success(ctx, isZh ? '已保存：$v' : 'Saved: $v');
+              }
+            } catch (e) {
+              if (ctx.mounted) {
+                UINotifier.error(ctx, isZh ? '保存失败：$e' : 'Save failed: $e');
+              }
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   void _showDynamicMergeMaxSpanDialog() {
     final TextEditingController controller = TextEditingController(
       text: _dynamicMergeMaxSpanMin.toString(),
@@ -3184,6 +3358,23 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() {
           _aiRequestIntervalSec = 3;
         });
+    }
+  }
+
+  Future<void> _loadSegmentsJsonAutoRetryMax() async {
+    try {
+      final v = await AISettingsService.instance.getSegmentsJsonAutoRetryMax();
+      if (mounted) {
+        setState(() {
+          _segmentsJsonAutoRetryMax = v;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _segmentsJsonAutoRetryMax = 1;
+        });
+      }
     }
   }
 

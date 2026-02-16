@@ -8,19 +8,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
-import '../services/ai_chat_service.dart';
 import '../services/ai_providers_service.dart';
 import '../services/ai_settings_service.dart';
 import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
-import '../services/path_service.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
@@ -48,29 +44,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   bool _loading = false;
   bool _onlyNoSummary = false; // 仅看暂无AI总结
 
-  // ====== 诊断/日志（用于定位“动态为空”问题） ======
-  String _segmentsDiagText = '';
-  bool _segmentsDiagLoading = false;
-  int _segmentsDiagSeq = 0;
-  DateTime? _segmentsDiagUpdatedAt;
-  // 诊断 BottomSheet 不在本页面 widget tree 下，外部 setState 不会触发其重建；
-  // 用一个轻量 signal 让 sheet 在诊断状态变化时也能实时刷新 UI。
-  final ValueNotifier<int> _segmentsDiagRev = ValueNotifier<int>(0);
-  int _segmentsRefreshSeq = 0;
-  DateTime? _segmentsLastRefreshAt;
-  String _segmentsLastRefreshNote = '';
   // 底部弹窗查询输入持久化，避免失焦或重建清空
   String _segProviderQueryText = '';
   String _segModelQueryText = '';
 
-  void _bumpSegmentsDiagRev() {
-    _segmentsDiagRev.value = _segmentsDiagRev.value + 1;
-  }
-
   // —— 基于提供商表的“动态(segments)”上下文（与对话隔离） ——
   AIProvider? _ctxSegProvider;
   String? _ctxSegModel;
-  bool _ctxSegLoading = true;
 
   // 应用图标缓存（包名 -> AppInfo）
   final Map<String, AppInfo> _appInfoByPackage = <String, AppInfo>{};
@@ -81,7 +61,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   // 自动轮询：每秒检测"暂无总结"并自动刷新，直到清空
   Timer? _autoTimer;
   bool _autoWatching = false;
-  int _autoTickCount = 0;
 
   // 日期 Tab 可见窗口控制：默认仅展示最近 14 天，向前按批次扩展
   static const int _initialDayTabs = 14;
@@ -126,7 +105,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           setState(() {
             _ctxSegProvider = null;
             _ctxSegModel = null;
-            _ctxSegLoading = false;
           });
         }
         return;
@@ -153,12 +131,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         setState(() {
           _ctxSegProvider = sel;
           _ctxSegModel = model;
-          _ctxSegLoading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _ctxSegLoading = false);
-    }
+    } catch (_) {}
   }
 
   Future<void> _showProviderSheetSegments() async {
@@ -511,25 +486,18 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   }
 
   Future<void> _refresh() async {
-    final int seq = ++_segmentsRefreshSeq;
     try {
-      await FlutterLogger.nativeInfo(
-        'SegmentsUI',
-        'refresh start seq=$seq onlyNoSummary=$_onlyNoSummary',
-      );
-    } catch (_) {}
-    setState(() {
-      _loading = true;
-    });
-    try {
+      if (mounted) {
+        setState(() {
+          _loading = true;
+        });
+      }
+
       // 先触发一次原生端推进/补救：用于“删空某日后重建日期 Tab”等场景
       // ignore: unawaited_futures
       _db.triggerSegmentTick();
       final active = await _db.getActiveSegment();
       List<Map<String, dynamic>> segments;
-      bool usedFallback = false;
-      String windowStartIso = '';
-      String windowEndIso = '';
 
       if (_onlyNoSummary) {
         // “仅看无总结”模式：保持原有行为，仅限制行数；由 SQL 侧过滤无总结事件
@@ -556,8 +524,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         );
         final int startMs = startDay.millisecondsSinceEpoch;
         final int endMs = endOfToday.millisecondsSinceEpoch;
-        windowStartIso = startDay.toLocal().toIso8601String();
-        windowEndIso = endOfToday.toLocal().toIso8601String();
 
         const int fetchLimit = 800;
         segments = await _db.listSegmentsEx(
@@ -571,7 +537,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         // 如果最近 14 天内完全没有事件，则回退为“全量但限行数”的查询，
         // 避免用户长期停用后重新开启时看不到更早历史。
         if (segments.isEmpty) {
-          usedFallback = true;
           segments = await _db.listSegmentsEx(
             limit: fetchLimit,
             onlyNoSummary: false,
@@ -580,34 +545,19 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         }
       }
 
-      final String refreshNote = _onlyNoSummary
-          ? 'seq=$seq mode=onlyNoSummary fetched=${segments.length}'
-          : 'seq=$seq mode=window14d start=$windowStartIso end=$windowEndIso usedFallback=$usedFallback fetched=${segments.length}';
+      if (!mounted) return;
       setState(() {
         _active = active;
         _segments = segments;
-        _segmentsLastRefreshAt = DateTime.now();
-        _segmentsLastRefreshNote = refreshNote;
         // 每次刷新都重置日期窗口，仅展示最近两周的日期 Tab
         final int totalDays = _countDistinctDays(segments);
         final int nextTabs = math.min(_initialDayTabs, totalDays);
-        _maxVisibleDayTabs = segments.isEmpty ? _initialDayTabs : math.max(1, nextTabs);
+        _maxVisibleDayTabs = segments.isEmpty
+            ? _initialDayTabs
+            : math.max(1, nextTabs);
         _noMoreOlderSegments = false;
       });
 
-      try {
-        final int activeId = (active?['id'] as int?) ?? 0;
-        await FlutterLogger.nativeInfo(
-          'SegmentsUI',
-          'refresh done seq=$seq segments=${segments.length} activeId=$activeId',
-        );
-      } catch (_) {}
-
-      // 若为空状态，自动采集一次诊断信息，便于用户复制反馈。
-      if (segments.isEmpty) {
-        // ignore: unawaited_futures
-        _collectSegmentsDiagnostics(reason: 'refresh_empty_auto');
-      }
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
       if (_onlyNoSummary) {
         final hasPending = segments.any(
@@ -619,459 +569,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           _stopAutoWatch();
         }
       }
-    } catch (e) {
-      try {
-        await FlutterLogger.nativeError(
-          'SegmentsUI',
-          'refresh failed seq=$seq err=${e.toString()}',
-        );
-      } catch (_) {}
-      if (mounted) {
-        setState(() {
-          _segmentsLastRefreshAt = DateTime.now();
-          _segmentsLastRefreshNote = 'seq=$seq FAILED: ${e.toString()}';
-        });
-      }
+    } catch (_) {
+      // Keep previous state on error.
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
         });
+      }
     }
   }
 
-  String _sanitizePackageName(String packageName) {
-    return packageName.replaceAll(RegExp(r'[^\w]'), '_');
-  }
-
-  Future<void> _collectSegmentsDiagnostics({String reason = 'manual'}) async {
-    if (!mounted) return;
-    if (_segmentsDiagLoading) return;
-    final int seq = ++_segmentsDiagSeq;
-    setState(() {
-      _segmentsDiagLoading = true;
-    });
-    _bumpSegmentsDiagRev();
-    try {
-      final db = await _db.database;
-
-      Future<int> qCount(String sql, [List<Object?> args = const <Object?>[]]) async {
-        final rows = await db.rawQuery(sql, args);
-        if (rows.isEmpty) return 0;
-        final v = rows.first.values.isEmpty ? null : rows.first.values.first;
-        if (v is int) return v;
-        if (v is num) return v.toInt();
-        return int.tryParse(v?.toString() ?? '') ?? 0;
-      }
-
-      Future<Map<String, Object?>?> qFirstRow(
-        String sql, [
-        List<Object?> args = const <Object?>[],
-      ]) async {
-        final rows = await db.rawQuery(sql, args);
-        if (rows.isEmpty) return null;
-        return Map<String, Object?>.from(rows.first);
-      }
-
-      String fmtMs(Object? ms) {
-        final int? v = (ms is int) ? ms : (ms is num ? ms.toInt() : int.tryParse(ms?.toString() ?? ''));
-        if (v == null || v <= 0) return (ms?.toString() ?? '');
-        return DateTime.fromMillisecondsSinceEpoch(v).toLocal().toIso8601String();
-      }
-
-      final Map<String, dynamic>? active = _active ?? await _db.getActiveSegment();
-      final int activeId = (active?['id'] as int?) ?? 0;
-      final int activeStart = (active?['start_time'] as int?) ?? 0;
-      final int activeEnd = (active?['end_time'] as int?) ?? 0;
-      final String activeStatus = (active?['status'] as String?) ?? '';
-
-      final DateTime now = DateTime.now();
-      final DateTime endOfToday = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        23,
-        59,
-        59,
-        999,
-      );
-      final DateTime startDay = endOfToday.subtract(
-        const Duration(days: _initialDayTabs - 1),
-      );
-      final int startMs = startDay.millisecondsSinceEpoch;
-      final int endMs = endOfToday.millisecondsSinceEpoch;
-
-      final int segmentsTotal = await qCount('SELECT COUNT(*) FROM segments');
-      final int segmentsGlobalRoot = await qCount(
-        '''
-        SELECT COUNT(*)
-        FROM segments s
-        WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
-          AND s.merged_into_id IS NULL
-      ''',
-      );
-      final int segmentsGlobalRootWithSamples = await qCount(
-        '''
-        SELECT COUNT(*)
-        FROM segments s
-        WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
-          AND s.merged_into_id IS NULL
-          AND EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)
-      ''',
-      );
-      final int segmentsGlobalRootWithoutSamples = await qCount(
-        '''
-        SELECT COUNT(*)
-        FROM segments s
-        WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
-          AND s.merged_into_id IS NULL
-          AND NOT EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)
-      ''',
-      );
-      final int samplesTotal = await qCount('SELECT COUNT(*) FROM segment_samples');
-      final int samplesDistinctSegments = await qCount(
-        'SELECT COUNT(DISTINCT segment_id) FROM segment_samples',
-      );
-      final int resultsTotal = await qCount('SELECT COUNT(*) FROM segment_results');
-      final int resultsNonEmpty = await qCount(
-        '''
-        SELECT COUNT(*)
-        FROM segment_results r
-        WHERE (r.output_text IS NOT NULL AND LOWER(TRIM(r.output_text)) NOT IN ('', 'null'))
-           OR (r.structured_json IS NOT NULL AND LOWER(TRIM(r.structured_json)) NOT IN ('', 'null'))
-      ''',
-      );
-      final int aiImageMetaTotal = await qCount('SELECT COUNT(*) FROM ai_image_meta');
-      final int shardRegistryTotal = await qCount('SELECT COUNT(*) FROM shard_registry');
-
-      // 试跑与 _refresh() 一致的“最近两周窗口”查询，判断是不是窗口过滤导致 UI 为空。
-      final List<Map<String, dynamic>> exWindowRequireSamples =
-          await _db.listSegmentsEx(
-            limit: 5,
-            onlyNoSummary: false,
-            requireSamples: true,
-            startMillis: startMs,
-            endMillis: endMs,
-          );
-      final List<Map<String, dynamic>> exWindowNoRequireSamples =
-          await _db.listSegmentsEx(
-            limit: 5,
-            onlyNoSummary: false,
-            requireSamples: false,
-            startMillis: startMs,
-            endMillis: endMs,
-          );
-      final int segmentsGlobalRootInWindow = await qCount(
-        '''
-        SELECT COUNT(*)
-        FROM segments s
-        WHERE (s.segment_kind IS NULL OR s.segment_kind = 'global')
-          AND s.merged_into_id IS NULL
-          AND s.start_time >= ?
-          AND s.start_time <= ?
-      ''',
-        [startMs, endMs],
-      );
-
-      final Map<String, Object?>? latestSeg = await qFirstRow(
-        'SELECT id, start_time, end_time, status, segment_kind, merged_into_id, created_at, updated_at FROM segments ORDER BY id DESC LIMIT 1',
-      );
-      final Map<String, Object?>? latestSample = await qFirstRow(
-        'SELECT segment_id, capture_time, file_path, app_package_name FROM segment_samples ORDER BY id DESC LIMIT 1',
-      );
-      final Map<String, Object?>? latestResult = await qFirstRow(
-        'SELECT segment_id, created_at FROM segment_results ORDER BY created_at DESC LIMIT 1',
-      );
-      final Map<String, Object?>? latestAiMeta = await qFirstRow(
-        'SELECT file_path, segment_id, capture_time, updated_at, nsfw FROM ai_image_meta ORDER BY updated_at DESC LIMIT 1',
-      );
-
-      // 试跑两种 requireSamples 的查询，快速判断是否“仅 samples 过滤导致为空”。
-      final int exRequireSamples = (await _db.listSegmentsEx(limit: 5)).length;
-      final int exNoRequireSamples =
-          (await _db.listSegmentsEx(limit: 5, requireSamples: false)).length;
-
-      // 抽样读取 shard_registry，检查 db_path 是否存在以及“按规则计算的路径”是否存在。
-      final List<Map<String, dynamic>> shardSample = <Map<String, dynamic>>[];
-      try {
-        final rows = await db.rawQuery(
-          'SELECT app_package_name, year, db_path FROM shard_registry ORDER BY year DESC LIMIT 6',
-        );
-        final internalDir = await PathService.getInternalAppDir(null);
-        final String? shardsRoot = internalDir == null
-            ? null
-            : (internalDir.path + Platform.pathSeparator + 'output' + Platform.pathSeparator + 'databases' + Platform.pathSeparator + 'shards');
-        for (final r in rows) {
-          final String pkg = (r['app_package_name'] as String?) ?? '';
-          final int year = (r['year'] as int?) ?? 0;
-          final String regPath = (r['db_path'] as String?) ?? '';
-          final bool regExists = regPath.isNotEmpty ? File(regPath).existsSync() : false;
-
-          String expectedPath = '';
-          bool expectedExists = false;
-          if (shardsRoot != null && pkg.isNotEmpty && year > 0) {
-            final String sanitized = _sanitizePackageName(pkg);
-            expectedPath = shardsRoot +
-                Platform.pathSeparator +
-                sanitized +
-                Platform.pathSeparator +
-                year.toString() +
-                Platform.pathSeparator +
-                'smm_' +
-                sanitized +
-                '_' +
-                year.toString() +
-                '.db';
-            expectedExists = File(expectedPath).existsSync();
-          }
-          shardSample.add(<String, dynamic>{
-            'pkg': pkg,
-            'year': year,
-            'reg_path': regPath,
-            'reg_exists': regExists,
-            'expected_path': expectedPath,
-            'expected_exists': expectedExists,
-          });
-        }
-      } catch (_) {}
-
-      final buf = StringBuffer();
-      buf.writeln('Segments Diagnostics (reason=$reason seq=$seq)');
-      buf.writeln('time_local=${DateTime.now().toLocal().toIso8601String()}');
-      buf.writeln(
-        'ui_state: segments_len=${_segments.length} loading=$_loading maxVisibleDayTabs=$_maxVisibleDayTabs isLoadingMoreDays=$_isLoadingMoreDays noMoreOlderSegments=$_noMoreOlderSegments privacyMode=$_privacyMode',
-      );
-      buf.writeln(
-        'refresh_last=${_segmentsLastRefreshAt?.toLocal().toIso8601String() ?? 'null'} note=${_segmentsLastRefreshNote.isEmpty ? '<empty>' : _segmentsLastRefreshNote}',
-      );
-      buf.writeln('onlyNoSummary=$_onlyNoSummary');
-      buf.writeln('window_start=${fmtMs(startMs)}');
-      buf.writeln('window_end=${fmtMs(endMs)}');
-      buf.writeln('flutter_db_path=${db.path}');
-      buf.writeln('active_id=$activeId status=$activeStatus start=${fmtMs(activeStart)} end=${fmtMs(activeEnd)}');
-      buf.writeln('listSegmentsEx(all, limit=5, requireSamples=true) -> $exRequireSamples');
-      buf.writeln('listSegmentsEx(all, limit=5, requireSamples=false) -> $exNoRequireSamples');
-      buf.writeln('listSegmentsEx(window, limit=5, requireSamples=true) -> ${exWindowRequireSamples.length}');
-      buf.writeln('listSegmentsEx(window, limit=5, requireSamples=false) -> ${exWindowNoRequireSamples.length}');
-      buf.writeln('segments_global_root_in_window=$segmentsGlobalRootInWindow');
-      buf.writeln('segments_total=$segmentsTotal');
-      buf.writeln('segments_global_root=$segmentsGlobalRoot');
-      buf.writeln('segments_global_root_with_samples=$segmentsGlobalRootWithSamples');
-      buf.writeln('segments_global_root_without_samples=$segmentsGlobalRootWithoutSamples');
-      buf.writeln('segment_samples_total=$samplesTotal distinct_segments=$samplesDistinctSegments');
-      buf.writeln('segment_results_total=$resultsTotal non_empty=$resultsNonEmpty');
-      buf.writeln('ai_image_meta_total=$aiImageMetaTotal');
-      buf.writeln('shard_registry_total=$shardRegistryTotal');
-      if (latestSeg != null) {
-        buf.writeln(
-          'latest_segment: id=${latestSeg['id']} status=${latestSeg['status']} kind=${latestSeg['segment_kind']} merged_into_id=${latestSeg['merged_into_id']} start=${fmtMs(latestSeg['start_time'])} end=${fmtMs(latestSeg['end_time'])}',
-        );
-      } else {
-        buf.writeln('latest_segment: <null>');
-      }
-      if (latestSample != null) {
-        buf.writeln(
-          'latest_sample: segment_id=${latestSample['segment_id']} capture=${fmtMs(latestSample['capture_time'])} pkg=${latestSample['app_package_name']} path=${latestSample['file_path']}',
-        );
-      } else {
-        buf.writeln('latest_sample: <null>');
-      }
-      if (latestResult != null) {
-        buf.writeln(
-          'latest_result: segment_id=${latestResult['segment_id']} created_at=${fmtMs(latestResult['created_at'])}',
-        );
-      } else {
-        buf.writeln('latest_result: <null>');
-      }
-      if (latestAiMeta != null) {
-        buf.writeln(
-          'latest_ai_image_meta: seg=${latestAiMeta['segment_id']} cap=${fmtMs(latestAiMeta['capture_time'])} upd=${fmtMs(latestAiMeta['updated_at'])} nsfw=${latestAiMeta['nsfw']} path=${latestAiMeta['file_path']}',
-        );
-      } else {
-        buf.writeln('latest_ai_image_meta: <null>');
-      }
-      if (shardSample.isNotEmpty) {
-        buf.writeln('shard_registry_sample:');
-        for (final m in shardSample) {
-          buf.writeln(
-            '- ${m['pkg']} y=${m['year']} reg_exists=${m['reg_exists']} expected_exists=${m['expected_exists']} reg=${m['reg_path']} expected=${m['expected_path']}',
-          );
-        }
-      }
-
-      final text = buf.toString().trimRight();
-      if (!mounted) return;
-      setState(() {
-        _segmentsDiagText = text;
-        _segmentsDiagUpdatedAt = DateTime.now();
-      });
-      _bumpSegmentsDiagRev();
-
-      try {
-        final String preview = text.length > 1800 ? (text.substring(0, 1800) + '…') : text;
-        await FlutterLogger.nativeInfo('SegmentsUI', preview);
-      } catch (_) {}
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _segmentsDiagText = 'Segments Diagnostics failed: ${e.toString()}';
-        _segmentsDiagUpdatedAt = DateTime.now();
-      });
-      _bumpSegmentsDiagRev();
-      try {
-        await FlutterLogger.nativeError('SegmentsUI', 'collect diag failed: ${e.toString()}');
-      } catch (_) {}
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _segmentsDiagLoading = false;
-      });
-      _bumpSegmentsDiagRev();
-    }
-  }
-
-  Future<void> _showSegmentsDiagnosticsSheet() async {
-    // 先确保有内容（避免空白 sheet）
-    if (_segmentsDiagText.trim().isEmpty && !_segmentsDiagLoading) {
-      await _collectSegmentsDiagnostics(reason: 'open_sheet_initial');
-    }
-    if (!mounted) return;
-    // ignore: use_build_context_synchronously
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return ValueListenableBuilder<int>(
-          valueListenable: _segmentsDiagRev,
-          builder: (modalCtx, _, __) {
-            final TextStyle mono = const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-              height: 1.35,
-            );
-            final double h = MediaQuery.of(modalCtx).size.height * 0.85;
-            return SafeArea(
-              child: SizedBox(
-                height: h,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    top: 8,
-                    bottom: 16 + MediaQuery.of(modalCtx).viewInsets.bottom,
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '动态诊断',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '刷新诊断',
-                            onPressed: _segmentsDiagLoading
-                                ? null
-                                : () async {
-                                    await _collectSegmentsDiagnostics(
-                                      reason: 'sheet_refresh',
-                                    );
-                                  },
-                            icon: _segmentsDiagLoading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.refresh_outlined),
-                          ),
-                          IconButton(
-                            tooltip: AppLocalizations.of(modalCtx).actionCopy,
-                            onPressed: _segmentsDiagText.trim().isEmpty
-                                ? null
-                                : () async {
-                                    try {
-                                      await Clipboard.setData(
-                                        ClipboardData(text: _segmentsDiagText),
-                                      );
-                                      if (!modalCtx.mounted) return;
-                                      ScaffoldMessenger.of(modalCtx).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('已复制诊断信息'),
-                                        ),
-                                      );
-                                    } catch (_) {
-                                      if (!modalCtx.mounted) return;
-                                      ScaffoldMessenger.of(modalCtx).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            AppLocalizations.of(modalCtx)
-                                                .operationFailed,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  },
-                            icon: const Icon(Icons.copy_outlined),
-                          ),
-                        ],
-                      ),
-                      if (_segmentsDiagUpdatedAt != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'updated: ${_segmentsDiagUpdatedAt!.toLocal().toIso8601String()}',
-                              style: Theme.of(modalCtx).textTheme.bodySmall,
-                            ),
-                          ),
-                        ),
-                      Expanded(
-                        child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Theme.of(modalCtx)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.all(12),
-                          child: SingleChildScrollView(
-                            child: SelectableText(
-                              _segmentsDiagText.trim().isEmpty
-                                  ? (_segmentsDiagLoading
-                                        ? '诊断采集中…'
-                                        : '暂无诊断信息')
-                                  : _segmentsDiagText,
-                              style: mono,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  /// 从当前已加载的 segments 向前再拉取一批“更早日期”的事件
-  /// - 仅在默认模式下生效（_onlyNoSummary=false）
-  /// - 以当前最早事件所在日的前一刻作为上界，从 DB 拉取更早事件
-  ///   （不设固定下界，允许跨越“空档期”继续向前翻到更早历史）
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
     if (_onlyNoSummary || _isLoadingMoreDays || _noMoreOlderSegments) return;
     if (_segments.isEmpty) return;
@@ -1907,7 +1415,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   void _maybeStartAutoWatch() {
     if (!_onlyNoSummary || _autoWatching) return;
     _autoWatching = true;
-    _autoTickCount = 0;
     // 先触发一次原生扫描，确保后续能尽快进入工作状态
     () async {
       try {
@@ -1930,7 +1437,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       return;
     }
     if (_loading) return;
-    _autoTickCount++;
     try {
       // 每次只做轻量查询；原生端 1s 心跳已持续推进/补救
       final segments = await _db.listSegmentsEx(limit: 50, onlyNoSummary: true);
@@ -1949,118 +1455,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   @override
   void dispose() {
     _stopAutoWatch();
-    _segmentsDiagRev.dispose();
     super.dispose();
-  }
-
-  Future<void> _showSegmentsAutoRetrySettingsDialog() async {
-    final bool isZh = (() {
-      try {
-        return Localizations.localeOf(
-          context,
-        ).languageCode.toLowerCase().startsWith('zh');
-      } catch (_) {
-        return true;
-      }
-    })();
-
-    int current = 1;
-    try {
-      current = await AISettingsService.instance.getSegmentsJsonAutoRetryMax();
-    } catch (_) {}
-
-    final TextEditingController ctrl = TextEditingController(text: '$current');
-
-    Future<void> save(BuildContext dialogCtx) async {
-      final int? v = int.tryParse(ctrl.text.trim());
-      if (v == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(isZh ? '请输入数字' : 'Please enter a number.')),
-        );
-        return;
-      }
-      final int next = v.clamp(0, 5);
-      try {
-        await AISettingsService.instance.setSegmentsJsonAutoRetryMax(next);
-      } catch (_) {}
-      if (!dialogCtx.mounted) return;
-      Navigator.of(dialogCtx).pop();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isZh ? '已保存：$next' : 'Saved: $next',
-          ),
-        ),
-      );
-    }
-
-    Future<void> reset(BuildContext dialogCtx) async {
-      const int next = 1;
-      try {
-        await AISettingsService.instance.setSegmentsJsonAutoRetryMax(next);
-      } catch (_) {}
-      if (!dialogCtx.mounted) return;
-      Navigator.of(dialogCtx).pop();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isZh ? '已恢复默认：$next' : 'Reset to default: $next'),
-        ),
-      );
-    }
-
-    if (!mounted) return;
-    // ignore: use_build_context_synchronously
-    await showUIDialog<void>(
-      context: context,
-      title: isZh ? '自动重试次数' : 'Auto Retry Times',
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            isZh
-                ? '当动态摘要 structured_json 解析失败时，自动重试次数（0=关闭，默认1）。'
-                : 'Auto retry times when segment structured_json fails to parse (0=off, default 1).',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppTheme.spacing3),
-          TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: <TextInputFormatter>[
-              FilteringTextInputFormatter.digitsOnly,
-            ],
-            decoration: InputDecoration(
-              labelText: isZh ? '次数（0-5）' : 'Times (0-5)',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              ),
-              isDense: true,
-            ),
-          ),
-        ],
-      ),
-      actions: <UIDialogAction<void>>[
-        UIDialogAction<void>(text: isZh ? '取消' : 'Cancel'),
-        UIDialogAction<void>(
-          text: isZh ? '恢复默认' : 'Reset',
-          style: UIDialogActionStyle.destructive,
-          closeOnPress: false,
-          onPressed: reset,
-        ),
-        UIDialogAction<void>(
-          text: isZh ? '保存' : 'Save',
-          style: UIDialogActionStyle.primary,
-          closeOnPress: false,
-          onPressed: save,
-        ),
-      ],
-    );
   }
 
   @override
@@ -2072,47 +1467,6 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         automaticallyImplyLeading: true,
         title: _buildSegmentsProviderModelAppBarTitle(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.bug_report_outlined),
-            tooltip: '诊断',
-            onPressed: _showSegmentsDiagnosticsSheet,
-          ),
-          IconButton(
-            icon: const Icon(Icons.copy_outlined),
-            tooltip: '复制诊断',
-            onPressed: () async {
-              try {
-                if (_segmentsDiagText.trim().isEmpty && !_segmentsDiagLoading) {
-                  await _collectSegmentsDiagnostics(reason: 'appbar_copy');
-                }
-                final text = _segmentsDiagText.trim();
-                if (text.isEmpty) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(AppLocalizations.of(context).operationFailed),
-                    ),
-                  );
-                  return;
-                }
-                await Clipboard.setData(ClipboardData(text: text));
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已复制诊断信息')),
-                );
-              } catch (_) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context).operationFailed)),
-                );
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.autorenew_outlined),
-            tooltip: '自动重试设置',
-            onPressed: _showSegmentsAutoRetrySettingsDialog,
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: AppLocalizations.of(context).actionRefresh,
@@ -2292,8 +1646,9 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     final List<String> orderedAll = keys.reversed.toList();
 
     // 仅展示“最近 maxVisibleDayTabs 个日期”，其余日期在用户滑动到末尾后再增量展示
-    final int desiredTabs =
-        widget.maxVisibleDayTabs <= 0 ? 1 : widget.maxVisibleDayTabs;
+    final int desiredTabs = widget.maxVisibleDayTabs <= 0
+        ? 1
+        : widget.maxVisibleDayTabs;
     final int visibleCount = math.min(desiredTabs, orderedAll.length);
     final List<String> ordered = orderedAll.take(visibleCount).toList();
 
@@ -2645,11 +2000,11 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         escaped = false;
         continue;
       }
-      if (cu == 92 /* \ */) {
+      if (cu == 92 /* \ */ ) {
         escaped = true;
         continue;
       }
-      if (cu == 34 /* " */) {
+      if (cu == 34 /* " */ ) {
         final String literal = s.substring(start, idx + 1);
         try {
           final dynamic v = jsonDecode(literal);
@@ -2677,7 +2032,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   }) {
     if (segmentId <= 0) return;
     if (_retrying) return;
-    if (structuredJsonTruncated) return; // likely truncated for CursorWindow fallback
+    if (structuredJsonTruncated)
+      return; // likely truncated for CursorWindow fallback
     if (!_isNonEmptyJsonLike(structuredJsonRaw)) return;
     if (_autoRetryTriggeredSegmentIds.contains(segmentId)) return;
     _markAutoRetryTriggered(segmentId);
@@ -2695,7 +2051,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     if (id <= 0 || _retrying) return;
     int maxRetries = 1;
     try {
-      maxRetries = await AISettingsService.instance.getSegmentsJsonAutoRetryMax();
+      maxRetries = await AISettingsService.instance
+          .getSegmentsJsonAutoRetryMax();
     } catch (_) {}
     if (maxRetries <= 0) {
       _autoRetryTriggeredSegmentIds.remove(id);
@@ -2720,7 +2077,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     });
     try {
       // Auto-retry should overwrite the existing invalid result.
-      final n = await ScreenshotDatabase.instance.retrySegments([id], force: true);
+      final n = await ScreenshotDatabase.instance.retrySegments([
+        id,
+      ], force: true);
       if (!mounted) return;
       final ok = n > 0;
       if (ok) {
@@ -3837,7 +3196,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   }) {
     final String provider = (result?['ai_provider'] as String?)?.trim() ?? '';
     final String model = (result?['ai_model'] as String?)?.trim() ?? '';
-    final String rawRequest = (result?['raw_request'] as String?)?.trimRight() ?? '';
+    final String rawRequest =
+        (result?['raw_request'] as String?)?.trimRight() ?? '';
     final String rawResponse =
         (result?['raw_response'] as String?)?.trimRight() ?? '';
     final int createdAtMs = (result?['created_at'] as int?) ?? 0;
@@ -3904,10 +3264,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       final bool isZh = Localizations.localeOf(
         context,
       ).languageCode.toLowerCase().startsWith('zh');
-      UINotifier.error(
-        context,
-        isZh ? '保存失败：$e' : 'Save failed: $e',
-      );
+      UINotifier.error(context, isZh ? '保存失败：$e' : 'Save failed: $e');
     }
   }
 
