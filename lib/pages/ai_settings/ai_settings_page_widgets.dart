@@ -497,6 +497,7 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
       fallbackIcon: icon,
       isSearch: isSearch,
     );
+    final bool shimmerActive = widget.isLoading && chip.active;
 
     return Container(
       width: double.infinity,
@@ -505,16 +506,19 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
         color: bg,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       ),
-      child: _Shimmer(
-        active: widget.isLoading && chip.active,
-        baseColor: fg,
-        child: Row(
-          mainAxisSize: MainAxisSize.max,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(padding: const EdgeInsets.only(top: 1), child: leading),
-            const SizedBox(width: 8),
-            Expanded(
+      // NOTE: Shimmer uses a ShaderMask which tints all descendants.
+      // Keep app icons in their original colors during tool execution by
+      // shimmering only the label text.
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(padding: const EdgeInsets.only(top: 1), child: leading),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _Shimmer(
+              active: shimmerActive,
+              baseColor: fg,
               child: Text(
                 label,
                 softWrap: true,
@@ -524,8 +528,8 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
