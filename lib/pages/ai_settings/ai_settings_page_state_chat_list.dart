@@ -220,8 +220,22 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                       IconButton(
                         onPressed: () async {
                           try {
-                            await _showGatewayLogsDialog(index);
-                          } catch (_) {}
+                            await _showGatewayLogsSheet(index);
+                          } catch (e, st) {
+                            try {
+                              await FlutterLogger.nativeWarn(
+                                'UI',
+                                'open gateway logs failed: $e\n$st',
+                              );
+                            } catch (_) {}
+                            if (!mounted) return;
+                            UINotifier.error(
+                              context,
+                              _isZhLocale()
+                                  ? ('打开日志失败：' + e.toString())
+                                  : ('Failed to open logs: ' + e.toString()),
+                            );
+                          }
                         },
                         constraints: const BoxConstraints.tightFor(
                           width: 24,
@@ -238,7 +252,7 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                           context,
                         ).colorScheme.onSurfaceVariant.withOpacity(0.8),
                         icon: const Icon(Icons.receipt_long_rounded),
-                        tooltip: _isZhLocale() ? '请求/响应日志' : 'Logs',
+                        tooltip: _isZhLocale() ? 'AI 日志' : 'Logs',
                       ),
                     if (m.role == 'assistant') const SizedBox(width: 4),
                   ],

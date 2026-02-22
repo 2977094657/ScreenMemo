@@ -1315,149 +1315,121 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     } catch (_) {}
   }
 
-  Future<void> _showGatewayLogsDialog(int assistantIndex) async {
+  Future<void> _showGatewayLogsSheet(int assistantIndex) async {
     String currentLogs() =>
         (_gatewayLogsByIndex[assistantIndex] ?? '').trimRight();
     final String logs = currentLogs();
     final String? logFilePath = _gatewayLogFilePathByIndex[assistantIndex];
     final AppLocalizations l10n = AppLocalizations.of(context);
-    final ThemeData theme = Theme.of(context);
+    final bool hasLogs = logs.trim().isNotEmpty;
+    final bool zh = _isZhLocale();
+    final String? trimmedPath = (logFilePath == null)
+        ? null
+        : logFilePath.trim();
+    final bool hasPath = trimmedPath != null && trimmedPath.isNotEmpty;
 
-    await showDialog<void>(
+    await AIRequestLogsSheet.show(
       context: context,
-      builder: (BuildContext dialogContext) {
-        final String header =
-            (logFilePath != null && logFilePath.trim().isNotEmpty)
-            ? ('log_file=' + logFilePath.trim() + '\n\n')
-            : '';
-        return AlertDialog(
-          title: Text(_isZhLocale() ? '请求/响应日志' : 'Request/Response Logs'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: SizedBox(
-              width: double.maxFinite,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                    width: 1,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      (header + logs).trim().isEmpty
-                          ? (_isZhLocale() ? '（暂无日志）' : '(No logs yet)')
-                          : (header + logs).trimRight(),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+      title: zh ? 'AI 日志' : 'AI Logs',
+      metaText: hasPath ? 'log_file=$trimmedPath' : null,
+      hintText: hasLogs
+          ? null
+          : (zh
+                ? '提示：这里展示的是本次会话的网关调试日志（REQ/RESP/PARSED 等）。只有“流式发送”时才会产生；如果你是在查看旧消息或未启用流式，可能会为空。'
+                : 'Tip: this shows gateway debug logs for this session (REQ/RESP/PARSED...). It is only produced for streamed sends; older messages or non-stream sends may be empty.'),
+      body: AIRequestLogsViewer.fromGatewayLogText(
+        text: logs,
+        scrollable: false,
+        emptyText: zh ? '（暂无日志）' : '(No logs yet)',
+        actions: <AIRequestLogsAction>[
+          AIRequestLogsAction(
+            label: l10n.actionCopy,
+            onPressed: () async {
+              try {
+                await Clipboard.setData(ClipboardData(text: currentLogs()));
+                if (mounted) {
+                  UINotifier.success(context, l10n.copySuccess);
+                }
+              } catch (_) {}
+            },
           ),
-          actions: <Widget>[
-            TextButton(
+          if (hasPath)
+            AIRequestLogsAction(
+              label: zh ? '复制路径' : 'Copy path',
               onPressed: () async {
                 try {
-                  await Clipboard.setData(ClipboardData(text: currentLogs()));
+                  await Clipboard.setData(ClipboardData(text: trimmedPath!));
                   if (mounted) {
-                    UINotifier.success(dialogContext, l10n.copySuccess);
+                    UINotifier.success(context, l10n.copySuccess);
                   }
                 } catch (_) {}
               },
-              child: Text(l10n.actionCopy),
             ),
-            if (logFilePath != null && logFilePath.trim().isNotEmpty)
-              TextButton(
-                onPressed: () async {
-                  try {
-                    await Clipboard.setData(
-                      ClipboardData(text: logFilePath.trim()),
-                    );
-                    if (mounted) {
-                      UINotifier.success(dialogContext, l10n.copySuccess);
-                    }
-                  } catch (_) {}
-                },
-                child: Text(_isZhLocale() ? '复制路径' : 'Copy path'),
-              ),
-            TextButton(
-              onPressed: () async {
-                final String text = currentLogs();
-                if (text.trim().isEmpty) return;
+          AIRequestLogsAction(
+            label: zh ? '保存到文件' : 'Save to file',
+            enabled: logs.trim().isNotEmpty,
+            onPressed: () async {
+              final String text = currentLogs();
+              if (text.trim().isEmpty) return;
+              try {
+                final String ts = DateFormat(
+                  'yyyyMMdd_HHmmss',
+                ).format(DateTime.now());
+                String? baseDirPath;
                 try {
-                  final String ts = DateFormat(
-                    'yyyyMMdd_HHmmss',
-                  ).format(DateTime.now());
-                  String? baseDirPath;
-                  try {
-                    baseDirPath = await FlutterLogger.getTodayLogsDir();
-                  } catch (_) {
-                    baseDirPath = null;
-                  }
-                  Directory baseDir = Directory.systemTemp;
-                  if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
-                    baseDir = Directory(baseDirPath.trim());
-                  }
-                  final String sep = Platform.pathSeparator;
-                  final Directory outDir = Directory(
-                    baseDir.path + sep + 'ai_gateway_logs',
-                  );
-                  await outDir.create(recursive: true);
-                  final File f = File(
-                    outDir.path +
-                        sep +
-                        'ai_gateway_' +
-                        ts +
-                        '_msg' +
-                        assistantIndex.toString() +
-                        '.log',
-                  );
-                  await f.writeAsString(text + '\n', flush: true);
-                  try {
-                    await Clipboard.setData(ClipboardData(text: f.path));
-                  } catch (_) {}
-                  if (mounted) {
-                    UINotifier.success(
-                      dialogContext,
-                      _isZhLocale()
-                          ? ('已保存到：' + f.path)
-                          : ('Saved to: ' + f.path),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    UINotifier.error(
-                      dialogContext,
-                      _isZhLocale()
-                          ? ('保存失败：' + e.toString())
-                          : ('Save failed: ' + e.toString()),
-                    );
-                  }
+                  baseDirPath = await FlutterLogger.getTodayLogsDir();
+                } catch (_) {
+                  baseDirPath = null;
                 }
-              },
-              child: Text(_isZhLocale() ? '保存到文件' : 'Save to file'),
-            ),
-            TextButton(
-              onPressed: () {
-                _setState(() => _gatewayLogsByIndex.remove(assistantIndex));
-                Navigator.of(dialogContext).pop();
-              },
-              child: Text(_isZhLocale() ? '清空' : 'Clear'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(_isZhLocale() ? '关闭' : 'Close'),
-            ),
-          ],
-        );
-      },
+                Directory baseDir = Directory.systemTemp;
+                if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+                  baseDir = Directory(baseDirPath.trim());
+                }
+                final String sep = Platform.pathSeparator;
+                final Directory outDir = Directory(
+                  baseDir.path + sep + 'ai_gateway_logs',
+                );
+                await outDir.create(recursive: true);
+                final File f = File(
+                  outDir.path +
+                      sep +
+                      'ai_gateway_' +
+                      ts +
+                      '_msg' +
+                      assistantIndex.toString() +
+                      '.log',
+                );
+                await f.writeAsString(text + '\n', flush: true);
+                try {
+                  await Clipboard.setData(ClipboardData(text: f.path));
+                } catch (_) {}
+                if (mounted) {
+                  UINotifier.success(
+                    context,
+                    zh ? ('已保存到：' + f.path) : ('Saved to: ' + f.path),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  UINotifier.error(
+                    context,
+                    zh
+                        ? ('保存失败：' + e.toString())
+                        : ('Save failed: ' + e.toString()),
+                  );
+                }
+              }
+            },
+          ),
+          AIRequestLogsAction(
+            label: zh ? '清空' : 'Clear',
+            onPressed: () {
+              _setState(() => _gatewayLogsByIndex.remove(assistantIndex));
+              Navigator.of(context).maybePop();
+            },
+          ),
+        ],
+      ),
     );
   }
 

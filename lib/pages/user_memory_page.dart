@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,9 @@ import '../services/user_memory_index_service.dart';
 import '../services/user_memory_service.dart';
 import '../services/flutter_logger.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ai_request_logs_action.dart';
+import '../widgets/ai_request_logs_viewer.dart';
+import '../widgets/ai_request_logs_sheet.dart';
 import '../widgets/ui_components.dart';
 
 class UserMemoryPage extends StatefulWidget {
@@ -203,9 +207,16 @@ class _UserMemoryPageState extends State<UserMemoryPage>
     return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}.${three(t.millisecond)}';
   }
 
-  List<TalkerData> _recentMemoryIndexAiTraceLogs({int limit = 12}) {
+  List<TalkerData> _recentMemoryIndexAiTraceLogs({
+    int limit = 12,
+    int? sinceMs,
+  }) {
+    final DateTime? since = (sinceMs == null || sinceMs <= 0)
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(sinceMs);
     final List<TalkerData> items = FlutterLogger.talker.history
         .where((e) {
+          if (since != null && e.time.isBefore(since)) return false;
           final String msg = (e.message ?? '').trimLeft();
           if (!msg.startsWith('[AITrace]')) return false;
           return msg.contains('user_memory_index_segment_');
@@ -219,7 +230,9 @@ class _UserMemoryPageState extends State<UserMemoryPage>
     final StringBuffer sb = StringBuffer();
     for (final TalkerData e in items) {
       final String msg = (e.message ?? '').trimRight();
-      sb.writeln('[${_formatLogTime(e.time)}] ${msg.isEmpty ? '(empty)' : msg}');
+      sb.writeln(
+        '[${_formatLogTime(e.time)}] ${msg.isEmpty ? '(empty)' : msg}',
+      );
       final Object? ex = e.exception ?? e.error;
       if (ex != null) sb.writeln(ex.toString());
       if (e.stackTrace != null && e.stackTrace != StackTrace.empty) {
@@ -228,6 +241,76 @@ class _UserMemoryPageState extends State<UserMemoryPage>
       sb.writeln();
     }
     return sb.toString().trimRight();
+  }
+
+  Future<void> _saveMemoryReindexTraceToFile(String content) async {
+    final String text = content.trimRight();
+    if (text.isEmpty) return;
+    try {
+      String? baseDirPath;
+      try {
+        baseDirPath = await FlutterLogger.getTodayLogsDir();
+      } catch (_) {
+        baseDirPath = null;
+      }
+      Directory baseDir = Directory.systemTemp;
+      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+        baseDir = Directory(baseDirPath.trim());
+      }
+      final String sep = Platform.pathSeparator;
+      final Directory outDir = Directory(
+        '${baseDir.path}${sep}ai_memory_reindex_logs',
+      );
+      await outDir.create(recursive: true);
+      final File f = File(
+        '${outDir.path}${sep}memory_reindex_${DateTime.now().millisecondsSinceEpoch}.log',
+      );
+      await f.writeAsString('$text\n', flush: true);
+      try {
+        await Clipboard.setData(ClipboardData(text: f.path));
+      } catch (_) {}
+      if (!mounted) return;
+      UINotifier.success(context, '已保存到：${f.path}');
+    } catch (e) {
+      if (!mounted) return;
+      UINotifier.error(context, '保存失败：$e');
+    }
+  }
+
+  Future<void> _showMemoryReindexLogsSheet({
+    required List<TalkerData> traces,
+    required String traceText,
+  }) async {
+    final String visible = traceText.trimRight();
+    if (visible.trim().isEmpty) return;
+    await AIRequestLogsSheet.show(
+      context: context,
+      title: 'AI 日志（memory 重建）',
+      body: AIRequestLogsViewer.fromAiTraceTalker(
+        logs: traces,
+        scrollable: false,
+        emptyText: '暂无日志',
+        actions: <AIRequestLogsAction>[
+          AIRequestLogsAction(
+            label: '复制',
+            onPressed: () async {
+              try {
+                await Clipboard.setData(ClipboardData(text: visible));
+                if (!mounted) return;
+                UINotifier.success(context, '已复制');
+              } catch (_) {
+                if (!mounted) return;
+                UINotifier.error(context, '复制失败');
+              }
+            },
+          ),
+          AIRequestLogsAction(
+            label: '保存到文件',
+            onPressed: () => _saveMemoryReindexTraceToFile(visible),
+          ),
+        ],
+      ),
+    );
   }
 
   String _fmtMs(int? ms) {
@@ -620,9 +703,13 @@ class _UserMemoryPageState extends State<UserMemoryPage>
         ? (processed / total).clamp(0.0, 1.0)
         : 0.0;
 
-    final List<TalkerData> traces = _recentMemoryIndexAiTraceLogs(limit: 12);
-    final String traceText =
-        traces.isEmpty ? '' : _buildAiTraceExportText(traces);
+    final List<TalkerData> traces = _recentMemoryIndexAiTraceLogs(
+      limit: 12,
+      sinceMs: st?.startedAtMs,
+    );
+    final String traceText = traces.isEmpty
+        ? ''
+        : _buildAiTraceExportText(traces);
 
     return ListView(
       padding: const EdgeInsets.all(AppTheme.spacing4),
@@ -661,37 +748,51 @@ class _UserMemoryPageState extends State<UserMemoryPage>
                   children: [
                     const Expanded(
                       child: Text(
-                        '请求/响应日志（memory 重建）',
+                        'AI 日志（memory 重建）',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
-                    IconButton(
-                      tooltip: '复制',
-                      icon: const Icon(Icons.copy),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+                Text(
+                  '最近 ${traces.length} 条 AITrace（已结构化，可在抽屉中展开查看）',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.mutedForeground,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing2),
+                Wrap(
+                  spacing: AppTheme.spacing2,
+                  runSpacing: AppTheme.spacing2,
+                  children: [
+                    OutlinedButton.icon(
                       onPressed: () async {
                         try {
                           await Clipboard.setData(
                             ClipboardData(text: traceText),
                           );
-                          if (mounted) UINotifier.success(context, '已复制');
+                          if (!mounted) return;
+                          UINotifier.success(context, '已复制');
                         } catch (_) {
-                          if (mounted) UINotifier.error(context, '复制失败');
+                          if (!mounted) return;
+                          UINotifier.error(context, '复制失败');
                         }
                       },
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('复制日志'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await _showMemoryReindexLogsSheet(
+                          traces: traces,
+                          traceText: traceText,
+                        );
+                      },
+                      icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                      label: const Text('查看日志'),
                     ),
                   ],
-                ),
-                const SizedBox(height: AppTheme.spacing2),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 260),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      traceText,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                          ),
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -705,7 +806,11 @@ class _UserMemoryPageState extends State<UserMemoryPage>
             ElevatedButton(
               onPressed: status == 'running'
                   ? null
-                  : () => _index.startFullReindex(),
+                  : () async {
+                      await _index.startFullReindex();
+                      await _loadProfile();
+                      await _loadItems();
+                    },
               child: const Text('立即全量重建'),
             ),
             OutlinedButton(

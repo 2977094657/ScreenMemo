@@ -31,6 +31,9 @@ import '../services/screenshot_database.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ui_perf_logger.dart';
 import '../widgets/chat_context_sheet.dart';
+import '../widgets/ai_request_logs_action.dart';
+import '../widgets/ai_request_logs_viewer.dart';
+import '../widgets/ai_request_logs_sheet.dart';
 import '../widgets/ui_perf_overlay.dart';
 
 part 'ai_settings/ai_settings_page_state_core.dart';

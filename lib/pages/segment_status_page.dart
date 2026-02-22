@@ -21,6 +21,9 @@ import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/merged_event_summary.dart';
 import '../utils/model_icon_utils.dart';
+import '../widgets/ai_request_logs_action.dart';
+import '../widgets/ai_request_logs_viewer.dart';
+import '../widgets/ai_request_logs_sheet.dart';
 import '../widgets/screenshot_image_widget.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
 import '../widgets/ui_components.dart';
@@ -2541,7 +2544,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                     : 'Request/Response',
                 icon: const Icon(Icons.receipt_long_outlined, size: 18),
                 onPressed: () async {
-                  await _showAiRequestResponseDialog(id, timeLabel: timeLabel);
+                  await _showAiRequestResponseSheet(id, timeLabel: timeLabel);
                 },
               ),
               const SizedBox(width: 8),
@@ -3268,7 +3271,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
   }
 
-  Future<void> _showAiRequestResponseDialog(
+  Future<void> _showAiRequestResponseSheet(
     int segmentId, {
     required String timeLabel,
   }) async {
@@ -3280,10 +3283,15 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
     if (!mounted) return;
 
-    final ThemeData theme = Theme.of(context);
     final bool isZh = Localizations.localeOf(
       context,
     ).languageCode.toLowerCase().startsWith('zh');
+    final String provider = (res?['ai_provider'] as String?)?.trim() ?? '';
+    final String model = (res?['ai_model'] as String?)?.trim() ?? '';
+    final int createdAtMs = (res?['created_at'] as int?) ?? 0;
+    final DateTime? createdAt = createdAtMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(createdAtMs)
+        : null;
     final String rawRequest = (res?['raw_request'] as String?)?.trim() ?? '';
     final String rawResponse = (res?['raw_response'] as String?)?.trim() ?? '';
     final bool hasTrace = rawRequest.isNotEmpty || rawResponse.isNotEmpty;
@@ -3299,76 +3307,50 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         ? text
         : (('$emptyHint\n\n$text').trimRight());
     final bool hasAny = visibleText.trim().isNotEmpty;
-
-    await showDialog<void>(
+    await AIRequestLogsSheet.show(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text(isZh ? '请求/响应' : 'Request/Response'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: SizedBox(
-              width: double.maxFinite,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                    width: 1,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      visibleText,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+      title: isZh ? 'AI 日志' : 'AI Logs',
+      metaText: null,
+      hintText: hasTrace ? null : emptyHint,
+      body: AIRequestLogsViewer.fromSegmentTrace(
+        rawRequest: rawRequest,
+        rawResponse: rawResponse,
+        segmentId: segmentId,
+        provider: provider,
+        model: model,
+        createdAt: createdAt,
+        scrollable: false,
+        emptyText: isZh ? '（暂无请求/响应记录）' : '(No request/response trace yet)',
+        actions: <AIRequestLogsAction>[
+          AIRequestLogsAction(
+            label: AppLocalizations.of(context).actionCopy,
+            enabled: hasAny,
+            onPressed: () async {
+              if (!hasAny) return;
+              try {
+                await Clipboard.setData(ClipboardData(text: visibleText));
+                if (mounted) {
+                  UINotifier.success(
+                    context,
+                    AppLocalizations.of(context).copySuccess,
+                  );
+                }
+              } catch (_) {}
+            },
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: !hasAny
-                  ? null
-                  : () async {
-                      try {
-                        await Clipboard.setData(
-                          ClipboardData(text: visibleText),
-                        );
-                        if (mounted) {
-                          UINotifier.success(
-                            dialogContext,
-                            AppLocalizations.of(context).copySuccess,
-                          );
-                        }
-                      } catch (_) {}
-                    },
-              child: Text(AppLocalizations.of(context).actionCopy),
-            ),
-            TextButton(
-              onPressed: !hasAny
-                  ? null
-                  : () async {
-                      await _saveAiRequestResponseTraceToFile(
-                        segmentId: segmentId,
-                        text: visibleText,
-                      );
-                    },
-              child: Text(isZh ? '保存到文件' : 'Save to file'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(isZh ? '关闭' : 'Close'),
-            ),
-          ],
-        );
-      },
+          AIRequestLogsAction(
+            label: isZh ? '保存到文件' : 'Save to file',
+            enabled: hasAny,
+            onPressed: () async {
+              if (!hasAny) return;
+              await _saveAiRequestResponseTraceToFile(
+                segmentId: segmentId,
+                text: visibleText,
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
