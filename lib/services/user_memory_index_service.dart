@@ -120,6 +120,17 @@ class UserMemoryIndexService {
         ? kSourceSegmentsVisionV1
         : source.trim();
     final int now = DateTime.now().millisecondsSinceEpoch;
+
+    // Full rebuild should start from a clean slate for index-generated data,
+    // otherwise stale items can survive indefinitely.
+    if (src == kSourceSegmentsVisionV1) {
+      try {
+        await UserMemoryService.instance.clearIndexGeneratedData(
+          preserveUserEditsAndPins: false,
+        );
+      } catch (_) {}
+    }
+
     try {
       final db = await _db.database;
       await db.execute(
@@ -465,6 +476,340 @@ class UserMemoryIndexService {
     return _LoadedImages(parts: parts, basenames: basenames);
   }
 
+  String _sanitizeModelText(String text) {
+    String t = text.trim();
+    if (!t.startsWith('```')) return t;
+    t = t.replaceFirst(RegExp(r'^```[a-zA-Z0-9_-]*\s*'), '');
+    t = t.replaceFirst(RegExp(r'\s*```$'), '');
+    return t.trim();
+  }
+
+  ExtractedUserMemoryItem _canonicalizeItem(
+    ExtractedUserMemoryItem original,
+    Map<String, dynamic>? canonical,
+  ) {
+    String kind = (canonical?['kind'] as String?)?.trim() ?? original.kind;
+    kind = (() {
+      final String k = kind.trim().toLowerCase();
+      if (k == 'rule' || k == 'fact' || k == 'habit') return k;
+      return 'fact';
+    })();
+
+    final String? keyRaw = (canonical?['key'] as String?)?.trim();
+    final String? key = (keyRaw == null || keyRaw.isEmpty)
+        ? original.key
+        : keyRaw;
+
+    final String content =
+        ((canonical?['content'] as String?)?.trim() ?? original.content).trim();
+
+    List<String> keywords = original.keywords;
+    final dynamic kw = canonical?['keywords'];
+    if (kw is List) {
+      keywords = kw
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .take(24)
+          .toList(growable: false);
+    } else if (kw is String) {
+      final String s = kw.trim();
+      if (s.isNotEmpty) keywords = <String>[s];
+    }
+
+    double? confidence = original.confidence;
+    final dynamic c = canonical?['confidence'];
+    if (c is num) {
+      confidence = c.toDouble().clamp(0.0, 1.0);
+    } else if (c is String) {
+      final double? parsed = double.tryParse(c.trim());
+      if (parsed != null) confidence = parsed.clamp(0.0, 1.0);
+    }
+
+    return ExtractedUserMemoryItem(
+      kind: kind,
+      key: (key == null || key.trim().isEmpty) ? null : key.trim(),
+      content: content,
+      keywords: keywords,
+      confidence: confidence,
+      // Keep evidence from the original extraction; the merge model does not need to edit it.
+      evidenceFilenames: original.evidenceFilenames,
+    );
+  }
+
+  Future<List<UserMemoryResolvedWrite>> _resolveWritesWithMergeModel({
+    required List<AIEndpoint> endpoints,
+    required List<ExtractedUserMemoryItem> extracted,
+    required int segmentId,
+    required String model,
+  }) async {
+    if (extracted.isEmpty) {
+      return const <UserMemoryResolvedWrite>[];
+    }
+
+    List<UserMemoryResolvedWrite> fallbackUpserts() => extracted
+        .map((it) => UserMemoryResolvedWrite.upsert(it))
+        .toList(growable: false);
+
+    final bool allHaveKeys = extracted.every(
+      (e) => (e.key ?? '').trim().isNotEmpty,
+    );
+    if (allHaveKeys) {
+      return fallbackUpserts();
+    }
+
+    // Lightweight candidate retrieval (local FTS) to keep the merge prompt small.
+    final Map<int, UserMemoryItem> candidatesById = <int, UserMemoryItem>{};
+    final Map<int, List<int>> candidateIdsByIndex = <int, List<int>>{};
+    for (int i = 0; i < extracted.length; i += 1) {
+      final ExtractedUserMemoryItem it = extracted[i];
+      final List<String> qParts = <String>[
+        (it.key ?? '').trim(),
+        it.content.trim(),
+        it.keywords.join(' ').trim(),
+      ].where((e) => e.isNotEmpty).toList(growable: false);
+      final String q = qParts.join(' ');
+      if (q.isEmpty) continue;
+      try {
+        final hits = await UserMemoryService.instance.searchItems(
+          q,
+          limit: 6,
+          offset: 0,
+          allowAdvanced: false,
+        );
+        final List<int> ids = <int>[];
+        for (final h in hits) {
+          if (h.id <= 0) continue;
+          candidatesById[h.id] = h;
+          if (ids.length < 6) ids.add(h.id);
+        }
+        if (ids.isNotEmpty) candidateIdsByIndex[i] = ids;
+      } catch (_) {}
+    }
+
+    final Set<int> allCandidateIds = candidatesById.keys.toSet();
+    final bool shouldCallMerge =
+        extracted.length > 1 || allCandidateIds.isNotEmpty;
+    if (!shouldCallMerge) {
+      return fallbackUpserts();
+    }
+
+    final List<Map<String, Object?>> newItems = <Map<String, Object?>>[];
+    for (int i = 0; i < extracted.length; i += 1) {
+      final it = extracted[i];
+      newItems.add(<String, Object?>{
+        'index': i,
+        'kind': it.kind,
+        'key': (it.key ?? '').trim(),
+        'content': it.content,
+        'keywords': it.keywords,
+        'confidence': it.confidence,
+        'candidate_ids': candidateIdsByIndex[i] ?? const <int>[],
+      });
+    }
+
+    final List<Map<String, Object?>> candidates = candidatesById.values
+        .map(
+          (c) => <String, Object?>{
+            'id': c.id,
+            'kind': c.kind,
+            'key': (c.memoryKey ?? '').trim(),
+            'content': c.content,
+            'pinned': c.pinned,
+            'user_edited': c.userEdited,
+            'updated_at': c.updatedAtMs,
+          },
+        )
+        .toList(growable: false);
+
+    final String sys = [
+      '你是一个“用户长期记忆去重/合并器”。',
+      '输入包含：new_items（本次抽取结果）与 candidates（已有记忆候选）。',
+      '',
+      '任务：为每条 new_items 生成一个 decision：',
+      '- action="merge": 语义等价/同一条记忆；选择 target_id（必须来自 candidates.id）；canonical 给出规范化字段。',
+      '- action="upsert": 新的长期记忆；canonical 给出规范化字段。',
+      '- action="discard": 与其它 new_items 重复且已被 merge/upsert 覆盖，或不够长期/太弱。',
+      '',
+      'key 规则（用于去重）：尽量输出稳定 key（lowercase，使用 . 分层，不含日期/segment id）。',
+      '如果 merge 的目标 candidate 已有 key，请复用它；不要随意更换已有 key。',
+      '',
+      '约束：canonical.content 只能做等价改写/归一化，不要引入新事实。',
+      '如果不确定是否重复，优先 upsert。',
+    ].join('\n');
+
+    const String toolName = 'user_memory_merge';
+    final List<Map<String, dynamic>> tools = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'type': 'function',
+        'function': <String, dynamic>{
+          'name': toolName,
+          'description':
+              'Resolve merge/upsert/discard decisions for extracted user memories.',
+          'parameters': <String, dynamic>{
+            'type': 'object',
+            'properties': <String, dynamic>{
+              'decisions': <String, dynamic>{
+                'type': 'array',
+                'items': <String, dynamic>{
+                  'type': 'object',
+                  'properties': <String, dynamic>{
+                    'index': <String, dynamic>{'type': 'integer', 'minimum': 0},
+                    'action': <String, dynamic>{
+                      'type': 'string',
+                      'enum': <String>['upsert', 'merge', 'discard'],
+                    },
+                    'target_id': <String, dynamic>{
+                      'type': 'integer',
+                      'minimum': 1,
+                    },
+                    'canonical': <String, dynamic>{
+                      'type': 'object',
+                      'properties': <String, dynamic>{
+                        'kind': <String, dynamic>{
+                          'type': 'string',
+                          'enum': <String>['rule', 'fact', 'habit'],
+                        },
+                        'key': <String, dynamic>{'type': 'string'},
+                        'content': <String, dynamic>{'type': 'string'},
+                        'keywords': <String, dynamic>{
+                          'type': 'array',
+                          'items': <String, dynamic>{'type': 'string'},
+                        },
+                        'confidence': <String, dynamic>{
+                          'type': 'number',
+                          'minimum': 0,
+                          'maximum': 1,
+                        },
+                      },
+                      'required': <String>[
+                        'kind',
+                        'content',
+                        'keywords',
+                        'confidence',
+                      ],
+                    },
+                  },
+                  'required': <String>['index', 'action'],
+                },
+              },
+            },
+            'required': <String>['decisions'],
+          },
+        },
+      },
+    ];
+    final Map<String, dynamic> toolChoice = <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{'name': toolName},
+    };
+
+    try {
+      final String userPayload = jsonEncode(<String, Object?>{
+        'segment_id': segmentId,
+        'model': model,
+        'new_items': newItems,
+        'candidates': candidates,
+      });
+
+      final AIGatewayResult result = await _gateway.complete(
+        endpoints: endpoints,
+        messages: <AIMessage>[
+          AIMessage(role: 'system', content: sys),
+          AIMessage(role: 'user', content: userPayload),
+        ],
+        responseStartMarker: '',
+        timeout: const Duration(seconds: 45),
+        preferStreaming: false,
+        logContext: 'user_memory_merge_segment_$segmentId',
+        tools: tools,
+        toolChoice: toolChoice,
+      );
+
+      String mergeText = result.content;
+      if (result.toolCalls.isNotEmpty) {
+        for (final AIToolCall tc in result.toolCalls) {
+          if (tc.name == toolName) {
+            mergeText = tc.argumentsJson;
+            break;
+          }
+        }
+      }
+
+      dynamic data;
+      final String t = _sanitizeModelText(mergeText);
+      try {
+        data = jsonDecode(t);
+      } catch (_) {
+        final int s = t.indexOf('{');
+        final int e = t.lastIndexOf('}');
+        if (s >= 0 && e > s) {
+          data = jsonDecode(t.substring(s, e + 1));
+        } else {
+          return fallbackUpserts();
+        }
+      }
+      if (data is! Map) return fallbackUpserts();
+      final dynamic decisionsRaw = data['decisions'];
+      if (decisionsRaw is! List) return fallbackUpserts();
+
+      final Map<int, Map<String, dynamic>> byIndex =
+          <int, Map<String, dynamic>>{};
+      for (final d in decisionsRaw) {
+        if (d is! Map) continue;
+        final int idx = (d['index'] is int)
+            ? (d['index'] as int)
+            : int.tryParse('${d['index']}'.trim()) ?? -1;
+        if (idx < 0) continue;
+        byIndex[idx] = Map<String, dynamic>.from(d);
+      }
+
+      final List<UserMemoryResolvedWrite> out = <UserMemoryResolvedWrite>[];
+      for (int i = 0; i < extracted.length; i += 1) {
+        final ExtractedUserMemoryItem original = extracted[i];
+        final Map<String, dynamic>? d = byIndex[i];
+        if (d == null) {
+          out.add(UserMemoryResolvedWrite.upsert(original));
+          continue;
+        }
+        final String action = (d['action'] as String? ?? '')
+            .trim()
+            .toLowerCase();
+        final Map<String, dynamic>? canonical = (d['canonical'] is Map)
+            ? Map<String, dynamic>.from(d['canonical'] as Map)
+            : null;
+        final ExtractedUserMemoryItem canon = _canonicalizeItem(
+          original,
+          canonical,
+        );
+
+        if (action == 'discard') {
+          out.add(UserMemoryResolvedWrite.discard(original));
+          continue;
+        }
+        if (action == 'merge') {
+          final int targetId = (d['target_id'] is int)
+              ? (d['target_id'] as int)
+              : int.tryParse('${d['target_id']}'.trim()) ?? 0;
+          if (targetId > 0 && allCandidateIds.contains(targetId)) {
+            out.add(
+              UserMemoryResolvedWrite.merge(targetId: targetId, item: canon),
+            );
+            continue;
+          }
+          // Invalid target -> fallback to upsert.
+          out.add(UserMemoryResolvedWrite.upsert(canon));
+          continue;
+        }
+        // Default: upsert.
+        out.add(UserMemoryResolvedWrite.upsert(canon));
+      }
+
+      return out;
+    } catch (_) {
+      return fallbackUpserts();
+    }
+  }
+
   Future<void> _runLoop(String source) async {
     final String src = source.trim();
     if (src.isEmpty) return;
@@ -621,6 +966,7 @@ class UserMemoryIndexService {
             '- 只输出与“用户本人”有关、可长期复用的偏好/习惯/规则/事实；不要输出临时任务或一次性事件。',
             '- 不确定就不要写；不要根据常识推断；不要编造。',
             '- evidence 必须来自你看到的图片 Filename 列表（最多 5 个）。无法给出证据则不要输出该条。',
+            '- key 可选，但强烈建议提供稳定 key（lowercase，用 . 分层，不含日期/segment id；同一语义尽量复用同一 key）。',
             '- 输出必须是 JSON only（不要代码块/不要解释）。',
             '- 如无可提取内容，输出 {"items":[]}。',
             '',
@@ -737,17 +1083,27 @@ class UserMemoryIndexService {
                 allowedEvidenceFilenames: allowedNames,
               );
 
+          final UserMemoryUpsertEvidenceParams ev =
+              UserMemoryUpsertEvidenceParams(
+                sourceType: 'segment',
+                sourceId: 'segment:$sid',
+                startTime: st,
+                endTime: et,
+              );
+
+          // Optional: model-assisted merge to reduce semantic duplicates at write-time
+          // (mobile-friendly; avoids heavy dedupe during UI search/render).
+          final List<UserMemoryResolvedWrite> resolvedWrites =
+              await _resolveWritesWithMergeModel(
+                endpoints: endpoints,
+                extracted: extracted,
+                segmentId: sid,
+                model: model,
+              );
+
           final UserMemoryUpsertStats upsertStats = await UserMemoryService
               .instance
-              .upsertExtractedItems(
-                items: extracted,
-                evidence: UserMemoryUpsertEvidenceParams(
-                  sourceType: 'segment',
-                  sourceId: 'segment:$sid',
-                  startTime: st,
-                  endTime: et,
-                ),
-              );
+              .applyResolvedWrites(writes: resolvedWrites, evidence: ev);
 
           stats = <String, dynamic>{
             ...stats,
