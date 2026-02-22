@@ -841,7 +841,7 @@ class AIRequestGateway {
     return <String, dynamic>{'type': 'function', 'name': name};
   }
 
-bool _shouldUseResponsesApi({
+  bool _shouldUseResponsesApi({
     required AIEndpoint endpoint,
     required Uri baseUri,
     required List<Map<String, dynamic>> tools,
@@ -959,6 +959,21 @@ bool _shouldUseResponsesApi({
         ? ''
         : endpoint.providerId.toString();
 
+    String usageFields(_UsageSnapshot? usage) {
+      if (usage == null) return '';
+      final List<String> parts = <String>[];
+      if (usage.promptTokens != null) {
+        parts.add('promptTokens=${usage.promptTokens}');
+      }
+      if (usage.completionTokens != null) {
+        parts.add('completionTokens=${usage.completionTokens}');
+      }
+      if (usage.totalTokens != null) {
+        parts.add('totalTokens=${usage.totalTokens}');
+      }
+      return parts.join(' ');
+    }
+
     emitUiLog(
       'REQ POST ${prepared.uri} stream=0 google=${prepared.isGoogle ? 1 : 0} bodyLen=${prepared.body.length}',
     );
@@ -1041,9 +1056,25 @@ bool _shouldUseResponsesApi({
         responseStartMarker,
         parsed.content,
       );
+      final String usage = usageFields(parsed.usage);
       emitUiLog(
-        'PARSED google contentLen=${sanitized.length} reasoningLen=${(parsed.reasoning ?? '').length}',
+        'PARSED google contentLen=${sanitized.length} reasoningLen=${(parsed.reasoning ?? '').length}${usage.isEmpty ? '' : ' $usage'}',
       );
+      if (usage.isNotEmpty) {
+        try {
+          final String respUsageText = [
+            'RESP $traceId',
+            '${response.statusCode} ${prepared.uri}',
+            'ctx=${(logContext ?? '').trim()} api=$apiType stream=0 tookMs=${sw.elapsedMilliseconds}',
+            if (providerName.isNotEmpty || providerType.isNotEmpty)
+              'provider=${providerName.isEmpty ? '-' : providerName}'
+                  '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                  ' type=${providerType.isEmpty ? '-' : providerType}',
+            'model=${endpoint.model} bodyLen=${response.body.length} $usage',
+          ].join('\n');
+          await FlutterLogger.nativeDebug('AITrace', respUsageText);
+        } catch (_) {}
+      }
       if (parsed.reasoning != null && parsed.reasoning!.isNotEmpty) {
         controller?.add(
           AIGatewayEvent(AIGatewayEventKind.reasoning, parsed.reasoning!),
@@ -1063,9 +1094,25 @@ bool _shouldUseResponsesApi({
     final String sanitized = hasToolCalls
         ? _trimLeadingIgnorable(parsed.content)
         : _stripResponseStart(responseStartMarker, parsed.content);
+    final String usage = usageFields(parsed.usage);
     emitUiLog(
-      'PARSED openai contentLen=${sanitized.length} toolCalls=${parsed.toolCalls.length} reasoningLen=${(parsed.reasoning ?? '').length}',
+      'PARSED openai contentLen=${sanitized.length} toolCalls=${parsed.toolCalls.length} reasoningLen=${(parsed.reasoning ?? '').length}${usage.isEmpty ? '' : ' $usage'}',
     );
+    if (usage.isNotEmpty) {
+      try {
+        final String respUsageText = [
+          'RESP $traceId',
+          '${response.statusCode} ${prepared.uri}',
+          'ctx=${(logContext ?? '').trim()} api=$apiType stream=0 tookMs=${sw.elapsedMilliseconds}',
+          if (providerName.isNotEmpty || providerType.isNotEmpty)
+            'provider=${providerName.isEmpty ? '-' : providerName}'
+                '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
+                ' type=${providerType.isEmpty ? '-' : providerType}',
+          'model=${endpoint.model} bodyLen=${response.body.length} $usage',
+        ].join('\n');
+        await FlutterLogger.nativeDebug('AITrace', respUsageText);
+      } catch (_) {}
+    }
     if (parsed.reasoning != null && parsed.reasoning!.isNotEmpty) {
       controller?.add(
         AIGatewayEvent(AIGatewayEventKind.reasoning, parsed.reasoning!),
@@ -1122,6 +1169,27 @@ bool _shouldUseResponsesApi({
     String responsesFinalOutputText = '';
     final RegExp responsesThinkTagRe = RegExp(r'</?think>');
     _UsageSnapshot? usageSnapshot;
+    int? ttftMs;
+    final Stopwatch sw = Stopwatch()..start();
+
+    String usageFields(_UsageSnapshot? usage) {
+      if (usage == null) return '';
+      final List<String> parts = <String>[];
+      if (usage.promptTokens != null) {
+        parts.add('promptTokens=${usage.promptTokens}');
+      }
+      if (usage.completionTokens != null) {
+        parts.add('completionTokens=${usage.completionTokens}');
+      }
+      if (usage.totalTokens != null) {
+        parts.add('totalTokens=${usage.totalTokens}');
+      }
+      return parts.join(' ');
+    }
+
+    void markFirstTokenSeen() {
+      ttftMs ??= sw.elapsedMilliseconds;
+    }
 
     String responsesKey(
       Map<String, dynamic> json, {
@@ -1162,6 +1230,7 @@ bool _shouldUseResponsesApi({
       if (r.visibleDelta.isNotEmpty) {
         final String? sanitized = startFilter.process(r.visibleDelta);
         if (sanitized != null && sanitized.isNotEmpty) {
+          markFirstTokenSeen();
           contentBuffer.write(sanitized);
           controller?.add(
             AIGatewayEvent(AIGatewayEventKind.content, sanitized),
@@ -1169,6 +1238,7 @@ bool _shouldUseResponsesApi({
         }
       }
       if (r.reasoningDelta.isNotEmpty) {
+        markFirstTokenSeen();
         reasoningBuffer.write(r.reasoningDelta);
         controller?.add(
           AIGatewayEvent(AIGatewayEventKind.reasoning, r.reasoningDelta),
@@ -1178,6 +1248,7 @@ bool _shouldUseResponsesApi({
 
     void emitReasoningDelta(String delta) {
       if (delta.isEmpty) return;
+      markFirstTokenSeen();
       reasoningBuffer.write(delta);
       controller?.add(AIGatewayEvent(AIGatewayEventKind.reasoning, delta));
     }
@@ -1250,7 +1321,6 @@ bool _shouldUseResponsesApi({
     }
 
     final String traceId = _newTraceId();
-    final Stopwatch sw = Stopwatch()..start();
 
     final String apiType = prepared.isGoogle
         ? 'google.streamGenerateContent'
@@ -1454,25 +1524,7 @@ bool _shouldUseResponsesApi({
                   previous: googleLastContent,
                   incoming: chunk.content,
                 );
-                final _ThinkStreamFilterResult r = thinkFilter.process(delta);
-                if (r.visibleDelta.isNotEmpty) {
-                  final String? sanitized = startFilter.process(r.visibleDelta);
-                  if (sanitized != null && sanitized.isNotEmpty) {
-                    contentBuffer.write(sanitized);
-                    controller?.add(
-                      AIGatewayEvent(AIGatewayEventKind.content, sanitized),
-                    );
-                  }
-                }
-                if (r.reasoningDelta.isNotEmpty) {
-                  reasoningBuffer.write(r.reasoningDelta);
-                  controller?.add(
-                    AIGatewayEvent(
-                      AIGatewayEventKind.reasoning,
-                      r.reasoningDelta,
-                    ),
-                  );
-                }
+                emitContentDelta(delta);
               }
             }
 
@@ -1488,10 +1540,7 @@ bool _shouldUseResponsesApi({
                   previous: googleLastThought,
                   incoming: chunk.thought,
                 );
-                reasoningBuffer.write(delta);
-                controller?.add(
-                  AIGatewayEvent(AIGatewayEventKind.reasoning, delta),
-                );
+                emitReasoningDelta(delta);
               }
             }
             continue;
@@ -1854,34 +1903,11 @@ bool _shouldUseResponsesApi({
                         : (reasoningField is String ? reasoningField : null)) ??
                     delta['thinking'];
                 if (reasoningPart is String && reasoningPart.isNotEmpty) {
-                  reasoningBuffer.write(reasoningPart);
-                  controller?.add(
-                    AIGatewayEvent(AIGatewayEventKind.reasoning, reasoningPart),
-                  );
+                  emitReasoningDelta(reasoningPart);
                 }
                 final String part = _extractOpenAIChatText(delta['content']);
                 if (part.isNotEmpty) {
-                  final _ThinkStreamFilterResult r = thinkFilter.process(part);
-                  if (r.visibleDelta.isNotEmpty) {
-                    final String? sanitized = startFilter.process(
-                      r.visibleDelta,
-                    );
-                    if (sanitized != null && sanitized.isNotEmpty) {
-                      contentBuffer.write(sanitized);
-                      controller?.add(
-                        AIGatewayEvent(AIGatewayEventKind.content, sanitized),
-                      );
-                    }
-                  }
-                  if (r.reasoningDelta.isNotEmpty) {
-                    reasoningBuffer.write(r.reasoningDelta);
-                    controller?.add(
-                      AIGatewayEvent(
-                        AIGatewayEventKind.reasoning,
-                        r.reasoningDelta,
-                      ),
-                    );
-                  }
+                  emitContentDelta(part);
                 }
               }
             }
@@ -1899,8 +1925,7 @@ bool _shouldUseResponsesApi({
 
       final String trailing = thinkFilter.finalize();
       if (trailing.isNotEmpty) {
-        reasoningBuffer.write(trailing);
-        controller?.add(AIGatewayEvent(AIGatewayEventKind.reasoning, trailing));
+        emitReasoningDelta(trailing);
       }
       startFilter.ensureCompleted();
 
@@ -1920,6 +1945,11 @@ bool _shouldUseResponsesApi({
           ? null
           : DateTime.now().difference(reasoningStart);
       sw.stop();
+      final String usage = usageFields(usageSnapshot);
+
+      emitUiLog(
+        'PARSED stream contentLen=${cleanedContent.length} reasoningLen=${reasoningText.length} toolCalls=${toolCalls.length}${ttftMs == null ? '' : ' ttftMs=$ttftMs'}${usage.isEmpty ? '' : ' $usage'}',
+      );
 
       try {
         final String summary = [
@@ -1929,7 +1959,7 @@ bool _shouldUseResponsesApi({
             'provider=${providerName.isEmpty ? '-' : providerName}'
                 '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
                 ' type=${providerType.isEmpty ? '-' : providerType}',
-          'model=${endpoint.model} contentLen=${cleanedContent.length} reasoningLen=${reasoningText.length} toolCalls=${toolCalls.length}',
+          'model=${endpoint.model} contentLen=${cleanedContent.length} reasoningLen=${reasoningText.length} toolCalls=${toolCalls.length}${ttftMs == null ? '' : ' ttftMs=$ttftMs'}${usage.isEmpty ? '' : ' $usage'}',
         ].join('\n');
         await FlutterLogger.nativeDebug('AITrace', summary);
       } catch (_) {}
