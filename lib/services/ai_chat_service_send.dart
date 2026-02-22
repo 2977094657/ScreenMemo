@@ -429,6 +429,7 @@ extension AIChatServiceSendExt on AIChatService {
     required String userMemoryMsg,
     required String atomicMemoryMsg,
     required List<String> extraSystemMessages,
+    int? effectivePromptCapTokens,
   }) async {
     final List<String> extras = <String>[];
     final List<String> optional = <String>[];
@@ -461,6 +462,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       reservedTokens: reserved,
       toolsSchemaTokens: toolsSchemaTokens,
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
     if (historyBudget >= _minHistoryReserveTokens) return extras;
 
@@ -486,6 +488,7 @@ extension AIChatServiceSendExt on AIChatService {
         budgets: budgets,
         reservedTokens: nextReserved,
         toolsSchemaTokens: toolsSchemaTokens,
+        effectivePromptCapTokens: effectivePromptCapTokens,
       );
       if (nextBudget >= _minHistoryReserveTokens) {
         kept.add(s);
@@ -526,6 +529,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       reservedTokens: reserved,
       toolsSchemaTokens: toolsSchemaTokens,
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
     if (historyBudget < 64) {
       unawaited(
@@ -615,24 +619,131 @@ extension AIChatServiceSendExt on AIChatService {
     return total;
   }
 
+  int _asInt(Object? v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  bool _isCjkLocale() {
+    final String code = _effectivePromptLocale().languageCode.toLowerCase();
+    return code.startsWith('zh') || code.startsWith('ja') || code.startsWith('ko');
+  }
+
+  bool _isCjkRune(int r) {
+    // Han + Extensions/Compatibility.
+    if (r >= 0x4E00 && r <= 0x9FFF) return true;
+    if (r >= 0x3400 && r <= 0x4DBF) return true;
+    if (r >= 0xF900 && r <= 0xFAFF) return true;
+    // Japanese.
+    if (r >= 0x3040 && r <= 0x30FF) return true;
+    // Korean.
+    if (r >= 0xAC00 && r <= 0xD7AF) return true;
+    return false;
+  }
+
+  bool _looksCjkHeavyText(String text) {
+    final String t = text.trim();
+    if (t.isEmpty) return false;
+    int total = 0;
+    int cjk = 0;
+    for (final int r in t.runes) {
+      if (r <= 0x20) continue;
+      total += 1;
+      if (_isCjkRune(r)) cjk += 1;
+      // Sample at most ~400 codepoints for performance.
+      if (total >= 400) break;
+    }
+    if (total < 40) return false;
+    return (cjk / total) >= 0.2;
+  }
+
+  double _tokenSafetyFactorFromBreakdown(
+    String breakdownJson, {
+    required String model,
+  }) {
+    final String raw = breakdownJson.trim();
+    if (raw.isEmpty) return 1.0;
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! Map) return 1.0;
+      final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
+
+      final String source = (map['source'] ?? '').toString().trim().toLowerCase();
+      if (source != 'usage') return 1.0;
+
+      final String breakdownModel = (map['model'] ?? '').toString().trim();
+      if (breakdownModel.isNotEmpty && breakdownModel != model) return 1.0;
+
+      final int estSent = _asInt(map['prompt_est_sent']);
+      final int usagePrompt = _asInt(map['usage_prompt_tokens']);
+      if (estSent <= 0 || usagePrompt <= 0) return 1.0;
+
+      final double ratio = usagePrompt / estSent;
+      if (!ratio.isFinite || ratio <= 1.05) return 1.0;
+      return ratio.clamp(1.0, 1.6);
+    } catch (_) {
+      return 1.0;
+    }
+  }
+
+  Future<double> _tokenSafetyFactorForConversation({
+    required String cid,
+    required String model,
+    required String userMessage,
+  }) async {
+    final String resolvedCid = cid.trim();
+    if (resolvedCid.isEmpty) return 1.0;
+
+    // Prefer empirical calibration: usage_prompt_tokens / prompt_est_sent.
+    try {
+      final ChatContextSnapshot snap = await _chatContext.getSnapshot(cid: resolvedCid);
+      final double fromUsage = _tokenSafetyFactorFromBreakdown(
+        snap.lastPromptBreakdownJson,
+        model: model,
+      );
+      if (fromUsage > 1.0) return fromUsage;
+    } catch (_) {}
+
+    // Conservative fallback: CJK-heavy inputs tend to be under-counted by bytes/4.
+    if (_isCjkLocale() || _looksCjkHeavyText(userMessage)) {
+      return 1.2;
+    }
+    return 1.0;
+  }
+
+  int _applyTokenSafetyToCap(int capTokens, double safetyFactor) {
+    final int cap = capTokens.clamp(0, 1 << 30).toInt();
+    if (cap <= 0) return 0;
+    final double f = (safetyFactor.isFinite && safetyFactor > 1.0) ? safetyFactor : 1.0;
+    final int adjusted = (cap / f).floor();
+    return adjusted.clamp(256, cap);
+  }
+
   int _historyBudgetTokensForPrompt({
     required AIContextBudgets budgets,
     required int reservedTokens,
     required int toolsSchemaTokens,
+    int? effectivePromptCapTokens,
   }) {
-    final int v =
-        budgets.effectivePromptCapTokens - reservedTokens - toolsSchemaTokens;
+    final int cap = (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens)
+        .clamp(256, budgets.effectivePromptCapTokens);
+    final int v = cap - reservedTokens - toolsSchemaTokens;
     if (v <= 0) return 0;
-    return v.clamp(0, budgets.effectivePromptCapTokens);
+    return v.clamp(0, cap);
   }
 
   int _toolLoopBudgetTokensForPrompt({
     required AIContextBudgets budgets,
     required int toolsSchemaTokens,
+    int? effectivePromptCapTokens,
   }) {
-    final int v = budgets.effectivePromptCapTokens - toolsSchemaTokens;
+    final int cap = (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens)
+        .clamp(256, budgets.effectivePromptCapTokens);
+    final int v = cap - toolsSchemaTokens;
     if (v <= 0) return 0;
-    return v.clamp(0, budgets.effectivePromptCapTokens);
+    return v.clamp(0, cap);
   }
 
   int _approxToolSchemaTokens(List<Map<String, dynamic>> tools) {
@@ -851,6 +962,20 @@ extension AIChatServiceSendExt on AIChatService {
         await AIContextBudgets.forModelWithOverrides(modelForBudget);
     final String cid = await _settings.getActiveConversationCid();
     final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
+
+    final double tokenSafetyFactor = await _tokenSafetyFactorForConversation(
+      cid: cid,
+      model: modelForBudget,
+      userMessage: userMessage,
+    );
+    final int effectivePromptCapTokens = _applyTokenSafetyToCap(
+      budgets.effectivePromptCapTokens,
+      tokenSafetyFactor,
+    );
+    final int autoCompactTriggerTokens = _applyTokenSafetyToCap(
+      budgets.autoCompactTriggerTokens,
+      tokenSafetyFactor,
+    ).clamp(256, effectivePromptCapTokens);
     final bool strictFullAttempted = _shouldTryStrictFullContext(
       context: 'chat',
       persistHistory: true,
@@ -903,6 +1028,7 @@ extension AIChatServiceSendExt on AIChatService {
       extraSystemMessages: <String>[
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
       ],
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
 
     // Codex-style dynamic history budget: keep as much history as fits after
@@ -917,6 +1043,7 @@ extension AIChatServiceSendExt on AIChatService {
       budgets: budgets,
       reservedTokens: reservedTokens,
       toolsSchemaTokens: toolsSchemaTokens,
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
 
     // Prefer strict raw transcript first (chat-only), then fallback to legacy.
@@ -936,7 +1063,7 @@ extension AIChatServiceSendExt on AIChatService {
               historyMaxTokens: 1 << 30,
             ),
           );
-      if (strictPromptTokens > budgets.effectivePromptCapTokens) {
+      if (strictPromptTokens > effectivePromptCapTokens) {
         fallbackTriggered = true;
       }
     }
@@ -983,7 +1110,7 @@ extension AIChatServiceSendExt on AIChatService {
         toolsSchemaTokens +
         PromptBudget.approxTokensForMessagesJson(requestMessages);
     if ((!strictFullAttempted || fallbackTriggered) &&
-        tokensApprox >= budgets.autoCompactTriggerTokens) {
+        tokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
         // openclaw-style: refresh long-term memory before we compact the chat context.
@@ -1025,6 +1152,7 @@ extension AIChatServiceSendExt on AIChatService {
           extraSystemMessages: <String>[
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
           ],
+          effectivePromptCapTokens: effectivePromptCapTokens,
         );
         reservedTokens = _approxReservedPromptTokens(
           systemPrompt: systemPrompt,
@@ -1035,6 +1163,7 @@ extension AIChatServiceSendExt on AIChatService {
           budgets: budgets,
           reservedTokens: reservedTokens,
           toolsSchemaTokens: toolsSchemaTokens,
+          effectivePromptCapTokens: effectivePromptCapTokens,
         );
         requestHistory = history;
         if (historyMaxTokens > 0) {
@@ -1378,6 +1507,21 @@ extension AIChatServiceSendExt on AIChatService {
         : (await _settings.getModel());
     final AIContextBudgets budgets =
         await AIContextBudgets.forModelWithOverrides(modelForBudget);
+    final double tokenSafetyFactor = (context == 'chat' && persistHistory)
+        ? await _tokenSafetyFactorForConversation(
+            cid: cid,
+            model: modelForBudget,
+            userMessage: userMessage,
+          )
+        : 1.0;
+    final int effectivePromptCapTokens = _applyTokenSafetyToCap(
+      budgets.effectivePromptCapTokens,
+      tokenSafetyFactor,
+    );
+    final int autoCompactTriggerTokens = _applyTokenSafetyToCap(
+      budgets.autoCompactTriggerTokens,
+      tokenSafetyFactor,
+    ).clamp(256, effectivePromptCapTokens);
     bool fallbackTriggered = false;
 
     // Best-effort bootstrap: seed append-only transcript from existing tail.
@@ -1442,6 +1586,7 @@ extension AIChatServiceSendExt on AIChatService {
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
         ...extraSystemMessages,
       ],
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
 
     const int toolsSchemaTokens = 0;
@@ -1455,6 +1600,7 @@ extension AIChatServiceSendExt on AIChatService {
             budgets: budgets,
             reservedTokens: reservedTokens,
             toolsSchemaTokens: toolsSchemaTokens,
+            effectivePromptCapTokens: effectivePromptCapTokens,
           )
         : 0;
 
@@ -1474,7 +1620,7 @@ extension AIChatServiceSendExt on AIChatService {
                 historyMaxTokens: 1 << 30,
               ),
             );
-        if (strictPromptTokens > budgets.effectivePromptCapTokens) {
+        if (strictPromptTokens > effectivePromptCapTokens) {
           fallbackTriggered = true;
         }
       }
@@ -1535,7 +1681,7 @@ extension AIChatServiceSendExt on AIChatService {
     if (context == 'chat' &&
         persistHistory &&
         (!strictFullAttempted || fallbackTriggered) &&
-        tokensApprox >= budgets.autoCompactTriggerTokens) {
+        tokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
         // openclaw-style: refresh long-term memory before we compact the chat context.
@@ -1580,6 +1726,7 @@ extension AIChatServiceSendExt on AIChatService {
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
             ...extraSystemMessages,
           ],
+          effectivePromptCapTokens: effectivePromptCapTokens,
         );
         extras2
           ..clear()
@@ -1595,6 +1742,7 @@ extension AIChatServiceSendExt on AIChatService {
                 budgets: budgets,
                 reservedTokens: reservedTokens,
                 toolsSchemaTokens: toolsSchemaTokens,
+                effectivePromptCapTokens: effectivePromptCapTokens,
               )
             : 0;
         effectiveHistory = const <AIMessage>[];
@@ -1814,6 +1962,21 @@ extension AIChatServiceSendExt on AIChatService {
         ? conversationCid!.trim()
         : await _settings.getActiveConversationCid();
     final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
+    final double tokenSafetyFactor = (context == 'chat' && persistHistory)
+        ? await _tokenSafetyFactorForConversation(
+            cid: cid,
+            model: modelForBudget,
+            userMessage: actualUserMessage,
+          )
+        : 1.0;
+    final int effectivePromptCapTokens = _applyTokenSafetyToCap(
+      budgets.effectivePromptCapTokens,
+      tokenSafetyFactor,
+    );
+    final int autoCompactTriggerTokens = _applyTokenSafetyToCap(
+      budgets.autoCompactTriggerTokens,
+      tokenSafetyFactor,
+    ).clamp(256, effectivePromptCapTokens);
     bool fallbackTriggered = false;
     // Best-effort bootstrap: seed append-only transcript from existing tail.
     try {
@@ -1880,6 +2043,7 @@ extension AIChatServiceSendExt on AIChatService {
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
         ...extraSystemMessages,
       ],
+      effectivePromptCapTokens: effectivePromptCapTokens,
     );
 
     final int toolsSchemaTokens = _approxToolSchemaTokens(tools);
@@ -1893,6 +2057,7 @@ extension AIChatServiceSendExt on AIChatService {
             budgets: budgets,
             reservedTokens: reservedTokens,
             toolsSchemaTokens: toolsSchemaTokens,
+            effectivePromptCapTokens: effectivePromptCapTokens,
           )
         : 0;
     int historyMaxTokensForBreakdown = historyMaxTokens;
@@ -1913,7 +2078,7 @@ extension AIChatServiceSendExt on AIChatService {
                 historyMaxTokens: 1 << 30,
               ),
             );
-        if (strictPromptTokens > budgets.effectivePromptCapTokens) {
+        if (strictPromptTokens > effectivePromptCapTokens) {
           fallbackTriggered = true;
         }
       }
@@ -1969,7 +2134,7 @@ extension AIChatServiceSendExt on AIChatService {
     if (context == 'chat' &&
         persistHistory &&
         (!strictFullAttempted || fallbackTriggered) &&
-        promptTokensApprox >= budgets.autoCompactTriggerTokens) {
+        promptTokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
         // openclaw-style: refresh long-term memory before we compact the chat context.
@@ -2013,6 +2178,7 @@ extension AIChatServiceSendExt on AIChatService {
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
             ...extraSystemMessages,
           ],
+          effectivePromptCapTokens: effectivePromptCapTokens,
         );
         extras2
           ..clear()
@@ -2029,6 +2195,7 @@ extension AIChatServiceSendExt on AIChatService {
                 budgets: budgets,
                 reservedTokens: reserved2,
                 toolsSchemaTokens: toolsSchemaTokens,
+                effectivePromptCapTokens: effectivePromptCapTokens,
               )
             : 0;
         filteredHistory = const <AIMessage>[];
@@ -2173,6 +2340,7 @@ extension AIChatServiceSendExt on AIChatService {
           maxPromptTokens: _toolLoopBudgetTokensForPrompt(
             budgets: budgets,
             toolsSchemaTokens: _approxToolSchemaTokens(toolsForCall),
+            effectivePromptCapTokens: effectivePromptCapTokens,
           ),
           emitEvent: null,
           cid: cid,
@@ -2301,6 +2469,7 @@ extension AIChatServiceSendExt on AIChatService {
         maxPromptTokens: _toolLoopBudgetTokensForPrompt(
           budgets: budgets,
           toolsSchemaTokens: toolsSchemaTokens,
+          effectivePromptCapTokens: effectivePromptCapTokens,
         ),
         emitEvent: emitEvent,
         cid: cid,
@@ -2425,6 +2594,7 @@ extension AIChatServiceSendExt on AIChatService {
           maxPromptTokens: _toolLoopBudgetTokensForPrompt(
             budgets: budgets,
             toolsSchemaTokens: toolsSchemaTokens,
+            effectivePromptCapTokens: effectivePromptCapTokens,
           ),
           emitEvent: emitEvent,
           cid: cid,
@@ -2684,6 +2854,7 @@ extension AIChatServiceSendExt on AIChatService {
           maxPromptTokens: _toolLoopBudgetTokensForPrompt(
             budgets: budgets,
             toolsSchemaTokens: toolsSchemaTokens,
+            effectivePromptCapTokens: effectivePromptCapTokens,
           ),
           emitEvent: emitEvent,
           cid: cid,
@@ -2811,6 +2982,7 @@ extension AIChatServiceSendExt on AIChatService {
             maxPromptTokens: _toolLoopBudgetTokensForPrompt(
               budgets: budgets,
               toolsSchemaTokens: toolsSchemaTokens,
+              effectivePromptCapTokens: effectivePromptCapTokens,
             ),
             emitEvent: emitEvent,
             cid: cid,
@@ -2919,6 +3091,7 @@ extension AIChatServiceSendExt on AIChatService {
             maxPromptTokens: _toolLoopBudgetTokensForPrompt(
               budgets: budgets,
               toolsSchemaTokens: toolsSchemaTokens,
+              effectivePromptCapTokens: effectivePromptCapTokens,
             ),
             emitEvent: emitEvent,
             cid: cid,
