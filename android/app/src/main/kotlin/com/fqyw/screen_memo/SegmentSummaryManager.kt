@@ -1542,21 +1542,30 @@ object SegmentSummaryManager {
                 .put("role", "user")
                 .put("content", contentArr)
             )
-            val body = JSONObject()
-                .put("model", model)
-                .put("messages", messages)
-                .put("temperature", 0.2)
-                .put("stream", true)
-                .toString()
+            fun buildChatBody(stream: Boolean): String {
+                return JSONObject()
+                    .put("model", model)
+                    .put("messages", messages)
+                    .put("temperature", 0.2)
+                    .put("stream", stream)
+                    .toString()
+            }
+            val bodyStream = buildChatBody(true)
+            val bodyNonStream = buildChatBody(false)
 
-            val reqBody: RequestBody = body.toRequestBody("application/json; charset=utf-8".toMediaType())
-            val req = Request.Builder()
-                .url(url)
-                .post(reqBody)
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "text/event-stream")
-                .build()
+            fun buildReq(body: String, accept: String): Request {
+                val reqBody: RequestBody =
+                    body.toRequestBody("application/json; charset=utf-8".toMediaType())
+                return Request.Builder()
+                    .url(url)
+                    .post(reqBody)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", accept)
+                    .build()
+            }
+            val reqStream = buildReq(bodyStream, "text/event-stream")
+            val reqNonStream = buildReq(bodyNonStream, "application/json")
             val t0 = System.currentTimeMillis()
             var respText = ""
             var outputText = ""
@@ -1569,7 +1578,7 @@ object SegmentSummaryManager {
                     val start = System.currentTimeMillis()
                     try {
                         var finished = false
-                        client.newCall(req).execute().use { resp ->
+                        client.newCall(reqStream).execute().use { resp ->
                             val end = System.currentTimeMillis()
                             lastCode = resp.code
                             try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
@@ -1577,7 +1586,7 @@ object SegmentSummaryManager {
                             try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             if (resp.isSuccessful) {
                                 val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
-                                 val reader = responseBody.charStream().buffered()
+                                val reader = responseBody.charStream().buffered()
                                 val aggregated = StringBuilder()
                                 val aggregatedReasoning = StringBuilder()
                                 val rawEvents = StringBuilder()
@@ -1718,15 +1727,135 @@ object SegmentSummaryManager {
                                     finished = true
                                 } else {
                                     outputText = aggregated.toString()
-                                    if (outputText.isBlank() && aggregatedReasoning.isNotBlank()) {
+                                    val gotReasoningOnly = outputText.isBlank() && aggregatedReasoning.isNotBlank()
+                                    if (gotReasoningOnly) {
+                                        // Some gateways stream thinking but fail to stream/return the final answer.
+                                        // We do NOT downgrade reasoning to user-facing content; instead, try a non-stream fallback.
                                         try {
                                             FileLogger.w(
                                                 TAG,
-                                                "OpenAI 流式仅收到 reasoning，正文为空（已不再将 reasoning 作为正文回退）",
+                                                "OpenAI 流式仅收到 reasoning，正文为空；尝试用非流式回退获取正文",
                                             )
                                         } catch (_: Exception) {}
                                     }
-                                    finished = true
+
+                                    if (outputText.isBlank()) {
+                                        // Fallback to non-streaming chat completion (some relays are buggy in SSE mode).
+                                        try {
+                                            client.newCall(reqNonStream).execute().use { resp2 ->
+                                                val body2 = resp2.body?.string() ?: ""
+                                                if (body2.isNotBlank()) {
+                                                    respText = rawEvents.toString() +
+                                                        "\n--- fallback: non-stream chat.completions ---\n" +
+                                                        body2
+                                                }
+                                                if (resp2.isSuccessful && body2.isNotBlank()) {
+                                                    try {
+                                                        val obj2 = JSONObject(body2)
+                                                        val choices2 = obj2.optJSONArray("choices")
+                                                        val c02 = choices2?.optJSONObject(0)
+                                                        val msg2 = c02?.optJSONObject("message")
+                                                        val piece2 = extractTextFromContentNode(msg2?.opt("content"))
+                                                        if (piece2.isNotBlank()) {
+                                                            outputText = piece2
+                                                        }
+                                                    } catch (_: Exception) {
+                                                    }
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            try { FileLogger.w(TAG, "非流式回退失败(OpenAI兼容)：${e.message}") } catch (_: Exception) {}
+                                        }
+                                    }
+
+                                    if (outputText.isBlank()) {
+                                        // Some relays only implement multimodal reliably on /v1/responses.
+                                        try {
+                                            val responsesUrl = url.replace("/chat/completions", "/responses")
+                                            val parts = JSONArray()
+                                            for (i in 0 until contentArr.length()) {
+                                                val item = contentArr.optJSONObject(i) ?: continue
+                                                when (item.optString("type")) {
+                                                    "text" -> {
+                                                        val t = item.optString("text")
+                                                        if (t.isNotBlank()) {
+                                                            parts.put(
+                                                                JSONObject()
+                                                                    .put("type", "input_text")
+                                                                    .put("text", t),
+                                                            )
+                                                        }
+                                                    }
+                                                    "image_url" -> {
+                                                        val img = item.optJSONObject("image_url")
+                                                        val u = img?.optString("url") ?: ""
+                                                        if (u.isNotBlank()) {
+                                                            parts.put(
+                                                                JSONObject()
+                                                                    .put("type", "input_image")
+                                                                    .put("image_url", u),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            val input = JSONArray().put(
+                                                JSONObject()
+                                                    .put("role", "user")
+                                                    .put("content", parts),
+                                            )
+                                            val bodyR = JSONObject()
+                                                .put("model", model)
+                                                .put("input", input)
+                                                .put("temperature", 0.2)
+                                                .put("stream", false)
+                                                .toString()
+                                            val reqRBody: RequestBody = bodyR.toRequestBody(
+                                                "application/json; charset=utf-8".toMediaType(),
+                                            )
+                                            val reqResponses = Request.Builder()
+                                                .url(responsesUrl)
+                                                .post(reqRBody)
+                                                .addHeader("Authorization", "Bearer $apiKey")
+                                                .addHeader("Content-Type", "application/json")
+                                                .addHeader("Accept", "application/json")
+                                                .build()
+                                            client.newCall(reqResponses).execute().use { resp3 ->
+                                                val body3 = resp3.body?.string() ?: ""
+                                                if (body3.isNotBlank()) {
+                                                    respText =
+                                                        respText +
+                                                        "\n--- fallback: non-stream /responses ---\n" +
+                                                        body3
+                                                }
+                                                if (resp3.isSuccessful && body3.isNotBlank()) {
+                                                    try {
+                                                        val obj3 = JSONObject(body3)
+                                                        val piece3 = pickNonEmpty(
+                                                            obj3.optString("output_text"),
+                                                            extractTextFromResponsesOutput(
+                                                                obj3.optJSONArray("output"),
+                                                            ),
+                                                        )
+                                                        if (piece3.isNotBlank()) {
+                                                            outputText = piece3
+                                                        }
+                                                    } catch (_: Exception) {
+                                                    }
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            try { FileLogger.w(TAG, "Responses 回退失败(OpenAI兼容)：${e.message}") } catch (_: Exception) {}
+                                        }
+                                    }
+
+                                    // If still blank, treat as failure and retry the whole request.
+                                    if (outputText.isBlank()) {
+                                        lastBody = respText
+                                        finished = attempt + 1 >= maxAttempts
+                                    } else {
+                                        finished = true
+                                    }
                                 }
                             } else {
                                 lastBody = resp.body?.string()
