@@ -298,13 +298,34 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     return isNeg ? '-$grouped' : grouped;
   }
 
-  String _fmtTime(DateTime? dt) {
+  String _fmtTime(DateTime? dt, {required bool zh}) {
     if (dt == null) return '';
     final DateTime local = dt.toLocal();
+    final DateTime now = DateTime.now();
+
+    bool sameDay(DateTime a, DateTime b) {
+      return a.year == b.year && a.month == b.month && a.day == b.day;
+    }
+
     final String hh = local.hour.toString().padLeft(2, '0');
     final String mm = local.minute.toString().padLeft(2, '0');
     final String ss = local.second.toString().padLeft(2, '0');
-    return '$hh:$mm:$ss';
+    final String time = '$hh:$mm:$ss';
+    if (sameDay(local, now)) {
+      return time;
+    }
+
+    if (local.year == now.year) {
+      if (zh) return '${local.month}月${local.day}日 $time';
+      final String month = local.month.toString().padLeft(2, '0');
+      final String day = local.day.toString().padLeft(2, '0');
+      return '$month-$day $time';
+    }
+
+    if (zh) return '${local.year}年${local.month}月${local.day}日 $time';
+    final String month = local.month.toString().padLeft(2, '0');
+    final String day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day $time';
   }
 
   String _prettyJsonFromString(String raw) {
@@ -383,7 +404,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       text = zh ? '失败' : 'Error';
       backgroundColor = cs.error;
       textColor = cs.onError;
-    } else if (tr.isHttpSuccess || (tr.response?.body ?? '').trim().isNotEmpty) {
+    } else if (tr.isHttpSuccess ||
+        (tr.response?.body ?? '').trim().isNotEmpty) {
       text = zh ? '成功' : 'OK';
       backgroundColor = AppTheme.success;
       textColor = AppTheme.successForeground;
@@ -1018,6 +1040,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         ),
       );
     }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1080,8 +1103,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
               ],
             ],
           ),
-          if (r != rows.length - 1)
-            const SizedBox(height: AppTheme.spacing2),
+          if (r != rows.length - 1) const SizedBox(height: AppTheme.spacing2),
         ],
       ],
     );
@@ -1160,9 +1182,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         final Animation<Offset> slide = Tween<Offset>(
           begin: begin,
           end: Offset.zero,
-        ).chain(
-          CurveTween(curve: Curves.easeOutCubic),
-        ).animate(animation);
+        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation);
         return ClipRect(
           child: SlideTransition(
             position: slide,
@@ -1201,9 +1221,16 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     if (dx < 0 && current < _panelResponse) target = current + 1;
     if (dx > 0 && current > _panelOverview) target = current - 1;
 
-    final Widget currentChild = _buildPanelByIndex(context, current, tr, req, rsp);
-    final Widget? targetChild =
-        target == null ? null : _buildPanelByIndex(context, target, tr, req, rsp);
+    final Widget currentChild = _buildPanelByIndex(
+      context,
+      current,
+      tr,
+      req,
+      rsp,
+    );
+    final Widget? targetChild = target == null
+        ? null
+        : _buildPanelByIndex(context, target, tr, req, rsp);
     final double targetDx = target == null
         ? 0
         : (dx < 0 ? dx + width : dx - width);
@@ -1233,7 +1260,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     _ResponseViewData rsp,
   ) {
     if (index == _panelRequest) return _buildRequestPanel(context, tr, req);
-    if (index == _panelResponse) return _buildResponsePanel(context, tr, req, rsp);
+    if (index == _panelResponse) {
+      return _buildResponsePanel(context, tr, req, rsp);
+    }
     return _buildOverviewPanel(context, tr, req, rsp);
   }
 
@@ -1447,8 +1476,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     final DateTime? createdAtParsed = DateTime.tryParse(createdAtRaw);
     final DateTime? createdAtDt =
         createdAtParsed ?? (createdAtRaw.isEmpty ? tr.startedAt : null);
-    final String createdAtText =
-        createdAtDt != null ? _fmtTime(createdAtDt) : createdAtRaw;
+    final String createdAtText = createdAtDt != null
+        ? _fmtTime(createdAtDt, zh: zh)
+        : createdAtRaw;
 
     final int? promptTokens = rsp.promptTokens ?? tr.usagePromptTokens;
     final int? completionTokens =
@@ -1578,11 +1608,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         ],
         if (tokenBadges.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: tokenBadges,
-          ),
+          Wrap(spacing: 6, runSpacing: 6, children: tokenBadges),
         ],
         if (url.isNotEmpty) ...[
           const SizedBox(height: AppTheme.spacing3),
@@ -1641,6 +1667,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     BuildContext context,
     _SegmentImageItem img, {
     int? targetWidth,
+    VoidCallback? onTap,
   }) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final File? imageFile = _resolveImageFile(img);
@@ -1661,7 +1688,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       );
     }
 
-    if (imageFile == null) return placeholder(Icons.image_not_supported_outlined);
+    if (imageFile == null) {
+      return placeholder(Icons.image_not_supported_outlined);
+    }
 
     return ScreenshotImageWidget(
       file: imageFile,
@@ -1669,6 +1698,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       targetWidth: targetWidth,
       borderRadius: BorderRadius.circular(8),
       showNsfwButton: false,
+      onTap: onTap,
     );
   }
 
@@ -1686,6 +1716,45 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       if (f.existsSync()) return f;
     }
     return null;
+  }
+
+  Future<void> _openAttachedImagesViewer(
+    List<_SegmentImageItem> images,
+    int initialIndex,
+  ) async {
+    if (images.isEmpty) return;
+
+    final int safeInitial = initialIndex < 0
+        ? 0
+        : (initialIndex >= images.length ? images.length - 1 : initialIndex);
+
+    final List<String> paths = <String>[];
+    int viewerIndex = 0;
+    for (int i = 0; i < images.length; i += 1) {
+      final File? f = _resolveImageFile(images[i]);
+      if (f == null) continue;
+      if (i == safeInitial) viewerIndex = paths.length;
+      paths.add(f.path);
+    }
+    if (paths.isEmpty) return;
+
+    final int safeViewerIndex = viewerIndex < 0
+        ? 0
+        : (viewerIndex >= paths.length ? paths.length - 1 : viewerIndex);
+
+    if (!mounted) return;
+    Navigator.pushNamed(
+      context,
+      '/screenshot_viewer',
+      arguments: <String, dynamic>{
+        'paths': paths,
+        'initialIndex': safeViewerIndex,
+        'singleMode': false,
+        'appName': images[safeInitial].app.trim().isEmpty
+            ? 'Attached Images'
+            : images[safeInitial].app.trim(),
+      },
+    );
   }
 
   Widget _buildRequestPanel(
@@ -1708,9 +1777,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         ),
       );
       children.add(const SizedBox(height: AppTheme.spacing2));
-      children.add(
-        _buildImagesVirtualGrid(context, req.images),
-      );
+      children.add(_buildImagesVirtualGrid(context, req.images));
       children.add(const SizedBox(height: AppTheme.spacing2));
     }
 
@@ -1803,6 +1870,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
                   context,
                   images[i],
                   targetWidth: targetWidthPx,
+                  onTap: () => _openAttachedImagesViewer(images, i),
                 );
               },
             ),
@@ -1926,10 +1994,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
 }
 
 class _MeasureSize extends StatefulWidget {
-  const _MeasureSize({
-    required this.child,
-    required this.onChange,
-  });
+  const _MeasureSize({required this.child, required this.onChange});
 
   final Widget child;
   final ValueChanged<Size> onChange;
