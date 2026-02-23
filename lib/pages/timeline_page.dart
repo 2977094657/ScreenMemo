@@ -2,12 +2,12 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/screenshot_record.dart';
 import '../services/screenshot_service.dart';
 import '../services/app_selection_service.dart';
 import '../models/app_info.dart';
-import '../widgets/nsfw_guard.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,7 +17,9 @@ import '../services/timeline_jump_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
+import '../services/replay_export_service.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
+import '../widgets/timeline_replay_sheet.dart';
 
 /// 全局时间线页面（骨架）
 /// 后续将加载按日期的全局截图时间线与应用图标
@@ -31,7 +33,8 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage>
     with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   bool _loading = false;
-  // 所有可用日期（完整列表，按时间倒序）
+  bool _refreshing = false;
+  // 已加载的日期Tab缓冲（按时间倒序）；支持增量向前追加
   final List<_DayTabInfo> _allDayTabs = <_DayTabInfo>[];
   // 当前 UI 中可见的日期Tab窗口（前缀子集：默认最近14天，向前增量加载）
   final List<_DayTabInfo> _dayTabs = <_DayTabInfo>[];
@@ -75,7 +78,11 @@ class _TimelinePageState extends State<TimelinePage>
   // 日期窗口控制：默认最近14天，每次向前追加14天
   static const int _initialVisibleDayTabs = 14;
   static const int _appendVisibleDayTabs = 14;
+  // 查询窗口：首屏与增量加载回溯天数（按时间窗仅扫描涉及的年月表）
+  static const int _initialDayTabsLookbackDays = 120;
+  static const int _appendDayTabsLookbackDays = 120;
   bool _isExpandingDayTabs = false;
+  bool _hasMoreDayTabs = false;
 
   @override
   void initState() {
@@ -95,6 +102,8 @@ class _TimelinePageState extends State<TimelinePage>
     _lifecycleSub = AppLifecycleService.instance.events.listen((event) {
       if (!mounted) return;
       if (_jumpInProgress) return; // 跳转处理中忽略生命周期触发的刷新，避免打断
+      if (_loading) return; // 首次初始化进行中，避免重复触发
+      if (_refreshing) return; // 刷新进行中，避免并发
       if (event == AppLifecycleEvent.resumed ||
           event == AppLifecycleEvent.firstUiResumed ||
           event == AppLifecycleEvent.timelineShown) {
@@ -105,7 +114,7 @@ class _TimelinePageState extends State<TimelinePage>
     // 如果“首次进入UI”事件已在本页挂载前发生，补一次刷新
     if (AppLifecycleService.instance.firstUiResumedEmitted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _refresh();
+        if (mounted && !_loading && !_refreshing) _refresh();
       });
     }
 
@@ -169,10 +178,39 @@ class _TimelinePageState extends State<TimelinePage>
     final sw = Stopwatch()..start();
     final List<_DayTabInfo> tabs = <_DayTabInfo>[];
     try {
-      final days = await ScreenshotService.instance.listAvailableDaysGlobal();
+      final swDays = Stopwatch()..start();
+      final int? latestMillis = await ScreenshotService.instance
+          .getGlobalLatestCaptureTimeMillis();
+      final DateTime base = (latestMillis == null || latestMillis <= 0)
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(latestMillis);
+      final DateTime endDay = DateTime(base.year, base.month, base.day);
+      final int endMillis = DateTime(
+        endDay.year,
+        endDay.month,
+        endDay.day,
+        23,
+        59,
+        59,
+      ).millisecondsSinceEpoch;
+      final DateTime startDay = endDay.subtract(
+        const Duration(days: _initialDayTabsLookbackDays - 1),
+      );
+      final int startMillis = startDay.millisecondsSinceEpoch;
+      final days = await ScreenshotService.instance
+          .listAvailableDaysGlobalRange(
+            startMillis: startMillis,
+            endMillis: endMillis,
+          );
+      swDays.stop();
+      try {
+        print(
+          '[时间线] 查询可用日期(范围)耗时 ${swDays.elapsedMilliseconds} 毫秒 start=$startMillis end=$endMillis',
+        );
+      } catch (_) {}
       for (final m in days) {
         final String ds = (m['date'] as String?) ?? '';
-        final int count = (m['count'] as int?) ?? 0;
+        final int count = _readInt(m['count']);
         if (ds.isEmpty || count <= 0) continue;
         try {
           final parts = ds.split('-');
@@ -197,10 +235,12 @@ class _TimelinePageState extends State<TimelinePage>
 
     if (!mounted) return;
     setState(() {
-      // 完整日期列表按倒序返回（今天在前、越往后越早）
+      // 已加载日期列表按倒序（越靠前越新）
       _allDayTabs
         ..clear()
         ..addAll(tabs);
+      // 只要当前有数据，就允许尝试“加载更多”；当增量查询为空时再关闭
+      _hasMoreDayTabs = _allDayTabs.isNotEmpty;
 
       final int visibleCount = _allDayTabs.isEmpty
           ? 0
@@ -222,16 +262,22 @@ class _TimelinePageState extends State<TimelinePage>
         _tabController = null;
       }
     });
-    await _prefetchFirstPageForTab(_currentTabIndex);
+    await _reloadForCurrentTab(reset: true);
     // ignore: unawaited_futures
     _prefetchAdjacentTabs(_currentTabIndex);
-    await _reloadForCurrentTab(reset: true);
     sw.stop();
     try {
       print(
         '[时间线] 准备日期标签完成，耗时 ${sw.elapsedMilliseconds} 毫秒 标签数=${_dayTabs.length}',
       );
     } catch (_) {}
+  }
+
+  int _readInt(Object? v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString().trim()) ?? 0;
   }
 
   Future<void> _computeDayCountsConcurrently(
@@ -290,13 +336,24 @@ class _TimelinePageState extends State<TimelinePage>
 
   /// 当用户滑动到当前最后一个日期Tab附近时，尝试将可见窗口向前扩展14天
   void _expandDayTabsIfNeeded() {
+    // ignore: discarded_futures
+    _expandDayTabsIfNeededAsync();
+  }
+
+  Future<void> _expandDayTabsIfNeededAsync() async {
     if (!mounted) return;
     if (_isExpandingDayTabs) return;
-    if (_allDayTabs.isEmpty) return;
-    if (_dayTabs.length >= _allDayTabs.length) return; // 已展示全部日期
+    if (_dayTabs.isEmpty) return;
 
     _isExpandingDayTabs = true;
     try {
+      // 当前已展示到缓冲末尾时，先向前增量拉取一段日期Tab（再展开可见窗口）
+      if (_dayTabs.length >= _allDayTabs.length) {
+        if (!_hasMoreDayTabs) return;
+        final bool appended = await _appendOlderDayTabsToBuffer();
+        if (!appended) return;
+      }
+
       final int currentVisible = _dayTabs.length;
       final int targetVisible = math.min(
         _allDayTabs.length,
@@ -305,10 +362,10 @@ class _TimelinePageState extends State<TimelinePage>
       if (targetVisible <= currentVisible) return;
 
       final int currentIndex = _tabController?.index ?? _currentTabIndex;
-
       _tabController?.removeListener(_onTabChanged);
       _tabController?.dispose();
 
+      if (!mounted) return;
       setState(() {
         _dayTabs
           ..clear()
@@ -324,6 +381,83 @@ class _TimelinePageState extends State<TimelinePage>
     } finally {
       _isExpandingDayTabs = false;
     }
+  }
+
+  Future<bool> _appendOlderDayTabsToBuffer() async {
+    if (!mounted) return false;
+    if (_allDayTabs.isEmpty) return false;
+
+    final DateTime oldest = _allDayTabs.last.day;
+    final DateTime endDay = DateTime(
+      oldest.year,
+      oldest.month,
+      oldest.day,
+    ).subtract(const Duration(days: 1));
+    final int endMillis = DateTime(
+      endDay.year,
+      endDay.month,
+      endDay.day,
+      23,
+      59,
+      59,
+    ).millisecondsSinceEpoch;
+
+    // 处理“大空档”：若过去120天没有任何截图，但更早还有数据，则逐步扩大回溯窗口
+    int lookback = _appendDayTabsLookbackDays;
+    for (int attempt = 0; attempt < 4; attempt++) {
+      final int daysBack = lookback <= 0 ? 1 : lookback;
+      final DateTime startDay = DateTime(
+        endDay.year,
+        endDay.month,
+        endDay.day,
+      ).subtract(Duration(days: daysBack - 1));
+      final int startMillis = startDay.millisecondsSinceEpoch;
+
+      final List<Map<String, dynamic>> days = await ScreenshotService.instance
+          .listAvailableDaysGlobalRange(
+            startMillis: startMillis,
+            endMillis: endMillis,
+          );
+
+      final List<_DayTabInfo> tabs = <_DayTabInfo>[];
+      for (final m in days) {
+        final String ds = (m['date'] as String?) ?? '';
+        final int count = _readInt(m['count']);
+        if (ds.isEmpty || count <= 0) continue;
+        try {
+          final parts = ds.split('-');
+          if (parts.length != 3) continue;
+          final int y = int.parse(parts[0]);
+          final int mo = int.parse(parts[1]);
+          final int d = int.parse(parts[2]);
+          final DateTime day = DateTime(y, mo, d);
+          final int start = DateTime(y, mo, d).millisecondsSinceEpoch;
+          final int end = DateTime(y, mo, d, 23, 59, 59).millisecondsSinceEpoch;
+          tabs.add(
+            _DayTabInfo(
+              day: day,
+              startMillis: start,
+              endMillis: end,
+              count: count,
+            ),
+          );
+        } catch (_) {}
+      }
+      if (tabs.isNotEmpty) {
+        if (!mounted) return false;
+        setState(() {
+          _allDayTabs.addAll(tabs);
+          _hasMoreDayTabs = true;
+        });
+        return true;
+      }
+
+      if (lookback >= 3650) break; // 约10年
+      lookback = math.min(3650, lookback * 3);
+    }
+
+    if (mounted) setState(() => _hasMoreDayTabs = false);
+    return false;
   }
 
   Future<void> _reloadForCurrentTab({bool reset = false}) async {
@@ -401,24 +535,30 @@ class _TimelinePageState extends State<TimelinePage>
   /// 顶部刷新：重载当前日期的时间线数据并更新计数
   Future<void> _refresh() async {
     if (!mounted) return;
-    if (_dayTabs.isEmpty ||
-        _dateStartMillis == null ||
-        _dateEndMillis == null) {
-      await _prepareDayTabs();
-      return;
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      if (_dayTabs.isEmpty ||
+          _dateStartMillis == null ||
+          _dateEndMillis == null) {
+        await _prepareDayTabs();
+        return;
+      }
+      final int idx = _currentTabIndex;
+      setState(() {
+        _screenshots.clear();
+        _pageOffset = 0;
+        _hasMore = true;
+        _isLoadingMore = false;
+        _tabCache[idx] = <ScreenshotRecord>[];
+        _tabOffset[idx] = 0;
+        _tabHasMore[idx] = true;
+      });
+      await _refreshCurrentTabCount();
+      await _reloadForCurrentTab(reset: true);
+    } finally {
+      _refreshing = false;
     }
-    final int idx = _currentTabIndex;
-    setState(() {
-      _screenshots.clear();
-      _pageOffset = 0;
-      _hasMore = true;
-      _isLoadingMore = false;
-      _tabCache[idx] = <ScreenshotRecord>[];
-      _tabOffset[idx] = 0;
-      _tabHasMore[idx] = true;
-    });
-    await _refreshCurrentTabCount();
-    await _reloadForCurrentTab(reset: true);
   }
 
   /// 刷新当前Tab的计数标签
@@ -440,152 +580,257 @@ class _TimelinePageState extends State<TimelinePage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 36,
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(AppLocalizations.of(context).timelineTitle),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refresh,
-            tooltip: AppLocalizations.of(context).actionRefresh,
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _dayTabs.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacing6,
+    return ValueListenableBuilder<ReplayExportTask?>(
+      valueListenable: ReplayExportService.instance.exportTaskNotifier,
+      builder: (context, task, _) {
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+        final l10n = AppLocalizations.of(context);
+
+        final Widget titleWidget;
+        if (task == null) {
+          titleWidget = Text(l10n.timelineTitle);
+        } else {
+          final String rangeText = _formatReplayExportRange(
+            task.start,
+            task.end,
+          );
+          titleWidget = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    cs.onSurfaceVariant,
+                  ),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              Flexible(
+                child: Text(
+                  l10n.timelineReplayGeneratingRange(rangeText),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        return Scaffold(
+          appBar: AppBar(
+            toolbarHeight: 36,
+            centerTitle: true,
+            automaticallyImplyLeading: false,
+            title: Padding(
+              padding: const EdgeInsets.only(top: 2.0),
+              child: titleWidget,
+            ),
+            actions: [
+              if (Platform.isAndroid)
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline),
+                  onPressed: _showReplaySheet,
+                  tooltip: l10n.timelineReplay,
+                ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _refresh,
+                tooltip: l10n.actionRefresh,
+              ),
+            ],
+          ),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _dayTabs.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing6,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 64,
+                          color: AppTheme.mutedForeground.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: AppTheme.spacing4),
+                        Text(
+                          l10n.noScreenshotsTitle,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.mutedForeground,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppTheme.spacing2),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 300),
+                          child: Text(
+                            l10n.noScreenshotsSubtitle,
+                            style: const TextStyle(
+                              color: AppTheme.mutedForeground,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.photo_library_outlined,
-                      size: 64,
-                      color: AppTheme.mutedForeground.withOpacity(0.5),
+                    // 与截图列表一致的Tab样式与内边距
+                    Builder(
+                      builder: (context) {
+                        if (_dayTabs.isEmpty || _tabController == null) {
+                          return const SizedBox(height: 32);
+                        }
+                        final bool hasMoreTabs =
+                            _dayTabs.length < _allDayTabs.length ||
+                            _hasMoreDayTabs;
+                        return SizedBox(
+                          height: 32,
+                          child: Transform.translate(
+                            offset: const Offset(0, -2),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: ScreenshotStyleTabBar(
+                                    controller: _tabController,
+                                    // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
+                                    padding: const EdgeInsets.only(
+                                      left: AppTheme.spacing2,
+                                    ),
+                                    // 与截图列表一致：标签水平留白适中
+                                    labelPadding: const EdgeInsets.symmetric(
+                                      horizontal: AppTheme.spacing4,
+                                    ),
+                                    indicatorInsets: const EdgeInsets.symmetric(
+                                      horizontal: 4.0,
+                                    ),
+                                    tabs: _dayTabs.map((t) {
+                                      final l10n = AppLocalizations.of(context);
+                                      final text = _DayTabInfo._isToday(t.day)
+                                          ? l10n.dayTabToday(t.count)
+                                          : (_DayTabInfo._isYesterday(t.day)
+                                                ? l10n.dayTabYesterday(t.count)
+                                                : l10n.dayTabMonthDayCount(
+                                                    t.day.month,
+                                                    t.day.day,
+                                                    t.count,
+                                                  ));
+                                      return Tab(text: text);
+                                    }).toList(),
+                                  ),
+                                ),
+                                if (hasMoreTabs)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: AppTheme.spacing2,
+                                    ),
+                                    child: TextButton.icon(
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: AppTheme.spacing2,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      onPressed: _expandDayTabsIfNeeded,
+                                      icon: const Icon(
+                                        Icons.more_horiz,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        AppLocalizations.of(context).loadMore,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: AppTheme.spacing4),
-                    Text(
-                      AppLocalizations.of(context).noScreenshotsTitle,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.mutedForeground,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 300),
-                      child: Text(
-                        AppLocalizations.of(context).noScreenshotsSubtitle,
-                        style: const TextStyle(color: AppTheme.mutedForeground),
-                        textAlign: TextAlign.center,
+                    // 日期Tab与内容之间增加1px底部外边距
+                    const SizedBox(height: 1),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: const ClampingScrollPhysics(),
+                        children: _dayTabs
+                            .asMap()
+                            .entries
+                            .map(
+                              (entry) => Builder(
+                                builder: (_) => _buildGridForIndex(entry.key),
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
                   ],
                 ),
-              ),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 与截图列表一致的Tab样式与内边距
-                Builder(
-                  builder: (context) {
-                    if (_dayTabs.isEmpty || _tabController == null) {
-                      return const SizedBox(height: 32);
-                    }
-                    final bool hasMoreTabs =
-                        _dayTabs.length < _allDayTabs.length;
-                    return SizedBox(
-                      height: 32,
-                      child: Transform.translate(
-                        offset: const Offset(0, -2),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ScreenshotStyleTabBar(
-                                controller: _tabController,
-                                // 与截图列表一致：左侧少量起始内边距，去除额外垂直内边距
-                                padding: const EdgeInsets.only(
-                                  left: AppTheme.spacing2,
-                                ),
-                                // 与截图列表一致：标签水平留白适中
-                                labelPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppTheme.spacing4,
-                                ),
-                                indicatorInsets: const EdgeInsets.symmetric(
-                                  horizontal: 4.0,
-                                ),
-                                tabs: _dayTabs.map((t) {
-                                  final l10n = AppLocalizations.of(context);
-                                  final text = _DayTabInfo._isToday(t.day)
-                                      ? l10n.dayTabToday(t.count)
-                                      : (_DayTabInfo._isYesterday(t.day)
-                                            ? l10n.dayTabYesterday(t.count)
-                                            : l10n.dayTabMonthDayCount(
-                                                t.day.month,
-                                                t.day.day,
-                                                t.count,
-                                              ));
-                                  return Tab(text: text);
-                                }).toList(),
-                              ),
-                            ),
-                            if (hasMoreTabs)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: AppTheme.spacing2,
-                                ),
-                                child: TextButton.icon(
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppTheme.spacing2,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  onPressed: _expandDayTabsIfNeeded,
-                                  icon: const Icon(Icons.more_horiz, size: 18),
-                                  label: Text(
-                                    AppLocalizations.of(context).loadMore,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                // 日期Tab与内容之间增加1px底部外边距
-                const SizedBox(height: 1),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    physics: const ClampingScrollPhysics(),
-                    children: _dayTabs
-                        .asMap()
-                        .entries
-                        .map(
-                          (entry) => Builder(
-                            builder: (_) => _buildGridForIndex(entry.key),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-              ],
-            ),
+        );
+      },
+    );
+  }
+
+  String _formatReplayExportRange(DateTime start, DateTime end) {
+    final Locale locale = Localizations.localeOf(context);
+    final bool isZh = locale.languageCode == 'zh';
+    final String localeName = locale.toString();
+
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    final bool isSameDay = sameDay(start, end);
+    final bool isFullDay =
+        isSameDay &&
+        start.hour == 0 &&
+        start.minute == 0 &&
+        end.hour == 23 &&
+        end.minute == 59;
+
+    final DateFormat dayFmt = isZh
+        ? DateFormat('M月d日')
+        : DateFormat.MMMd(localeName);
+    if (isFullDay) return dayFmt.format(start);
+
+    if (isSameDay) {
+      final DateFormat timeFmt = isZh
+          ? DateFormat('HH:mm')
+          : DateFormat.Hm(localeName);
+      return '${dayFmt.format(start)} ${timeFmt.format(start)}-${timeFmt.format(end)}';
+    }
+
+    return '${dayFmt.format(start)}-${dayFmt.format(end)}';
+  }
+
+  Future<void> _showReplaySheet() async {
+    if (_dateStartMillis == null || _dateEndMillis == null) return;
+    final DateTime dayStart = DateTime.fromMillisecondsSinceEpoch(
+      _dateStartMillis!,
+    );
+    final DateTime dayEnd = DateTime.fromMillisecondsSinceEpoch(
+      _dateEndMillis!,
+    );
+    await TimelineReplaySheet.show(
+      context: context,
+      initialStart: dayStart,
+      initialEnd: dayEnd,
+      dayStart: dayStart,
+      dayEnd: dayEnd,
     );
   }
 
@@ -1377,8 +1622,9 @@ class _TimelinePageState extends State<TimelinePage>
 
   Widget _buildItem(ScreenshotRecord screenshot, int index) {
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool isNsfw =
-        NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+    final bool isNsfw = NsfwPreferenceService.instance.shouldMaskCached(
+      screenshot,
+    );
     final bool nsfwMasked = _privacyMode && isNsfw;
 
     final content = ScreenshotItemWidget(

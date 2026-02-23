@@ -83,6 +83,7 @@ dependencies:
   talker: ^5.0.2
   talker_flutter: ^5.0.2
   sentry_flutter: ^8.14.2
+  omni_datetime_picker: ^2.3.1
 
 
 

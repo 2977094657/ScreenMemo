@@ -69,6 +69,7 @@ import kotlin.math.max
 import kotlin.math.min
 import com.fqyw.screen_memo.OutputFileLogger
 import com.fqyw.screen_memo.storage.StorageAnalyzer
+import com.fqyw.screen_memo.replay.ReplayVideoComposer
 
 class MainActivity : FlutterActivity() {
 
@@ -91,6 +92,7 @@ class MainActivity : FlutterActivity() {
     private var activityCreateTs: Long = 0L
     private var splashDialog: Dialog? = null
     private val outputCacheDirTokens = setOf("cache", "tmp", "temp", ".thumbnails")
+    private val replayExecutor = Executors.newSingleThreadExecutor()
     
     private val accessibilityServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -642,6 +644,48 @@ class MainActivity : FlutterActivity() {
                     val subDir = call.argument<String>("subDir")
                     val path = getInternalFilesDirPath(subDir)
                     result.success(path)
+                }
+                "composeReplayVideo" -> {
+                    val framesJsonlPath = call.argument<String>("framesJsonlPath") ?: ""
+                    val outputPath = call.argument<String>("outputPath") ?: ""
+                    val fps = call.argument<Int>("fps") ?: 24
+                    val shortSide = call.argument<Int>("shortSide") ?: 720
+                    val quality = call.argument<String>("quality") ?: "medium"
+                    val overlayEnabled = call.argument<Boolean>("overlayEnabled") ?: true
+                    val appProgressBarEnabled = call.argument<Boolean>("appProgressBarEnabled") ?: false
+                    val appProgressBarPosition = call.argument<String>("appProgressBarPosition") ?: "right"
+                    val nsfwMode = call.argument<String>("nsfwMode") ?: "mask"
+                    val nsfwTitle = call.argument<String>("nsfwTitle")
+                    val nsfwSubtitle = call.argument<String>("nsfwSubtitle")
+
+                    if (framesJsonlPath.isBlank() || outputPath.isBlank()) {
+                        result.error("invalid_args", "framesJsonlPath/outputPath are required", null)
+                        return@setMethodCallHandler
+                    }
+
+                    val pendingResult = result
+                    replayExecutor.execute {
+                        try {
+                            val map = ReplayVideoComposer.compose(
+                                context = applicationContext,
+                                framesJsonlPath = framesJsonlPath,
+                                outputPath = outputPath,
+                                fps = fps,
+                                shortSide = shortSide,
+                                quality = quality,
+                                overlayEnabled = overlayEnabled,
+                                appProgressBarEnabled = appProgressBarEnabled,
+                                appProgressBarPosition = appProgressBarPosition,
+                                nsfwMode = nsfwMode,
+                                nsfwTitle = nsfwTitle,
+                                nsfwSubtitle = nsfwSubtitle,
+                            )
+                            mainHandler.post { pendingResult.success(map) }
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "composeReplayVideo 失败", e)
+                            mainHandler.post { pendingResult.error("compose_failed", e.message, null) }
+                        }
+                    }
                 }
                 "getDetailedStorageStats" -> {
                     val pendingResult = result

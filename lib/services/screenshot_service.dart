@@ -65,39 +65,39 @@ class ScreenshotService {
 
   bool _compressionInFlight = false;
   void Function(CompressionProgress)? _compressionProgressListener;
-String? _activeCompressionPackage;
-String? _listenerPackageFilter;
-CompressionProgress? _latestCompressionProgress;
-final Map<String, CompressionProgress> _latestCompressionProgressByPackage =
-    <String, CompressionProgress>{};
+  String? _activeCompressionPackage;
+  String? _listenerPackageFilter;
+  CompressionProgress? _latestCompressionProgress;
+  final Map<String, CompressionProgress> _latestCompressionProgressByPackage =
+      <String, CompressionProgress>{};
 
-CompressionProgress? latestCompressionProgressFor(String packageName) {
-  return _latestCompressionProgressByPackage[packageName];
-}
+  CompressionProgress? latestCompressionProgressFor(String packageName) {
+    return _latestCompressionProgressByPackage[packageName];
+  }
 
-bool compressionInFlightFor(String packageName) {
-  return _compressionInFlight && _activeCompressionPackage == packageName;
-}
+  bool compressionInFlightFor(String packageName) {
+    return _compressionInFlight && _activeCompressionPackage == packageName;
+  }
 
-void attachCompressionProgressListener(
-  void Function(CompressionProgress)? listener, {
-  bool replayLatest = true,
-  String? packageName,
-}) {
-  _compressionProgressListener = listener;
-  _listenerPackageFilter = packageName;
-  if (listener != null && replayLatest && packageName != null) {
-    final CompressionProgress? latest =
-        _latestCompressionProgressByPackage[packageName];
-    if (latest != null) {
-      try {
-        listener(latest);
-      } catch (e) {
-        print('重放压缩进度回调失败: $e');
+  void attachCompressionProgressListener(
+    void Function(CompressionProgress)? listener, {
+    bool replayLatest = true,
+    String? packageName,
+  }) {
+    _compressionProgressListener = listener;
+    _listenerPackageFilter = packageName;
+    if (listener != null && replayLatest && packageName != null) {
+      final CompressionProgress? latest =
+          _latestCompressionProgressByPackage[packageName];
+      if (latest != null) {
+        try {
+          listener(latest);
+        } catch (e) {
+          print('重放压缩进度回调失败: $e');
+        }
       }
     }
   }
-}
 
   /// 检查截屏服务是否正在运行
   bool get isRunning => _isRunning;
@@ -794,6 +794,24 @@ void attachCompressionProgressListener(
     }
   }
 
+  /// 全局：按 bucket 抽样获取给定时间范围内的截图帧（所有应用，按时间正序）
+  Future<List<ScreenshotRecord>> getGlobalScreenshotsBucketedBetween({
+    required int startMillis,
+    required int endMillis,
+    required int bucketMillis,
+  }) async {
+    try {
+      return await _database.getGlobalScreenshotsBucketedBetween(
+        startMillis: startMillis,
+        endMillis: endMillis,
+        bucketMillis: bucketMillis,
+      );
+    } catch (e) {
+      print('获取全局 bucket 抽样截图失败: $e');
+      return [];
+    }
+  }
+
   /// 获取指定应用在时间范围内的截图列表（按时间倒序，支持分页）
   Future<List<ScreenshotRecord>> getScreenshotsByAppBetween(
     String appPackageName, {
@@ -848,8 +866,7 @@ void attachCompressionProgressListener(
       return result;
     }
 
-    final Map<int, ScreenshotRecord> recordByGid =
-        <int, ScreenshotRecord>{};
+    final Map<int, ScreenshotRecord> recordByGid = <int, ScreenshotRecord>{};
     final List<Map<String, dynamic>> tasks = <Map<String, dynamic>>[];
     int aggregatedOriginalBytes = 0;
     for (final ScreenshotRecord record in records) {
@@ -874,18 +891,24 @@ void attachCompressionProgressListener(
     }
 
     final Stopwatch stopwatch = Stopwatch()..start();
-    final int targetBytes =
-        ((targetSizeKb * 1024).clamp(1024, 1024 * 1024 * 20)).toInt();
-    final String normalizedFormat =
-        (imageFormat ?? 'webp_lossy').toLowerCase().trim();
+    final int targetBytes = ((targetSizeKb * 1024).clamp(
+      1024,
+      1024 * 1024 * 20,
+    )).toInt();
+    final String normalizedFormat = (imageFormat ?? 'webp_lossy')
+        .toLowerCase()
+        .trim();
     final bool wantTarget = useTargetSize;
-    final bool formatIsLossy = normalizedFormat == 'webp_lossy' ||
+    final bool formatIsLossy =
+        normalizedFormat == 'webp_lossy' ||
         normalizedFormat == 'webp' ||
         normalizedFormat == 'jpeg' ||
         normalizedFormat == 'jpg';
-    final String finalFormat =
-        wantTarget && !formatIsLossy ? 'webp_lossy' : normalizedFormat;
-    final bool finalUseTarget = wantTarget &&
+    final String finalFormat = wantTarget && !formatIsLossy
+        ? 'webp_lossy'
+        : normalizedFormat;
+    final bool finalUseTarget =
+        wantTarget &&
         (finalFormat == 'webp_lossy' ||
             finalFormat == 'webp' ||
             finalFormat == 'jpeg' ||
@@ -913,17 +936,17 @@ void attachCompressionProgressListener(
 
     Map<String, dynamic> response = const <String, dynamic>{};
     try {
-      final Map<String, dynamic>? raw =
-          await _channel.invokeMapMethod<String, dynamic>(
-        'compressScreenshotsBatch',
-        <String, dynamic>{
-          'tasks': tasks,
-          'format': finalFormat,
-          'targetBytes': targetBytes,
-          'quality': finalQuality,
-          'useTargetSize': finalUseTarget,
-        },
-      );
+      final Map<String, dynamic>? raw = await _channel
+          .invokeMapMethod<String, dynamic>(
+            'compressScreenshotsBatch',
+            <String, dynamic>{
+              'tasks': tasks,
+              'format': finalFormat,
+              'targetBytes': targetBytes,
+              'quality': finalQuality,
+              'useTargetSize': finalUseTarget,
+            },
+          );
       if (raw != null) {
         response = raw;
       }
@@ -977,13 +1000,13 @@ void attachCompressionProgressListener(
 
     stopwatch.stop();
 
-    final int fallbackBefore = successesRaw.fold<int>(
-      0,
-      (previousValue, element) {
-        if (element is! Map) return previousValue;
-        return previousValue + _coerceToInt(element['originalSize']);
-      },
-    );
+    final int fallbackBefore = successesRaw.fold<int>(0, (
+      previousValue,
+      element,
+    ) {
+      if (element is! Map) return previousValue;
+      return previousValue + _coerceToInt(element['originalSize']);
+    });
     final int totalBeforeBytes = rawTotalBefore > 0
         ? rawTotalBefore
         : (fallbackBefore > 0 ? fallbackBefore : aggregatedOriginalBytes);
@@ -1003,8 +1026,9 @@ void attachCompressionProgressListener(
       skipped: skippedCount,
       failed: failedCount,
       savedBytes: safeSavedBytes,
-      durationMillis:
-          durationMillis == 0 ? stopwatch.elapsedMilliseconds : durationMillis,
+      durationMillis: durationMillis == 0
+          ? stopwatch.elapsedMilliseconds
+          : durationMillis,
       totalBeforeBytes: totalBeforeBytes,
       totalAfterBytes: totalAfterBytes,
     );
@@ -1277,10 +1301,7 @@ void attachCompressionProgressListener(
       // ignore: unawaited_futures
       FlutterLogger.error('SERVICE.deleteAllScreenshotsForApp 异常: $e');
       // ignore: unawaited_futures
-      FlutterLogger.nativeError(
-        'SERVICE',
-        'deleteAllScreenshotsForApp 异常: $e',
-      );
+      FlutterLogger.nativeError('SERVICE', 'deleteAllScreenshotsForApp 异常: $e');
       return false;
     }
   }
@@ -1289,9 +1310,7 @@ void attachCompressionProgressListener(
   Future<bool> deleteScreenshot(int id, String packageName) async {
     try {
       // ignore: unawaited_futures
-      FlutterLogger.info(
-        'SERVICE.deleteScreenshot 开始 id=$id 包名=$packageName',
-      );
+      FlutterLogger.info('SERVICE.deleteScreenshot 开始 id=$id 包名=$packageName');
       // ignore: unawaited_futures
       FlutterLogger.nativeInfo(
         'SERVICE',
@@ -1763,6 +1782,30 @@ void attachCompressionProgressListener(
     }
   }
 
+  /// 获取全局最新截图时间戳（毫秒）
+  Future<int?> getGlobalLatestCaptureTimeMillis() async {
+    try {
+      return await _database.getGlobalLatestCaptureTimeMillis();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 全局列出指定时间范围内所有有数据的日期（本地时区），按日期倒序
+  Future<List<Map<String, dynamic>>> listAvailableDaysGlobalRange({
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    try {
+      return await _database.listAvailableDaysGlobalRange(
+        startMillis: startMillis,
+        endMillis: endMillis,
+      );
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   /// 获取全局可用日期数量（缓存优先，避免频繁全库统计）
   Future<int> getAvailableDayCountCachedFirst({
     bool forceRefresh = false,
@@ -1888,15 +1931,15 @@ class CompressionResult extends CompressionProgress {
   });
 
   const CompressionResult.empty()
-      : durationMillis = 0,
-        totalBeforeBytes = 0,
-        totalAfterBytes = 0,
-        super(
-          total: 0,
-          handled: 0,
-          success: 0,
-          skipped: 0,
-          failed: 0,
-          savedBytes: 0,
-        );
+    : durationMillis = 0,
+      totalBeforeBytes = 0,
+      totalAfterBytes = 0,
+      super(
+        total: 0,
+        handled: 0,
+        success: 0,
+        skipped: 0,
+        failed: 0,
+        savedBytes: 0,
+      );
 }

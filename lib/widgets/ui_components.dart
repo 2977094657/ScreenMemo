@@ -24,8 +24,8 @@ class UINotifier {
     _progressNotifier = null;
   }
 
-  static void _showTopToast(
-    BuildContext context, {
+  static void _showTopToastWithOverlay(
+    OverlayState overlay, {
     required String message,
     required Color textColor,
     required Color backgroundColor,
@@ -37,9 +37,6 @@ class UINotifier {
   }) {
     // 移除已有吐司，避免堆叠
     _removeCurrent();
-
-    final overlay = Overlay.of(context);
-    if (overlay == null) return;
 
     final entry = OverlayEntry(
       builder: (ctx) => _TopToast(
@@ -61,7 +58,39 @@ class UINotifier {
     _currentEntry = entry;
   }
 
-  static void success(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+  static void _showTopToast(
+    BuildContext context, {
+    required String message,
+    required Color textColor,
+    required Color backgroundColor,
+    Color? borderColor,
+    bool outlined = true,
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    final overlay = Overlay.of(context);
+    if (overlay == null) return;
+    _showTopToastWithOverlay(
+      overlay,
+      message: message,
+      textColor: textColor,
+      backgroundColor: backgroundColor,
+      borderColor: borderColor,
+      outlined: outlined,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void success(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     // 统一 Toast 样式（更透明的半透明背景）
     const Color bg = Color(0xCC323232);
     _showTopToast(
@@ -77,7 +106,34 @@ class UINotifier {
     );
   }
 
-  static void info(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+  static void successOnOverlay(
+    OverlayState overlay,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    const Color bg = Color(0xCC323232);
+    _showTopToastWithOverlay(
+      overlay,
+      message: message,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
+      duration: duration ?? const Duration(seconds: 2),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void info(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
@@ -92,7 +148,34 @@ class UINotifier {
     );
   }
 
-  static void error(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+  static void infoOnOverlay(
+    OverlayState overlay,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    const Color bg = Color(0xCC323232);
+    _showTopToastWithOverlay(
+      overlay,
+      message: message,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
+      duration: duration ?? const Duration(seconds: 2),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void error(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
@@ -107,10 +190,58 @@ class UINotifier {
     );
   }
 
-  static void warning(BuildContext context, String message, {Duration? duration, String? actionLabel, VoidCallback? onAction}) {
+  static void errorOnOverlay(
+    OverlayState overlay,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    const Color bg = Color(0xCC323232);
+    _showTopToastWithOverlay(
+      overlay,
+      message: message,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
+      duration: duration ?? const Duration(seconds: 3),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void warning(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     const Color bg = Color(0xCC323232);
     _showTopToast(
       context,
+      message: message,
+      textColor: Colors.white,
+      backgroundColor: bg,
+      borderColor: null,
+      outlined: false,
+      duration: duration ?? const Duration(seconds: 3),
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  static void warningOnOverlay(
+    OverlayState overlay,
+    String message, {
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    const Color bg = Color(0xCC323232);
+    _showTopToastWithOverlay(
+      overlay,
       message: message,
       textColor: Colors.white,
       backgroundColor: bg,
@@ -123,7 +254,11 @@ class UINotifier {
   }
 
   /// 居中吐司：用于误触提示等场景，扁平无阴影，轻圆角
-  static void center(BuildContext context, String message, {Duration? duration}) {
+  static void center(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+  }) {
     // 移除已有吐司，避免堆叠
     _removeCurrent();
 
@@ -143,10 +278,21 @@ class UINotifier {
   }
 
   // ===== 持续进度吐司（手动更新与关闭） =====
-  static void showProgress(BuildContext context, {required String message, double? progress}) {
+  static void showProgress(
+    BuildContext context, {
+    required String message,
+    double? progress,
+  }) {
     final overlay = Overlay.of(context);
     if (overlay == null) return;
+    showProgressOnOverlay(overlay, message: message, progress: progress);
+  }
 
+  static void showProgressOnOverlay(
+    OverlayState overlay, {
+    required String message,
+    double? progress,
+  }) {
     final initial = _ProgressState(message: message, progress: progress);
     if (_progressNotifier == null) {
       _progressNotifier = ValueNotifier<_ProgressState>(initial);
@@ -206,7 +352,8 @@ class _TopToast extends StatefulWidget {
   State<_TopToast> createState() => _TopToastState();
 }
 
-class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixin {
+class _TopToastState extends State<_TopToast>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -215,9 +362,15 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _slide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(_fade);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.08),
+      end: Offset.zero,
+    ).animate(_fade);
     _controller.forward();
     _timer = Timer(widget.displayDuration, _startDismiss);
   }
@@ -293,7 +446,10 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
                                 _startDismiss();
                               },
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
@@ -336,7 +492,8 @@ class _CenterToast extends StatefulWidget {
   State<_CenterToast> createState() => _CenterToastState();
 }
 
-class _CenterToastState extends State<_CenterToast> with SingleTickerProviderStateMixin {
+class _CenterToastState extends State<_CenterToast>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fade;
   Timer? _timer;
@@ -344,7 +501,10 @@ class _CenterToastState extends State<_CenterToast> with SingleTickerProviderSta
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 160));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+    );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     _controller.forward();
     _timer = Timer(widget.displayDuration, _startDismiss);
@@ -388,9 +548,9 @@ class _CenterToastState extends State<_CenterToast> with SingleTickerProviderSta
                     widget.message,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -452,14 +612,20 @@ class _ProgressToastState extends State<_ProgressToast> {
                       children: [
                         Text(
                           message,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
                         const SizedBox(height: AppTheme.spacing2),
                         if (prog != null)
-                          UIProgress(value: prog, backgroundColor: Colors.white24, valueColor: Colors.white, height: 6)
+                          UIProgress(
+                            value: prog,
+                            backgroundColor: Colors.white24,
+                            valueColor: Colors.white,
+                            height: 6,
+                          )
                         else
                           const SizedBox(
                             height: 6,
@@ -507,7 +673,7 @@ class UIButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget button;
-    
+
     switch (variant) {
       case UIButtonVariant.primary:
         button = _buildPrimaryButton();
@@ -525,106 +691,116 @@ class UIButton extends StatelessWidget {
         button = _buildDestructiveButton();
         break;
     }
-    
+
     if (fullWidth) {
       return SizedBox(width: double.infinity, child: button);
     }
-    
+
     return button;
   }
-  
+
   Widget _buildPrimaryButton() {
-    return Builder(builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: cs.primary,
-          foregroundColor: cs.onPrimary,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return ElevatedButton(
+          onPressed: loading ? null : onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: cs.primary,
+            foregroundColor: cs.onPrimary,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            padding: _getPadding(),
           ),
-          padding: _getPadding(),
-        ),
-        child: _buildButtonContent(),
-      );
-    });
+          child: _buildButtonContent(),
+        );
+      },
+    );
   }
-  
+
   Widget _buildSecondaryButton() {
-    return Builder(builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: cs.surfaceVariant,
-          foregroundColor: cs.onSurfaceVariant,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return ElevatedButton(
+          onPressed: loading ? null : onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: cs.surfaceVariant,
+            foregroundColor: cs.onSurfaceVariant,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            padding: _getPadding(),
           ),
-          padding: _getPadding(),
-        ),
-        child: _buildButtonContent(),
-      );
-    });
+          child: _buildButtonContent(),
+        );
+      },
+    );
   }
-  
+
   Widget _buildOutlineButton() {
-    return Builder(builder: (context) {
-      final theme = Theme.of(context);
-      return OutlinedButton(
-        onPressed: loading ? null : onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface,
-          side: BorderSide(color: theme.colorScheme.outline, width: 1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        return OutlinedButton(
+          onPressed: loading ? null : onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.colorScheme.onSurface,
+            side: BorderSide(color: theme.colorScheme.outline, width: 1),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            padding: _getPadding(),
           ),
-          padding: _getPadding(),
-        ),
-        child: _buildButtonContent(),
-      );
-    });
+          child: _buildButtonContent(),
+        );
+      },
+    );
   }
-  
+
   Widget _buildGhostButton() {
-    return Builder(builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return TextButton(
-        onPressed: loading ? null : onPressed,
-        style: TextButton.styleFrom(
-          foregroundColor: cs.onSurface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return TextButton(
+          onPressed: loading ? null : onPressed,
+          style: TextButton.styleFrom(
+            foregroundColor: cs.onSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            padding: _getPadding(),
           ),
-          padding: _getPadding(),
-        ),
-        child: _buildButtonContent(),
-      );
-    });
+          child: _buildButtonContent(),
+        );
+      },
+    );
   }
-  
+
   Widget _buildDestructiveButton() {
-    return Builder(builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: cs.error,
-          foregroundColor: cs.onError,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    return Builder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return ElevatedButton(
+          onPressed: loading ? null : onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: cs.error,
+            foregroundColor: cs.onError,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            padding: _getPadding(),
           ),
-          padding: _getPadding(),
-        ),
-        child: _buildButtonContent(),
-      );
-    });
+          child: _buildButtonContent(),
+        );
+      },
+    );
   }
-  
+
   Widget _buildButtonContent() {
     if (loading) {
       return SizedBox(
@@ -636,25 +812,21 @@ class UIButton extends StatelessWidget {
         ),
       );
     }
-    
+
     if (icon != null) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: _getIconSize(),
-            width: _getIconSize(),
-            child: icon,
-          ),
+          SizedBox(height: _getIconSize(), width: _getIconSize(), child: icon),
           const SizedBox(width: AppTheme.spacing2),
           Text(text, style: TextStyle(fontSize: _getFontSize())),
         ],
       );
     }
-    
+
     return Text(text, style: TextStyle(fontSize: _getFontSize()));
   }
-  
+
   EdgeInsets _getPadding() {
     switch (size) {
       case UIButtonSize.small:
@@ -674,7 +846,7 @@ class UIButton extends StatelessWidget {
         );
     }
   }
-  
+
   double _getFontSize() {
     switch (size) {
       case UIButtonSize.small:
@@ -685,7 +857,7 @@ class UIButton extends StatelessWidget {
         return AppTheme.fontSizeBase;
     }
   }
-  
+
   double _getIconSize() {
     switch (size) {
       case UIButtonSize.small:
@@ -698,19 +870,9 @@ class UIButton extends StatelessWidget {
   }
 }
 
-enum UIButtonVariant {
-  primary,
-  secondary,
-  outline,
-  ghost,
-  destructive,
-}
+enum UIButtonVariant { primary, secondary, outline, ghost, destructive }
 
-enum UIButtonSize {
-  small,
-  medium,
-  large,
-}
+enum UIButtonSize { small, medium, large }
 
 /// shadcn/ui风格的卡片组件
 class UICard extends StatelessWidget {
@@ -729,21 +891,25 @@ class UICard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget card = Builder(builder: (context) {
-      final theme = Theme.of(context);
-      final cardColor = theme.cardTheme.color ?? theme.colorScheme.surface;
-      final borderColor = theme.colorScheme.outline;
-      return Container(
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          border: showBorder ? Border.all(color: borderColor, width: 1) : null,
-        ),
-        padding: padding ?? const EdgeInsets.all(AppTheme.spacing6),
-        child: child,
-      );
-    });
-    
+    Widget card = Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        final cardColor = theme.cardTheme.color ?? theme.colorScheme.surface;
+        final borderColor = theme.colorScheme.outline;
+        return Container(
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            border: showBorder
+                ? Border.all(color: borderColor, width: 1)
+                : null,
+          ),
+          padding: padding ?? const EdgeInsets.all(AppTheme.spacing6),
+          child: child,
+        );
+      },
+    );
+
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
@@ -751,7 +917,7 @@ class UICard extends StatelessWidget {
         child: card,
       );
     }
-    
+
     return card;
   }
 }
@@ -773,26 +939,28 @@ class UIProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Builder(builder: (context) {
-      final cs = Theme.of(context).colorScheme;
-      return Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: backgroundColor ?? cs.surfaceVariant,
-          borderRadius: BorderRadius.circular(height / 2),
-        ),
-        child: FractionallySizedBox(
-          alignment: Alignment.centerLeft,
-          widthFactor: value.clamp(0.0, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: valueColor ?? cs.primary,
-              borderRadius: BorderRadius.circular(height / 2),
+    return Builder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return Container(
+          height: height,
+          decoration: BoxDecoration(
+            color: backgroundColor ?? cs.surfaceVariant,
+            borderRadius: BorderRadius.circular(height / 2),
+          ),
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: value.clamp(0.0, 1.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: valueColor ?? cs.primary,
+                borderRadius: BorderRadius.circular(height / 2),
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
@@ -812,7 +980,7 @@ class UIBadge extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     Color backgroundColor;
     Color textColor;
-    
+
     switch (variant) {
       case UIBadgeVariant.primary:
         backgroundColor = cs.primary;
@@ -835,7 +1003,7 @@ class UIBadge extends StatelessWidget {
         textColor = cs.onSurface;
         break;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -860,13 +1028,7 @@ class UIBadge extends StatelessWidget {
   }
 }
 
-enum UIBadgeVariant {
-  primary,
-  secondary,
-  success,
-  destructive,
-  outline,
-}
+enum UIBadgeVariant { primary, secondary, success, destructive, outline }
 
 /// shadcn/ui风格的分隔符组件
 class UISeparator extends StatelessWidget {
@@ -874,23 +1036,20 @@ class UISeparator extends StatelessWidget {
   final double? width;
   final Color? color;
 
-  const UISeparator({
-    super.key,
-    this.height,
-    this.width,
-    this.color,
-  });
+  const UISeparator({super.key, this.height, this.width, this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Builder(builder: (context) {
-      final outline = Theme.of(context).colorScheme.outline;
-      return Container(
-        height: height ?? 1,
-        width: width,
-        color: color ?? outline,
-      );
-    });
+    return Builder(
+      builder: (context) {
+        final outline = Theme.of(context).colorScheme.outline;
+        return Container(
+          height: height ?? 1,
+          width: width,
+          color: color ?? outline,
+        );
+      },
+    );
   }
 }
 
@@ -917,11 +1076,7 @@ class UISheetSurface extends StatelessWidget {
       ),
       child: ColoredBox(
         color: cs.surface,
-        child: SafeArea(
-          top: safeAreaTop,
-          bottom: safeAreaBottom,
-          child: child,
-        ),
+        child: SafeArea(top: safeAreaTop, bottom: safeAreaBottom, child: child),
       ),
     );
   }
@@ -974,7 +1129,10 @@ class UIRectSwitch extends StatelessWidget {
     final double innerHeight = height - padding * 2;
     const double thumbMargin = 3.0;
     final double thumbHeight = innerHeight - thumbMargin * 2;
-    final double thumbWidth = (thumbHeight * 0.8).clamp(thumbHeight * 0.7, innerWidth / 2.6);
+    final double thumbWidth = (thumbHeight * 0.8).clamp(
+      thumbHeight * 0.7,
+      innerWidth / 2.6,
+    );
 
     return GestureDetector(
       onTap: onChanged == null ? null : () => onChanged!(!value),

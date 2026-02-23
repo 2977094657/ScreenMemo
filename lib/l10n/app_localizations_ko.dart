@@ -24,7 +24,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get homeEmptySubtitle => '설정에서 모니터링할 앱을 선택하세요';
 
   @override
-  String get navSelectApps => '모니터링할 앱 선택';
+  String get navSelectApps => '스크린샷 앱 선택';
 
   @override
   String get dialogOk => '확인';
@@ -1266,6 +1266,77 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get timelineTitle => '타임라인';
+
+  @override
+  String get timelineReplay => '리플레이';
+
+  @override
+  String get timelineReplayGenerate => '리플레이 생성';
+
+  @override
+  String get timelineReplayUseSelectedDay => '선택한 날짜 사용';
+
+  @override
+  String get timelineReplayStartTime => '시작 시간';
+
+  @override
+  String get timelineReplayEndTime => '종료 시간';
+
+  @override
+  String get timelineReplayDuration => '목표 길이';
+
+  @override
+  String get timelineReplayFps => 'FPS';
+
+  @override
+  String get timelineReplayResolution => '해상도';
+
+  @override
+  String get timelineReplayQuality => '품질';
+
+  @override
+  String get timelineReplayOverlay => '시간/앱 오버레이';
+
+  @override
+  String get timelineReplaySaveToGallery => '생성 후 갤러리에 저장';
+
+  @override
+  String get timelineReplayAppProgressBar => '앱 진행 바';
+
+  @override
+  String get timelineReplayNsfw => 'NSFW 콘텐츠';
+
+  @override
+  String get timelineReplayNsfwMask => 'NSFW 마스크 표시';
+
+  @override
+  String get timelineReplayNsfwShow => '완전히 표시';
+
+  @override
+  String get timelineReplayNsfwHide => '표시 안 함';
+
+  @override
+  String get timelineReplayFpsInvalid => '1~120을 입력하세요';
+
+  @override
+  String timelineReplayGeneratingRange(Object range) {
+    return '$range 동영상을 생성 중…';
+  }
+
+  @override
+  String get timelineReplayPreparing => '리플레이 준비 중…';
+
+  @override
+  String get timelineReplayEncoding => '동영상 생성 중…';
+
+  @override
+  String get timelineReplayNoScreenshots => '이 시간 범위에 스크린샷이 없습니다';
+
+  @override
+  String get timelineReplayFailed => '리플레이 생성에 실패했습니다';
+
+  @override
+  String get timelineReplayReady => '리플레이가 생성되었습니다';
 
   @override
   String get pressBackAgainToExit => '종료하려면 뒤로를 다시 누르세요.';

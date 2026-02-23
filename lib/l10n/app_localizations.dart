@@ -135,7 +135,7 @@ abstract class AppLocalizations {
   /// No description provided for @navSelectApps.
   ///
   /// In en, this message translates to:
-  /// **'Select apps to monitor'**
+  /// **'Select screenshot apps'**
   String get navSelectApps;
 
   /// No description provided for @dialogOk.
@@ -2357,6 +2357,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Timeline'**
   String get timelineTitle;
+
+  /// No description provided for @timelineReplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay'**
+  String get timelineReplay;
+
+  /// No description provided for @timelineReplayGenerate.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate replay'**
+  String get timelineReplayGenerate;
+
+  /// No description provided for @timelineReplayUseSelectedDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Use selected day'**
+  String get timelineReplayUseSelectedDay;
+
+  /// No description provided for @timelineReplayStartTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Start time'**
+  String get timelineReplayStartTime;
+
+  /// No description provided for @timelineReplayEndTime.
+  ///
+  /// In en, this message translates to:
+  /// **'End time'**
+  String get timelineReplayEndTime;
+
+  /// No description provided for @timelineReplayDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Target duration'**
+  String get timelineReplayDuration;
+
+  /// No description provided for @timelineReplayFps.
+  ///
+  /// In en, this message translates to:
+  /// **'FPS'**
+  String get timelineReplayFps;
+
+  /// No description provided for @timelineReplayResolution.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolution'**
+  String get timelineReplayResolution;
+
+  /// No description provided for @timelineReplayQuality.
+  ///
+  /// In en, this message translates to:
+  /// **'Quality'**
+  String get timelineReplayQuality;
+
+  /// No description provided for @timelineReplayOverlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Overlay time/app'**
+  String get timelineReplayOverlay;
+
+  /// No description provided for @timelineReplaySaveToGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to gallery after generating'**
+  String get timelineReplaySaveToGallery;
+
+  /// No description provided for @timelineReplayAppProgressBar.
+  ///
+  /// In en, this message translates to:
+  /// **'App progress bar'**
+  String get timelineReplayAppProgressBar;
+
+  /// No description provided for @timelineReplayNsfw.
+  ///
+  /// In en, this message translates to:
+  /// **'NSFW content'**
+  String get timelineReplayNsfw;
+
+  /// No description provided for @timelineReplayNsfwMask.
+  ///
+  /// In en, this message translates to:
+  /// **'Mask NSFW'**
+  String get timelineReplayNsfwMask;
+
+  /// No description provided for @timelineReplayNsfwShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all'**
+  String get timelineReplayNsfwShow;
+
+  /// No description provided for @timelineReplayNsfwHide.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide NSFW'**
+  String get timelineReplayNsfwHide;
+
+  /// No description provided for @timelineReplayFpsInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter 1–120'**
+  String get timelineReplayFpsInvalid;
+
+  /// No description provided for @timelineReplayGeneratingRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating {range} video…'**
+  String timelineReplayGeneratingRange(Object range);
+
+  /// No description provided for @timelineReplayPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing replay…'**
+  String get timelineReplayPreparing;
+
+  /// No description provided for @timelineReplayEncoding.
+  ///
+  /// In en, this message translates to:
+  /// **'Encoding video…'**
+  String get timelineReplayEncoding;
+
+  /// No description provided for @timelineReplayNoScreenshots.
+  ///
+  /// In en, this message translates to:
+  /// **'No screenshots in this time range'**
+  String get timelineReplayNoScreenshots;
+
+  /// No description provided for @timelineReplayFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to generate replay'**
+  String get timelineReplayFailed;
+
+  /// No description provided for @timelineReplayReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay generated'**
+  String get timelineReplayReady;
 
   /// No description provided for @pressBackAgainToExit.
   ///

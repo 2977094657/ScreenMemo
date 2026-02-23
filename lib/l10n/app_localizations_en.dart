@@ -24,7 +24,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeEmptySubtitle => 'Choose apps to monitor in Settings';
 
   @override
-  String get navSelectApps => 'Select apps to monitor';
+  String get navSelectApps => 'Select screenshot apps';
 
   @override
   String get dialogOk => 'OK';
@@ -1306,6 +1306,77 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get timelineTitle => 'Timeline';
+
+  @override
+  String get timelineReplay => 'Replay';
+
+  @override
+  String get timelineReplayGenerate => 'Generate replay';
+
+  @override
+  String get timelineReplayUseSelectedDay => 'Use selected day';
+
+  @override
+  String get timelineReplayStartTime => 'Start time';
+
+  @override
+  String get timelineReplayEndTime => 'End time';
+
+  @override
+  String get timelineReplayDuration => 'Target duration';
+
+  @override
+  String get timelineReplayFps => 'FPS';
+
+  @override
+  String get timelineReplayResolution => 'Resolution';
+
+  @override
+  String get timelineReplayQuality => 'Quality';
+
+  @override
+  String get timelineReplayOverlay => 'Overlay time/app';
+
+  @override
+  String get timelineReplaySaveToGallery => 'Save to gallery after generating';
+
+  @override
+  String get timelineReplayAppProgressBar => 'App progress bar';
+
+  @override
+  String get timelineReplayNsfw => 'NSFW content';
+
+  @override
+  String get timelineReplayNsfwMask => 'Mask NSFW';
+
+  @override
+  String get timelineReplayNsfwShow => 'Show all';
+
+  @override
+  String get timelineReplayNsfwHide => 'Hide NSFW';
+
+  @override
+  String get timelineReplayFpsInvalid => 'Enter 1–120';
+
+  @override
+  String timelineReplayGeneratingRange(Object range) {
+    return 'Generating $range video…';
+  }
+
+  @override
+  String get timelineReplayPreparing => 'Preparing replay…';
+
+  @override
+  String get timelineReplayEncoding => 'Encoding video…';
+
+  @override
+  String get timelineReplayNoScreenshots => 'No screenshots in this time range';
+
+  @override
+  String get timelineReplayFailed => 'Failed to generate replay';
+
+  @override
+  String get timelineReplayReady => 'Replay generated';
 
   @override
   String get pressBackAgainToExit => 'Press back again to exit';

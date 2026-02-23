@@ -24,7 +24,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get homeEmptySubtitle => '設定で監視するアプリを選択してください';
 
   @override
-  String get navSelectApps => '監視するアプリを選択';
+  String get navSelectApps => 'スクリーンショット対象アプリを選択';
 
   @override
   String get dialogOk => 'OK';
@@ -1270,6 +1270,77 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get timelineTitle => 'タイムライン';
+
+  @override
+  String get timelineReplay => 'リプレイ';
+
+  @override
+  String get timelineReplayGenerate => 'リプレイを生成';
+
+  @override
+  String get timelineReplayUseSelectedDay => '選択した日を使用';
+
+  @override
+  String get timelineReplayStartTime => '開始時刻';
+
+  @override
+  String get timelineReplayEndTime => '終了時刻';
+
+  @override
+  String get timelineReplayDuration => '目標時間';
+
+  @override
+  String get timelineReplayFps => 'FPS';
+
+  @override
+  String get timelineReplayResolution => '解像度';
+
+  @override
+  String get timelineReplayQuality => '品質';
+
+  @override
+  String get timelineReplayOverlay => '時間/アプリを重ねる';
+
+  @override
+  String get timelineReplaySaveToGallery => '生成後にギャラリーへ保存';
+
+  @override
+  String get timelineReplayAppProgressBar => 'アプリ進捗バー';
+
+  @override
+  String get timelineReplayNsfw => 'NSFW コンテンツ';
+
+  @override
+  String get timelineReplayNsfwMask => 'NSFW をマスク表示';
+
+  @override
+  String get timelineReplayNsfwShow => '完全表示';
+
+  @override
+  String get timelineReplayNsfwHide => '非表示';
+
+  @override
+  String get timelineReplayFpsInvalid => '1〜120 を入力してください';
+
+  @override
+  String timelineReplayGeneratingRange(Object range) {
+    return '$rangeの動画を生成中…';
+  }
+
+  @override
+  String get timelineReplayPreparing => 'リプレイを準備中…';
+
+  @override
+  String get timelineReplayEncoding => '動画を生成中…';
+
+  @override
+  String get timelineReplayNoScreenshots => 'この時間帯にスクリーンショットがありません';
+
+  @override
+  String get timelineReplayFailed => 'リプレイの生成に失敗しました';
+
+  @override
+  String get timelineReplayReady => 'リプレイを生成しました';
 
   @override
   String get pressBackAgainToExit => 'もう一度戻るボタンを押して終了します';

@@ -24,7 +24,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeEmptySubtitle => '请在设置中选择要监控的应用';
 
   @override
-  String get navSelectApps => '选择监控应用';
+  String get navSelectApps => '选择截图应用';
 
   @override
   String get dialogOk => '确定';
@@ -1255,6 +1255,77 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get timelineTitle => '时间线';
+
+  @override
+  String get timelineReplay => '回放';
+
+  @override
+  String get timelineReplayGenerate => '生成回放';
+
+  @override
+  String get timelineReplayUseSelectedDay => '使用当前日期';
+
+  @override
+  String get timelineReplayStartTime => '开始时间';
+
+  @override
+  String get timelineReplayEndTime => '结束时间';
+
+  @override
+  String get timelineReplayDuration => '目标时长';
+
+  @override
+  String get timelineReplayFps => '帧率';
+
+  @override
+  String get timelineReplayResolution => '分辨率';
+
+  @override
+  String get timelineReplayQuality => '质量';
+
+  @override
+  String get timelineReplayOverlay => '叠加时间/应用';
+
+  @override
+  String get timelineReplaySaveToGallery => '生成后保存到相册';
+
+  @override
+  String get timelineReplayAppProgressBar => '应用进度条';
+
+  @override
+  String get timelineReplayNsfw => 'NSFW 内容';
+
+  @override
+  String get timelineReplayNsfwMask => '显示 NSFW 遮罩';
+
+  @override
+  String get timelineReplayNsfwShow => '完全显示';
+
+  @override
+  String get timelineReplayNsfwHide => '不显示';
+
+  @override
+  String get timelineReplayFpsInvalid => '请输入 1-120';
+
+  @override
+  String timelineReplayGeneratingRange(Object range) {
+    return '正在生成$range的视频';
+  }
+
+  @override
+  String get timelineReplayPreparing => '正在准备回放…';
+
+  @override
+  String get timelineReplayEncoding => '正在生成视频…';
+
+  @override
+  String get timelineReplayNoScreenshots => '该时间段没有截图';
+
+  @override
+  String get timelineReplayFailed => '生成回放失败';
+
+  @override
+  String get timelineReplayReady => '回放已生成';
 
   @override
   String get pressBackAgainToExit => '再按一次退出屏忆';

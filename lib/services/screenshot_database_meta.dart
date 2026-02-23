@@ -944,6 +944,26 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     }
   }
 
+  /// 获取全局最新截图时间戳（毫秒）
+  ///
+  /// 读取自主库 `app_stats.last_capture_time` 的聚合值，避免扫描分库。
+  Future<int?> getGlobalLatestCaptureTimeMillis() async {
+    final db = await database; // 主库
+    try {
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        'SELECT MAX(last_capture_time) AS m FROM app_stats',
+      );
+      if (rows.isEmpty) return null;
+      final Object? m = rows.first['m'];
+      if (m == null) return null;
+      if (m is int) return m;
+      if (m is num) return m.toInt();
+      return int.tryParse(m.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<int> getTodayScreenshotCount() async {
     StartupProfiler.begin('ScreenshotDatabase.getTodayScreenshotCount');
     final db = await database; // 主库
@@ -1140,6 +1160,113 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
       return slice.map((m) => ScreenshotRecord.fromMap(m)).toList();
     } catch (e) {
       print('getGlobalScreenshotsBetween 失败: $e');
+      return <ScreenshotRecord>[];
+    }
+  }
+
+  /// 全局：按 bucket 抽样获取给定时间范围内的截图帧（所有应用，按时间正序）
+  ///
+  /// - `bucketMillis` 会将范围按 `(capture_time - startMillis) / bucketMillis` 分桶。
+  /// - 每个桶取 `MIN(capture_time)` 的那一条（尽量取最早帧，便于正序回放）。
+  /// - 该方法返回的是候选帧集合；上层仍需按全局 bucket 去重/裁剪到目标帧数。
+  Future<List<ScreenshotRecord>> getGlobalScreenshotsBucketedBetween({
+    required int startMillis,
+    required int endMillis,
+    required int bucketMillis,
+  }) async {
+    final db = await database; // 主库
+    try {
+      if (endMillis < startMillis) return <ScreenshotRecord>[];
+      final int bucket = bucketMillis <= 0 ? 1 : bucketMillis;
+
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[];
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final ymList = _listYearMonthBetween(s, e);
+
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      if (shards.isEmpty) return <ScreenshotRecord>[];
+
+      final Map<String, String> appNameCache = <String, String>{};
+      try {
+        final reg = await db.query(
+          'app_registry',
+          columns: ['app_package_name', 'app_name'],
+        );
+        for (final r in reg) {
+          final pkg = r['app_package_name'] as String;
+          final name = (r['app_name'] as String?) ?? pkg;
+          appNameCache[pkg] = name;
+        }
+      } catch (_) {}
+
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final containsYear = ymList.any((ym) => ym[0] == y);
+        if (!containsYear) continue;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        final String appName = appNameCache[pkg] ?? pkg;
+
+        for (final ym in ymList) {
+          final int year = ym[0];
+          final int month = ym[1];
+          if (year != y) continue;
+          final t = _monthTableName(year, month);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            // 每个 bucket 取最早的一帧；返回 t.* 以兼容未来字段变更。
+            final sql =
+                '''
+              SELECT t.*
+              FROM $t t
+              JOIN (
+                SELECT CAST((capture_time - ?) / ? AS INTEGER) AS b, MIN(capture_time) AS min_ct
+                FROM $t
+                WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0
+                GROUP BY b
+              ) x
+              ON CAST((t.capture_time - ?) / ? AS INTEGER) = x.b AND t.capture_time = x.min_ct
+              WHERE t.capture_time >= ? AND t.capture_time <= ? AND t.is_deleted = 0
+              ORDER BY t.capture_time ASC
+            ''';
+            final args = <Object?>[
+              startMillis,
+              bucket,
+              startMillis,
+              endMillis,
+              startMillis,
+              bucket,
+              startMillis,
+              endMillis,
+            ];
+            final maps = await (shardDb as Database).rawQuery(sql, args);
+            for (final m in maps) {
+              final full = Map<String, dynamic>.from(m);
+              full['app_package_name'] = pkg;
+              full['app_name'] = appName;
+              final localId = (m['id'] as int?) ?? 0;
+              full['id'] = _encodeGid(year, month, localId);
+              rows.add(full);
+            }
+          } catch (_) {}
+        }
+      }
+
+      rows.sort((a, b) {
+        final int ta = (a['capture_time'] as int?) ?? 0;
+        final int tb = (b['capture_time'] as int?) ?? 0;
+        return ta.compareTo(tb);
+      });
+
+      return rows.map((m) => ScreenshotRecord.fromMap(m)).toList();
+    } catch (e) {
+      print('getGlobalScreenshotsBucketedBetween 失败: $e');
       return <ScreenshotRecord>[];
     }
   }
@@ -2800,6 +2927,76 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
           } catch (_) {}
         }
       }
+      final List<Map<String, dynamic>> out = dayToCount.entries
+          .map((e) => <String, dynamic>{'date': e.key, 'count': e.value})
+          .toList();
+      out.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return out;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// 全局列出指定时间范围内所有有数据的日期（本地时区），按日期倒序返回
+  /// 返回元素：{ 'date': 'YYYY-MM-DD', 'count': <int> }
+  ///
+  /// 相比 `listAvailableDaysGlobal()`，该方法会按范围仅扫描涉及的年月表，
+  /// 用于时间线首屏/增量加载，避免全库扫描导致卡顿。
+  Future<List<Map<String, dynamic>>> listAvailableDaysGlobalRange({
+    required int startMillis,
+    required int endMillis,
+  }) async {
+    if (endMillis < startMillis) return <Map<String, dynamic>>[];
+    final Map<String, int> dayToCount = <String, int>{};
+    try {
+      final db = await database; // 主库
+      final DateTime s = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      final DateTime e = DateTime.fromMillisecondsSinceEpoch(endMillis);
+      final List<List<int>> ymList = _listYearMonthBetween(s, e);
+      if (ymList.isEmpty) return <Map<String, dynamic>>[];
+
+      final Map<int, List<int>> monthsByYear = <int, List<int>>{};
+      for (final ym in ymList) {
+        if (ym.length < 2) continue;
+        monthsByYear.putIfAbsent(ym[0], () => <int>[]).add(ym[1]);
+      }
+
+      final shards = await db.query(
+        'shard_registry',
+        columns: ['app_package_name', 'year'],
+        orderBy: 'year DESC',
+      );
+      if (shards.isEmpty) return <Map<String, dynamic>>[];
+
+      for (final sh in shards) {
+        final String pkg = sh['app_package_name'] as String;
+        final int y = sh['year'] as int;
+        final List<int>? months = monthsByYear[y];
+        if (months == null || months.isEmpty) continue;
+        final shardDb = await _openShardDb(pkg, y);
+        if (shardDb == null) continue;
+        for (final m in months) {
+          final String t = _monthTableName(y, m);
+          if (!await _tableExists(shardDb, t)) continue;
+          try {
+            final List<Map<String, Object?>>
+            rows = await (shardDb as Database).rawQuery(
+              'SELECT date(capture_time/1000, \"unixepoch\", \"localtime\") AS d, COUNT(*) AS c FROM ' +
+                  t +
+                  ' WHERE capture_time >= ? AND capture_time <= ? AND is_deleted = 0 GROUP BY d',
+              <Object?>[startMillis, endMillis],
+            );
+            for (final r in rows) {
+              final String d = (r['d'] as String?) ?? '';
+              if (d.isEmpty) continue;
+              final int c = (r['c'] as int?) ?? 0;
+              if (c <= 0) continue;
+              dayToCount[d] = (dayToCount[d] ?? 0) + c;
+            }
+          } catch (_) {}
+        }
+      }
+      if (dayToCount.isEmpty) return <Map<String, dynamic>>[];
       final List<Map<String, dynamic>> out = dayToCount.entries
           .map((e) => <String, dynamic>{'date': e.key, 'count': e.value})
           .toList();
