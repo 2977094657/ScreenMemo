@@ -63,14 +63,8 @@ class _ExclusionHelpPageState extends State<ExclusionHelpPage> {
                       child: Text('  - ${((m['appName'] ?? '').trim().isNotEmpty) ? (m['appName'] ?? '') : '未知输入法'}'),
                     ),
                 ],
-                const SizedBox(height: AppTheme.spacing4),
-                Text(
-                  '说明：当你在其他应用中弹出键盘时，系统会切到输入法窗口。如果不排除，会被误判为正在使用输入法，从而导致截图归类错误。我们已自动排除输入法应用，并在检测到输入法时，仍将截图归属到弹出输入法之前的应用。',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
               ],
             ),
     );
   }
 }
-

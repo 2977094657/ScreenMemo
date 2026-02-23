@@ -1394,18 +1394,6 @@ class _HomePageState extends State<HomePage>
                                           ),
                                         );
                                       }
-                                      lines.add(const SizedBox(height: 12));
-                                      lines.add(
-                                        Text(
-                                          AppLocalizations.of(
-                                            context,
-                                          ).imeExplainText,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
-                                        ),
-                                      );
-
                                       await showUIDialog<void>(
                                         context: context,
                                         title: AppLocalizations.of(

@@ -103,6 +103,70 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     ];
   }
 
+  Widget _buildBottomNavigationBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final List<BottomNavigationBarItem> items = _buildNavigationItems(context);
+    final Color navBg =
+        theme.bottomNavigationBarTheme.backgroundColor ??
+        theme.scaffoldBackgroundColor;
+    final Color topBorder = theme.colorScheme.outline.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.40 : 0.60,
+    );
+    final Color selectedColor =
+        theme.bottomNavigationBarTheme.selectedItemColor ??
+        theme.colorScheme.primary;
+    final Color unselectedColor =
+        theme.bottomNavigationBarTheme.unselectedItemColor ??
+        theme.colorScheme.onSurfaceVariant;
+    final double selectedSize =
+        theme.bottomNavigationBarTheme.selectedIconTheme?.size ?? 20;
+    final double unselectedSize =
+        theme.bottomNavigationBarTheme.unselectedIconTheme?.size ?? 18;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: topBorder, width: 0.5)),
+      ),
+      child: Material(
+        color: navBg,
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 52,
+            child: Row(
+              children: List<Widget>.generate(items.length, (index) {
+                final BottomNavigationBarItem item = items[index];
+                final bool selected = _currentIndex == index;
+                final Widget icon = selected ? item.activeIcon : item.icon;
+
+                return Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: selected,
+                    child: InkWell(
+                      onTap: () => _onTabTapped(index),
+                      child: SizedBox.expand(
+                        child: Center(
+                          child: IconTheme.merge(
+                            data: IconThemeData(
+                              color: selected ? selectedColor : unselectedColor,
+                              size: selected ? selectedSize : unselectedSize,
+                            ),
+                            child: icon,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _onTabTapped(int index) {
     // 切换底部标签时，统一取消当前焦点，避免隐藏页的输入框仍然保留焦点导致键盘误弹
     FocusManager.instance.primaryFocus?.unfocus();
@@ -157,33 +221,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             if (_currentIndex == 4 && isInSubPage) {
               return const SizedBox.shrink();
             }
-            final theme = Theme.of(context);
-            final Color navBg =
-                theme.bottomNavigationBarTheme.backgroundColor ??
-                theme.scaffoldBackgroundColor;
-            final Color topBorder = theme.colorScheme.outline.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.40 : 0.60,
-            );
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: topBorder, width: 0.5)),
-              ),
-              child: SizedBox(
-                height: 52,
-                child: BottomNavigationBar(
-                  backgroundColor: navBg,
-                  elevation: 0,
-                  currentIndex: _currentIndex,
-                  onTap: _onTabTapped,
-                  showSelectedLabels: false,
-                  showUnselectedLabels: false,
-                  // Force a compact bar (labels are hidden anyway).
-                  selectedFontSize: 0,
-                  unselectedFontSize: 0,
-                  items: _buildNavigationItems(context),
-                ),
-              ),
-            );
+            return _buildBottomNavigationBar(context);
           },
         ),
       ),
