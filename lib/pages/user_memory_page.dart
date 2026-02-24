@@ -4,12 +4,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:talker/talker.dart';
 
+import '../l10n/app_localizations.dart';
+import '../services/ai_providers_service.dart';
+import '../services/ai_settings_service.dart';
 import '../services/user_memory_index_service.dart';
 import '../services/user_memory_service.dart';
 import '../services/flutter_logger.dart';
 import '../theme/app_theme.dart';
+import '../utils/model_icon_utils.dart';
 import '../widgets/ai_request_logs_action.dart';
 import '../widgets/ai_request_logs_viewer.dart';
 import '../widgets/ai_request_logs_sheet.dart';
@@ -44,12 +49,18 @@ class _UserMemoryPageState extends State<UserMemoryPage>
   UserMemoryIndexState? _indexState;
   StreamSubscription<UserMemoryIndexState>? _indexSub;
 
+  AIProvider? _ctxMemProvider;
+  String? _ctxMemModel;
+  String _memProviderQueryText = '';
+  String _memModelQueryText = '';
+
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _loadItems();
     _loadIndexState();
+    _loadMemoryContextSelection();
 
     _searchCtrl.addListener(() {
       _searchDebounce?.cancel();
@@ -199,6 +210,379 @@ class _UserMemoryPageState extends State<UserMemoryPage>
         _indexState = st;
       });
     });
+  }
+
+  // 载入“记忆(memory)”的提供商/模型选择（独立于对话页）
+  Future<void> _loadMemoryContextSelection() async {
+    try {
+      final svc = AIProvidersService.instance;
+      final providers = await svc.listProviders();
+      if (providers.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _ctxMemProvider = null;
+            _ctxMemModel = null;
+          });
+        }
+        return;
+      }
+
+      final ctxRow = await AISettingsService.instance.getAIContextRow('memory');
+      AIProvider? sel;
+      if (ctxRow != null && ctxRow['provider_id'] is int) {
+        sel = await svc.getProvider(ctxRow['provider_id'] as int);
+      }
+      sel ??= await svc.getDefaultProvider();
+      sel ??= providers.first;
+
+      String model =
+          (ctxRow != null &&
+                  (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
+              ? (ctxRow['model'] as String).trim()
+              : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
+                    .toString();
+      if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
+
+      if (mounted) {
+        setState(() {
+          _ctxMemProvider = sel;
+          _ctxMemModel = model;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showProviderSheetMemory() async {
+    final svc = AIProvidersService.instance;
+    final list = await svc.listProviders();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final currentId = _ctxMemProvider?.id ?? -1;
+        // 使用持久化查询文本，避免键盘开合/重建导致输入被清空
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _memProviderQueryText,
+        );
+        return StatefulBuilder(
+          builder: (c, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                final q = queryCtrl.text.trim().toLowerCase();
+                final filtered = list.where((p) {
+                  if (q.isEmpty) return true;
+                  final name = p.name.toLowerCase();
+                  final type = p.type.toLowerCase();
+                  final base = (p.baseUrl ?? '').toString().toLowerCase();
+                  return name.contains(q) ||
+                      type.contains(q) ||
+                      base.contains(q);
+                }).toList();
+                // 将当前选中的提供商置顶，便于观察
+                final selIdx = filtered.indexWhere((e) => e.id == currentId);
+                if (selIdx > 0) {
+                  final sel = filtered.removeAt(selIdx);
+                  filtered.insert(0, sel);
+                }
+                return UISheetSurface(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        child: TextField(
+                          controller: queryCtrl,
+                          autofocus: true,
+                          onChanged: (_) {
+                            _memProviderQueryText = queryCtrl.text;
+                            setModalState(() {});
+                          },
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchProviderPlaceholder,
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing2),
+                      Expanded(
+                        child: ListView.separated(
+                          controller: scrollCtrl,
+                          itemCount: filtered.length,
+                          separatorBuilder: (c, i) => Container(
+                            height: 1,
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
+                          ),
+                          itemBuilder: (c, i) {
+                            final p = filtered[i];
+                            final selected = p.id == currentId;
+                            return ListTile(
+                              leading: SvgPicture.asset(
+                                ModelIconUtils.getProviderIconPath(p.type),
+                                width: 20,
+                                height: 20,
+                              ),
+                              title: Text(
+                                p.name,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.onSurface,
+                                    )
+                                  : null,
+                              onTap: () async {
+                                String model = (_ctxMemModel ?? '').trim();
+                                if (model.isEmpty) {
+                                  model =
+                                      ((p.extra['active_model'] as String?) ??
+                                              p.defaultModel)
+                                          .toString()
+                                          .trim();
+                                }
+                                if (model.isEmpty && p.models.isNotEmpty) {
+                                  model = p.models.first;
+                                }
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'memory',
+                                      providerId: p.id!,
+                                      model: model,
+                                    );
+                                if (mounted) {
+                                  setState(() {
+                                    _ctxMemProvider = p;
+                                    _ctxMemModel = model;
+                                  });
+                                  Navigator.of(ctx).pop();
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).providerSelectedToast(p.name),
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showModelSheetMemory() async {
+    final p = _ctxMemProvider;
+    if (p == null) {
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).pleaseSelectProviderFirst,
+      );
+      return;
+    }
+    final models = p.models;
+    if (models.isEmpty) {
+      UINotifier.info(
+        context,
+        AppLocalizations.of(context).noModelsForProviderHint,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final active = (_ctxMemModel ?? '').trim();
+        // 使用持久化查询文本，避免失焦时文本被清空
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _memModelQueryText,
+        );
+        return StatefulBuilder(
+          builder: (c, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.85,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (_, scrollCtrl) {
+                final q = queryCtrl.text.trim().toLowerCase();
+                final filtered = models.where((mm) {
+                  if (q.isEmpty) return true;
+                  return mm.toLowerCase().contains(q);
+                }).toList();
+                // 将当前选中的模型置顶
+                if (active.isNotEmpty && filtered.contains(active)) {
+                  final idx = filtered.indexOf(active);
+                  if (idx > 0) {
+                    final sel = filtered.removeAt(idx);
+                    filtered.insert(0, sel);
+                  }
+                }
+                return UISheetSurface(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: AppTheme.spacing3),
+                      const UISheetHandle(),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing4,
+                        ),
+                        child: TextField(
+                          controller: queryCtrl,
+                          autofocus: true,
+                          onChanged: (_) {
+                            _memModelQueryText = queryCtrl.text;
+                            setModalState(() {});
+                          },
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchModelPlaceholder,
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppTheme.spacing2),
+                      Expanded(
+                        child: ListView.separated(
+                          controller: scrollCtrl,
+                          itemCount: filtered.length,
+                          separatorBuilder: (c, i) => Container(
+                            height: 1,
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withOpacity(0.6),
+                          ),
+                          itemBuilder: (c, i) {
+                            final m = filtered[i];
+                            final selected = m == active;
+                            return ListTile(
+                              leading: SvgPicture.asset(
+                                ModelIconUtils.getIconPath(m),
+                                width: 20,
+                                height: 20,
+                              ),
+                              title: Text(
+                                m,
+                                style: Theme.of(c).textTheme.bodyMedium,
+                              ),
+                              trailing: selected
+                                  ? Icon(
+                                      Icons.check_circle,
+                                      color: Theme.of(c).colorScheme.primary,
+                                    )
+                                  : null,
+                              onTap: () async {
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'memory',
+                                      providerId: p.id!,
+                                      model: m,
+                                    );
+                                if (mounted) {
+                                  setState(() => _ctxMemModel = m);
+                                  Navigator.of(ctx).pop();
+                                  UINotifier.success(
+                                    context,
+                                    AppLocalizations.of(
+                                      context,
+                                    ).modelSwitchedToast(m),
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// AppBar 顶部：仅显示内容并加下划线（provider / model），不显示“提供商”字样
+  Widget _buildMemoryProviderModelAppBarTitle() {
+    final theme = Theme.of(context);
+    final String providerName = _ctxMemProvider?.name ?? '—';
+    final String modelName = _ctxMemModel ?? '—';
+    final TextStyle? linkStyle = theme.textTheme.labelSmall?.copyWith(
+      decoration: TextDecoration.underline,
+      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      color: theme.colorScheme.onSurface,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (modelName.trim().isNotEmpty && modelName != '—') ...[
+          SvgPicture.asset(
+            ModelIconUtils.getIconPath(modelName),
+            width: 18,
+            height: 18,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: GestureDetector(
+            onTap: _showProviderSheetMemory,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              providerName,
+              style: linkStyle,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: GestureDetector(
+            onTap: _showModelSheetMemory,
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              modelName,
+              style: linkStyle,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   String _formatLogTime(DateTime t) {
@@ -844,7 +1228,10 @@ class _UserMemoryPageState extends State<UserMemoryPage>
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('记忆 / Memory'),
+          toolbarHeight: 36,
+          centerTitle: true,
+          automaticallyImplyLeading: true,
+          title: _buildMemoryProviderModelAppBarTitle(),
           bottom: const TabBar(
             tabs: [
               Tab(text: '画像'),

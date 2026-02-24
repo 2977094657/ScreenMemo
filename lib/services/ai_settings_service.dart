@@ -757,28 +757,6 @@ class AISettingsService {
     // 读取上下文选择：优先 ai_contexts(context)，否则默认提供商，否则列表首项
     final db = ScreenshotDatabase.instance;
     Map<String, dynamic>? ctx = await db.getAIContext(context);
-
-    // Best-effort bootstrap: if "memory" context is unset, seed it from the
-    // active chat context so global memory uses the same provider/model by
-    // default (only once).
-    if (ctx == null && context == 'memory') {
-      try {
-        final Map<String, dynamic>? chatCtx = await db.getAIContext('chat');
-        if (chatCtx != null && chatCtx['provider_id'] is int) {
-          final int pid = chatCtx['provider_id'] as int;
-          final String chatModel = (chatCtx['model'] as String?)?.trim() ?? '';
-          final String seedModel = chatModel.isNotEmpty
-              ? chatModel
-              : (await getModel());
-          await db.setAIContext(
-            context: 'memory',
-            providerId: pid,
-            model: seedModel.trim().isEmpty ? _defaultModel : seedModel.trim(),
-          );
-          ctx = await db.getAIContext('memory');
-        }
-      } catch (_) {}
-    }
     AIProvider? pSelected;
     final int? ctxProviderId = (ctx != null && ctx['provider_id'] is int)
         ? (ctx['provider_id'] as int)
