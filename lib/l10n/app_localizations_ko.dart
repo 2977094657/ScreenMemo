@@ -1545,7 +1545,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get promptAddonSuggestionWeekly =>
-      'Suggested ideas:\n- Emphasize week-over-week trends or pivots to highlight\n- Ask for actionable follow-ups or attention points\n- Avoid requesting structural changes to the JSON output';
+      '제안된 아이디어:\n- 주간 추세나 변화 포인트를 강조\n- 실행 가능한 후속 조치나 주의할 점을 요청\n- JSON 출력 구조 변경을 요청하지 마세요.';
 
   @override
   String get promptAddonSuggestionMorning =>
@@ -1561,7 +1561,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dailySummaryPromptLabel => '일일 요약 프롬프트';
 
   @override
-  String get weeklySummaryPromptLabel => 'Weekly summary prompt';
+  String get weeklySummaryPromptLabel => '주간 요약 프롬프트';
 
   @override
   String get morningInsightsPromptLabel => '아침 행동 제안 프롬프트';
@@ -1639,7 +1639,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get savedDailyPromptToast => '일일 프롬프트를 저장했습니다';
 
   @override
-  String get savedWeeklyPromptToast => 'Weekly prompt saved';
+  String get savedWeeklyPromptToast => '주간 프롬프트를 저장했습니다';
 
   @override
   String get resetToDefaultPromptToast => '기본 프롬프트로 재설정했습니다';

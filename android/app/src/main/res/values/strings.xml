@@ -7,6 +7,7 @@
     <string name="accessibility_service_description">屏忆的核心功能依靠此服务。若不开启，将无法进行截屏。</string>
     <string name="foreground_service_title">屏幕截图服务运行中</string>
     <string name="foreground_service_content">点击返回应用</string>
+    <string name="fgs_special_use_subtype">通过无障碍截屏并在后台保持运行</string>
     <string name="notification_channel_name">屏幕截图服务</string>
     <string name="notification_channel_description">用于显示屏幕截图服务状态</string>
     <string name="fg_notif_interval_value">%1$d秒</string>

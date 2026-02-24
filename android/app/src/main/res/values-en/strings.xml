@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Screen Memo</string>
+    <string name="accessibility_service_description">ScreenMemo’s core features rely on this service. Without enabling it, screenshots cannot be captured.</string>
     <string name="notification_channel_name">Screen capture service</string>
     <string name="notification_channel_description">Shows the screen capture service status</string>
     <string name="fg_notif_interval_value">%1$ds</string>

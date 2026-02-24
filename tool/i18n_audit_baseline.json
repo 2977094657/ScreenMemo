@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "generatedAt": "2026-02-24T05:28:22.820467Z",
+  "uiStringLiterals": {
+    "lib/pages/daily_summary_page.dart": {
+      "晨间提示已更新": 1,
+      "晨间提示生成失败": 2,
+      "${index + 1}. ${tip.displayTitle}": 1
+    },
+    "lib/pages/desktop_merger_page.dart": {
+      "$label: ": 1
+    },
+    "lib/pages/event_home_page.dart": {
+      "Create failed: ${e.toString()}": 1,
+      "已切换会话": 1,
+      "Switch failed: ${e.toString()}": 1,
+      "删除失败": 1,
+      "会话已删除": 1,
+      "删除失败: ${e.toString()}": 1
+    },
+    "lib/pages/exclusion_help_page.dart": {
+      "已排除的应用": 1,
+      "· 本应用（避免自循环）": 1,
+      "· 输入法（键盘）应用：": 1,
+      "  - （已自动过滤）": 1,
+      "  - ${((m['appName'] ?? '').trim().isNotEmpty) ? (m['appName'] ?? '') : '未知输入法'}": 1
+    },
+    "lib/pages/favorites_page.dart": {
+      "Image Error": 1
+    },
+    "lib/pages/log_console_page.dart": {
+      "日志详情": 1,
+      "复制": 1,
+      "关闭": 1,
+      "日志面板": 1,
+      "全部": 1,
+      "调试/详细": 1,
+      "信息": 1,
+      "警告": 1,
+      "错误/严重": 1,
+      "搜索（标题/内容/异常/堆栈）": 1
+    },
+    "lib/pages/onboarding_page.dart": {
+      "加载权限状态失败: $e": 1
+    },
+    "lib/pages/permission_guide_page.dart": {
+      "已打开应用设置页面，请按照指南进行设置": 1,
+      "打开设置页面失败: $e": 1,
+      "已打开电池优化设置页面": 1,
+      "打开电池优化设置失败: $e": 1,
+      "已打开自启动设置页面": 1,
+      "打开自启动设置失败: $e": 1,
+      "权限设置已标记为完成": 1,
+      "标记权限设置失败: $e": 1,
+      "权限设置指南": 1,
+      "打开应用设置页面": 1,
+      "打开电池优化设置": 1,
+      "打开自启动设置": 1,
+      "我已完成所有设置": 1
+    },
+    "lib/pages/provider_edit_page.dart": {
+      "OpenAI": 1,
+      "Azure OpenAI": 1,
+      "Claude": 1,
+      "Gemini": 1
+    },
+    "lib/pages/screenshot_gallery_page.dart": {
+      "正在删除...": 1,
+      "正在清理缓存...": 1,
+      "已取消收藏": 1,
+      "已添加到收藏": 1,
+      "操作失败": 1,
+      "操作失败: $e": 1
+    },
+    "lib/pages/screenshot_viewer_page.dart": {
+      "Copied": 1,
+      "Copy failed": 1
+    },
+    "lib/pages/search_page.dart": {
+      "搜索语义": 1,
+      "搜索动态": 1,
+      "搜索更多": 1,
+      "已复制": 1,
+      "打开每日总结": 1,
+      "打开周总结": 1,
+      "暂无可用标签": 2,
+      "清除全部": 1,
+      "清除": 1,
+      "清除筛选": 1
+    },
+    "lib/pages/segment_status_page.dart": {
+      "Image Error": 2,
+      "强制合并": 1,
+      "保存失败：$e": 1,
+      "Save failed: $e": 1,
+      "没有可合并的上一事件": 1,
+      "强制合并入队失败": 1,
+      "强制合并已入队": 1,
+      "强制合并失败": 1,
+      "合并完成": 1
+    },
+    "lib/pages/settings_page.dart": {
+      "$e": 2,
+      "• $w": 1,
+      "保存失败：$e": 2,
+      "Save failed: $e": 2,
+      "请输入数字": 1,
+      "Please enter a number.": 1,
+      "已保存：$v": 1,
+      "Saved: $v": 1,
+      "保存失败: ": 3,
+      "Open channel settings failed: $e": 1,
+      "Open app notification settings failed: $e": 1
+    },
+    "lib/pages/user_memory_page.dart": {
+      "已保存": 1,
+      "保存失败": 2,
+      "已刷新自动画像": 1,
+      "刷新失败": 1,
+      "已保存到：${f.path}": 1,
+      "保存失败：$e": 1,
+      "已复制": 2,
+      "复制失败": 2,
+      "编辑记忆": 1,
+      "Kind:": 1,
+      "rule": 4,
+      "habit": 3,
+      "fact": 4,
+      "Pinned": 2,
+      "Key (optional)": 1,
+      "Keywords (comma separated)": 1,
+      "Content": 1,
+      "Loading…": 1,
+      "(empty)": 1,
+      "\\n": 1,
+      "保存": 2,
+      "删除": 1,
+      "关闭": 1,
+      "在这里写入你希望 AI 永久记住的偏好/约束/背景…": 1,
+      "保存中…": 1,
+      "刷新中…": 1,
+      "刷新自动画像": 1,
+      "已复制到用户画像（未保存）": 1,
+      "用自动画像覆盖（不保存）": 1,
+      "搜索记忆…": 1,
+      "all": 1,
+      "状态：$status": 1,
+      "进度：$processed / ${total > 0 ? total : 'unknown'}": 1,
+      "复制日志": 1,
+      "查看日志": 1,
+      "立即全量重建": 1,
+      "暂停": 1,
+      "恢复": 1,
+      "取消": 1,
+      "画像": 1,
+      "记忆项": 1,
+      "重建": 1
+    },
+    "lib/pages/weekly_summary_page.dart": {
+      "正在生成周总结…": 1,
+      "模型正在思考，请稍候…": 1
+    },
+    "lib/widgets/ai_request_logs_viewer.dart": {
+      "已复制": 1,
+      "Copied": 1,
+      "复制失败": 1,
+      "Copy failed": 1
+    },
+    "lib/widgets/chat_context_sheet.dart": {
+      "$label: $value": 1
+    },
+    "lib/widgets/markdown_math.dart": {
+      "[evidence: ": 1
+    },
+    "lib/widgets/segment_timeline_tab_view.dart": {
+      "强制合并": 1,
+      "Image Error": 1,
+      "没有可合并的上一事件": 1,
+      "强制合并入队失败": 1,
+      "强制合并已入队": 1,
+      "强制合并失败": 1,
+      "合并完成": 1
+    },
+    "lib/widgets/ui_perf_overlay.dart": {
+      "已复制": 1
+    }
+  }
+}

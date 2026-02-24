@@ -606,7 +606,6 @@
     }
   },
   "imageInfoTooltip": "图片信息",
-  "linkTooltip": "链接",
   "copySuccess": "已复制",
   "copyFailed": "复制失败",
   "invalidArguments": "参数错误",

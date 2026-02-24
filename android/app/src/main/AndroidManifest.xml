@@ -143,15 +143,15 @@
         </service>
 
         <!-- 前台服务声明 -->
-        <service
-            android:name=".ScreenCaptureService"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="通过无障碍截屏并在后台保持运行" />
-        </service>
+	        <service
+	            android:name=".ScreenCaptureService"
+	            android:exported="false"
+	            android:stopWithTask="false"
+	            android:foregroundServiceType="specialUse">
+	            <property
+	                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+	                android:value="@string/fgs_special_use_subtype" />
+	        </service>
 
         <!-- 守护服务（已禁用，避免重复前台通知） -->
         <!--

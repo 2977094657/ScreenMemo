@@ -358,6 +358,32 @@ flutter build linux -t lib/main_desktop_merger.dart --release
 3. 运行 `flutter gen-l10n` 生成代码
 4. 在 `LocaleService` 中注册新语言
 
+### i18n 审计（防止漏翻译/硬编码回归）
+
+为避免新增“用户可见但未适配多语言”的文案，本项目提供审计工具与测试拦截：
+
+- **ARB 一致性**：所有 `lib/l10n/*.arb` 必须与模板（`app_en.arb`）key 完全一致（缺失/多余都会失败）。
+- **平台层本地化**：iOS/Android 的关键本地化声明与资源必须齐全（缺失直接失败）。
+- **Flutter UI 硬编码文案**：采用 baseline 模式，只阻止**新增**硬编码字符串；历史遗留会记录在 baseline 中，后续可逐步消减。
+
+运行检查：
+```bash
+dart run tool/i18n_audit.dart --check
+```
+
+更新 baseline（仅在确认是历史遗留/例外时使用）：
+```bash
+dart run tool/i18n_audit.dart --update-baseline
+```
+
+忽略规则（谨慎使用）：
+- 行尾添加 `// i18n-ignore`：忽略该行
+- 文件内任意位置添加 `// i18n-ignore-file`：忽略整个文件
+
+`flutter test` 会自动运行 `test/i18n_audit_test.dart` 来拦截回归。
+
+> 如果本机配置了 `HTTP_PROXY/HTTPS_PROXY`，在 Windows 上运行 `flutter test` 可能出现 `WebSocketException: Invalid WebSocket upgrade request`。可临时设置 `NO_PROXY=127.0.0.1,localhost` 或清空代理环境变量后再运行。
+
 ---
 
 ## 贡献指南

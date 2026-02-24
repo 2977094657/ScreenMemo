@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">スクリーンメモ</string>
+    <string name="accessibility_service_description">スクリーンメモの主要機能はこのサービスに依存しています。有効にしないとスクリーンショットを取得できません。</string>
     <string name="notification_channel_name">スクリーンショットサービス</string>
     <string name="notification_channel_description">スクリーンショットサービスの状態を表示します</string>
     <string name="fg_notif_interval_value">%1$d秒</string>
