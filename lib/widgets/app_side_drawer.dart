@@ -69,20 +69,6 @@ class AppSideDrawer extends StatelessWidget {
                 );
               },
             ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.wifi_tethering_outlined,
-              title: '网络抓包',
-              isFirst: false,
-              onTap: () async {
-                final ok = await FlutterLogger.openChucker();
-                if (!context.mounted) return;
-                if (!ok) {
-                  UINotifier.error(context, 'Chucker 不可用（仅 Android Debug 可用）');
-                }
-                Navigator.of(context).pop();
-              },
-            ),
             // 提供商
             _buildMenuItem(
               context: context,

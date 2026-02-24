@@ -86,16 +86,6 @@ class FlutterLogger {
     }
   }
 
-  /// 打开 Android 原生网络抓包面板（Chucker）。非 Android/Release/no-op 时可能返回 false。
-  static Future<bool> openChucker() async {
-    try {
-      final ok = await _channel.invokeMethod<bool>('openChucker');
-      return ok == true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   // 兼容旧接口
   static Future<void> log(String message) async => _write(LogLevel.info, message);
 

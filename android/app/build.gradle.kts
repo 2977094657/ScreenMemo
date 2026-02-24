@@ -65,10 +65,6 @@ dependencies {
     // OkHttp：用于每日总结/分段上传等 HTTP 调用
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Chucker：OkHttp 抓包（Debug 可视化，Release no-op）
-    debugImplementation("com.github.chuckerteam.chucker:library:4.0.0")
-    releaseImplementation("com.github.chuckerteam.chucker:library-no-op:4.0.0")
-
     // ML Kit: 中文文本识别（离线模型随 APK 打包）
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
 

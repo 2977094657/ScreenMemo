@@ -223,14 +223,6 @@ class MainActivity : FlutterActivity() {
                     val dir = OutputFileLogger.getTodayDir(this)
                     result.success(dir?.absolutePath)
                 }
-                "openChucker" -> {
-                    try {
-                        val ok = ChuckerBridge.open(this)
-                        result.success(ok)
-                    } catch (_: Exception) {
-                        result.success(false)
-                    }
-                }
                 "getSegmentsAIConfig" -> {
                     try {
                         val cfg = AISettingsNative.readConfig(this)
