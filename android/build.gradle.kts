@@ -30,6 +30,17 @@ rootProject.layout.buildDirectory = rootProject.layout.projectDirectory.dir("../
 subprojects {
     project.layout.buildDirectory = rootProject.layout.buildDirectory.dir(project.name)
     evaluationDependsOn(":app")
+
+    afterEvaluate {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            kotlinOptions {
+                // Kotlin 2.2+ no longer supports languageVersion/apiVersion 1.6.
+                // Some Flutter plugins (e.g. sentry_flutter) still pin 1.6, so bump to 1.8.
+                if (languageVersion == "1.6") languageVersion = "1.8"
+                if (apiVersion == "1.6") apiVersion = "1.8"
+            }
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {
