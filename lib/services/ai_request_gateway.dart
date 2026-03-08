@@ -114,6 +114,7 @@ class AIRequestGateway {
     String? logContext,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    bool forceChatCompletions = false,
   }) async {
     if (endpoints.isEmpty) {
       throw Exception('No AI endpoints configured');
@@ -122,19 +123,23 @@ class AIRequestGateway {
     final int toolsCount = tools.length;
     Exception? lastError;
     for (final AIEndpoint endpoint in endpoints) {
+      final AIEndpoint effectiveEndpoint = forceChatCompletions
+          ? _forceChatCompletionsEndpoint(endpoint)
+          : endpoint;
       // Try streaming first (when allowed), then fall back to non-streaming for
       // providers/endpoints that don't support SSE.
       if (preferStreaming) {
         try {
           final _PreparedRequest prepared = _prepareRequest(
-            endpoint: endpoint,
+            endpoint: effectiveEndpoint,
             messages: messages,
             stream: true,
             tools: tools,
             toolChoice: toolChoice,
+            useResponsesApiOverride: forceChatCompletions ? false : null,
           );
           final _GatewayAggregate aggregate = await _performStreaming(
-            endpoint: endpoint,
+            endpoint: effectiveEndpoint,
             prepared: prepared,
             responseStartMarker: responseStartMarker,
             timeout: timeout,
@@ -163,16 +168,18 @@ class AIRequestGateway {
         }
       }
 
+      _PreparedRequest? prepared;
       try {
-        final _PreparedRequest prepared = _prepareRequest(
-          endpoint: endpoint,
+        prepared = _prepareRequest(
+          endpoint: effectiveEndpoint,
           messages: messages,
           stream: false,
           tools: tools,
           toolChoice: toolChoice,
+          useResponsesApiOverride: forceChatCompletions ? false : null,
         );
         final _GatewayAggregate aggregate = await _performNonStreaming(
-          endpoint: endpoint,
+          endpoint: effectiveEndpoint,
           prepared: prepared,
           responseStartMarker: responseStartMarker,
           timeout: timeout,
@@ -192,6 +199,114 @@ class AIRequestGateway {
         );
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
+
+        // Some OpenAI-compatible relays incorrectly type `tool_choice` as a string
+        // in the Responses API response DTOs, and crash when OpenAI returns an object
+        // tool_choice (e.g. forced function calling). In that case, retry once using
+        // Chat Completions to avoid the relay's Responses parsing path.
+        if (prepared != null &&
+            prepared.useResponsesApi &&
+            _looksLikeGoToolChoiceUnmarshalError(lastError)) {
+          try {
+            await FlutterLogger.nativeWarn(
+              'AI',
+              '[网关] 检测到 tool_choice 兼容性错误，改用 Chat Completions 重试（${endpoint.baseUrl}）',
+            );
+          } catch (_) {}
+          try {
+            final AIEndpoint chatEndpoint = _forceChatCompletionsEndpoint(
+              effectiveEndpoint,
+            );
+            final _PreparedRequest retryPrepared = _prepareRequest(
+              endpoint: chatEndpoint,
+              messages: messages,
+              stream: false,
+              tools: tools,
+              toolChoice: toolChoice,
+              useResponsesApiOverride: false,
+            );
+            final _GatewayAggregate aggregate = await _performNonStreaming(
+              endpoint: chatEndpoint,
+              prepared: retryPrepared,
+              responseStartMarker: responseStartMarker,
+              timeout: timeout,
+              logContext: logContext,
+              imagesCount: imagesCount,
+              toolsCount: toolsCount,
+            );
+            return AIGatewayResult(
+              content: aggregate.content,
+              toolCalls: aggregate.toolCalls,
+              reasoning: aggregate.reasoning,
+              reasoningDuration: aggregate.reasoningDuration,
+              modelUsed: chatEndpoint.model,
+              usagePromptTokens: aggregate.usage?.promptTokens,
+              usageCompletionTokens: aggregate.usage?.completionTokens,
+              usageTotalTokens: aggregate.usage?.totalTokens,
+            );
+          } catch (retryErr) {
+            lastError = retryErr is Exception
+                ? retryErr
+                : Exception(retryErr.toString());
+          }
+        }
+
+        // Some "OpenAI-compatible" providers implement Chat Completions with a
+        // non-standard tool_choice schema:
+        // - OpenAI Chat Completions spec: {"type":"function","function":{"name":"..."}} (nested)
+        // - some relays expect: {"type":"function","name":"..."} (flat)
+        // When we detect that variant, retry once with the flat form.
+        if (toolsCount > 0 &&
+            toolChoice != null &&
+            _looksLikeUnknownToolChoiceFunctionParam(lastError)) {
+          final Object? flattenedToolChoice = _normalizeResponsesToolChoice(
+            toolChoice,
+          );
+          if (flattenedToolChoice != null) {
+            try {
+              await FlutterLogger.nativeWarn(
+                'AI',
+                '[网关] tool_choice.function 不被支持，改用扁平 tool_choice{name} 重试（${endpoint.baseUrl}）',
+              );
+            } catch (_) {}
+            try {
+              final AIEndpoint chatEndpoint = _forceChatCompletionsEndpoint(
+                effectiveEndpoint,
+              );
+              final _PreparedRequest retryPrepared = _prepareRequest(
+                endpoint: chatEndpoint,
+                messages: messages,
+                stream: false,
+                tools: tools,
+                toolChoice: flattenedToolChoice,
+                useResponsesApiOverride: false,
+              );
+              final _GatewayAggregate aggregate = await _performNonStreaming(
+                endpoint: chatEndpoint,
+                prepared: retryPrepared,
+                responseStartMarker: responseStartMarker,
+                timeout: timeout,
+                logContext: logContext,
+                imagesCount: imagesCount,
+                toolsCount: toolsCount,
+              );
+              return AIGatewayResult(
+                content: aggregate.content,
+                toolCalls: aggregate.toolCalls,
+                reasoning: aggregate.reasoning,
+                reasoningDuration: aggregate.reasoningDuration,
+                modelUsed: chatEndpoint.model,
+                usagePromptTokens: aggregate.usage?.promptTokens,
+                usageCompletionTokens: aggregate.usage?.completionTokens,
+                usageTotalTokens: aggregate.usage?.totalTokens,
+              );
+            } catch (retryErr) {
+              lastError = retryErr is Exception
+                  ? retryErr
+                  : Exception(retryErr.toString());
+            }
+          }
+        }
         continue;
       }
     }
@@ -206,6 +321,7 @@ class AIRequestGateway {
     String? logContext,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    bool forceChatCompletions = false,
   }) {
     if (endpoints.isEmpty) {
       final StreamController<AIGatewayEvent> empty =
@@ -229,6 +345,9 @@ class AIRequestGateway {
     () async {
       Exception? lastError;
       for (final AIEndpoint endpoint in endpoints) {
+        final AIEndpoint effectiveEndpoint = forceChatCompletions
+            ? _forceChatCompletionsEndpoint(endpoint)
+            : endpoint;
         StreamController<AIGatewayEvent>? proxy;
         StreamSubscription<AIGatewayEvent>? sub;
         int emittedCount = 0;
@@ -241,15 +360,16 @@ class AIRequestGateway {
             }
           });
           final _PreparedRequest prepared = _prepareRequest(
-            endpoint: endpoint,
+            endpoint: effectiveEndpoint,
             messages: messages,
             stream: true,
             tools: tools,
             toolChoice: toolChoice,
+            useResponsesApiOverride: forceChatCompletions ? false : null,
           );
 
           final _GatewayAggregate aggregate = await _performStreaming(
-            endpoint: endpoint,
+            endpoint: effectiveEndpoint,
             prepared: prepared,
             responseStartMarker: responseStartMarker,
             timeout: timeout,
@@ -376,6 +496,7 @@ class AIRequestGateway {
     required bool stream,
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
+    bool? useResponsesApiOverride,
   }) {
     final String trimmedBase = endpoint.baseUrl.trim();
     final Uri baseUri = _resolveBaseUri(trimmedBase);
@@ -413,11 +534,13 @@ class AIRequestGateway {
       );
     }
 
-    final bool useResponsesApi = _shouldUseResponsesApi(
-      endpoint: endpoint,
-      baseUri: baseUri,
-      tools: tools,
-    );
+    final bool useResponsesApi =
+        useResponsesApiOverride ??
+        _shouldUseResponsesApi(
+          endpoint: endpoint,
+          baseUri: baseUri,
+          tools: tools,
+        );
     final Uri uri = useResponsesApi
         ? _buildResponsesUriFromBase(baseUri, endpoint.chatPath)
         : _buildEndpointUriFromBase(baseUri, endpoint.chatPath);
@@ -448,6 +571,39 @@ class AIRequestGateway {
       isGoogle: false,
       hasTools: tools.isNotEmpty,
       useResponsesApi: useResponsesApi,
+    );
+  }
+
+  bool _looksLikeGoToolChoiceUnmarshalError(Object? error) {
+    if (error == null) return false;
+    final String t = error.toString().toLowerCase();
+    if (!t.contains('cannot unmarshal object')) return false;
+    if (!t.contains('go struct field')) return false;
+    if (!t.contains('tool_choice')) return false;
+    return true;
+  }
+
+  bool _looksLikeUnknownToolChoiceFunctionParam(Object? error) {
+    if (error == null) return false;
+    final String t = error.toString().toLowerCase();
+    if (!t.contains('unknown parameter')) return false;
+    if (!t.contains('tool_choice.function')) return false;
+    return true;
+  }
+
+  AIEndpoint _forceChatCompletionsEndpoint(AIEndpoint endpoint) {
+    final String path = endpoint.chatPath.trim();
+    if (!_isResponsesPath(path)) return endpoint;
+    return AIEndpoint(
+      groupId: endpoint.groupId,
+      providerId: endpoint.providerId,
+      providerName: endpoint.providerName,
+      providerType: endpoint.providerType,
+      baseUrl: endpoint.baseUrl,
+      apiKey: endpoint.apiKey,
+      model: endpoint.model,
+      chatPath: '/v1/chat/completions',
+      useResponseApi: endpoint.useResponseApi,
     );
   }
 
@@ -841,6 +997,16 @@ class AIRequestGateway {
     return <String, dynamic>{'type': 'function', 'name': name};
   }
 
+  bool _isLikelyOpenAIHost(Uri baseUri) {
+    final String host = baseUri.host.toLowerCase();
+    if (host.isEmpty) return false;
+    if (host == 'api.openai.com') return true;
+    if (host.endsWith('.openai.com')) return true;
+    // Azure OpenAI endpoints often look like: {resource}.openai.azure.com
+    if (host.contains('openai.azure.com')) return true;
+    return false;
+  }
+
   bool _shouldUseResponsesApi({
     required AIEndpoint endpoint,
     required Uri baseUri,
@@ -849,13 +1015,18 @@ class AIRequestGateway {
     if (endpoint.useResponseApi) return true;
     if (_isResponsesPath(endpoint.chatPath)) return true;
 
-    final String model = endpoint.model.trim().toLowerCase();
-    if (model.startsWith('gpt-5')) return true;
-
     final String host = baseUri.host.toLowerCase();
     if (host.contains('codex-api') || host.contains('packycode')) {
       return true;
     }
+
+    final String model = endpoint.model.trim().toLowerCase();
+    if (model.startsWith('gpt-5')) {
+      // Keep gpt-5 on Responses for official hosts by default, but do NOT force
+      // Responses for arbitrary proxies unless explicitly enabled.
+      return _isLikelyOpenAIHost(baseUri);
+    }
+
     if (tools.isEmpty) return false;
     return false;
   }
@@ -990,7 +1161,8 @@ class AIRequestGateway {
           'provider=${providerName.isEmpty ? '-' : providerName}'
               '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
               ' type=${providerType.isEmpty ? '-' : providerType}',
-        'model=${endpoint.model} tools=$toolsCount images=$imagesCount',
+        'model=${endpoint.model} tools=$toolsCount images=$imagesCount toolChoice=${prepared.body.contains('"tool_choice"') ? 1 : 0}',
+        'chatPath=${endpoint.chatPath} endpoint.useResponseApi=${endpoint.useResponseApi ? 1 : 0} resolved.responses=${prepared.useResponsesApi ? 1 : 0}',
         'headers=${jsonEncode(maskHeaders(prepared.headers))}',
         'body=$body',
       ].join('\n');
@@ -1353,7 +1525,8 @@ class AIRequestGateway {
             'provider=${providerName.isEmpty ? '-' : providerName}'
                 '${providerIdText.isEmpty ? '' : '($providerIdText)'}'
                 ' type=${providerType.isEmpty ? '-' : providerType}',
-          'model=${endpoint.model} tools=$toolsCount images=$imagesCount',
+          'model=${endpoint.model} tools=$toolsCount images=$imagesCount toolChoice=${prepared.body.contains('"tool_choice"') ? 1 : 0}',
+          'chatPath=${endpoint.chatPath} endpoint.useResponseApi=${endpoint.useResponseApi ? 1 : 0} resolved.responses=${prepared.useResponsesApi ? 1 : 0}',
           'headers=${jsonEncode(maskHeaders(prepared.headers))}',
           'body=$body',
         ].join('\n');
