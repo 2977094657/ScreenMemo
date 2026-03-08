@@ -41,7 +41,6 @@ jobs:
       - name: Install Android SDK packages
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null
           sdkmanager \
             "platform-tools" \
             "platforms;android-36" \
