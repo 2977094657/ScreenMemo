@@ -31,15 +31,13 @@ subprojects {
     project.layout.buildDirectory = rootProject.layout.buildDirectory.dir(project.name)
     evaluationDependsOn(":app")
 
-    afterEvaluate {
-        if (name == "sentry_flutter") {
-            tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-                compilerOptions {
-                    // Kotlin 2.2+ no longer supports languageVersion/apiVersion 1.6.
-                    // sentry_flutter still pins 1.6, so bump to 1.8 for CI builds.
-                    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
-                    apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
-                }
+    if (name == "sentry_flutter") {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                // Kotlin 2.2+ no longer supports languageVersion/apiVersion 1.6.
+                // sentry_flutter still pins 1.6, so bump to 1.8 for CI builds.
+                languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
+                apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_8)
             }
         }
     }
