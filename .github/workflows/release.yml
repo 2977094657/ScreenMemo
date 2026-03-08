@@ -58,18 +58,22 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Configure Android release signing (optional)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         shell: bash
         run: |
-          mkdir -p android/app
-          printf "%s" "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          if [[ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]]; then
+            echo "ANDROID_KEYSTORE_BASE64 is not set; skipping release signing config."
+            exit 0
+          fi
 
-          cat > android/key.properties <<'EOF'
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          storeFile=upload-keystore.jks
-          EOF
+          mkdir -p android/app
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+
+          {
+            printf 'storePassword=%s\n' "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            printf 'keyPassword=%s\n' "${{ secrets.ANDROID_KEY_PASSWORD }}"
+            printf 'keyAlias=%s\n' "${{ secrets.ANDROID_KEY_ALIAS }}"
+            printf 'storeFile=upload-keystore.jks\n'
+          } > android/key.properties
 
           chmod 600 android/app/upload-keystore.jks android/key.properties
 
