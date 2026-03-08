@@ -237,10 +237,10 @@ class _UserMemoryPageState extends State<UserMemoryPage>
 
       String model =
           (ctxRow != null &&
-                  (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
-              ? (ctxRow['model'] as String).trim()
-              : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
-                    .toString();
+              (ctxRow['model'] as String?)?.trim().isNotEmpty == true)
+          ? (ctxRow['model'] as String).trim()
+          : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
+                .toString();
       if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
 
       if (mounted) {
@@ -735,6 +735,8 @@ class _UserMemoryPageState extends State<UserMemoryPage>
 
     Future<List<UserMemoryEvidence>> loadEvidence() =>
         _mem.listEvidenceForItem(item.id);
+    Future<List<UserMemoryItemEvent>> loadEvents() =>
+        _mem.listEventsForItem(item.id, limit: 50);
 
     await showDialog<void>(
       context: context,
@@ -829,6 +831,65 @@ class _UserMemoryPageState extends State<UserMemoryPage>
                         lines.add('${e.sourceType}:${e.sourceId} → $files');
                       }
                       return Text(lines.join('\n'));
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'History',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  FutureBuilder<List<UserMemoryItemEvent>>(
+                    future: loadEvents(),
+                    builder: (c2, snap) {
+                      if (snap.connectionState != ConnectionState.done) {
+                        return const Text('Loading…');
+                      }
+                      final List<UserMemoryItemEvent> ev =
+                          snap.data ?? const [];
+                      if (ev.isEmpty) return const Text('(empty)');
+
+                      String fmtTime(UserMemoryItemEvent e) {
+                        final int? st = e.startTime;
+                        final int? et = e.endTime;
+                        if (st != null && st > 0) {
+                          final String s = _fmtMs(st);
+                          if (et != null && et > 0 && et != st) {
+                            return '$s–${_fmtMs(et)}';
+                          }
+                          return s;
+                        }
+                        return _fmtMs(e.createdAtMs);
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final e in ev)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${fmtTime(e)} (${e.kind}) ${e.content}',
+                                  ),
+                                  if (e.sourceType.trim().isNotEmpty &&
+                                      e.sourceId.trim().isNotEmpty)
+                                    Text(
+                                      '${e.sourceType}:${e.sourceId}',
+                                      style: const TextStyle(
+                                        color: AppTheme.mutedForeground,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      );
                     },
                   ),
                 ],
@@ -1075,6 +1136,22 @@ class _UserMemoryPageState extends State<UserMemoryPage>
     final UserMemoryIndexState? st = _indexState;
     final String status = st?.status ?? 'idle';
     final Map<String, dynamic> stats = st?.stats ?? const <String, dynamic>{};
+
+    int toInt(Object? v) {
+      if (v == null) return 0;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString().trim()) ?? 0;
+    }
+
+    List<String> toStrList(Object? v) {
+      if (v is! List) return const <String>[];
+      return v
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    }
+
     final int processed = (stats['processed_segments'] as int?) ?? 0;
     final int total = (stats['total_segments'] as int?) ?? 0;
     final int errors = (stats['errors'] as int?) ?? 0;
@@ -1082,6 +1159,15 @@ class _UserMemoryPageState extends State<UserMemoryPage>
     final int updated = (stats['updated'] as int?) ?? 0;
     final int touched = (stats['touched'] as int?) ?? 0;
     final int images = (stats['processed_images'] as int?) ?? 0;
+
+    final int dbgSid = toInt(stats['debug_segment_id']);
+    final String dbgModel = (stats['debug_model'] as String?)?.trim() ?? '';
+    final String dbgExtractJson =
+        (stats['debug_extract_json'] as String?)?.trim() ?? '';
+    final String dbgMergeJson =
+        (stats['debug_merge_json'] as String?)?.trim() ?? '';
+    final List<String> dbgExtracted = toStrList(stats['debug_extracted']);
+    final List<String> dbgResolved = toStrList(stats['debug_resolved']);
 
     final double progress = (total > 0)
         ? (processed / total).clamp(0.0, 1.0)
@@ -1112,6 +1198,138 @@ class _UserMemoryPageState extends State<UserMemoryPage>
           Text(
             '最近错误：${(stats['last_error'] as String).trim()}',
             style: const TextStyle(color: Colors.redAccent),
+          ),
+        ],
+        if (dbgSid > 0 ||
+            dbgExtractJson.isNotEmpty ||
+            dbgMergeJson.isNotEmpty ||
+            dbgExtracted.isNotEmpty ||
+            dbgResolved.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '调试：抽取 / 去重',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      dbgSid > 0 ? 'segment:$dbgSid' : '',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.mutedForeground,
+                      ),
+                    ),
+                  ],
+                ),
+                if (dbgModel.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.spacing1),
+                  Text(
+                    'model: $dbgModel',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppTheme.mutedForeground,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppTheme.spacing2),
+                Wrap(
+                  spacing: AppTheme.spacing2,
+                  runSpacing: AppTheme.spacing2,
+                  children: [
+                    if (dbgExtractJson.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await Clipboard.setData(
+                              ClipboardData(text: dbgExtractJson),
+                            );
+                            if (!mounted) return;
+                            UINotifier.success(context, '已复制 Extract JSON');
+                          } catch (_) {
+                            if (!mounted) return;
+                            UINotifier.error(context, '复制失败');
+                          }
+                        },
+                        icon: const Icon(Icons.content_copy, size: 16),
+                        label: const Text('复制 Extract'),
+                      ),
+                    if (dbgMergeJson.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await Clipboard.setData(
+                              ClipboardData(text: dbgMergeJson),
+                            );
+                            if (!mounted) return;
+                            UINotifier.success(context, '已复制 Merge JSON');
+                          } catch (_) {
+                            if (!mounted) return;
+                            UINotifier.error(context, '复制失败');
+                          }
+                        },
+                        icon: const Icon(Icons.content_copy, size: 16),
+                        label: const Text('复制 Merge'),
+                      ),
+                  ],
+                ),
+                if (dbgExtracted.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.spacing2),
+                  Text(
+                    'Extracted items',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  SelectableText(dbgExtracted.join('\n')),
+                ],
+                if (dbgExtractJson.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.spacing2),
+                  Text(
+                    'Extract tool response (raw)',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  SelectableText(dbgExtractJson),
+                ],
+                if (dbgResolved.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.spacing2),
+                  Text(
+                    'Resolved writes',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  SelectableText(dbgResolved.join('\n')),
+                ],
+                if (dbgMergeJson.isNotEmpty) ...[
+                  const SizedBox(height: AppTheme.spacing2),
+                  Text(
+                    'Merge tool response (raw)',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.spacing1),
+                  SelectableText(dbgMergeJson),
+                ],
+              ],
+            ),
           ),
         ],
         if (traceText.trim().isNotEmpty) ...[

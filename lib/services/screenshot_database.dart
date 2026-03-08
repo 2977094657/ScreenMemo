@@ -112,7 +112,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 33,
+          version: 34,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -150,7 +150,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 33,
+          version: 34,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -183,7 +183,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 33,
+          version: 34,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -210,7 +210,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 33,
+        version: 34,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -1092,6 +1092,13 @@ class ScreenshotDatabase {
     if (oldVersion < 33) {
       try {
         await _recreateSearchDocsFtsWithPrefix(db);
+      } catch (_) {}
+    }
+
+    // v34: Global user memory item history/events.
+    if (oldVersion < 34) {
+      try {
+        await _createUserMemoryItemEventsTable(db);
       } catch (_) {}
     }
   }

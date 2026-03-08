@@ -238,6 +238,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       'CREATE INDEX IF NOT EXISTS idx_user_memory_evidence_item ON user_memory_evidence(memory_item_id, created_at DESC, id DESC)',
     );
 
+    await _createUserMemoryItemEventsTable(db);
+
     await db.execute('''
       CREATE TABLE IF NOT EXISTS user_memory_index_state (
         source TEXT PRIMARY KEY,
@@ -1533,7 +1535,7 @@ ORDER BY day ASC
       // Retry with truncated result columns so the timeline won't go empty.
       try {
         const int maxOutputTextChars = 4096;
-        const int maxStructuredJsonChars = 16384;
+        const int maxStructuredJsonChars = 204800;
         const int maxCategoriesChars = 4096;
         final String fallbackSql =
             '''
@@ -3237,6 +3239,39 @@ ORDER BY day ASC
       return <Map<String, dynamic>>[];
     }
   }
+}
+
+Future<void> _createUserMemoryItemEventsTable(DatabaseExecutor db) async {
+  try {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_memory_item_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memory_item_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,                -- rule | fact | habit
+        content TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        keywords_json TEXT,
+        confidence REAL,
+        source_type TEXT NOT NULL,         -- segment | chat | daily_summary | weekly_summary | morning_insights
+        source_id TEXT NOT NULL,           -- e.g. segment:123 / chat:cid=...#ts=...
+        evidence_filenames_json TEXT,      -- optional JSON array of basenames (max ~5)
+        start_time INTEGER,
+        end_time INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000),
+        UNIQUE(memory_item_id, source_type, source_id, content_hash)
+      )
+    ''');
+  } catch (_) {}
+
+  // Expression index for stable chronological reads; best-effort for older SQLite.
+  try {
+    await db.execute(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_user_memory_item_events_item
+      ON user_memory_item_events(memory_item_id, COALESCE(start_time, created_at) ASC, id ASC)
+      ''',
+    );
+  } catch (_) {}
 }
 
 Future<void> _createWeeklySummariesTable(DatabaseExecutor db) async {

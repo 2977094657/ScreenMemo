@@ -64,4 +64,28 @@ void main() {
       isFalse,
     );
   });
+
+  test('shouldPauseOnSegmentFailure pauses on failures with images', () {
+    expect(
+      UserMemoryIndexService.shouldPauseOnSegmentFailure(
+        imagesProvided: 0,
+        error: Exception('timeout'),
+      ),
+      isFalse,
+    );
+    expect(
+      UserMemoryIndexService.shouldPauseOnSegmentFailure(
+        imagesProvided: 1,
+        error: Exception('no_images_available_for_segment'),
+      ),
+      isFalse,
+    );
+    expect(
+      UserMemoryIndexService.shouldPauseOnSegmentFailure(
+        imagesProvided: 1,
+        error: Exception('timeout'),
+      ),
+      isTrue,
+    );
+  });
 }

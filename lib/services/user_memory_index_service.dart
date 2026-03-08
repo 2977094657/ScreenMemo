@@ -82,6 +82,16 @@ class UserMemoryIndexService {
         (segmentEndTime == cursorEndTime && segmentId > cursorSegmentId);
   }
 
+  static bool shouldPauseOnSegmentFailure({
+    required int imagesProvided,
+    required Object error,
+  }) {
+    if (imagesProvided <= 0) return false;
+    final String msg = error.toString().toLowerCase();
+    if (msg.contains('no_images_available_for_segment')) return false;
+    return true;
+  }
+
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
   final AISettingsService _settings = AISettingsService.instance;
   final AIRequestGateway _gateway = AIRequestGateway.instance;
@@ -484,7 +494,7 @@ class UserMemoryIndexService {
     return t.trim();
   }
 
-  ExtractedUserMemoryItem _canonicalizeItem(
+  static ExtractedUserMemoryItem _canonicalizeItem(
     ExtractedUserMemoryItem original,
     Map<String, dynamic>? canonical,
   ) {
@@ -536,11 +546,101 @@ class UserMemoryIndexService {
     );
   }
 
+  static List<UserMemoryResolvedWrite> resolveWritesFromMergeDecisions({
+    required List<ExtractedUserMemoryItem> extracted,
+    required List<dynamic> decisionsRaw,
+    required Set<int> allowedCandidateIds,
+  }) {
+    final Map<int, Map<String, dynamic>> byIndex =
+        <int, Map<String, dynamic>>{};
+    for (final d in decisionsRaw) {
+      if (d is! Map) continue;
+      final int idx = (d['index'] is int)
+          ? (d['index'] as int)
+          : int.tryParse('${d['index']}'.trim()) ?? -1;
+      if (idx < 0) continue;
+      byIndex[idx] = Map<String, dynamic>.from(d);
+    }
+
+    final List<UserMemoryResolvedWrite> out = <UserMemoryResolvedWrite>[];
+    for (int i = 0; i < extracted.length; i += 1) {
+      final ExtractedUserMemoryItem original = extracted[i];
+      final Map<String, dynamic>? d = byIndex[i];
+      if (d == null) {
+        out.add(UserMemoryResolvedWrite.upsert(original));
+        continue;
+      }
+      final String action = (d['action'] as String? ?? '').trim().toLowerCase();
+      final Map<String, dynamic>? canonical = (d['canonical'] is Map)
+          ? Map<String, dynamic>.from(d['canonical'] as Map)
+          : null;
+      final ExtractedUserMemoryItem canon = _canonicalizeItem(
+        original,
+        canonical,
+      );
+
+      if (action == 'discard') {
+        out.add(UserMemoryResolvedWrite.discard(original));
+        continue;
+      }
+
+      if (action == 'merge' || action == 'append') {
+        final int targetId = (d['target_id'] is int)
+            ? (d['target_id'] as int)
+            : int.tryParse('${d['target_id']}'.trim()) ?? 0;
+        if (targetId > 0 && allowedCandidateIds.contains(targetId)) {
+          out.add(
+            action == 'append'
+                ? UserMemoryResolvedWrite.append(
+                    targetId: targetId,
+                    item: canon,
+                  )
+                : UserMemoryResolvedWrite.merge(
+                    targetId: targetId,
+                    item: canon,
+                  ),
+          );
+          continue;
+        }
+        // Invalid target -> fallback to upsert.
+        out.add(UserMemoryResolvedWrite.upsert(canon));
+        continue;
+      }
+
+      // Default: upsert.
+      out.add(UserMemoryResolvedWrite.upsert(canon));
+    }
+    return out;
+  }
+
+  Future<List<UserMemoryResolvedWrite>> resolveWritesWithMergeModel({
+    required List<AIEndpoint> endpoints,
+    required List<ExtractedUserMemoryItem> extracted,
+    required int segmentId,
+    required String model,
+    String? logContext,
+    bool require = false,
+    void Function(String rawJson)? onRawMergeJson,
+  }) {
+    return _resolveWritesWithMergeModel(
+      endpoints: endpoints,
+      extracted: extracted,
+      segmentId: segmentId,
+      model: model,
+      logContext: logContext,
+      require: require,
+      onRawMergeJson: onRawMergeJson,
+    );
+  }
+
   Future<List<UserMemoryResolvedWrite>> _resolveWritesWithMergeModel({
     required List<AIEndpoint> endpoints,
     required List<ExtractedUserMemoryItem> extracted,
     required int segmentId,
     required String model,
+    String? logContext,
+    bool require = false,
+    void Function(String rawJson)? onRawMergeJson,
   }) async {
     if (extracted.isEmpty) {
       return const <UserMemoryResolvedWrite>[];
@@ -550,10 +650,10 @@ class UserMemoryIndexService {
         .map((it) => UserMemoryResolvedWrite.upsert(it))
         .toList(growable: false);
 
-    final bool allHaveKeys = extracted.every(
-      (e) => (e.key ?? '').trim().isNotEmpty,
-    );
-    if (allHaveKeys) {
+    if (endpoints.isEmpty) {
+      if (require) {
+        throw StateError('No AI endpoints configured for context=memory');
+      }
       return fallbackUpserts();
     }
 
@@ -562,17 +662,28 @@ class UserMemoryIndexService {
     final Map<int, List<int>> candidateIdsByIndex = <int, List<int>>{};
     for (int i = 0; i < extracted.length; i += 1) {
       final ExtractedUserMemoryItem it = extracted[i];
+      final String key0 = (it.key ?? '').trim();
+      final List<String> kw = it.keywords
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .take(8)
+          .toList(growable: false);
+      final bool includeContent = kw.length < 2;
+
       final List<String> qParts = <String>[
-        (it.key ?? '').trim(),
-        it.content.trim(),
-        it.keywords.join(' ').trim(),
-      ].where((e) => e.isNotEmpty).toList(growable: false);
-      final String q = qParts.join(' ');
+        if (key0.isNotEmpty) key0,
+        ...kw,
+        if (includeContent && it.content.trim().isNotEmpty)
+          (it.content.trim().length > 120
+              ? it.content.trim().substring(0, 120)
+              : it.content.trim()),
+      ];
+      final String q = qParts.join(' ').trim();
       if (q.isEmpty) continue;
       try {
         final hits = await UserMemoryService.instance.searchItems(
           q,
-          limit: 6,
+          limit: 10,
           offset: 0,
           allowAdvanced: false,
         );
@@ -580,18 +691,13 @@ class UserMemoryIndexService {
         for (final h in hits) {
           if (h.id <= 0) continue;
           candidatesById[h.id] = h;
-          if (ids.length < 6) ids.add(h.id);
+          if (ids.length < 10) ids.add(h.id);
         }
         if (ids.isNotEmpty) candidateIdsByIndex[i] = ids;
       } catch (_) {}
     }
 
     final Set<int> allCandidateIds = candidatesById.keys.toSet();
-    final bool shouldCallMerge =
-        extracted.length > 1 || allCandidateIds.isNotEmpty;
-    if (!shouldCallMerge) {
-      return fallbackUpserts();
-    }
 
     final List<Map<String, Object?>> newItems = <Map<String, Object?>>[];
     for (int i = 0; i < extracted.length; i += 1) {
@@ -626,15 +732,35 @@ class UserMemoryIndexService {
       '输入包含：new_items（本次抽取结果）与 candidates（已有记忆候选）。',
       '',
       '任务：为每条 new_items 生成一个 decision：',
-      '- action="merge": 语义等价/同一条记忆；选择 target_id（必须来自 candidates.id）；canonical 给出规范化字段。',
-      '- action="upsert": 新的长期记忆；canonical 给出规范化字段。',
-      '- action="discard": 与其它 new_items 重复且已被 merge/upsert 覆盖，或不够长期/太弱。',
+      '- action="merge": 语义等价/同义改写/重复（不产生时序）；选择 target_id（必须来自 candidates.id）；canonical 给出规范化字段。',
+      '- action="append": 同一主题/同一实体但不是重复，是下一阶段/新状态（需要时序）；选择 target_id（必须来自 candidates.id）；canonical 给出规范化字段。',
+      '- action="upsert": 新的长期记忆（新 thread）；canonical 给出规范化字段。',
+      '- action="discard": 与其它 new_items 重复且已被 merge/append/upsert 覆盖，或不够长期/太弱。',
+      '',
+      '示例：',
+      '- merge: 「用户习惯使用哔哩哔哩观看视频」≈「用户习惯在哔哩哔哩观看视频」',
+      '- append: 「我有一个杯子」→「杯子碎掉了」→「买了新杯子」',
       '',
       'key 规则（用于去重）：尽量输出稳定 key（lowercase，使用 . 分层，不含日期/segment id）。',
-      '如果 merge 的目标 candidate 已有 key，请复用它；不要随意更换已有 key。',
+      '如果 merge/append 的目标 candidate 已有 key，请复用它；不要随意更换已有 key。',
       '',
       '约束：canonical.content 只能做等价改写/归一化，不要引入新事实。',
       '如果不确定是否重复，优先 upsert。',
+      '',
+      '输出 schema（JSON only）：',
+      '{ "decisions": [',
+      '  {',
+      '    "index": 0,',
+      '    "action": "upsert|merge|append|discard",',
+      '    "target_id": 123,',
+      '    "canonical": { "kind":"rule|fact|habit", "key":"optional", "content":"string", "keywords":["..."], "confidence":0.0 }',
+      '  }',
+      '] }',
+      '',
+      '输出要求：',
+      '- 优先使用工具调用：如果可以调用工具，请调用 user_memory_merge，并仅返回符合 schema 的 arguments。',
+      '- 否则请直接输出 JSON 对象（不要代码块/不要解释），schema 如上。',
+      '- 如无任何输出，返回 {"decisions":[]}。',
     ].join('\n');
 
     const String toolName = 'user_memory_merge';
@@ -644,7 +770,7 @@ class UserMemoryIndexService {
         'function': <String, dynamic>{
           'name': toolName,
           'description':
-              'Resolve merge/upsert/discard decisions for extracted user memories.',
+              'Resolve merge/append/upsert/discard decisions for extracted user memories.',
           'parameters': <String, dynamic>{
             'type': 'object',
             'properties': <String, dynamic>{
@@ -656,7 +782,7 @@ class UserMemoryIndexService {
                     'index': <String, dynamic>{'type': 'integer', 'minimum': 0},
                     'action': <String, dynamic>{
                       'type': 'string',
-                      'enum': <String>['upsert', 'merge', 'discard'],
+                      'enum': <String>['upsert', 'merge', 'append', 'discard'],
                     },
                     'target_id': <String, dynamic>{
                       'type': 'integer',
@@ -698,116 +824,77 @@ class UserMemoryIndexService {
         },
       },
     ];
-    final Map<String, dynamic> toolChoice = <String, dynamic>{
-      'type': 'function',
-      'function': <String, dynamic>{'name': toolName},
-    };
 
+    final String userPayload = jsonEncode(<String, Object?>{
+      'new_items': newItems,
+      'candidates': candidates,
+    });
+
+    final AIGatewayResult result = await _gateway.complete(
+      endpoints: endpoints,
+      messages: <AIMessage>[
+        AIMessage(role: 'system', content: sys),
+        AIMessage(role: 'user', content: userPayload),
+      ],
+      responseStartMarker: '',
+      timeout: const Duration(seconds: 45),
+      preferStreaming: false,
+      logContext: logContext ?? 'user_memory_merge_segment_$segmentId',
+      tools: tools,
+      forceChatCompletions: true,
+    );
+
+    String mergeText = result.content;
+    if (result.toolCalls.isNotEmpty) {
+      for (final AIToolCall tc in result.toolCalls) {
+        if (tc.name == toolName) {
+          mergeText = tc.argumentsJson;
+          break;
+        }
+      }
+    }
     try {
-      final String userPayload = jsonEncode(<String, Object?>{
-        'segment_id': segmentId,
-        'model': model,
-        'new_items': newItems,
-        'candidates': candidates,
-      });
+      onRawMergeJson?.call(_sanitizeModelText(mergeText));
+    } catch (_) {}
 
-      final AIGatewayResult result = await _gateway.complete(
-        endpoints: endpoints,
-        messages: <AIMessage>[
-          AIMessage(role: 'system', content: sys),
-          AIMessage(role: 'user', content: userPayload),
-        ],
-        responseStartMarker: '',
-        timeout: const Duration(seconds: 45),
-        preferStreaming: false,
-        logContext: 'user_memory_merge_segment_$segmentId',
-        tools: tools,
-        toolChoice: toolChoice,
-      );
-
-      String mergeText = result.content;
-      if (result.toolCalls.isNotEmpty) {
-        for (final AIToolCall tc in result.toolCalls) {
-          if (tc.name == toolName) {
-            mergeText = tc.argumentsJson;
-            break;
-          }
-        }
-      }
-
-      dynamic data;
-      final String t = _sanitizeModelText(mergeText);
-      try {
-        data = jsonDecode(t);
-      } catch (_) {
-        final int s = t.indexOf('{');
-        final int e = t.lastIndexOf('}');
-        if (s >= 0 && e > s) {
-          data = jsonDecode(t.substring(s, e + 1));
-        } else {
-          return fallbackUpserts();
-        }
-      }
-      if (data is! Map) return fallbackUpserts();
-      final dynamic decisionsRaw = data['decisions'];
-      if (decisionsRaw is! List) return fallbackUpserts();
-
-      final Map<int, Map<String, dynamic>> byIndex =
-          <int, Map<String, dynamic>>{};
-      for (final d in decisionsRaw) {
-        if (d is! Map) continue;
-        final int idx = (d['index'] is int)
-            ? (d['index'] as int)
-            : int.tryParse('${d['index']}'.trim()) ?? -1;
-        if (idx < 0) continue;
-        byIndex[idx] = Map<String, dynamic>.from(d);
-      }
-
-      final List<UserMemoryResolvedWrite> out = <UserMemoryResolvedWrite>[];
-      for (int i = 0; i < extracted.length; i += 1) {
-        final ExtractedUserMemoryItem original = extracted[i];
-        final Map<String, dynamic>? d = byIndex[i];
-        if (d == null) {
-          out.add(UserMemoryResolvedWrite.upsert(original));
-          continue;
-        }
-        final String action = (d['action'] as String? ?? '')
-            .trim()
-            .toLowerCase();
-        final Map<String, dynamic>? canonical = (d['canonical'] is Map)
-            ? Map<String, dynamic>.from(d['canonical'] as Map)
-            : null;
-        final ExtractedUserMemoryItem canon = _canonicalizeItem(
-          original,
-          canonical,
-        );
-
-        if (action == 'discard') {
-          out.add(UserMemoryResolvedWrite.discard(original));
-          continue;
-        }
-        if (action == 'merge') {
-          final int targetId = (d['target_id'] is int)
-              ? (d['target_id'] as int)
-              : int.tryParse('${d['target_id']}'.trim()) ?? 0;
-          if (targetId > 0 && allCandidateIds.contains(targetId)) {
-            out.add(
-              UserMemoryResolvedWrite.merge(targetId: targetId, item: canon),
-            );
-            continue;
-          }
-          // Invalid target -> fallback to upsert.
-          out.add(UserMemoryResolvedWrite.upsert(canon));
-          continue;
-        }
-        // Default: upsert.
-        out.add(UserMemoryResolvedWrite.upsert(canon));
-      }
-
-      return out;
+    dynamic data;
+    final String t = _sanitizeModelText(mergeText);
+    try {
+      data = jsonDecode(t);
     } catch (_) {
+      final int s = t.indexOf('{');
+      final int e = t.lastIndexOf('}');
+      if (s >= 0 && e > s) {
+        data = jsonDecode(t.substring(s, e + 1));
+      } else {
+        if (require) {
+          throw const FormatException('user_memory_merge returned non-JSON');
+        }
+        return fallbackUpserts();
+      }
+    }
+    if (data is! Map) {
+      if (require) {
+        throw const FormatException(
+          'user_memory_merge returned JSON but not an object',
+        );
+      }
       return fallbackUpserts();
     }
+    final dynamic decisionsRaw = data['decisions'];
+    if (decisionsRaw is! List) {
+      if (require) {
+        throw const FormatException(
+          'user_memory_merge returned JSON without decisions[]',
+        );
+      }
+      return fallbackUpserts();
+    }
+    return UserMemoryIndexService.resolveWritesFromMergeDecisions(
+      extracted: extracted,
+      decisionsRaw: List<dynamic>.from(decisionsRaw),
+      allowedCandidateIds: allCandidateIds,
+    );
   }
 
   Future<void> _runLoop(String source) async {
@@ -843,22 +930,6 @@ class UserMemoryIndexService {
       await _updateIndexState(db, src, stats: stats);
       await _emitState(src);
     }
-
-    // Resolve memory endpoints once per run.
-    final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
-      context: 'memory',
-    );
-    if (endpoints.isEmpty) {
-      await _updateIndexState(
-        db,
-        src,
-        status: 'error',
-        error: 'No AI endpoints configured for context=memory',
-      );
-      await _emitState(src);
-      return;
-    }
-    final String model = endpoints.first.model;
 
     while (true) {
       final String status = await _getIndexStatus(db, src);
@@ -906,13 +977,30 @@ class UserMemoryIndexService {
             ...cursor,
             'last_segment_end_time': lastEndTime,
             'last_segment_id': lastId,
-            'model': model,
           };
           await _updateIndexState(db, src, cursor: cursor, stats: stats);
           await _emitState(src);
           continue;
         }
 
+        // Always use the latest Memory AppBar provider/model selection.
+        final List<AIEndpoint> endpoints = await _settings
+            .getEndpointCandidates(context: 'memory');
+        if (endpoints.isEmpty) {
+          stats = <String, dynamic>{
+            ...stats,
+            'errors': ((stats['errors'] as int?) ?? 0) + 1,
+            'last_error': 'No AI endpoints configured for context=memory',
+            'paused_at_segment_id': sid,
+            'paused_at_segment_end_time': et,
+          };
+          await _updateIndexState(db, src, status: 'paused', stats: stats);
+          await _emitState(src);
+          return;
+        }
+        final String model = endpoints.first.model;
+
+        int imagesProvided = 0;
         try {
           final List<Map<String, dynamic>> samples = await _fetchSegmentSamples(
             db,
@@ -935,7 +1023,7 @@ class UserMemoryIndexService {
           );
           parts.addAll(loaded.parts);
 
-          final int imagesProvided = loaded.basenames.length;
+          imagesProvided = loaded.basenames.length;
           final Set<String> allowedNames = loaded.basenames.toSet();
 
           if (imagesProvided <= 0) {
@@ -1029,10 +1117,6 @@ class UserMemoryIndexService {
               },
             },
           ];
-          final Map<String, dynamic> toolChoice = <String, dynamic>{
-            'type': 'function',
-            'function': <String, dynamic>{'name': toolName},
-          };
 
           AIGatewayResult result;
           int attempt = 0;
@@ -1050,7 +1134,7 @@ class UserMemoryIndexService {
                 preferStreaming: false,
                 logContext: 'user_memory_index_segment_$sid',
                 tools: tools,
-                toolChoice: toolChoice,
+                forceChatCompletions: true,
               );
               break;
             } catch (e) {
@@ -1082,6 +1166,26 @@ class UserMemoryIndexService {
                 extractionText,
                 allowedEvidenceFilenames: allowedNames,
               );
+          final String extractedJson = (() {
+            try {
+              final String raw = _sanitizeModelText(extractionText);
+              if (raw.length <= 8000) return raw;
+              return raw.substring(0, 8000) + '…(truncated)';
+            } catch (_) {
+              return '';
+            }
+          })();
+          final List<String> extractedLines = extracted
+              .map((e) {
+                final String k = (e.key ?? '').trim();
+                final String keyPart = k.isEmpty ? '' : ' key=$k';
+                final String evPart = e.evidenceFilenames.isEmpty
+                    ? ''
+                    : ' evidence=${e.evidenceFilenames.join(',')}';
+                return '(${e.kind}) ${e.content}$keyPart$evPart';
+              })
+              .take(12)
+              .toList(growable: false);
 
           final UserMemoryUpsertEvidenceParams ev =
               UserMemoryUpsertEvidenceParams(
@@ -1091,15 +1195,58 @@ class UserMemoryIndexService {
                 endTime: et,
               );
 
-          // Optional: model-assisted merge to reduce semantic duplicates at write-time
-          // (mobile-friendly; avoids heavy dedupe during UI search/render).
+          // Update debug panel early (even if merge later fails).
+          stats = <String, dynamic>{
+            ...stats,
+            'debug_segment_id': sid,
+            'debug_model': model,
+            'debug_extract_json': extractedJson,
+            'debug_extracted': extractedLines,
+            'debug_merge_json': '',
+            'debug_resolved': const <String>[],
+          };
+          await _updateIndexState(db, src, stats: stats);
+          await _emitState(src);
+
+          // Required: model-assisted merge to reduce semantic duplicates at
+          // write-time. If merge fails, pause progress.
+          String mergeJson = '';
           final List<UserMemoryResolvedWrite> resolvedWrites =
               await _resolveWritesWithMergeModel(
                 endpoints: endpoints,
                 extracted: extracted,
                 segmentId: sid,
                 model: model,
+                require: true,
+                onRawMergeJson: (raw) {
+                  mergeJson = raw;
+                },
               );
+          final String mergeJsonClipped = (() {
+            final String raw = mergeJson.trim();
+            if (raw.isEmpty) return '';
+            if (raw.length <= 8000) return raw;
+            return raw.substring(0, 8000) + '…(truncated)';
+          })();
+          final List<String> resolvedLines = resolvedWrites
+              .map((w) {
+                final int tid = w.targetId ?? 0;
+                final String target = tid > 0 ? ' target=$tid' : '';
+                final String k = (w.item.key ?? '').trim();
+                final String keyPart = k.isEmpty ? '' : ' key=$k';
+                return '${w.action.name}$target (${w.item.kind}) ${w.item.content}$keyPart';
+              })
+              .take(12)
+              .toList(growable: false);
+
+          // Update debug panel with merge response before DB writes.
+          stats = <String, dynamic>{
+            ...stats,
+            'debug_merge_json': mergeJsonClipped,
+            'debug_resolved': resolvedLines,
+          };
+          await _updateIndexState(db, src, stats: stats);
+          await _emitState(src);
 
           final UserMemoryUpsertStats upsertStats = await UserMemoryService
               .instance
@@ -1117,12 +1264,36 @@ class UserMemoryIndexService {
             'touched': ((stats['touched'] as int?) ?? 0) + upsertStats.touched,
           };
         } catch (e) {
+          final String msg = e.toString();
+          final bool shouldPause =
+              UserMemoryIndexService.shouldPauseOnSegmentFailure(
+                imagesProvided: imagesProvided,
+                error: e,
+              );
+          if (shouldPause) {
+            stats = <String, dynamic>{
+              ...stats,
+              'errors': ((stats['errors'] as int?) ?? 0) + 1,
+              'last_error': msg,
+              'paused_at_segment_id': sid,
+              'paused_at_segment_end_time': et,
+            };
+            try {
+              await FlutterLogger.nativeWarn(
+                'Memory',
+                'index segment $sid failed with images; pausing: $e',
+              );
+            } catch (_) {}
+            await _updateIndexState(db, src, status: 'paused', stats: stats);
+            await _emitState(src);
+            return;
+          }
           stats = <String, dynamic>{
             ...stats,
             'processed_segments':
                 ((stats['processed_segments'] as int?) ?? 0) + 1,
             'errors': ((stats['errors'] as int?) ?? 0) + 1,
-            'last_error': e.toString(),
+            'last_error': msg,
           };
           try {
             await FlutterLogger.nativeWarn(
@@ -1132,7 +1303,6 @@ class UserMemoryIndexService {
           } catch (_) {}
         }
 
-        // Advance cursor regardless of success/failure to avoid being stuck.
         lastEndTime = et;
         lastId = sid;
         cursor = <String, dynamic>{

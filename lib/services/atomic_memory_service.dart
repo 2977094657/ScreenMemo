@@ -7,6 +7,7 @@ import 'chat_context_service.dart';
 import 'flutter_logger.dart';
 import 'prompt_budget.dart';
 import 'screenshot_database.dart';
+import 'user_memory_index_service.dart';
 import 'user_memory_service.dart';
 
 class AtomicMemoryService {
@@ -516,12 +517,37 @@ class AtomicMemoryService {
               ),
             )
             .toList(growable: false);
-        await UserMemoryService.instance.upsertExtractedItems(
-          items: global,
-          evidence: UserMemoryUpsertEvidenceParams(
-            sourceType: 'chat',
-            sourceId: 'chat:cid=$cid#ts=$now',
-          ),
+
+        final UserMemoryUpsertEvidenceParams ev =
+            UserMemoryUpsertEvidenceParams(
+              sourceType: 'chat',
+              sourceId: 'chat:cid=$cid#ts=$now',
+              startTime: now,
+              endTime: now,
+            );
+
+        final List<AIEndpoint> endpoints = await _settings
+            .getEndpointCandidates(context: 'memory');
+
+        final List<UserMemoryResolvedWrite> resolvedWrites;
+        if (endpoints.isEmpty) {
+          resolvedWrites = global
+              .map((it) => UserMemoryResolvedWrite.upsert(it))
+              .toList(growable: false);
+        } else {
+          resolvedWrites = await UserMemoryIndexService.instance
+              .resolveWritesWithMergeModel(
+                endpoints: endpoints,
+                extracted: global,
+                segmentId: 0,
+                model: endpoints.first.model,
+                logContext: 'user_memory_merge_chat_${cid}_$now',
+              );
+        }
+
+        await UserMemoryService.instance.applyResolvedWrites(
+          writes: resolvedWrites,
+          evidence: ev,
         );
       }
     } catch (_) {}

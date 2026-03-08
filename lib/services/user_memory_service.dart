@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:sqflite/sqflite.dart';
+
 import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
@@ -43,6 +45,38 @@ class UserMemoryEvidence {
   final String sourceType;
   final String sourceId;
   final List<String> filenames;
+  final int? startTime;
+  final int? endTime;
+  final int createdAtMs;
+}
+
+class UserMemoryItemEvent {
+  const UserMemoryItemEvent({
+    required this.id,
+    required this.memoryItemId,
+    required this.kind,
+    required this.content,
+    required this.contentHash,
+    required this.keywords,
+    required this.confidence,
+    required this.sourceType,
+    required this.sourceId,
+    required this.filenames,
+    required this.startTime,
+    required this.endTime,
+    required this.createdAtMs,
+  });
+
+  final int id;
+  final int memoryItemId;
+  final String kind; // rule | fact | habit
+  final String content;
+  final String contentHash;
+  final List<String> keywords;
+  final double? confidence;
+  final String sourceType;
+  final String sourceId;
+  final List<String> filenames; // basenames
   final int? startTime;
   final int? endTime;
   final int createdAtMs;
@@ -93,7 +127,6 @@ enum UserMemoryPathKind {
   profileAuto,
   item,
   daily,
-  weekly,
   morning,
   unknown,
 }
@@ -143,16 +176,6 @@ class UserMemoryPath {
         dateKey: dateKey.isEmpty ? null : dateKey,
       );
     }
-    if (t.startsWith('weekly:')) {
-      final String dateKey = t.substring('weekly:'.length).trim();
-      return UserMemoryPath(
-        kind: dateKey.isEmpty
-            ? UserMemoryPathKind.unknown
-            : UserMemoryPathKind.weekly,
-        raw: t,
-        dateKey: dateKey.isEmpty ? null : dateKey,
-      );
-    }
     if (t.startsWith('morning:')) {
       final String dateKey = t.substring('morning:'.length).trim();
       return UserMemoryPath(
@@ -194,7 +217,7 @@ class UserMemoryUpsertStats {
   final int touched;
 }
 
-enum UserMemoryResolvedAction { upsert, merge, discard }
+enum UserMemoryResolvedAction { upsert, merge, append, discard }
 
 class UserMemoryResolvedWrite {
   const UserMemoryResolvedWrite._({
@@ -211,6 +234,15 @@ class UserMemoryResolvedWrite {
     required ExtractedUserMemoryItem item,
   }) : this._(
          action: UserMemoryResolvedAction.merge,
+         item: item,
+         targetId: targetId,
+       );
+
+  const UserMemoryResolvedWrite.append({
+    required int targetId,
+    required ExtractedUserMemoryItem item,
+  }) : this._(
+         action: UserMemoryResolvedAction.append,
          item: item,
          targetId: targetId,
        );
@@ -668,7 +700,15 @@ class UserMemoryService {
         } catch (_) {}
 
         if (preserveUserEditsAndPins) {
-          // Delete evidence first (no FK cascade).
+          // Delete derived data first (no FK cascade).
+          try {
+            await txn.execute('''
+              DELETE FROM user_memory_item_events
+              WHERE memory_item_id IN (
+                SELECT id FROM user_memory_items WHERE user_edited = 0 AND pinned = 0
+              )
+              ''');
+          } catch (_) {}
           try {
             await txn.execute('''
               DELETE FROM user_memory_evidence
@@ -684,6 +724,9 @@ class UserMemoryService {
             );
           } catch (_) {}
         } else {
+          try {
+            await txn.execute('DELETE FROM user_memory_item_events');
+          } catch (_) {}
           try {
             await txn.execute('DELETE FROM user_memory_evidence');
           } catch (_) {}
@@ -943,7 +986,15 @@ class UserMemoryService {
           }
         }
       } else {
-        addLikeTermClause(q, likeArgs, likeFilters);
+        final List<String> terms = q
+            .split(RegExp(r'\s+'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .take(6)
+            .toList(growable: false);
+        for (final t in terms) {
+          addLikeTermClause(t, likeArgs, likeFilters);
+        }
       }
 
       if (likeFilters.isEmpty) return const <UserMemoryItem>[];
@@ -1008,6 +1059,13 @@ class UserMemoryService {
     try {
       final storage = await _db.database;
       await storage.transaction((txn) async {
+        try {
+          await txn.delete(
+            'user_memory_item_events',
+            where: 'memory_item_id = ?',
+            whereArgs: <Object?>[mid],
+          );
+        } catch (_) {}
         try {
           await txn.delete(
             'user_memory_evidence',
@@ -1159,10 +1217,92 @@ class UserMemoryService {
     }
   }
 
+  Future<List<UserMemoryItemEvent>> listEventsForItem(
+    int itemId, {
+    int limit = 50,
+  }) async {
+    if (itemId <= 0) return const <UserMemoryItemEvent>[];
+    final int lim = limit.clamp(1, 200);
+    try {
+      final storage = await _db.database;
+      final rows = await storage.rawQuery(
+        '''
+        SELECT
+          id,
+          memory_item_id,
+          kind,
+          content,
+          content_hash,
+          keywords_json,
+          confidence,
+          source_type,
+          source_id,
+          evidence_filenames_json,
+          start_time,
+          end_time,
+          created_at
+        FROM user_memory_item_events
+        WHERE memory_item_id = ?
+        ORDER BY COALESCE(start_time, created_at) ASC, id ASC
+        LIMIT ?
+        ''',
+        <Object?>[itemId, lim],
+      );
+      return rows
+          .map((r) {
+            final int id = (_toInt(r['id']) ?? 0);
+            final int mid = (_toInt(r['memory_item_id']) ?? 0);
+            final String kind = _sanitizeKind(r['kind'] as String?);
+            final String content = (r['content'] as String?)?.trim() ?? '';
+            final String hash = (r['content_hash'] as String?)?.trim() ?? '';
+            final List<String> keywords = _decodeStringListJson(
+              (r['keywords_json'] as String?) ?? '',
+            );
+            final double? confidence = _toDouble(r['confidence']);
+            final String sourceType =
+                (r['source_type'] as String?)?.trim() ?? '';
+            final String sourceId = (r['source_id'] as String?)?.trim() ?? '';
+            final List<String> files = _decodeStringListJson(
+              (r['evidence_filenames_json'] as String?) ?? '',
+            );
+            return UserMemoryItemEvent(
+              id: id,
+              memoryItemId: mid,
+              kind: kind,
+              content: content,
+              contentHash: hash,
+              keywords: keywords,
+              confidence: confidence,
+              sourceType: sourceType,
+              sourceId: sourceId,
+              filenames: files,
+              startTime: _toInt(r['start_time']),
+              endTime: _toInt(r['end_time']),
+              createdAtMs: _toInt(r['created_at']) ?? 0,
+            );
+          })
+          .where(
+            (e) =>
+                e.id > 0 &&
+                e.memoryItemId == itemId &&
+                e.content.trim().isNotEmpty,
+          )
+          .toList(growable: false);
+    } catch (_) {
+      return const <UserMemoryItemEvent>[];
+    }
+  }
+
   /// Apply a pre-resolved write plan (e.g. model-assisted merge decisions).
   ///
-  /// - upsert: normal key/hash based insert/update
-  /// - merge: prefer writing into an existing row id (targetId), still respecting user_edited
+  /// - upsert: normal key/hash based insert/update; when it maps to an existing
+  ///   row with a different content_hash, it is treated as a state advancement
+  ///   and an event is appended.
+  /// - merge: prefer writing into an existing row id (targetId) to normalize
+  ///   semantic duplicates; does NOT append an event.
+  /// - append: append a temporal event to an existing row id (targetId); if the
+  ///   target is not user-edited, also updates the "current" content to the
+  ///   latest state.
   /// - discard: no-op
   Future<UserMemoryUpsertStats> applyResolvedWrites({
     required List<UserMemoryResolvedWrite> writes,
@@ -1201,28 +1341,56 @@ class UserMemoryService {
             ? null
             : it.confidence!.clamp(0.0, 1.0);
 
+        // Evidence filenames are stored both in evidence and event tables.
+        final List<String> files = it.evidenceFilenames
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .take(5)
+            .toSet()
+            .toList(growable: false);
+        String? filesJson;
+        if (files.isNotEmpty) {
+          try {
+            filesJson = jsonEncode(files);
+          } catch (_) {
+            filesJson = null;
+          }
+        }
+
         int? id;
         bool existingUserEdited = false;
         String? existingKey;
+        String? existingHash;
         bool insertedThis = false;
 
-        // Merge hint: prefer writing into an existing row id if provided.
-        if (w.action == UserMemoryResolvedAction.merge &&
-            (w.targetId ?? 0) > 0) {
+        Future<void> loadExistingById(int targetId) async {
           try {
             final rows = await txn.query(
               'user_memory_items',
-              columns: const <String>['id', 'user_edited', 'memory_key'],
+              columns: const <String>[
+                'id',
+                'user_edited',
+                'memory_key',
+                'content_hash',
+              ],
               where: 'id = ?',
-              whereArgs: <Object?>[w.targetId],
+              whereArgs: <Object?>[targetId],
               limit: 1,
             );
             if (rows.isNotEmpty) {
               id = _toInt(rows.first['id']);
               existingUserEdited = _toBool(rows.first['user_edited']);
               existingKey = (rows.first['memory_key'] as String?)?.trim();
+              existingHash = (rows.first['content_hash'] as String?)?.trim();
             }
           } catch (_) {}
+        }
+
+        // Merge/append hint: prefer writing into an existing row id if provided.
+        if ((w.action == UserMemoryResolvedAction.merge ||
+                w.action == UserMemoryResolvedAction.append) &&
+            (w.targetId ?? 0) > 0) {
+          await loadExistingById(w.targetId!);
         }
 
         // Prefer key-based upsert when available.
@@ -1230,7 +1398,12 @@ class UserMemoryService {
           try {
             final rows = await txn.query(
               'user_memory_items',
-              columns: const <String>['id', 'user_edited', 'memory_key'],
+              columns: const <String>[
+                'id',
+                'user_edited',
+                'memory_key',
+                'content_hash',
+              ],
               where: 'memory_key = ?',
               whereArgs: <Object?>[key],
               limit: 1,
@@ -1239,6 +1412,7 @@ class UserMemoryService {
               id = _toInt(rows.first['id']);
               existingUserEdited = _toBool(rows.first['user_edited']);
               existingKey = (rows.first['memory_key'] as String?)?.trim();
+              existingHash = (rows.first['content_hash'] as String?)?.trim();
             }
           } catch (_) {}
         }
@@ -1248,7 +1422,12 @@ class UserMemoryService {
           try {
             final rows = await txn.query(
               'user_memory_items',
-              columns: const <String>['id', 'user_edited', 'memory_key'],
+              columns: const <String>[
+                'id',
+                'user_edited',
+                'memory_key',
+                'content_hash',
+              ],
               where: 'content_hash = ?',
               whereArgs: <Object?>[hash],
               limit: 1,
@@ -1257,6 +1436,7 @@ class UserMemoryService {
               id = _toInt(rows.first['id']);
               existingUserEdited = _toBool(rows.first['user_edited']);
               existingKey = (rows.first['memory_key'] as String?)?.trim();
+              existingHash = (rows.first['content_hash'] as String?)?.trim();
             }
           } catch (_) {}
         }
@@ -1309,7 +1489,12 @@ class UserMemoryService {
             if (key != null) {
               final rows = await txn.query(
                 'user_memory_items',
-                columns: const <String>['id', 'user_edited', 'memory_key'],
+                columns: const <String>[
+                  'id',
+                  'user_edited',
+                  'memory_key',
+                  'content_hash',
+                ],
                 where: 'memory_key = ?',
                 whereArgs: <Object?>[key],
                 limit: 1,
@@ -1318,6 +1503,7 @@ class UserMemoryService {
                 id = _toInt(rows.first['id']);
                 existingUserEdited = _toBool(rows.first['user_edited']);
                 existingKey = (rows.first['memory_key'] as String?)?.trim();
+                existingHash = (rows.first['content_hash'] as String?)?.trim();
               }
             }
           } catch (_) {}
@@ -1325,7 +1511,12 @@ class UserMemoryService {
             try {
               final rows = await txn.query(
                 'user_memory_items',
-                columns: const <String>['id', 'user_edited', 'memory_key'],
+                columns: const <String>[
+                  'id',
+                  'user_edited',
+                  'memory_key',
+                  'content_hash',
+                ],
                 where: 'content_hash = ?',
                 whereArgs: <Object?>[hash],
                 limit: 1,
@@ -1334,23 +1525,35 @@ class UserMemoryService {
                 id = _toInt(rows.first['id']);
                 existingUserEdited = _toBool(rows.first['user_edited']);
                 existingKey = (rows.first['memory_key'] as String?)?.trim();
+                existingHash = (rows.first['content_hash'] as String?)?.trim();
               }
             } catch (_) {}
           }
         }
 
         if ((id ?? 0) > 0) {
-          if (!insertedThis) {
-            // Existing row: update or touch.
-            if (existingUserEdited) {
-              try {
-                final int n = await txn.rawUpdate(
-                  'UPDATE user_memory_items SET last_seen_at = ?, updated_at = ? WHERE id = ?',
-                  <Object?>[now, now, id],
-                );
-                if (n > 0) touched += n;
-              } catch (_) {}
-            } else {
+          final bool isExisting = !insertedThis;
+          final bool sameHash =
+              (existingHash ?? '').trim().isNotEmpty &&
+              existingHash!.trim() == hash;
+
+          // Decide whether to update the "current" row and whether to append an
+          // event into the per-item timeline.
+          final bool wantsMerge = w.action == UserMemoryResolvedAction.merge;
+          final bool wantsAppend = w.action == UserMemoryResolvedAction.append;
+
+          final bool shouldWriteEvent =
+              insertedThis ||
+              wantsAppend ||
+              (!wantsMerge && !sameHash); // upsert w/ changed hash
+
+          final bool shouldUpdateCurrent =
+              !insertedThis &&
+              !existingUserEdited &&
+              (wantsMerge || wantsAppend || (!sameHash));
+
+          if (isExisting) {
+            if (shouldUpdateCurrent) {
               try {
                 // Only adopt a new key when the existing row has no key.
                 String? keyToWrite = key;
@@ -1398,23 +1601,31 @@ class UserMemoryService {
                 );
                 if (n > 0) updated += n;
               } catch (_) {}
+            } else {
+              // Touch only (keep user-edited content or duplicate state).
+              try {
+                final int n = await txn.rawUpdate(
+                  'UPDATE user_memory_items SET last_seen_at = ?, updated_at = ? WHERE id = ?',
+                  <Object?>[now, now, id],
+                );
+                if (n > 0) touched += n;
+              } catch (_) {}
             }
           }
 
-          // Evidence upsert (best-effort).
-          final List<String> files = it.evidenceFilenames
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .take(5)
-              .toSet()
-              .toList(growable: false);
-          String? filesJson;
-          if (files.isNotEmpty) {
-            try {
-              filesJson = jsonEncode(files);
-            } catch (_) {
-              filesJson = null;
-            }
+          if (shouldWriteEvent) {
+            await _insertEventTxn(
+              txn,
+              memoryItemId: id!,
+              kind: kind,
+              content: content,
+              contentHash: hash,
+              keywordsJson: keywordsJson,
+              confidence: confidence,
+              evidence: evidence,
+              evidenceFilenamesJson: filesJson,
+              createdAtMs: now,
+            );
           }
 
           try {
@@ -1467,6 +1678,54 @@ class UserMemoryService {
       updated: updated,
       touched: touched,
     );
+  }
+
+  Future<void> _insertEventTxn(
+    DatabaseExecutor txn, {
+    required int memoryItemId,
+    required String kind,
+    required String content,
+    required String contentHash,
+    required String keywordsJson,
+    required double? confidence,
+    required UserMemoryUpsertEvidenceParams evidence,
+    required String? evidenceFilenamesJson,
+    required int createdAtMs,
+  }) async {
+    try {
+      await txn.rawInsert(
+        '''
+        INSERT OR IGNORE INTO user_memory_item_events(
+          memory_item_id,
+          kind,
+          content,
+          content_hash,
+          keywords_json,
+          confidence,
+          source_type,
+          source_id,
+          evidence_filenames_json,
+          start_time,
+          end_time,
+          created_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        <Object?>[
+          memoryItemId,
+          kind,
+          content,
+          contentHash,
+          keywordsJson,
+          confidence,
+          evidence.sourceType.trim(),
+          evidence.sourceId.trim(),
+          evidenceFilenamesJson,
+          evidence.startTime,
+          evidence.endTime,
+          createdAtMs,
+        ],
+      );
+    } catch (_) {}
   }
 
   Future<UserMemoryUpsertStats> upsertExtractedItems({
@@ -1843,6 +2102,7 @@ class UserMemoryService {
         timeout: const Duration(seconds: 45),
         preferStreaming: false,
         logContext: 'user_memory_profile_refresh',
+        forceChatCompletions: true,
       );
 
       final String out = _sanitizeModelText(result.content).trim();

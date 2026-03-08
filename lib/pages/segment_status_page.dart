@@ -30,6 +30,90 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import 'daily_summary_page.dart';
 
+String _normalizeMarkdownForUi(String input) {
+  if (input.trim().isEmpty) return input;
+
+  final String pre = input
+      .replaceAll('\\r\\n', '\n')
+      .replaceAll('\\r', '\n')
+      .replaceAll('\\n', '\n')
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .replaceAll('\\"', '"');
+
+  final List<String> lines = pre.split('\n');
+  final List<String> out = <String>[];
+  bool lastWasBlank = true;
+  final RegExp headingRe = RegExp(r'^\s{0,3}#{1,6}\s+');
+  final RegExp headingMissingSpaceRe = RegExp(
+    r'^(\s{0,3}#{1,6})(?![#\s])(.+)$',
+  );
+  final RegExp boldSubtitleRe = RegExp(r'^\s*\*\*[^*\n]+\*\*[:：]');
+  final RegExp listStartRe = RegExp(r'^\s*-\s+');
+  final RegExp listMissingSpaceRe = RegExp(r'^(\s*-)(?![-\s])(.+)$');
+
+  for (int i = 0; i < lines.length; i++) {
+    String line = lines[i];
+    String trimmed = line.trimRight();
+
+    final Match? headingMissingSpace = headingMissingSpaceRe.firstMatch(
+      trimmed,
+    );
+    if (headingMissingSpace != null) {
+      line =
+          '${headingMissingSpace.group(1)} ${headingMissingSpace.group(2)!.trimLeft()}';
+      trimmed = line.trimRight();
+    }
+
+    final Match? listMissingSpace = listMissingSpaceRe.firstMatch(trimmed);
+    if (listMissingSpace != null) {
+      line =
+          '${listMissingSpace.group(1)} ${listMissingSpace.group(2)!.trimLeft()}';
+      trimmed = line.trimRight();
+    }
+
+    final bool isHeading = headingRe.hasMatch(trimmed);
+    final bool isBoldSubtitle = boldSubtitleRe.hasMatch(trimmed);
+    final bool isListStart = listStartRe.hasMatch(trimmed);
+
+    if ((isHeading || isBoldSubtitle || isListStart) &&
+        !lastWasBlank &&
+        out.isNotEmpty &&
+        out.last.trim().isNotEmpty) {
+      out.add('');
+      lastWasBlank = true;
+    }
+
+    out.add(line);
+
+    if (isHeading) {
+      final String? next = i + 1 < lines.length ? lines[i + 1] : null;
+      if (next != null && next.trim().isNotEmpty) {
+        out.add('');
+        lastWasBlank = true;
+        continue;
+      }
+    }
+
+    lastWasBlank = line.trim().isEmpty;
+  }
+
+  final List<String> normalized = <String>[];
+  for (final String line in out) {
+    if (line.trim().isEmpty) {
+      if (normalized.isEmpty || normalized.last.trim().isEmpty) {
+        if (normalized.isEmpty) normalized.add('');
+      } else {
+        normalized.add('');
+      }
+    } else {
+      normalized.add(line);
+    }
+  }
+
+  return normalized.join('\n');
+}
+
 /// 段落事件状态页
 /// - 显示进行中的事件（collecting）
 /// - 列出最近事件及其样本与AI结果摘要
@@ -1306,7 +1390,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
                                         ),
                                         const SizedBox(height: 6),
                                         MarkdownBody(
-                                          data: rawText,
+                                          data: _normalizeMarkdownForUi(
+                                            rawText,
+                                          ),
                                           styleSheet:
                                               MarkdownStyleSheet.fromTheme(
                                                 Theme.of(c),
@@ -2809,8 +2895,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     String data,
     TextStyle? textStyle,
   ) {
+    final String normalized = _normalizeMarkdownForUi(data);
     return MarkdownBody(
-      data: data,
+      data: normalized,
       styleSheet: MarkdownStyleSheet.fromTheme(
         Theme.of(context),
       ).copyWith(p: textStyle),
@@ -3271,6 +3358,194 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
   }
 
+  Widget _buildRawResponseTab(
+    BuildContext context, {
+    required int segmentId,
+    required String rawResponse,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool isZh = Localizations.localeOf(
+      context,
+    ).languageCode.toLowerCase().startsWith('zh');
+    final String raw = rawResponse.trimRight();
+    final bool hasRaw = raw.trim().isNotEmpty;
+
+    Future<void> copyRaw() async {
+      if (!hasRaw) return;
+      try {
+        await Clipboard.setData(ClipboardData(text: raw));
+        if (!mounted) return;
+        UINotifier.success(context, AppLocalizations.of(context).copySuccess);
+      } catch (_) {}
+    }
+
+    Future<void> saveRaw() async {
+      if (!hasRaw) return;
+      await _saveAiRequestResponseTraceToFile(segmentId: segmentId, text: raw);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Spacer(),
+            OutlinedButton(
+              onPressed: hasRaw ? copyRaw : null,
+              style: OutlinedButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: const Size(0, 36),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(AppLocalizations.of(context).actionCopy),
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            OutlinedButton(
+              onPressed: hasRaw ? saveRaw : null,
+              style: OutlinedButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: const Size(0, 36),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              child: Text(isZh ? '保存到文件' : 'Save to file'),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+            ),
+            child: hasRaw
+                ? SingleChildScrollView(
+                    child: SelectableText(
+                      raw,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        height: 1.35,
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      isZh ? '（暂无原始响应）' : '(No raw response yet)',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiRequestResponseSheetBody({
+    required BuildContext context,
+    required int segmentId,
+    required String rawRequest,
+    required String rawResponse,
+    required String provider,
+    required String model,
+    required DateTime? createdAt,
+    required bool isZh,
+    required bool hasAny,
+    required String visibleText,
+  }) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.62,
+      child: DefaultTabController(
+        length: 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ScreenshotStyleTabBar(
+              height: kTextTabBarHeight,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing1,
+              ),
+              labelPadding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+              ),
+              indicatorInsets: const EdgeInsets.symmetric(horizontal: 4.0),
+              tabs: [
+                Tab(text: isZh ? '日志' : 'Logs'),
+                Tab(text: isZh ? '原始响应' : 'Raw Response'),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacing3),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  AIRequestLogsViewer.fromSegmentTrace(
+                    rawRequest: rawRequest,
+                    rawResponse: rawResponse,
+                    segmentId: segmentId,
+                    provider: provider,
+                    model: model,
+                    createdAt: createdAt,
+                    scrollable: true,
+                    emptyText: isZh
+                        ? '（暂无请求/响应记录）'
+                        : '(No request/response trace yet)',
+                    actions: <AIRequestLogsAction>[
+                      AIRequestLogsAction(
+                        label: AppLocalizations.of(context).actionCopy,
+                        enabled: hasAny,
+                        onPressed: () async {
+                          if (!hasAny) return;
+                          try {
+                            await Clipboard.setData(
+                              ClipboardData(text: visibleText),
+                            );
+                            if (mounted) {
+                              UINotifier.success(
+                                context,
+                                AppLocalizations.of(context).copySuccess,
+                              );
+                            }
+                          } catch (_) {}
+                        },
+                      ),
+                      AIRequestLogsAction(
+                        label: isZh ? '保存到文件' : 'Save to file',
+                        enabled: hasAny,
+                        onPressed: () async {
+                          if (!hasAny) return;
+                          await _saveAiRequestResponseTraceToFile(
+                            segmentId: segmentId,
+                            text: visibleText,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  _buildRawResponseTab(
+                    context,
+                    segmentId: segmentId,
+                    rawResponse: rawResponse,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showAiRequestResponseSheet(
     int segmentId, {
     required String timeLabel,
@@ -3312,44 +3587,17 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       title: isZh ? 'AI 日志' : 'AI Logs',
       metaText: null,
       hintText: hasTrace ? null : emptyHint,
-      body: AIRequestLogsViewer.fromSegmentTrace(
+      body: _buildAiRequestResponseSheetBody(
+        context: context,
+        segmentId: segmentId,
         rawRequest: rawRequest,
         rawResponse: rawResponse,
-        segmentId: segmentId,
         provider: provider,
         model: model,
         createdAt: createdAt,
-        scrollable: false,
-        emptyText: isZh ? '（暂无请求/响应记录）' : '(No request/response trace yet)',
-        actions: <AIRequestLogsAction>[
-          AIRequestLogsAction(
-            label: AppLocalizations.of(context).actionCopy,
-            enabled: hasAny,
-            onPressed: () async {
-              if (!hasAny) return;
-              try {
-                await Clipboard.setData(ClipboardData(text: visibleText));
-                if (mounted) {
-                  UINotifier.success(
-                    context,
-                    AppLocalizations.of(context).copySuccess,
-                  );
-                }
-              } catch (_) {}
-            },
-          ),
-          AIRequestLogsAction(
-            label: isZh ? '保存到文件' : 'Save to file',
-            enabled: hasAny,
-            onPressed: () async {
-              if (!hasAny) return;
-              await _saveAiRequestResponseTraceToFile(
-                segmentId: segmentId,
-                text: visibleText,
-              );
-            },
-          ),
-        ],
+        isZh: isZh,
+        hasAny: hasAny,
+        visibleText: visibleText,
       ),
     );
   }
