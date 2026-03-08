@@ -10,7 +10,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:screen_memo/main.dart';
 import 'package:screen_memo/services/intent_analysis_service.dart';
-import 'package:screen_memo/services/weekly_summary_service.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
@@ -35,27 +34,4 @@ void main() {
     expect(r.hasValidRange, false);
     expect(r.sqlFill.containsKey('segments_between'), false);
   }, timeout: const Timeout(Duration(seconds: 90)));
-
-  test('WeeklySummaryService sanitizeWeeklyRows removes overlapping weeks', () {
-    final rows = <Map<String, dynamic>>[
-      {
-        'week_start_date': '2025-12-06',
-        'week_end_date': '2025-12-12',
-      },
-      {
-        'week_start_date': '2025-12-01',
-        'week_end_date': '2025-12-07',
-      },
-      {
-        'week_start_date': '2025-11-29',
-        'week_end_date': '2025-12-05',
-      },
-    ];
-
-    final sanitized = WeeklySummaryService.sanitizeWeeklyRows(rows);
-    expect(
-      sanitized.map((e) => e['week_start_date']).toList(),
-      ['2025-12-06', '2025-11-29'],
-    );
-  });
 }

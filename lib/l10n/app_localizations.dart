@@ -2823,7 +2823,7 @@ abstract class AppLocalizations {
   /// No description provided for @promptManagerHint.
   ///
   /// In en, this message translates to:
-  /// **'Configure prompts for normal, merged, daily, weekly summaries, and morning insights; supports Markdown. Empty or reset to use defaults.'**
+  /// **'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.'**
   String get promptManagerHint;
 
   /// No description provided for @promptAddonGeneralInfo.

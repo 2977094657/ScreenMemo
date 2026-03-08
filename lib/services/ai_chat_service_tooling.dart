@@ -533,7 +533,7 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'memory_search',
         'description':
-            'Search the user memory system (global profile + global memory items + daily/weekly/morning summaries). Use this BEFORE answering questions about user preferences/habits/identity/long-term constraints/past decisions. Returns snippet + a stable path you can use with memory_get.',
+            'Search the user memory system (global profile + global memory items + daily/morning summaries). Use this BEFORE answering questions about user preferences/habits/identity/long-term constraints/past decisions. Returns snippet + a stable path you can use with memory_get.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -592,7 +592,7 @@ extension AIChatServiceToolingExt on AIChatService {
               'type': 'array',
               'items': <String, dynamic>{'type': 'string'},
               'description':
-                  'Optional sources filter. Values: profile | items | daily | weekly | morning. Default: all.',
+                  'Optional sources filter. Values: profile | items | daily | morning. Default: all.',
             },
           },
           'required': const <String>[],
@@ -611,7 +611,7 @@ extension AIChatServiceToolingExt on AIChatService {
             'path': <String, dynamic>{
               'type': 'string',
               'description':
-                  'One of: profile:user | profile:auto | item:<id> | daily:<YYYY-MM-DD> | weekly:<YYYY-MM-DD> | morning:<YYYY-MM-DD>.',
+                  'One of: profile:user | profile:auto | item:<id> | daily:<YYYY-MM-DD> | morning:<YYYY-MM-DD>.',
             },
             'from': <String, dynamic>{
               'type': 'integer',

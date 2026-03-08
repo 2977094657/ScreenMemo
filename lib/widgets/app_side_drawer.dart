@@ -12,7 +12,6 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
-import '../pages/weekly_summary_page.dart';
 import '../pages/log_console_page.dart';
 
 /// 侧边栏：简洁清爽，复用设置页面样式
@@ -43,18 +42,6 @@ class AppSideDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 NavigationService.instance.openSegmentStatus();
-              },
-            ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.auto_awesome_outlined,
-              title: t.weeklySummaryShort,
-              isFirst: false,
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const WeeklySummaryPage()),
-                );
               },
             ),
             _buildMenuItem(

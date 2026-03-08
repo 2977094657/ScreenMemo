@@ -18,24 +18,20 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
   String? _promptSegment;
   String? _promptMerge;
   String? _promptDaily;
-  String? _promptWeekly;
   String? _promptMorning;
 
   // 编辑状态与控制器
   final TextEditingController _segCtrl = TextEditingController();
   final TextEditingController _mergeCtrl = TextEditingController();
   final TextEditingController _dailyCtrl = TextEditingController();
-  final TextEditingController _weeklyCtrl = TextEditingController();
   final TextEditingController _morningCtrl = TextEditingController();
   bool _editingSeg = false;
   bool _editingMerge = false;
   bool _editingDaily = false;
-  bool _editingWeekly = false;
   bool _editingMorning = false;
   bool _savingSeg = false;
   bool _savingMerge = false;
   bool _savingDaily = false;
-  bool _savingWeekly = false;
   bool _savingMorning = false;
 
   bool _loading = true;
@@ -51,7 +47,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
     _segCtrl.dispose();
     _mergeCtrl.dispose();
     _dailyCtrl.dispose();
-    _weeklyCtrl.dispose();
     _morningCtrl.dispose();
    super.dispose();
   }
@@ -61,20 +56,17 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       final seg = await _settings.getPromptSegment();
       final mer = await _settings.getPromptMerge();
       final day = await _settings.getPromptDaily();
-      final weekly = await _settings.getPromptWeekly();
       final morning = await _settings.getPromptMorning();
       if (!mounted) return;
       setState(() {
         _promptSegment = seg;
         _promptMerge = mer;
         _promptDaily = day;
-        _promptWeekly = weekly;
         _promptMorning = morning;
 
         _segCtrl.text = seg?.trim() ?? '';
         _mergeCtrl.text = mer?.trim() ?? '';
         _dailyCtrl.text = day?.trim() ?? '';
-        _weeklyCtrl.text = weekly?.trim() ?? '';
         _morningCtrl.text = morning?.trim() ?? '';
 
         _loading = false;
@@ -96,7 +88,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       Tab(text: t.normalEventPromptLabel),
       Tab(text: t.mergeEventPromptLabel),
       Tab(text: t.dailySummaryPromptLabel),
-      Tab(text: t.weeklySummaryPromptLabel),
       Tab(text: t.morningInsightsPromptLabel),
     ];
     return DefaultTabController(
@@ -143,18 +134,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
               onSave: _saveDaily,
               onReset: _resetDaily,
               saving: _savingDaily,
-            ),
-            _buildPromptTab(
-              label: t.weeklySummaryPromptLabel,
-              infoText: t.promptAddonGeneralInfo,
-              suggestion: t.promptAddonSuggestionWeekly,
-              currentAddon: _promptWeekly ?? '',
-              editing: _editingWeekly,
-              controller: _weeklyCtrl,
-              onEditToggle: () => setState(() => _editingWeekly = !_editingWeekly),
-              onSave: _saveWeekly,
-              onReset: _resetWeekly,
-              saving: _savingWeekly,
             ),
             _buildPromptTab(
               label: t.morningInsightsPromptLabel,
@@ -386,28 +365,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
     }
   }
 
-  Future<void> _saveWeekly() async {
-    if (_savingWeekly) return;
-    setState(() => _savingWeekly = true);
-    try {
-      final text = _weeklyCtrl.text.trim();
-      final normalized = text.isEmpty ? null : text;
-      await _settings.setPromptWeekly(normalized);
-      if (mounted) {
-        setState(() {
-          _promptWeekly = normalized;
-          _weeklyCtrl.text = normalized ?? '';
-          _editingWeekly = false;
-        });
-        UINotifier.success(context, AppLocalizations.of(context).savedWeeklyPromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).saveFailedError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingWeekly = false);
-    }
-  }
-
   Future<void> _resetDaily() async {
     if (_savingDaily) return;
     setState(() => _savingDaily = true);
@@ -425,26 +382,6 @@ class _PromptManagerPageState extends State<PromptManagerPage> with SingleTicker
       if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
     } finally {
       if (mounted) setState(() => _savingDaily = false);
-    }
-  }
-
-  Future<void> _resetWeekly() async {
-    if (_savingWeekly) return;
-    setState(() => _savingWeekly = true);
-    try {
-      await _settings.setPromptWeekly(null);
-      if (mounted) {
-        setState(() {
-          _promptWeekly = null;
-          _weeklyCtrl.text = '';
-          _editingWeekly = false;
-        });
-        UINotifier.success(context, AppLocalizations.of(context).resetToDefaultPromptToast);
-      }
-    } catch (e) {
-      if (mounted) UINotifier.error(context, AppLocalizations.of(context).resetFailedWithError(e.toString()));
-    } finally {
-      if (mounted) setState(() => _savingWeekly = false);
     }
   }
 

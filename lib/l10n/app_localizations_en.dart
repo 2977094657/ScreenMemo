@@ -1559,7 +1559,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      'Configure prompts for normal, merged, daily, weekly summaries, and morning insights; supports Markdown. Empty or reset to use defaults.';
+      'Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.';
 
   @override
   String get promptAddonGeneralInfo =>

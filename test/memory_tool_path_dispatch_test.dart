@@ -20,10 +20,6 @@ void main() {
     expect(daily.kind, UserMemoryPathKind.daily);
     expect(daily.dateKey, '2026-02-14');
 
-    final UserMemoryPath weekly = UserMemoryPath.parse('weekly:2026-02-10');
-    expect(weekly.kind, UserMemoryPathKind.weekly);
-    expect(weekly.dateKey, '2026-02-10');
-
     final UserMemoryPath morning = UserMemoryPath.parse('morning:2026-02-14');
     expect(morning.kind, UserMemoryPathKind.morning);
     expect(morning.dateKey, '2026-02-14');
@@ -33,6 +29,7 @@ void main() {
     expect(UserMemoryPath.parse('').kind, UserMemoryPathKind.unknown);
     expect(UserMemoryPath.parse('item:0').kind, UserMemoryPathKind.unknown);
     expect(UserMemoryPath.parse('daily:').kind, UserMemoryPathKind.unknown);
+    expect(UserMemoryPath.parse('weekly:2026-02-10').kind, UserMemoryPathKind.unknown);
     expect(UserMemoryPath.parse('xxx').kind, UserMemoryPathKind.unknown);
   });
 }

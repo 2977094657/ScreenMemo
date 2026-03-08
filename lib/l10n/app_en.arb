@@ -816,7 +816,7 @@
   "streamingEnabledToast": "Streaming enabled",
   "streamingDisabledToast": "Streaming disabled",
   "promptManagerTitle": "Prompt manager",
-  "promptManagerHint": "Configure prompts for normal, merged, daily, weekly summaries, and morning insights; supports Markdown. Empty or reset to use defaults.",
+  "promptManagerHint": "Configure prompts for normal, merged, daily summaries, and morning insights; supports Markdown. Empty or reset to use defaults.",
   "promptAddonGeneralInfo": "The built-in template already defines the structured schema. Only append extra guidance here (tone, style, emphasis). Leave blank to keep the template unchanged.",
   "promptAddonInputHint": "Add optional extra instructions (leave blank to skip)",
   "promptAddonHelperText": "Describe tone or preferences only; do not request schema changes or JSON modifications.",

@@ -23,7 +23,6 @@ import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/nsfw_preference_service.dart';
 import 'daily_summary_page.dart';
-import 'weekly_summary_page.dart';
 
 /// 搜索类型枚举
 enum SearchTab { all, screenshots, moments }
@@ -69,14 +68,12 @@ class _SearchPageState extends State<SearchPage>
   static const int _pageSize = 24; // 后续分页大小
   static const Set<String> _docTabTypes = <String>{
     kSearchDocTypeDailySummary,
-    kSearchDocTypeWeeklySummary,
     kSearchDocTypeMorningInsights,
     kSearchDocTypeFavoriteNote,
   };
   static const Set<String> _docIndexSources = <String>{
     kSearchIndexSourceFavorites,
     kSearchIndexSourceDailySummaries,
-    kSearchIndexSourceWeeklySummaries,
     kSearchIndexSourceMorningInsights,
   };
   int _offset = 0;
@@ -99,7 +96,7 @@ class _SearchPageState extends State<SearchPage>
   bool _segmentSearchFinished = false;
   bool _segmentSearching = false;
 
-  // “更多”搜索相关状态（SearchIndex：daily/weekly/persona/favorite_note 等）
+  // “更多”搜索相关状态（SearchIndex：daily/morning/persona/favorite_note 等）
   List<Map<String, dynamic>> _docResults = <Map<String, dynamic>>[];
   int _docOffset = 0;
   bool _docHasMore = false;
@@ -2763,7 +2760,7 @@ class _SearchPageState extends State<SearchPage>
     );
   }
 
-  /// 构建“更多”视图（SearchIndex：daily/weekly/morning/persona/favorite_note 等）。
+  /// 构建“更多”视图（SearchIndex：daily/morning/persona/favorite_note 等）。
   Widget _buildDocsView() {
     final l10n = AppLocalizations.of(context);
 
@@ -2786,7 +2783,7 @@ class _SearchPageState extends State<SearchPage>
               ),
               const SizedBox(height: AppTheme.spacing2),
               Text(
-                '这里会搜索每日/每周总结、早报、画像文章、应用事件、收藏备注等。为避免输入时卡顿，需要手动触发搜索。',
+                '这里会搜索每日总结、早报、画像文章、应用事件、收藏备注等。为避免输入时卡顿，需要手动触发搜索。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppTheme.mutedForeground,
                 ),
@@ -3062,8 +3059,6 @@ class _SearchPageState extends State<SearchPage>
         return '收藏备注';
       case kSearchDocTypeDailySummary:
         return '每日总结';
-      case kSearchDocTypeWeeklySummary:
-        return '周总结';
       case kSearchDocTypeMorningInsights:
         return '早报';
       default:
@@ -3346,23 +3341,6 @@ class _SearchPageState extends State<SearchPage>
                                 },
                                 icon: const Icon(Icons.open_in_new, size: 18),
                                 label: const Text('打开每日总结'),
-                              ),
-                            if (docType == kSearchDocTypeWeeklySummary)
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  Navigator.of(ctx).pop();
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => WeeklySummaryPage(
-                                        weekStart: dateKey.isNotEmpty
-                                            ? dateKey
-                                            : null,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.open_in_new, size: 18),
-                                label: const Text('打开周总结'),
                               ),
                           ],
                         ),
@@ -3710,7 +3688,6 @@ class _SearchPageState extends State<SearchPage>
     final List<String> ordered = <String>[
       kSearchDocTypeDailySummary,
       kSearchDocTypeMorningInsights,
-      kSearchDocTypeWeeklySummary,
       kSearchDocTypeFavoriteNote,
     ];
     final Set<String> active =

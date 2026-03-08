@@ -1504,7 +1504,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get promptManagerHint =>
-      '为“普通事件总结”“合并事件总结”“每日总结”“周总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
+      '为“普通事件总结”“合并事件总结”“每日总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。';
 
   @override
   String get promptAddonGeneralInfo =>

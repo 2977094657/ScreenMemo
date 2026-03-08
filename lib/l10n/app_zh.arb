@@ -816,7 +816,7 @@
   "streamingEnabledToast": "流式已开启",
   "streamingDisabledToast": "流式已关闭",
   "promptManagerTitle": "提示词管理",
-  "promptManagerHint": "为“普通事件总结”“合并事件总结”“每日总结”“周总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。",
+  "promptManagerHint": "为“普通事件总结”“合并事件总结”“每日总结”“晨间行动建议”配置提示词；支持 Markdown 渲染。留空或重置将使用默认提示词。",
   "promptAddonGeneralInfo": "默认模板包含结构化字段并由系统维护，仅允许在此追加不涉及数据结构的补充说明（如语气、风格、注意事项）。留空表示不添加附加说明。",
   "promptAddonInputHint": "请输入附加说明（可留空）",
   "promptAddonHelperText": "建议仅描述语气、输出风格或优先级，禁止修改字段结构或要求生成 JSON。",

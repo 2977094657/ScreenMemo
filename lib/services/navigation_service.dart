@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../pages/daily_summary_page.dart';
-import '../pages/weekly_summary_page.dart';
 import '../pages/segment_status_page.dart';
 import 'flutter_logger.dart';
 
@@ -25,21 +24,6 @@ class NavigationService {
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dk)));
-  }
-
-  Future<void> openWeeklySummary(String? weekStartDate) async {
-    final String? wk = weekStartDate?.trim().isEmpty == true ? null : weekStartDate?.trim();
-    try {
-      await FlutterLogger.nativeInfo('Navigation', '打开每周总结 weekStart=${wk ?? '最新'}');
-    } catch (_) {}
-    final nav = navigatorKey.currentState;
-    if (nav == null) {
-      try {
-        await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开每周总结 weekStart=${wk ?? '最新'}');
-      } catch (_) {}
-      return;
-    }
-    nav.push(MaterialPageRoute(builder: (_) => WeeklySummaryPage(weekStart: wk)));
   }
 
   Future<void> openSegmentStatus() async {

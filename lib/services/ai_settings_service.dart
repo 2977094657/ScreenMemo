@@ -154,8 +154,6 @@ class AISettingsService {
   static const String _keyPromptDailyExtraEn = 'prompt_daily_extra_en';
   static const String _keyPromptMorningExtraZh = 'prompt_morning_extra_zh';
   static const String _keyPromptMorningExtraEn = 'prompt_morning_extra_en';
-  static const String _keyPromptWeeklyExtraZh = 'prompt_weekly_extra_zh';
-  static const String _keyPromptWeeklyExtraEn = 'prompt_weekly_extra_en';
   // Dynamic (segments) - structured_json 解析失败时的自动重试次数（原生侧也会读取）
   static const String _keySegmentsJsonAutoRetryMax =
       'segments_json_auto_retry_max';
@@ -670,25 +668,6 @@ class AISettingsService {
     );
   }
 
-  Future<String?> getPromptWeekly() async {
-    final lang = _currentLang();
-    return _getPromptAddon(
-      primaryKey: lang == 'zh'
-          ? _keyPromptWeeklyExtraZh
-          : _keyPromptWeeklyExtraEn,
-    );
-  }
-
-  Future<void> setPromptWeekly(String? value) async {
-    final lang = _currentLang();
-    await _setPromptAddon(
-      primaryKey: lang == 'zh'
-          ? _keyPromptWeeklyExtraZh
-          : _keyPromptWeeklyExtraEn,
-      value: value,
-    );
-  }
-
   // ========== 晨间行动提示词 ==========
   Future<String?> getPromptMorning() async {
     final lang = _currentLang();
@@ -1129,16 +1108,6 @@ class AISettingsService {
         final key = await AIProvidersService.instance.getApiKey(providerId);
         await ScreenshotDatabase.instance.setAiSetting(
           'api_key_segments',
-          (key == null || key.trim().isEmpty) ? null : key.trim(),
-        );
-      } catch (_) {}
-    }
-    // 若为“周总结(weekly)”上下文：同步 API Key 至 ai_settings.api_key_weekly，供原生侧 Worker 读取
-    if (context == 'weekly') {
-      try {
-        final key = await AIProvidersService.instance.getApiKey(providerId);
-        await ScreenshotDatabase.instance.setAiSetting(
-          'api_key_weekly',
           (key == null || key.trim().isEmpty) ? null : key.trim(),
         );
       } catch (_) {}

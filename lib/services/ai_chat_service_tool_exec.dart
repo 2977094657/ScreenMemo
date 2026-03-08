@@ -185,7 +185,6 @@ extension AIChatServiceToolExecExt on AIChatService {
         'profile',
         'items',
         'daily',
-        'weekly',
         'morning',
       });
     }
@@ -323,7 +322,6 @@ extension AIChatServiceToolExecExt on AIChatService {
 
     final bool wantsSearchDocs =
         sources.contains('daily') ||
-        sources.contains('weekly') ||
         sources.contains('morning');
     if (wantsSearchDocs && results.length < limit) {
       final Set<String> idxSources = <String>{};
@@ -331,10 +329,6 @@ extension AIChatServiceToolExecExt on AIChatService {
       if (sources.contains('daily')) {
         idxSources.add(kSearchIndexSourceDailySummaries);
         docTypes.add(kSearchDocTypeDailySummary);
-      }
-      if (sources.contains('weekly')) {
-        idxSources.add(kSearchIndexSourceWeeklySummaries);
-        docTypes.add(kSearchDocTypeWeeklySummary);
       }
       if (sources.contains('morning')) {
         idxSources.add(kSearchIndexSourceMorningInsights);
@@ -372,10 +366,6 @@ extension AIChatServiceToolExecExt on AIChatService {
           if (type == kSearchDocTypeDailySummary && dateKey.isNotEmpty) {
             path = 'daily:$dateKey';
             source = 'daily';
-          } else if (type == kSearchDocTypeWeeklySummary &&
-              dateKey.isNotEmpty) {
-            path = 'weekly:$dateKey';
-            source = 'weekly';
           } else if (type == kSearchDocTypeMorningInsights &&
               dateKey.isNotEmpty) {
             path = 'morning:$dateKey';
@@ -509,19 +499,6 @@ extension AIChatServiceToolExecExt on AIChatService {
           text = (row?['output_text'] as String?)?.trim() ?? '';
           meta['source'] = 'daily';
           meta['date_key'] = dateKey;
-          meta['created_at'] = row?['created_at'];
-          meta['ai_provider'] = row?['ai_provider'];
-          meta['ai_model'] = row?['ai_model'];
-          break;
-        case UserMemoryPathKind.weekly:
-          final String dateKey = parsed.dateKey ?? '';
-          final row = await ScreenshotDatabase.instance.getWeeklySummary(
-            dateKey,
-          );
-          text = (row?['output_text'] as String?)?.trim() ?? '';
-          meta['source'] = 'weekly';
-          meta['week_start_date'] = dateKey;
-          meta['week_end_date'] = row?['week_end_date'];
           meta['created_at'] = row?['created_at'];
           meta['ai_provider'] = row?['ai_provider'];
           meta['ai_model'] = row?['ai_model'];
