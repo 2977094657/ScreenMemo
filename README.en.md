@@ -8,9 +8,9 @@ Intelligent screenshot memo & information management tool
 
 "Trace-free screen, traceable memory"
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-A Flutter-based intelligent screenshot management app to help you efficiently capture, organize, and review important information.
+A local-first screenshot memory tool: automatic capture, OCR full-text search, plus optional AI summaries/replay.
 
 </div>
 
@@ -26,47 +26,43 @@ A Flutter-based intelligent screenshot management app to help you efficiently ca
 
 ---
 
-## Project Overview & Use Cases
+## Project Overview
 
-ScreenMemo is a local-first intelligent screenshot memo and retrieval tool: it automatically records the screen on your Android device. With OCR and AI summaries, information becomes searchable and reviewable, helping you quickly retrieve clues and reconstruct context when needed.
+ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant permission, it automatically captures your screen on Android and makes it searchable with OCR; you can also enable AI summaries when you need them, turning a time range into reviewable notes so you can quickly find what you saw and restore context.
 
-What it can do:
-- Recover text that appeared across different apps (e.g., article snippets, chat logs, subtitles), even if the original content was withdrawn or removed — searchable in your local history.
-- Trace “I’ve seen it somewhere but can’t recall where”: filter by time range and app to quickly locate historical screens.
-- Aggregate multiple screenshots within the same time span for AI summaries into “Daily Summary”, helping you review key activities, operations, and takeaways of the day.
-- Export/backup your local library to migrate or archive your “second memory”.
-
-Typical scenarios:
-- Recall messages or page content that were withdrawn/deleted; retrieve information from windows closed by mistake.
-- Search for recurring lines, terms, or key fields across days by keywords, connecting memory fragments with counts and quick review.
-- Retrospect important phases (e.g., project work, thesis writing, review/prep), using “Daily Summary” to quickly review daily highlights and reduce organization costs.
-- “Memory treasure hunt”: browse past overlooked details or sparks of inspiration to inform creation and decision-making.
 ---
 
-## Start building your personal digital memory today
+## Start Building Your Personal Digital Memory Today
 
-Why start recording now?
-- Others are already training their personal AI
-- Don’t be left behind — every day without recording is lost knowledge for your future AI assistant
-
-AI advantage gap
-- Those who start collecting personal data today will have years of advantage when AI becomes more capable
-
-Scattered digital self
-- Valuable personal context is trapped across apps and devices — making it hard to leverage without ScreenMemo
+**Why start right now?**
+- **Irreversible Knowledge Loss**: As more people use daily data to train their personal AI, every day you don't record is a loss of "understanding you" for your future AI assistant.
+- **The Quiet Compound Interest of Time**: Data cannot be rushed. Those who start accumulating digital specimens today will naturally possess an irreplaceable, exclusive memory vault when AI achieves its next breakthrough.
+- **Salvaging Your Scattered Digital Self**: Your most precious context is often shattered across various apps and devices—without ScreenMemo to properly collect them, they will eventually fade with time, never to be fully awakened again.
 
 ---
 
 ## How It Works
 
 1. Screen capture: after user authorization, based on Android 11+ Accessibility screenshot capability (`takeScreenshot`), capture the current foreground app at configured intervals; can be enabled/excluded by app or time range.
-2. Local storage: save the original image to the app’s private directory, and record metadata (timestamp, foreground app package name, etc.) to a local database (SQLite) to power timeline and filtering.
-3. Text extraction (OCR): run OCR on new screenshots, extract text and index with the image; support multilingual character sets for full-text search.
+2. Local storage: save screenshots to app-private storage, and record metadata (timestamp, foreground app package name, etc.) to a local database (SQLite) to power timeline and filtering. Since recent versions, screenshots/database/cache live under internal `files/output`; logs are written to the app-private external directory `<externalFiles>/output/logs` for easier export/debug; the app migrates older external data on startup.
+3. Text extraction (OCR): run OCR on new screenshots (Android ML Kit), extract text and index with the image for full-text search.
 4. Indexing & search: build inverted indexes by time/app/keywords; the Search page supports keyword match, time range, and app filters to quickly locate historical screens.
-5. AI processing: aggregate multiple screenshots within the same time segment to form “Events” and “Daily Summary”; you can choose and configure different model providers.
-6. Privacy & security: all raw data and indexes are stored locally; you can pause capture, purge data, and export backups at any time; NSFW preference for sensitive content masking.
+5. AI processing (optional): aggregate multiple screenshots within the same time segment to form “Events” and “Daily Summary”; you can choose and configure different model providers.
+6. Privacy & security: screenshots/OCR/index are stored locally by default; AI summaries only make network requests after you enable them. You can pause capture, purge data, and export backups at any time; NSFW preference for sensitive content masking.
 7. Space management: compress images and clean up expired data by policy to automatically control disk usage and keep the library size manageable.
 8. Deep links: via deep links, jump from Search/Statistics to the image viewer or specific pages to quickly return to the original context.
+9. AI request gateway (when AI is enabled): all model calls go through a streaming-first gateway, with automatic fallback to non-streaming to improve multi-provider compatibility.
+
+---
+
+## Flutter Chat Context System (Codex-style)
+
+> Design doc: `docs/CONTEXT_MEMORY.md`
+
+- **Three-layer storage**: UI tail (`ai_messages`) + full transcripts (`ai_messages_full`) + compressed memory (`ai_conversations.summary/tool_memory_json`).
+- **Context injection**: each request injects `<conversation_context>` (summary + tool memory) and appends recent tail transcripts as prompt history.
+- **Auto compression**: when conversations grow, a rolling summary is generated to reduce repetition/looping.
+- **Observability**: estimate tokens (bytes/4) of the last prompt and provide a UI panel to inspect/compress/clear memory.
 
 ---
 
@@ -134,9 +130,12 @@ Scattered digital self
 
 ### Key Features
 
-- Deep links: automatically record browser links.
-- NSFW masking: automatically mask common adult domains; customizable domain list.
-- App-specific settings: per-app capture strategy (whether to capture, capture frequency, resolution/compression, etc.) with optimized presets for game/video/reading apps.
+- Deep links: automatically record browser links and jump back from Search/Stats.
+- NSFW masking: auto-mask common adult domains; customizable rules.
+- App-specific settings: per-app capture strategy (enable/disable, interval, resolution/compression) with presets for gaming/video/reading.
+- Theme & colors: light/dark and seed color switching.
+- Summaries: daily and weekly summaries, plus persona articles (streamed output).
+- Storage analysis: breakdown for app data, cache, screenshots, and logs.
 
 ---
 
@@ -244,20 +243,89 @@ flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --spl
 - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
 - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
 - `build/app/outputs/flutter-apk/app-x86_64-release.apk`
+
+---
+
+## Automated Release (GitHub Actions)
+
+This project is configured to automatically build and publish to GitHub Releases when a tag is pushed: it will only build when you push a tag (e.g., `v1.0.0`), and will not trigger on regular pushes/commits.
+
+### Release Steps
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+After pushing, GitHub Actions will automatically build **ABI-split Release APKs** and create a Release with the same name, attaching the artifacts (APKs, `symbols-*.zip`, and optional `mapping-*.txt`).
+
+Version rules: the tag (without the `v` prefix) will be used as `--build-name`, and `github.run_number` as `--build-number`.
+
+### Optional: Configure Production Signature (Recommended)
+
+If you want the Release APKs to be signed with a production keystore (instead of the debug key), add the following Secrets in your repository under `Settings -> Secrets and variables -> Actions`:
+
+- `ANDROID_KEYSTORE_BASE64`: Base64 of the `jks`/`keystore` file
+- `ANDROID_KEYSTORE_PASSWORD`: Keystore password
+- `ANDROID_KEY_ALIAS`: Key alias
+- `ANDROID_KEY_PASSWORD`: Key password
+
+> The workflow uses the built-in `GITHUB_TOKEN` to publish the Release by default; you do not need to provide a personal token.
+
+---
+
+## Desktop Data Merger Tool
+
+Because merging imports on mobile can be slow, ScreenMemo provides a Windows/macOS/Linux desktop data merger tool to efficiently merge multiple exported ZIP backup files.
+
+### Features
+
+- Select multiple exported ZIP backup files
+- Choose an output directory (where the merged data will be saved)
+- Show merge progress and detailed results
+- Full merge of screenshots and databases
+
+### Build executable
+
+**Windows**:
+```powershell
+flutter build windows -t lib/main_desktop_merger.dart --release
+```
+
+**macOS**:
+```bash
+flutter build macos -t lib/main_desktop_merger.dart --release
+```
+
+**Linux**:
+```bash
+flutter build linux -t lib/main_desktop_merger.dart --release
+```
+
+### Output
+
+| Platform | Output directory |
+|------|----------|
+| Windows | `build/windows/x64/runner/Release/` |
+| macOS | `build/macos/Build/Products/Release/` |
+| Linux | `build/linux/x64/release/bundle/` |
+
+> The artifact is a folder. On Windows it contains `screen_memo.exe` and required DLLs. Copy the whole folder to run.
 ---
 
 ## Permissions
 
-The app needs the following permissions to provide full functionality:
+The app may request the following permissions (depending on features you enable):
 
 | Permission | Purpose | Required |
 |-----------|---------|----------|
-| Storage | Save screenshots and data files | Required |
-| Notifications | Show service status and notifications | Required |
-| Accessibility Service | Automatic screenshots and foreground app detection | Required |
-| Usage Stats | Get foreground app (Usage Stats) | Required |
+| Notifications | Foreground service status & reminders | Required (background capture) |
+| Accessibility Service | Automatic screenshots (`takeScreenshot`, Android 11+) and foreground detection | Required (auto capture) |
+| Usage Stats | Get foreground app (Usage Stats) for tagging/filtering | Required |
+| Photos/Media | Save images/videos to system gallery | Optional |
+| Exact alarm | Scheduled daily/weekly summary reminders | Optional |
 
-> All permissions are requested on first launch and can be revoked anytime in system settings.
+> Note: app data is stored in app-private storage; legacy `READ/WRITE_EXTERNAL_STORAGE` runtime permissions are not required. Permissions are requested when needed and can be revoked anytime in system settings.
 
 ---
 
@@ -275,6 +343,30 @@ Add a new language
 2. Copy the content of `app_en.arb` and translate
 3. Run `flutter gen-l10n` to generate code
 4. Register the new locale in `LocaleService`
+
+### i18n Audit (Prevent missing translations/hardcoded regressions)
+
+To avoid introducing new user-visible strings that are not localized, the project provides an audit tool and a test guard:
+
+- **ARB consistency**: all `lib/l10n/*.arb` must have exactly the same keys as the template (`app_en.arb`).
+- **Platform localization**: required iOS/Android locale declarations and resources must be present.
+- **Hardcoded Flutter UI strings**: baseline mode blocks only **new** hardcoded strings; existing ones are recorded in the baseline and can be reduced over time.
+
+Run check:
+```bash
+dart run tool/i18n_audit.dart --check
+```
+
+Update baseline (use only when it’s truly legacy/intentional):
+```bash
+dart run tool/i18n_audit.dart --update-baseline
+```
+
+Ignore rules (use with care):
+- Add `// i18n-ignore` at end of line to ignore that line
+- Add `// i18n-ignore-file` anywhere in a file to ignore the whole file
+
+`flutter test` runs `test/i18n_audit_test.dart` to prevent regressions.
 
 ---
 
