@@ -130,6 +130,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
   bool _loading = false;
   bool _onlyNoSummary = false; // 仅看暂无AI总结
+  String? _selectedDateKey;
 
   // 底部弹窗查询输入持久化，避免失焦或重建清空
   String _segProviderQueryText = '';
@@ -665,6 +666,14 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         });
       }
     }
+  }
+
+  Future<void> _openSelectedDailySummary() async {
+    final String? dateKey = _selectedDateKey;
+    if (dateKey == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dateKey)),
+    );
   }
 
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
@@ -1556,6 +1565,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         automaticallyImplyLeading: true,
         title: _buildSegmentsProviderModelAppBarTitle(),
         actions: [
+          if (_selectedDateKey != null)
+            IconButton(
+              icon: const Icon(Icons.event_note_outlined),
+              tooltip: AppLocalizations.of(context).viewOrGenerateForDay,
+              onPressed: _openSelectedDailySummary,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: AppLocalizations.of(context).actionRefresh,
@@ -1582,6 +1597,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           isLoadingMoreDays: _isLoadingMoreDays,
           noMoreOlderSegments: _noMoreOlderSegments,
           onLastDayTabReached: _handleLastDayTabReached,
+          onActiveDateChanged: (dateKey) {
+            if (!mounted || _selectedDateKey == dateKey) return;
+            setState(() {
+              _selectedDateKey = dateKey;
+            });
+          },
         ),
       ),
     );
@@ -1615,6 +1636,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
   final bool isLoadingMoreDays;
   final bool noMoreOlderSegments;
   final Future<void> Function()? onLastDayTabReached;
+  final ValueChanged<String?>? onActiveDateChanged;
 
   const _SegmentTimelineTabView({
     required this.segments,
@@ -1633,6 +1655,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
     required this.isLoadingMoreDays,
     required this.noMoreOlderSegments,
     this.onLastDayTabReached,
+    this.onActiveDateChanged,
   });
 
   @override
@@ -1643,9 +1666,34 @@ class _SegmentTimelineTabView extends StatefulWidget {
 class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     with SingleTickerProviderStateMixin {
   TabController? _tabController;
+  List<String> _orderedKeys = const <String>[];
+  String? _lastReportedDateKey;
+
+  void _handleTabSelectionChanged() {
+    if (!mounted) return;
+    _reportActiveDateKey();
+  }
+
+  void _reportActiveDateKey() {
+    final TabController? controller = _tabController;
+    String? nextDateKey;
+    if (controller != null &&
+        _orderedKeys.isNotEmpty &&
+        controller.index >= 0 &&
+        controller.index < _orderedKeys.length) {
+      nextDateKey = _orderedKeys[controller.index];
+    }
+    if (_lastReportedDateKey == nextDateKey) return;
+    _lastReportedDateKey = nextDateKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onActiveDateChanged?.call(nextDateKey);
+    });
+  }
 
   @override
   void dispose() {
+    _tabController?.removeListener(_handleTabSelectionChanged);
     _tabController?.dispose();
     super.dispose();
   }
@@ -1655,6 +1703,8 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     final List<Map<String, dynamic>> segments = widget.segments;
 
     if (segments.isEmpty) {
+      _orderedKeys = const <String>[];
+      _reportActiveDateKey();
       return CustomScrollView(
         slivers: [
           SliverPadding(
@@ -1740,10 +1790,12 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
         : widget.maxVisibleDayTabs;
     final int visibleCount = math.min(desiredTabs, orderedAll.length);
     final List<String> ordered = orderedAll.take(visibleCount).toList();
+    _orderedKeys = ordered;
 
     // 根据当前可见日期数量维护 TabController，尽量保留用户当前选中的索引
     if (_tabController == null || _tabController!.length != ordered.length) {
       final int currentIndex = _tabController?.index ?? 0;
+      _tabController?.removeListener(_handleTabSelectionChanged);
       _tabController?.dispose();
 
       final int initialIndex = ordered.isEmpty
@@ -1754,7 +1806,9 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
         vsync: this,
         initialIndex: initialIndex,
       );
+      _tabController!.addListener(_handleTabSelectionChanged);
     }
+    _reportActiveDateKey();
 
     return Column(
       children: [
@@ -1876,7 +1930,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                   children: [
                     widget.activeHeader,
                     const SizedBox(height: 8),
-                    _buildDailyEntryCard(context, k, grouped),
                     ...List.generate(
                       (grouped[k] ?? const <Map<String, dynamic>>[]).length,
                       (i) => _SegmentEntryCard(
@@ -1899,33 +1952,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildDailyEntryCard(
-    BuildContext context,
-    String dateKey,
-    Map<String, List<Map<String, dynamic>>> grouped,
-  ) {
-    final theme = Theme.of(context);
-    return Card(
-      // Daily summary entry should blend with the page background (user-selected).
-      color: theme.scaffoldBackgroundColor,
-      surfaceTintColor: Colors.transparent,
-      child: ListTile(
-        leading: const Icon(Icons.event_note_outlined),
-        title: Text(AppLocalizations.of(context).dailySummaryShort),
-        subtitle: Text(AppLocalizations.of(context).viewOrGenerateForDay),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {
-          // 这里仍然使用 dateKey（YYYY-MM-DD）作为每日总结的键，与 DailySummaryPage 保持一致
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => DailySummaryPage(dateKey: dateKey),
-            ),
-          );
-        },
-      ),
     );
   }
 }
