@@ -19,6 +19,7 @@ import '../models/app_info.dart';
 import 'package:file_picker/file_picker.dart';
 import 'nsfw_settings_page.dart';
 import 'storage_analysis_page.dart';
+import 'import_diagnostics_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ai_settings_service.dart';
@@ -1924,6 +1925,7 @@ class _SettingsPageState extends State<SettingsPage>
                 _buildStorageAnalysisItem(context),
                 _buildExportItem(context),
                 _buildImportItem(context),
+                _buildImportDiagnosticsItem(context),
                 _buildRecalculateAllItem(context),
               ],
             ),
@@ -3867,6 +3869,76 @@ class _SettingsPageState extends State<SettingsPage>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(AppLocalizations.of(context).actionImport),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportDiagnosticsItem(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        border: Border(top: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(
+              Icons.fact_check_outlined,
+              color: theme.colorScheme.onSecondaryContainer,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '导入诊断',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '导入完成后自检当前 output/数据库/索引状态，定位“文件存在但无数据”问题',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          TextButton(
+            onPressed: _importingData
+                ? null
+                : () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ImportDiagnosticsPage(),
+                      ),
+                    );
+                  },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing1,
+              ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: Size.zero,
+            ),
+            child: Text(l10n.actionEnter),
           ),
         ],
       ),

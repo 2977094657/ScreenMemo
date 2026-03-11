@@ -21,6 +21,19 @@
     <string name="fg_time_minutes_ago">%1$d分钟前</string>
     <string name="fg_time_hours_ago">%1$d小时前</string>
     <string name="fg_time_days_ago">%1$d天前</string>
+    <string name="import_ocr_channel_name">导入图片文字修复</string>
+    <string name="import_ocr_channel_desc">显示导入后图片文字修复进度</string>
+    <string name="import_ocr_notif_preparing_title">正在准备图片文字修复</string>
+    <string name="import_ocr_notif_preparing_text">正在扫描导入数据并建立修复任务</string>
+    <string name="import_ocr_notif_running_title">正在修复图片文字</string>
+    <string name="import_ocr_notif_running_text">已处理 %1$d/%2$d（%3$s）</string>
+    <string name="import_ocr_notif_running_scope_default">正在处理导入图片</string>
+    <string name="import_ocr_notif_done_title">图片文字修复完成</string>
+    <string name="import_ocr_notif_done_text">已写入 OCR %1$d 条，空文本 %2$d 条</string>
+    <string name="import_ocr_notif_failed_title">图片文字修复失败</string>
+    <string name="import_ocr_notif_failed_generic">任务执行失败，请打开导入诊断查看详情</string>
+    <string name="import_ocr_notif_cancelled_title">图片文字修复已取消</string>
+    <string name="import_ocr_notif_cancelled_text">修复任务已停止，可稍后重新继续</string>
 
     <!-- AI 语言策略（按应用语言强制输出），供原生端读取 -->
     <string name="ai_language_policy_zh"><![CDATA[无论输入上下文（事件/截图文本/用户消息）使用何种语言，你必须严格忽略其语言，始终使用当前应用语言输出内容。如果当前应用为简体中文，则所有回答、标题、摘要、标签、结构化字段与错误信息均必须使用简体中文撰写；除非用户在消息中明确要求使用其他语言。]]></string>

@@ -16,6 +16,7 @@ import 'services/app_lifecycle_service.dart';
 import 'services/navigation_service.dart';
 import 'services/daily_summary_service.dart';
 import 'services/locale_service.dart';
+import 'services/screenshot_database.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'pages/app_screenshot_settings_page.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -225,6 +226,13 @@ class _AppInitializerState extends State<AppInitializer> {
         ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(),
       );
     }
+    unawaited(_resumeImportOcrRepairIfNeeded());
+  }
+
+  Future<void> _resumeImportOcrRepairIfNeeded() async {
+    try {
+      await ScreenshotDatabase.instance.ensureImportOcrRepairTaskResumed();
+    } catch (_) {}
   }
 
   @override

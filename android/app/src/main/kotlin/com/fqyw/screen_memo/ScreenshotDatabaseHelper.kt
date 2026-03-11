@@ -204,6 +204,46 @@ object ScreenshotDatabaseHelper {
         return packageName.replace(Regex("[^\\w]"), "_")
     }
 
+    fun resolveExpectedShardDbPath(context: Context, packageName: String, year: Int): String? {
+        return try {
+            val base = context.filesDir.absolutePath
+            val shardsRoot = File(base, SHARDS_DIR_RELATIVE)
+            val sanitized = sanitizePackageName(packageName)
+            File(
+                File(File(shardsRoot, sanitized), "$year"),
+                "smm_${sanitized}_${year}.db"
+            ).absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun resolveExistingShardDbPath(
+        context: Context,
+        packageName: String,
+        year: Int,
+        registryDbPath: String?
+    ): String? {
+        val candidates = ArrayList<String>(2)
+        val registryPath = registryDbPath?.trim().orEmpty()
+        if (registryPath.isNotEmpty()) {
+            candidates.add(registryPath)
+        }
+        val expectedPath = resolveExpectedShardDbPath(context, packageName, year)
+        if (!expectedPath.isNullOrBlank() && expectedPath != registryPath) {
+            candidates.add(expectedPath)
+        }
+        for (path in candidates) {
+            try {
+                val file = File(path)
+                if (file.exists() && file.isFile) {
+                    return path
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
     private fun openShardDb(context: Context, packageName: String, year: Int): SQLiteDatabase? {
         return try {
             val base = context.filesDir.absolutePath

@@ -19,6 +19,137 @@ class MergeReport {
   });
 }
 
+class MergeZipAuditReport {
+  final String sourcePath;
+  final String sourceKind;
+  final int timestampMillis;
+  final int durationMs;
+  final int screenFileCount;
+  final int screenPackageCount;
+  final List<String> samplePackages;
+  final bool masterDbExists;
+  final bool masterDbReadable;
+  final String? masterDbReadError;
+  final int? userVersion;
+  final int smmDbCount;
+  final List<String> sampleSmmDbPaths;
+  final int dbSidecarFileCount;
+  final List<String> sampleDbSidecarPaths;
+  final Map<String, int?> registryCounts;
+  final List<String> blockingIssues;
+  final List<String> warnings;
+
+  const MergeZipAuditReport({
+    required this.sourcePath,
+    required this.sourceKind,
+    required this.timestampMillis,
+    required this.durationMs,
+    required this.screenFileCount,
+    required this.screenPackageCount,
+    required this.samplePackages,
+    required this.masterDbExists,
+    required this.masterDbReadable,
+    required this.masterDbReadError,
+    required this.userVersion,
+    required this.smmDbCount,
+    required this.sampleSmmDbPaths,
+    required this.dbSidecarFileCount,
+    required this.sampleDbSidecarPaths,
+    required this.registryCounts,
+    required this.blockingIssues,
+    required this.warnings,
+  });
+
+  bool get isValidForMerge => blockingIssues.isEmpty;
+
+  String toText() {
+    final StringBuffer sb = StringBuffer()
+      ..writeln('ScreenMemo 合并预检')
+      ..writeln('sourceKind: $sourceKind')
+      ..writeln('sourcePath: $sourcePath')
+      ..writeln('运行时间: ${_fmtTime(timestampMillis)}')
+      ..writeln('耗时: ${durationMs}ms')
+      ..writeln('状态: ${isValidForMerge ? 'OK' : 'BLOCKED'}')
+      ..writeln()
+      ..writeln('[文件]')
+      ..writeln(
+        'screenFiles: $screenFileCount packages=$screenPackageCount sample=${samplePackages.join(', ')}',
+      )
+      ..writeln(
+        'smmDbFiles: $smmDbCount sample=${sampleSmmDbPaths.join(', ')}',
+      )
+      ..writeln(
+        'dbSidecars: $dbSidecarFileCount sample=${sampleDbSidecarPaths.join(', ')}',
+      )
+      ..writeln()
+      ..writeln('[主库]')
+      ..writeln('masterDbExists: $masterDbExists')
+      ..writeln('masterDbReadable: $masterDbReadable')
+      ..writeln('userVersion: ${userVersion?.toString() ?? '(null)'}');
+    if (masterDbReadError != null && masterDbReadError!.trim().isNotEmpty) {
+      sb.writeln('masterDbReadError: $masterDbReadError');
+    }
+    sb
+      ..writeln(
+        'registryCounts: app_registry=${registryCounts['app_registry'] ?? '(n/a)'}, '
+        'app_stats=${registryCounts['app_stats'] ?? '(n/a)'}, '
+        'shard_registry=${registryCounts['shard_registry'] ?? '(n/a)'}, '
+        'totals=${registryCounts['totals'] ?? '(n/a)'}',
+      )
+      ..writeln();
+
+    if (blockingIssues.isNotEmpty) {
+      sb.writeln('[阻断问题]');
+      for (final String issue in blockingIssues) {
+        sb.writeln('- $issue');
+      }
+      sb.writeln();
+    }
+
+    if (warnings.isNotEmpty) {
+      sb.writeln('[警告]');
+      for (final String warning in warnings) {
+        sb.writeln('- $warning');
+      }
+    }
+
+    return sb.toString().trimRight();
+  }
+}
+
+class MergeAuditException implements Exception {
+  final String code;
+  final String message;
+  final MergeZipAuditReport? report;
+
+  const MergeAuditException({
+    required this.code,
+    required this.message,
+    this.report,
+  });
+
+  @override
+  String toString() => '$code: $message';
+}
+
+class _MasterDbProbeResult {
+  final bool openOk;
+  final String? openError;
+  final int? userVersion;
+  final Map<String, int?> rowCounts;
+  final bool sidecarOpenFailed;
+  final String? sidecarOpenError;
+
+  const _MasterDbProbeResult({
+    required this.openOk,
+    required this.openError,
+    required this.userVersion,
+    required this.rowCounts,
+    required this.sidecarOpenFailed,
+    required this.sidecarOpenError,
+  });
+}
+
 class _MergeContext {
   final Map<int, int> gidMapping = <int, int>{};
   final Map<String, String> relativePathMapping = <String, String>{};
@@ -52,6 +183,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     List<int>? zipBytes,
     void Function(ImportExportProgress progress)? onProgress,
     bool throwOnError = false,
+    bool requireCompleteShardData = false,
+    MergeZipAuditReport? preflightAuditReport,
   }) async {
     if ((zipPath == null || zipPath.isEmpty) &&
         (zipBytes == null || zipBytes.isEmpty)) {
@@ -131,6 +264,20 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         localZipPath = tempZipFile.path;
       }
 
+      if (requireCompleteShardData) {
+        final MergeZipAuditReport audit =
+            preflightAuditReport ?? await auditMergeInputZip(localZipPath!);
+        if (!audit.isValidForMerge) {
+          throw MergeAuditException(
+            code: 'invalid_source_zip',
+            message: audit.blockingIssues.isNotEmpty
+                ? audit.blockingIssues.first
+                : 'ZIP 预检未通过',
+            report: audit,
+          );
+        }
+      }
+
       final Map<String, dynamic>? extraction = await _runImportZipWithProgress(
         localZipPath: localZipPath!,
         outputDirPath: stagingOutput.path,
@@ -161,6 +308,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         stagingOutput: stagingOutput,
         ctx: ctx,
         progress: reportProgress,
+        requireCompleteShardData: requireCompleteShardData,
       );
 
       try {
@@ -215,6 +363,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required Directory stagingOutput,
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
+    bool requireCompleteShardData = false,
   }) async {
     final Directory targetOutput = Directory(join(baseDir.path, 'output'));
     if (!await targetOutput.exists()) {
@@ -240,6 +389,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       stagingOutput: stagingOutput,
       ctx: ctx,
       progress: progress,
+      requireCompleteShardData: requireCompleteShardData,
     );
 
     await _mergeMetadataDatabase(
@@ -451,6 +601,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     required Directory stagingOutput,
     required _MergeContext ctx,
     void Function(ImportExportProgress progress)? progress,
+    bool requireCompleteShardData = false,
   }) async {
     final Directory stagingDbDir = Directory(
       join(stagingOutput.path, 'databases'),
@@ -474,6 +625,12 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       join(stagingDbDir.path, 'screenshot_memo.db'),
     );
     if (!await importedMaster.exists()) {
+      if (requireCompleteShardData) {
+        throw const MergeAuditException(
+          code: 'invalid_master_db',
+          message: 'Imported screenshot_memo.db not found.',
+        );
+      }
       ctx.warnings.add(
         'Imported screenshot_memo.db not found, try infer shards from copied screen files.',
       );
@@ -531,6 +688,13 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         }
       }
     } catch (e) {
+      if (requireCompleteShardData) {
+        throw MergeAuditException(
+          code: 'invalid_master_db',
+          message:
+              'Failed to open/read imported screenshot_memo.db (${importedMaster.path}): $e',
+        );
+      }
       ctx.warnings.add(
         'Failed to open/read imported screenshot_memo.db (${importedMaster.path}): $e',
       );
@@ -539,6 +703,13 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     }
 
     if (shards.isEmpty) {
+      if (requireCompleteShardData) {
+        throw const MergeAuditException(
+          code: 'missing_shard_db',
+          message:
+              'Imported screenshot_memo.db has no shard_registry rows while screen files exist.',
+        );
+      }
       shards = _inferShardRegistryRowsFromCopiedScreens(ctx);
       if (shards.isNotEmpty) {
         ctx.warnings.add(
@@ -568,11 +739,17 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         'shards',
         sanitized,
         '$year',
-        'smm_${sanitized}_${year}.db',
+        'smm_${sanitized}_$year.db',
       );
 
       final File shardFile = File(shardPath);
       if (!await shardFile.exists()) {
+        if (requireCompleteShardData) {
+          throw MergeAuditException(
+            code: 'missing_shard_db',
+            message: 'Shard file missing for $pkg/$year: $shardPath',
+          );
+        }
         ctx.warnings.add('Shard file missing for $pkg - $year: $shardPath');
         continue;
       }
@@ -1161,102 +1338,428 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     await source.copy(target.path);
   }
 
-  String _memoryEventKey(Map<String, Object?> row) {
-    final Object? occurred = row['occurred_at'];
-    final String type = (row['type'] as String?) ?? '';
-    final String source = (row['source'] as String?) ?? '';
-    final String content = (row['content'] as String?) ?? '';
-    return '${occurred ?? 0}|$source|$type|$content';
-  }
+  Future<MergeZipAuditReport> auditMergeInputZip(String zipPath) async {
+    final Stopwatch sw = Stopwatch()..start();
+    final int ts = DateTime.now().millisecondsSinceEpoch;
+    final List<String> warnings = <String>[];
+    final List<String> blockingIssues = <String>[];
+    final Set<String> packages = <String>{};
+    final List<String> smmSamples = <String>[];
+    final List<String> sidecarSamples = <String>[];
+    int screenFileCount = 0;
+    int smmDbCount = 0;
+    int dbSidecarFileCount = 0;
+    bool masterDbExists = false;
+    late final Archive archive;
 
-  Map<String, Object?> _mergeTagRows(
-    Map<String, Object?> existing,
-    Map<String, Object?> incoming,
-  ) {
-    if (existing.isEmpty) {
-      return Map<String, Object?>.from(incoming);
+    try {
+      final InputFileStream input = InputFileStream(zipPath);
+      try {
+        archive = ZipDecoder().decodeBuffer(input);
+      } finally {
+        input.close();
+      }
+    } catch (e) {
+      sw.stop();
+      return MergeZipAuditReport(
+        sourcePath: zipPath,
+        sourceKind: 'zip',
+        timestampMillis: ts,
+        durationMs: sw.elapsedMilliseconds,
+        screenFileCount: 0,
+        screenPackageCount: 0,
+        samplePackages: const <String>[],
+        masterDbExists: false,
+        masterDbReadable: false,
+        masterDbReadError: e.toString(),
+        userVersion: null,
+        smmDbCount: 0,
+        sampleSmmDbPaths: const <String>[],
+        dbSidecarFileCount: 0,
+        sampleDbSidecarPaths: const <String>[],
+        registryCounts: const <String, int?>{
+          'app_registry': null,
+          'app_stats': null,
+          'shard_registry': null,
+          'totals': null,
+        },
+        blockingIssues: <String>['ZIP 无法读取或不是有效备份：$e'],
+        warnings: const <String>[],
+      );
     }
 
-    final Map<String, Object?> result = Map<String, Object?>.from(existing);
+    ArchiveFile? masterEntry;
+    ArchiveFile? walEntry;
+    ArchiveFile? shmEntry;
 
-    result['label'] = _preferString(existing['label'], incoming['label']);
-    result['level1'] = _preferString(existing['level1'], incoming['level1']);
-    result['level2'] = _preferString(existing['level2'], incoming['level2']);
-    result['level3'] = _preferString(existing['level3'], incoming['level3']);
-    result['level4'] = _preferString(existing['level4'], incoming['level4']);
-    result['full_path'] = _preferString(
-      existing['full_path'],
-      incoming['full_path'],
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) continue;
+      final String normalized = _normalizeMergeBackupEntryPath(file.name);
+      if (normalized.isEmpty) continue;
+      final String lower = normalized.toLowerCase();
+      if (lower.startsWith('screen/')) {
+        screenFileCount++;
+        final List<String> parts = normalized.split('/');
+        if (parts.length >= 2 && parts[1].trim().isNotEmpty) {
+          packages.add(parts[1].trim());
+        }
+      }
+      if (lower == 'databases/screenshot_memo.db') {
+        masterDbExists = true;
+        masterEntry = file;
+      } else if (lower == 'databases/screenshot_memo.db-wal') {
+        walEntry = file;
+        dbSidecarFileCount++;
+        if (sidecarSamples.length < 10) {
+          sidecarSamples.add(normalized);
+        }
+      } else if (lower == 'databases/screenshot_memo.db-shm') {
+        shmEntry = file;
+        dbSidecarFileCount++;
+        if (sidecarSamples.length < 10) {
+          sidecarSamples.add(normalized);
+        }
+      } else if (_isSmmShardDbPath(normalized)) {
+        smmDbCount++;
+        if (smmSamples.length < 10) {
+          smmSamples.add(normalized);
+        }
+      } else if (lower.endsWith('.db-wal') || lower.endsWith('.db-shm')) {
+        dbSidecarFileCount++;
+        if (sidecarSamples.length < 10) {
+          sidecarSamples.add(normalized);
+        }
+      }
+    }
+
+    if (screenFileCount <= 0) {
+      blockingIssues.add('未发现任何 screen 文件，不能作为可合并备份。');
+    }
+    if (!masterDbExists) {
+      blockingIssues.add('缺少 databases/screenshot_memo.db。');
+    }
+    if (screenFileCount > 0 && smmDbCount <= 0) {
+      blockingIssues.add('检测到 screen 有内容，但没有任何 smm_*.db 分库。');
+    }
+
+    _MasterDbProbeResult? probe;
+    if (masterEntry != null) {
+      Directory? tempDir;
+      try {
+        tempDir = await Directory.systemTemp.createTemp('screenmemo_merge_zip_');
+        final String masterPath = join(tempDir.path, 'screenshot_memo.db');
+        final OutputFileStream masterOut = OutputFileStream(masterPath);
+        masterEntry.writeContent(masterOut);
+        await masterOut.close();
+
+        if (walEntry != null) {
+          final OutputFileStream walOut = OutputFileStream('$masterPath-wal');
+          walEntry.writeContent(walOut);
+          await walOut.close();
+        }
+        if (shmEntry != null) {
+          final OutputFileStream shmOut = OutputFileStream('$masterPath-shm');
+          shmEntry.writeContent(shmOut);
+          await shmOut.close();
+        }
+
+        probe = await _probeMasterDbSnapshot(masterPath);
+      } catch (e) {
+        warnings.add('读取 ZIP 内 screenshot_memo.db 失败: $e');
+      } finally {
+        if (tempDir != null) {
+          try {
+            await tempDir.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    }
+
+    final Map<String, int?> registryCounts = probe?.rowCounts ??
+        <String, int?>{
+          'app_registry': null,
+          'app_stats': null,
+          'shard_registry': null,
+          'totals': null,
+        };
+
+    if (probe != null) {
+      if (!probe.openOk) {
+        blockingIssues.add('主库不可读：${probe.openError ?? 'unknown error'}');
+      }
+      if (probe.sidecarOpenFailed) {
+        blockingIssues.add(
+          '主库 WAL/SHM 快照不一致：${probe.sidecarOpenError ?? 'unknown error'}',
+        );
+      }
+    }
+
+    if (screenFileCount > 0 && (registryCounts['shard_registry'] ?? 0) <= 0) {
+      blockingIssues.add('主库 shard_registry 为空。');
+    }
+    if (screenFileCount > 0 && (registryCounts['app_registry'] ?? 0) <= 0) {
+      blockingIssues.add('主库 app_registry 为空。');
+    }
+    if (screenFileCount > 0 && (registryCounts['app_stats'] ?? 0) <= 0) {
+      blockingIssues.add('主库 app_stats 为空。');
+    }
+    if (screenFileCount > 0 && (registryCounts['totals'] ?? 0) <= 0) {
+      blockingIssues.add('主库 totals 为空。');
+    }
+
+    sw.stop();
+    final List<String> samplePackages = packages.toList()..sort();
+    final MergeZipAuditReport report = MergeZipAuditReport(
+      sourcePath: zipPath,
+      sourceKind: 'zip',
+      timestampMillis: ts,
+      durationMs: sw.elapsedMilliseconds,
+      screenFileCount: screenFileCount,
+      screenPackageCount: packages.length,
+      samplePackages: samplePackages.length <= 10
+          ? samplePackages
+          : samplePackages.take(10).toList(),
+      masterDbExists: masterDbExists,
+      masterDbReadable: probe?.openOk ?? false,
+      masterDbReadError: probe?.openError,
+      userVersion: probe?.userVersion,
+      smmDbCount: smmDbCount,
+      sampleSmmDbPaths: smmSamples,
+      dbSidecarFileCount: dbSidecarFileCount,
+      sampleDbSidecarPaths: sidecarSamples,
+      registryCounts: registryCounts,
+      blockingIssues: blockingIssues,
+      warnings: warnings,
+    );
+    try {
+      await FlutterLogger.nativeInfo('MERGE_AUDIT', report.toText());
+    } catch (_) {}
+    return report;
+  }
+
+  Future<void> freezeMergedOutputForBackup({
+    required String baseDirPath,
+  }) async {
+    final Directory dbRoot = Directory(
+      join(baseDirPath, 'output', 'databases'),
+    );
+    if (!await dbRoot.exists()) return;
+
+    final List<File> dbFiles = <File>[];
+    await for (final FileSystemEntity entity in dbRoot.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is! File) continue;
+      if (entity.path.toLowerCase().endsWith('.db')) {
+        dbFiles.add(entity);
+      }
+    }
+
+    for (final File dbFile in dbFiles) {
+      Database? db;
+      try {
+        db = await openDatabase(dbFile.path, singleInstance: false);
+        try {
+          await db.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+        } catch (_) {
+          await db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+        }
+      } catch (e) {
+        throw MergeAuditException(
+          code: 'invalid_merged_output',
+          message: '无法固化数据库 ${dbFile.path}: $e',
+        );
+      } finally {
+        try {
+          await db?.close();
+        } catch (_) {}
+      }
+    }
+
+    await for (final FileSystemEntity entity in dbRoot.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is! File) continue;
+      final String lower = entity.path.toLowerCase();
+      if (!lower.endsWith('.db-wal') && !lower.endsWith('.db-shm')) {
+        continue;
+      }
+      try {
+        await entity.delete();
+      } catch (e) {
+        throw MergeAuditException(
+          code: 'invalid_merged_output',
+          message: '无法删除数据库 sidecar ${entity.path}: $e',
+        );
+      }
+    }
+  }
+
+  Future<MergeZipAuditReport> auditMergedOutputDirectory({
+    required String baseDirPath,
+  }) async {
+    final Stopwatch sw = Stopwatch()..start();
+    final int ts = DateTime.now().millisecondsSinceEpoch;
+    final List<String> warnings = <String>[];
+    final List<String> blockingIssues = <String>[];
+    final Set<String> packages = <String>{};
+    final List<String> smmSamples = <String>[];
+    final List<String> sidecarSamples = <String>[];
+    int screenFileCount = 0;
+    int smmDbCount = 0;
+    int dbSidecarFileCount = 0;
+
+    final Directory outputDir = Directory(join(baseDirPath, 'output'));
+    final Directory screenDir = Directory(join(outputDir.path, 'screen'));
+    final Directory dbRoot = Directory(join(outputDir.path, 'databases'));
+    final File masterDbFile = File(
+      join(outputDir.path, 'databases', 'screenshot_memo.db'),
     );
 
-    final int existingOccurrences = _asInt(existing['occurrences']);
-    final int incomingOccurrences = _asInt(incoming['occurrences']);
-    result['occurrences'] = existingOccurrences + incomingOccurrences;
-
-    final double existingConfidence = _asDouble(existing['confidence']);
-    final double incomingConfidence = _asDouble(incoming['confidence']);
-    result['confidence'] = math.max(existingConfidence, incomingConfidence);
-
-    final int existingFirst = _asInt(existing['first_seen_at']);
-    final int incomingFirst = _asInt(incoming['first_seen_at']);
-    if (existingFirst == 0) {
-      result['first_seen_at'] = incomingFirst;
-    } else if (incomingFirst == 0) {
-      result['first_seen_at'] = existingFirst;
-    } else {
-      result['first_seen_at'] = math.min(existingFirst, incomingFirst);
+    if (await screenDir.exists()) {
+      await for (final FileSystemEntity entity in screenDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        screenFileCount++;
+        final String relative = _relativeTo(outputDir.path, entity.path);
+        final List<String> parts = relative.split('/');
+        if (parts.length >= 2 &&
+            parts.first == 'screen' &&
+            parts[1].trim().isNotEmpty) {
+          packages.add(parts[1].trim());
+        }
+      }
     }
 
-    final int existingLast = _asInt(existing['last_seen_at']);
-    final int incomingLast = _asInt(incoming['last_seen_at']);
-    result['last_seen_at'] = math.max(existingLast, incomingLast);
-
-    final String existingStatus = (existing['status'] as String?) ?? 'pending';
-    final String incomingStatus = (incoming['status'] as String?) ?? 'pending';
-    if (incomingStatus == 'confirmed' || existingStatus == 'confirmed') {
-      result['status'] = 'confirmed';
+    if (await dbRoot.exists()) {
+      await for (final FileSystemEntity entity in dbRoot.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        final String relative = _relativeTo(outputDir.path, entity.path);
+        final String lower = relative.toLowerCase();
+        if (_isSmmShardDbPath(relative)) {
+          smmDbCount++;
+          if (smmSamples.length < 10) {
+            smmSamples.add(relative);
+          }
+        }
+        if (lower.endsWith('.db-wal') || lower.endsWith('.db-shm')) {
+          dbSidecarFileCount++;
+          if (sidecarSamples.length < 10) {
+            sidecarSamples.add(relative);
+          }
+        }
+      }
     }
 
-    final String existingCategory =
-        (existing['category'] as String?) ?? 'other';
-    final String incomingCategory =
-        (incoming['category'] as String?) ?? existingCategory;
-    if (existingCategory == 'other' && incomingCategory.isNotEmpty) {
-      result['category'] = incomingCategory;
+    final bool masterDbExists = await masterDbFile.exists();
+    _MasterDbProbeResult? probe;
+    if (masterDbExists) {
+      Directory? tempDir;
+      try {
+        tempDir = await Directory.systemTemp.createTemp('screenmemo_merge_out_');
+        final String tempMasterPath = join(tempDir.path, 'screenshot_memo.db');
+        await masterDbFile.copy(tempMasterPath);
+        final File walFile = File('${masterDbFile.path}-wal');
+        if (await walFile.exists()) {
+          await walFile.copy('$tempMasterPath-wal');
+        }
+        final File shmFile = File('${masterDbFile.path}-shm');
+        if (await shmFile.exists()) {
+          await shmFile.copy('$tempMasterPath-shm');
+        }
+        probe = await _probeMasterDbSnapshot(tempMasterPath);
+      } catch (e) {
+        warnings.add('读取输出目录主库失败: $e');
+      } finally {
+        if (tempDir != null) {
+          try {
+            await tempDir.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
     }
 
-    final int incomingAutoConfirmed = _asInt(incoming['auto_confirmed_at']);
-    final int existingAutoConfirmed = _asInt(existing['auto_confirmed_at']);
-    if (existingAutoConfirmed == 0 && incomingAutoConfirmed != 0) {
-      result['auto_confirmed_at'] = incomingAutoConfirmed;
+    final Map<String, int?> registryCounts = probe?.rowCounts ??
+        <String, int?>{
+          'app_registry': null,
+          'app_stats': null,
+          'shard_registry': null,
+          'totals': null,
+        };
+
+    if (screenFileCount <= 0) {
+      blockingIssues.add('输出目录未发现任何 screen 文件。');
+    }
+    if (packages.isEmpty) {
+      blockingIssues.add('输出目录未发现任何截图包目录。');
+    }
+    if (!masterDbExists) {
+      blockingIssues.add('输出目录缺少 databases/screenshot_memo.db。');
+    }
+    if (smmDbCount <= 0) {
+      blockingIssues.add('输出目录没有任何 smm_*.db 分库。');
+    }
+    if (dbSidecarFileCount > 0) {
+      blockingIssues.add('输出目录仍残留 .db-wal/.db-shm sidecar 文件。');
+    }
+    if (probe != null) {
+      if (!probe.openOk) {
+        blockingIssues.add('输出目录主库不可读：${probe.openError ?? 'unknown error'}');
+      }
+      if (probe.sidecarOpenFailed) {
+        blockingIssues.add(
+          '输出目录主库 WAL/SHM 快照不一致：${probe.sidecarOpenError ?? 'unknown error'}',
+        );
+      }
+    }
+    if ((registryCounts['shard_registry'] ?? 0) <= 0) {
+      blockingIssues.add('输出目录主库 shard_registry 为空。');
+    }
+    if ((registryCounts['app_registry'] ?? 0) <= 0) {
+      blockingIssues.add('输出目录主库 app_registry 为空。');
+    }
+    if ((registryCounts['app_stats'] ?? 0) <= 0) {
+      blockingIssues.add('输出目录主库 app_stats 为空。');
+    }
+    if ((registryCounts['totals'] ?? 0) <= 0) {
+      blockingIssues.add('输出目录主库 totals 为空。');
     }
 
-    final int incomingManualConfirmed = _asInt(incoming['manual_confirmed_at']);
-    final int existingManualConfirmed = _asInt(existing['manual_confirmed_at']);
-    if (existingManualConfirmed == 0 && incomingManualConfirmed != 0) {
-      result['manual_confirmed_at'] = incomingManualConfirmed;
-    }
-
-    return result;
-  }
-
-  String _preferString(Object? primary, Object? secondary) {
-    final String first = (primary as String?)?.trim() ?? '';
-    if (first.isNotEmpty) return first;
-    return (secondary as String?)?.trim() ?? '';
-  }
-
-  int _asInt(Object? value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
-  }
-
-  double _asDouble(Object? value) {
-    if (value is num) return value.toDouble();
-    if (value is String) return double.tryParse(value) ?? 0.0;
-    return 0.0;
+    sw.stop();
+    final List<String> samplePackages = packages.toList()..sort();
+    final MergeZipAuditReport report = MergeZipAuditReport(
+      sourcePath: outputDir.path,
+      sourceKind: 'output_dir',
+      timestampMillis: ts,
+      durationMs: sw.elapsedMilliseconds,
+      screenFileCount: screenFileCount,
+      screenPackageCount: packages.length,
+      samplePackages: samplePackages.length <= 10
+          ? samplePackages
+          : samplePackages.take(10).toList(),
+      masterDbExists: masterDbExists,
+      masterDbReadable: probe?.openOk ?? false,
+      masterDbReadError: probe?.openError,
+      userVersion: probe?.userVersion,
+      smmDbCount: smmDbCount,
+      sampleSmmDbPaths: smmSamples,
+      dbSidecarFileCount: dbSidecarFileCount,
+      sampleDbSidecarPaths: sidecarSamples,
+      registryCounts: registryCounts,
+      blockingIssues: blockingIssues,
+      warnings: warnings,
+    );
+    try {
+      await FlutterLogger.nativeInfo('MERGE_AUDIT', report.toText());
+    } catch (_) {}
+    return report;
   }
 
   String _relativeFromScreenPath(String screenRoot, String absolutePath) {
@@ -1281,5 +1784,158 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       return normalized.substring(idx + '/output/'.length);
     }
     return null;
+  }
+}
+
+Future<_MasterDbProbeResult> _probeMasterDbSnapshot(String masterDbPath) async {
+  final String walPath = '$masterDbPath-wal';
+  final String shmPath = '$masterDbPath-shm';
+  final bool hasSidecars =
+      await File(walPath).exists() || await File(shmPath).exists();
+
+  final _MasterDbProbeResult result = await _queryMasterDb(masterDbPath);
+  if (result.openOk || !hasSidecars) {
+    return result;
+  }
+
+  final String sidecarError = result.openError ?? 'unknown error';
+  try {
+    if (await File(walPath).exists()) {
+      await File(walPath).delete();
+    }
+  } catch (_) {}
+  try {
+    if (await File(shmPath).exists()) {
+      await File(shmPath).delete();
+    }
+  } catch (_) {}
+
+  final _MasterDbProbeResult fallback = await _queryMasterDb(masterDbPath);
+  if (fallback.openOk) {
+    return _MasterDbProbeResult(
+      openOk: true,
+      openError: null,
+      userVersion: fallback.userVersion,
+      rowCounts: fallback.rowCounts,
+      sidecarOpenFailed: true,
+      sidecarOpenError: sidecarError,
+    );
+  }
+
+  return _MasterDbProbeResult(
+    openOk: false,
+    openError: result.openError ?? fallback.openError,
+    userVersion: fallback.userVersion,
+    rowCounts: fallback.rowCounts,
+    sidecarOpenFailed: true,
+    sidecarOpenError: sidecarError,
+  );
+}
+
+Future<_MasterDbProbeResult> _queryMasterDb(String dbPath) async {
+  final Map<String, int?> rowCounts = <String, int?>{
+    'app_registry': null,
+    'app_stats': null,
+    'shard_registry': null,
+    'totals': null,
+  };
+  Database? db;
+  try {
+    db = await openDatabase(
+      dbPath,
+      readOnly: true,
+      singleInstance: false,
+    );
+    int? userVersion;
+    try {
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        'PRAGMA user_version',
+      );
+      if (rows.isNotEmpty) {
+        final Object? value = rows.first.values.isNotEmpty
+            ? rows.first.values.first
+            : rows.first['user_version'];
+        if (value is int) {
+          userVersion = value;
+        } else if (value is num) {
+          userVersion = value.toInt();
+        } else {
+          userVersion = int.tryParse(value?.toString() ?? '');
+        }
+      }
+    } catch (_) {}
+
+    for (final String table in rowCounts.keys) {
+      final bool exists = await _auditTableExists(db, table);
+      if (!exists) {
+        rowCounts[table] = 0;
+        continue;
+      }
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        'SELECT COUNT(*) AS c FROM $table',
+      );
+      final Object? value = rows.isNotEmpty ? rows.first['c'] : null;
+      if (value is int) {
+        rowCounts[table] = value;
+      } else if (value is num) {
+        rowCounts[table] = value.toInt();
+      } else {
+        rowCounts[table] = int.tryParse(value?.toString() ?? '');
+      }
+    }
+
+    return _MasterDbProbeResult(
+      openOk: true,
+      openError: null,
+      userVersion: userVersion,
+      rowCounts: rowCounts,
+      sidecarOpenFailed: false,
+      sidecarOpenError: null,
+    );
+  } catch (e) {
+    return _MasterDbProbeResult(
+      openOk: false,
+      openError: e.toString(),
+      userVersion: null,
+      rowCounts: rowCounts,
+      sidecarOpenFailed: false,
+      sidecarOpenError: null,
+    );
+  } finally {
+    try {
+      await db?.close();
+    } catch (_) {}
+  }
+}
+
+String _normalizeMergeBackupEntryPath(String raw) {
+  String path = raw.replaceAll('\\', '/').trim();
+  while (path.startsWith('./')) {
+    path = path.substring(2);
+  }
+  path = path.replaceFirst(RegExp(r'^/+'), '');
+  if (path.startsWith('output/')) {
+    path = path.substring('output/'.length);
+  }
+  return path;
+}
+
+bool _isSmmShardDbPath(String path) {
+  final String normalized = path.replaceAll('\\', '/');
+  final String lower = normalized.toLowerCase();
+  if (!lower.startsWith('databases/shards/')) return false;
+  final String name = basename(lower);
+  return name.startsWith('smm_') && name.endsWith('.db');
+}
+
+Future<bool> _auditTableExists(DatabaseExecutor db, String tableName) async {
+  try {
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1",
+      <Object?>[tableName],
+    );
+    return rows.isNotEmpty;
+  } catch (_) {
+    return false;
   }
 }

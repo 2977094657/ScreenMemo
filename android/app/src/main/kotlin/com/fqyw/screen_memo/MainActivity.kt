@@ -799,6 +799,57 @@ class MainActivity : FlutterActivity() {
                         result.error("ocr_error", e.message, null)
                     }
                 }
+                "repairImportOcrBatch" -> {
+                    val filePaths = call.argument<List<String>>("filePaths") ?: emptyList()
+                    Thread {
+                        try {
+                            val report = runImportOcrBatch(filePaths)
+                            runOnUiThread { result.success(report) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("repair_import_ocr_failed", e.message, null) }
+                        }
+                    }.start()
+                }
+                "startImportOcrRepairTask" -> {
+                    try {
+                        val onlyMissing = call.argument<Boolean>("onlyMissing") ?: true
+                        val batchSize = call.argument<Int>("batchSize") ?: 12
+                        val status = ImportOcrRepairService.startOrResumeTask(
+                            applicationContext,
+                            onlyMissing,
+                            batchSize,
+                        )
+                        result.success(status)
+                    } catch (e: Exception) {
+                        result.error("start_import_ocr_task_failed", e.message, null)
+                    }
+                }
+                "getImportOcrRepairTaskStatus" -> {
+                    try {
+                        result.success(ImportOcrRepairService.getTaskStatus(applicationContext))
+                    } catch (e: Exception) {
+                        result.error("get_import_ocr_task_status_failed", e.message, null)
+                    }
+                }
+                "ensureImportOcrRepairTaskResumed" -> {
+                    try {
+                        result.success(
+                            ImportOcrRepairService.ensureResumedIfPending(
+                                applicationContext,
+                                "flutter_request",
+                            )
+                        )
+                    } catch (e: Exception) {
+                        result.error("ensure_import_ocr_task_resumed_failed", e.message, null)
+                    }
+                }
+                "cancelImportOcrRepairTask" -> {
+                    try {
+                        result.success(ImportOcrRepairService.cancelTask(applicationContext))
+                    } catch (e: Exception) {
+                        result.error("cancel_import_ocr_task_failed", e.message, null)
+                    }
+                }
                 "compressScreenshotFile" -> {
                     val filePath = call.argument<String>("filePath")
                     val format = call.argument<String>("format") ?: "webp_lossy"
@@ -2657,6 +2708,74 @@ class MainActivity : FlutterActivity() {
             rel = rel.substring(1)
         }
         return rel.replace("\\", "/")
+    }
+
+    private fun runImportOcrBatch(filePaths: List<String>): Map<String, Any> {
+        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        var processed = 0
+        var updated = 0
+        var empty = 0
+        var failed = 0
+        var missingFiles = 0
+        val failureSamples = ArrayList<String>()
+        try {
+            for (rawPath in filePaths) {
+                val filePath = rawPath.trim()
+                if (filePath.isEmpty()) continue
+                processed++
+                try {
+                    val file = File(filePath)
+                    if (!file.exists()) {
+                        missingFiles++
+                        if (failureSamples.size < 20) {
+                            failureSamples.add("missing_file: $filePath")
+                        }
+                        continue
+                    }
+                    val text = recognizeImportOcrText(filePath, recognizer)
+                    val finalText = text?.trim()?.takeIf { it.isNotEmpty() }
+                    ScreenshotDatabaseHelper.updateOcrTextByFilePath(
+                        this,
+                        filePath,
+                        finalText
+                    )
+                    if (finalText != null) {
+                        updated++
+                    } else {
+                        empty++
+                    }
+                } catch (e: Exception) {
+                    failed++
+                    if (failureSamples.size < 20) {
+                        failureSamples.add("ocr_failed: $filePath :: ${e.message ?: "unknown"}")
+                    }
+                }
+            }
+        } finally {
+            try { recognizer.close() } catch (_: Exception) {}
+        }
+        return mapOf(
+            "processed" to processed,
+            "updated" to updated,
+            "empty" to empty,
+            "failed" to failed,
+            "missingFiles" to missingFiles,
+            "failureSamples" to failureSamples
+        )
+    }
+
+    private fun recognizeImportOcrText(
+        filePath: String,
+        recognizer: com.google.mlkit.vision.text.TextRecognizer
+    ): String? {
+        val bmp = BitmapFactory.decodeFile(filePath) ?: return null
+        return try {
+            val image = InputImage.fromBitmap(bmp, 0)
+            val visionText = Tasks.await(recognizer.process(image))
+            visionText?.text?.trim()?.takeIf { it.isNotEmpty() }
+        } finally {
+            try { bmp.recycle() } catch (_: Exception) {}
+        }
     }
 
     private fun clearOutputCacheDirsNative(root: File) {

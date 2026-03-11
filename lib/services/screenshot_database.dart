@@ -17,6 +17,7 @@ import 'path_service.dart';
 
 part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
+part 'screenshot_database_import_diagnostics.dart';
 part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
 part 'screenshot_database_query.dart';

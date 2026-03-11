@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
-import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -22,8 +20,10 @@ class DesktopMergerPage extends StatefulWidget {
 
 class _DesktopMergerPageState extends State<DesktopMergerPage> {
   final List<File> _selectedZipFiles = [];
+  final Map<String, _ZipAuditState> _zipAuditStates = {};
   String? _outputDirectory;
   bool _isMerging = false;
+  bool _isAuditingZipFiles = false;
   double _progress = 0.0;
   String _currentStage = '';
   String? _currentEntry;
@@ -31,13 +31,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
   int _currentFileIndex = 0;
   final List<_MergeResult> _results = [];
   String? _errorMessage;
+  String? _preflightMessage;
   bool _showDetails = true;
 
   // 累计统计（实时更新）
   int _totalScreenshots = 0;
   int _totalSkipped = 0;
   int _totalFiles = 0;
-  int _totalReused = 0;
   final Set<String> _allAffectedApps = {};
   final List<String> _allWarnings = [];
 
@@ -89,7 +89,11 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             // 右侧：进度和结果区域
             Expanded(
               child:
-                  (_isMerging || _results.isNotEmpty || _errorMessage != null)
+                  (_isMerging ||
+                      _isAuditingZipFiles ||
+                      _results.isNotEmpty ||
+                      _errorMessage != null ||
+                      _preflightMessage != null)
                   ? SingleChildScrollView(child: _buildProgressArea(context))
                   : _buildEmptyState(context),
             ),
@@ -152,7 +156,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               ),
             ),
             TextButton(
-              onPressed: _isMerging ? null : _selectOutputDirectory,
+              onPressed:
+                  (_isMerging || _isAuditingZipFiles) ? null : _selectOutputDirectory,
               child: Text(
                 t.desktopMergerBrowse,
                 style: TextStyle(
@@ -191,7 +196,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               ),
             ),
             TextButton(
-              onPressed: _isMerging ? null : _selectZipFiles,
+              onPressed:
+                  (_isMerging || _isAuditingZipFiles) ? null : _selectZipFiles,
               child: Text(
                 t.desktopMergerAddFiles,
                 style: TextStyle(
@@ -238,10 +244,15 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           final file = _selectedZipFiles[index];
           final fileName = p.basename(file.path);
           final fileSize = _formatFileSize(file.lengthSync());
+          final _ZipAuditState? auditState = _zipAuditStates[file.path];
+          final Color auditColor = _auditStatusColor(theme, auditState);
+          final IconData auditIcon = _auditStatusIcon(auditState);
+          final String auditText = _auditStatusText(auditState);
 
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(Icons.archive, size: 16, color: Colors.orange.shade700),
                 const SizedBox(width: 6),
@@ -263,13 +274,41 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (auditState?.isRunning == true)
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            Icon(auditIcon, size: 12, color: auditColor),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              auditText,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: auditColor,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-                if (!_isMerging)
+                if (!_isMerging && !_isAuditingZipFiles)
                   InkWell(
-                    onTap: () =>
-                        setState(() => _selectedZipFiles.removeAt(index)),
+                    onTap: () => setState(() {
+                      _zipAuditStates.remove(file.path);
+                      _selectedZipFiles.removeAt(index);
+                      _refreshPreflightMessage();
+                    }),
                     child: Icon(
                       Icons.close,
                       size: 16,
@@ -448,6 +487,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               if (!_isPacking && _hasAnyStats()) _buildLiveStatsPanel(context),
             ],
 
+            if (!_isMerging && (_isAuditingZipFiles || _preflightMessage != null))
+              _buildPreflightPanel(context),
+
             // 错误信息
             if (_errorMessage != null) ...[
               Container(
@@ -503,6 +545,80 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             if (_results.isNotEmpty && !_isMerging) ...[
               _buildSummarySection(context),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreflightPanel(BuildContext context) {
+    final theme = Theme.of(context);
+    final bool hasBlockingIssues =
+        _selectedZipFiles.any((File file) => _isAuditBlocking(file.path));
+    final Color tone = hasBlockingIssues
+        ? theme.colorScheme.error
+        : theme.colorScheme.primary;
+    final Color bg = hasBlockingIssues
+        ? theme.colorScheme.errorContainer.withOpacity(0.25)
+        : theme.colorScheme.primaryContainer.withOpacity(0.2);
+    final String title = _isAuditingZipFiles ? 'ZIP 预检中' : 'ZIP 预检结果';
+    final String body = _preflightMessage ??
+        '正在检查所选 ZIP 是否包含完整的 screen / screenshot_memo.db / smm_*.db。';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTheme.spacing3),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.spacing3),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (_isAuditingZipFiles)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(
+                    hasBlockingIssues ? Icons.error_outline : Icons.fact_check,
+                    color: tone,
+                  ),
+                const SizedBox(width: AppTheme.spacing2),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: tone,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (body.trim().isNotEmpty)
+                  IconButton(
+                    tooltip: AppLocalizations.of(context).copyResultsTooltip,
+                    icon: const Icon(Icons.copy, size: 18),
+                    onPressed: () => _copyToClipboard(body),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  body,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: tone,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -594,7 +710,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
   Widget _buildSummarySection(BuildContext context) {
     final t = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final successCount = _results.where((r) => r.success).length;
     final failedCount = _results.where((r) => !r.success).length;
 
     return Column(
@@ -715,6 +830,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             ],
           ),
         ),
+        if (_showDetails) ...[
+          const SizedBox(height: AppTheme.spacing2),
+          ..._results.map((result) => _buildFileResultCard(context, result)),
+        ],
       ],
     );
   }
@@ -750,58 +869,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildWarningsSection(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      title: Text(
-        t.desktopMergerWarnings(_allWarnings.length),
-        style: theme.textTheme.titleSmall?.copyWith(color: Colors.orange),
-      ),
-      leading: const Icon(Icons.warning_amber, color: Colors.orange),
-      initiallyExpanded: false,
-      children: [
-        ..._allWarnings
-            .take(10)
-            .map(
-              (w) => Padding(
-                padding: const EdgeInsets.only(bottom: AppTheme.spacing1),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('• ', style: TextStyle(color: Colors.orange)),
-                    Expanded(child: Text(w, style: theme.textTheme.bodySmall)),
-                  ],
-                ),
-              ),
-            ),
-        if (_allWarnings.length > 10)
-          Text(
-            '... +${_allWarnings.length - 10} more',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildDetailedResultsSection(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.desktopMergerDetailTitle, style: theme.textTheme.titleSmall),
-        const SizedBox(height: AppTheme.spacing2),
-        ..._results.map((r) => _buildFileResultCard(context, r)),
       ],
     );
   }
@@ -979,6 +1046,11 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     final t = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final needMoreFiles = _selectedZipFiles.length < 2 && !_isMerging;
+    final bool hasBlockingZip = _selectedZipFiles.any(
+      (File file) => _isAuditBlocking(file.path),
+    );
+    final bool waitingForAudit = _isAuditingZipFiles ||
+        _selectedZipFiles.any((File file) => !_hasFinishedAudit(file.path));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -995,9 +1067,31 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               textAlign: TextAlign.center,
             ),
           ),
+        if (!needMoreFiles && waitingForAudit)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              '正在预检 ZIP，完成前不能开始合并',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        if (!needMoreFiles && !waitingForAudit && hasBlockingZip)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              '存在未通过预检的 ZIP，已禁止开始合并',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
         Row(
           children: [
-            if (_selectedZipFiles.isNotEmpty && !_isMerging)
+            if (_selectedZipFiles.isNotEmpty && !_isMerging && !_isAuditingZipFiles)
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
@@ -1007,8 +1101,10 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                   ),
                   onPressed: () => setState(() {
                     _selectedZipFiles.clear();
+                    _zipAuditStates.clear();
                     _results.clear();
                     _errorMessage = null;
+                    _preflightMessage = null;
                   }),
                   child: Text(
                     t.desktopMergerClear,
@@ -1066,6 +1162,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       dialogTitle: AppLocalizations.of(context).desktopMergerSelectZips,
     );
     if (result != null && result.files.isNotEmpty) {
+      final List<File> newFiles = <File>[];
       setState(() {
         for (final file in result.files) {
           if (file.path != null) {
@@ -1073,17 +1170,32 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             // 避免重复添加
             if (!_selectedZipFiles.any((e) => e.path == f.path)) {
               _selectedZipFiles.add(f);
+              newFiles.add(f);
             }
           }
         }
+        if (newFiles.isNotEmpty) {
+          _preflightMessage = '正在预检新添加的 ZIP...';
+        }
       });
+      if (newFiles.isNotEmpty) {
+        unawaited(_auditZipFiles(newFiles));
+      }
     }
   }
 
   bool _canStartMerge() {
     return !_isMerging &&
+        !_isAuditingZipFiles &&
         _selectedZipFiles.length >= 2 && // 至少需要 2 个文件才能合并
-        _outputDirectory != null;
+        _outputDirectory != null &&
+        _selectedZipFiles.every((File file) {
+          final _ZipAuditState? state = _zipAuditStates[file.path];
+          return state != null &&
+              !state.isRunning &&
+              state.report != null &&
+              state.report!.isValidForMerge;
+        });
   }
 
   /// 是否有任何统计数据
@@ -1094,8 +1206,150 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         _results.isNotEmpty;
   }
 
+  Future<void> _auditZipFiles(List<File> files) async {
+    if (files.isEmpty) return;
+    setState(() {
+      _isAuditingZipFiles = true;
+      for (final File file in files) {
+        _zipAuditStates[file.path] = const _ZipAuditState(isRunning: true);
+      }
+      _refreshPreflightMessage();
+    });
+
+    for (final File file in files) {
+      try {
+        final MergeZipAuditReport report =
+            await ScreenshotDatabase.instance.auditMergeInputZip(file.path);
+        if (!mounted) return;
+        setState(() {
+          _zipAuditStates[file.path] = _ZipAuditState(
+            isRunning: false,
+            report: report,
+          );
+          _refreshPreflightMessage();
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _zipAuditStates[file.path] = _ZipAuditState(
+            isRunning: false,
+            errorMessage: e.toString(),
+          );
+          _refreshPreflightMessage();
+        });
+      }
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isAuditingZipFiles = _selectedZipFiles.any(
+        (File file) => _zipAuditStates[file.path]?.isRunning == true,
+      );
+      _refreshPreflightMessage();
+    });
+  }
+
+  void _refreshPreflightMessage() {
+    if (_selectedZipFiles.isEmpty) {
+      _preflightMessage = null;
+      _isAuditingZipFiles = false;
+      return;
+    }
+
+    if (_isAuditingZipFiles) {
+      _preflightMessage = '正在预检所选 ZIP，完成前不会允许开始合并。';
+      return;
+    }
+
+    final List<String> failures = <String>[];
+    for (final File file in _selectedZipFiles) {
+      final _ZipAuditState? state = _zipAuditStates[file.path];
+      if (state == null) {
+        failures.add('${p.basename(file.path)}\n- 尚未完成预检。');
+        continue;
+      }
+      if (state.isRunning) {
+        failures.add('${p.basename(file.path)}\n- 正在预检。');
+        continue;
+      }
+      if (state.report != null && !state.report!.isValidForMerge) {
+        failures.add(
+          '===== ${p.basename(file.path)} =====\n${state.report!.toText()}',
+        );
+        continue;
+      }
+      if (state.errorMessage != null && state.errorMessage!.trim().isNotEmpty) {
+        failures.add(
+          '===== ${p.basename(file.path)} =====\n预检异常: ${state.errorMessage}',
+        );
+      }
+    }
+
+    _preflightMessage = failures.isEmpty
+        ? '所有已选 ZIP 都通过了预检，可以开始合并。'
+        : failures.join('\n\n');
+  }
+
+  bool _hasFinishedAudit(String path) {
+    final _ZipAuditState? state = _zipAuditStates[path];
+    return state != null && !state.isRunning;
+  }
+
+  bool _isAuditBlocking(String path) {
+    final _ZipAuditState? state = _zipAuditStates[path];
+    if (state == null) return true;
+    if (state.isRunning) return true;
+    if (state.report != null) return !state.report!.isValidForMerge;
+    return true;
+  }
+
+  Color _auditStatusColor(ThemeData theme, _ZipAuditState? state) {
+    if (state == null || state.isRunning) {
+      return theme.colorScheme.primary;
+    }
+    if (state.report != null && state.report!.isValidForMerge) {
+      return Colors.green;
+    }
+    return theme.colorScheme.error;
+  }
+
+  IconData _auditStatusIcon(_ZipAuditState? state) {
+    if (state == null || state.isRunning) {
+      return Icons.hourglass_top;
+    }
+    if (state.report != null && state.report!.isValidForMerge) {
+      return Icons.check_circle;
+    }
+    return Icons.error;
+  }
+
+  String _auditStatusText(_ZipAuditState? state) {
+    if (state == null || state.isRunning) {
+      return '预检中...';
+    }
+    if (state.report != null) {
+      if (state.report!.isValidForMerge) {
+        return '预检通过 · screen ${state.report!.screenFileCount} · 包 ${state.report!.screenPackageCount} · smm ${state.report!.smmDbCount}';
+      }
+      if (state.report!.blockingIssues.isNotEmpty) {
+        return state.report!.blockingIssues.first;
+      }
+      return '预检未通过';
+    }
+    if (state.errorMessage != null && state.errorMessage!.trim().isNotEmpty) {
+      return '预检异常: ${state.errorMessage}';
+    }
+    return '等待预检';
+  }
+
   Future<void> _startMerge() async {
-    if (!_canStartMerge()) return;
+    if (!_canStartMerge()) {
+      setState(() {
+        _refreshPreflightMessage();
+      });
+      return;
+    }
 
     final t = AppLocalizations.of(context);
 
@@ -1119,6 +1373,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       _currentFileIndex = 0;
       _results.clear();
       _errorMessage = null;
+      _preflightMessage = null;
       _outputZipPath = null;
       _packingProgress = 0.0;
       _isPacking = false;
@@ -1126,7 +1381,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       _totalScreenshots = 0;
       _totalSkipped = 0;
       _totalFiles = 0;
-      _totalReused = 0;
       _allAffectedApps.clear();
       _allWarnings.clear();
     });
@@ -1160,6 +1414,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           final report = await ScreenshotDatabase.instance.mergeDataFromZip(
             zipPath: file.path,
             throwOnError: true,
+            requireCompleteShardData: true,
+            preflightAuditReport: _zipAuditStates[file.path]?.report,
             onProgress: (progress) {
               setState(() {
                 // 计算总体进度
@@ -1207,7 +1463,6 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
             _totalScreenshots = totalNewScreenshots;
             _totalSkipped += report.skippedScreenshotDuplicates;
             _totalFiles += report.copiedFiles;
-            _totalReused += report.reusedFiles;
             _allAffectedApps.addAll(report.affectedPackages);
             _allWarnings.addAll(report.warnings);
           });
@@ -1229,15 +1484,16 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               ),
             ),
           );
+          rethrow;
         }
       }
 
-      // 合并完成，开始打包
+      // 合并完成，先固化数据库快照并做最终审计
       setState(() {
-        _currentStage = 'packing';
-        _isPacking = true;
+        _currentStage = 'merge_finalizing';
+        _isPacking = false;
         _packingProgress = 0.0;
-        _currentEntry = null;
+        _currentEntry = '固化数据库快照';
       });
 
       // 生成输出 ZIP 文件名
@@ -1248,16 +1504,41 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           .first;
       final zipFileName = 'merged_backup_$timestamp.zip';
       final mergedOutputDir = p.join(_outputDirectory!, 'output');
-      _outputZipPath = p.join(_outputDirectory!, zipFileName);
+      final outputZipPath = p.join(_outputDirectory!, zipFileName);
 
-      // 使用系统命令打包（避免内存溢出）
-      await _packWithSystemCommand(mergedOutputDir, _outputZipPath!);
-
-      // 打包完成后清理 output 目录，保持输出根目录干净
       try {
-        // 关闭桌面端数据库连接，避免删除时文件被占用
         await ScreenshotDatabase.instance.disposeDesktop();
       } catch (_) {}
+
+      await ScreenshotDatabase.instance.freezeMergedOutputForBackup(
+        baseDirPath: _outputDirectory!,
+      );
+
+      setState(() {
+        _currentEntry = '最终审计 merged output';
+      });
+      final MergeZipAuditReport finalAudit =
+          await ScreenshotDatabase.instance.auditMergedOutputDirectory(
+        baseDirPath: _outputDirectory!,
+      );
+      _allWarnings.addAll(finalAudit.warnings);
+      if (!finalAudit.isValidForMerge) {
+        throw MergeAuditException(
+          code: 'invalid_merged_output',
+          message: finalAudit.blockingIssues.isNotEmpty
+              ? finalAudit.blockingIssues.first
+              : 'Merged output audit failed.',
+          report: finalAudit,
+        );
+      }
+
+      // 最终输出通过后才开始打包
+      setState(() {
+        _currentStage = 'packing';
+        _isPacking = true;
+        _currentEntry = null;
+      });
+      await _packWithSystemCommand(mergedOutputDir, outputZipPath);
 
       try {
         final cleanupDir = Directory(mergedOutputDir);
@@ -1272,6 +1553,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         _progress = 1.0;
         _currentStage = 'completed';
         _isPacking = false;
+        _outputZipPath = outputZipPath;
       });
     } catch (e, st) {
       setState(() {
@@ -1285,74 +1567,13 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         );
       });
     } finally {
+      try {
+        await ScreenshotDatabase.instance.disposeDesktop();
+      } catch (_) {}
       setState(() {
         _isMerging = false;
         _isPacking = false;
       });
-    }
-  }
-
-  /// 将输出目录打包成 ZIP 文件
-  Future<void> _packOutputToZip(String outputDirPath, String zipPath) async {
-    // 打包整个输出目录
-    final dir = Directory(outputDirPath);
-    if (!await dir.exists()) return;
-
-    // 收集所有文件，添加异常处理
-    final files = <String>[];
-    try {
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File) continue;
-        final relPath = entity.path
-            .substring(dir.path.length + 1)
-            .replaceAll('\\', '/');
-        // 跳过系统目录、缓存目录和临时文件
-        final relLower = relPath.toLowerCase();
-        if (relLower.startsWith('\$') ||
-            relLower.startsWith('system volume information') ||
-            relLower.startsWith('cache/') ||
-            relLower.startsWith('tmp/') ||
-            relLower.startsWith('temp/') ||
-            relLower.startsWith('.thumbnails/') ||
-            relLower.endsWith('.db-journal')) {
-          continue;
-        }
-        files.add(relPath);
-      }
-    } catch (e) {
-      // 忽略权限错误，继续处理已收集的文件
-    }
-
-    if (files.isEmpty) return;
-
-    // 使用 Isolate 进行打包避免阻塞 UI
-    final receivePort = ReceivePort();
-    await Isolate.spawn(_zipPackingIsolate, {
-      'sendPort': receivePort.sendPort,
-      'outputDirPath': dir.path, // 使用实际的打包目录
-      'zipPath': zipPath,
-      'files': files,
-    });
-
-    await for (final message in receivePort) {
-      if (message is Map<String, dynamic>) {
-        final type = message['type'] as String?;
-        if (type == 'progress') {
-          setState(() {
-            _packingProgress = (message['progress'] as double?) ?? 0.0;
-            _currentEntry = message['entry'] as String?;
-          });
-        } else if (type == 'done') {
-          receivePort.close();
-          break;
-        } else if (type == 'error') {
-          receivePort.close();
-          throw Exception(message['error']);
-        }
-      }
     }
   }
 
@@ -1539,6 +1760,12 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       ..writeln('error: ${error.runtimeType}: $error')
       ..writeln('stackTrace:')
       ..writeln(stackTrace);
+    if (error is MergeAuditException && error.report != null) {
+      b
+        ..writeln()
+        ..writeln('auditReport:')
+        ..writeln(error.report!.toText());
+    }
     return b.toString();
   }
 
@@ -1567,6 +1794,12 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       ..writeln('error: ${error.runtimeType}: $error')
       ..writeln('stackTrace:')
       ..writeln(stackTrace);
+    if (error is MergeAuditException && error.report != null) {
+      b
+        ..writeln()
+        ..writeln('auditReport:')
+        ..writeln(error.report!.toText());
+    }
     return b.toString();
   }
 
@@ -1599,38 +1832,14 @@ class _MergeResult {
   });
 }
 
-/// Isolate 打包入口（必须是顶级函数）
-void _zipPackingIsolate(Map<String, dynamic> args) {
-  final sendPort = args['sendPort'] as SendPort;
-  final outputDirPath = args['outputDirPath'] as String;
-  final zipPath = args['zipPath'] as String;
-  final files = args['files'] as List<String>;
+class _ZipAuditState {
+  final bool isRunning;
+  final MergeZipAuditReport? report;
+  final String? errorMessage;
 
-  try {
-    final total = files.length;
-    final encoder = ZipFileEncoder();
-    encoder.create(zipPath, level: 0); // store 模式，只打包不压缩
-
-    for (int i = 0; i < files.length; i++) {
-      final relPath = files[i];
-      final file = File(p.join(outputDirPath, relPath));
-      if (file.existsSync()) {
-        encoder.addFile(file, relPath);
-      }
-      // 每 20 个文件更新一次进度，减少 UI 更新开销
-      if (i % 20 == 0 || i == total - 1) {
-        final progress = (i + 1) / total;
-        sendPort.send({
-          'type': 'progress',
-          'progress': progress.clamp(0.0, 1.0),
-          'entry': relPath,
-        });
-      }
-    }
-
-    encoder.close();
-    sendPort.send({'type': 'done'});
-  } catch (e) {
-    sendPort.send({'type': 'error', 'error': e.toString()});
-  }
+  const _ZipAuditState({
+    required this.isRunning,
+    this.report,
+    this.errorMessage,
+  });
 }
