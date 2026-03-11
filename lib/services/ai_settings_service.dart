@@ -133,17 +133,6 @@ class AISettingsService {
   // 是否显示 AIChat 页面的性能日志悬浮窗（UiPerfOverlay）。默认关闭。
   static const String _keyAiChatPerfOverlayEnabled =
       'ai_chat_perf_overlay_enabled';
-  static const String _keyAtomicMemoryInjectionEnabled =
-      'atomic_memory_injection_enabled';
-  static const String _keyAtomicMemoryAutoExtractEnabled =
-      'atomic_memory_auto_extract_enabled';
-  static const String _keyAtomicMemoryPromptTokens =
-      'atomic_memory_prompt_tokens';
-  static const String _keyAtomicMemoryMaxItems = 'atomic_memory_max_items';
-  static const String _keyUserMemoryInjectionEnabled =
-      'user_memory_injection_enabled';
-  static const String _keyUserMemoryPromptTokens = 'user_memory_prompt_tokens';
-  static const String _keyUserMemoryMaxItems = 'user_memory_max_items';
   static const String _keyActiveGroupId = 'active_group_id'; // 当前激活的分组
   // 提示词键名（历史兼容 + 语言区分）
   static const String _keyPromptSegmentExtraZh = 'prompt_segment_extra_zh';
@@ -161,99 +150,10 @@ class AISettingsService {
   // 默认值
   static const String _defaultBaseUrl = 'https://api.openai.com';
   static const String _defaultModel = 'gpt-4o-mini';
-
-  // Prompt budgets should scale with the active model's prompt/context window.
-  // Ratios are derived from the old fixed defaults (tuned around ~32k prompt cap).
-  static const double _defaultAtomicMemoryPromptTokensRatio = 700.0 / 32000.0;
-  static const double _defaultUserMemoryPromptTokensRatio = 1200.0 / 32000.0;
-
-  // Hard safety caps (we still want scaling, but avoid absurd token budgets on
-  // ultra-large context models).
-  static const int _atomicMemoryPromptTokensAbsMax = 8000;
-  static const int _userMemoryPromptTokensAbsMax = 12000;
-
-  // Max budget as a percentage of prompt cap.
-  static const double _atomicMemoryPromptTokensMaxRatio = 0.15;
-  static const double _userMemoryPromptTokensMaxRatio = 0.10;
-
-  static const int _atomicMemoryPromptTokensMin = 100;
-  static const int _userMemoryPromptTokensMin = 200;
-
-  static const int _defaultAtomicMemoryMaxItems = 24;
-  static const int _defaultUserMemoryMaxItems = 24;
   static const int _defaultSegmentsJsonAutoRetryMax = 1;
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
   static const int _maxHistoryMessages = 40;
-
-  Future<int> _promptCapTokensForBudget() async {
-    try {
-      final String model = await getModel();
-      final AIContextBudgets budgets =
-          await AIContextBudgets.forModelWithOverrides(model);
-      return budgets.promptCapTokens;
-    } catch (_) {
-      return AIContextBudgets.forModel(_defaultModel).promptCapTokens;
-    }
-  }
-
-  static int _capByPct(
-    int cap,
-    double ratio, {
-    required int min,
-    required int absMax,
-  }) {
-    final int v = (cap * ratio).round();
-    return v.clamp(min, absMax);
-  }
-
-  static int _maxAtomicMemoryTokensForCap(int cap) {
-    return _capByPct(
-      cap,
-      _atomicMemoryPromptTokensMaxRatio,
-      min: _atomicMemoryPromptTokensMin,
-      absMax: _atomicMemoryPromptTokensAbsMax,
-    );
-  }
-
-  static int _defaultAtomicMemoryTokensForCap(int cap) {
-    final int suggested = (cap * _defaultAtomicMemoryPromptTokensRatio).round();
-    return suggested.clamp(
-      _atomicMemoryPromptTokensMin,
-      _maxAtomicMemoryTokensForCap(cap),
-    );
-  }
-
-  static int _clampAtomicMemoryTokens(int value, int cap) {
-    return value.clamp(
-      _atomicMemoryPromptTokensMin,
-      _maxAtomicMemoryTokensForCap(cap),
-    );
-  }
-
-  static int _maxUserMemoryTokensForCap(int cap) {
-    return _capByPct(
-      cap,
-      _userMemoryPromptTokensMaxRatio,
-      min: _userMemoryPromptTokensMin,
-      absMax: _userMemoryPromptTokensAbsMax,
-    );
-  }
-
-  static int _defaultUserMemoryTokensForCap(int cap) {
-    final int suggested = (cap * _defaultUserMemoryPromptTokensRatio).round();
-    return suggested.clamp(
-      _userMemoryPromptTokensMin,
-      _maxUserMemoryTokensForCap(cap),
-    );
-  }
-
-  static int _clampUserMemoryTokens(int value, int cap) {
-    return value.clamp(
-      _userMemoryPromptTokensMin,
-      _maxUserMemoryTokensForCap(cap),
-    );
-  }
 
   // ========== 基础布尔设置（流式开关） ==========
   Future<bool> getStreamEnabled() async {
@@ -295,117 +195,6 @@ class AISettingsService {
   Future<void> setAiChatPerfOverlayEnabled(bool enabled) async {
     final db = ScreenshotDatabase.instance;
     await db.setAiSetting(_keyAiChatPerfOverlayEnabled, enabled ? '1' : '0');
-  }
-
-  // ========== 原子记忆注入（SimpleMem-style） ==========
-
-  Future<bool> getAtomicMemoryInjectionEnabled() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyAtomicMemoryInjectionEnabled);
-    if (v == null || v.isEmpty) return true; // 默认开启（若无数据则不注入）
-    final s = v.toLowerCase();
-    return s == '1' || s == 'true' || s == 'yes';
-  }
-
-  Future<void> setAtomicMemoryInjectionEnabled(bool enabled) async {
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(
-      _keyAtomicMemoryInjectionEnabled,
-      enabled ? '1' : '0',
-    );
-  }
-
-  /// Whether to auto-extract atomic memories after each turn (uses AI calls).
-  /// Defaults to false to avoid unexpected cost.
-  Future<bool> getAtomicMemoryAutoExtractEnabled() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyAtomicMemoryAutoExtractEnabled);
-    if (v == null || v.isEmpty) return false;
-    final s = v.toLowerCase();
-    return s == '1' || s == 'true' || s == 'yes';
-  }
-
-  Future<void> setAtomicMemoryAutoExtractEnabled(bool enabled) async {
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(
-      _keyAtomicMemoryAutoExtractEnabled,
-      enabled ? '1' : '0',
-    );
-  }
-
-  Future<int> getAtomicMemoryPromptTokens() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyAtomicMemoryPromptTokens);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    final int cap = await _promptCapTokensForBudget();
-    final int raw = parsed ?? _defaultAtomicMemoryTokensForCap(cap);
-    return _clampAtomicMemoryTokens(raw, cap);
-  }
-
-  Future<void> setAtomicMemoryPromptTokens(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int cap = await _promptCapTokensForBudget();
-    final int v = _clampAtomicMemoryTokens(value, cap);
-    await db.setAiSetting(_keyAtomicMemoryPromptTokens, v.toString());
-  }
-
-  Future<int> getAtomicMemoryMaxItems() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyAtomicMemoryMaxItems);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    final int raw = parsed ?? _defaultAtomicMemoryMaxItems;
-    return raw.clamp(5, 80);
-  }
-
-  Future<void> setAtomicMemoryMaxItems(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int v = value.clamp(5, 80);
-    await db.setAiSetting(_keyAtomicMemoryMaxItems, v.toString());
-  }
-
-  // ========== 全局用户记忆注入（跨会话 UserMemory） ==========
-
-  Future<bool> getUserMemoryInjectionEnabled() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyUserMemoryInjectionEnabled);
-    if (v == null || v.isEmpty) return true; // 默认开启（若无数据则不注入）
-    final s = v.toLowerCase();
-    return s == '1' || s == 'true' || s == 'yes';
-  }
-
-  Future<void> setUserMemoryInjectionEnabled(bool enabled) async {
-    final db = ScreenshotDatabase.instance;
-    await db.setAiSetting(_keyUserMemoryInjectionEnabled, enabled ? '1' : '0');
-  }
-
-  Future<int> getUserMemoryPromptTokens() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyUserMemoryPromptTokens);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    final int cap = await _promptCapTokensForBudget();
-    final int raw = parsed ?? _defaultUserMemoryTokensForCap(cap);
-    return _clampUserMemoryTokens(raw, cap);
-  }
-
-  Future<void> setUserMemoryPromptTokens(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int cap = await _promptCapTokensForBudget();
-    final int v = _clampUserMemoryTokens(value, cap);
-    await db.setAiSetting(_keyUserMemoryPromptTokens, v.toString());
-  }
-
-  Future<int> getUserMemoryMaxItems() async {
-    final db = ScreenshotDatabase.instance;
-    final v = await db.getAiSetting(_keyUserMemoryMaxItems);
-    final int? parsed = int.tryParse((v ?? '').trim());
-    final int raw = parsed ?? _defaultUserMemoryMaxItems;
-    return raw.clamp(5, 120);
-  }
-
-  Future<void> setUserMemoryMaxItems(int value) async {
-    final db = ScreenshotDatabase.instance;
-    final int v = value.clamp(5, 120);
-    await db.setAiSetting(_keyUserMemoryMaxItems, v.toString());
   }
 
   // ========== 动态（segments）自动重试 ==========

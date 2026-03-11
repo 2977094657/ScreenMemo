@@ -29,6 +29,10 @@ class UserSettingKeys {
   static const String dailyNotifyEnabled = 'daily_notify_enabled';
   static const String dailyNotifyHour = 'daily_notify_hour';
   static const String dailyNotifyMinute = 'daily_notify_minute';
+
+  // Nocturne-style memory (URI graph)
+  static const String nocturneMemoryLastUri = 'nocturne_memory_last_uri';
+  static const String nocturneMemoryRebuildState = 'nocturne_memory_rebuild_state';
 }
 
 /// 兼容旧版 SharedPreferences 中的键名，用于迁移历史数据。

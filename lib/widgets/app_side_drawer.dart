@@ -4,7 +4,7 @@ import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/theme_service.dart';
 import '../pages/provider_list_page.dart';
 import '../pages/prompt_manager_page.dart';
-import '../pages/user_memory_page.dart';
+import '../pages/nocturne_memory_page.dart';
 import '../theme/app_theme.dart';
 import '../services/ai_settings_service.dart';
 import '../utils/model_icon_utils.dart';
@@ -46,6 +46,18 @@ class AppSideDrawer extends StatelessWidget {
             ),
             _buildMenuItem(
               context: context,
+              icon: Icons.memory_outlined,
+              title: '记忆',
+              isFirst: false,
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const NocturneMemoryPage()),
+                );
+              },
+            ),
+            _buildMenuItem(
+              context: context,
               icon: Icons.receipt_long_outlined,
               title: '日志面板',
               isFirst: false,
@@ -80,18 +92,6 @@ class AppSideDrawer extends StatelessWidget {
                 Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => PromptManagerPage()));
-              },
-            ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.psychology_alt_outlined,
-              title: '记忆 / Memory',
-              isFirst: false,
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const UserMemoryPage()),
-                );
               },
             ),
             // —— 对话分割 + 会话列表 ——

@@ -22,6 +22,58 @@ class UIDialogAction<T> {
   });
 }
 
+/// Small convenience wrappers for the common dialog patterns used across pages.
+class UIDialogs {
+  static Future<void> showInfo(
+    BuildContext context, {
+    required String title,
+    required String message,
+    String okText = '知道了',
+  }) async {
+    await showUIDialog<void>(
+      context: context,
+      title: title,
+      message: message,
+      actions: <UIDialogAction<void>>[
+        UIDialogAction<void>(
+          text: okText,
+          style: UIDialogActionStyle.primary,
+          result: null,
+        ),
+      ],
+    );
+  }
+
+  static Future<bool> showConfirm(
+    BuildContext context, {
+    required String title,
+    required String message,
+    String confirmText = '确定',
+    String cancelText = '取消',
+    bool destructive = false,
+  }) async {
+    final bool? ok = await showUIDialog<bool>(
+      context: context,
+      title: title,
+      message: message,
+      barrierDismissible: true,
+      actions: <UIDialogAction<bool>>[
+        UIDialogAction<bool>(
+          text: cancelText,
+          style: UIDialogActionStyle.normal,
+          result: false,
+        ),
+        UIDialogAction<bool>(
+          text: confirmText,
+          style: destructive ? UIDialogActionStyle.destructive : UIDialogActionStyle.primary,
+          result: true,
+        ),
+      ],
+    );
+    return ok == true;
+  }
+}
+
 enum UIDialogActionStyle { normal, primary, destructive }
 
 Future<T?> showUIDialog<T>({

@@ -1647,6 +1647,70 @@ ORDER BY day ASC
     }
   }
 
+  /// 供“记忆重建”使用的轻量段落列表（避免拉取 segment_results 的大字段）。
+  ///
+  /// - 默认按 start_time DESC 排序（与“动态”一致）。
+  /// - requireSamples=true 时只返回至少有一张样本的段落；false 时允许无图段落（由上层跳过）。
+  Future<List<Map<String, dynamic>>> listSegmentsForMemoryRebuild({
+    int limit = 200,
+    int offset = 0,
+    bool requireSamples = true,
+    int? startMillis,
+    int? endMillis,
+  }) async {
+    final db = await database;
+    int safeOffset = offset;
+    if (safeOffset < 0) safeOffset = 0;
+
+    final List<String> whereClauses = <String>[
+      _segmentsRootWhere('s'),
+      "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+    ];
+    final List<Object?> whereParams = <Object?>[];
+
+    if (requireSamples) {
+      whereClauses.add(
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)",
+      );
+    }
+    if (startMillis != null) {
+      whereClauses.add('s.start_time >= ?');
+      whereParams.add(startMillis);
+    }
+    if (endMillis != null) {
+      whereClauses.add('s.start_time <= ?');
+      whereParams.add(endMillis);
+    }
+
+    final String whereSql =
+        whereClauses.isEmpty ? '' : ('WHERE ' + whereClauses.join(' AND '));
+
+    final String sql =
+        '''
+        SELECT
+          s.id AS id,
+          s.start_time AS start_time,
+          s.end_time AS end_time,
+          (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count,
+          COALESCE(
+            NULLIF(TRIM(s.app_packages), ''),
+            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
+          ) AS app_packages_display
+        FROM segments s
+        $whereSql
+        ORDER BY s.start_time ASC, s.id ASC
+        LIMIT ? OFFSET ?
+      ''';
+
+    try {
+      final List<Object?> params = <Object?>[...whereParams, limit, safeOffset];
+      final rows = await db.rawQuery(sql, params);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   /// 强制将某个事件与其上一事件合并（跳过 same_event 判定，直接执行合并总结）
   /// - prevId 可选：指定要合并的上一事件ID（否则由原生侧自动选择）
   Future<bool> forceMergeSegment(int id, {int? prevId}) async {

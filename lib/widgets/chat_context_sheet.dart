@@ -300,7 +300,6 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
       PromptTokenPart.toolSchema,
       PromptTokenPart.toolInstruction,
       PromptTokenPart.conversationContext,
-      PromptTokenPart.atomicMemory,
       PromptTokenPart.extraSystem,
       PromptTokenPart.historyUser,
       PromptTokenPart.historyAssistant,
@@ -448,10 +447,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   int? _activeModelContextTokens;
   int? _activeModelOutputTokens;
   String _lastPromptModelForCapOverride = '';
-  bool _amEnabled = true;
-  bool _amAutoExtract = false;
-  int _amMaxTokens = 700;
-  int _amMaxItems = 24;
 
   @override
   void initState() {
@@ -556,7 +551,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   void _reload() {
     _refreshSnapshotOnly();
     _loadModelInfo();
-    _loadAtomicMemorySettings();
   }
 
   Future<void> _loadModelInfo() async {
@@ -595,12 +589,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
     final String model = _activeModel.trim();
     return _activeModelContextTokens ??
         AIContextBudgets.forModel(model).promptCapTokens;
-  }
-
-  int _amMaxTokensCapForUi() {
-    final int cap = _promptCapTokensForUi();
-    // Keep it bounded while still scaling by model prompt cap.
-    return (cap * 0.15).round().clamp(100, 8000);
   }
 
   int _approxToolSchemaTokens(List<Map<String, dynamic>> tools) {
@@ -811,53 +799,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
       totalTokens: total,
       parts: parts,
     );
-  }
-
-  Future<void> _loadAtomicMemorySettings() async {
-    try {
-      final s = AISettingsService.instance;
-      final bool enabled = await s.getAtomicMemoryInjectionEnabled();
-      final bool autoExtract = await s.getAtomicMemoryAutoExtractEnabled();
-      final int maxTokens = await s.getAtomicMemoryPromptTokens();
-      final int maxItems = await s.getAtomicMemoryMaxItems();
-      if (!mounted) return;
-      setState(() {
-        _amEnabled = enabled;
-        _amAutoExtract = autoExtract;
-        _amMaxTokens = maxTokens;
-        _amMaxItems = maxItems;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _setAmEnabled(bool v) async {
-    setState(() => _amEnabled = v);
-    try {
-      await AISettingsService.instance.setAtomicMemoryInjectionEnabled(v);
-    } catch (_) {}
-  }
-
-  Future<void> _setAmAutoExtract(bool v) async {
-    setState(() => _amAutoExtract = v);
-    try {
-      await AISettingsService.instance.setAtomicMemoryAutoExtractEnabled(v);
-    } catch (_) {}
-  }
-
-  Future<void> _setAmMaxTokens(int v) async {
-    final int next = v.clamp(100, _amMaxTokensCapForUi());
-    setState(() => _amMaxTokens = next);
-    try {
-      await AISettingsService.instance.setAtomicMemoryPromptTokens(next);
-    } catch (_) {}
-  }
-
-  Future<void> _setAmMaxItems(int v) async {
-    final int next = v.clamp(5, 80);
-    setState(() => _amMaxItems = next);
-    try {
-      await AISettingsService.instance.setAtomicMemoryMaxItems(next);
-    } catch (_) {}
   }
 
   Future<void> _copy(String text) async {
@@ -1587,8 +1528,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                         const SizedBox(height: AppTheme.spacing3),
                         _trimEventsCard(context, trimEvents),
                         const SizedBox(height: AppTheme.spacing3),
-                        _atomicMemoryCard(context),
-                        const SizedBox(height: AppTheme.spacing3),
                         _actionRow(
                           context,
                           busy: _busy,
@@ -1802,7 +1741,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
       PromptTokenPart.toolSchema,
       PromptTokenPart.toolInstruction,
       PromptTokenPart.conversationContext,
-      PromptTokenPart.atomicMemory,
       PromptTokenPart.extraSystem,
       PromptTokenPart.historyUser,
       PromptTokenPart.historyAssistant,
@@ -2022,7 +1960,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
       PromptTokenPart.toolSchema,
       PromptTokenPart.toolInstruction,
       PromptTokenPart.conversationContext,
-      PromptTokenPart.atomicMemory,
       PromptTokenPart.extraSystem,
       PromptTokenPart.historyUser,
       PromptTokenPart.historyAssistant,
@@ -2431,110 +2368,6 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
         border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
       ),
       child: Text('$label: $value', style: theme.textTheme.bodySmall),
-    );
-  }
-
-  Widget _atomicMemoryCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final int amCap = _amMaxTokensCapForUi();
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            ChatContextSheet._loc(
-              context,
-              '原子记忆注入（SimpleMem）',
-              'Atomic memory injection (SimpleMem)',
-            ),
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  ChatContextSheet._loc(
-                    context,
-                    '启用 <atomic_memory> 系统消息（事实/规则）',
-                    'Enable <atomic_memory> system message (facts/rules)',
-                  ),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              Switch(
-                value: _amEnabled,
-                onChanged: _busy ? null : (v) => _setAmEnabled(v),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacing1),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  ChatContextSheet._loc(
-                    context,
-                    '自动抽取并写入（会触发 AI 调用）',
-                    'Auto-extract & write (uses AI calls)',
-                  ),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              Switch(
-                value: _amAutoExtract,
-                onChanged: _busy ? null : (v) => _setAmAutoExtract(v),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacing1),
-          _stepperRow(
-            context,
-            label: ChatContextSheet._loc(
-              context,
-              'Token 预算（粗估）',
-              'Token budget (approx)',
-            ),
-            valueText: _amMaxTokens.toString(),
-            onMinus: _busy || _amMaxTokens <= 100
-                ? null
-                : () => _setAmMaxTokens(_amMaxTokens - 100),
-            onPlus: _busy || _amMaxTokens >= amCap
-                ? null
-                : () => _setAmMaxTokens(_amMaxTokens + 100),
-          ),
-          const SizedBox(height: AppTheme.spacing1),
-          _stepperRow(
-            context,
-            label: ChatContextSheet._loc(context, '条目上限', 'Max items'),
-            valueText: _amMaxItems.toString(),
-            onMinus: _busy || _amMaxItems <= 5
-                ? null
-                : () => _setAmMaxItems(_amMaxItems - 5),
-            onPlus: _busy || _amMaxItems >= 80
-                ? null
-                : () => _setAmMaxItems(_amMaxItems + 5),
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Text(
-            ChatContextSheet._loc(
-              context,
-              '提示：原子记忆用于稳定保存“可复用的个人事实/偏好规则”。开启自动抽取会增加一次小的后台请求（已做节流）。',
-              'Tip: atomic memory stores durable user facts/preferences. Auto-extract adds a small background request (throttled).',
-            ),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
