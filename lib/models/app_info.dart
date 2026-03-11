@@ -8,6 +8,7 @@ class AppInfo {
   final Uint8List? icon;
   final String version;
   final bool isSystemApp;
+  final bool isInstalled;
   bool isSelected;
 
   AppInfo({
@@ -16,6 +17,7 @@ class AppInfo {
     this.icon,
     required this.version,
     required this.isSystemApp,
+    this.isInstalled = true,
     this.isSelected = false,
   });
 
@@ -27,6 +29,7 @@ class AppInfo {
       icon: app.icon,
       version: app.versionName ?? '',
       isSystemApp: false, // installed_apps包默认排除系统应用
+      isInstalled: true,
     );
   }
 
@@ -37,6 +40,7 @@ class AppInfo {
       'appName': appName,
       'version': version,
       'isSystemApp': isSystemApp,
+      'isInstalled': isInstalled,
       'isSelected': isSelected,
       'icon': icon != null ? base64Encode(icon!) : null,
     };
@@ -59,6 +63,7 @@ class AppInfo {
       icon: iconData,
       version: json['version'] ?? '',
       isSystemApp: json['isSystemApp'] ?? false,
+      isInstalled: json['isInstalled'] ?? true,
       isSelected: json['isSelected'] ?? false,
     );
   }

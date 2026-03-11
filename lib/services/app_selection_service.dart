@@ -70,11 +70,17 @@ class AppSelectionService {
             _allApps = await ImeExclusionService.filterOutImeApps(_allApps);
             // 确保排序一致
             _allApps.sort((a, b) => a.appName.compareTo(b.appName));
+            if (_hasSuspiciousInstalledAppNames(_allApps)) {
+              _allApps = [];
+              await prefs.remove(_appsCacheKey);
+              await prefs.remove(_appsCacheTsKey);
+              throw StateError('installed app cache contains package fallback names');
+            }
             // 如果即将过期（<60秒），提前后台续期
             final remainingMs = _appsCacheTtlSeconds * 1000 - (now - ts);
             if (remainingMs <= 60000) {
               // ignore: unawaited_futures
-              getAllInstalledApps(forceRefresh: true).catchError((_) {});
+              getAllInstalledApps(forceRefresh: true).catchError((_) => _allApps);
             }
             StartupProfiler.end('AppSelectionService.getAllInstalledApps');
             return _allApps;
@@ -127,7 +133,7 @@ class AppSelectionService {
       if (!isFresh) {
         // 后台刷新，但不抛出异常
         // ignore: unawaited_futures
-        getAllInstalledApps(forceRefresh: true).catchError((_) {});
+        getAllInstalledApps(forceRefresh: true).catchError((_) => _allApps);
       }
     } catch (_) {}
   }
@@ -181,6 +187,27 @@ class AppSelectionService {
       StartupProfiler.end('AppSelectionService.getSelectedApps');
       return [];
     }
+  }
+
+  bool _hasSuspiciousInstalledAppNames(List<AppInfo> apps) {
+    if (apps.isEmpty) return false;
+    int suspicious = 0;
+    for (final AppInfo app in apps) {
+      final String packageName = app.packageName.trim();
+      final String appName = app.appName.trim();
+      if (packageName.isEmpty) continue;
+      if (appName.isEmpty || appName == packageName) {
+        suspicious++;
+        continue;
+      }
+      if (!appName.contains(' ') &&
+          !appName.contains('-') &&
+          !appName.contains('_') &&
+          RegExp(r'^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$').hasMatch(appName)) {
+        suspicious++;
+      }
+    }
+    return suspicious >= 5 && suspicious * 2 >= apps.length;
   }
 
   /// 保存显示模式

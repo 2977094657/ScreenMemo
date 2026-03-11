@@ -37,6 +37,10 @@ class _HomePageState extends State<HomePage>
   final AppSelectionService _appService = AppSelectionService.instance;
 
   List<AppInfo> _selectedApps = AppSelectionService.instance.selectedApps;
+  List<AppInfo> _savedSelectedApps = AppSelectionService.instance.selectedApps;
+  Set<String> _installedPackages = <String>{};
+  Map<String, AppInfo> _installedAppsByPackage = <String, AppInfo>{};
+  bool _installedAppsLoaded = false;
   String _sortMode = 'timeDesc';
   bool _sortOrderAsc = false; // 新增：排序顺序，false为降序，true为升序
   bool _screenshotEnabled = false;
@@ -270,6 +274,7 @@ class _HomePageState extends State<HomePage>
     try {
       // 加载用户设置
       final selectedApps = await _appService.getSelectedApps();
+      final installedApps = await _appService.getAllInstalledApps();
       final sortMode = await _appService.getSortMode();
       final screenshotEnabled = await _appService.getScreenshotEnabled();
       final screenshotInterval = await _appService.getScreenshotInterval();
@@ -277,7 +282,17 @@ class _HomePageState extends State<HomePage>
       // 先更新轻量数据，避免出现短暂空状态
       if (mounted) {
         setState(() {
-          _selectedApps = selectedApps;
+          _savedSelectedApps = List<AppInfo>.from(selectedApps);
+          _installedPackages = installedApps
+              .map((app) => app.packageName)
+              .where((pkg) => pkg.trim().isNotEmpty)
+              .toSet();
+          _installedAppsByPackage = <String, AppInfo>{
+            for (final AppInfo app in installedApps)
+              if (app.packageName.trim().isNotEmpty) app.packageName: app,
+          };
+          _installedAppsLoaded = true;
+          _selectedApps = List<AppInfo>.from(selectedApps);
           _sortMode = sortMode;
           _screenshotEnabled = screenshotEnabled;
           _screenshotInterval = screenshotInterval;
@@ -343,6 +358,7 @@ class _HomePageState extends State<HomePage>
         _screenshotStats['appStatistics']
             as Map<String, Map<String, dynamic>>? ??
         {};
+    final List<AppInfo> visibleApps = _buildVisibleApps(appStats);
 
     // 兼容旧排序键
     String mode = _sortMode;
@@ -352,7 +368,7 @@ class _HomePageState extends State<HomePage>
     // 仅对“有截图的应用”排序，无截图的应用保持在后面，且内部按应用名升序稳定显示
     final List<AppInfo> appsWithShots = [];
     final List<AppInfo> appsWithoutShots = [];
-    for (final app in _selectedApps) {
+    for (final app in visibleApps) {
       final stat = appStats[app.packageName];
       final hasAny =
           (stat != null) && (((stat['totalCount'] as int?) ?? 0) > 0);
@@ -445,6 +461,122 @@ class _HomePageState extends State<HomePage>
     appsWithoutShots.sort((a, b) => a.appName.compareTo(b.appName));
 
     _selectedApps = [...appsWithShots, ...appsWithoutShots];
+  }
+
+  List<AppInfo> _buildVisibleApps(
+    Map<String, Map<String, dynamic>> appStats,
+  ) {
+    final Map<String, AppInfo> visible = <String, AppInfo>{};
+    final Set<String> savedPackages = _savedSelectedApps
+        .map((app) => app.packageName)
+        .where((pkg) => pkg.trim().isNotEmpty)
+        .toSet();
+
+    for (final app in _savedSelectedApps) {
+      final Map<String, dynamic>? stat = appStats[app.packageName];
+      final String statName = (stat?['appName'] as String?)?.trim() ?? '';
+      final String displayName = _resolvePreferredAppName(
+        packageName: app.packageName,
+        installedName: _installedAppsByPackage[app.packageName]?.appName,
+        savedName: app.appName,
+        statName: statName,
+      );
+      final bool isInstalled =
+          !_installedAppsLoaded || _installedPackages.contains(app.packageName);
+      final AppInfo? installedApp = _installedAppsByPackage[app.packageName];
+      visible[app.packageName] = AppInfo(
+        packageName: app.packageName,
+        appName: displayName,
+        icon: isInstalled ? (installedApp?.icon ?? app.icon) : null,
+        version: isInstalled
+            ? (installedApp?.version ?? app.version)
+            : app.version,
+        isSystemApp: isInstalled
+            ? (installedApp?.isSystemApp ?? app.isSystemApp)
+            : app.isSystemApp,
+        isInstalled: isInstalled,
+        isSelected: app.isSelected,
+      );
+    }
+
+    if (_installedAppsLoaded) {
+      for (final MapEntry<String, Map<String, dynamic>> entry in appStats.entries) {
+        final String packageName = entry.key.trim();
+        if (packageName.isEmpty) continue;
+        if (savedPackages.contains(packageName)) continue;
+        if (_installedPackages.contains(packageName)) continue;
+        final Map<String, dynamic> stat = entry.value;
+        final String rawName = (stat['appName'] as String?)?.trim() ?? '';
+        visible[packageName] = AppInfo(
+          packageName: packageName,
+          appName: _resolvePreferredAppName(
+            packageName: packageName,
+            statName: rawName,
+          ),
+          icon: null,
+          version: '',
+          isSystemApp: false,
+          isInstalled: false,
+        );
+      }
+    }
+
+    return visible.values.toList();
+  }
+
+  String _resolvePreferredAppName({
+    required String packageName,
+    String? installedName,
+    String? savedName,
+    String? statName,
+  }) {
+    final List<String?> candidates = <String?>[
+      installedName,
+      savedName,
+      statName,
+    ];
+
+    for (final String? candidate in candidates) {
+      final String value = candidate?.trim() ?? '';
+      if (value.isEmpty) continue;
+      if (!_looksLikePackageFallback(value, packageName)) {
+        return value;
+      }
+    }
+
+    for (final String? candidate in candidates) {
+      final String value = candidate?.trim() ?? '';
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+
+    return packageName;
+  }
+
+  bool _looksLikePackageFallback(String value, String packageName) {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) return true;
+    if (trimmed == packageName) return true;
+    if (trimmed.contains(' ') || trimmed.contains('-') || trimmed.contains('_')) {
+      return false;
+    }
+    return RegExp(r'^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$').hasMatch(trimmed);
+  }
+
+  bool _isAppSelectable(AppInfo app) {
+    for (final saved in _savedSelectedApps) {
+      if (saved.packageName == app.packageName) return true;
+    }
+    return false;
+  }
+
+  String _appInitial(AppInfo app) {
+    final String raw = app.appName.trim().isNotEmpty
+        ? app.appName.trim()
+        : app.packageName.trim();
+    if (raw.isEmpty) return '?';
+    return raw.characters.first.toUpperCase();
   }
 
   void _onSelectSort(String mode) async {
@@ -1204,6 +1336,10 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     super.build(context);
     // 构建 AppBar 的 actions（选择模式时显示批量操作）
+    final List<String> selectablePackages = _selectedApps
+        .where(_isAppSelectable)
+        .map((app) => app.packageName)
+        .toList();
     final List<Widget>? appBarActions = _selectionMode
         ? <Widget>[
             TextButton(
@@ -1218,12 +1354,13 @@ class _HomePageState extends State<HomePage>
             TextButton(
               onPressed: () {
                 setState(() {
-                  if (_selectedPackages.length == _selectedApps.length) {
+                  if (selectablePackages.isNotEmpty &&
+                      _selectedPackages.length == selectablePackages.length) {
                     _selectedPackages.clear();
                   } else {
                     _selectedPackages
                       ..clear()
-                      ..addAll(_selectedApps.map((a) => a.packageName));
+                      ..addAll(selectablePackages);
                   }
                 });
               },
@@ -1359,7 +1496,6 @@ class _HomePageState extends State<HomePage>
                                         );
                                         for (final m in imeList) {
                                           final name = m['appName'] ?? '';
-                                          final pkg = m['packageName'] ?? '';
                                           lines.add(
                                             Text(
                                               '  - ${name.isNotEmpty ? name : AppLocalizations.of(context).unknownIme}',
@@ -1386,10 +1522,8 @@ class _HomePageState extends State<HomePage>
                                             AppLocalizations.of(
                                               context,
                                             ).currentDefaultIme(
-                                              (defaultIme['appName'] ?? '')
-                                                  as String,
-                                              (defaultIme['packageName'] ?? '')
-                                                  as String,
+                                              defaultIme['appName'] ?? '',
+                                              defaultIme['packageName'] ?? '',
                                             ),
                                           ),
                                         );
@@ -1418,7 +1552,7 @@ class _HomePageState extends State<HomePage>
                                   TextButton(
                                     onPressed: () async {
                                       await _appService.saveSelectedApps(
-                                        _selectedApps,
+                                        _savedSelectedApps,
                                       );
                                       if (mounted) Navigator.of(context).pop();
                                       await _loadData(soft: true);
@@ -1432,7 +1566,7 @@ class _HomePageState extends State<HomePage>
                               body: AppSelectionWidget(
                                 displayAsList: true,
                                 onSelectionChanged: (apps) {
-                                  _selectedApps = apps;
+                                  _savedSelectedApps = apps;
                                 },
                               ),
                             ),
@@ -1917,29 +2051,42 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildAppListItem(AppInfo app) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final bool selectable = _isAppSelectable(app);
     final bool isSelected =
-        _selectionMode && _selectedPackages.contains(app.packageName);
+        selectable &&
+        _selectionMode &&
+        _selectedPackages.contains(app.packageName);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          if (_selectionMode) {
+          if (_selectionMode && selectable) {
             _toggleSelect(app.packageName);
           } else {
             _onAppTap(app);
           }
         },
-        onLongPress: () {
-          if (!_selectionMode) {
-            setState(() => _selectionMode = true);
-          }
-          _toggleSelect(app.packageName);
-        },
+        onLongPress: selectable
+            ? () {
+                if (!_selectionMode) {
+                  setState(() => _selectionMode = true);
+                }
+                _toggleSelect(app.packageName);
+              }
+            : null,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing4,
             vertical: AppTheme.spacing2,
+          ),
+          decoration: BoxDecoration(
+            color: app.isInstalled
+                ? Colors.transparent
+                : cs.surfaceContainerHighest.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
           ),
           child: Row(
             children: [
@@ -1951,19 +2098,35 @@ class _HomePageState extends State<HomePage>
                   clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(
-                      child: app.icon != null
+                      child: app.isInstalled && app.icon != null
                           ? Image.memory(
                               app.icon!,
                               width: 48,
                               height: 48,
                               fit: BoxFit.contain,
                             )
-                          : Icon(
-                              Icons.android,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              size: 32,
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: app.isInstalled
+                                    ? cs.surfaceContainerHighest
+                                    : Colors.grey.shade400,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: app.isInstalled
+                                  ? Icon(
+                                      Icons.android,
+                                      color: cs.onSurfaceVariant,
+                                      size: 32,
+                                    )
+                                  : Text(
+                                      _appInitial(app),
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                             ),
                     ),
                     if (_customEnabledPackages.contains(app.packageName))
@@ -2009,22 +2172,47 @@ class _HomePageState extends State<HomePage>
                   children: [
                     Text(
                       app.appName,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: app.isInstalled ? null : cs.onSurfaceVariant,
+                      ),
                     ),
                     Text(
                       _getAppStatText(app.packageName),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: app.isInstalled
+                            ? cs.onSurfaceVariant
+                            : cs.onSurfaceVariant.withValues(alpha: 0.9),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              if (!_selectionMode)
+              if (!app.isInstalled) ...[
+                const SizedBox(width: AppTheme.spacing2),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade500.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '未安装',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+
+              if (!_selectionMode || !selectable)
                 Icon(
                   Icons.chevron_right,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: cs.onSurfaceVariant,
                 )
               else
                 Container(
@@ -2032,8 +2220,8 @@ class _HomePageState extends State<HomePage>
                   height: 22,
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.surfaceVariant,
+                        ? cs.primary
+                        : cs.surfaceVariant,
                     borderRadius: const BorderRadius.all(Radius.circular(4.0)),
                   ),
                   alignment: Alignment.center,
@@ -2041,7 +2229,7 @@ class _HomePageState extends State<HomePage>
                       ? Icon(
                           Icons.check,
                           size: 14,
-                          color: Theme.of(context).colorScheme.onPrimary,
+                          color: cs.onPrimary,
                         )
                       : null,
                 ),
@@ -2160,13 +2348,14 @@ class _HomePageState extends State<HomePage>
     );
     if (confirmed != true) return;
 
-    final remaining = _selectedApps
+    final remaining = _savedSelectedApps
         .where((a) => !_selectedPackages.contains(a.packageName))
         .toList();
     await _appService.saveSelectedApps(remaining);
     if (!mounted) return;
     setState(() {
-      _selectedApps = remaining;
+      _savedSelectedApps = remaining;
+      _sortApps();
       _selectionMode = false;
       _selectedPackages.clear();
     });
