@@ -1,21 +1,6 @@
 part of 'ai_chat_service.dart';
 
 extension AIChatServiceToolExecExt on AIChatService {
-  List<String> _decodeStringListJsonTool(String raw) {
-    final String t = raw.trim();
-    if (t.isEmpty) return const <String>[];
-    try {
-      final dynamic v = jsonDecode(t);
-      if (v is List) {
-        return v
-            .map((e) => e?.toString().trim() ?? '')
-            .where((s) => s.isNotEmpty)
-            .toList(growable: false);
-      }
-    } catch (_) {}
-    return const <String>[];
-  }
-
   Future<List<AIMessage>> _executeGetImagesTool(AIToolCall call) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final dynamic raw = args['filenames'];
@@ -149,252 +134,12 @@ extension AIChatServiceToolExecExt on AIChatService {
   }
 
   Future<List<AIMessage>> _executeMemorySearchTool(AIToolCall call) async {
-    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
-    final String query = (args['query'] ?? '').toString().trim();
-    final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
-      args['query_advanced'],
-    );
-    final String queryText =
-        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
-    if (queryText.isEmpty) {
-      return <AIMessage>[
-        AIMessage(
-          role: 'tool',
-          content: jsonEncode(<String, dynamic>{
-            'tool': 'memory_search',
-            'error': 'missing_query',
-          }),
-          toolCallId: call.id,
-        ),
-      ];
-    }
-
-    final int limit = (_toInt(args['limit']) ?? 10).clamp(1, 20);
-
-    final Set<String> sources = <String>{};
-    final dynamic rawSources = args['sources'];
-    if (rawSources is List) {
-      for (final dynamic s in rawSources) {
-        final String v = (s ?? '').toString().trim().toLowerCase();
-        if (v.isEmpty) continue;
-        sources.add(v);
-      }
-    }
-    if (sources.isEmpty) {
-      sources.addAll(const <String>{
-        'profile',
-        'items',
-        'daily',
-        'morning',
-      });
-    }
-
-    String clip(String text, {int maxBytes = 1200}) {
-      final String t = text.trim();
-      if (t.isEmpty) return '';
-      return PromptBudget.truncateTextByBytes(
-        text: t,
-        maxBytes: maxBytes,
-        marker: '…',
-      );
-    }
-
-    final List<Map<String, dynamic>> results = <Map<String, dynamic>>[];
-
-    if (sources.contains('profile') && results.length < limit) {
-      try {
-        final profile = await UserMemoryService.instance.getProfile();
-        final String userMd = profile.userMarkdown.trim();
-        final String autoMd = profile.autoMarkdown.trim();
-
-        if (userMd.isNotEmpty) {
-          results.add(<String, dynamic>{
-            'path': 'profile:user',
-            'source': 'profile',
-            'title': 'User profile',
-            'snippet': clip(userMd),
-            'updated_at': profile.userUpdatedAtMs,
-          });
-        }
-
-        final List<String> hints = <String>[];
-        if (queryAdv != null) {
-          void addTokensFromTerms(List<String> terms) {
-            for (final String t in terms) {
-              for (final String tok in t.split(RegExp(r'\s+'))) {
-                final String w = tok.trim().toLowerCase();
-                if (w.isEmpty) continue;
-                if (!hints.contains(w)) hints.add(w);
-                if (hints.length >= 6) return;
-              }
-              if (hints.length >= 6) return;
-            }
-          }
-
-          addTokensFromTerms(queryAdv.must);
-          addTokensFromTerms(queryAdv.any);
-          addTokensFromTerms(queryAdv.phrases);
-          addTokensFromTerms(queryAdv.phrasesAny);
-          for (final AdvancedSearchNearClause n in queryAdv.near) {
-            addTokensFromTerms(n.terms);
-            if (hints.length >= 6) break;
-          }
-        }
-        if (hints.isEmpty) {
-          for (final String tok in queryText.split(RegExp(r'\s+'))) {
-            final String w = tok.trim().toLowerCase();
-            if (w.isEmpty) continue;
-            if (!hints.contains(w)) hints.add(w);
-            if (hints.length >= 6) break;
-          }
-        }
-
-        bool containsAnyHint(String text) {
-          final String t = text.toLowerCase();
-          for (final String h in hints) {
-            if (h.isEmpty) continue;
-            if (t.contains(h)) return true;
-          }
-          return false;
-        }
-
-        final bool wantsAuto =
-            userMd.isEmpty ||
-            (autoMd.isNotEmpty &&
-                (containsAnyHint(autoMd) && !containsAnyHint(userMd)));
-        if (wantsAuto && autoMd.isNotEmpty && results.length < limit) {
-          results.add(<String, dynamic>{
-            'path': 'profile:auto',
-            'source': 'profile',
-            'title': 'Auto profile',
-            'snippet': clip(autoMd),
-            'updated_at': profile.autoUpdatedAtMs,
-          });
-        }
-      } catch (_) {}
-    }
-
-    if (sources.contains('items') && results.length < limit) {
-      final int remaining = (limit - results.length).clamp(0, 200);
-      try {
-        final List<UserMemoryItem> items = await UserMemoryService.instance
-            .searchItems(
-              queryText,
-              limit: remaining,
-              offset: 0,
-              allowAdvanced: false,
-              queryAdvanced: queryAdv,
-            );
-        final db = await ScreenshotDatabase.instance.database;
-        for (final UserMemoryItem it in items) {
-          if (results.length >= limit) break;
-          final List<String> evidence = <String>[];
-          try {
-            final rows = await db.query(
-              'user_memory_evidence',
-              columns: const <String>['evidence_filenames_json'],
-              where: 'memory_item_id = ?',
-              whereArgs: <Object?>[it.id],
-              orderBy: 'created_at DESC, id DESC',
-              limit: 2,
-            );
-            for (final r in rows) {
-              final String raw =
-                  (r['evidence_filenames_json'] as String?) ?? '';
-              for (final String f in _decodeStringListJsonTool(raw)) {
-                if (evidence.length >= 5) break;
-                if (!evidence.contains(f)) evidence.add(f);
-              }
-            }
-          } catch (_) {}
-
-          results.add(<String, dynamic>{
-            'path': 'item:${it.id}',
-            'source': 'items',
-            'title': it.kind,
-            'snippet': clip(it.content),
-            if (evidence.isNotEmpty) 'evidence': evidence,
-            'updated_at': it.updatedAtMs,
-          });
-        }
-      } catch (_) {}
-    }
-
-    final bool wantsSearchDocs =
-        sources.contains('daily') ||
-        sources.contains('morning');
-    if (wantsSearchDocs && results.length < limit) {
-      final Set<String> idxSources = <String>{};
-      final Set<String> docTypes = <String>{};
-      if (sources.contains('daily')) {
-        idxSources.add(kSearchIndexSourceDailySummaries);
-        docTypes.add(kSearchDocTypeDailySummary);
-      }
-      if (sources.contains('morning')) {
-        idxSources.add(kSearchIndexSourceMorningInsights);
-        docTypes.add(kSearchDocTypeMorningInsights);
-      }
-      try {
-        if (idxSources.isNotEmpty) {
-          await ScreenshotDatabase.instance.syncSearchIndex(
-            sources: idxSources,
-          );
-        }
-      } catch (_) {}
-      try {
-        final int remaining = (limit - results.length).clamp(0, 200);
-        final List<Map<String, dynamic>> docs = await ScreenshotDatabase
-            .instance
-            .searchSearchDocsByText(
-              queryText,
-              docTypes: docTypes.isEmpty ? null : docTypes,
-              limit: remaining,
-              offset: 0,
-              allowAdvanced: false,
-              queryAdvanced: queryAdv,
-            );
-        for (final Map<String, dynamic> d in docs) {
-          if (results.length >= limit) break;
-          final String type = (d['doc_type'] as String?)?.trim() ?? '';
-          final String dateKey = (d['date_key'] as String?)?.trim() ?? '';
-          final String title = (d['title'] as String?)?.trim() ?? '';
-          final String content = (d['content'] as String?)?.trim() ?? '';
-          final int? updatedAt = _toInt(d['updated_at']);
-
-          String? path;
-          String? source;
-          if (type == kSearchDocTypeDailySummary && dateKey.isNotEmpty) {
-            path = 'daily:$dateKey';
-            source = 'daily';
-          } else if (type == kSearchDocTypeMorningInsights &&
-              dateKey.isNotEmpty) {
-            path = 'morning:$dateKey';
-            source = 'morning';
-          }
-          if (path == null || source == null) continue;
-
-          results.add(<String, dynamic>{
-            'path': path,
-            'source': source,
-            'title': title.isNotEmpty ? title : type,
-            'snippet': clip(content),
-            'updated_at': updatedAt,
-          });
-        }
-      } catch (_) {}
-    }
-
     return <AIMessage>[
       AIMessage(
         role: 'tool',
         content: jsonEncode(<String, dynamic>{
           'tool': 'memory_search',
-          'query': queryText,
-          if (queryAdv != null) 'query_advanced': args['query_advanced'],
-          'count': results.length,
-          'results': results,
-          'note':
-              'Use memory_get(path) to fetch full text or more lines. For global memory items, you may cite [memory: item:<id>] and use evidence filenames when available.',
+          'error': 'disabled',
         }),
         toolCallId: call.id,
       ),
@@ -402,183 +147,323 @@ extension AIChatServiceToolExecExt on AIChatService {
   }
 
   Future<List<AIMessage>> _executeMemoryGetTool(AIToolCall call) async {
+    return <AIMessage>[
+      AIMessage(
+        role: 'tool',
+        content: jsonEncode(<String, dynamic>{
+          'tool': 'memory_get',
+          'error': 'disabled',
+        }),
+        toolCallId: call.id,
+      ),
+    ];
+  }
+
+  Future<List<AIMessage>> _executeReadMemoryTool(AIToolCall call) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
-    final String path = (args['path'] ?? '').toString().trim();
-    if (path.isEmpty) {
+    final String uri = (args['uri'] ?? '').toString().trim();
+
+    if (uri.isEmpty) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
           content: jsonEncode(<String, dynamic>{
-            'tool': 'memory_get',
-            'error': 'missing_path',
+            'tool': 'read_memory',
+            'error': 'missing_uri',
           }),
           toolCallId: call.id,
         ),
       ];
     }
 
-    int fromLine = _toInt(args['from']) ?? 1;
-    if (fromLine < 1) fromLine = 1;
-    int lines = _toInt(args['lines']) ?? 80;
-    lines = lines.clamp(1, 400);
-
-    String text = '';
-    final Map<String, dynamic> meta = <String, dynamic>{};
-
     try {
-      final UserMemoryPath parsed = UserMemoryPath.parse(path);
-      switch (parsed.kind) {
-        case UserMemoryPathKind.profileUser:
-        case UserMemoryPathKind.profileAuto:
-          final profile = await UserMemoryService.instance.getProfile();
-          final bool isUser = parsed.kind == UserMemoryPathKind.profileUser;
-          text = isUser ? profile.userMarkdown : profile.autoMarkdown;
-          meta['source'] = 'profile';
-          meta['variant'] = isUser ? 'user' : 'auto';
-          meta['updated_at'] = isUser
-              ? profile.userUpdatedAtMs
-              : profile.autoUpdatedAtMs;
-          break;
-        case UserMemoryPathKind.item:
-          final int id = parsed.itemId ?? 0;
-          if (id <= 0) throw Exception('invalid_item_id');
-          final db = await ScreenshotDatabase.instance.database;
-          final rows = await db.query(
-            'user_memory_items',
-            where: 'id = ?',
-            whereArgs: <Object?>[id],
-            limit: 1,
-          );
-          if (rows.isEmpty) throw Exception('not_found');
-          final r = rows.first;
-          text = (r['content'] as String?)?.trim() ?? '';
-          meta['source'] = 'items';
-          meta['id'] = id;
-          meta['kind'] = (r['kind'] as String?)?.trim() ?? '';
-          meta['memory_key'] = (r['memory_key'] as String?)?.trim();
-          meta['pinned'] = _toBool(r['pinned']);
-          meta['user_edited'] = _toBool(r['user_edited']);
-          meta['updated_at'] = _toInt(r['updated_at']);
-          meta['confidence'] = r['confidence'];
-          final String kwRaw = (r['keywords_json'] as String?) ?? '';
-          final List<String> kws = _decodeStringListJsonTool(kwRaw);
-          if (kws.isNotEmpty) meta['keywords'] = kws;
-
-          final List<String> evidence = <String>[];
-          try {
-            final evRows = await db.query(
-              'user_memory_evidence',
-              columns: const <String>[
-                'source_type',
-                'source_id',
-                'evidence_filenames_json',
-                'created_at',
-              ],
-              where: 'memory_item_id = ?',
-              whereArgs: <Object?>[id],
-              orderBy: 'created_at DESC, id DESC',
-              limit: 8,
-            );
-            for (final ev in evRows) {
-              final String raw =
-                  (ev['evidence_filenames_json'] as String?) ?? '';
-              for (final String f in _decodeStringListJsonTool(raw)) {
-                if (evidence.length >= 5) break;
-                if (!evidence.contains(f)) evidence.add(f);
-              }
-              if (evidence.length >= 5) break;
-            }
-          } catch (_) {}
-          if (evidence.isNotEmpty) meta['evidence'] = evidence;
-          break;
-        case UserMemoryPathKind.daily:
-          final String dateKey = parsed.dateKey ?? '';
-          final row = await ScreenshotDatabase.instance.getDailySummary(
-            dateKey,
-          );
-          text = (row?['output_text'] as String?)?.trim() ?? '';
-          meta['source'] = 'daily';
-          meta['date_key'] = dateKey;
-          meta['created_at'] = row?['created_at'];
-          meta['ai_provider'] = row?['ai_provider'];
-          meta['ai_model'] = row?['ai_model'];
-          break;
-        case UserMemoryPathKind.morning:
-          final String dateKey = parsed.dateKey ?? '';
-          final row = await ScreenshotDatabase.instance.getMorningInsights(
-            dateKey,
-          );
-          final String rawResponse =
-              (row?['raw_response'] as String?)?.trim() ?? '';
-          if (rawResponse.isNotEmpty) {
-            text = rawResponse;
-          } else {
-            // Prefer the rendered markdown from search_docs if available.
-            try {
-              await ScreenshotDatabase.instance.syncSearchIndex(
-                sources: <String>{kSearchIndexSourceMorningInsights},
-              );
-            } catch (_) {}
-            try {
-              final db = await ScreenshotDatabase.instance.database;
-              final docRows = await db.query(
-                'search_docs',
-                columns: const <String>['content'],
-                where: 'doc_key = ?',
-                whereArgs: <Object?>['morning:$dateKey'],
-                limit: 1,
-              );
-              if (docRows.isNotEmpty) {
-                text = (docRows.first['content'] as String?)?.trim() ?? '';
-              }
-            } catch (_) {}
-            if (text.trim().isEmpty) {
-              text = (row?['tips_json'] as String?)?.trim() ?? '';
-            }
-          }
-          meta['source'] = 'morning';
-          meta['date_key'] = dateKey;
-          meta['source_date_key'] = row?['source_date_key'];
-          meta['created_at'] = row?['created_at'];
-          break;
-        case UserMemoryPathKind.unknown:
-          throw Exception('unknown_path');
-      }
+      final Map<String, dynamic> result =
+          await NocturneMemoryService.instance.readMemory(uri);
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'read_memory',
+            ...result,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
     } catch (e) {
       return <AIMessage>[
         AIMessage(
           role: 'tool',
           content: jsonEncode(<String, dynamic>{
-            'tool': 'memory_get',
-            'path': path,
+            'tool': 'read_memory',
+            'uri': uri,
             'error': e.toString(),
           }),
           toolCallId: call.id,
         ),
       ];
     }
+  }
 
-    final String sliced = UserMemoryService.sliceLines(
-      text,
-      fromLine: fromLine,
-      lines: lines,
-      maxLines: 400,
-    );
+  Future<List<AIMessage>> _executeCreateMemoryTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String parentUri = (args['parent_uri'] ?? '').toString().trim();
+    final String content = (args['content'] ?? '').toString();
+    final int priority = _toInt(args['priority']) ?? 0;
+    final String titleRaw = (args['title'] ?? '').toString();
+    final String disclosureRaw = (args['disclosure'] ?? '').toString();
+    final String? title = titleRaw.trim().isEmpty ? null : titleRaw.trim();
+    final String? disclosure =
+        disclosureRaw.trim().isEmpty ? null : disclosureRaw.trim();
 
-    return <AIMessage>[
-      AIMessage(
-        role: 'tool',
-        content: jsonEncode(<String, dynamic>{
-          'tool': 'memory_get',
-          'path': path,
-          'from': fromLine,
-          'lines': lines,
-          'text': sliced,
-          'meta': meta,
-        }),
-        toolCallId: call.id,
-      ),
-    ];
+    if (parentUri.isEmpty || content.trim().isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'create_memory',
+            'error': 'missing_parent_or_content',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    try {
+      final Map<String, dynamic> created =
+          await NocturneMemoryService.instance.createMemory(
+        parentUri: parentUri,
+        content: content,
+        priority: priority,
+        title: title,
+        disclosure: disclosure,
+      );
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'create_memory',
+            ...created,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'create_memory',
+            'parent_uri': parentUri,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+  }
+
+  Future<List<AIMessage>> _executeUpdateMemoryTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String uri = (args['uri'] ?? '').toString().trim();
+    if (uri.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'update_memory',
+            'error': 'missing_uri',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    try {
+      final Map<String, dynamic> updated =
+          await NocturneMemoryService.instance.updateMemory(
+        uri: uri,
+        oldString: args['old_string'] == null ? null : args['old_string'].toString(),
+        newString: args['new_string'] == null ? null : args['new_string'].toString(),
+        append: args['append'] == null ? null : args['append'].toString(),
+        priority: _toInt(args['priority']),
+        disclosure: args['disclosure'] == null ? null : args['disclosure'].toString(),
+      );
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'update_memory',
+            ...updated,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'update_memory',
+            'uri': uri,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+  }
+
+  Future<List<AIMessage>> _executeDeleteMemoryTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String uri = (args['uri'] ?? '').toString().trim();
+    if (uri.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'delete_memory',
+            'error': 'missing_uri',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+    try {
+      final Map<String, dynamic> deleted =
+          await NocturneMemoryService.instance.deleteMemory(uri: uri);
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'delete_memory',
+            ...deleted,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'delete_memory',
+            'uri': uri,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+  }
+
+  Future<List<AIMessage>> _executeAddAliasTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String newUri = (args['new_uri'] ?? '').toString().trim();
+    final String targetUri = (args['target_uri'] ?? '').toString().trim();
+    final int priority = _toInt(args['priority']) ?? 0;
+    final String disclosureRaw = (args['disclosure'] ?? '').toString();
+    final String? disclosure =
+        disclosureRaw.trim().isEmpty ? null : disclosureRaw.trim();
+    if (newUri.isEmpty || targetUri.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'add_alias',
+            'error': 'missing_new_or_target_uri',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    try {
+      final Map<String, dynamic> res =
+          await NocturneMemoryService.instance.addAlias(
+        newUri: newUri,
+        targetUri: targetUri,
+        priority: priority,
+        disclosure: disclosure,
+      );
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'add_alias',
+            ...res,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'add_alias',
+            'new_uri': newUri,
+            'target_uri': targetUri,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+  }
+
+  Future<List<AIMessage>> _executeSearchMemoryTool(AIToolCall call) async {
+    final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
+    final String query = (args['query'] ?? '').toString().trim();
+    final String domainRaw = (args['domain'] ?? '').toString();
+    final String? domain = domainRaw.trim().isEmpty ? null : domainRaw.trim();
+    final int limit = (_toInt(args['limit']) ?? 10).clamp(1, 100);
+    if (query.isEmpty) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'search_memory',
+            'error': 'missing_query',
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
+
+    try {
+      final List<Map<String, dynamic>> results =
+          await NocturneMemoryService.instance.searchMemory(
+        query,
+        domain: domain,
+        limit: limit,
+      );
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'search_memory',
+            'query': query,
+            if (domain != null) 'domain': domain,
+            'limit': limit,
+            'count': results.length,
+            'results': results,
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    } catch (e) {
+      return <AIMessage>[
+        AIMessage(
+          role: 'tool',
+          content: jsonEncode(<String, dynamic>{
+            'tool': 'search_memory',
+            'query': query,
+            'error': e.toString(),
+          }),
+          toolCallId: call.id,
+        ),
+      ];
+    }
   }
 
   Future<List<AIMessage>> _executeListSegmentsTool(
@@ -2029,6 +1914,18 @@ extension AIChatServiceToolExecExt on AIChatService {
     switch (call.name) {
       case 'get_images':
         return _executeGetImagesTool(call);
+      case 'read_memory':
+        return _executeReadMemoryTool(call);
+      case 'create_memory':
+        return _executeCreateMemoryTool(call);
+      case 'update_memory':
+        return _executeUpdateMemoryTool(call);
+      case 'delete_memory':
+        return _executeDeleteMemoryTool(call);
+      case 'add_alias':
+        return _executeAddAliasTool(call);
+      case 'search_memory':
+        return _executeSearchMemoryTool(call);
       case 'memory_search':
         return _executeMemorySearchTool(call);
       case 'memory_get':

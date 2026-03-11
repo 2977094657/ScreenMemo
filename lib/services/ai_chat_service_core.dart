@@ -95,22 +95,6 @@ extension AIChatServiceCoreExt on AIChatService {
       );
     }
 
-    final bool hasMemoryTools =
-        names.contains('memory_search') || names.contains('memory_get');
-    if (hasMemoryTools) {
-      sb.writeln(
-        _loc(
-          '- 若问题涉及用户偏好/习惯/身份/长期约束/过去决定，请先调用 memory_search；必要时再用 memory_get 读取全文/更多行，不要靠猜。',
-          '- For user preference/habit/identity/long-term constraints/past decisions, call memory_search first; use memory_get for full text/more lines when needed. Do not guess.',
-        ),
-      );
-      sb.writeln(
-        _loc(
-          '- 允许引用 [memory: item:123]（来自 memory_search/memory_get 的 path）；但关键事实尽量仍落到截图证据 [evidence: filename.png]（若该条 memory 提供了 evidence）。',
-          '- You may cite [memory: item:123] (from memory_search/memory_get paths); for key factual claims, still prefer screenshot evidence [evidence: filename.png] when available (if the memory provides evidence).',
-        ),
-      );
-    }
     if (names.contains('get_images')) {
       sb.writeln(
         _loc(

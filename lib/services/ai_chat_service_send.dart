@@ -991,22 +991,18 @@ extension AIChatServiceSendExt on AIChatService {
     } catch (_) {}
 
     final String systemPrompt = _systemPromptForLocale();
+    final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
+      _effectivePromptLocale(),
+    );
     List<String> extras = <String>[];
     String ctxMsg = '';
     try {
       ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
     } catch (_) {}
+
+    // Memory system removed (sidebar + injection/tools): keep prompts compatible.
     String umMsg = '';
-    try {
-      umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
-        query: userMessage.trim(),
-      );
-    } catch (_) {}
     String amMsg = '';
-    try {
-      amMsg = await AtomicMemoryService.instance
-          .buildAtomicMemoryContextMessage(cid: cid, query: userMessage.trim());
-    } catch (_) {}
     String summaryAppsMsg = '';
     try {
       summaryAppsMsg = await _buildSummaryAppsContextMessage();
@@ -1026,6 +1022,7 @@ extension AIChatServiceSendExt on AIChatService {
       userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
+        if (memoryAddon.trim().isNotEmpty) memoryAddon,
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
       ],
       effectivePromptCapTokens: effectivePromptCapTokens,
@@ -1113,23 +1110,6 @@ extension AIChatServiceSendExt on AIChatService {
         tokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
-        // openclaw-style: refresh long-term memory before we compact the chat context.
-        try {
-          final UserMemoryProfile p = await UserMemoryService.instance
-              .getProfile();
-          final bool userEmpty = p.userMarkdown.trim().isEmpty;
-          final int nowMs = DateTime.now().millisecondsSinceEpoch;
-          final int lastAuto = p.autoUpdatedAtMs ?? 0;
-          final bool stale =
-              lastAuto <= 0 ||
-              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
-          if (userEmpty && stale) {
-            await UserMemoryService.instance.refreshAutoProfile();
-            umMsg = await UserMemoryService.instance
-                .buildUserMemoryContextMessage(query: userMessage.trim());
-          }
-        } catch (_) {}
-
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Rebuild context message (summary likely changed) and recompute budgets.
         ctxMsg = '';
@@ -1150,6 +1130,7 @@ extension AIChatServiceSendExt on AIChatService {
           userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
+            if (memoryAddon.trim().isNotEmpty) memoryAddon,
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
           ],
           effectivePromptCapTokens: effectivePromptCapTokens,
@@ -1215,27 +1196,6 @@ extension AIChatServiceSendExt on AIChatService {
     final int promptEstSent = PromptBudget.approxTokensForMessagesJson(
       requestMessages,
     );
-    try {
-      final bool amEnabled = await _settings.getAtomicMemoryInjectionEnabled();
-      final bool amAutoExtract = await _settings
-          .getAtomicMemoryAutoExtractEnabled();
-      final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
-      final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
-      unawaited(
-        _chatContext.logContextEvent(
-          cid: cid,
-          type: 'atomic_memory',
-          payload: <String, dynamic>{
-            'enabled': amEnabled,
-            'auto_extract': amAutoExtract,
-            'injected': amMsg.trim().isNotEmpty,
-            'am_tokens': PromptBudget.approxTokensForText(amMsg),
-            'max_tokens': amMaxTokens,
-            'max_items': amMaxItems,
-          },
-        ),
-      );
-    } catch (_) {}
 
     final AIGatewayResult result = await _gateway.complete(
       endpoints: endpoints,
@@ -1552,22 +1512,13 @@ extension AIChatServiceSendExt on AIChatService {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
       } catch (_) {}
       try {
-        umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
-          query: userMessage.trim(),
-        );
-      } catch (_) {}
-      try {
-        amMsg = await AtomicMemoryService.instance
-            .buildAtomicMemoryContextMessage(
-              cid: cid,
-              query: userMessage.trim(),
-            );
-      } catch (_) {}
-      try {
         summaryAppsMsg = await _buildSummaryAppsContextMessage();
       } catch (_) {}
     }
     final String systemPrompt = _systemPromptForLocale();
+    final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
+      _effectivePromptLocale(),
+    );
 
     effectiveExtras = await _buildHistoryFirstExtras(
       cid: cid,
@@ -1583,6 +1534,7 @@ extension AIChatServiceSendExt on AIChatService {
       userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
+        if (memoryAddon.trim().isNotEmpty) memoryAddon,
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
         ...extraSystemMessages,
       ],
@@ -1684,23 +1636,6 @@ extension AIChatServiceSendExt on AIChatService {
         tokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
-        // openclaw-style: refresh long-term memory before we compact the chat context.
-        try {
-          final UserMemoryProfile p = await UserMemoryService.instance
-              .getProfile();
-          final bool userEmpty = p.userMarkdown.trim().isEmpty;
-          final int nowMs = DateTime.now().millisecondsSinceEpoch;
-          final int lastAuto = p.autoUpdatedAtMs ?? 0;
-          final bool stale =
-              lastAuto <= 0 ||
-              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
-          if (userEmpty && stale) {
-            await UserMemoryService.instance.refreshAutoProfile();
-            umMsg = await UserMemoryService.instance
-                .buildUserMemoryContextMessage(query: userMessage.trim());
-          }
-        } catch (_) {}
-
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Refresh only the context message + history tail; keep AM/WM stable.
         final List<String> extras2 = <String>[];
@@ -1723,6 +1658,7 @@ extension AIChatServiceSendExt on AIChatService {
           userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
+            if (memoryAddon.trim().isNotEmpty) memoryAddon,
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
             ...extraSystemMessages,
           ],
@@ -1799,28 +1735,6 @@ extension AIChatServiceSendExt on AIChatService {
           atomicMemoryMsg: amMsg,
           extraSystemMessages: effectiveExtras,
           historyMaxTokens: historyMaxTokens,
-        );
-      } catch (_) {}
-      try {
-        final bool amEnabled = await _settings
-            .getAtomicMemoryInjectionEnabled();
-        final bool amAutoExtract = await _settings
-            .getAtomicMemoryAutoExtractEnabled();
-        final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
-        final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
-        unawaited(
-          _chatContext.logContextEvent(
-            cid: cid,
-            type: 'atomic_memory',
-            payload: <String, dynamic>{
-              'enabled': amEnabled,
-              'auto_extract': amAutoExtract,
-              'injected': amMsg.trim().isNotEmpty,
-              'am_tokens': PromptBudget.approxTokensForText(amMsg),
-              'max_tokens': amMaxTokens,
-              'max_items': amMaxItems,
-            },
-          ),
         );
       } catch (_) {}
     }
@@ -1983,6 +1897,9 @@ extension AIChatServiceSendExt on AIChatService {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
     final String systemPrompt = _systemPromptForLocale();
+    final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
+      _effectivePromptLocale(),
+    );
     final bool includeHistoryEffective = AIChatService.includeHistoryEffective(
       context: context,
       includeHistory: includeHistory,
@@ -2010,18 +1927,6 @@ extension AIChatServiceSendExt on AIChatService {
         ctxMsg = await _chatContext.buildSystemContextMessage(cid: cid);
       } catch (_) {}
       try {
-        umMsg = await UserMemoryService.instance.buildUserMemoryContextMessage(
-          query: actualUserMessage.trim(),
-        );
-      } catch (_) {}
-      try {
-        amMsg = await AtomicMemoryService.instance
-            .buildAtomicMemoryContextMessage(
-              cid: cid,
-              query: actualUserMessage.trim(),
-            );
-      } catch (_) {}
-      try {
         summaryAppsMsg = await _buildSummaryAppsContextMessage();
       } catch (_) {}
     }
@@ -2040,6 +1945,7 @@ extension AIChatServiceSendExt on AIChatService {
       userMemoryMsg: umMsg,
       atomicMemoryMsg: amMsg,
       extraSystemMessages: <String>[
+        if (memoryAddon.trim().isNotEmpty) memoryAddon,
         if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
         ...extraSystemMessages,
       ],
@@ -2137,23 +2043,6 @@ extension AIChatServiceSendExt on AIChatService {
         promptTokensApprox >= autoCompactTriggerTokens) {
       fallbackTriggered = true;
       try {
-        // openclaw-style: refresh long-term memory before we compact the chat context.
-        try {
-          final UserMemoryProfile p = await UserMemoryService.instance
-              .getProfile();
-          final bool userEmpty = p.userMarkdown.trim().isEmpty;
-          final int nowMs = DateTime.now().millisecondsSinceEpoch;
-          final int lastAuto = p.autoUpdatedAtMs ?? 0;
-          final bool stale =
-              lastAuto <= 0 ||
-              (nowMs - lastAuto) > const Duration(hours: 24).inMilliseconds;
-          if (userEmpty && stale) {
-            await UserMemoryService.instance.refreshAutoProfile();
-            umMsg = await UserMemoryService.instance
-                .buildUserMemoryContextMessage(query: actualUserMessage.trim());
-          }
-        } catch (_) {}
-
         await _chatContext.compactNow(cid: cid, reason: 'preflight');
         // Refresh ctx message and history tail; keep tool instruction + AM/WM stable.
         final List<String> extras2 = <String>[];
@@ -2175,6 +2064,7 @@ extension AIChatServiceSendExt on AIChatService {
           userMemoryMsg: umMsg,
           atomicMemoryMsg: amMsg,
           extraSystemMessages: <String>[
+            if (memoryAddon.trim().isNotEmpty) memoryAddon,
             if (summaryAppsMsg.trim().isNotEmpty) summaryAppsMsg,
             ...extraSystemMessages,
           ],
@@ -2257,29 +2147,6 @@ extension AIChatServiceSendExt on AIChatService {
           atomicMemoryMsg: amMsg,
           extraSystemMessages: effectiveExtras,
           historyMaxTokens: historyMaxTokensForBreakdown,
-        );
-      } catch (_) {}
-      try {
-        final bool amEnabled = await _settings
-            .getAtomicMemoryInjectionEnabled();
-        final bool amAutoExtract = await _settings
-            .getAtomicMemoryAutoExtractEnabled();
-        final int amMaxTokens = await _settings.getAtomicMemoryPromptTokens();
-        final int amMaxItems = await _settings.getAtomicMemoryMaxItems();
-        unawaited(
-          _chatContext.logContextEvent(
-            cid: cid,
-            type: 'atomic_memory',
-            payload: <String, dynamic>{
-              'enabled': amEnabled,
-              'auto_extract': amAutoExtract,
-              'injected': amMsg.trim().isNotEmpty,
-              'am_tokens': PromptBudget.approxTokensForText(amMsg),
-              'max_tokens': amMaxTokens,
-              'max_items': amMaxItems,
-              'tool_loop': tools.isNotEmpty,
-            },
-          ),
         );
       } catch (_) {}
     }

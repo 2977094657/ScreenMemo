@@ -133,6 +133,32 @@ extension AIChatServiceToolingExt on AIChatService {
           ? _loc('返回 $count 条', 'returned $count')
           : _loc('返回 $count 条', 'returned $count');
     }
+    if (tool == 'read_memory') {
+      final String uri = (obj['uri'] as String?)?.trim() ?? '';
+      final int children = (obj['children'] is List)
+          ? (obj['children'] as List).length
+          : 0;
+      if (uri.isEmpty) return _loc('已读取', 'read');
+      return children > 0
+          ? _loc('已读取（$children 个子节点）', 'read ($children children)')
+          : _loc('已读取', 'read');
+    }
+    if (tool == 'create_memory') {
+      final String uri = (obj['uri'] as String?)?.trim() ?? '';
+      return uri.isEmpty ? _loc('已创建', 'created') : _loc('已创建', 'created');
+    }
+    if (tool == 'update_memory') {
+      return _loc('已更新', 'updated');
+    }
+    if (tool == 'delete_memory') {
+      final int deleted = _toInt(obj['deleted_paths']) ?? 0;
+      return deleted > 0
+          ? _loc('已删除 $deleted 条路径', 'deleted $deleted paths')
+          : _loc('已删除', 'deleted');
+    }
+    if (tool == 'add_alias') {
+      return _loc('已创建别名', 'alias created');
+    }
     final int count = _toInt(obj['count']) ?? -1;
     if (count >= 0) {
       final int? total = _toInt(obj['total_count']);
@@ -167,6 +193,174 @@ extension AIChatServiceToolingExt on AIChatService {
             },
           },
           'required': <String>['filenames'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'read_memory',
+        'description':
+            'Read a long-term memory node by URI (Nocturne-style URI graph). Also supports special system URIs: system://boot, system://index[/<domain>], system://recent[/N].',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'Memory URI like core://agent or dynamic://2026/03/10.',
+            },
+          },
+          'required': <String>['uri'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'create_memory',
+        'description':
+            'Create a new memory under a parent URI. Parent MUST exist. Use core:// or dynamic:// (ending with //) to create at domain root.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'parent_uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'Parent URI, e.g. core://agent or core://.',
+            },
+            'content': <String, dynamic>{
+              'type': 'string',
+              'description': 'Memory content (Markdown allowed).',
+            },
+            'priority': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Retrieval priority (lower = higher priority).',
+            },
+            'title': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional child name (a-z0-9_- only). If omitted, auto-assigns a numeric id.',
+            },
+            'disclosure': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Optional trigger condition: WHEN this memory should be recalled.',
+            },
+          },
+          'required': <String>['parent_uri', 'content', 'priority'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'update_memory',
+        'description':
+            'Update a memory. Content editing modes are mutually exclusive: patch (old_string+new_string) OR append. Metadata updates (priority/disclosure) are allowed. Recommended: read_memory first.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'Memory URI to update, e.g. core://agent/my_user.',
+            },
+            'old_string': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Patch mode: text to replace (must match exactly ONE location).',
+            },
+            'new_string': <String, dynamic>{
+              'type': 'string',
+              'description':
+                  'Patch mode: replacement text. Use empty string "" to delete.',
+            },
+            'append': <String, dynamic>{
+              'type': 'string',
+              'description': 'Append mode: text to append to the end.',
+            },
+            'priority': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Optional new edge priority for this URI.',
+            },
+            'disclosure': <String, dynamic>{
+              'type': 'string',
+              'description': 'Optional new disclosure for this URI.',
+            },
+          },
+          'required': <String>['uri'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'delete_memory',
+        'description':
+            'Delete a memory access path (URI). This removes the URI path (and descendant paths in the same domain) but preserves historical content versions for recovery.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'Memory URI to delete, e.g. core://agent/old_note.',
+            },
+          },
+          'required': <String>['uri'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'add_alias',
+        'description':
+            'Create an alias URI pointing to the same memory as target_uri (not a copy). Automatically cascades descendant path mappings under the new alias.',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'new_uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'New alias URI to create.',
+            },
+            'target_uri': <String, dynamic>{
+              'type': 'string',
+              'description': 'Existing URI to point to.',
+            },
+            'priority': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Optional priority for the alias edge (default 0).',
+            },
+            'disclosure': <String, dynamic>{
+              'type': 'string',
+              'description': 'Optional disclosure for the alias edge.',
+            },
+          },
+          'required': <String>['new_uri', 'target_uri'],
+        },
+      },
+    },
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': 'search_memory',
+        'description':
+            'Search memories by substring match on URI path and content (NOT semantic search).',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'query': <String, dynamic>{
+              'type': 'string',
+              'description': 'Keyword to search.',
+            },
+            'domain': <String, dynamic>{
+              'type': 'string',
+              'description': 'Optional domain filter (e.g. core, dynamic).',
+            },
+            'limit': <String, dynamic>{
+              'type': 'integer',
+              'description': 'Optional max results (default 10, max 100).',
+            },
+          },
+          'required': <String>['query'],
         },
       },
     },
@@ -525,105 +719,6 @@ extension AIChatServiceToolingExt on AIChatService {
             },
           },
           'required': const <String>[],
-        },
-      },
-    },
-    <String, dynamic>{
-      'type': 'function',
-      'function': <String, dynamic>{
-        'name': 'memory_search',
-        'description':
-            'Search the user memory system (global profile + global memory items + daily/morning summaries). Use this BEFORE answering questions about user preferences/habits/identity/long-term constraints/past decisions. Returns snippet + a stable path you can use with memory_get.',
-        'parameters': <String, dynamic>{
-          'type': 'object',
-          'properties': <String, dynamic>{
-            'query': <String, dynamic>{
-              'type': 'string',
-              'description':
-                  'Search query (plain text). Optional if query_advanced is provided. Do NOT write SQLite FTS operators (quotes, AND/OR/NOT, NEAR, parentheses, "*", col:term). The app will build a safe query internally.',
-            },
-            'query_advanced': <String, dynamic>{
-              'type': 'object',
-              'description':
-                  'Optional structured advanced query (recommended for complex boolean/proximity search). Provide either query or query_advanced. Use this instead of writing raw FTS syntax in query.',
-              'properties': <String, dynamic>{
-                'must': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{'type': 'string'},
-                },
-                'any': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{'type': 'string'},
-                },
-                'must_not': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{'type': 'string'},
-                },
-                'phrases': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{'type': 'string'},
-                },
-                'phrases_any': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{'type': 'string'},
-                },
-                'near': <String, dynamic>{
-                  'type': 'array',
-                  'items': <String, dynamic>{
-                    'type': 'object',
-                    'properties': <String, dynamic>{
-                      'terms': <String, dynamic>{
-                        'type': 'array',
-                        'items': <String, dynamic>{'type': 'string'},
-                      },
-                      'distance': <String, dynamic>{'type': 'integer'},
-                    },
-                    'required': <String>['terms'],
-                  },
-                },
-                'prefix': <String, dynamic>{'type': 'boolean'},
-              },
-            },
-            'limit': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Max results (1-20). Default 10.',
-            },
-            'sources': <String, dynamic>{
-              'type': 'array',
-              'items': <String, dynamic>{'type': 'string'},
-              'description':
-                  'Optional sources filter. Values: profile | items | daily | morning. Default: all.',
-            },
-          },
-          'required': const <String>[],
-        },
-      },
-    },
-    <String, dynamic>{
-      'type': 'function',
-      'function': <String, dynamic>{
-        'name': 'memory_get',
-        'description':
-            'Get full text (or a line slice) for a memory path returned by memory_search. Always prefer memory_search first.',
-        'parameters': <String, dynamic>{
-          'type': 'object',
-          'properties': <String, dynamic>{
-            'path': <String, dynamic>{
-              'type': 'string',
-              'description':
-                  'One of: profile:user | profile:auto | item:<id> | daily:<YYYY-MM-DD> | morning:<YYYY-MM-DD>.',
-            },
-            'from': <String, dynamic>{
-              'type': 'integer',
-              'description': 'Optional 1-based start line number.',
-            },
-            'lines': <String, dynamic>{
-              'type': 'integer',
-              'description':
-                  'Optional number of lines to return (default 80, max 400).',
-            },
-          },
-          'required': <String>['path'],
         },
       },
     },

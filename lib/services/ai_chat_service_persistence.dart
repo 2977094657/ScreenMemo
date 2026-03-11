@@ -152,12 +152,6 @@ extension AIChatServicePersistenceExt on AIChatService {
           reason: toolSignatureDigests.isNotEmpty ? 'tool_loop' : 'turn',
         );
       } catch (_) {}
-      try {
-        AtomicMemoryService.instance.scheduleExtractFromTurn(
-          cid: cid,
-          userMessage: userMessage,
-        );
-      } catch (_) {}
     } catch (_) {}
 
     if (history.isEmpty) {

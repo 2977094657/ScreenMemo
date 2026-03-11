@@ -18,6 +18,7 @@ import 'path_service.dart';
 part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
 part 'screenshot_database_import_diagnostics.dart';
+part 'screenshot_database_nocturne_memory.dart';
 part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
 part 'screenshot_database_query.dart';
@@ -113,7 +114,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 34,
+          version: 35,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -151,7 +152,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 34,
+          version: 35,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -184,7 +185,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 34,
+          version: 35,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -211,7 +212,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 34,
+        version: 35,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -650,6 +651,9 @@ class ScreenshotDatabase {
 
     // 统一 SearchIndex（可选用，不影响现有搜索路径）
     await _createSearchIndexTables(db);
+
+    // Nocturne Memory（URI 图谱记忆）表结构
+    await _createNocturneMemoryTables(db);
   }
 
   /// 升级回调：按版本增量迁移
@@ -1100,6 +1104,13 @@ class ScreenshotDatabase {
     if (oldVersion < 34) {
       try {
         await _createUserMemoryItemEventsTable(db);
+      } catch (_) {}
+    }
+
+    // v35: Nocturne Memory（URI 图谱记忆）表结构
+    if (oldVersion < 35) {
+      try {
+        await _createNocturneMemoryTables(db);
       } catch (_) {}
     }
   }
