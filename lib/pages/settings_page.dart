@@ -20,6 +20,7 @@ import 'package:file_picker/file_picker.dart';
 import 'nsfw_settings_page.dart';
 import 'storage_analysis_page.dart';
 import 'import_diagnostics_page.dart';
+import 'export_backup_page.dart';
 import '../services/daily_summary_service.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ai_settings_service.dart';
@@ -1098,84 +1099,11 @@ class _SettingsPageState extends State<SettingsPage>
     setState(() {
       _exportingDb = true;
     });
-    // 原生极速导出：不传 onProgress，让底层走 exportOutputToDownloadsNative
-    unawaited(_showNativeExportDialog());
     try {
       await FlutterLogger.nativeInfo('UI_EXPORT', '开始导出');
-      final result = await _screenshotDatabase.exportDatabaseToDownloads();
-      if (!mounted) return;
-      if (result != null) {
-        await FlutterLogger.nativeInfo(
-          'UI_EXPORT',
-          '导出成功 -> ' + ((result['humanPath'] as String?) ?? ''),
-        );
-        final displayPath =
-            (result['humanPath'] as String?) ??
-            (result['absolutePath'] as String?) ??
-            (result['displayPath'] as String?) ??
-            'Download/ScreenMemory/output_export.zip';
-        // 成功弹窗：中文提示 + 可复制路径
-        await showUIDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          title: AppLocalizations.of(context).exportSuccessTitle,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(AppLocalizations.of(context).exportFileExportedTo),
-              const SizedBox(height: AppTheme.spacing2),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(AppTheme.spacing3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                ),
-                child: Text(
-                  displayPath,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            UIDialogAction(
-              text: AppLocalizations.of(context).actionCopyPath,
-              style: UIDialogActionStyle.normal,
-              closeOnPress: false,
-              onPressed: (ctx) async {
-                await Clipboard.setData(ClipboardData(text: displayPath));
-                if (ctx.mounted) {
-                  Navigator.of(ctx).pop();
-                  UINotifier.success(
-                    ctx,
-                    AppLocalizations.of(ctx).pathCopiedToast,
-                  );
-                }
-              },
-            ),
-            UIDialogAction(
-              text: AppLocalizations.of(context).dialogOk,
-              style: UIDialogActionStyle.primary,
-            ),
-          ],
-        );
-      } else {
-        await FlutterLogger.nativeWarn('UI_EXPORT', '导出结果为 null');
-        await showUIDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          title: AppLocalizations.of(context).exportFailedTitle,
-          message: AppLocalizations.of(context).pleaseTryAgain,
-          actions: [
-            UIDialogAction(
-              text: AppLocalizations.of(context).dialogOk,
-              style: UIDialogActionStyle.primary,
-            ),
-          ],
-        );
-      }
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(builder: (_) => const ExportBackupPage()),
+      );
     } catch (e) {
       if (!mounted) return;
       await showUIDialog<void>(
@@ -1193,14 +1121,6 @@ class _SettingsPageState extends State<SettingsPage>
           _exportingDb = false;
         });
       }
-      try {
-        if (mounted) {
-          final NavigatorState nav = Navigator.of(context, rootNavigator: true);
-          if (nav.canPop()) {
-            nav.pop();
-          }
-        }
-      } catch (_) {}
     }
   }
 
@@ -1342,6 +1262,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
         await ScreenshotService.instance.invalidateStatsCache();
         ScreenshotService.instance.invalidateAvailableDayCountCache();
+        final bool requiresRestart = importRes['requiresRestart'] == true;
         await showUIDialog<void>(
           context: context,
           barrierDismissible: false,
@@ -1364,6 +1285,18 @@ class _SettingsPageState extends State<SettingsPage>
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
+              if (requiresRestart) ...[
+                const SizedBox(height: AppTheme.spacing3),
+                Text(
+                  Localizations.localeOf(context).languageCode.toLowerCase() ==
+                          'zh'
+                      ? '本次导入已恢复偏好设置或应用级目录。为了让这些内容立即生效，建议重启应用一次。'
+                      : 'This restore updated preferences or app-level directories. Restart the app once so every change takes effect immediately.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
           actions: [

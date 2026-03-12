@@ -553,6 +553,16 @@ class MainActivity : FlutterActivity() {
                         result.error("export_failed", e.message, null)
                     }
                 }
+                "deleteExportedArtifact" -> {
+                    try {
+                        val contentUri = call.argument<String>("contentUri")
+                        val absolutePath = call.argument<String>("absolutePath")
+                        result.success(deleteExportedArtifactInternal(contentUri, absolutePath))
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "删除导出文件失败", e)
+                        result.error("delete_export_failed", e.message, null)
+                    }
+                }
                 "exportOutputToDownloadsNative" -> {
                     // 极致速度：原生 Java ZipOutputStream(BEST_SPEED) 直接写入 Downloads（无中间临时文件）
                     val displayName = call.argument<String>("displayName") ?: "output_export.zip"
@@ -2386,26 +2396,32 @@ class MainActivity : FlutterActivity() {
 
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("Failed to create item in MediaStore")
+            try {
+                resolver.openOutputStream(uri)?.use { out ->
+                    FileInputStream(sourceFile).use { input -> input.copyTo(out) }
+                } ?: throw IllegalStateException("Failed to open output stream")
 
-            resolver.openOutputStream(uri)?.use { out ->
-                FileInputStream(sourceFile).use { input -> input.copyTo(out) }
-            } ?: throw IllegalStateException("Failed to open output stream")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
 
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+                @Suppress("DEPRECATION")
+                val absDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val absolutePath = if (targetSubDir.isNotEmpty()) File(absDownloads, "$targetSubDir/$displayName").absolutePath else File(absDownloads, displayName).absolutePath
 
-            @Suppress("DEPRECATION")
-            val absDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val absolutePath = if (targetSubDir.isNotEmpty()) File(absDownloads, "$targetSubDir/$displayName").absolutePath else File(absDownloads, displayName).absolutePath
-
-            mapOf(
-                "contentUri" to uri.toString(),
-                "displayPath" to displayPath,
-                "absolutePath" to absolutePath,
-                "fileName" to displayName,
-                "size" to size
-            )
+                mapOf(
+                    "contentUri" to uri.toString(),
+                    "displayPath" to displayPath,
+                    "absolutePath" to absolutePath,
+                    "fileName" to displayName,
+                    "size" to size
+                )
+            } catch (e: Exception) {
+                try {
+                    resolver.delete(uri, null, null)
+                } catch (_: Exception) {}
+                throw e
+            }
         } else {
             @Suppress("DEPRECATION")
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -2413,8 +2429,17 @@ class MainActivity : FlutterActivity() {
             if (!targetDir.exists()) targetDir.mkdirs()
             val dest = File(targetDir, displayName)
 
-            FileInputStream(sourceFile).use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
+            try {
+                FileInputStream(sourceFile).use { input ->
+                    FileOutputStream(dest).use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                try {
+                    if (dest.exists()) {
+                        dest.delete()
+                    }
+                } catch (_: Exception) {}
+                throw e
             }
 
             mapOf(
@@ -2425,6 +2450,28 @@ class MainActivity : FlutterActivity() {
                 "size" to size
             )
         }
+    }
+
+    private fun deleteExportedArtifactInternal(contentUri: String?, absolutePath: String?): Boolean {
+        var deleted = false
+        if (!contentUri.isNullOrBlank() && contentUri.startsWith("content://")) {
+            try {
+                deleted = contentResolver.delete(Uri.parse(contentUri), null, null) > 0
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "删除 MediaStore 导出项失败: $contentUri", e)
+            }
+        }
+        if (!deleted && !absolutePath.isNullOrBlank()) {
+            try {
+                val file = File(absolutePath)
+                if (file.exists()) {
+                    deleted = file.delete()
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "删除导出目标文件失败: $absolutePath", e)
+            }
+        }
+        return deleted
     }
 
     /**

@@ -14,6 +14,7 @@ import '../models/screenshot_record.dart';
 import 'startup_profiler.dart';
 import 'flutter_logger.dart';
 import 'path_service.dart';
+import 'backup_inventory_service.dart';
 
 part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';

@@ -126,30 +126,40 @@ Future<void> _exportZipIsolateEntry(Map<String, dynamic> args) async {
 Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
   final SendPort sendPort = args['sendPort'] as SendPort;
   final String localZipPath = args['zipPath'] as String;
-  final String outputDirPath = args['outputDirPath'] as String;
+  final Map<String, String> targetRoots = Map<String, String>.from(
+    (args['targetRoots'] as Map?) ?? const <String, String>{},
+  );
   final bool overwrite = (args['overwrite'] as bool?) ?? true;
 
   try {
-    final Directory outputDir = Directory(outputDirPath);
-    if (!await outputDir.exists()) {
-      await outputDir.create(recursive: true);
-    }
-
     final InputFileStream input = InputFileStream(localZipPath);
     final Archive archive = ZipDecoder().decodeBuffer(input);
+    final BackupArchiveInspection inspection =
+        BackupInventoryService.inspectArchiveEntries(
+          archive.files.map((ArchiveFile file) => file.name),
+        );
 
-    // 只统计文件项数量用于进度
     final List<ArchiveFile> files = archive.files
-        .where((ArchiveFile f) => f.isFile)
+        .where(
+          (ArchiveFile f) =>
+              f.isFile &&
+              f.name.replaceAll('\\', '/') != backupManifestFileName,
+        )
         .toList();
     final int total = files.length;
     if (total == 0) {
       input.close();
-      sendPort.send(<String, Object?>{'type': 'done', 'extracted': 0});
+      sendPort.send(<String, Object?>{
+        'type': 'done',
+        'extracted': 0,
+        'restoredRoots': inspection.rootEntries.toList(),
+        'requiresRestart': inspection.manifestRequiresRestart,
+      });
       return;
     }
 
     int extracted = 0;
+    final Set<String> restoredRoots = <String>{};
     sendPort.send(<String, Object?>{
       'type': 'progress',
       'progress': 0.0,
@@ -164,17 +174,53 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
 
     for (int i = 0; i < files.length; i++) {
       final ArchiveFile f = files[i];
-      final String relative = normalize(f.name).replaceAll('\\', '/');
-      final String rel = relative.startsWith('output/')
-          ? relative.substring('output/'.length)
-          : relative;
-
-      // 安全检查，防止目录穿越
-      if (rel.startsWith('../') || rel.startsWith('/')) {
+      final String normalizedEntry = normalize(
+        f.name,
+      ).replaceAll('\\', '/').trimLeft();
+      if (normalizedEntry.isEmpty ||
+          normalizedEntry == backupManifestFileName) {
         continue;
       }
 
-      final String destPath = join(outputDir.path, rel);
+      String? rootEntry = BackupInventoryService.rootEntryForArchivePath(
+        normalizedEntry,
+      );
+      String relativePath;
+      if (rootEntry == null) {
+        if (inspection.hasManifest) {
+          throw StateError('unsupported_backup_root:$normalizedEntry');
+        }
+        rootEntry = 'output';
+        relativePath = normalizedEntry;
+      } else {
+        if (rootEntry == backupManifestFileName) {
+          continue;
+        }
+        relativePath = normalizedEntry.length == rootEntry.length
+            ? ''
+            : normalizedEntry.substring(rootEntry.length + 1);
+      }
+
+      final String rel = _normalizeBackupImportRelativePath(relativePath);
+      if (rel.isEmpty) {
+        continue;
+      }
+      if (BackupInventoryService.shouldSkipImportedRelativePath(
+        rootEntry,
+        rel,
+      )) {
+        continue;
+      }
+
+      final String? destRootPath = targetRoots[rootEntry];
+      if (destRootPath == null || destRootPath.isEmpty) {
+        if (inspection.hasManifest) {
+          throw StateError('missing_import_target:$rootEntry');
+        }
+        continue;
+      }
+
+      final String destPath = join(destRootPath, rel);
       if (f.isFile) {
         final File destFile = File(destPath);
         final Directory parent = destFile.parent;
@@ -188,11 +234,7 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
           f.writeContent(out);
           await out.close();
           extracted++;
-        }
-      } else {
-        final Directory d = Directory(destPath);
-        if (!await d.exists()) {
-          await d.create(recursive: true);
+          restoredRoots.add(rootEntry);
         }
       }
 
@@ -216,10 +258,40 @@ Future<void> _importZipIsolateEntry(Map<String, dynamic> args) async {
 
     input.close();
 
-    sendPort.send(<String, Object?>{'type': 'done', 'extracted': extracted});
+    sendPort.send(<String, Object?>{
+      'type': 'done',
+      'extracted': extracted,
+      'restoredRoots': restoredRoots.toList(),
+      'requiresRestart':
+          inspection.manifestRequiresRestart ||
+          restoredRoots.any((String root) => root != 'output'),
+    });
   } catch (e) {
     sendPort.send(<String, Object?>{'type': 'error', 'error': e.toString()});
   }
+}
+
+String _normalizeBackupImportRelativePath(String raw) {
+  String sanitized = raw.replaceAll('\\', '/').trim();
+  while (sanitized.startsWith('./')) {
+    sanitized = sanitized.substring(2);
+  }
+  sanitized = sanitized.replaceFirst(RegExp(r'^/+'), '');
+  if (sanitized.isEmpty) {
+    return '';
+  }
+  final List<String> parts = sanitized.split('/');
+  final List<String> result = <String>[];
+  for (final String part in parts) {
+    if (part.isEmpty || part == '.') {
+      continue;
+    }
+    if (part == '..') {
+      return '';
+    }
+    result.add(part);
+  }
+  return result.join('/');
 }
 
 /// 导出打包的帮助函数：在主 Isolate 中管理进度与结果
@@ -305,7 +377,7 @@ Future<String?> _runExportZipWithProgress({
 /// 导入解压的帮助函数：在主 Isolate 中管理进度与结果
 Future<Map<String, dynamic>?> _runImportZipWithProgress({
   required String localZipPath,
-  required String outputDirPath,
+  required Map<String, String> targetRoots,
   required bool overwrite,
   void Function(ImportExportProgress progress)? onProgress,
 }) async {
@@ -317,7 +389,7 @@ Future<Map<String, dynamic>?> _runImportZipWithProgress({
       <String, dynamic>{
         'sendPort': receivePort.sendPort,
         'zipPath': localZipPath,
-        'outputDirPath': outputDirPath,
+        'targetRoots': targetRoots,
         'overwrite': overwrite,
       },
     );
@@ -347,7 +419,10 @@ Future<Map<String, dynamic>?> _runImportZipWithProgress({
         if (!completer.isCompleted) {
           completer.complete(<String, dynamic>{
             'extracted': extracted,
-            'targetDir': outputDirPath,
+            'restoredRoots': List<String>.from(
+              (message['restoredRoots'] as List?) ?? const <String>[],
+            ),
+            'requiresRestart': message['requiresRestart'] == true,
           });
         }
       } else if (type == 'error') {
@@ -3561,112 +3636,296 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
 
   // ======= 导出/导入 =======
   Future<Map<String, dynamic>?> exportDatabaseToDownloads({
-    void Function(ImportExportProgress progress)? onProgress,
+    void Function(ExportProgressSnapshot snapshot)? onDetailedProgress,
+    bool Function()? shouldCancel,
   }) async {
+    File? tmpZip;
+    File? tmpManifest;
+    BackupInventory? inventory;
+    final Map<String, int> categoryCompletedBytes = <String, int>{
+      for (final String id in BackupCategoryIds.ordered) id: 0,
+    };
     try {
-      final base =
-          await PathService.getInternalAppDir(null) ??
-          await _getInternalFilesDir();
+      final BackupRootPaths? roots =
+          await BackupInventoryService.resolveDefaultRoots();
+      if (roots == null) {
+        throw StateError('backup_roots_unavailable');
+      }
       await FlutterLogger.nativeInfo(
         'EXPORT',
-        '导出到下载目录：baseDir=' + (base?.path ?? 'null'),
+        '开始构建全量导出清单，filesDir=' + roots.filesDirPath,
       );
-      if (base == null) return null;
-      final outputDir = Directory(join(base.path, 'output'));
-      if (!await outputDir.exists()) {
-        await FlutterLogger.nativeWarn(
-          'EXPORT',
-          '未找到 output 目录：' + outputDir.path,
-        );
-        return null;
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.scanning,
+        inventory: null,
+        categoryCompletedBytes: categoryCompletedBytes,
+        currentCategoryId: 'output',
+        currentEntry: roots.outputDirPath,
+      );
+
+      inventory = await BackupInventoryService.scan(
+        roots: roots,
+        onProgress: (String scopeId, String? currentPath) {
+          if (shouldCancel?.call() == true) {
+            throw const BackupExportCancelledException();
+          }
+          _emitExportSnapshot(
+            onDetailedProgress,
+            phase: ExportPhase.scanning,
+            inventory: null,
+            categoryCompletedBytes: categoryCompletedBytes,
+            currentCategoryId: scopeId,
+            currentEntry: currentPath,
+          );
+        },
+      );
+
+      if (shouldCancel?.call() == true) {
+        throw const BackupExportCancelledException();
+      }
+      if (inventory.isEmpty) {
+        throw StateError('backup_inventory_empty');
       }
 
-      // 若未请求进度，则优先尝试原生快速导出
-      if (onProgress == null) {
-        try {
-          await FlutterLogger.nativeInfo(
-            'EXPORT',
-            '尝试原生快速导出 exportOutputToDownloadsNative',
-          );
-          final dynamic fast = await ScreenshotDatabase._channel.invokeMethod(
-            'exportOutputToDownloadsNative',
-            <String, Object?>{
-              'displayName': 'output_export.zip',
-              'subDir': 'ScreenMemory',
-            },
-          );
-          if (fast is Map) {
-            final Map<String, dynamic> map = Map<String, dynamic>.from(fast);
-            map['humanPath'] =
-                (map['absolutePath'] as String?) ??
-                (map['displayPath'] as String?);
-            await FlutterLogger.nativeInfo(
-              'EXPORT',
-              '原生快速导出已保存至 ' + (map['humanPath']?.toString() ?? ''),
+      final Directory tempDir = await getTemporaryDirectory();
+      final String timestamp = DateTime.now().toIso8601String().replaceAll(
+        RegExp(r'[:.]'),
+        '-',
+      );
+      final String displayName = 'screen_memo_backup_$timestamp.zip';
+      tmpZip = File(join(tempDir.path, displayName));
+      tmpManifest = File(
+        join(tempDir.path, 'screen_memo_backup_manifest.json'),
+      );
+      if (await tmpZip.exists()) {
+        await tmpZip.delete();
+      }
+      if (await tmpManifest.exists()) {
+        await tmpManifest.delete();
+      }
+
+      await tmpManifest.writeAsString(
+        BackupInventoryService.encodeManifestJson(
+          inventory,
+          createdAt: DateTime.now(),
+          archiveFileName: displayName,
+        ),
+        flush: true,
+      );
+
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.packing,
+        inventory: inventory,
+        categoryCompletedBytes: categoryCompletedBytes,
+        currentEntry: backupManifestFileName,
+      );
+
+      final ZipFileEncoder encoder = ZipFileEncoder();
+      bool encoderClosed = false;
+      try {
+        encoder.create(tmpZip.path, level: 0);
+        encoder.addFile(tmpManifest, backupManifestFileName);
+
+        int completedBytes = 0;
+        for (final BackupInventoryCategory category in inventory.categories) {
+          for (final BackupInventoryFile entry in category.files) {
+            if (shouldCancel?.call() == true) {
+              throw const BackupExportCancelledException();
+            }
+            final File source = File(entry.sourcePath);
+            if (!await source.exists()) {
+              throw StateError('backup_source_missing:${entry.archivePath}');
+            }
+            encoder.addFile(source, entry.archivePath);
+            completedBytes += entry.bytes;
+            categoryCompletedBytes[entry.categoryId] =
+                (categoryCompletedBytes[entry.categoryId] ?? 0) + entry.bytes;
+            _emitExportSnapshot(
+              onDetailedProgress,
+              phase: ExportPhase.packing,
+              inventory: inventory,
+              completedBytes: completedBytes,
+              categoryCompletedBytes: categoryCompletedBytes,
+              currentCategoryId: entry.categoryId,
+              currentEntry: entry.archivePath,
             );
-            return map;
           }
-        } catch (e) {
-          await FlutterLogger.nativeWarn(
-            'EXPORT',
-            '原生快速导出不可用，回退：' + e.toString(),
-          );
+        }
+        encoder.close();
+        encoderClosed = true;
+      } finally {
+        if (!encoderClosed) {
+          try {
+            encoder.close();
+          } catch (_) {}
         }
       }
 
-      final tmpZip = File(join(base.path, 'output_export.zip'));
-      try {
-        if (await tmpZip.exists()) await tmpZip.delete();
-      } catch (_) {}
-
-      await FlutterLogger.nativeInfo('EXPORT', '兜底 zip 路径=' + tmpZip.path);
-      final String outputPath = outputDir.path;
-      final String tmpZipPath = tmpZip.path;
-      final String? zippedPath = await _runExportZipWithProgress(
-        outputDirPath: outputPath,
-        tmpZipPath: tmpZipPath,
-        onProgress: onProgress,
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.verifying,
+        inventory: inventory,
+        completedBytes: inventory.totalBytes,
+        categoryCompletedBytes: categoryCompletedBytes,
+        currentEntry: tmpZip.path,
       );
 
-      if (zippedPath == null) return null;
-      await FlutterLogger.nativeInfo('EXPORT', '兜底 zip 已就绪 路径=' + zippedPath);
+      final BackupArchiveInspection inspection = await _inspectBackupArchive(
+        tmpZip.path,
+      );
+      if (!inspection.hasManifest) {
+        throw StateError('backup_manifest_missing');
+      }
+      if (shouldCancel?.call() == true) {
+        throw const BackupExportCancelledException();
+      }
 
       final dynamic result = await ScreenshotDatabase._channel
           .invokeMethod('exportFileToDownloads', <String, Object?>{
-            'sourcePath': zippedPath,
-            'displayName': 'output_export.zip',
+            'sourcePath': tmpZip.path,
+            'displayName': displayName,
             'subDir': 'ScreenMemory',
           });
 
-      try {
-        await tmpZip.delete();
-      } catch (_) {}
-
-      if (result is Map) {
-        final Map<String, dynamic> map = Map<String, dynamic>.from(result);
-        map['humanPath'] =
-            (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
-        await FlutterLogger.nativeInfo(
-          'EXPORT',
-          '已保存至 ' + (map['humanPath']?.toString() ?? ''),
-        );
-        return map;
+      if (result is! Map) {
+        throw StateError('backup_export_result_invalid');
       }
-      await FlutterLogger.nativeWarn(
-        'EXPORT',
-        'exportFileToDownloads 返回值不是 Map，result=' + result.toString(),
+      final Map<String, dynamic> map = Map<String, dynamic>.from(result);
+      if (shouldCancel?.call() == true) {
+        await _deleteExportedBackupArtifact(map);
+        throw const BackupExportCancelledException();
+      }
+      map['humanPath'] =
+          (map['absolutePath'] as String?) ?? (map['displayPath'] as String?);
+      map['inventoryTotalBytes'] = inventory.totalBytes;
+      map['inventoryTotalFiles'] = inventory.totalFiles;
+      map['requiresRestartAfterImport'] = inventory.requiresRestartAfterImport;
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.completed,
+        inventory: inventory,
+        completedBytes: inventory.totalBytes,
+        categoryCompletedBytes: categoryCompletedBytes,
+        outputPath: map['humanPath']?.toString(),
       );
-      return null;
+      await FlutterLogger.nativeInfo(
+        'EXPORT',
+        '全量备份导出完成 -> ' + (map['humanPath']?.toString() ?? ''),
+      );
+      return map;
+    } on BackupExportCancelledException {
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.cancelled,
+        inventory: inventory,
+        completedBytes: _sumCategoryCompletedBytes(categoryCompletedBytes),
+        categoryCompletedBytes: categoryCompletedBytes,
+      );
+      rethrow;
     } catch (e) {
-      print('导出output压缩包失败: $e');
+      await FlutterLogger.nativeError(
+        'EXPORT',
+        'exportDatabaseToDownloads 异常：$e',
+      );
+      _emitExportSnapshot(
+        onDetailedProgress,
+        phase: ExportPhase.failed,
+        inventory: inventory,
+        completedBytes: _sumCategoryCompletedBytes(categoryCompletedBytes),
+        categoryCompletedBytes: categoryCompletedBytes,
+        errorMessage: e.toString(),
+      );
+      rethrow;
+    } finally {
       try {
-        await FlutterLogger.nativeError(
-          'EXPORT',
-          'exportDatabaseToDownloads 异常：' + e.toString(),
-        );
+        if (tmpZip != null && await tmpZip.exists()) {
+          await tmpZip.delete();
+        }
       } catch (_) {}
-      return null;
+      try {
+        if (tmpManifest != null && await tmpManifest.exists()) {
+          await tmpManifest.delete();
+        }
+      } catch (_) {}
     }
+  }
+
+  void _emitExportSnapshot(
+    void Function(ExportProgressSnapshot snapshot)? listener, {
+    required ExportPhase phase,
+    required BackupInventory? inventory,
+    required Map<String, int> categoryCompletedBytes,
+    int? completedBytes,
+    String? currentEntry,
+    String? currentCategoryId,
+    String? outputPath,
+    String? errorMessage,
+  }) {
+    if (listener == null) {
+      return;
+    }
+    final int totalBytes = inventory?.totalBytes ?? 0;
+    final int resolvedCompletedBytes = completedBytes ?? 0;
+    final double progress = totalBytes <= 0
+        ? (phase == ExportPhase.completed ? 1.0 : 0.0)
+        : (resolvedCompletedBytes / totalBytes).clamp(0.0, 1.0);
+    listener(
+      ExportProgressSnapshot(
+        phase: phase,
+        overallProgress: progress,
+        completedBytes: resolvedCompletedBytes,
+        totalBytes: totalBytes,
+        categoryCompletedBytes: Map<String, int>.from(categoryCompletedBytes),
+        inventory: inventory,
+        currentEntry: currentEntry,
+        currentCategoryId: currentCategoryId,
+        outputPath: outputPath,
+        errorMessage: errorMessage,
+      ),
+    );
+  }
+
+  int _sumCategoryCompletedBytes(Map<String, int> categoryCompletedBytes) {
+    int sum = 0;
+    for (final int value in categoryCompletedBytes.values) {
+      sum += value;
+    }
+    return sum;
+  }
+
+  Future<BackupArchiveInspection> _inspectBackupArchive(String zipPath) async {
+    final InputFileStream input = InputFileStream(zipPath);
+    try {
+      final Archive archive = ZipDecoder().decodeBuffer(input);
+      return BackupInventoryService.inspectArchiveEntries(
+        archive.files.map((ArchiveFile file) => file.name),
+      );
+    } finally {
+      input.close();
+    }
+  }
+
+  Future<void> _deleteExportedBackupArtifact(
+    Map<String, dynamic> exportResult,
+  ) async {
+    try {
+      await ScreenshotDatabase._channel
+          .invokeMethod('deleteExportedArtifact', <String, Object?>{
+            'contentUri': exportResult['contentUri']?.toString(),
+            'absolutePath': exportResult['absolutePath']?.toString(),
+          });
+    } catch (_) {}
+  }
+
+  Future<BackupRootPaths> _requireBackupRoots() async {
+    final BackupRootPaths? roots =
+        await BackupInventoryService.resolveDefaultRoots();
+    if (roots == null) {
+      throw StateError('backup_roots_unavailable');
+    }
+    return roots;
   }
 
   Future<Map<String, dynamic>?> importDataFromZip({
@@ -3675,42 +3934,38 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
     bool overwrite = true,
     void Function(ImportExportProgress progress)? onProgress,
   }) async {
-    // 导入前立即清理 output 目录下的缓存子目录（cache/tmp/temp/.thumbnails）
-    try {
-      final base =
-          await PathService.getInternalAppDir(null) ??
-          await _getInternalFilesDir();
-      if (base != null) {
-        final Directory outputDir = Directory(join(base.path, 'output'));
-        await _clearOutputCacheDirs(outputDir);
-      }
-    } catch (_) {}
-
-    // 优先走原生导入（仅支持 zipPath），失败或无路径时回退到 Dart 流式实现
     if (zipPath != null && zipPath.isNotEmpty) {
       try {
-        await FlutterLogger.nativeInfo(
-          'IMPORT',
-          '尝试原生导入 importZipToOutput 路径=' + zipPath,
+        final BackupArchiveInspection inspection = await _inspectBackupArchive(
+          zipPath,
         );
-        final bool ok = await _importDataFromZipNative(
-          zipPath: zipPath,
-          overwrite: overwrite,
-        );
-        if (ok) {
-          String? outDir;
-          try {
-            final Directory? base =
-                await PathService.getInternalAppDir(null) ??
-                await _getInternalFilesDir();
-            if (base != null) {
-              final Directory outputDir = Directory(join(base.path, 'output'));
+        if (!inspection.hasManifest) {
+          await FlutterLogger.nativeInfo(
+            'IMPORT',
+            '尝试原生导入 importZipToOutput 路径=' + zipPath,
+          );
+          final bool ok = await _importDataFromZipNative(
+            zipPath: zipPath,
+            overwrite: overwrite,
+          );
+          if (ok) {
+            final BackupRootPaths roots = await _requireBackupRoots();
+            final Directory outputDir = Directory(roots.outputDirPath);
+            try {
               await _clearOutputCacheDirs(outputDir);
-              outDir = outputDir.path;
-            }
-          } catch (_) {}
-          // 原生导入成功后返回与流式导入相似的结果结构
-          return <String, dynamic>{'extracted': null, 'targetDir': outDir};
+            } catch (_) {}
+            return <String, dynamic>{
+              'extracted': null,
+              'targetDir': outputDir.path,
+              'restoredRoots': const <String>['output'],
+              'requiresRestart': false,
+            };
+          }
+        } else {
+          await FlutterLogger.nativeInfo(
+            'IMPORT',
+            '检测到新备份 manifest，跳过原生 output-only 导入',
+          );
         }
       } catch (_) {
         // 失败时回退到 Dart 实现
@@ -3745,64 +4000,6 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         return null;
       }
 
-      final base =
-          await PathService.getInternalAppDir(null) ??
-          await _getInternalFilesDir();
-      if (base == null) return null;
-      final outputDir = Directory(join(base.path, 'output'));
-      Directory? legacyOutputDir;
-      if (overwrite) {
-        legacyOutputDir = Directory(join(base.path, 'cache'));
-        if (await legacyOutputDir.exists()) {
-          try {
-            await legacyOutputDir.delete(recursive: true);
-            await FlutterLogger.nativeInfo(
-              'IMPORT',
-              '覆盖导入前已删除旧 cache 目录：' + legacyOutputDir.path,
-            );
-          } catch (e) {
-            await FlutterLogger.nativeWarn(
-              'IMPORT',
-              '删除旧 cache 目录失败：' + e.toString(),
-            );
-          }
-        }
-      }
-
-      await FlutterLogger.nativeInfo('IMPORT', '基础目录=' + base.path);
-
-      if (overwrite && await outputDir.exists()) {
-        try {
-          await outputDir.delete(recursive: true);
-          await FlutterLogger.nativeInfo(
-            'IMPORT',
-            '覆盖导入前已删除旧 outputDir：' + outputDir.path,
-          );
-        } catch (e) {
-          await FlutterLogger.nativeWarn(
-            'IMPORT',
-            '删除旧 outputDir 失败：' + e.toString(),
-          );
-        }
-      }
-
-      if (!await outputDir.exists()) {
-        await outputDir.create(recursive: true);
-        await FlutterLogger.nativeInfo(
-          'IMPORT',
-          '已创建 outputDir=' + outputDir.path,
-        );
-      } else {
-        try {
-          // 导入前清理缓存目录，避免旧缓存占用空间并与新数据混淆
-          await _clearOutputCacheDirs(outputDir);
-        } catch (_) {}
-      }
-
-      try {
-        await _resetDatabasesAfterImport();
-      } catch (_) {}
-
       String localZipPath;
       File? tmpZipFile;
       if (zipPath != null && zipPath.isNotEmpty) {
@@ -3817,9 +4014,36 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         localZipPath = tmpZipFile.path;
       }
 
+      final BackupRootPaths roots = await _requireBackupRoots();
+      final BackupArchiveInspection inspection = await _inspectBackupArchive(
+        localZipPath,
+      );
+      final Set<String> importRoots = inspection.rootEntries.isEmpty
+          ? <String>{'output'}
+          : inspection.rootEntries;
+
+      await FlutterLogger.nativeInfo(
+        'IMPORT',
+        '基础目录=' +
+            roots.filesDirPath +
+            ' roots=' +
+            importRoots.join(',') +
+            ' manifest=' +
+            inspection.hasManifest.toString(),
+      );
+
+      try {
+        await _resetDatabasesAfterImport();
+      } catch (_) {}
+      await _prepareImportTargets(
+        roots: roots,
+        importRoots: importRoots,
+        overwrite: overwrite,
+      );
+
       final Map<String, dynamic>? res = await _runImportZipWithProgress(
         localZipPath: localZipPath,
-        outputDirPath: outputDir.path,
+        targetRoots: roots.toImportTargetMap(),
         overwrite: overwrite,
         onProgress: onProgress,
       );
@@ -3848,20 +4072,70 @@ extension ScreenshotDatabaseMeta on ScreenshotDatabase {
         await _resetDatabasesAfterImport();
       } catch (_) {}
 
+      final Directory outputDir = Directory(roots.outputDirPath);
       await FlutterLogger.nativeInfo(
         'IMPORT',
         '完成(流式+Isolate) 解压=' +
             ((res?['extracted'] as int?) ?? 0).toString() +
             ' 目标=' +
-            outputDir.path,
+            (inspection.manifestRequiresRestart
+                ? roots.dataRootPath
+                : outputDir.path),
       );
       try {
         await _clearOutputCacheDirs(outputDir);
       } catch (_) {}
+      if (res != null) {
+        final List<String> restoredRoots = List<String>.from(
+          (res['restoredRoots'] as List?) ?? const <String>[],
+        );
+        res['targetDir'] = restoredRoots.any((String root) => root != 'output')
+            ? roots.dataRootPath
+            : outputDir.path;
+      }
       return res;
     } catch (e) {
       await FlutterLogger.nativeError('IMPORT', '异常(流式): ' + e.toString());
       return null;
+    }
+  }
+
+  Future<void> _prepareImportTargets({
+    required BackupRootPaths roots,
+    required Set<String> importRoots,
+    required bool overwrite,
+  }) async {
+    final Map<String, String> targetRoots = roots.toImportTargetMap();
+    final Directory outputDir = Directory(roots.outputDirPath);
+
+    if (!overwrite) {
+      try {
+        if (await outputDir.exists()) {
+          await _clearOutputCacheDirs(outputDir);
+        }
+      } catch (_) {}
+      return;
+    }
+
+    for (final String root in importRoots) {
+      final String? path = targetRoots[root];
+      if (path == null || path.isEmpty) {
+        continue;
+      }
+      await _deleteDirectoryIfExists(path);
+    }
+  }
+
+  Future<void> _deleteDirectoryIfExists(String path) async {
+    final Directory dir = Directory(path);
+    if (!await dir.exists()) {
+      return;
+    }
+    try {
+      await dir.delete(recursive: true);
+      await FlutterLogger.nativeInfo('IMPORT', '覆盖导入前已删除目录：' + path);
+    } catch (e) {
+      await FlutterLogger.nativeWarn('IMPORT', '删除导入目标目录失败：$path -> $e');
     }
   }
 

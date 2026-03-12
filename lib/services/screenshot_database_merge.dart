@@ -75,9 +75,7 @@ class MergeZipAuditReport {
       ..writeln(
         'screenFiles: $screenFileCount packages=$screenPackageCount sample=${samplePackages.join(', ')}',
       )
-      ..writeln(
-        'smmDbFiles: $smmDbCount sample=${sampleSmmDbPaths.join(', ')}',
-      )
+      ..writeln('smmDbFiles: $smmDbCount sample=${sampleSmmDbPaths.join(', ')}')
       ..writeln(
         'dbSidecars: $dbSidecarFileCount sample=${sampleDbSidecarPaths.join(', ')}',
       )
@@ -280,7 +278,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
       final Map<String, dynamic>? extraction = await _runImportZipWithProgress(
         localZipPath: localZipPath!,
-        outputDirPath: stagingOutput.path,
+        targetRoots: <String, String>{'output': stagingOutput.path},
         overwrite: true,
         onProgress: (progress) {
           reportProgress(
@@ -681,9 +679,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
             columns: ['app_package_name', 'year'],
           );
         } catch (e) {
-          ctx.warnings.add(
-            'Failed to read imported shard_registry: $e',
-          );
+          ctx.warnings.add('Failed to read imported shard_registry: $e');
           shards = <Map<String, Object?>>[];
         }
       }
@@ -790,10 +786,7 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       if (year == null) continue;
       final String key = '$pkg|$year';
       if (!seen.add(key)) continue;
-      result.add(<String, Object?>{
-        'app_package_name': pkg,
-        'year': year,
-      });
+      result.add(<String, Object?>{'app_package_name': pkg, 'year': year});
     }
     return result;
   }
@@ -830,9 +823,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
         await _ensureMonthTable(targetShard, year, month);
 
-        final Set<String> targetColumns =
-            targetColumnsCache[tableName] ??=
-                await _tryListTableColumns(targetShard, tableName);
+        final Set<String> targetColumns = targetColumnsCache[tableName] ??=
+            await _tryListTableColumns(targetShard, tableName);
 
         final List<Map<String, Object?>> existingRows = await targetShard.query(
           tableName,
@@ -1074,13 +1066,14 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       try {
         final Map<String, Object?> insertRow = <String, Object?>{
           if (targetCols.contains('screenshot_id')) 'screenshot_id': newId,
-          if (targetCols.contains('app_package_name'))
-            'app_package_name': pkg,
+          if (targetCols.contains('app_package_name')) 'app_package_name': pkg,
           if (targetCols.contains('favorite_time'))
             'favorite_time': row['favorite_time'],
           if (targetCols.contains('note')) 'note': row['note'],
-          if (targetCols.contains('created_at')) 'created_at': row['created_at'],
-          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+          if (targetCols.contains('created_at'))
+            'created_at': row['created_at'],
+          if (targetCols.contains('updated_at'))
+            'updated_at': row['updated_at'],
         };
         await txn.insert(
           'favorites',
@@ -1120,8 +1113,10 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       importedDb,
       'nsfw_manual_flags',
     );
-    final Set<String> targetCols =
-        await _tryListTableColumns(txn, 'nsfw_manual_flags');
+    final Set<String> targetCols = await _tryListTableColumns(
+      txn,
+      'nsfw_manual_flags',
+    );
     if (!importCols.contains('screenshot_id') ||
         !importCols.contains('app_package_name')) {
       return;
@@ -1146,11 +1141,12 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       try {
         final Map<String, Object?> insertRow = <String, Object?>{
           if (targetCols.contains('screenshot_id')) 'screenshot_id': newId,
-          if (targetCols.contains('app_package_name'))
-            'app_package_name': pkg,
+          if (targetCols.contains('app_package_name')) 'app_package_name': pkg,
           if (targetCols.contains('flag')) 'flag': row['flag'],
-          if (targetCols.contains('created_at')) 'created_at': row['created_at'],
-          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+          if (targetCols.contains('created_at'))
+            'created_at': row['created_at'],
+          if (targetCols.contains('updated_at'))
+            'updated_at': row['updated_at'],
         };
         await txn.insert(
           'nsfw_manual_flags',
@@ -1174,8 +1170,10 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       importedDb,
       'user_settings',
     );
-    final Set<String> targetCols =
-        await _tryListTableColumns(txn, 'user_settings');
+    final Set<String> targetCols = await _tryListTableColumns(
+      txn,
+      'user_settings',
+    );
     if (!importCols.contains('key')) {
       return;
     }
@@ -1205,7 +1203,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
         final Map<String, Object?> insertRow = <String, Object?>{
           if (targetCols.contains('key')) 'key': key,
           if (targetCols.contains('value')) 'value': row['value'],
-          if (targetCols.contains('updated_at')) 'updated_at': row['updated_at'],
+          if (targetCols.contains('updated_at'))
+            'updated_at': row['updated_at'],
         };
         await txn.insert(
           'user_settings',
@@ -1218,8 +1217,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
 
   Future<int?> _tryReadUserVersion(DatabaseExecutor db) async {
     try {
-      final List<Map<String, Object?>> rows =
-          await db.rawQuery('PRAGMA user_version');
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        'PRAGMA user_version',
+      );
       if (rows.isEmpty) return null;
       final Object? v = rows.first['user_version'];
       if (v is int) return v;
@@ -1237,8 +1237,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
   ) async {
     try {
       final String safe = tableName.replaceAll("'", "''");
-      final List<Map<String, Object?>> rows =
-          await db.rawQuery("PRAGMA table_info('$safe')");
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        "PRAGMA table_info('$safe')",
+      );
       final Set<String> cols = <String>{};
       for (final Map<String, Object?> row in rows) {
         final String? name = row['name'] as String?;
@@ -1446,7 +1447,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (masterEntry != null) {
       Directory? tempDir;
       try {
-        tempDir = await Directory.systemTemp.createTemp('screenmemo_merge_zip_');
+        tempDir = await Directory.systemTemp.createTemp(
+          'screenmemo_merge_zip_',
+        );
         final String masterPath = join(tempDir.path, 'screenshot_memo.db');
         final OutputFileStream masterOut = OutputFileStream(masterPath);
         masterEntry.writeContent(masterOut);
@@ -1475,7 +1478,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       }
     }
 
-    final Map<String, int?> registryCounts = probe?.rowCounts ??
+    final Map<String, int?> registryCounts =
+        probe?.rowCounts ??
         <String, int?>{
           'app_registry': null,
           'app_stats': null,
@@ -1663,7 +1667,9 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
     if (masterDbExists) {
       Directory? tempDir;
       try {
-        tempDir = await Directory.systemTemp.createTemp('screenmemo_merge_out_');
+        tempDir = await Directory.systemTemp.createTemp(
+          'screenmemo_merge_out_',
+        );
         final String tempMasterPath = join(tempDir.path, 'screenshot_memo.db');
         await masterDbFile.copy(tempMasterPath);
         final File walFile = File('${masterDbFile.path}-wal');
@@ -1686,7 +1692,8 @@ extension ScreenshotDatabaseMerge on ScreenshotDatabase {
       }
     }
 
-    final Map<String, int?> registryCounts = probe?.rowCounts ??
+    final Map<String, int?> registryCounts =
+        probe?.rowCounts ??
         <String, int?>{
           'app_registry': null,
           'app_stats': null,
@@ -1841,11 +1848,7 @@ Future<_MasterDbProbeResult> _queryMasterDb(String dbPath) async {
   };
   Database? db;
   try {
-    db = await openDatabase(
-      dbPath,
-      readOnly: true,
-      singleInstance: false,
-    );
+    db = await openDatabase(dbPath, readOnly: true, singleInstance: false);
     int? userVersion;
     try {
       final List<Map<String, Object?>> rows = await db.rawQuery(
