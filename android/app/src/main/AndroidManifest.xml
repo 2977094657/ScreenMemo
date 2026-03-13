@@ -159,6 +159,12 @@
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".DynamicRebuildService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- 守护服务（已禁用，避免重复前台通知） -->
         <!--
         <service

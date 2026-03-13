@@ -41,6 +41,12 @@ class ScreenMemoApplication : Application() {
             FileLogger.w(TAG, "恢复导入 OCR 修复任务失败：${e.message}")
         }
 
+        try {
+            DynamicRebuildService.ensureResumedIfPending(this, "application_on_create")
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "恢复动态重建任务失败：${e.message}")
+        }
+
     }
 }
 

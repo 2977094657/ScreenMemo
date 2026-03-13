@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/ai_request_log.dart';
 import '../models/app_info.dart';
 import '../models/screenshot_record.dart';
 import '../services/ai_providers_service.dart';
@@ -19,6 +20,7 @@ import '../services/app_selection_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import '../utils/native_ai_request_log_parser.dart';
 import '../utils/merged_event_summary.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/ai_request_logs_action.dart';
@@ -124,13 +126,93 @@ class SegmentStatusPage extends StatefulWidget {
   State<SegmentStatusPage> createState() => _SegmentStatusPageState();
 }
 
-class _SegmentStatusPageState extends State<SegmentStatusPage> {
+class _DynamicRebuildUiSnapshot {
+  const _DynamicRebuildUiSnapshot({
+    required this.status,
+    required this.starting,
+    required this.stopping,
+    required this.requestLogs,
+  });
+
+  final DynamicRebuildTaskStatus status;
+  final bool starting;
+  final bool stopping;
+  final _DynamicRebuildRequestLogsState requestLogs;
+}
+
+class _DynamicRebuildRequestLogsState {
+  const _DynamicRebuildRequestLogsState({
+    this.loading = false,
+    this.traces = const <AIRequestTrace>[],
+    this.rawText = '',
+    this.error,
+  });
+
+  final bool loading;
+  final List<AIRequestTrace> traces;
+  final String rawText;
+  final String? error;
+
+  bool get hasAny => traces.isNotEmpty || rawText.trim().isNotEmpty;
+
+  _DynamicRebuildRequestLogsState copyWith({
+    bool? loading,
+    List<AIRequestTrace>? traces,
+    String? rawText,
+    Object? error = _dynamicRebuildRequestLogsNoChange,
+  }) {
+    return _DynamicRebuildRequestLogsState(
+      loading: loading ?? this.loading,
+      traces: traces ?? this.traces,
+      rawText: rawText ?? this.rawText,
+      error: identical(error, _dynamicRebuildRequestLogsNoChange)
+          ? this.error
+          : error as String?,
+    );
+  }
+}
+
+const Object _dynamicRebuildRequestLogsNoChange = Object();
+
+class _SegmentStatusPageState extends State<SegmentStatusPage>
+    with SingleTickerProviderStateMixin {
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
+  static const bool _dynamicRebuildRequestLogsEnabled = false;
   Map<String, dynamic>? _active;
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
   bool _loading = false;
+  bool _startingDynamicRebuild = false;
+  bool _stoppingDynamicRebuild = false;
   bool _onlyNoSummary = false; // 仅看暂无AI总结
   String? _selectedDateKey;
+  DynamicRebuildTaskStatus _dynamicRebuildTaskStatus =
+      const DynamicRebuildTaskStatus(
+        taskId: '',
+        status: 'idle',
+        startedAt: 0,
+        updatedAt: 0,
+        completedAt: 0,
+        totalSegments: 0,
+        processedSegments: 0,
+        failedSegments: 0,
+        currentDayKey: '',
+        currentSegmentId: 0,
+        currentRangeLabel: '',
+        lastError: null,
+        isActive: false,
+        progressPercent: '0%',
+      );
+  Timer? _dynamicRebuildTaskPollTimer;
+  bool _pollingDynamicRebuildTask = false;
+  int _lastDynamicRebuildListRefreshAt = 0;
+  late final ValueNotifier<_DynamicRebuildUiSnapshot>
+  _dynamicRebuildUiSnapshotNotifier;
+  late final AnimationController _dynamicRebuildIconController;
+  _DynamicRebuildRequestLogsState _dynamicRebuildRequestLogsState =
+      const _DynamicRebuildRequestLogsState();
+  bool _dynamicRebuildTaskSheetOpen = false;
+  int _lastDynamicRebuildRequestLogsRefreshAt = 0;
+  int _dynamicRebuildRequestLogsLoadTicket = 0;
 
   // 底部弹窗查询输入持久化，避免失焦或重建清空
   String _segProviderQueryText = '';
@@ -150,30 +232,45 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
   Timer? _autoTimer;
   bool _autoWatching = false;
 
-  // 日期 Tab 可见窗口控制：默认仅展示最近 14 天，向前按批次扩展
-  static const int _initialDayTabs = 14;
-  static const int _appendDayTabs = 14;
+  // 日期 Tab 批次控制：默认加载最近 30 个“有数据的日期”，向前按批次追加。
+  static const int _initialDayTabs = 30;
+  static const int _appendDayTabs = 30;
   int _maxVisibleDayTabs = _initialDayTabs;
   bool _isLoadingMoreDays = false;
   bool _noMoreOlderSegments = false;
+  List<String> _loadedDayKeys = const <String>[];
 
-  int _countDistinctDays(List<Map<String, dynamic>> segments) {
+  List<String> _orderedDayKeysFromSegments(
+    List<Map<String, dynamic>> segments,
+  ) {
     final Set<String> keys = <String>{};
     for (final Map<String, dynamic> seg in segments) {
       final int ms = (seg['start_time'] as int?) ?? 0;
       if (ms <= 0) continue;
       keys.add(_dateKeyFromMillis(ms));
     }
-    return keys.length;
+    final List<String> ordered = keys.toList()..sort((a, b) => b.compareTo(a));
+    return ordered;
   }
 
   @override
   void initState() {
     super.initState();
+    _dynamicRebuildUiSnapshotNotifier =
+        ValueNotifier<_DynamicRebuildUiSnapshot>(
+          _currentDynamicRebuildUiSnapshot(),
+        );
+    _dynamicRebuildIconController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+    _syncDynamicRebuildIconAnimation();
     _initApps();
     _loadPrivacyMode();
     _loadSegmentsContextSelection();
     _refresh();
+    _startDynamicRebuildTaskPolling();
+    unawaited(_refreshDynamicRebuildTaskStatus(refreshSegmentsOnChange: false));
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
@@ -573,7 +670,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     } catch (_) {}
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool triggerSegmentTick = true}) async {
     try {
       if (mounted) {
         setState(() {
@@ -583,9 +680,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
       // 先触发一次原生端推进/补救：用于“删空某日后重建日期 Tab”等场景
       // ignore: unawaited_futures
-      _db.triggerSegmentTick();
+      if (triggerSegmentTick && !_dynamicRebuildTaskStatus.isActive) {
+        _db.triggerSegmentTick();
+      }
       final active = await _db.getActiveSegment();
       List<Map<String, dynamic>> segments;
+      List<String> loadedDayKeys;
+      bool hasMoreOlder = false;
 
       if (_onlyNoSummary) {
         // “仅看无总结”模式：保持原有行为，仅限制行数；由 SQL 侧过滤无总结事件
@@ -594,56 +695,28 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           limit: fetchLimit,
           onlyNoSummary: true,
         );
+        loadedDayKeys = _orderedDayKeysFromSegments(segments);
       } else {
-        // 默认模式：只拉取“最近 14 天”的段落，按 start_time 过滤
-        final DateTime now = DateTime.now();
-        // 使用当天 23:59:59.999 作为上界，避免时区/毫秒误差导致当天事件遗漏
-        final DateTime endOfToday = DateTime(
-          now.year,
-          now.month,
-          now.day,
-          23,
-          59,
-          59,
-          999,
-        );
-        final DateTime startDay = endOfToday.subtract(
-          const Duration(days: _initialDayTabs - 1),
-        );
-        final int startMs = startDay.millisecondsSinceEpoch;
-        final int endMs = endOfToday.millisecondsSinceEpoch;
-
-        const int fetchLimit = 800;
-        segments = await _db.listSegmentsEx(
-          limit: fetchLimit,
-          onlyNoSummary: false,
+        final String pinnedDateKey = (_selectedDateKey ?? '').trim();
+        final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
+          distinctDayCount: _initialDayTabs,
+          pinnedDateKey: pinnedDateKey.isEmpty ? null : pinnedDateKey,
           requireSamples: true,
-          startMillis: startMs,
-          endMillis: endMs,
         );
-
-        // 如果最近 14 天内完全没有事件，则回退为“全量但限行数”的查询，
-        // 避免用户长期停用后重新开启时看不到更早历史。
-        if (segments.isEmpty) {
-          segments = await _db.listSegmentsEx(
-            limit: fetchLimit,
-            onlyNoSummary: false,
-            requireSamples: true,
-          );
-        }
+        segments = batch.segments;
+        loadedDayKeys = batch.dayKeys;
+        hasMoreOlder = batch.hasMoreOlder;
       }
 
       if (!mounted) return;
       setState(() {
         _active = active;
         _segments = segments;
-        // 每次刷新都重置日期窗口，仅展示最近两周的日期 Tab
-        final int totalDays = _countDistinctDays(segments);
-        final int nextTabs = math.min(_initialDayTabs, totalDays);
-        _maxVisibleDayTabs = segments.isEmpty
+        _loadedDayKeys = loadedDayKeys;
+        _maxVisibleDayTabs = loadedDayKeys.isEmpty
             ? _initialDayTabs
-            : math.max(1, nextTabs);
-        _noMoreOlderSegments = false;
+            : loadedDayKeys.length;
+        _noMoreOlderSegments = _onlyNoSummary ? true : !hasMoreOlder;
       });
 
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
@@ -678,16 +751,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
     if (_onlyNoSummary || _isLoadingMoreDays || _noMoreOlderSegments) return;
-    if (_segments.isEmpty) return;
-
-    // 计算当前已加载段落中最早的 start_time
-    int? oldestMs;
-    for (final m in _segments) {
-      final int v = (m['start_time'] as int?) ?? 0;
-      if (v <= 0) continue;
-      if (oldestMs == null || v < oldestMs) oldestMs = v;
-    }
-    if (oldestMs == null || oldestMs <= 0) {
+    final List<String> currentDayKeys = _loadedDayKeys.isNotEmpty
+        ? _loadedDayKeys
+        : _orderedDayKeysFromSegments(_segments);
+    final String beforeDateKey = currentDayKeys.isEmpty
+        ? ''
+        : currentDayKeys.last;
+    if (beforeDateKey.isEmpty) {
       if (!_noMoreOlderSegments) {
         setState(() => _noMoreOlderSegments = true);
       }
@@ -696,22 +766,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
 
     _isLoadingMoreDays = true;
     try {
-      final DateTime oldestDate = DateTime.fromMillisecondsSinceEpoch(oldestMs);
-      // 以“最早事件所在日的前一天 23:59:59.999”为新的上界，向前再扩展 _appendDayTabs 天
-      final DateTime endDay = DateTime(
-        oldestDate.year,
-        oldestDate.month,
-        oldestDate.day,
-      ).subtract(const Duration(milliseconds: 1));
-      final int endMs = endDay.millisecondsSinceEpoch;
-
-      const int extraLimit = 800;
-      final List<Map<String, dynamic>> more = await _db.listSegmentsEx(
-        limit: extraLimit,
-        onlyNoSummary: false,
+      final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
+        distinctDayCount: _appendDayTabs,
+        beforeDateKey: beforeDateKey,
         requireSamples: true,
-        endMillis: endMs,
       );
+      final List<Map<String, dynamic>> more = batch.segments;
       if (more.isEmpty) {
         if (!_noMoreOlderSegments) {
           setState(() => _noMoreOlderSegments = true);
@@ -737,51 +797,24 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           final int tb = (b['start_time'] as int?) ?? 0;
           return tb.compareTo(ta); // 按时间倒序
         });
-      final int mergedTotalDays = _countDistinctDays(merged);
+      final List<String> mergedDayKeys = <String>[
+        ..._loadedDayKeys,
+        ...batch.dayKeys,
+      ].toSet().toList()..sort((a, b) => b.compareTo(a));
 
       setState(() {
         _segments = merged;
-        // 向前扩展一个批次的日期窗口
-        _maxVisibleDayTabs = math.min(
-          mergedTotalDays,
-          _maxVisibleDayTabs + _appendDayTabs,
-        );
+        _loadedDayKeys = mergedDayKeys;
+        _maxVisibleDayTabs = mergedDayKeys.length;
+        _noMoreOlderSegments = !batch.hasMoreOlder;
       });
     } finally {
       _isLoadingMoreDays = false;
     }
   }
 
-  /// 处理“加载更多日期”动作：
-  /// - 若当前 segments 中仍有更多日期尚未展示，则只增加可见天数
-  /// - 若已经展示了所有已加载日期，尝试从数据库再加载更早一批
   Future<void> _handleLastDayTabReached() async {
     if (!mounted) return;
-
-    // 基于当前 _segments 统计所有日期 key
-    final Map<String, List<Map<String, dynamic>>> grouped =
-        <String, List<Map<String, dynamic>>>{};
-    for (final seg in _segments) {
-      final int ms = (seg['start_time'] as int?) ?? 0;
-      if (ms <= 0) continue;
-      final String k = _dateKeyFromMillis(ms);
-      grouped.putIfAbsent(k, () => <Map<String, dynamic>>[]).add(seg);
-    }
-    final int totalDays = grouped.length;
-    if (totalDays == 0) return;
-
-    // 还有未展示的日期，只扩展可见窗口，不访问数据库
-    if (_maxVisibleDayTabs < totalDays) {
-      setState(() {
-        _maxVisibleDayTabs = math.min(
-          totalDays,
-          _maxVisibleDayTabs + _appendDayTabs,
-        );
-      });
-      return;
-    }
-
-    // 已经展示了当前数据中的所有日期，再尝试向前加载更早一批
     await _loadOlderSegmentsFromDbIfNeeded();
   }
 
@@ -833,6 +866,658 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildHeaderStack() {
+    return _buildActiveCard();
+  }
+
+  _DynamicRebuildUiSnapshot _currentDynamicRebuildUiSnapshot() {
+    return _DynamicRebuildUiSnapshot(
+      status: _dynamicRebuildTaskStatus,
+      starting: _startingDynamicRebuild,
+      stopping: _stoppingDynamicRebuild,
+      requestLogs: _dynamicRebuildRequestLogsState,
+    );
+  }
+
+  void _publishDynamicRebuildUiSnapshot() {
+    _dynamicRebuildUiSnapshotNotifier.value =
+        _currentDynamicRebuildUiSnapshot();
+    _syncDynamicRebuildIconAnimation();
+  }
+
+  void _syncDynamicRebuildIconAnimation() {
+    final bool shouldSpin =
+        _startingDynamicRebuild ||
+        _stoppingDynamicRebuild ||
+        _dynamicRebuildTaskStatus.isActive;
+    if (shouldSpin) {
+      if (!_dynamicRebuildIconController.isAnimating) {
+        _dynamicRebuildIconController.repeat();
+      }
+      return;
+    }
+    if (_dynamicRebuildIconController.isAnimating) {
+      _dynamicRebuildIconController.stop();
+    }
+    _dynamicRebuildIconController.value = 0;
+  }
+
+  Future<void> _openDynamicRebuildTaskSheet() async {
+    try {
+      await _refreshDynamicRebuildTaskStatus(refreshSegmentsOnChange: false);
+    } catch (_) {}
+    _dynamicRebuildTaskSheetOpen = true;
+    if (_dynamicRebuildRequestLogsEnabled) {
+      await _refreshDynamicRebuildRequestLogs(force: true);
+    }
+    if (!mounted) return;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) {
+          return ValueListenableBuilder<_DynamicRebuildUiSnapshot>(
+            valueListenable: _dynamicRebuildUiSnapshotNotifier,
+            builder: (sheetCtx, snapshot, _) {
+              final cs = Theme.of(sheetCtx).colorScheme;
+              return DraggableScrollableSheet(
+                initialChildSize: 0.62,
+                minChildSize: 0.32,
+                maxChildSize: 0.90,
+                expand: false,
+                builder: (_, scrollCtrl) {
+                  return ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(AppTheme.radiusLg),
+                      topRight: Radius.circular(AppTheme.radiusLg),
+                    ),
+                    child: ColoredBox(
+                      color: cs.surface,
+                      child: SafeArea(
+                        top: false,
+                        child: SingleChildScrollView(
+                          controller: scrollCtrl,
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.spacing4,
+                            AppTheme.spacing3,
+                            AppTheme.spacing4,
+                            AppTheme.spacing4,
+                          ),
+                          child: _buildDynamicRebuildTaskSheetBody(
+                            sheetCtx,
+                            snapshot,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      _dynamicRebuildTaskSheetOpen = false;
+    }
+  }
+
+  Widget _buildDynamicRebuildTaskSheetBody(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final status = snapshot.status;
+    final Color statusColor = _dynamicRebuildTaskColor(status);
+    final double? progressValue = status.totalSegments > 0
+        ? (status.processedSegments / status.totalSegments).clamp(0, 1)
+        : (status.isCompleted ? 1 : null);
+    final String progressText = status.totalSegments > 0
+        ? '${status.processedSegments}/${status.totalSegments} (${status.progressPercent})'
+        : (status.isCompleted ? '无可重建动态' : status.progressPercent);
+    final String currentLine = _dynamicRebuildCurrentLine(status);
+    final String serialHint = _dynamicRebuildSerialHint(status);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacing3),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '动态重建任务',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: statusColor.withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                _dynamicRebuildTaskLabel(status),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: statusColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing3),
+        Text(progressText, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: AppTheme.spacing2),
+        LinearProgressIndicator(value: progressValue, minHeight: 6),
+        if (currentLine.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: AppTheme.spacing3),
+            child: Text(
+              currentLine,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (serialHint.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: AppTheme.spacing2),
+            child: Text(
+              serialHint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        const SizedBox(height: AppTheme.spacing3),
+        if (status.startedAt > 0)
+          Text(
+            '开始：${_fmtTaskDateTime(status.startedAt)}',
+            style: theme.textTheme.bodySmall,
+          ),
+        if (status.updatedAt > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '更新：${_fmtTaskDateTime(status.updatedAt)}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (status.completedAt > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '结束：${_fmtTaskDateTime(status.completedAt)}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (status.lastError != null)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: AppTheme.spacing3),
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.errorContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Text(
+              status.lastError!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onErrorContainer,
+              ),
+            ),
+          ),
+        const SizedBox(height: AppTheme.spacing4),
+        _buildDynamicRebuildTaskActionRow(context, snapshot),
+        if (_dynamicRebuildRequestLogsEnabled) ...[
+          const SizedBox(height: AppTheme.spacing4),
+          _buildDynamicRebuildRequestLogsSection(context, snapshot),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDynamicRebuildTaskActionRow(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final DynamicRebuildTaskStatus status = snapshot.status;
+    final OutlinedBorder shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+    );
+    final Widget startButton = SizedBox(
+      height: 44,
+      child: FilledButton.tonalIcon(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+        ),
+        onPressed: (snapshot.starting || status.isActive)
+            ? null
+            : _confirmStartDynamicRebuild,
+        icon: const Icon(Icons.restart_alt),
+        label: const Text('开始重建'),
+      ),
+    );
+    if (status.isActive) {
+      return Row(
+        children: [
+          Expanded(child: startButton),
+          const SizedBox(width: AppTheme.spacing2),
+          Expanded(
+            child: SizedBox(
+              height: 44,
+              child: OutlinedButton.icon(
+                style: ButtonStyle(
+                  shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+                ),
+                onPressed: snapshot.stopping ? null : _cancelDynamicRebuild,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('停止'),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (status.canContinue) {
+      return Row(
+        children: [
+          Expanded(child: startButton),
+          const SizedBox(width: AppTheme.spacing2),
+          Expanded(
+            child: SizedBox(
+              height: 44,
+              child: FilledButton.icon(
+                style: ButtonStyle(
+                  shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+                ),
+                onPressed: snapshot.starting ? null : _continueDynamicRebuild,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('继续重建'),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return SizedBox(width: double.infinity, child: startButton);
+  }
+
+  Widget _buildDynamicRebuildRequestLogsSection(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool isZh = Localizations.localeOf(
+      context,
+    ).languageCode.toLowerCase().startsWith('zh');
+    final _DynamicRebuildRequestLogsState logs = snapshot.requestLogs;
+    final String rawText = logs.rawText.trimRight();
+    final bool hasRaw = rawText.trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 1),
+        const SizedBox(height: AppTheme.spacing4),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isZh ? '重建请求' : 'Rebuild Requests',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            if (logs.loading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing2),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppTheme.spacing3),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+          ),
+          child: Text(
+            isZh
+                ? '这里展示的是动态重建期间由原生 SegmentSummaryManager 直连发出的 AI 请求，不经过 Flutter 的 AIRequestGateway。日期 tab 只是根据数据库里已经生成出的 segments 刷新显示，切 tab 只会读取本地结果，不会额外触发这些 AI 请求。'
+                : 'These are native SegmentSummaryManager AI requests emitted during dynamic rebuild. They bypass Flutter AIRequestGateway. Day tabs only reflect segments already written into the local database and do not trigger these AI calls.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacing3),
+        if (logs.error != null && logs.error!.trim().isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.errorContainer,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Text(
+              logs.error!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onErrorContainer,
+              ),
+            ),
+          )
+        else if (!logs.loading && logs.traces.isEmpty && !hasRaw)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: cs.outline.withValues(alpha: 0.16)),
+            ),
+            child: Text(
+              isZh
+                  ? '当前任务还没有匹配到请求日志。若 AI 分类日志未开启，这里也会为空。'
+                  : 'No request logs matched the current task yet. This also stays empty when AI category logging is disabled.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          AIRequestLogsViewer.traces(
+            traces: logs.traces,
+            rawFallbackText: hasRaw ? rawText : null,
+            scrollable: false,
+            emptyText: isZh ? '（暂无请求日志）' : '(No request logs yet)',
+            actions: <AIRequestLogsAction>[
+              AIRequestLogsAction(
+                label: AppLocalizations.of(context).actionCopy,
+                enabled: hasRaw,
+                onPressed: () async {
+                  if (!hasRaw) return;
+                  try {
+                    await Clipboard.setData(ClipboardData(text: rawText));
+                    if (!mounted) return;
+                    UINotifier.success(
+                      context,
+                      AppLocalizations.of(context).copySuccess,
+                    );
+                  } catch (_) {}
+                },
+              ),
+              AIRequestLogsAction(
+                label: isZh ? '保存到文件' : 'Save to file',
+                enabled: hasRaw,
+                onPressed: () async {
+                  if (!hasRaw) return;
+                  await _saveDynamicRebuildRequestLogsToFile(rawText);
+                },
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Future<void> _refreshDynamicRebuildRequestLogs({
+    DynamicRebuildTaskStatus? status,
+    bool force = false,
+  }) async {
+    final DynamicRebuildTaskStatus current =
+        status ?? _dynamicRebuildTaskStatus;
+    if (current.taskId.isEmpty || current.startedAt <= 0) {
+      if (_dynamicRebuildRequestLogsState.hasAny ||
+          _dynamicRebuildRequestLogsState.error != null ||
+          _dynamicRebuildRequestLogsState.loading) {
+        _dynamicRebuildRequestLogsState =
+            const _DynamicRebuildRequestLogsState();
+        _publishDynamicRebuildUiSnapshot();
+      }
+      return;
+    }
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (!force && _dynamicRebuildRequestLogsState.loading) return;
+    if (!force && now - _lastDynamicRebuildRequestLogsRefreshAt < 1200) return;
+    _lastDynamicRebuildRequestLogsRefreshAt = now;
+    final int ticket = ++_dynamicRebuildRequestLogsLoadTicket;
+    _dynamicRebuildRequestLogsState = _dynamicRebuildRequestLogsState.copyWith(
+      loading: true,
+      error: null,
+    );
+    _publishDynamicRebuildUiSnapshot();
+    try {
+      final _DynamicRebuildRequestLogsState loaded =
+          await _loadDynamicRebuildRequestLogs(current);
+      if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
+      _dynamicRebuildRequestLogsState = loaded.copyWith(loading: false);
+      _publishDynamicRebuildUiSnapshot();
+    } catch (e) {
+      if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
+      _dynamicRebuildRequestLogsState = _dynamicRebuildRequestLogsState
+          .copyWith(loading: false, error: e.toString());
+      _publishDynamicRebuildUiSnapshot();
+    }
+  }
+
+  Future<_DynamicRebuildRequestLogsState> _loadDynamicRebuildRequestLogs(
+    DynamicRebuildTaskStatus status,
+  ) async {
+    String? todayDirPath;
+    try {
+      todayDirPath = await FlutterLogger.getTodayLogsDir();
+    } catch (_) {
+      todayDirPath = null;
+    }
+    final String trimmed = (todayDirPath ?? '').trim();
+    if (trimmed.isEmpty) {
+      return const _DynamicRebuildRequestLogsState();
+    }
+    final Directory? logsRoot = _resolveOutputLogsRoot(Directory(trimmed));
+    if (logsRoot == null || !await logsRoot.exists()) {
+      return const _DynamicRebuildRequestLogsState();
+    }
+
+    final DateTime startedAt = DateTime.fromMillisecondsSinceEpoch(
+      status.startedAt,
+    );
+    final DateTime endedAt = status.completedAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(status.completedAt)
+        : DateTime.now();
+    final List<File> files = await _listDynamicRebuildRequestLogFiles(
+      logsRoot,
+      startedAt: startedAt,
+      endedAt: endedAt,
+    );
+    if (files.isEmpty) {
+      return const _DynamicRebuildRequestLogsState();
+    }
+
+    final StringBuffer sb = StringBuffer();
+    for (final File file in files) {
+      try {
+        final String text = await file.readAsString();
+        final String content = text.trimRight();
+        if (content.isEmpty) continue;
+        if (sb.isNotEmpty) sb.writeln();
+        sb.writeln(content);
+      } catch (_) {}
+    }
+    final String rawText = sb.toString().trimRight();
+    if (rawText.trim().isEmpty) {
+      return const _DynamicRebuildRequestLogsState();
+    }
+    final List<AIRequestTrace> traces = parseNativeAiRequestLogText(
+      rawText,
+      since: startedAt.subtract(const Duration(seconds: 5)),
+      until: endedAt.add(const Duration(seconds: 5)),
+    );
+    return _DynamicRebuildRequestLogsState(traces: traces, rawText: rawText);
+  }
+
+  Directory? _resolveOutputLogsRoot(Directory todayDir) {
+    Directory current = todayDir;
+    for (int i = 0; i < 3; i += 1) {
+      final Directory parent = current.parent;
+      if (parent.path == current.path) return null;
+      current = parent;
+    }
+    return current;
+  }
+
+  Future<List<File>> _listDynamicRebuildRequestLogFiles(
+    Directory logsRoot, {
+    required DateTime startedAt,
+    required DateTime endedAt,
+  }) async {
+    final List<File> files = <File>[];
+    DateTime day = DateTime(startedAt.year, startedAt.month, startedAt.day);
+    final DateTime lastDay = DateTime(endedAt.year, endedAt.month, endedAt.day);
+    while (!day.isAfter(lastDay)) {
+      final String yyyy = day.year.toString().padLeft(4, '0');
+      final String mm = day.month.toString().padLeft(2, '0');
+      final String dd = day.day.toString().padLeft(2, '0');
+      final Directory dir = Directory(
+        '${logsRoot.path}${Platform.pathSeparator}$yyyy${Platform.pathSeparator}$mm${Platform.pathSeparator}$dd',
+      );
+      final File infoFile = File(
+        '${dir.path}${Platform.pathSeparator}${dd}_info.log',
+      );
+      final File errorFile = File(
+        '${dir.path}${Platform.pathSeparator}${dd}_error.log',
+      );
+      if (await infoFile.exists()) files.add(infoFile);
+      if (await errorFile.exists()) files.add(errorFile);
+      day = day.add(const Duration(days: 1));
+    }
+    files.sort((a, b) => a.path.compareTo(b.path));
+    return files;
+  }
+
+  Future<void> _saveDynamicRebuildRequestLogsToFile(String text) async {
+    final String content = text.trimRight();
+    if (content.trim().isEmpty) return;
+    try {
+      final DateTime now = DateTime.now();
+      String? baseDirPath;
+      try {
+        baseDirPath = await FlutterLogger.getTodayLogsDir();
+      } catch (_) {
+        baseDirPath = null;
+      }
+      Directory baseDir = Directory.systemTemp;
+      if (baseDirPath != null && baseDirPath.trim().isNotEmpty) {
+        baseDir = Directory(baseDirPath.trim());
+      }
+      final String sep = Platform.pathSeparator;
+      final Directory outDir = Directory(
+        '${baseDir.path}${sep}dynamic_rebuild_ai_logs',
+      );
+      await outDir.create(recursive: true);
+      final File f = File(
+        '${outDir.path}${sep}dynamic_rebuild_ai_${now.millisecondsSinceEpoch}.log',
+      );
+      await f.writeAsString('$content\n', flush: true);
+      try {
+        await Clipboard.setData(ClipboardData(text: f.path));
+      } catch (_) {}
+      if (!mounted) return;
+      final bool isZh = Localizations.localeOf(
+        context,
+      ).languageCode.toLowerCase().startsWith('zh');
+      UINotifier.success(
+        context,
+        isZh ? '已保存到：${f.path}' : 'Saved to: ${f.path}',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final bool isZh = Localizations.localeOf(
+        context,
+      ).languageCode.toLowerCase().startsWith('zh');
+      UINotifier.error(context, isZh ? '保存失败：$e' : 'Save failed: $e');
+    }
+  }
+
+  int _dynamicRebuildCurrentOrdinal(DynamicRebuildTaskStatus status) {
+    if (status.totalSegments <= 0) return 0;
+    if (status.isCompleted) return status.totalSegments;
+    final int next = status.processedSegments + 1;
+    return math.min(status.totalSegments, math.max(1, next));
+  }
+
+  String _dynamicRebuildCurrentLine(DynamicRebuildTaskStatus status) {
+    final String scope = [
+      if (status.currentDayKey.isNotEmpty) status.currentDayKey,
+      if (status.currentRangeLabel.isNotEmpty) status.currentRangeLabel,
+    ].join(' · ');
+    if (status.totalSegments <= 0) return scope;
+    final int currentOrdinal = _dynamicRebuildCurrentOrdinal(status);
+    if (currentOrdinal <= 0) return scope;
+    final String prefix = status.isActive ? '当前正在重建' : '当前停留在';
+    if (scope.isEmpty) {
+      return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态';
+    }
+    return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态 · $scope';
+  }
+
+  String _dynamicRebuildSerialHint(DynamicRebuildTaskStatus status) {
+    if (status.isPreparing || status.isPending || status.isRunning) {
+      return '按时间顺序串行重建中，当前只处理这一条动态，不会提前触发后面的动态。';
+    }
+    return '';
+  }
+
+  String _dynamicRebuildTaskLabel(DynamicRebuildTaskStatus status) {
+    if (status.isIdle) return '未启动';
+    if (status.isPreparing) return '准备中';
+    if (status.isPending || status.isRunning) return '运行中';
+    if (status.isCompleted) return '已完成';
+    if (status.isFailed) return '失败';
+    if (status.isCancelled) return '已停止';
+    return status.status;
+  }
+
+  Color _dynamicRebuildTaskColor(DynamicRebuildTaskStatus status) {
+    final cs = Theme.of(context).colorScheme;
+    if (status.isCompleted) return cs.primary;
+    if (status.isPreparing || status.isPending || status.isRunning) {
+      return cs.tertiary;
+    }
+    if (status.isFailed) return cs.error;
+    if (status.isCancelled) return cs.onSurfaceVariant;
+    return cs.onSurfaceVariant;
+  }
+
+  String _fmtTaskDateTime(int millis) {
+    if (millis <= 0) return '(null)';
+    return DateTime.fromMillisecondsSinceEpoch(millis).toString();
   }
 
   Future<void> _openImageGallery(
@@ -1539,8 +2224,14 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
       // 每次只做轻量查询；原生端 1s 心跳已持续推进/补救
       final segments = await _db.listSegmentsEx(limit: 50, onlyNoSummary: true);
       if (!mounted) return;
+      final List<String> loadedDayKeys = _orderedDayKeysFromSegments(segments);
       setState(() {
         _segments = segments;
+        _loadedDayKeys = loadedDayKeys;
+        _maxVisibleDayTabs = loadedDayKeys.isEmpty
+            ? _initialDayTabs
+            : loadedDayKeys.length;
+        _noMoreOlderSegments = true;
       });
       // 若已无“暂无总结”，停止自动检测
       final hasPending = segments.any(
@@ -1550,9 +2241,163 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
     } catch (_) {}
   }
 
+  void _startDynamicRebuildTaskPolling() {
+    _dynamicRebuildTaskPollTimer?.cancel();
+    _dynamicRebuildTaskPollTimer = Timer.periodic(const Duration(seconds: 2), (
+      _,
+    ) {
+      // ignore: discarded_futures
+      _refreshDynamicRebuildTaskStatus();
+    });
+  }
+
+  Future<void> _refreshDynamicRebuildTaskStatus({
+    bool refreshSegmentsOnChange = true,
+  }) async {
+    if (_pollingDynamicRebuildTask) return;
+    _pollingDynamicRebuildTask = true;
+    try {
+      final previous = _dynamicRebuildTaskStatus;
+      final status = await _db.getDynamicRebuildTaskStatus();
+      if (!mounted) return;
+      setState(() {
+        _dynamicRebuildTaskStatus = status;
+      });
+      _publishDynamicRebuildUiSnapshot();
+      if (_dynamicRebuildRequestLogsEnabled &&
+          (_dynamicRebuildTaskSheetOpen || status.taskId.isNotEmpty)) {
+        unawaited(_refreshDynamicRebuildRequestLogs(status: status));
+      } else if (_dynamicRebuildRequestLogsState.hasAny ||
+          _dynamicRebuildRequestLogsState.error != null ||
+          _dynamicRebuildRequestLogsState.loading) {
+        _dynamicRebuildRequestLogsState =
+            const _DynamicRebuildRequestLogsState();
+        _publishDynamicRebuildUiSnapshot();
+      }
+      if (!refreshSegmentsOnChange) return;
+      await _handleDynamicRebuildTaskStatusChange(previous, status);
+    } catch (_) {
+    } finally {
+      _pollingDynamicRebuildTask = false;
+    }
+  }
+
+  Future<void> _handleDynamicRebuildTaskStatusChange(
+    DynamicRebuildTaskStatus previous,
+    DynamicRebuildTaskStatus current,
+  ) async {
+    final bool justStarted = !previous.isActive && current.isActive;
+    final bool progressAdvanced =
+        current.isActive &&
+        current.processedSegments > previous.processedSegments;
+    final bool becameTerminal = previous.isActive && !current.isActive;
+    final bool terminalChanged =
+        previous.status != current.status &&
+        (current.isCompleted || current.isFailed || current.isCancelled);
+    if (justStarted) {
+      await _refresh(triggerSegmentTick: false);
+      return;
+    }
+    if (progressAdvanced) {
+      await _refreshSegmentsForDynamicRebuildProgress();
+      return;
+    }
+    if (becameTerminal || terminalChanged) {
+      await _refresh(triggerSegmentTick: false);
+    }
+  }
+
+  Future<void> _refreshSegmentsForDynamicRebuildProgress() async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastDynamicRebuildListRefreshAt < 1500) return;
+    _lastDynamicRebuildListRefreshAt = now;
+    await _refresh(triggerSegmentTick: false);
+  }
+
+  Future<void> _confirmStartDynamicRebuild() async {
+    if (_dynamicRebuildTaskStatus.isActive || _startingDynamicRebuild) return;
+    final bool ok = await UIDialogs.showConfirm(
+      context,
+      title: '重建动态',
+      message: '会立即清空当前动态，并从最老截图开始全量重建。确定继续吗？',
+      confirmText: '立即重建',
+      cancelText: '取消',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    await _startDynamicRebuild();
+  }
+
+  Future<void> _startDynamicRebuild({bool resumeExisting = false}) async {
+    if (_startingDynamicRebuild) return;
+    setState(() => _startingDynamicRebuild = true);
+    _publishDynamicRebuildUiSnapshot();
+    try {
+      final previous = _dynamicRebuildTaskStatus;
+      final status = await _db.startDynamicRebuildTask(
+        resumeExisting: resumeExisting,
+      );
+      if (!mounted) return;
+      setState(() => _dynamicRebuildTaskStatus = status);
+      _publishDynamicRebuildUiSnapshot();
+      if (status.isCompleted && status.totalSegments == 0) {
+        UINotifier.info(context, '没有可重建的动态');
+        await _refresh(triggerSegmentTick: false);
+      } else if (status.isActive && !previous.isActive) {
+        UINotifier.info(context, '已在后台开始重建，可在通知栏查看进度');
+        await _refresh(triggerSegmentTick: false);
+      } else if (status.isActive) {
+        UINotifier.info(context, '后台重建任务已恢复');
+      }
+    } catch (e) {
+      if (mounted) {
+        await UIDialogs.showInfo(
+          context,
+          title: '动态重建失败',
+          message: e.toString(),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _startingDynamicRebuild = false);
+        _publishDynamicRebuildUiSnapshot();
+      }
+    }
+  }
+
+  Future<void> _continueDynamicRebuild() async {
+    await _startDynamicRebuild(resumeExisting: true);
+  }
+
+  Future<void> _cancelDynamicRebuild() async {
+    if (_stoppingDynamicRebuild) return;
+    setState(() => _stoppingDynamicRebuild = true);
+    _publishDynamicRebuildUiSnapshot();
+    try {
+      final status = await _db.cancelDynamicRebuildTask();
+      if (!mounted) return;
+      setState(() => _dynamicRebuildTaskStatus = status);
+      _publishDynamicRebuildUiSnapshot();
+      UINotifier.info(context, '动态重建已停止');
+      await _refresh(triggerSegmentTick: false);
+    } catch (_) {
+      if (mounted) {
+        UINotifier.error(context, '停止动态重建失败');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _stoppingDynamicRebuild = false);
+        _publishDynamicRebuildUiSnapshot();
+      }
+    }
+  }
+
   @override
   void dispose() {
     _stopAutoWatch();
+    _dynamicRebuildTaskPollTimer?.cancel();
+    _dynamicRebuildIconController.dispose();
+    _dynamicRebuildUiSnapshotNotifier.dispose();
     super.dispose();
   }
 
@@ -1572,6 +2417,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
               onPressed: _openSelectedDailySummary,
             ),
           IconButton(
+            icon: RotationTransition(
+              turns: _dynamicRebuildIconController,
+              child: Icon(
+                Icons.autorenew_rounded,
+                color: _dynamicRebuildTaskColor(_dynamicRebuildTaskStatus),
+              ),
+            ),
+            tooltip: '重建动态',
+            onPressed: _openDynamicRebuildTaskSheet,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: AppLocalizations.of(context).actionRefresh,
             onPressed: _refresh,
@@ -1590,10 +2446,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage> {
           loadResult: (id) => _db.getSegmentResult(id),
           onOpenDetail: (seg) => _openDetail(seg),
           openGallery: (samples, index) => _openImageGallery(samples, index),
-          activeHeader: _buildActiveCard(),
+          activeHeader: _buildHeaderStack(),
           onRefreshRequested: _refresh,
           privacyMode: _privacyMode,
+          dynamicRebuildActive: _dynamicRebuildTaskStatus.isActive,
           maxVisibleDayTabs: _maxVisibleDayTabs,
+          selectedDateKey: _selectedDateKey,
           isLoadingMoreDays: _isLoadingMoreDays,
           noMoreOlderSegments: _noMoreOlderSegments,
           onLastDayTabReached: _handleLastDayTabReached,
@@ -1632,7 +2490,9 @@ class _SegmentTimelineTabView extends StatefulWidget {
   final Widget activeHeader;
   final Future<void> Function() onRefreshRequested;
   final bool privacyMode;
+  final bool dynamicRebuildActive;
   final int maxVisibleDayTabs;
+  final String? selectedDateKey;
   final bool isLoadingMoreDays;
   final bool noMoreOlderSegments;
   final Future<void> Function()? onLastDayTabReached;
@@ -1651,7 +2511,9 @@ class _SegmentTimelineTabView extends StatefulWidget {
     required this.activeHeader,
     required this.onRefreshRequested,
     required this.privacyMode,
+    required this.dynamicRebuildActive,
     required this.maxVisibleDayTabs,
+    this.selectedDateKey,
     required this.isLoadingMoreDays,
     required this.noMoreOlderSegments,
     this.onLastDayTabReached,
@@ -1665,13 +2527,56 @@ class _SegmentTimelineTabView extends StatefulWidget {
 
 class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
     with SingleTickerProviderStateMixin {
+  static const int _autoLoadThreshold = 3;
+
   TabController? _tabController;
   List<String> _orderedKeys = const <String>[];
   String? _lastReportedDateKey;
+  String? _lastAutoLoadTriggerKey;
+  bool _autoLoadCheckQueued = false;
 
   void _handleTabSelectionChanged() {
     if (!mounted) return;
     _reportActiveDateKey();
+    _queueAutoLoadCheck();
+  }
+
+  int _desiredTabIndex(List<String> ordered, int fallbackIndex) {
+    if (ordered.isEmpty) return 0;
+    final String selectedDateKey = (widget.selectedDateKey ?? '').trim();
+    if (selectedDateKey.isNotEmpty) {
+      final int selectedIndex = ordered.indexOf(selectedDateKey);
+      if (selectedIndex >= 0) return selectedIndex;
+      return 0;
+    }
+    return fallbackIndex.clamp(0, ordered.length - 1);
+  }
+
+  void _queueAutoLoadCheck() {
+    if (_autoLoadCheckQueued) return;
+    _autoLoadCheckQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoLoadCheckQueued = false;
+      if (!mounted) return;
+      _maybeAutoLoadOlderDays();
+    });
+  }
+
+  void _maybeAutoLoadOlderDays() {
+    if (widget.onlyNoSummary ||
+        widget.onLastDayTabReached == null ||
+        widget.isLoadingMoreDays ||
+        widget.noMoreOlderSegments) {
+      return;
+    }
+    final TabController? controller = _tabController;
+    if (controller == null || _orderedKeys.isEmpty) return;
+    final int remainingTabs = _orderedKeys.length - 1 - controller.index;
+    if (remainingTabs >= _autoLoadThreshold) return;
+    final String triggerKey = _orderedKeys.last;
+    if (_lastAutoLoadTriggerKey == triggerKey) return;
+    _lastAutoLoadTriggerKey = triggerKey;
+    unawaited(widget.onLastDayTabReached!.call());
   }
 
   void _reportActiveDateKey() {
@@ -1784,45 +2689,61 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
       ..sort((a, b) => a.compareTo(b));
     final List<String> orderedAll = keys.reversed.toList();
 
-    // 仅展示“最近 maxVisibleDayTabs 个日期”，其余日期在用户滑动到末尾后再增量展示
+    // 仅展示当前已加载批次中的日期；默认模式下 maxVisibleDayTabs 会与已加载日期数保持一致。
     final int desiredTabs = widget.maxVisibleDayTabs <= 0
         ? 1
         : widget.maxVisibleDayTabs;
     final int visibleCount = math.min(desiredTabs, orderedAll.length);
     final List<String> ordered = orderedAll.take(visibleCount).toList();
+    final List<String> previousOrderedKeys = _orderedKeys;
+    final TabController? oldController = _tabController;
+    final int oldIndex = oldController?.index ?? 0;
+    final String? currentDateKey =
+        oldController != null &&
+            previousOrderedKeys.isNotEmpty &&
+            oldIndex >= 0 &&
+            oldIndex < previousOrderedKeys.length
+        ? previousOrderedKeys[oldIndex]
+        : null;
     _orderedKeys = ordered;
 
-    // 根据当前可见日期数量维护 TabController，尽量保留用户当前选中的索引
-    if (_tabController == null || _tabController!.length != ordered.length) {
-      final int currentIndex = _tabController?.index ?? 0;
+    int fallbackIndex = 0;
+    if (ordered.isNotEmpty) {
+      if (currentDateKey != null) {
+        final int currentKeyIndex = ordered.indexOf(currentDateKey);
+        fallbackIndex = currentKeyIndex >= 0
+            ? currentKeyIndex
+            : oldIndex.clamp(0, ordered.length - 1);
+      } else {
+        fallbackIndex = oldIndex.clamp(0, ordered.length - 1);
+      }
+    }
+    final int desiredIndex = _desiredTabIndex(ordered, fallbackIndex);
+    final bool shouldRecreateController =
+        _tabController == null ||
+        _tabController!.length != ordered.length ||
+        _tabController!.index != desiredIndex;
+    if (shouldRecreateController) {
       _tabController?.removeListener(_handleTabSelectionChanged);
       _tabController?.dispose();
-
-      final int initialIndex = ordered.isEmpty
-          ? 0
-          : currentIndex.clamp(0, ordered.length - 1);
       _tabController = TabController(
         length: ordered.length,
         vsync: this,
-        initialIndex: initialIndex,
+        initialIndex: desiredIndex,
       );
       _tabController!.addListener(_handleTabSelectionChanged);
     }
     _reportActiveDateKey();
+    _queueAutoLoadCheck();
 
     return Column(
       children: [
         Builder(
           builder: (context) {
-            final bool hasHiddenTabs =
-                widget.maxVisibleDayTabs < orderedAll.length;
-            final bool canLoadMoreFromDb =
+            final bool showLoadMoreButton =
                 !widget.onlyNoSummary &&
                 widget.onLastDayTabReached != null &&
                 !widget.noMoreOlderSegments;
-            final bool showLoadMoreButton =
-                widget.onLastDayTabReached != null &&
-                (hasHiddenTabs || canLoadMoreFromDb);
             final bool isLoadingMore = widget.isLoadingMoreDays;
             return SizedBox(
               height: 32,
@@ -1883,33 +2804,23 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                       ),
                     ),
                     if (showLoadMoreButton)
-                      Padding(
-                        padding: const EdgeInsets.only(left: AppTheme.spacing2),
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.spacing2,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed:
-                              (widget.onLastDayTabReached == null ||
-                                  isLoadingMore)
-                              ? null
-                              : () {
-                                  widget.onLastDayTabReached!.call();
-                                },
-                          icon: isLoadingMore
-                              ? const SizedBox(
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 150),
+                        child: isLoadingMore
+                            ? const Padding(
+                                padding: EdgeInsets.only(
+                                  left: AppTheme.spacing2,
+                                  right: AppTheme.spacing1,
+                                ),
+                                child: SizedBox(
                                   width: 16,
                                   height: 16,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                   ),
-                                )
-                              : const Icon(Icons.more_horiz, size: 18),
-                          label: Text(AppLocalizations.of(context).loadMore),
-                        ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                   ],
                 ),
@@ -1943,6 +2854,7 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                         openGallery: widget.openGallery,
                         onRefreshRequested: widget.onRefreshRequested,
                         privacyMode: widget.privacyMode,
+                        dynamicRebuildActive: widget.dynamicRebuildActive,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -1967,6 +2879,7 @@ class _SegmentEntryCard extends StatefulWidget {
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
   final Future<void> Function() onRefreshRequested;
   final bool privacyMode;
+  final bool dynamicRebuildActive;
 
   const _SegmentEntryCard({
     required this.segment,
@@ -1979,6 +2892,7 @@ class _SegmentEntryCard extends StatefulWidget {
     required this.openGallery,
     required this.onRefreshRequested,
     required this.privacyMode,
+    required this.dynamicRebuildActive,
   });
 
   @override
@@ -2605,8 +3519,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
               ),
               const Spacer(),
               IconButton(
-                tooltip: AppLocalizations.of(context).actionRegenerate,
-                onPressed: _retrying
+                tooltip: widget.dynamicRebuildActive
+                    ? '全量重建进行中，已禁止单条重新生成'
+                    : AppLocalizations.of(context).actionRegenerate,
+                onPressed: (_retrying || widget.dynamicRebuildActive)
                     ? null
                     : () async {
                         await _retry();
@@ -3033,7 +3949,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
-                  onPressed: () async => _forceMerge(),
+                  onPressed: widget.dynamicRebuildActive
+                      ? null
+                      : () async => _forceMerge(),
                   child: const Text('强制合并'),
                 ),
             ],
@@ -3631,6 +4549,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   Future<void> _retry() async {
     final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0 || _retrying) return;
+    if (widget.dynamicRebuildActive) {
+      UINotifier.info(context, '全量重建进行中，暂时禁止单条重新生成');
+      return;
+    }
     final previous = Map<String, dynamic>.from(_segmentData);
     int? previousCreatedAt = _lastResultCreatedAt;
     try {
@@ -3695,6 +4617,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   Future<void> _forceMerge() async {
     final int id = (_segmentData['id'] as int?) ?? 0;
     if (id <= 0 || _forcingMerge) return;
+    if (widget.dynamicRebuildActive) {
+      UINotifier.info(context, '全量重建进行中，暂时禁止手动强制合并');
+      return;
+    }
     final int prevId = (_segmentData['merge_prev_id'] as int?) ?? 0;
     if (prevId <= 0) {
       if (!mounted) return;

@@ -413,6 +413,14 @@ class ScreenshotService {
               print('处理通知点击失败: $e');
             }
             break;
+          case 'onDynamicRebuildNotificationTap':
+            try {
+              await FlutterLogger.nativeInfo('Navigation', '通知点击：打开动态页');
+              await NavigationService.instance.openSegmentStatus();
+            } catch (e) {
+              print('处理动态重建通知点击失败: $e');
+            }
+            break;
           case 'onCompressionProgress':
             if (call.arguments is Map) {
               _handleCompressionProgress(

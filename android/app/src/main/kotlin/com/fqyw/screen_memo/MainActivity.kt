@@ -616,27 +616,6 @@ class MainActivity : FlutterActivity() {
                 "testAutoStartPermission" -> {
                     result.success(testAutoStartPermission())
                 }
-                "isServiceRunning" -> {
-                    // 使用增强的看门狗状态检测
-                    val watchdogStatus = AccessibilityServiceWatchdog.checkServiceStatus(this)
-                    val running = watchdogStatus.isReallyRunning
-                    
-                    FileLogger.i(TAG, AccessibilityServiceWatchdog.getStatusSummary(this))
-                    
-                    // 如果系统中已启用但实际不运行，记录详细信息并尝试触发连接
-                    if (watchdogStatus.needsRestart) {
-                        FileLogger.e(TAG, "检测到服务需要重启，状态详情：")
-                        FileLogger.e(TAG, "- 系统启用: ${watchdogStatus.isSystemEnabled}")
-                        FileLogger.e(TAG, "- 实例存在: ${watchdogStatus.isInstanceExists}")
-                        FileLogger.e(TAG, "- 进程存活: ${watchdogStatus.isProcessAlive}")
-                        FileLogger.e(TAG, "- 心跳有效: ${watchdogStatus.isHeartbeatValid}")
-                        FileLogger.e(TAG, "- 功能正常: ${watchdogStatus.isFunctional}")
-                        
-                        triggerAccessibilityServiceConnection()
-                    }
-                    
-                    result.success(running)
-                }
                 "getExternalFilesDir" -> {
                     val subDir = call.argument<String>("subDir")
                     val path = getExternalFilesDirPath(subDir)
@@ -858,6 +837,44 @@ class MainActivity : FlutterActivity() {
                         result.success(ImportOcrRepairService.cancelTask(applicationContext))
                     } catch (e: Exception) {
                         result.error("cancel_import_ocr_task_failed", e.message, null)
+                    }
+                }
+                "startDynamicRebuildTask" -> {
+                    try {
+                        val resumeExisting = call.argument<Boolean>("resumeExisting") ?: false
+                        val status = DynamicRebuildService.startOrResumeTask(
+                            applicationContext,
+                            resumeExisting,
+                        )
+                        result.success(status)
+                    } catch (e: Exception) {
+                        result.error("start_dynamic_rebuild_task_failed", e.message, null)
+                    }
+                }
+                "getDynamicRebuildTaskStatus" -> {
+                    try {
+                        result.success(DynamicRebuildService.getTaskStatus(applicationContext))
+                    } catch (e: Exception) {
+                        result.error("get_dynamic_rebuild_task_status_failed", e.message, null)
+                    }
+                }
+                "ensureDynamicRebuildTaskResumed" -> {
+                    try {
+                        result.success(
+                            DynamicRebuildService.ensureResumedIfPending(
+                                applicationContext,
+                                "flutter_request",
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        result.error("ensure_dynamic_rebuild_task_resumed_failed", e.message, null)
+                    }
+                }
+                "cancelDynamicRebuildTask" -> {
+                    try {
+                        result.success(DynamicRebuildService.cancelTask(applicationContext))
+                    } catch (e: Exception) {
+                        result.error("cancel_dynamic_rebuild_task_failed", e.message, null)
                     }
                 }
                 "compressScreenshotFile" -> {
@@ -1199,13 +1216,25 @@ class MainActivity : FlutterActivity() {
         try {
             val it = i ?: return
             val from = it.getBooleanExtra("from_daily_summary_notification", false)
-            if (!from) return
-            val dateKey = it.getStringExtra("daily_summary_date_key") ?: ""
-            try { FileLogger.i(TAG, "通知启动：from=true dateKey=$dateKey") } catch (_: Exception) {}
-            try {
-                methodChannel.invokeMethod("onDailySummaryNotificationTap", mapOf("dateKey" to dateKey))
-            } catch (e: Exception) {
-                try { FileLogger.w(TAG, "调用 onDailySummaryNotificationTap 失败：${e.message}") } catch (_: Exception) {}
+            if (from) {
+                val dateKey = it.getStringExtra("daily_summary_date_key") ?: ""
+                try { FileLogger.i(TAG, "通知启动：from=true dateKey=$dateKey") } catch (_: Exception) {}
+                try {
+                    methodChannel.invokeMethod("onDailySummaryNotificationTap", mapOf("dateKey" to dateKey))
+                } catch (e: Exception) {
+                    try { FileLogger.w(TAG, "调用 onDailySummaryNotificationTap 失败：${e.message}") } catch (_: Exception) {}
+                }
+                return
+            }
+
+            val fromDynamicRebuild = it.getBooleanExtra("from_dynamic_rebuild_notification", false)
+            if (fromDynamicRebuild) {
+                try { FileLogger.i(TAG, "通知启动：打开动态重建页面") } catch (_: Exception) {}
+                try {
+                    methodChannel.invokeMethod("onDynamicRebuildNotificationTap", null)
+                } catch (e: Exception) {
+                    try { FileLogger.w(TAG, "调用 onDynamicRebuildNotificationTap 失败：${e.message}") } catch (_: Exception) {}
+                }
             }
         } catch (_: Exception) {}
     }

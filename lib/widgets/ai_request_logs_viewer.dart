@@ -379,6 +379,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       final String api = (tr.apiType ?? '').trim();
       if (api.isNotEmpty) return api;
     }
+    if (tr.source == AIRequestLogSource.nativeLog && ctx.isNotEmpty) {
+      return ctx;
+    }
     final Uri? uri = tr.request?.uri;
     if (uri != null) {
       final String host = uri.host.trim();

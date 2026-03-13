@@ -1,7 +1,7 @@
 // Structured AI request/response trace used for human-readable log viewing.
 // This is intentionally UI-focused (not a full fidelity network dump).
 
-enum AIRequestLogSource { aiTrace, gatewayLog, segmentTrace }
+enum AIRequestLogSource { aiTrace, gatewayLog, segmentTrace, nativeLog }
 
 class AIRequestHttpRequest {
   const AIRequestHttpRequest({

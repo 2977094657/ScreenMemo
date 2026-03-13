@@ -1,5 +1,132 @@
 part of 'screenshot_database.dart';
 
+class DynamicRebuildTaskStatus {
+  final String taskId;
+  final String status;
+  final int startedAt;
+  final int updatedAt;
+  final int completedAt;
+  final int totalSegments;
+  final int processedSegments;
+  final int failedSegments;
+  final String currentDayKey;
+  final int currentSegmentId;
+  final String currentRangeLabel;
+  final String? lastError;
+  final bool isActive;
+  final String progressPercent;
+
+  const DynamicRebuildTaskStatus({
+    required this.taskId,
+    required this.status,
+    required this.startedAt,
+    required this.updatedAt,
+    required this.completedAt,
+    required this.totalSegments,
+    required this.processedSegments,
+    required this.failedSegments,
+    required this.currentDayKey,
+    required this.currentSegmentId,
+    required this.currentRangeLabel,
+    required this.lastError,
+    required this.isActive,
+    required this.progressPercent,
+  });
+
+  factory DynamicRebuildTaskStatus.fromMap(Map<dynamic, dynamic>? map) {
+    final data = map ?? const <dynamic, dynamic>{};
+    final String? lastErrorRaw = (data['lastError'] as String?)?.trim();
+    final String? lastError =
+        lastErrorRaw == null ||
+            lastErrorRaw.isEmpty ||
+            lastErrorRaw.toLowerCase() == 'null'
+        ? null
+        : lastErrorRaw;
+    return DynamicRebuildTaskStatus(
+      taskId: (data['taskId'] as String?) ?? '',
+      status: (data['status'] as String?) ?? 'idle',
+      startedAt: _safeTaskInt(data['startedAt']),
+      updatedAt: _safeTaskInt(data['updatedAt']),
+      completedAt: _safeTaskInt(data['completedAt']),
+      totalSegments: _safeTaskInt(data['totalSegments']),
+      processedSegments: _safeTaskInt(data['processedSegments']),
+      failedSegments: _safeTaskInt(data['failedSegments']),
+      currentDayKey: (data['currentDayKey'] as String?) ?? '',
+      currentSegmentId: _safeTaskInt(data['currentSegmentId']),
+      currentRangeLabel: (data['currentRangeLabel'] as String?) ?? '',
+      lastError: lastError,
+      isActive: data['isActive'] == true,
+      progressPercent: (data['progressPercent'] as String?) ?? '0%',
+    );
+  }
+
+  static int _safeTaskInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  bool get isIdle => status == 'idle' || taskId.isEmpty;
+  bool get isPreparing => status == 'preparing';
+  bool get isPending => status == 'pending';
+  bool get isRunning => status == 'running';
+  bool get isCompleted => status == 'completed';
+  bool get isFailed => status == 'failed';
+  bool get isCancelled => status == 'cancelled';
+  bool get canContinue =>
+      (isFailed || isCancelled) &&
+      totalSegments > 0 &&
+      processedSegments < totalSegments;
+
+  String toText() {
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('ScreenMemo 动态全量重建');
+    sb.writeln('taskId: ${taskId.isEmpty ? '(none)' : taskId}');
+    sb.writeln('status: $status');
+    sb.writeln(
+      'startedAt: ${startedAt > 0 ? _fmtTaskTime(startedAt) : '(null)'}',
+    );
+    sb.writeln(
+      'updatedAt: ${updatedAt > 0 ? _fmtTaskTime(updatedAt) : '(null)'}',
+    );
+    sb.writeln(
+      'completedAt: ${completedAt > 0 ? _fmtTaskTime(completedAt) : '(null)'}',
+    );
+    sb.writeln(
+      'progress: $processedSegments/$totalSegments ($progressPercent)',
+    );
+    sb.writeln('failedSegments: $failedSegments');
+    if (currentDayKey.isNotEmpty || currentRangeLabel.isNotEmpty) {
+      sb.writeln(
+        'current: ${[if (currentDayKey.isNotEmpty) currentDayKey, if (currentRangeLabel.isNotEmpty) currentRangeLabel].join(' / ')}',
+      );
+    }
+    if (currentSegmentId > 0) {
+      sb.writeln('currentSegmentId: $currentSegmentId');
+    }
+    if (lastError != null) {
+      sb.writeln('lastError: $lastError');
+    }
+    return sb.toString().trimRight();
+  }
+
+  static String _fmtTaskTime(int millis) {
+    return DateTime.fromMillisecondsSinceEpoch(millis).toString();
+  }
+}
+
+class SegmentTimelineBatch {
+  final List<Map<String, dynamic>> segments;
+  final List<String> dayKeys;
+  final bool hasMoreOlder;
+
+  const SegmentTimelineBatch({
+    required this.segments,
+    required this.dayKeys,
+    required this.hasMoreOlder,
+  });
+}
+
 // 将 AI 配置、消息、会话、提供商与上下文相关方法拆分为扩展
 extension ScreenshotDatabaseAI on ScreenshotDatabase {
   Future<void> _createAiTables(DatabaseExecutor db) async {
@@ -1143,7 +1270,7 @@ ORDER BY day ASC
         'created_at': DateTime.now().millisecondsSinceEpoch,
       }, conflictAlgorithm: ConflictAlgorithm.abort);
 
-      if (isDefault && id != null) {
+      if (isDefault) {
         await setDefaultAIProvider(id);
       }
       return id;
@@ -1424,6 +1551,219 @@ ORDER BY day ASC
     }
   }
 
+  Future<SegmentTimelineBatch> listSegmentTimelineBatch({
+    required int distinctDayCount,
+    String? beforeDateKey,
+    String? pinnedDateKey,
+    bool requireSamples = true,
+  }) async {
+    final db = await database;
+    final int safeDayCount = math.max(1, distinctDayCount);
+    final String beforeKey = (beforeDateKey ?? '').trim();
+    final String pinnedKey = (pinnedDateKey ?? '').trim();
+    const String hasSamplesCond =
+        "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
+    const String dayExpr =
+        "date(s.start_time / 1000, 'unixepoch', 'localtime')";
+
+    List<String> buildWhereClauses({
+      String? beforeKey,
+      String? exactKey,
+      String? minKeyInclusive,
+      String? olderThanKey,
+    }) {
+      final List<String> whereClauses = <String>[
+        _segmentsRootWhere('s'),
+        "(s.segment_kind IS NULL OR s.segment_kind = 'global')",
+      ];
+      if (requireSamples) {
+        whereClauses.add(hasSamplesCond);
+      }
+      final String before = (beforeKey ?? '').trim();
+      if (before.isNotEmpty) {
+        whereClauses.add("$dayExpr < ?");
+      }
+      final String exact = (exactKey ?? '').trim();
+      if (exact.isNotEmpty) {
+        whereClauses.add("$dayExpr = ?");
+      }
+      final String minKey = (minKeyInclusive ?? '').trim();
+      if (minKey.isNotEmpty) {
+        whereClauses.add("$dayExpr >= ?");
+      }
+      final String olderThan = (olderThanKey ?? '').trim();
+      if (olderThan.isNotEmpty) {
+        whereClauses.add("$dayExpr < ?");
+      }
+      return whereClauses;
+    }
+
+    List<Object?> buildWhereParams({
+      String? beforeKey,
+      String? exactKey,
+      String? minKeyInclusive,
+      String? olderThanKey,
+    }) {
+      final List<Object?> whereParams = <Object?>[];
+      final String before = (beforeKey ?? '').trim();
+      if (before.isNotEmpty) {
+        whereParams.add(before);
+      }
+      final String exact = (exactKey ?? '').trim();
+      if (exact.isNotEmpty) {
+        whereParams.add(exact);
+      }
+      final String minKey = (minKeyInclusive ?? '').trim();
+      if (minKey.isNotEmpty) {
+        whereParams.add(minKey);
+      }
+      final String olderThan = (olderThanKey ?? '').trim();
+      if (olderThan.isNotEmpty) {
+        whereParams.add(olderThan);
+      }
+      return whereParams;
+    }
+
+    Future<List<String>> queryDayKeys({
+      String? beforeKey,
+      String? minKeyInclusive,
+      required int limit,
+    }) async {
+      final List<String> whereClauses = buildWhereClauses(
+        beforeKey: beforeKey,
+        minKeyInclusive: minKeyInclusive,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        beforeKey: beforeKey,
+        minKeyInclusive: minKeyInclusive,
+      );
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        '''
+        SELECT day_key
+        FROM (
+          SELECT DISTINCT $dayExpr AS day_key
+          FROM segments s
+          $whereSql
+        )
+        ORDER BY day_key DESC
+        LIMIT ?
+        ''',
+        <Object?>[...whereParams, limit],
+      );
+      return rows
+          .map((Map<String, Object?> row) => (row['day_key'] as String?) ?? '')
+          .where((String value) => value.isNotEmpty)
+          .toList(growable: false);
+    }
+
+    Future<bool> dayKeyExists(String dateKey) async {
+      final String normalized = dateKey.trim();
+      if (normalized.isEmpty) return false;
+      final List<String> whereClauses = buildWhereClauses(exactKey: normalized);
+      final List<Object?> whereParams = buildWhereParams(exactKey: normalized);
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery('''
+        SELECT 1
+        FROM segments s
+        $whereSql
+        LIMIT 1
+        ''', whereParams);
+      return rows.isNotEmpty;
+    }
+
+    Future<bool> hasOlderThan(String dateKey) async {
+      final String normalized = dateKey.trim();
+      if (normalized.isEmpty) return false;
+      final List<String> whereClauses = buildWhereClauses(
+        olderThanKey: normalized,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        olderThanKey: normalized,
+      );
+      final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
+      final List<Map<String, Object?>> rows = await db.rawQuery('''
+        SELECT 1
+        FROM (
+          SELECT DISTINCT $dayExpr AS day_key
+          FROM segments s
+          $whereSql
+        )
+        LIMIT 1
+        ''', whereParams);
+      return rows.isNotEmpty;
+    }
+
+    String dayKeyFromMillis(int ms) {
+      final DateTime dt = DateTime.fromMillisecondsSinceEpoch(ms);
+      return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+
+    List<String> dayKeys = await queryDayKeys(
+      beforeKey: beforeKey,
+      limit: safeDayCount,
+    );
+    if (dayKeys.isEmpty) {
+      return const SegmentTimelineBatch(
+        segments: <Map<String, dynamic>>[],
+        dayKeys: <String>[],
+        hasMoreOlder: false,
+      );
+    }
+
+    if (beforeKey.isEmpty &&
+        pinnedKey.isNotEmpty &&
+        !dayKeys.contains(pinnedKey)) {
+      final bool pinnedExists = await dayKeyExists(pinnedKey);
+      if (pinnedExists) {
+        final List<String> expanded = await queryDayKeys(
+          minKeyInclusive: pinnedKey,
+          limit: 1 << 20,
+        );
+        if (expanded.isNotEmpty) {
+          dayKeys = expanded;
+        }
+      }
+    }
+
+    final String newestDayKey = dayKeys.first;
+    final String oldestDayKey = dayKeys.last;
+    final int? oldestStartMillis = _parseYmdToStartMillis(oldestDayKey);
+    final int? newestStartMillis = _parseYmdToStartMillis(newestDayKey);
+    if (oldestStartMillis == null || newestStartMillis == null) {
+      return const SegmentTimelineBatch(
+        segments: <Map<String, dynamic>>[],
+        dayKeys: <String>[],
+        hasMoreOlder: false,
+      );
+    }
+    final int newestEndMillis =
+        DateTime.fromMillisecondsSinceEpoch(
+          newestStartMillis,
+        ).add(const Duration(days: 1)).millisecondsSinceEpoch -
+        1;
+    final Set<String> allowedDayKeys = dayKeys.toSet();
+    final List<Map<String, dynamic>> segments =
+        (await listSegmentsEx(
+              limit: 1 << 30,
+              onlyNoSummary: false,
+              requireSamples: requireSamples,
+              startMillis: oldestStartMillis,
+              endMillis: newestEndMillis,
+            ))
+            .where((Map<String, dynamic> row) {
+              final int ms = (row['start_time'] as int?) ?? 0;
+              return ms > 0 && allowedDayKeys.contains(dayKeyFromMillis(ms));
+            })
+            .toList(growable: false);
+    final bool hasMoreOlder = await hasOlderThan(oldestDayKey);
+    return SegmentTimelineBatch(
+      segments: segments,
+      dayKeys: dayKeys,
+      hasMoreOlder: hasMoreOlder,
+    );
+  }
+
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
   /// - has_summary: 0 表示无总结；1 表示已有总结
   /// - 默认仅返回“至少有一张样本图片”的事件（避免前端渲染后再隐藏导致滚动抖动）
@@ -1647,6 +1987,49 @@ ORDER BY day ASC
     }
   }
 
+  Future<DynamicRebuildTaskStatus> startDynamicRebuildTask({
+    bool resumeExisting = false,
+  }) async {
+    final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+      'startDynamicRebuildTask',
+      <String, dynamic>{'resumeExisting': resumeExisting},
+    );
+    if (raw is Map) {
+      return DynamicRebuildTaskStatus.fromMap(raw);
+    }
+    return DynamicRebuildTaskStatus.fromMap(null);
+  }
+
+  Future<DynamicRebuildTaskStatus> getDynamicRebuildTaskStatus() async {
+    final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+      'getDynamicRebuildTaskStatus',
+    );
+    if (raw is Map) {
+      return DynamicRebuildTaskStatus.fromMap(raw);
+    }
+    return DynamicRebuildTaskStatus.fromMap(null);
+  }
+
+  Future<DynamicRebuildTaskStatus> ensureDynamicRebuildTaskResumed() async {
+    final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+      'ensureDynamicRebuildTaskResumed',
+    );
+    if (raw is Map) {
+      return DynamicRebuildTaskStatus.fromMap(raw);
+    }
+    return DynamicRebuildTaskStatus.fromMap(null);
+  }
+
+  Future<DynamicRebuildTaskStatus> cancelDynamicRebuildTask() async {
+    final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+      'cancelDynamicRebuildTask',
+    );
+    if (raw is Map) {
+      return DynamicRebuildTaskStatus.fromMap(raw);
+    }
+    return DynamicRebuildTaskStatus.fromMap(null);
+  }
+
   /// 供“记忆重建”使用的轻量段落列表（避免拉取 segment_results 的大字段）。
   ///
   /// - 默认按 start_time DESC 排序（与“动态”一致）。
@@ -1682,8 +2065,9 @@ ORDER BY day ASC
       whereParams.add(endMillis);
     }
 
-    final String whereSql =
-        whereClauses.isEmpty ? '' : ('WHERE ' + whereClauses.join(' AND '));
+    final String whereSql = whereClauses.isEmpty
+        ? ''
+        : ('WHERE ' + whereClauses.join(' AND '));
 
     final String sql =
         '''
@@ -1928,7 +2312,7 @@ ORDER BY day ASC
 
         for (final e in rawTags) {
           if (e is! Map) continue;
-          final m = Map<String, dynamic>.from(e as Map);
+          final m = Map<String, dynamic>.from(e);
           final String file = (m['file'] ?? '').toString().trim();
           if (file.isEmpty) continue;
           final String bn = basenameOf(file);
@@ -1958,7 +2342,7 @@ ORDER BY day ASC
         FROM segment_samples
         WHERE file_path IN ($placeholders)
       ''';
-      final rows = await (db as Database).rawQuery(sql, chunk);
+      final rows = await db.rawQuery(sql, chunk);
       for (final r in rows) {
         final String? fp = r['file_path'] as String?;
         final int sid = (r['segment_id'] as int?) ?? 0;
@@ -1987,7 +2371,7 @@ ORDER BY day ASC
         FROM segment_results
         WHERE segment_id IN ($placeholders)
       ''';
-      final rows = await (db as Database).rawQuery(sql, chunk);
+      final rows = await db.rawQuery(sql, chunk);
       for (final r in rows) {
         final int sid = (r['segment_id'] as int?) ?? 0;
         if (sid <= 0) continue;
@@ -2262,12 +2646,20 @@ ORDER BY day ASC
             }
           }
           if (gClauses.isNotEmpty) {
-            anyClauses.add(gClauses.length == 1 ? gClauses.single : '(${gClauses.join(' AND ')})');
+            anyClauses.add(
+              gClauses.length == 1
+                  ? gClauses.single
+                  : '(${gClauses.join(' AND ')})',
+            );
             anyArgs.addAll(gArgs);
           }
         }
         if (anyClauses.isNotEmpty) {
-          filters.add(anyClauses.length == 1 ? anyClauses.single : '(${anyClauses.join(' OR ')})');
+          filters.add(
+            anyClauses.length == 1
+                ? anyClauses.single
+                : '(${anyClauses.join(' OR ')})',
+          );
           args.addAll(anyArgs);
         }
 
@@ -2282,8 +2674,9 @@ ORDER BY day ASC
             gClauses.add('(m.description LIKE ? OR m.tags_json LIKE ?)');
           }
           if (gClauses.isNotEmpty) {
-            final String inner =
-                gClauses.length == 1 ? gClauses.single : '(${gClauses.join(' AND ')})';
+            final String inner = gClauses.length == 1
+                ? gClauses.single
+                : '(${gClauses.join(' AND ')})';
             filters.add('NOT ($inner)');
             args.addAll(gArgs);
           }
@@ -3329,12 +3722,10 @@ Future<void> _createUserMemoryItemEventsTable(DatabaseExecutor db) async {
 
   // Expression index for stable chronological reads; best-effort for older SQLite.
   try {
-    await db.execute(
-      '''
+    await db.execute('''
       CREATE INDEX IF NOT EXISTS idx_user_memory_item_events_item
       ON user_memory_item_events(memory_item_id, COALESCE(start_time, created_at) ASC, id ASC)
-      ''',
-    );
+      ''');
   } catch (_) {}
 }
 

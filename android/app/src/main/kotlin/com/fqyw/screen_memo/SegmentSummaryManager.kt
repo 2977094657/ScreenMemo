@@ -40,6 +40,14 @@ object SegmentSummaryManager {
     // 读写设置（SharedPreferences）
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
 
+    private fun isDynamicRebuildTaskActive(ctx: Context): Boolean {
+        return try {
+            DynamicRebuildService.isTaskActive(ctx)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     @Volatile private var lastLoggedSampleIntervalSec: Int = -1
     @Volatile private var lastLoggedSegmentDurationSec: Int = -1
     @Volatile private var lastLoggedAiMinIntervalSec: Int = -1
@@ -222,6 +230,10 @@ object SegmentSummaryManager {
 
     fun onScreenshotSaved(ctx: Context, appPackage: String, appName: String, filePathAbs: String, captureTime: Long) {
         val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        if (isDynamicRebuildTaskActive(appCtx)) {
+            try { FileLogger.i(TAG, "onScreenshotSaved：检测到动态重建任务运行中，跳过常规动态生成") } catch (_: Exception) {}
+            return
+        }
         runOnWorker("onScreenshotSaved") {
             onScreenshotSavedInternal(appCtx, appPackage, appName, filePathAbs, captureTime)
         }
@@ -291,6 +303,10 @@ object SegmentSummaryManager {
     // - tick 会调度到 worker 池执行；通过 tickEnqueued 去抖避免高频并发 tick
     fun tick(ctx: Context) {
         val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        if (isDynamicRebuildTaskActive(appCtx)) {
+            try { FileLogger.i(TAG, "tick：检测到动态重建任务运行中，跳过常规推进") } catch (_: Exception) {}
+            return
+        }
         if (isWorkerThread()) {
             tickInternal(appCtx)
             return
@@ -640,6 +656,10 @@ object SegmentSummaryManager {
      */
     fun backfillToLatest(ctx: Context) {
         val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        if (isDynamicRebuildTaskActive(appCtx)) {
+            try { FileLogger.i(TAG, "backfillToLatest：检测到动态重建任务运行中，跳过常规回填") } catch (_: Exception) {}
+            return
+        }
         if (isWorkerThread()) {
             backfillToLatestInternal(appCtx)
             return
@@ -1064,9 +1084,10 @@ object SegmentSummaryManager {
         injectDynamicRules: Boolean = true,
         maxImagesOverride: Int? = null,
         allowJsonAutoRetry: Boolean = true,
-        jsonRetryCount: Int = 0
+        jsonRetryCount: Int = 0,
+        aiConfigOverride: AISettingsNative.AIConfig? = null,
     ): AiCallResult {
-        val cfg = AISettingsNative.readConfig(ctx)
+        val cfg = aiConfigOverride ?: AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
         val client = OkHttpClientFactory.newBuilder(ctx)
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -1228,12 +1249,6 @@ object SegmentSummaryManager {
             val promptPreview = truncateForLog(promptWithRule, 800)
             FileLogger.i(TAG, "AI 提示词预览：${promptPreview}")
         } catch (_: Exception) {}
-        try {
-            OutputFileLogger.info(ctx, TAG, "AI 提示词完整内容开始 >>>")
-            OutputFileLogger.info(ctx, TAG, promptWithRule)
-            OutputFileLogger.info(ctx, TAG, "AI 提示词完整内容结束 <<<")
-        } catch (_: Exception) {}
-
         val url = if (isGoogle) {
             // Gemini SSE: POST {base}/v1beta/models/{model}:streamGenerateContent?alt=sse
             "$base/v1beta/models/$model:streamGenerateContent?alt=sse"
@@ -1241,6 +1256,18 @@ object SegmentSummaryManager {
             // OpenAI 兼容 REST: POST {base}/v1/chat/completions
             "$base/v1/chat/completions"
         }
+        val requestId = "seg${seg.id}_${System.nanoTime()}"
+        val providerLabel = if (isGoogle) "google" else "openai-compat"
+        fun logStructuredRequest(message: String) {
+            try { OutputFileLogger.info(ctx, TAG, message) } catch (_: Exception) {}
+        }
+        try {
+            logStructuredRequest("AIREQ PROMPT_BEGIN id=$requestId")
+            OutputFileLogger.info(ctx, TAG, "AI 提示词完整内容开始 >>>")
+            OutputFileLogger.info(ctx, TAG, promptWithRule)
+            OutputFileLogger.info(ctx, TAG, "AI 提示词完整内容结束 <<<")
+            logStructuredRequest("AIREQ PROMPT_END id=$requestId")
+        } catch (_: Exception) {}
         fun buildRequestTrace(): String {
             val sb = StringBuilder()
             sb.append("=== AI Request ===").append('\n')
@@ -1278,6 +1305,9 @@ object SegmentSummaryManager {
             return sb.toString().trimEnd()
         }
         val rawRequestTrace: String? = try { buildRequestTrace() } catch (_: Exception) { null }
+        logStructuredRequest(
+            "AIREQ START id=$requestId provider=$providerLabel segment_id=${seg.id} is_merge=$isMerge url=$url model=$model images_attached=${effSamples.size} images_total=${samples.size} prompt_len=$textLenWithRule"
+        )
 
         if (isGoogle) {
             try { FileLogger.i(TAG, "AI 请求：地址=$url 模型=$model 图片数=${effSamples.size}") } catch (_: Exception) {}
@@ -1322,6 +1352,7 @@ object SegmentSummaryManager {
                             try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             try { FileLogger.i(TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            logStructuredRequest("AIREQ RESP id=$requestId code=${resp.code} took_ms=${end - start} attempt=${attempt + 1}/${maxAttempts}")
                             if (resp.isSuccessful) {
                                 val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
                                 val reader = responseBody.charStream().buffered()
@@ -1402,12 +1433,14 @@ object SegmentSummaryManager {
                                     val lower = lastBody.lowercase()
                                     if (lower.contains("user location is not supported")) {
                                         try { FileLogger.e(TAG, "Gemini 请求因地区策略被阻止：${truncateForLog(lastBody, 800)}") } catch (_: Exception) {}
+                                        logStructuredRequest("AIREQ ERR id=$requestId kind=region_block code=${resp.code} attempt=${attempt + 1}/${maxAttempts}")
                                     }
                                 }
                                 val shouldRetry = resp.code >= 500
                                 try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                                 try { FileLogger.w(TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                                 try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(code=${resp.code}) 尝试=${attempt + 1}/${maxAttempts} 响应体=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                logStructuredRequest("AIREQ ERR id=$requestId kind=http code=${resp.code} attempt=${attempt + 1}/${maxAttempts}")
                                 if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                             }
                         }
@@ -1416,12 +1449,14 @@ object SegmentSummaryManager {
                         try { FileLogger.w(TAG, "AI 请求超时 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求超时 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI 请求超时 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        logStructuredRequest("AIREQ ERR id=$requestId kind=timeout attempt=${attempt + 1}/${maxAttempts}")
                         // 继续重试
                     } catch (e: Exception) {
                         // 其他IO异常：仅第一次尝试记录，仍然重试
                         try { FileLogger.w(TAG, "AI 请求异常 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求异常 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI 请求异常 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
+                        logStructuredRequest("AIREQ ERR id=$requestId kind=exception attempt=${attempt + 1}/${maxAttempts}")
                     }
                     attempt++
                     if (attempt < maxAttempts) {
@@ -1445,6 +1480,7 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
             // 完整响应落盘（分块写入）
             try {
+                logStructuredRequest("AIREQ RESP_BODY_BEGIN id=$requestId")
                 OutputFileLogger.info(ctx, TAG, "AI 响应完整内容开始 >>>")
                 val text = respText
                 val chunk = 1800
@@ -1455,6 +1491,7 @@ object SegmentSummaryManager {
                     i = end
                 }
                 OutputFileLogger.info(ctx, TAG, "AI 响应完整内容结束 <<<")
+                logStructuredRequest("AIREQ RESP_BODY_END id=$requestId")
             } catch (_: Exception) {}
             try {
                 val preview = truncateForLog(respText, 2000)
@@ -1506,6 +1543,7 @@ object SegmentSummaryManager {
                     OutputFileLogger.info(ctx, TAG, "AI 分类：${cats}")
                 }
             } catch (_: Exception) {}
+            logStructuredRequest("AIREQ DONE id=$requestId content_len=${outputText.length} response_len=${respText.length}")
             return finalizeAiResultJson(
                 ctx = ctx,
                 seg = seg,
@@ -1516,6 +1554,7 @@ object SegmentSummaryManager {
                 maxImagesOverride = maxImagesOverride,
                 allowJsonAutoRetry = allowJsonAutoRetry,
                 jsonRetryCount = jsonRetryCount,
+                aiConfigOverride = aiConfigOverride,
                 model = model,
                 outputText = outputText,
                 structured = structured,
@@ -1584,6 +1623,7 @@ object SegmentSummaryManager {
                             try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             try { FileLogger.i(TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                             try { OutputFileLogger.info(ctx, TAG, "AI 响应元信息(OpenAI兼容)：code=${resp.code} 耗时毫秒=${end - start} 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                            logStructuredRequest("AIREQ RESP id=$requestId code=${resp.code} took_ms=${end - start} attempt=${attempt + 1}/${maxAttempts}")
                             if (resp.isSuccessful) {
                                 val responseBody = resp.body ?: throw IllegalStateException("Empty response body")
                                 val reader = responseBody.charStream().buffered()
@@ -1863,6 +1903,7 @@ object SegmentSummaryManager {
                                 try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                                 try { FileLogger.w(TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
                                 try { OutputFileLogger.error(ctx, TAG, "AI 请求失败(OpenAI兼容)：code=${resp.code} 尝试=${attempt + 1}/${maxAttempts} body=${truncateForLog(lastBody ?: "", 800)}") } catch (_: Exception) {}
+                                logStructuredRequest("AIREQ ERR id=$requestId kind=http code=${resp.code} attempt=${attempt + 1}/${maxAttempts}")
                                 if (!shouldRetry) throw IllegalStateException("Request failed: ${resp.code} ${lastBody}")
                             }
                         }
@@ -1871,11 +1912,13 @@ object SegmentSummaryManager {
                         try { FileLogger.w(TAG, "AI 请求超时(OpenAI) 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求超时(OpenAI) 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI 请求超时(OpenAI) 尝试=${attempt + 1}/${maxAttempts}") } catch (_: Exception) {}
+                        logStructuredRequest("AIREQ ERR id=$requestId kind=timeout attempt=${attempt + 1}/${maxAttempts}")
                         // 继续重试
                     } catch (e: Exception) {
                         try { FileLogger.w(TAG, "AI 请求异常(OpenAI) 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
                         try { FileLogger.w(TAG, "AI 请求异常(OpenAI) 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
                         try { OutputFileLogger.error(ctx, TAG, "AI 请求异常(OpenAI) 尝试=${attempt + 1}/${maxAttempts}：${e.message}") } catch (_: Exception) {}
+                        logStructuredRequest("AIREQ ERR id=$requestId kind=exception attempt=${attempt + 1}/${maxAttempts}")
                     }
                     attempt++
                     if (attempt < maxAttempts) {
@@ -1899,6 +1942,7 @@ object SegmentSummaryManager {
             } catch (_: Exception) {}
             // 完整响应落盘（分块写入）
             try {
+                logStructuredRequest("AIREQ RESP_BODY_BEGIN id=$requestId")
                 OutputFileLogger.info(ctx, TAG, "AI 响应完整内容(OpenAI) 开始 >>>")
                 val text2 = respText
                 val chunk2 = 1800
@@ -1909,6 +1953,7 @@ object SegmentSummaryManager {
                     j = end
                 }
                 OutputFileLogger.info(ctx, TAG, "AI 响应完整内容(OpenAI) 结束 <<<")
+                logStructuredRequest("AIREQ RESP_BODY_END id=$requestId")
             } catch (_: Exception) {}
             try {
                 val preview = truncateForLog(respText, 2000)
@@ -1960,6 +2005,7 @@ object SegmentSummaryManager {
                     OutputFileLogger.info(ctx, TAG, "AI 分类(OpenAI)：${cats}")
                 }
             } catch (_: Exception) {}
+            logStructuredRequest("AIREQ DONE id=$requestId content_len=${outputText.length} response_len=${respText.length}")
             return finalizeAiResultJson(
                 ctx = ctx,
                 seg = seg,
@@ -1970,6 +2016,7 @@ object SegmentSummaryManager {
                 maxImagesOverride = maxImagesOverride,
                 allowJsonAutoRetry = allowJsonAutoRetry,
                 jsonRetryCount = jsonRetryCount,
+                aiConfigOverride = aiConfigOverride,
                 model = model,
                 outputText = outputText,
                 structured = structured,
@@ -2546,6 +2593,509 @@ object SegmentSummaryManager {
         }
     }
 
+    private fun tryCompareAndMergeBackwardStrict(
+        ctx: Context,
+        cur: SegmentDatabaseHelper.Segment,
+        curSamples: List<SegmentDatabaseHelper.Sample>,
+        curOutputText: String,
+        curStructured: String?,
+        aiConfig: AISettingsNative.AIConfig,
+        forceMerge: Boolean = false,
+        specifiedPrevSegmentId: Long? = null,
+        lockHeld: Boolean = false,
+    ): Long {
+        if (!lockHeld) {
+            if (!mergingSegments.add(cur.id)) {
+                try { FileLogger.i(TAG, "merge(strict): skip because already merging seg=${cur.id}") } catch (_: Exception) {}
+                return cur.id
+            }
+        }
+        try {
+            val prev = run {
+                val specified = specifiedPrevSegmentId?.takeIf { it > 0L }
+                if (specified != null) {
+                    val s = SegmentDatabaseHelper.getSegmentById(ctx, specified)
+                    val ok = if (s != null && s.status == "completed") {
+                        val rr = SegmentDatabaseHelper.getResultForSegment(ctx, s.id)
+                        _hasUsableSegmentResult(rr.first, rr.second)
+                    } else false
+                    if (ok) s else SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+                } else {
+                    SegmentDatabaseHelper.getPreviousCompletedSegmentWithResult(ctx, cur.startTime)
+                }
+            }
+            if (prev == null) {
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = null,
+                        decisionJson = null,
+                        reason = if (forceMerge) "强制合并失败：未找到上一事件" else "未找到上一事件，跳过合并",
+                        forced = forceMerge,
+                    )
+                } catch (_: Exception) {}
+                SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                return cur.id
+            }
+
+            if (!forceMerge) {
+                val maxSpanSecRaw = try {
+                    UserSettingsStorage.getInt(
+                        ctx,
+                        UserSettingsKeysNative.MERGE_DYNAMIC_MAX_SPAN_SEC,
+                        3 * 3600,
+                    )
+                } catch (_: Exception) { 3 * 3600 }
+                val maxGapSecRaw = try {
+                    UserSettingsStorage.getInt(
+                        ctx,
+                        UserSettingsKeysNative.MERGE_DYNAMIC_MAX_GAP_SEC,
+                        3600,
+                    )
+                } catch (_: Exception) { 3600 }
+                val maxSpanSec = if (maxSpanSecRaw < 0) 0 else maxSpanSecRaw
+                val maxGapSec = if (maxGapSecRaw < 0) 0 else maxGapSecRaw
+                val mergedSpanMs = kotlin.math.max(0L, cur.endTime - prev.startTime)
+                val mergedGapMs = kotlin.math.max(0L, cur.startTime - prev.endTime)
+                val spanExceeded = maxSpanSec > 0 && mergedSpanMs > maxSpanSec.toLong() * 1000L
+                val gapExceeded = maxGapSec > 0 && mergedGapMs > maxGapSec.toLong() * 1000L
+                if (spanExceeded || gapExceeded) {
+                    val spanMin = mergedSpanMs / 60000L
+                    val gapMin = mergedGapMs / 60000L
+                    val details = ArrayList<String>()
+                    if (spanExceeded) {
+                        val limitMin = maxSpanSec.toLong() / 60L
+                        details.add("触发整体跨度限制：${spanMin}分钟 > ${limitMin}分钟")
+                    }
+                    if (gapExceeded) {
+                        val limitMin = maxGapSec.toLong() / 60L
+                        details.add("触发时间间隔限制：${gapMin}分钟 > ${limitMin}分钟")
+                    }
+                    val reason = details.joinToString("；") + "，系统禁止合并"
+                    try {
+                        SegmentDatabaseHelper.updateMergeDecisionInfo(
+                            ctx,
+                            segmentId = cur.id,
+                            prevSegmentId = prev.id,
+                            decisionJson = null,
+                            reason = reason,
+                            forced = false,
+                        )
+                    } catch (_: Exception) {}
+                    SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                    return cur.id
+                }
+            }
+
+            val prevSamples = SegmentDatabaseHelper.getSamplesForSegment(ctx, prev.id)
+            val mergedUniqueSamples = mergeSamples(prevSamples, curSamples)
+            if (!forceMerge) {
+                val maxImagesRaw = try {
+                    UserSettingsStorage.getInt(
+                        ctx,
+                        UserSettingsKeysNative.MERGE_DYNAMIC_MAX_IMAGES,
+                        200,
+                    )
+                } catch (_: Exception) { 200 }
+                val maxImages = if (maxImagesRaw < 0) 0 else maxImagesRaw
+                if (maxImages > 0 && mergedUniqueSamples.size > maxImages) {
+                    val reason = "触发图片数量限制：${mergedUniqueSamples.size}张 > ${maxImages}张，系统禁止合并"
+                    try {
+                        SegmentDatabaseHelper.updateMergeDecisionInfo(
+                            ctx,
+                            segmentId = cur.id,
+                            prevSegmentId = prev.id,
+                            decisionJson = null,
+                            reason = reason,
+                            forced = false,
+                        )
+                    } catch (_: Exception) {}
+                    SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                    return cur.id
+                }
+            }
+
+            val prevRes = SegmentDatabaseHelper.getResultForSegment(ctx, prev.id)
+            val prevOutput = prevRes.first ?: ""
+
+            if (forceMerge) {
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = prev.id,
+                        decisionJson = null,
+                        reason = "用户强制合并：跳过判定，直接执行合并",
+                        forced = true,
+                    )
+                } catch (_: Exception) {}
+            } else run {
+                val sb = StringBuilder()
+                val effectiveLang2 = resolveEffectiveLang(ctx)
+                val isZh2 = effectiveLang2 == "zh"
+                val langPolicy2 = getStringByLang(
+                    ctx,
+                    effectiveLang2,
+                    R.string.ai_language_policy_zh,
+                    R.string.ai_language_policy_en,
+                    R.string.ai_language_policy_ja,
+                    R.string.ai_language_policy_ko,
+                )
+                sb.append(langPolicy2).append('\n').append('\n')
+                if (isZh2) {
+                    sb.append("请判断两段时间是否属于同一用户事件：\n")
+                        .append("段A：").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                        .append("段B：").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                        .append("注意：只根据画面语义与行为，不做OCR逐字比对；更关注是否为同一持续活动。\n")
+                        .append("两段各自的 overall_summary：\n")
+                        .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                        .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                    val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+                    sb.append("两段时间间隔约：").append(gapMin).append(" 分钟\n")
+                        .append("合并判定策略（放宽）：\n")
+                        .append("- 若两段主要应用相同，或同属'视频观看/文章阅读/信息流浏览/社交浏览/购物浏览/办公操作'等同类行为，即使内容不同也视为同一事件；\n")
+                        .append("- 时间间隔仅供参考，不设固定阈值；若后段延续了前段的同类行为或属于同一持续活动，倾向判定 same_event=true；\n")
+                        .append("- 短暂且占比很小的打断（例如少量截图/短暂切换）应忽略；\n")
+                        .append("- 请输出 JSON：{\\\"same_event\\\":true|false,\\\"reason\\\":\\\"简述\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+                } else {
+                    sb.append("Decide whether the two time ranges belong to the same user event:\n")
+                        .append("Range A: ").append(fmt(prev.startTime)).append(" - ").append(fmt(prev.endTime)).append('\n')
+                        .append("Range B: ").append(fmt(cur.startTime)).append(" - ").append(fmt(cur.endTime)).append('\n')
+                        .append("Note: Judge by on-screen semantics and behavior only; DO NOT rely on OCR word-by-word matching. Focus on whether it's the same continuous activity.\n")
+                        .append("Each range overall_summary:\n")
+                        .append("A: ").append(extractOverallSummary(prevOutput)).append('\n')
+                        .append("B: ").append(extractOverallSummary(curOutputText)).append('\n')
+                    val gapMin = kotlin.math.max(0L, (cur.startTime - prev.endTime)) / 60000L
+                    sb.append("Approximate gap between ranges: ").append(gapMin).append(" minutes\n")
+                        .append("Merge decision guidelines (relaxed):\n")
+                        .append("- If the main app is the same, or both are of the same activity type (video watching/article reading/feed browsing/social browsing/shopping/working), treat as the same event even when content differs.\n")
+                        .append("- The time gap is only a reference (no fixed threshold). If the latter continues the former activity type or appears to be the same continuous activity, prefer same_event=true.\n")
+                        .append("- Ignore brief interruptions with small proportion (e.g., few screenshots/short switches).\n")
+                        .append("- Output JSON: {\\\"same_event\\\":true|false,\\\"reason\\\":\\\"brief\\\",\\\"primary_activity\\\":\\\"watching|reading|browsing|shopping|working|other\\\"}\n")
+                }
+
+                val decide = callGeminiWithImages(
+                    ctx,
+                    cur,
+                    mergedUniqueSamples,
+                    sb.toString(),
+                    injectDynamicRules = false,
+                    maxImagesOverride = PROVIDER_IMAGE_HARD_LIMIT.coerceAtLeast(1),
+                    aiConfigOverride = aiConfig,
+                )
+                val decisionText = decide.outputText
+                var decisionJson: String? = null
+                var decisionReason: String? = null
+                val same = try {
+                    val pair = extractJsonBlocks(decisionText)
+                    val jsonStr = pair.first
+                    decisionJson = jsonStr
+                    if (jsonStr != null) {
+                        try {
+                            val obj = org.json.JSONObject(jsonStr)
+                            val rr = obj.optString("reason", "").trim()
+                            if (rr.isNotEmpty()) decisionReason = rr
+                            obj.optBoolean("same_event", false)
+                        } catch (_: Exception) {
+                            Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                        }
+                    } else {
+                        Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                    }
+                } catch (_: Exception) {
+                    Regex("\"same_event\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(decisionText)
+                }
+                if (decisionReason.isNullOrBlank()) {
+                    val t = decisionText.trim()
+                    decisionReason = if (t.length <= 240) t else (t.substring(0, 240) + "…")
+                }
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = prev.id,
+                        decisionJson = decisionJson,
+                        reason = decisionReason,
+                        forced = false,
+                    )
+                } catch (_: Exception) {}
+                if (!same) {
+                    SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                    return cur.id
+                }
+            }
+
+            val maxAiImages = PROVIDER_IMAGE_HARD_LIMIT.coerceAtLeast(1)
+            val mergePlan = planMergeAiInput(
+                allSamples = mergedUniqueSamples,
+                prevStructuredJson = prevRes.second,
+                prevSamples = prevSamples,
+                curStructuredJson = curStructured,
+                curSamples = curSamples,
+                maxAiImages = maxAiImages,
+            )
+            val mergedAiSamples = mergePlan.aiSamples
+            val mergePrompt = buildMergePrompt(
+                ctx,
+                prev,
+                cur,
+                mergedAiSamples,
+                textOnlyDescriptions = mergePlan.textOnlyDescriptions,
+                totalImages = mergedUniqueSamples.size,
+                maxAttachedImages = maxAiImages,
+                forced = forceMerge,
+            )
+
+            val merged = try {
+                callGeminiWithImages(
+                    ctx,
+                    cur,
+                    mergedAiSamples,
+                    mergePrompt,
+                    isMerge = true,
+                    maxImagesOverride = maxAiImages,
+                    aiConfigOverride = aiConfig,
+                )
+            } catch (e: Exception) {
+                try {
+                    SegmentDatabaseHelper.updateMergeDecisionInfo(
+                        ctx,
+                        segmentId = cur.id,
+                        prevSegmentId = prev.id,
+                        decisionJson = null,
+                        reason = "合并失败：" + (e.message ?: e.toString()),
+                        forced = forceMerge,
+                    )
+                } catch (_: Exception) {}
+                SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+                throw DynamicRebuildStepException(
+                    "动态重建合并失败：${e.message ?: e.toString()}",
+                    cur.id,
+                )
+            }
+
+            val prevOriginalSummaries = extractOriginalSummaryPartsForMerge(prevRes.first, prevRes.second)
+            val curOriginalSummaries = extractOriginalSummaryPartsForMerge(curOutputText, curStructured)
+            val mergedStructuredNormalizedByAiOrder = normalizeImageRefsToFilenames(
+                merged.structuredJson,
+                mergedAiSamples,
+            )
+            val mergedPatched = attachOriginalSummariesToMergedResult(
+                mergedOutputText = merged.outputText,
+                mergedStructuredJson = mergedStructuredNormalizedByAiOrder,
+                prevOriginals = prevOriginalSummaries,
+                curOriginals = curOriginalSummaries,
+            )
+            var mergedOutputTextForSave = mergedPatched.first
+            var mergedStructuredForSave = mergedPatched.second
+            var mergedCategoriesForSave: String? = merged.categories
+            val prevCategoriesFromDb: String? = try { SegmentDatabaseHelper.getSegmentResult(ctx, prev.id)?.categories } catch (_: Exception) { null }
+            val curCategoriesFromDb: String? = try { SegmentDatabaseHelper.getSegmentResult(ctx, cur.id)?.categories } catch (_: Exception) { null }
+
+            run {
+                val mergedObj = parseStructuredJsonObject(mergedStructuredForSave)
+                val sjMissingOrInvalid = mergedObj == null
+
+                fun buildFallback(): TextFirstMergedResult = buildTextFirstMergedResult(
+                    prevOutputText = prevOutput,
+                    prevStructuredJson = prevRes.second,
+                    curOutputText = curOutputText,
+                    curStructuredJson = curStructured,
+                )
+
+                fun pickOverallSummaryForFallback(fallback: TextFirstMergedResult): String {
+                    val candidate = mergedOutputTextForSave.trim()
+                    if (candidate.isEmpty() || candidate.equals("null", ignoreCase = true)) return fallback.outputText
+                    if (candidate.startsWith("{") && candidate.endsWith("}")) return fallback.outputText
+                    return candidate
+                }
+
+                if (sjMissingOrInvalid) {
+                    val fallback = buildFallback()
+                    mergedCategoriesForSave = pickNonEmpty(
+                        mergedCategoriesForSave,
+                        fallback.categoriesJson,
+                        prevCategoriesFromDb,
+                        curCategoriesFromDb,
+                    )
+                    mergedStructuredForSave = try {
+                        val obj = JSONObject(fallback.structuredJson)
+                        obj.put("overall_summary", pickOverallSummaryForFallback(fallback))
+                        obj.toString()
+                    } catch (_: Exception) {
+                        fallback.structuredJson
+                    }
+                    return@run
+                }
+
+                try {
+                    fun hasUsableKeyActionDetail(arr: JSONArray?): Boolean {
+                        if (arr == null || arr.length() == 0) return false
+                        for (i in 0 until arr.length()) {
+                            val v = arr.opt(i)
+                            when (v) {
+                                is JSONObject -> {
+                                    val d = v.optString("detail", "").trim()
+                                    if (d.isNotEmpty()) return true
+                                }
+                                is String -> {
+                                    if (v.trim().isNotEmpty()) return true
+                                }
+                            }
+                        }
+                        return false
+                    }
+
+                    val ka = mergedObj.optJSONArray("key_actions")
+                    if (!hasUsableKeyActionDetail(ka)) {
+                        val fallback = buildFallback()
+                        mergedCategoriesForSave = pickNonEmpty(
+                            mergedCategoriesForSave,
+                            fallback.categoriesJson,
+                            prevCategoriesFromDb,
+                            curCategoriesFromDb,
+                        )
+                        try {
+                            val fbObj = JSONObject(fallback.structuredJson)
+                            val fbKa = fbObj.optJSONArray("key_actions")
+                            if (hasUsableKeyActionDetail(fbKa)) {
+                                mergedObj.put("key_actions", fbKa)
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                    mergedStructuredForSave = mergedObj.toString()
+                } catch (_: Exception) {
+                }
+            }
+
+            run {
+                fun readCategoriesFromColumn(categories: String?): List<String> {
+                    val raw = categories?.trim()
+                    if (raw.isNullOrEmpty() || raw.equals("null", ignoreCase = true)) return emptyList()
+                    return try {
+                        val arr = JSONArray(raw)
+                        val out = ArrayList<String>(arr.length())
+                        for (i in 0 until arr.length()) {
+                            val v = arr.optString(i, "").trim()
+                            if (v.isNotEmpty() && !v.equals("null", ignoreCase = true)) out.add(v)
+                        }
+                        out
+                    } catch (_: Exception) {
+                        raw.split(Regex("[,，;；\\s]+"))
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+                    }
+                }
+
+                val mergedObj = parseStructuredJsonObject(mergedStructuredForSave)
+                val prevObj = parseStructuredJsonObject(prevRes.second)
+                val curObj = parseStructuredJsonObject(curStructured)
+
+                val originalCats = mergeUniqueStrings(
+                    mergeUniqueStrings(
+                        readStringList(prevObj, "categories"),
+                        readCategoriesFromColumn(prevCategoriesFromDb),
+                    ),
+                    mergeUniqueStrings(
+                        readStringList(curObj, "categories"),
+                        readCategoriesFromColumn(curCategoriesFromDb),
+                    ),
+                )
+                val mergedCats = readStringList(mergedObj, "categories")
+                val cats = mergeUniqueStrings(originalCats, mergedCats)
+                if (cats.isEmpty()) return@run
+
+                val catArr = JSONArray()
+                for (v in cats) catArr.put(v)
+                mergedCategoriesForSave = catArr.toString()
+
+                if (mergedObj != null) {
+                    try {
+                        mergedObj.put("categories", catArr)
+                        mergedStructuredForSave = mergedObj.toString()
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+
+            SegmentDatabaseHelper.updateSegmentWindow(ctx, cur.id, prev.startTime, cur.endTime)
+            var mergedSamplesForUi: List<SegmentDatabaseHelper.Sample> = mergedUniqueSamples
+            try {
+                val curAfter = SegmentDatabaseHelper.getSegmentById(ctx, cur.id)
+                if (curAfter != null) {
+                    val rebuilt = buildSamplesForSegment(ctx, curAfter)
+                    if (rebuilt.isNotEmpty()) {
+                        mergedSamplesForUi = mergeSamples(mergedUniqueSamples, rebuilt)
+                    }
+                }
+                try { SegmentDatabaseHelper.saveSamples(ctx, cur.id, mergedSamplesForUi) } catch (_: Exception) {}
+            } catch (_: Exception) {}
+
+            val mergedStructuredWithImages = mergeImageDescriptionsIntoStructuredJson(
+                mergedStructuredJson = mergedStructuredForSave,
+                mergedSamplesForUi = mergedSamplesForUi,
+                mergedAiSamples = mergedAiSamples,
+                prevStructuredJson = prevRes.second,
+                prevSamples = prevSamples,
+                curStructuredJson = curStructured,
+                curSamples = curSamples,
+            ) ?: mergedStructuredForSave
+            val mergedStructuredFinal = normalizeImageRefsToFilenames(
+                mergedStructuredWithImages,
+                mergedAiSamples,
+            ) ?: mergedStructuredWithImages
+
+            SegmentDatabaseHelper.saveResult(
+                ctx,
+                cur.id,
+                provider = aiConfig.providerType?.trim()?.takeIf { it.isNotEmpty() } ?: "gemini",
+                model = merged.model,
+                outputText = mergedOutputTextForSave,
+                structuredJson = mergedStructuredFinal,
+                categories = mergedCategoriesForSave,
+                rawRequest = merged.rawRequest,
+                rawResponse = merged.rawResponse,
+            )
+            try {
+                SegmentDatabaseHelper.upsertAiImageMetaFromStructuredJson(
+                    ctx,
+                    segmentId = cur.id,
+                    samples = mergedSamplesForUi,
+                    structuredJson = mergedStructuredFinal,
+                    lang = null,
+                )
+            } catch (_: Exception) {}
+            try { SegmentDatabaseHelper.setMergedFlag(ctx, cur.id, true) } catch (_: Exception) {}
+            try {
+                SegmentDatabaseHelper.deleteSegmentCascade(ctx, prev.id)
+            } catch (_: Exception) {}
+            SegmentDatabaseHelper.setMergeAttempted(ctx, cur.id, true)
+            return tryCompareAndMergeBackwardStrict(
+                ctx,
+                cur.copy(startTime = prev.startTime),
+                mergedSamplesForUi,
+                mergedOutputTextForSave,
+                mergedStructuredWithImages,
+                aiConfig = aiConfig,
+                forceMerge = false,
+                lockHeld = true,
+            )
+        } catch (e: DynamicRebuildStepException) {
+            throw e
+        } catch (e: Exception) {
+            throw DynamicRebuildStepException(
+                "动态重建合并失败：${e.message ?: e.toString()}",
+                cur.id,
+            )
+        } finally {
+            if (!lockHeld) {
+                mergingSegments.remove(cur.id)
+            }
+        }
+    }
+
     private data class TextFirstMergedResult(
         val outputText: String,
         val structuredJson: String,
@@ -3074,6 +3624,198 @@ object SegmentSummaryManager {
             }
         }
         return samples
+    }
+
+    private fun summarizeSegmentForRebuildStrict(
+        ctx: Context,
+        seg: SegmentDatabaseHelper.Segment,
+        samples: List<SegmentDatabaseHelper.Sample>,
+        aiConfig: AISettingsNative.AIConfig,
+    ): Pair<String, String?> {
+        if (samples.isEmpty()) {
+            SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
+            return Pair("", null)
+        }
+
+        val capBySeg = (seg.durationSec / seg.sampleIntervalSec).coerceAtLeast(1)
+        val effectiveCap = kotlin.math.min(capBySeg, PROVIDER_IMAGE_HARD_LIMIT)
+        val samplesOrdered = samples.sortedBy { it.captureTime }
+        val effSamples = if (samplesOrdered.size > effectiveCap) {
+            evenPick(samplesOrdered, effectiveCap)
+        } else {
+            samplesOrdered
+        }
+        val effectiveLang = resolveEffectiveLang(ctx)
+        val prompt = buildSegmentSummaryPrompt(ctx, seg, effSamples, effectiveLang)
+
+        val result = try {
+            callGeminiWithImages(
+                ctx = ctx,
+                seg = seg,
+                samples = effSamples,
+                prompt = prompt,
+                aiConfigOverride = aiConfig,
+            )
+        } catch (e: Exception) {
+            throw DynamicRebuildStepException(
+                "动态重建 AI 调用失败：${e.message ?: e.toString()}",
+                seg.id,
+            )
+        }
+
+        val provider = aiConfig.providerType?.trim()?.takeIf { it.isNotEmpty() } ?: "gemini"
+        val structuredToSave = normalizeImageRefsToFilenames(result.structuredJson, effSamples)
+        SegmentDatabaseHelper.saveResult(
+            ctx,
+            seg.id,
+            provider = provider,
+            model = result.model,
+            outputText = result.outputText,
+            structuredJson = structuredToSave,
+            categories = result.categories,
+            rawRequest = result.rawRequest,
+            rawResponse = result.rawResponse,
+        )
+        if (!SegmentDatabaseHelper.hasResultForSegment(ctx, seg.id)) {
+            throw DynamicRebuildStepException("动态重建结果落盘失败", seg.id)
+        }
+        try {
+            SegmentDatabaseHelper.upsertAiImageMetaFromStructuredJson(
+                ctx,
+                segmentId = seg.id,
+                samples = effSamples,
+                structuredJson = structuredToSave,
+                lang = effectiveLang,
+            )
+        } catch (_: Exception) {}
+        SegmentDatabaseHelper.updateSegmentStatus(ctx, seg.id, "completed")
+        return Pair(result.outputText, structuredToSave)
+    }
+
+    private fun resolveEffectiveLang(ctx: Context): String {
+        val langOpt = try {
+            ctx.getSharedPreferences(
+                "FlutterSharedPreferences",
+                android.content.Context.MODE_PRIVATE,
+            ).getString("flutter.locale_option", "system")
+        } catch (_: Exception) {
+            "system"
+        }
+        val sysLang = try {
+            java.util.Locale.getDefault().language?.lowercase()
+        } catch (_: Exception) {
+            "en"
+        } ?: "en"
+        return when (langOpt) {
+            "zh", "en", "ja", "ko" -> langOpt
+            "system" -> when {
+                sysLang.startsWith("zh") -> "zh"
+                sysLang.startsWith("ja") -> "ja"
+                sysLang.startsWith("ko") -> "ko"
+                else -> "en"
+            }
+            else -> "en"
+        }
+    }
+
+    private fun buildSegmentSummaryPrompt(
+        ctx: Context,
+        seg: SegmentDatabaseHelper.Segment,
+        samples: List<SegmentDatabaseHelper.Sample>,
+        effectiveLang: String,
+    ): String {
+        val extraHeader = try {
+            val key = when (effectiveLang) {
+                "zh" -> "prompt_segment_extra_zh"
+                else -> "prompt_segment_extra_en"
+            }
+            AISettingsNative.readSettingValue(ctx, key)
+        } catch (_: Exception) { null }
+        val legacyHeaderLang = try {
+            val key = when (effectiveLang) {
+                "zh" -> "prompt_segment_zh"
+                else -> "prompt_segment_en"
+            }
+            AISettingsNative.readSettingValue(ctx, key)
+        } catch (_: Exception) { null }
+        val legacyHeader = try {
+            AISettingsNative.readSettingValue(ctx, "prompt_segment")
+        } catch (_: Exception) { null }
+
+        val languagePolicy = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.ai_language_policy_zh,
+            R.string.ai_language_policy_en,
+            R.string.ai_language_policy_ja,
+            R.string.ai_language_policy_ko,
+        )
+        val baseHeader = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.segment_prompt_default_zh,
+            R.string.segment_prompt_default_en,
+            R.string.segment_prompt_default_ja,
+            R.string.segment_prompt_default_ko,
+        )
+        val addon = sequenceOf(extraHeader, legacyHeaderLang, legacyHeader)
+            .firstOrNull { it != null && it.trim().isNotEmpty() }
+            ?.trim()
+        val headerBuilder = StringBuilder()
+        headerBuilder.append(languagePolicy).append("\n\n").append(baseHeader)
+        if (!addon.isNullOrEmpty()) {
+            val label = when (effectiveLang) {
+                "zh" -> "附加说明："
+                "ja" -> "追加指示："
+                "ko" -> "추가 지침:"
+                else -> "Additional instructions:"
+            }
+            headerBuilder.append("\n\n").append(label).append('\n').append(addon)
+        }
+
+        val timeRangeLabel = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.label_time_range_zh,
+            R.string.label_time_range_en,
+            R.string.label_time_range_ja,
+            R.string.label_time_range_ko,
+        )
+        val shotLabel = getStringByLang(
+            ctx,
+            effectiveLang,
+            R.string.label_screenshot_at_zh,
+            R.string.label_screenshot_at_en,
+            R.string.label_screenshot_at_ja,
+            R.string.label_screenshot_at_ko,
+        )
+        val imageIndexLabel = when (effectiveLang) {
+            "zh" -> "图片索引（仅使用序号引用图片）"
+            "ja" -> "画像インデックス（画像参照は番号のみ）"
+            "ko" -> "이미지 인덱스(번호로만 참조)"
+            else -> "Image index list (reference by number only)"
+        }
+
+        val sb = StringBuilder()
+        sb.append(timeRangeLabel)
+            .append(fmt(seg.startTime))
+            .append(" - ")
+            .append(fmt(seg.endTime))
+            .append('\n')
+        sb.append(headerBuilder.toString()).append('\n')
+        sb.append(imageIndexLabel).append('\n')
+        for ((idx, s) in samples.sortedBy { it.captureTime }.withIndex()) {
+            val appDisplay = s.appName.trim().ifEmpty { s.appPackageName.trim() }
+            sb.append(shotLabel)
+                .append("[#")
+                .append(idx + 1)
+                .append("] ")
+                .append(fmt(s.captureTime))
+                .append(" | ")
+                .append(appDisplay)
+                .append('\n')
+        }
+        return sb.toString()
     }
 
     private fun mergeSamples(
@@ -3724,26 +4466,212 @@ object SegmentSummaryManager {
      */
     fun retrySegmentsByIds(ctx: Context, ids: List<Long>, force: Boolean = false): Int {
         if (ids.isEmpty()) return 0
+        val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        if (isDynamicRebuildTaskActive(appCtx)) {
+            try { FileLogger.i(TAG, "retrySegments：检测到动态重建任务运行中，拒绝单条重试 ids=${ids.size}") } catch (_: Exception) {}
+            return 0
+        }
         var retried = 0
         for (id in ids) {
             try {
                 // 非强制：已有结果则跳过
-                if (!force && SegmentDatabaseHelper.hasResultForSegment(ctx, id)) continue
-                val seg = SegmentDatabaseHelper.getSegmentById(ctx, id) ?: continue
-                var samples = SegmentDatabaseHelper.getSamplesForSegment(ctx, id)
+                if (!force && SegmentDatabaseHelper.hasResultForSegment(appCtx, id)) continue
+                val seg = SegmentDatabaseHelper.getSegmentById(appCtx, id) ?: continue
+                var samples = SegmentDatabaseHelper.getSamplesForSegment(appCtx, id)
                 if (samples.isEmpty()) {
-                    samples = buildSamplesForSegment(ctx, seg)
+                    samples = buildSamplesForSegment(appCtx, seg)
                     if (samples.isNotEmpty()) {
-                        try { SegmentDatabaseHelper.saveSamples(ctx, seg.id, samples) } catch (_: Exception) {}
+                        try { SegmentDatabaseHelper.saveSamples(appCtx, seg.id, samples) } catch (_: Exception) {}
                     }
                 }
                 if (samples.isEmpty()) continue
                 try { FileLogger.i(TAG, "retrySegments: seg=${id} imgs=${samples.size} force=${force}") } catch (_: Exception) {}
-                finishSegment(ctx, seg, samples, force)
+                finishSegment(appCtx, seg, samples, force)
                 retried++
             } catch (_: Exception) {}
         }
         return retried
+    }
+
+    data class DynamicRebuildWindow(
+        val startTime: Long,
+        val endTime: Long,
+    )
+
+    class DynamicRebuildStepException(
+        message: String,
+        val segmentId: Long = 0L,
+    ) : IllegalStateException(message)
+
+    fun buildFullRebuildWorklist(ctx: Context, durationSec: Int): List<DynamicRebuildWindow> {
+        val safeDurationSec = durationSec.coerceAtLeast(60)
+        val shots = SegmentDatabaseHelper.listAllShotsAscending(ctx)
+        if (shots.isEmpty()) return emptyList()
+
+        val works = ArrayList<DynamicRebuildWindow>()
+        var i = 0
+        while (i < shots.size) {
+            val start = shots[i].captureTime
+            val end = start + safeDurationSec * 1000L
+            works.add(
+                DynamicRebuildWindow(
+                    startTime = start,
+                    endTime = end,
+                ),
+            )
+
+            var next = i + 1
+            while (next < shots.size && shots[next].captureTime < end) next++
+            i = if (next <= i) i + 1 else next
+        }
+        return works
+    }
+
+    fun rebuildWindowStrict(
+        ctx: Context,
+        windowStart: Long,
+        windowEnd: Long,
+        durationSec: Int,
+        sampleIntervalSec: Int,
+        aiConfig: AISettingsNative.AIConfig,
+        existingSegmentId: Long = 0L,
+    ): Long {
+        val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        var seg: SegmentDatabaseHelper.Segment? = null
+        var summaryReady = false
+        var outputText: String? = null
+        var structuredJson: String? = null
+        try {
+            if (existingSegmentId > 0L) {
+                val existing = SegmentDatabaseHelper.getSegmentById(appCtx, existingSegmentId)
+                if (existing != null) {
+                    val existingResult = SegmentDatabaseHelper.getResultForSegment(appCtx, existing.id)
+                    if (_hasUsableSegmentResult(existingResult.first, existingResult.second)) {
+                        seg = existing
+                        summaryReady = true
+                        outputText = existingResult.first
+                        structuredJson = existingResult.second
+                    } else {
+                        cleanupRebuildSegment(appCtx, existing.id)
+                    }
+                }
+            }
+
+            if (seg == null) {
+                val exactId = SegmentDatabaseHelper.findSegmentIdByWindow(appCtx, windowStart, windowEnd)
+                if (exactId > 0L) {
+                    val exactSeg = SegmentDatabaseHelper.getSegmentById(appCtx, exactId)
+                    val exactResult = SegmentDatabaseHelper.getResultForSegment(appCtx, exactId)
+                    if (exactSeg != null && _hasUsableSegmentResult(exactResult.first, exactResult.second)) {
+                        seg = exactSeg
+                        summaryReady = true
+                        outputText = exactResult.first
+                        structuredJson = exactResult.second
+                    } else {
+                        cleanupRebuildSegment(appCtx, exactId)
+                    }
+                }
+            }
+
+            if (seg == null) {
+                val createdId = SegmentDatabaseHelper.createSegment(
+                    appCtx,
+                    windowStart,
+                    windowEnd,
+                    durationSec.coerceAtLeast(60),
+                    sampleIntervalSec.coerceAtLeast(5),
+                    status = "collecting",
+                )
+                if (createdId <= 0L) {
+                    throw DynamicRebuildStepException("创建动态事件失败", 0L)
+                }
+                seg = SegmentDatabaseHelper.getSegmentById(appCtx, createdId)
+                    ?: SegmentDatabaseHelper.Segment(
+                        id = createdId,
+                        startTime = windowStart,
+                        endTime = windowEnd,
+                        durationSec = durationSec.coerceAtLeast(60),
+                        sampleIntervalSec = sampleIntervalSec.coerceAtLeast(5),
+                        status = "collecting",
+                    )
+            }
+
+            var samples = SegmentDatabaseHelper.getSamplesForSegment(appCtx, seg.id)
+            if (samples.isEmpty()) {
+                val buildSeg = if (
+                    seg.startTime == windowStart &&
+                    seg.endTime == windowEnd &&
+                    seg.durationSec == durationSec.coerceAtLeast(60) &&
+                    seg.sampleIntervalSec == sampleIntervalSec.coerceAtLeast(5)
+                ) {
+                    seg
+                } else {
+                    seg.copy(
+                        startTime = windowStart,
+                        endTime = windowEnd,
+                        durationSec = durationSec.coerceAtLeast(60),
+                        sampleIntervalSec = sampleIntervalSec.coerceAtLeast(5),
+                    )
+                }
+                samples = buildSamplesForSegment(appCtx, buildSeg)
+                if (samples.isNotEmpty()) {
+                    SegmentDatabaseHelper.saveSamples(appCtx, seg.id, samples)
+                }
+            }
+
+            if (!summaryReady) {
+                val summary = summarizeSegmentForRebuildStrict(appCtx, seg, samples, aiConfig)
+                outputText = summary.first
+                structuredJson = summary.second
+                summaryReady = true
+            }
+
+            if (_hasUsableSegmentResult(outputText, structuredJson)) {
+                val latestSeg = SegmentDatabaseHelper.getSegmentById(appCtx, seg.id) ?: seg
+                val latestSamples = SegmentDatabaseHelper.getSamplesForSegment(appCtx, latestSeg.id)
+                    .ifEmpty { samples }
+                tryCompareAndMergeBackwardStrict(
+                    appCtx,
+                    latestSeg,
+                    latestSamples,
+                    outputText ?: "",
+                    structuredJson,
+                    aiConfig,
+                )
+            } else {
+                try { SegmentDatabaseHelper.updateSegmentStatus(appCtx, seg.id, "completed") } catch (_: Exception) {}
+            }
+            return seg.id
+        } catch (e: DynamicRebuildStepException) {
+            if (!summaryReady) {
+                seg?.id?.takeIf { it > 0L }?.let { cleanupRebuildSegment(appCtx, it) }
+            }
+            throw e
+        } catch (e: Exception) {
+            if (!summaryReady) {
+                seg?.id?.takeIf { it > 0L }?.let { cleanupRebuildSegment(appCtx, it) }
+            }
+            throw DynamicRebuildStepException(
+                "动态重建失败：${e.message ?: e.toString()}",
+                seg?.id ?: 0L,
+            )
+        }
+    }
+
+    private fun cleanupRebuildSegment(ctx: Context, segmentId: Long) {
+        if (segmentId <= 0L) return
+        val paths = try { SegmentDatabaseHelper.getSampleFilePaths(ctx, segmentId) } catch (_: Exception) { emptyList() }
+        try { SegmentDatabaseHelper.deleteSegmentCascade(ctx, segmentId) } catch (_: Exception) {}
+        if (paths.isNotEmpty()) {
+            try { SegmentDatabaseHelper.deleteAiImageMetaByFilePaths(ctx, paths) } catch (_: Exception) {}
+        }
+    }
+
+    private fun _hasUsableSegmentResult(outputText: String?, structuredJson: String?): Boolean {
+        val ot = outputText?.trim().orEmpty()
+        val sj = structuredJson?.trim().orEmpty()
+        return (ot.isNotEmpty() && !ot.equals("null", ignoreCase = true)) ||
+            (sj.isNotEmpty() && !sj.equals("null", ignoreCase = true))
     }
 
     /**
@@ -3755,6 +4683,10 @@ object SegmentSummaryManager {
     fun forceMergeSegmentById(ctx: Context, segmentId: Long, prevSegmentId: Long? = null): Boolean {
         if (segmentId <= 0L) return false
         val appCtx = try { ctx.applicationContext } catch (_: Exception) { ctx }
+        if (isDynamicRebuildTaskActive(appCtx)) {
+            try { FileLogger.i(TAG, "forceMerge：检测到动态重建任务运行中，拒绝手动强制合并 seg=${segmentId}") } catch (_: Exception) {}
+            return false
+        }
         val seg = SegmentDatabaseHelper.getSegmentById(appCtx, segmentId) ?: return false
         if (seg.status != "completed") return false
 
@@ -3974,6 +4906,7 @@ object SegmentSummaryManager {
         maxImagesOverride: Int?,
         allowJsonAutoRetry: Boolean,
         jsonRetryCount: Int,
+        aiConfigOverride: AISettingsNative.AIConfig?,
         model: String,
         outputText: String,
         structured: String?,
@@ -4045,7 +4978,8 @@ object SegmentSummaryManager {
                 injectDynamicRules = injectDynamicRules,
                 maxImagesOverride = maxImagesOverride,
                 allowJsonAutoRetry = allowJsonAutoRetry,
-                jsonRetryCount = jsonRetryCount + 1
+                jsonRetryCount = jsonRetryCount + 1,
+                aiConfigOverride = aiConfigOverride,
             )
         }
 

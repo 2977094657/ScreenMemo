@@ -30,8 +30,8 @@ Future<void> main() async {
 
   // 提前计算首屏需要用到的首启/引导信息
   final permissionService = PermissionService.instance;
-  final bool onboardingCompleted =
-      await permissionService.isOnboardingCompleted();
+  final bool onboardingCompleted = await permissionService
+      .isOnboardingCompleted();
   final bool isFirstLaunch = await permissionService.isFirstLaunch();
   final bool showOnboarding = !onboardingCompleted && isFirstLaunch;
 
@@ -65,10 +65,12 @@ Future<void> main() async {
         ScreenshotService.instance;
 
         StartupProfiler.begin('runApp');
-        runApp(ScreenMemoApp(
-          initialShowOnboarding: showOnboarding,
-          isFirstLaunch: isFirstLaunch,
-        ));
+        runApp(
+          ScreenMemoApp(
+            initialShowOnboarding: showOnboarding,
+            isFirstLaunch: isFirstLaunch,
+          ),
+        );
         StartupProfiler.end('runApp');
       },
       (e, s) {
@@ -86,13 +88,10 @@ Future<void> main() async {
 
   const sentryDsn = String.fromEnvironment('SENTRY_DSN');
   if (sentryDsn.isNotEmpty) {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = sentryDsn;
-        options.tracesSampleRate = 0.0;
-      },
-      appRunner: appRunner,
-    );
+    await SentryFlutter.init((options) {
+      options.dsn = sentryDsn;
+      options.tracesSampleRate = 0.0;
+    }, appRunner: appRunner);
   } else {
     appRunner();
   }
@@ -222,16 +221,17 @@ class _AppInitializerState extends State<AppInitializer> {
     _showOnboarding = widget.initialShowOnboarding;
     // 非首次启动时，在后台异步清理一次过期截图（不阻塞首屏）
     if (!widget.isFirstLaunch) {
-      unawaited(
-        ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded(),
-      );
+      unawaited(ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded());
     }
-    unawaited(_resumeImportOcrRepairIfNeeded());
+    unawaited(_resumeBackgroundTasksIfNeeded());
   }
 
-  Future<void> _resumeImportOcrRepairIfNeeded() async {
+  Future<void> _resumeBackgroundTasksIfNeeded() async {
     try {
       await ScreenshotDatabase.instance.ensureImportOcrRepairTaskResumed();
+    } catch (_) {}
+    try {
+      await ScreenshotDatabase.instance.ensureDynamicRebuildTaskResumed();
     } catch (_) {}
   }
 

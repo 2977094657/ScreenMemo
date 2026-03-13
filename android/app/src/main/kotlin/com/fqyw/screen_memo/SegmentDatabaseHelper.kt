@@ -839,6 +839,85 @@ object SegmentDatabaseHelper {
     }
 
     /**
+     * 查询所有未删除截图（全量，按时间升序）。
+     */
+    fun listAllShotsAscending(context: Context): List<ShotInfo> {
+        val result = ArrayList<ShotInfo>()
+        var master: SQLiteDatabase? = null
+        try {
+            master = openMasterDb(context, writable = false) ?: return emptyList()
+
+            val appNameMap = HashMap<String, String>()
+            try {
+                val c = master.query("app_registry", arrayOf("app_package_name", "app_name"), null, null, null, null, null)
+                c.use { cur ->
+                    while (cur.moveToNext()) {
+                        appNameMap[cur.getString(0)] = cur.getString(1) ?: cur.getString(0)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            val shards = master.query(
+                "shard_registry",
+                arrayOf("app_package_name", "year", "db_path"),
+                null,
+                null,
+                null,
+                null,
+                "year ASC, app_package_name ASC",
+            )
+            shards.use { cur ->
+                while (cur.moveToNext()) {
+                    val pkg = cur.getString(0)
+                    val year = cur.getInt(1)
+                    val dbPath = cur.getString(2)
+                    val resolvedDbPath = chooseExistingShardDbPath(context, pkg, year, dbPath) ?: continue
+
+                    var shard: SQLiteDatabase? = null
+                    try {
+                        shard = SQLiteDatabase.openDatabase(
+                            resolvedDbPath,
+                            null,
+                            SQLiteDatabase.OPEN_READONLY,
+                        )
+                        for (m in 1..12) {
+                            val table = monthTableName(year, m)
+                            if (!tableExists(shard, table)) continue
+                            try {
+                                val rows = shard.query(
+                                    table,
+                                    arrayOf("file_path", "capture_time"),
+                                    "is_deleted = 0",
+                                    null,
+                                    null,
+                                    null,
+                                    "capture_time ASC",
+                                )
+                                rows.use { rc ->
+                                    while (rc.moveToNext()) {
+                                        val path = rc.getString(0)
+                                        val ts = rc.getLong(1)
+                                        val appName = appNameMap[pkg] ?: pkg
+                                        result.add(ShotInfo(path, ts, pkg, appName))
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        try { shard?.close() } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { master?.close() } catch (_: Exception) {}
+        }
+        result.sortBy { it.captureTime }
+        return result
+    }
+
+    /**
      * 查询指定时间范围内某个应用的所有截图（按时间升序）。
      * - 仅扫描该 app 的 shard 库，避免全量遍历所有包。
      */
@@ -1407,6 +1486,104 @@ object SegmentDatabaseHelper {
             db.update("segments", cv, "id = ?", arrayOf(segmentId.toString()))
         } catch (_: Exception) {
         } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    fun getSampleFilePaths(context: Context, segmentId: Long): List<String> {
+        val paths = ArrayList<String>()
+        var db: SQLiteDatabase? = null
+        var cursor: Cursor? = null
+        try {
+            db = openMasterDb(context, writable = false) ?: return emptyList()
+            cursor = db.query(
+                "segment_samples",
+                arrayOf("file_path"),
+                "segment_id = ?",
+                arrayOf(segmentId.toString()),
+                null,
+                null,
+                "position_index ASC",
+            )
+            while (cursor.moveToNext()) {
+                val path = cursor.getStringOrNull(0)?.trim().orEmpty()
+                if (path.isNotEmpty()) paths.add(path)
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { cursor?.close() } catch (_: Exception) {}
+            try { db?.close() } catch (_: Exception) {}
+        }
+        return paths
+    }
+
+    fun deleteAiImageMetaByFilePaths(context: Context, filePaths: List<String>) {
+        if (filePaths.isEmpty()) return
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            db.beginTransaction()
+            try {
+                val normalized = filePaths
+                    .asSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                    .toList()
+                for (chunk in normalized.chunked(300)) {
+                    val placeholders = chunk.joinToString(",") { "?" }
+                    db.delete(
+                        "ai_image_meta",
+                        "file_path IN ($placeholders)",
+                        chunk.toTypedArray(),
+                    )
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                try { db.endTransaction() } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    fun resetAllDynamicRebuildArtifacts(context: Context) {
+        var db: SQLiteDatabase? = null
+        try {
+            db = openMasterDb(context, writable = true) ?: return
+            db.beginTransaction()
+            try {
+                db.delete("segment_results", null, null)
+                db.delete("segment_samples", null, null)
+                db.delete("segments", null, null)
+
+                if (tableExists(db, "ai_image_meta")) {
+                    db.delete("ai_image_meta", "segment_id IS NOT NULL", null)
+                }
+                if (tableExists(db, "daily_summaries")) {
+                    db.delete("daily_summaries", null, null)
+                }
+                if (tableExists(db, "weekly_summaries")) {
+                    db.delete("weekly_summaries", null, null)
+                }
+                if (tableExists(db, "morning_insights")) {
+                    db.delete("morning_insights", null, null)
+                }
+                if (tableExists(db, "search_docs")) {
+                    db.delete(
+                        "search_docs",
+                        "doc_type IN (?, ?, ?)",
+                        arrayOf("daily_summary", "weekly_summary", "morning_insights"),
+                    )
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                try { db.endTransaction() } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            try { FileLogger.w(TAG, "重置动态重建相关数据失败：${e.message}") } catch (_: Exception) {}
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
     }
 
     /** 查询：某段落是否为“合并事件”（merged_flag=1） */
