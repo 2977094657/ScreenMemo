@@ -295,6 +295,37 @@ class MainActivity : FlutterActivity() {
                         result.error("read_failed", e.message, null)
                     }
                 }
+                "getDynamicAutoRepairEnabled" -> {
+                    try {
+                        val enabled = UserSettingsStorage.getBoolean(
+                            this,
+                            UserSettingsKeysNative.DYNAMIC_AUTO_REPAIR_ENABLED,
+                            true
+                        )
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        result.error("read_failed", e.message, null)
+                    }
+                }
+                "setDynamicAutoRepairEnabled" -> {
+                    try {
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        UserSettingsStorage.putBoolean(
+                            this,
+                            UserSettingsKeysNative.DYNAMIC_AUTO_REPAIR_ENABLED,
+                            enabled
+                        )
+                        try {
+                            FileLogger.i(
+                                TAG,
+                                "设置动态自动补建开关：enabled=${enabled}"
+                            )
+                        } catch (_: Exception) {}
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        result.error("invalid_args", e.message, null)
+                    }
+                }
                 "setDynamicMergeLimits" -> {
                     try {
                         val spanRaw = call.argument<Int>("maxSpanSec") ?: (3 * 3600)

@@ -15,6 +15,7 @@ object UserSettingsKeysNative {
     const val SEGMENT_SAMPLE_INTERVAL_SEC = "segment_sample_interval_sec"
     const val SEGMENT_DURATION_SEC = "segment_duration_sec"
     const val AI_MIN_REQUEST_INTERVAL_SEC = "ai_min_request_interval_sec"
+    const val DYNAMIC_AUTO_REPAIR_ENABLED = "dynamic_auto_repair_enabled"
     // 动态合并（仅自动合并；强制合并不受限）
     const val MERGE_DYNAMIC_MAX_SPAN_SEC = "merge_dynamic_max_span_sec"
     const val MERGE_DYNAMIC_MAX_GAP_SEC = "merge_dynamic_max_gap_sec"

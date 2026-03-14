@@ -39,6 +39,16 @@ class DynamicRebuildService : Service() {
         ): Map<String, Any?> {
             val current = DynamicRebuildTaskStore.load(context)
             if (current != null && current.isRecoverable()) {
+                current.currentStage = "resume_requested"
+                current.currentStageLabel = "恢复后台任务"
+                current.currentStageDetail = "检测到未完成任务，继续在后台执行"
+                current.appendRecentLog(
+                    buildStageLogLine(
+                        "恢复后台任务",
+                        "检测到未完成任务，继续在后台执行",
+                    ),
+                )
+                DynamicRebuildTaskStore.save(context, current)
                 startService(context, ACTION_RESUME)
                 return current.toMap()
             }
@@ -47,6 +57,15 @@ class DynamicRebuildService : Service() {
                 current.updatedAt = System.currentTimeMillis()
                 current.completedAt = 0L
                 current.lastError = null
+                current.currentStage = "resume_requested"
+                current.currentStageLabel = "继续重建"
+                current.currentStageDetail = "沿用现有进度，等待后台继续处理"
+                current.appendRecentLog(
+                    buildStageLogLine(
+                        "继续重建",
+                        "沿用现有进度，等待后台继续处理",
+                    ),
+                )
                 DynamicRebuildTaskStore.save(context, current)
                 startService(context, ACTION_RESUME)
                 return current.toMap()
@@ -65,6 +84,9 @@ class DynamicRebuildService : Service() {
                 currentDayKey = "",
                 currentSegmentId = 0L,
                 currentRangeLabel = "",
+                currentStage = "queued",
+                currentStageLabel = "等待后台启动",
+                currentStageDetail = "任务已创建，等待后台服务开始准备",
                 lastError = null,
                 segmentDurationSec = 0,
                 segmentSampleIntervalSec = 0,
@@ -73,6 +95,12 @@ class DynamicRebuildService : Service() {
                 aiModel = "",
                 aiProviderType = null,
                 aiChatPath = null,
+                recentLogs = mutableListOf(
+                    buildStageLogLine(
+                        "等待后台启动",
+                        "任务已创建，等待后台服务开始准备",
+                    ),
+                ),
                 works = mutableListOf(),
             )
             DynamicRebuildTaskStore.save(context, next)
@@ -104,6 +132,15 @@ class DynamicRebuildService : Service() {
             current.status = DynamicRebuildTaskState.STATUS_CANCELLED
             current.completedAt = System.currentTimeMillis()
             current.updatedAt = current.completedAt
+            current.currentStage = "cancelled"
+            current.currentStageLabel = "已停止"
+            current.currentStageDetail = "已停止后台重建，当前进度可稍后继续"
+            current.appendRecentLog(
+                buildStageLogLine(
+                    "已停止",
+                    "已停止后台重建，当前进度可稍后继续",
+                ),
+            )
             DynamicRebuildTaskStore.save(context, current)
             startService(context, ACTION_CANCEL)
             return current.toMap()
@@ -197,6 +234,13 @@ class DynamicRebuildService : Service() {
                 return
             }
 
+            recordStage(
+                state = state,
+                stage = "worker_started",
+                label = "后台任务启动",
+                detail = "已进入串行重建流程",
+            )
+
             if (!state.hasPreparedWorks()) {
                 state = prepareWorkItems(state)
             }
@@ -206,9 +250,12 @@ class DynamicRebuildService : Service() {
             }
 
             state.status = DynamicRebuildTaskState.STATUS_RUNNING
-            state.updatedAt = System.currentTimeMillis()
-            DynamicRebuildTaskStore.save(this, state)
-            updateNotification(state)
+            recordStage(
+                state = state,
+                stage = "running",
+                label = "开始串行重建",
+                detail = "按时间顺序逐条重建动态",
+            )
 
             finalState = processPreparedWorks(state)
         } catch (e: Exception) {
@@ -218,6 +265,15 @@ class DynamicRebuildService : Service() {
             failed.lastError = e.message ?: e.toString()
             failed.completedAt = System.currentTimeMillis()
             failed.updatedAt = failed.completedAt
+            failed.currentStage = "failed"
+            failed.currentStageLabel = "任务失败"
+            failed.currentStageDetail = failed.lastError ?: "后台重建失败"
+            failed.appendRecentLog(
+                buildStageLogLine(
+                    "任务失败",
+                    failed.currentStageDetail,
+                ),
+            )
             DynamicRebuildTaskStore.save(this, failed)
             FileLogger.e(TAG, "??????????", e)
             finalState = failed
@@ -234,19 +290,40 @@ class DynamicRebuildService : Service() {
 
     private fun prepareWorkItems(state: DynamicRebuildTaskState): DynamicRebuildTaskState {
         state.status = DynamicRebuildTaskState.STATUS_PREPARING
-        state.updatedAt = System.currentTimeMillis()
-        DynamicRebuildTaskStore.save(this, state)
-        updateNotification(state)
+        recordStage(
+            state = state,
+            stage = "prepare_settings",
+            label = "读取重建配置",
+            detail = "正在读取分段长度与采样间隔",
+        )
 
         val durationSec = readSegmentDurationSec()
         val sampleIntervalSec = readSegmentSampleIntervalSec()
+        recordStage(
+            state = state,
+            stage = "prepare_worklist",
+            label = "生成时间窗清单",
+            detail = "按截图时间顺序计算全量重建范围",
+        )
         val works = SegmentSummaryManager.buildFullRebuildWorklist(this, durationSec)
         val aiConfig = if (works.isNotEmpty()) {
+            recordStage(
+                state = state,
+                stage = "prepare_ai_config",
+                label = "读取 AI 配置",
+                detail = "准备动态重建所需的模型配置",
+            )
             AISettingsNative.readConfig(this, "segments")
         } else {
             null
         }
 
+        recordStage(
+            state = state,
+            stage = "prepare_reset",
+            label = "清空旧动态数据",
+            detail = "删除旧的动态、总结与样本，准备重建",
+        )
         SegmentDatabaseHelper.resetAllDynamicRebuildArtifacts(this)
 
         state.segmentDurationSec = durationSec
@@ -275,19 +352,31 @@ class DynamicRebuildService : Service() {
         state.currentRangeLabel = state.works.firstOrNull()?.rangeLabel.orEmpty()
         state.lastError = null
         state.completedAt = 0L
-        state.updatedAt = System.currentTimeMillis()
 
         if (state.works.isEmpty()) {
             state.status = DynamicRebuildTaskState.STATUS_COMPLETED
             state.completedAt = state.updatedAt
+            state.currentStage = "completed_empty"
+            state.currentStageLabel = "准备完成"
+            state.currentStageDetail = "没有找到可重建的动态"
+            state.appendRecentLog(
+                buildStageLogLine(
+                    "准备完成",
+                    "没有找到可重建的动态",
+                ),
+            )
             DynamicRebuildTaskStore.save(this, state)
             updateNotification(state)
             return state
         }
 
         state.status = DynamicRebuildTaskState.STATUS_PENDING
-        DynamicRebuildTaskStore.save(this, state)
-        updateNotification(state)
+        recordStage(
+            state = state,
+            stage = "prepare_done",
+            label = "准备完成",
+            detail = "共 ${state.totalSegments} 条，下一条：${state.currentDayKey} ${state.currentRangeLabel}".trim(),
+        )
         return state
     }
 
@@ -299,6 +388,15 @@ class DynamicRebuildService : Service() {
                 state.status = DynamicRebuildTaskState.STATUS_CANCELLED
                 state.completedAt = System.currentTimeMillis()
                 state.updatedAt = state.completedAt
+                state.currentStage = "cancelled"
+                state.currentStageLabel = "已停止"
+                state.currentStageDetail = "停止请求已生效，后台任务退出"
+                state.appendRecentLog(
+                    buildStageLogLine(
+                        "已停止",
+                        "停止请求已生效，后台任务退出",
+                    ),
+                )
                 DynamicRebuildTaskStore.save(this, state)
                 return state
             }
@@ -308,9 +406,12 @@ class DynamicRebuildService : Service() {
             state.currentSegmentId = 0L
             state.currentDayKey = work.dayKey
             state.currentRangeLabel = work.rangeLabel
-            state.updatedAt = System.currentTimeMillis()
-            DynamicRebuildTaskStore.save(this, state)
-            updateNotification(state)
+            recordStage(
+                state = state,
+                stage = "window_start",
+                label = "开始重建当前动态",
+                detail = "第 ${state.currentWorkOrdinal()}/${state.totalSegments} 条 · ${work.dayKey} ${work.rangeLabel}".trim(),
+            )
 
             try {
                 SegmentSummaryManager.rebuildWindowStrict(
@@ -321,13 +422,25 @@ class DynamicRebuildService : Service() {
                     sampleIntervalSec = state.segmentSampleIntervalSec,
                     aiConfig = state.requireAiConfig(),
                     existingSegmentId = state.currentSegmentId,
+                    stageReporter = { stage, label, detail, segmentId ->
+                        recordStage(
+                            state = state,
+                            stage = stage,
+                            label = label,
+                            detail = detail,
+                            segmentId = segmentId,
+                        )
+                    },
                 )
                 state.currentSegmentId = 0L
                 state.processedSegments += 1
                 state.lastError = null
-                state.updatedAt = System.currentTimeMillis()
-                DynamicRebuildTaskStore.save(this, state)
-                updateNotification(state)
+                recordStage(
+                    state = state,
+                    stage = "window_completed",
+                    label = "当前动态完成",
+                    detail = "已完成第 ${state.processedSegments}/${state.totalSegments} 条",
+                )
             } catch (e: SegmentSummaryManager.DynamicRebuildStepException) {
                 state.status = DynamicRebuildTaskState.STATUS_FAILED
                 state.failedSegments += 1
@@ -337,6 +450,15 @@ class DynamicRebuildService : Service() {
                 }
                 state.completedAt = System.currentTimeMillis()
                 state.updatedAt = state.completedAt
+                state.currentStage = "failed"
+                state.currentStageLabel = "当前动态失败"
+                state.currentStageDetail = state.lastError ?: "动态重建失败"
+                state.appendRecentLog(
+                    buildStageLogLine(
+                        "当前动态失败",
+                        state.currentStageDetail,
+                    ),
+                )
                 DynamicRebuildTaskStore.save(this, state)
                 updateNotification(state)
                 return state
@@ -346,6 +468,15 @@ class DynamicRebuildService : Service() {
                 state.lastError = e.message ?: e.toString()
                 state.completedAt = System.currentTimeMillis()
                 state.updatedAt = state.completedAt
+                state.currentStage = "failed"
+                state.currentStageLabel = "当前动态失败"
+                state.currentStageDetail = state.lastError ?: "动态重建失败"
+                state.appendRecentLog(
+                    buildStageLogLine(
+                        "当前动态失败",
+                        state.currentStageDetail,
+                    ),
+                )
                 DynamicRebuildTaskStore.save(this, state)
                 updateNotification(state)
                 return state
@@ -356,6 +487,15 @@ class DynamicRebuildService : Service() {
         state.completedAt = System.currentTimeMillis()
         state.updatedAt = state.completedAt
         state.currentSegmentId = 0L
+        state.currentStage = "completed"
+        state.currentStageLabel = "全部完成"
+        state.currentStageDetail = "共完成 ${state.processedSegments}/${state.totalSegments} 条动态"
+        state.appendRecentLog(
+            buildStageLogLine(
+                "全部完成",
+                state.currentStageDetail,
+            ),
+        )
         DynamicRebuildTaskStore.save(this, state)
         try {
             SegmentSummaryManager.tick(applicationContext)
@@ -550,10 +690,46 @@ class DynamicRebuildService : Service() {
         if (state.currentDayKey.isNotBlank() || state.currentRangeLabel.isNotBlank()) {
             sb.appendLine("??: 第 ${state.currentWorkOrdinal()}/${state.totalSegments} 条 ${state.currentDayKey} ${state.currentRangeLabel}".trim())
         }
+        if (state.currentStageLabel.isNotBlank()) {
+            sb.appendLine("stage: ${state.currentStageLabel}")
+        }
+        if (state.currentStageDetail.isNotBlank()) {
+            sb.appendLine("stageDetail: ${state.currentStageDetail}")
+        }
         if (!state.lastError.isNullOrBlank()) {
             sb.appendLine("lastError: ${state.lastError}")
         }
         return sb.toString().trim()
+    }
+
+    private fun recordStage(
+        state: DynamicRebuildTaskState,
+        stage: String,
+        label: String,
+        detail: String = "",
+        segmentId: Long = 0L,
+        forceLog: Boolean = false,
+    ) {
+        val normalizedStage = stage.trim()
+        val normalizedLabel = label.trim()
+        val normalizedDetail = detail.trim()
+        val changed =
+            forceLog ||
+                state.currentStage != normalizedStage ||
+                state.currentStageLabel != normalizedLabel ||
+                state.currentStageDetail != normalizedDetail ||
+                (segmentId > 0L && state.currentSegmentId != segmentId)
+        if (!changed) return
+        state.currentStage = normalizedStage
+        state.currentStageLabel = normalizedLabel
+        state.currentStageDetail = normalizedDetail
+        if (segmentId > 0L) {
+            state.currentSegmentId = segmentId
+        }
+        state.updatedAt = System.currentTimeMillis()
+        state.appendRecentLog(buildStageLogLine(normalizedLabel, normalizedDetail))
+        DynamicRebuildTaskStore.save(this, state)
+        updateNotification(state)
     }
 
     private fun readSegmentDurationSec(): Int {
@@ -595,6 +771,16 @@ class DynamicRebuildService : Service() {
     }
 }
 
+private fun buildStageLogLine(label: String, detail: String): String {
+    val time = try {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+    } catch (_: Exception) {
+        ""
+    }
+    val body = if (detail.isBlank()) label.trim() else "${label.trim()}：${detail.trim()}"
+    return listOf(time.trim(), body.trim()).filter { it.isNotEmpty() }.joinToString(" ")
+}
+
 private data class DynamicRebuildWorkItem(
     val startTime: Long,
     val endTime: Long,
@@ -633,6 +819,9 @@ private data class DynamicRebuildTaskState(
     var currentDayKey: String,
     var currentSegmentId: Long,
     var currentRangeLabel: String,
+    var currentStage: String,
+    var currentStageLabel: String,
+    var currentStageDetail: String,
     var lastError: String?,
     var segmentDurationSec: Int,
     var segmentSampleIntervalSec: Int,
@@ -641,6 +830,7 @@ private data class DynamicRebuildTaskState(
     var aiModel: String,
     var aiProviderType: String?,
     var aiChatPath: String?,
+    val recentLogs: MutableList<String>,
     val works: MutableList<DynamicRebuildWorkItem>,
 ) {
     companion object {
@@ -665,6 +855,9 @@ private data class DynamicRebuildTaskState(
                 currentDayKey = "",
                 currentSegmentId = 0L,
                 currentRangeLabel = "",
+                currentStage = "",
+                currentStageLabel = "",
+                currentStageDetail = "",
                 lastError = null,
                 segmentDurationSec = 0,
                 segmentSampleIntervalSec = 0,
@@ -673,6 +866,7 @@ private data class DynamicRebuildTaskState(
                 aiModel = "",
                 aiProviderType = null,
                 aiChatPath = null,
+                recentLogs = mutableListOf(),
                 works = mutableListOf(),
             )
         }
@@ -707,6 +901,15 @@ private data class DynamicRebuildTaskState(
         }
     }
 
+    fun appendRecentLog(entry: String) {
+        val normalized = entry.trim()
+        if (normalized.isEmpty()) return
+        recentLogs.add(normalized)
+        while (recentLogs.size > 160) {
+            recentLogs.removeAt(0)
+        }
+    }
+
     fun requireAiConfig(): AISettingsNative.AIConfig {
         if (aiBaseUrl.isBlank() || aiApiKey.isBlank() || aiModel.isBlank()) {
             throw IllegalStateException("???? AI ????")
@@ -733,9 +936,13 @@ private data class DynamicRebuildTaskState(
             "currentDayKey" to currentDayKey,
             "currentSegmentId" to currentSegmentId,
             "currentRangeLabel" to currentRangeLabel,
+            "currentStage" to currentStage,
+            "currentStageLabel" to currentStageLabel,
+            "currentStageDetail" to currentStageDetail,
             "lastError" to lastError,
             "isActive" to isRecoverable(),
             "progressPercent" to progressPercentText(),
+            "recentLogs" to recentLogs.toList(),
         )
     }
 }
@@ -756,9 +963,17 @@ private object DynamicRebuildTaskStore {
             val obj = JSONObject(raw)
             val works = mutableListOf<DynamicRebuildWorkItem>()
             val worksJson = obj.optJSONArray("works") ?: JSONArray()
+            val recentLogs = mutableListOf<String>()
             for (i in 0 until worksJson.length()) {
                 val item = worksJson.optJSONObject(i) ?: continue
                 works.add(DynamicRebuildWorkItem.fromJson(item))
+            }
+            val recentLogsJson = obj.optJSONArray("recentLogs") ?: JSONArray()
+            for (i in 0 until recentLogsJson.length()) {
+                val value = recentLogsJson.optString(i, "").trim()
+                if (value.isNotEmpty()) {
+                    recentLogs.add(value)
+                }
             }
             DynamicRebuildTaskState(
                 taskId = obj.optString("taskId", ""),
@@ -772,6 +987,9 @@ private object DynamicRebuildTaskStore {
                 currentDayKey = obj.optString("currentDayKey", ""),
                 currentSegmentId = obj.optLong("currentSegmentId", 0L),
                 currentRangeLabel = obj.optString("currentRangeLabel", ""),
+                currentStage = obj.optString("currentStage", ""),
+                currentStageLabel = obj.optString("currentStageLabel", ""),
+                currentStageDetail = obj.optString("currentStageDetail", ""),
                 lastError = obj.optString("lastError", "").takeIf { it.isNotBlank() },
                 segmentDurationSec = obj.optInt("segmentDurationSec", 0),
                 segmentSampleIntervalSec = obj.optInt("segmentSampleIntervalSec", 0),
@@ -780,6 +998,7 @@ private object DynamicRebuildTaskStore {
                 aiModel = obj.optString("aiModel", ""),
                 aiProviderType = obj.optString("aiProviderType", "").takeIf { it.isNotBlank() },
                 aiChatPath = obj.optString("aiChatPath", "").takeIf { it.isNotBlank() },
+                recentLogs = recentLogs,
                 works = works,
             )
         } catch (e: Exception) {
@@ -791,7 +1010,9 @@ private object DynamicRebuildTaskStore {
     @Synchronized
     fun save(context: Context, state: DynamicRebuildTaskState) {
         val works = JSONArray()
+        val recentLogs = JSONArray()
         state.works.forEach { works.put(it.toJson()) }
+        state.recentLogs.forEach { recentLogs.put(it) }
         val obj = JSONObject()
             .put("taskId", state.taskId)
             .put("status", state.status)
@@ -804,6 +1025,9 @@ private object DynamicRebuildTaskStore {
             .put("currentDayKey", state.currentDayKey)
             .put("currentSegmentId", state.currentSegmentId)
             .put("currentRangeLabel", state.currentRangeLabel)
+            .put("currentStage", state.currentStage)
+            .put("currentStageLabel", state.currentStageLabel)
+            .put("currentStageDetail", state.currentStageDetail)
             .put("lastError", state.lastError ?: JSONObject.NULL)
             .put("segmentDurationSec", state.segmentDurationSec)
             .put("segmentSampleIntervalSec", state.segmentSampleIntervalSec)
@@ -812,6 +1036,7 @@ private object DynamicRebuildTaskStore {
             .put("aiModel", state.aiModel)
             .put("aiProviderType", state.aiProviderType ?: JSONObject.NULL)
             .put("aiChatPath", state.aiChatPath ?: JSONObject.NULL)
+            .put("recentLogs", recentLogs)
             .put("works", works)
         prefs(context).edit().putString(KEY_TASK_JSON, obj.toString()).commit()
     }

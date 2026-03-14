@@ -21,6 +21,7 @@ class UserSettingKeys {
   static const String segmentSampleIntervalSec = 'segment_sample_interval_sec';
   static const String segmentDurationSec = 'segment_duration_sec';
   static const String aiMinRequestIntervalSec = 'ai_min_request_interval_sec';
+  static const String dynamicAutoRepairEnabled = 'dynamic_auto_repair_enabled';
   // 动态合并（仅自动合并；强制合并不受限）
   static const String mergeDynamicMaxSpanSec = 'merge_dynamic_max_span_sec';
   static const String mergeDynamicMaxGapSec = 'merge_dynamic_max_gap_sec';
@@ -32,7 +33,8 @@ class UserSettingKeys {
 
   // Nocturne-style memory (URI graph)
   static const String nocturneMemoryLastUri = 'nocturne_memory_last_uri';
-  static const String nocturneMemoryRebuildState = 'nocturne_memory_rebuild_state';
+  static const String nocturneMemoryRebuildState =
+      'nocturne_memory_rebuild_state';
 }
 
 /// 兼容旧版 SharedPreferences 中的键名，用于迁移历史数据。
@@ -44,4 +46,3 @@ class LegacySettingKeys {
     'flutter.screenshot_interval',
   ];
 }
-

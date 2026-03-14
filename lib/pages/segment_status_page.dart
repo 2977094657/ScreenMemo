@@ -131,12 +131,18 @@ class _DynamicRebuildUiSnapshot {
     required this.status,
     required this.starting,
     required this.stopping,
+    required this.autoRepairEnabled,
+    required this.autoRepairLoading,
+    required this.autoRepairToggling,
     required this.requestLogs,
   });
 
   final DynamicRebuildTaskStatus status;
   final bool starting;
   final bool stopping;
+  final bool autoRepairEnabled;
+  final bool autoRepairLoading;
+  final bool autoRepairToggling;
   final _DynamicRebuildRequestLogsState requestLogs;
 }
 
@@ -174,10 +180,18 @@ class _DynamicRebuildRequestLogsState {
 
 const Object _dynamicRebuildRequestLogsNoChange = Object();
 
+bool _sameDynamicRebuildRequestLogsState(
+  _DynamicRebuildRequestLogsState a,
+  _DynamicRebuildRequestLogsState b,
+) {
+  return a.loading == b.loading && a.error == b.error && a.rawText == b.rawText;
+}
+
 class _SegmentStatusPageState extends State<SegmentStatusPage>
     with SingleTickerProviderStateMixin {
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
   static const bool _dynamicRebuildRequestLogsEnabled = false;
+  static const int _dynamicRebuildRequestLogsDisplayLimit = 10;
   Map<String, dynamic>? _active;
   List<Map<String, dynamic>> _segments = <Map<String, dynamic>>[];
   bool _loading = false;
@@ -198,9 +212,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         currentDayKey: '',
         currentSegmentId: 0,
         currentRangeLabel: '',
+        currentStage: '',
+        currentStageLabel: '',
+        currentStageDetail: '',
         lastError: null,
         isActive: false,
         progressPercent: '0%',
+        recentLogs: <String>[],
       );
   Timer? _dynamicRebuildTaskPollTimer;
   bool _pollingDynamicRebuildTask = false;
@@ -213,6 +231,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   bool _dynamicRebuildTaskSheetOpen = false;
   int _lastDynamicRebuildRequestLogsRefreshAt = 0;
   int _dynamicRebuildRequestLogsLoadTicket = 0;
+  bool _dynamicAutoRepairEnabled = true;
+  bool _loadingDynamicAutoRepair = false;
+  bool _togglingDynamicAutoRepair = false;
 
   // 底部弹窗查询输入持久化，避免失焦或重建清空
   String _segProviderQueryText = '';
@@ -253,6 +274,56 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     return ordered;
   }
 
+  bool _shouldGateTimelineToCurrentRebuild([DynamicRebuildTaskStatus? status]) {
+    final DynamicRebuildTaskStatus effective =
+        status ?? _dynamicRebuildTaskStatus;
+    if (effective.taskId.isEmpty || effective.isIdle || effective.isCompleted) {
+      return false;
+    }
+    return true;
+  }
+
+  String? _dynamicRebuildTimelineCutoffDayKey([
+    DynamicRebuildTaskStatus? status,
+  ]) {
+    final DynamicRebuildTaskStatus effective =
+        status ?? _dynamicRebuildTaskStatus;
+    if (!_shouldGateTimelineToCurrentRebuild(effective)) return null;
+    final String key = effective.currentDayKey.trim();
+    return key.isEmpty ? '' : key;
+  }
+
+  bool _shouldHideTimelineUntilRebuildAdvances([
+    DynamicRebuildTaskStatus? status,
+  ]) {
+    final String? cutoff = _dynamicRebuildTimelineCutoffDayKey(status);
+    return cutoff != null && cutoff.isEmpty;
+  }
+
+  int? _endMillisForDateKey(String dateKey) {
+    final List<String> parts = dateKey.split('-');
+    if (parts.length != 3) return null;
+    final int? year = int.tryParse(parts[0]);
+    final int? month = int.tryParse(parts[1]);
+    final int? day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    return DateTime(
+          year,
+          month,
+          day,
+        ).add(const Duration(days: 1)).millisecondsSinceEpoch -
+        1;
+  }
+
+  String _dynamicRebuildTimelineVisibilityFingerprint([
+    DynamicRebuildTaskStatus? status,
+  ]) {
+    final DynamicRebuildTaskStatus effective =
+        status ?? _dynamicRebuildTaskStatus;
+    final String? cutoff = _dynamicRebuildTimelineCutoffDayKey(effective);
+    return '${_shouldGateTimelineToCurrentRebuild(effective)}|${cutoff ?? '(none)'}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -269,8 +340,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     _loadPrivacyMode();
     _loadSegmentsContextSelection();
     _refresh();
+    unawaited(_refreshDynamicAutoRepairEnabled(showLoading: true));
     _startDynamicRebuildTaskPolling();
-    unawaited(_refreshDynamicRebuildTaskStatus(refreshSegmentsOnChange: false));
+    unawaited(_refreshDynamicRebuildTaskStatus());
     // 订阅隐私模式变更
     AppSelectionService.instance.onPrivacyModeChanged.listen((enabled) {
       if (!mounted) return;
@@ -684,16 +756,27 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         _db.triggerSegmentTick();
       }
       final active = await _db.getActiveSegment();
+      final String? rebuildCutoffDayKey = _dynamicRebuildTimelineCutoffDayKey();
+      final bool hideAllUntilCurrentDay =
+          _shouldHideTimelineUntilRebuildAdvances();
+      final int? rebuildCutoffEndMillis =
+          rebuildCutoffDayKey == null || rebuildCutoffDayKey.isEmpty
+          ? null
+          : _endMillisForDateKey(rebuildCutoffDayKey);
       List<Map<String, dynamic>> segments;
       List<String> loadedDayKeys;
       bool hasMoreOlder = false;
 
-      if (_onlyNoSummary) {
+      if (hideAllUntilCurrentDay) {
+        segments = const <Map<String, dynamic>>[];
+        loadedDayKeys = const <String>[];
+      } else if (_onlyNoSummary) {
         // “仅看无总结”模式：保持原有行为，仅限制行数；由 SQL 侧过滤无总结事件
         const int fetchLimit = 100;
         segments = await _db.listSegmentsEx(
           limit: fetchLimit,
           onlyNoSummary: true,
+          endMillis: rebuildCutoffEndMillis,
         );
         loadedDayKeys = _orderedDayKeysFromSegments(segments);
       } else {
@@ -701,6 +784,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
           distinctDayCount: _initialDayTabs,
           pinnedDateKey: pinnedDateKey.isEmpty ? null : pinnedDateKey,
+          maxDateKeyInclusive: rebuildCutoffDayKey,
           requireSamples: true,
         );
         segments = batch.segments;
@@ -716,7 +800,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         _maxVisibleDayTabs = loadedDayKeys.isEmpty
             ? _initialDayTabs
             : loadedDayKeys.length;
-        _noMoreOlderSegments = _onlyNoSummary ? true : !hasMoreOlder;
+        _noMoreOlderSegments = hideAllUntilCurrentDay || _onlyNoSummary
+            ? true
+            : !hasMoreOlder;
       });
 
       // 若处于“仅看无总结”，根据是否还有待补事件启动/停止自动检测
@@ -750,7 +836,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   }
 
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
-    if (_onlyNoSummary || _isLoadingMoreDays || _noMoreOlderSegments) return;
+    if (_onlyNoSummary ||
+        _isLoadingMoreDays ||
+        _noMoreOlderSegments ||
+        _shouldHideTimelineUntilRebuildAdvances()) {
+      return;
+    }
     final List<String> currentDayKeys = _loadedDayKeys.isNotEmpty
         ? _loadedDayKeys
         : _orderedDayKeysFromSegments(_segments);
@@ -769,6 +860,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       final SegmentTimelineBatch batch = await _db.listSegmentTimelineBatch(
         distinctDayCount: _appendDayTabs,
         beforeDateKey: beforeDateKey,
+        maxDateKeyInclusive: _dynamicRebuildTimelineCutoffDayKey(),
         requireSamples: true,
       );
       final List<Map<String, dynamic>> more = batch.segments;
@@ -877,6 +969,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       status: _dynamicRebuildTaskStatus,
       starting: _startingDynamicRebuild,
       stopping: _stoppingDynamicRebuild,
+      autoRepairEnabled: _dynamicAutoRepairEnabled,
+      autoRepairLoading: _loadingDynamicAutoRepair,
+      autoRepairToggling: _togglingDynamicAutoRepair,
       requestLogs: _dynamicRebuildRequestLogsState,
     );
   }
@@ -904,9 +999,61 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     _dynamicRebuildIconController.value = 0;
   }
 
+  Future<void> _refreshDynamicAutoRepairEnabled({
+    bool showLoading = false,
+  }) async {
+    if (_loadingDynamicAutoRepair) return;
+    if (showLoading && mounted) {
+      setState(() => _loadingDynamicAutoRepair = true);
+      _publishDynamicRebuildUiSnapshot();
+    }
+    try {
+      final bool enabled = await _db.getDynamicAutoRepairEnabled();
+      if (!mounted) return;
+      setState(() {
+        _dynamicAutoRepairEnabled = enabled;
+        _loadingDynamicAutoRepair = false;
+      });
+      _publishDynamicRebuildUiSnapshot();
+    } catch (_) {
+      if (!mounted || !_loadingDynamicAutoRepair) return;
+      setState(() => _loadingDynamicAutoRepair = false);
+      _publishDynamicRebuildUiSnapshot();
+    }
+  }
+
+  Future<void> _setDynamicAutoRepairEnabled(bool enabled) async {
+    if (_loadingDynamicAutoRepair || _togglingDynamicAutoRepair) return;
+    final bool previous = _dynamicAutoRepairEnabled;
+    setState(() {
+      _togglingDynamicAutoRepair = true;
+      _dynamicAutoRepairEnabled = enabled;
+    });
+    _publishDynamicRebuildUiSnapshot();
+    try {
+      final bool persisted = await _db.setDynamicAutoRepairEnabled(enabled);
+      if (!mounted) return;
+      setState(() => _dynamicAutoRepairEnabled = persisted);
+      _publishDynamicRebuildUiSnapshot();
+      UINotifier.info(context, persisted ? '自动补建已开启' : '自动补建已暂停');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _dynamicAutoRepairEnabled = previous);
+      _publishDynamicRebuildUiSnapshot();
+      UINotifier.error(context, '切换自动补建失败');
+    } finally {
+      if (!mounted) return;
+      setState(() => _togglingDynamicAutoRepair = false);
+      _publishDynamicRebuildUiSnapshot();
+    }
+  }
+
   Future<void> _openDynamicRebuildTaskSheet() async {
     try {
-      await _refreshDynamicRebuildTaskStatus(refreshSegmentsOnChange: false);
+      await Future.wait<void>([
+        _refreshDynamicRebuildTaskStatus(refreshSegmentsOnChange: false),
+        _refreshDynamicAutoRepairEnabled(showLoading: true),
+      ]);
     } catch (_) {}
     _dynamicRebuildTaskSheetOpen = true;
     if (_dynamicRebuildRequestLogsEnabled) {
@@ -980,6 +1127,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         ? '${status.processedSegments}/${status.totalSegments} (${status.progressPercent})'
         : (status.isCompleted ? '无可重建动态' : status.progressPercent);
     final String currentLine = _dynamicRebuildCurrentLine(status);
+    final String stageHeadline = _dynamicRebuildStageHeadline(status);
     final String serialHint = _dynamicRebuildSerialHint(status);
 
     return Column(
@@ -1038,6 +1186,23 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
               ),
             ),
           ),
+        if (stageHeadline.isNotEmpty)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: AppTheme.spacing3),
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.secondaryContainer.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Text(
+              stageHeadline,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSecondaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         if (serialHint.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing2),
@@ -1088,6 +1253,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           ),
         const SizedBox(height: AppTheme.spacing4),
         _buildDynamicRebuildTaskActionRow(context, snapshot),
+        const SizedBox(height: AppTheme.spacing3),
+        _buildDynamicAutoRepairSection(context, snapshot),
+        if (status.recentLogs.isNotEmpty) ...[
+          const SizedBox(height: AppTheme.spacing4),
+          _buildDynamicRebuildStageLogsSection(context, status),
+        ],
         if (_dynamicRebuildRequestLogsEnabled) ...[
           const SizedBox(height: AppTheme.spacing4),
           _buildDynamicRebuildRequestLogsSection(context, snapshot),
@@ -1162,6 +1333,91 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     return SizedBox(width: double.infinity, child: startButton);
   }
 
+  Widget _buildDynamicAutoRepairSection(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool busy = snapshot.autoRepairLoading || snapshot.autoRepairToggling;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '自动补建/补洞',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing1),
+                Text(
+                  snapshot.autoRepairEnabled
+                      ? '已开启：后台会自动补历史日期、缺失总结和断档动态。'
+                      : '已暂停：后台不会自动补历史日期或缺失总结，可避免请求快速打满 RPM。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing1),
+                Text(
+                  '关闭后不影响手动“开始重建”，也不会打断当前正在执行的任务。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.9),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: AppTheme.spacing1),
+                Text(
+                  '这个开关控制的是后台自动补建流量；手动重建仍以上面的按钮为准。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.78),
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          if (snapshot.autoRepairLoading && !snapshot.autoRepairToggling)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            Opacity(
+              opacity: busy ? 0.6 : 1,
+              child: Transform.scale(
+                scale: 0.92,
+                child: Switch(
+                  value: snapshot.autoRepairEnabled,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: busy ? null : _setDynamicAutoRepairEnabled,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDynamicRebuildRequestLogsSection(
     BuildContext context,
     _DynamicRebuildUiSnapshot snapshot,
@@ -1190,12 +1446,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                 ),
               ),
             ),
-            if (logs.loading)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: logs.loading && !logs.hasAny
+                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  : null,
+            ),
           ],
         ),
         const SizedBox(height: AppTheme.spacing2),
@@ -1209,8 +1466,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           ),
           child: Text(
             isZh
-                ? '这里展示的是动态重建期间由原生 SegmentSummaryManager 直连发出的 AI 请求，不经过 Flutter 的 AIRequestGateway。日期 tab 只是根据数据库里已经生成出的 segments 刷新显示，切 tab 只会读取本地结果，不会额外触发这些 AI 请求。'
-                : 'These are native SegmentSummaryManager AI requests emitted during dynamic rebuild. They bypass Flutter AIRequestGateway. Day tabs only reflect segments already written into the local database and do not trigger these AI calls.',
+                ? '这里展示的是动态重建期间由原生 SegmentSummaryManager 直连发出的 AI 请求，不经过 Flutter 的 AIRequestGateway。日期 tab 只是根据数据库里已经生成出的 segments 刷新显示，切 tab 只会读取本地结果，不会额外触发这些 AI 请求。默认仅展示最近 $_dynamicRebuildRequestLogsDisplayLimit 个请求，避免面板卡顿。'
+                : 'These are native SegmentSummaryManager AI requests emitted during dynamic rebuild. They bypass Flutter AIRequestGateway. Day tabs only reflect segments already written into the local database and do not trigger these AI calls. Only the most recent $_dynamicRebuildRequestLogsDisplayLimit requests are shown by default to keep the panel responsive.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
               height: 1.35,
@@ -1308,22 +1565,49 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     if (!force && now - _lastDynamicRebuildRequestLogsRefreshAt < 1200) return;
     _lastDynamicRebuildRequestLogsRefreshAt = now;
     final int ticket = ++_dynamicRebuildRequestLogsLoadTicket;
-    _dynamicRebuildRequestLogsState = _dynamicRebuildRequestLogsState.copyWith(
-      loading: true,
-      error: null,
-    );
-    _publishDynamicRebuildUiSnapshot();
+    final bool showForegroundLoading =
+        !_dynamicRebuildRequestLogsState.hasAny &&
+        (_dynamicRebuildRequestLogsState.error?.trim().isNotEmpty != true);
+    if (showForegroundLoading) {
+      final _DynamicRebuildRequestLogsState next =
+          _dynamicRebuildRequestLogsState.copyWith(loading: true, error: null);
+      if (!_sameDynamicRebuildRequestLogsState(
+        _dynamicRebuildRequestLogsState,
+        next,
+      )) {
+        _dynamicRebuildRequestLogsState = next;
+        _publishDynamicRebuildUiSnapshot();
+      }
+    }
     try {
       final _DynamicRebuildRequestLogsState loaded =
           await _loadDynamicRebuildRequestLogs(current);
       if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
-      _dynamicRebuildRequestLogsState = loaded.copyWith(loading: false);
-      _publishDynamicRebuildUiSnapshot();
+      final _DynamicRebuildRequestLogsState next = loaded.copyWith(
+        loading: false,
+      );
+      if (!_sameDynamicRebuildRequestLogsState(
+        _dynamicRebuildRequestLogsState,
+        next,
+      )) {
+        _dynamicRebuildRequestLogsState = next;
+        _publishDynamicRebuildUiSnapshot();
+      }
     } catch (e) {
       if (!mounted || ticket != _dynamicRebuildRequestLogsLoadTicket) return;
-      _dynamicRebuildRequestLogsState = _dynamicRebuildRequestLogsState
-          .copyWith(loading: false, error: e.toString());
-      _publishDynamicRebuildUiSnapshot();
+      final _DynamicRebuildRequestLogsState next = showForegroundLoading
+          ? _dynamicRebuildRequestLogsState.copyWith(
+              loading: false,
+              error: e.toString(),
+            )
+          : _dynamicRebuildRequestLogsState.copyWith(loading: false);
+      if (!_sameDynamicRebuildRequestLogsState(
+        _dynamicRebuildRequestLogsState,
+        next,
+      )) {
+        _dynamicRebuildRequestLogsState = next;
+        _publishDynamicRebuildUiSnapshot();
+      }
     }
   }
 
@@ -1379,7 +1663,22 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       since: startedAt.subtract(const Duration(seconds: 5)),
       until: endedAt.add(const Duration(seconds: 5)),
     );
-    return _DynamicRebuildRequestLogsState(traces: traces, rawText: rawText);
+    if (traces.isEmpty) {
+      return const _DynamicRebuildRequestLogsState();
+    }
+    final List<AIRequestTrace> visibleTraces = traces
+        .take(_dynamicRebuildRequestLogsDisplayLimit)
+        .toList(growable: false);
+    final String visibleRawText = visibleTraces
+        .expand((AIRequestTrace trace) => trace.rawBlocks)
+        .map((String line) => line.trimRight())
+        .where((String line) => line.trim().isNotEmpty)
+        .join('\n')
+        .trimRight();
+    return _DynamicRebuildRequestLogsState(
+      traces: visibleTraces,
+      rawText: visibleRawText,
+    );
   }
 
   Directory? _resolveOutputLogsRoot(Directory todayDir) {
@@ -1485,6 +1784,59 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态';
     }
     return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态 · $scope';
+  }
+
+  String _dynamicRebuildStageHeadline(DynamicRebuildTaskStatus status) {
+    final String label = status.currentStageLabel.trim();
+    final String detail = status.currentStageDetail.trim();
+    if (label.isEmpty && detail.isEmpty) return '';
+    if (label.isEmpty) return '当前环节：$detail';
+    if (detail.isEmpty) return '当前环节：$label';
+    return '当前环节：$label\n$detail';
+  }
+
+  Widget _buildDynamicRebuildStageLogsSection(
+    BuildContext context,
+    DynamicRebuildTaskStatus status,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final List<String> logs = status.recentLogs;
+    if (logs.isEmpty) return const SizedBox.shrink();
+    final int start = math.max(0, logs.length - 12);
+    final List<String> visible = logs.sublist(start);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '阶段日志',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          for (final String line in visible)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                line,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   String _dynamicRebuildSerialHint(DynamicRebuildTaskStatus status) {
@@ -2222,7 +2574,18 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     if (_loading) return;
     try {
       // 每次只做轻量查询；原生端 1s 心跳已持续推进/补救
-      final segments = await _db.listSegmentsEx(limit: 50, onlyNoSummary: true);
+      final String? rebuildCutoffDayKey = _dynamicRebuildTimelineCutoffDayKey();
+      final List<Map<String, dynamic>> segments =
+          _shouldHideTimelineUntilRebuildAdvances()
+          ? const <Map<String, dynamic>>[]
+          : await _db.listSegmentsEx(
+              limit: 50,
+              onlyNoSummary: true,
+              endMillis:
+                  rebuildCutoffDayKey == null || rebuildCutoffDayKey.isEmpty
+                  ? null
+                  : _endMillisForDateKey(rebuildCutoffDayKey),
+            );
       if (!mounted) return;
       final List<String> loadedDayKeys = _orderedDayKeysFromSegments(segments);
       setState(() {
@@ -2264,8 +2627,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         _dynamicRebuildTaskStatus = status;
       });
       _publishDynamicRebuildUiSnapshot();
-      if (_dynamicRebuildRequestLogsEnabled &&
-          (_dynamicRebuildTaskSheetOpen || status.taskId.isNotEmpty)) {
+      if (_dynamicRebuildRequestLogsEnabled && _dynamicRebuildTaskSheetOpen) {
         unawaited(_refreshDynamicRebuildRequestLogs(status: status));
       } else if (_dynamicRebuildRequestLogsState.hasAny ||
           _dynamicRebuildRequestLogsState.error != null ||
@@ -2294,6 +2656,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final bool terminalChanged =
         previous.status != current.status &&
         (current.isCompleted || current.isFailed || current.isCancelled);
+    final bool timelineVisibilityChanged =
+        _dynamicRebuildTimelineVisibilityFingerprint(previous) !=
+        _dynamicRebuildTimelineVisibilityFingerprint(current);
     if (justStarted) {
       await _refresh(triggerSegmentTick: false);
       return;
@@ -2302,7 +2667,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       await _refreshSegmentsForDynamicRebuildProgress();
       return;
     }
-    if (becameTerminal || terminalChanged) {
+    if (timelineVisibilityChanged || becameTerminal || terminalChanged) {
       await _refresh(triggerSegmentTick: false);
     }
   }
@@ -4302,100 +4667,6 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     }
   }
 
-  Widget _buildRawResponseTab(
-    BuildContext context, {
-    required int segmentId,
-    required String rawResponse,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final bool isZh = Localizations.localeOf(
-      context,
-    ).languageCode.toLowerCase().startsWith('zh');
-    final String raw = rawResponse.trimRight();
-    final bool hasRaw = raw.trim().isNotEmpty;
-
-    Future<void> copyRaw() async {
-      if (!hasRaw) return;
-      try {
-        await Clipboard.setData(ClipboardData(text: raw));
-        if (!mounted) return;
-        UINotifier.success(context, AppLocalizations.of(context).copySuccess);
-      } catch (_) {}
-    }
-
-    Future<void> saveRaw() async {
-      if (!hasRaw) return;
-      await _saveAiRequestResponseTraceToFile(segmentId: segmentId, text: raw);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            const Spacer(),
-            OutlinedButton(
-              onPressed: hasRaw ? copyRaw : null,
-              style: OutlinedButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                minimumSize: const Size(0, 36),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-              ),
-              child: Text(AppLocalizations.of(context).actionCopy),
-            ),
-            const SizedBox(width: AppTheme.spacing2),
-            OutlinedButton(
-              onPressed: hasRaw ? saveRaw : null,
-              style: OutlinedButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                minimumSize: const Size(0, 36),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-              ),
-              child: Text(isZh ? '保存到文件' : 'Save to file'),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTheme.spacing2),
-        Expanded(
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppTheme.spacing3),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-              border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
-            ),
-            child: hasRaw
-                ? SingleChildScrollView(
-                    child: SelectableText(
-                      raw,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                        height: 1.35,
-                      ),
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      isZh ? '（暂无原始响应）' : '(No raw response yet)',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildAiRequestResponseSheetBody({
     required BuildContext context,
     required int segmentId,
@@ -4408,85 +4679,55 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     required bool hasAny,
     required String visibleText,
   }) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.62,
-      child: DefaultTabController(
-        length: 2,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ScreenshotStyleTabBar(
-              height: kTextTabBarHeight,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing1,
-              ),
-              labelPadding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing4,
-              ),
-              indicatorInsets: const EdgeInsets.symmetric(horizontal: 4.0),
-              tabs: [
-                Tab(text: isZh ? '日志' : 'Logs'),
-                Tab(text: isZh ? '原始响应' : 'Raw Response'),
-              ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double fallbackHeight = MediaQuery.of(context).size.height * 0.62;
+        final double viewerHeight =
+            constraints.maxHeight.isFinite && constraints.maxHeight > 0
+            ? constraints.maxHeight
+            : fallbackHeight;
+        return AIRequestLogsViewer.fromSegmentTrace(
+          rawRequest: rawRequest,
+          rawResponse: rawResponse,
+          segmentId: segmentId,
+          provider: provider,
+          model: model,
+          createdAt: createdAt,
+          scrollable: true,
+          maxHeight: viewerHeight,
+          emptyText: isZh
+              ? '（暂无请求/响应记录）'
+              : '(No request/response trace yet)',
+          actions: <AIRequestLogsAction>[
+            AIRequestLogsAction(
+              label: AppLocalizations.of(context).actionCopy,
+              enabled: hasAny,
+              onPressed: () async {
+                if (!hasAny) return;
+                try {
+                  await Clipboard.setData(ClipboardData(text: visibleText));
+                  if (!mounted) return;
+                  UINotifier.success(
+                    this.context,
+                    AppLocalizations.of(this.context).copySuccess,
+                  );
+                } catch (_) {}
+              },
             ),
-            const SizedBox(height: AppTheme.spacing3),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  AIRequestLogsViewer.fromSegmentTrace(
-                    rawRequest: rawRequest,
-                    rawResponse: rawResponse,
-                    segmentId: segmentId,
-                    provider: provider,
-                    model: model,
-                    createdAt: createdAt,
-                    scrollable: true,
-                    emptyText: isZh
-                        ? '（暂无请求/响应记录）'
-                        : '(No request/response trace yet)',
-                    actions: <AIRequestLogsAction>[
-                      AIRequestLogsAction(
-                        label: AppLocalizations.of(context).actionCopy,
-                        enabled: hasAny,
-                        onPressed: () async {
-                          if (!hasAny) return;
-                          try {
-                            await Clipboard.setData(
-                              ClipboardData(text: visibleText),
-                            );
-                            if (mounted) {
-                              UINotifier.success(
-                                context,
-                                AppLocalizations.of(context).copySuccess,
-                              );
-                            }
-                          } catch (_) {}
-                        },
-                      ),
-                      AIRequestLogsAction(
-                        label: isZh ? '保存到文件' : 'Save to file',
-                        enabled: hasAny,
-                        onPressed: () async {
-                          if (!hasAny) return;
-                          await _saveAiRequestResponseTraceToFile(
-                            segmentId: segmentId,
-                            text: visibleText,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  _buildRawResponseTab(
-                    context,
-                    segmentId: segmentId,
-                    rawResponse: rawResponse,
-                  ),
-                ],
-              ),
+            AIRequestLogsAction(
+              label: isZh ? '保存到文件' : 'Save to file',
+              enabled: hasAny,
+              onPressed: () async {
+                if (!hasAny) return;
+                await _saveAiRequestResponseTraceToFile(
+                  segmentId: segmentId,
+                  text: visibleText,
+                );
+              },
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -4531,6 +4772,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       title: isZh ? 'AI 日志' : 'AI Logs',
       metaText: null,
       hintText: hasTrace ? null : emptyHint,
+      expandBody: true,
       body: _buildAiRequestResponseSheetBody(
         context: context,
         segmentId: segmentId,

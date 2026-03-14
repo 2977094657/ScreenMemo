@@ -25,9 +25,13 @@ Map<String, Object?> _mockDynamicRebuildStatus = <String, Object?>{
   'currentDayKey': '',
   'currentSegmentId': 0,
   'currentRangeLabel': '',
+  'currentStage': '',
+  'currentStageLabel': '',
+  'currentStageDetail': '',
   'lastError': null,
   'isActive': false,
   'progressPercent': '0%',
+  'recentLogs': <String>[],
 };
 String? _mockTodayLogsDir;
 
@@ -148,9 +152,13 @@ void main() {
       'currentDayKey': '',
       'currentSegmentId': 0,
       'currentRangeLabel': '',
+      'currentStage': '',
+      'currentStageLabel': '',
+      'currentStageDetail': '',
       'lastError': null,
       'isActive': false,
       'progressPercent': '0%',
+      'recentLogs': <String>[],
     };
     _mockTodayLogsDir = null;
   });
@@ -257,6 +265,61 @@ void main() {
     }
   });
 
+  testWidgets('paused rebuild hides newer unreconstructed tabs', (
+    WidgetTester tester,
+  ) async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'screen_memo_segment_page_cutoff_',
+    );
+    try {
+      final Directory root = Directory(p.join(tmp.path, 'root'));
+      await root.create(recursive: true);
+      await _prepareDesktopDbRoot(root);
+      final DateTime latest = DateTime(2024, 4, 10);
+      final List<DateTime> days = List<DateTime>.generate(
+        6,
+        (int index) => latest.subtract(Duration(days: index)),
+      );
+      await _seedTimelineDays(days);
+      final DateTime cutoffDay = latest.subtract(const Duration(days: 2));
+      _mockDynamicRebuildStatus = <String, Object?>{
+        'taskId': 'dynamic_rebuild_test',
+        'status': 'cancelled',
+        'startedAt': DateTime(2024, 4, 8, 9).millisecondsSinceEpoch,
+        'updatedAt': DateTime(2024, 4, 8, 9, 30).millisecondsSinceEpoch,
+        'completedAt': DateTime(2024, 4, 8, 9, 31).millisecondsSinceEpoch,
+        'totalSegments': 6,
+        'processedSegments': 2,
+        'failedSegments': 0,
+        'currentDayKey': _dateKey(cutoffDay),
+        'currentSegmentId': 0,
+        'currentRangeLabel': '12:00:00-12:30:00',
+        'currentStage': 'cancelled',
+        'currentStageLabel': '已停止',
+        'currentStageDetail': '已停止后台重建，当前进度可稍后继续',
+        'lastError': null,
+        'isActive': false,
+        'progressPercent': '33.3%',
+        'recentLogs': <String>['09:30:00 已停止：已停止后台重建，当前进度可稍后继续'],
+      };
+
+      await tester.pumpWidget(_buildHarness());
+      await _pumpUntilFound(tester, find.text(_summaryText(cutoffDay)));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text(_tabLabel(cutoffDay)), findsWidgets);
+      expect(find.text(_tabLabel(latest)), findsNothing);
+      expect(find.text(_summaryText(latest)), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    } finally {
+      if (await tmp.exists()) {
+        await tmp.delete(recursive: true);
+      }
+    }
+  });
+
   testWidgets('dynamic rebuild sheet shows native request logs', (
     WidgetTester tester,
   ) async {
@@ -299,9 +362,17 @@ void main() {
         'currentDayKey': '2026-03-12',
         'currentSegmentId': 102,
         'currentRangeLabel': '09:05-09:35',
+        'currentStage': 'summary_wait_ai',
+        'currentStageLabel': '等待 AI 总结',
+        'currentStageDetail': '已准备请求模型，总图片 3 张',
         'lastError': null,
         'isActive': true,
         'progressPercent': '50%',
+        'recentLogs': <String>[
+          '09:05:00 开始重建当前动态：第 2/2 条 · 2026-03-12 09:05-09:35',
+          '09:05:00 构建总结提示词：为段落 #102 组织 3 张样本图片',
+          '09:05:01 等待 AI 总结：已准备请求模型，总图片 3 张',
+        ],
       };
 
       await tester.pumpWidget(_buildHarness());

@@ -12,9 +12,13 @@ class DynamicRebuildTaskStatus {
   final String currentDayKey;
   final int currentSegmentId;
   final String currentRangeLabel;
+  final String currentStage;
+  final String currentStageLabel;
+  final String currentStageDetail;
   final String? lastError;
   final bool isActive;
   final String progressPercent;
+  final List<String> recentLogs;
 
   const DynamicRebuildTaskStatus({
     required this.taskId,
@@ -28,9 +32,13 @@ class DynamicRebuildTaskStatus {
     required this.currentDayKey,
     required this.currentSegmentId,
     required this.currentRangeLabel,
+    required this.currentStage,
+    required this.currentStageLabel,
+    required this.currentStageDetail,
     required this.lastError,
     required this.isActive,
     required this.progressPercent,
+    required this.recentLogs,
   });
 
   factory DynamicRebuildTaskStatus.fromMap(Map<dynamic, dynamic>? map) {
@@ -54,9 +62,16 @@ class DynamicRebuildTaskStatus {
       currentDayKey: (data['currentDayKey'] as String?) ?? '',
       currentSegmentId: _safeTaskInt(data['currentSegmentId']),
       currentRangeLabel: (data['currentRangeLabel'] as String?) ?? '',
+      currentStage: (data['currentStage'] as String?) ?? '',
+      currentStageLabel: (data['currentStageLabel'] as String?) ?? '',
+      currentStageDetail: (data['currentStageDetail'] as String?) ?? '',
       lastError: lastError,
       isActive: data['isActive'] == true,
       progressPercent: (data['progressPercent'] as String?) ?? '0%',
+      recentLogs: ((data['recentLogs'] as List?) ?? const <Object?>[])
+          .map((Object? value) => value?.toString() ?? '')
+          .where((String value) => value.trim().isNotEmpty)
+          .toList(growable: false),
     );
   }
 
@@ -73,6 +88,9 @@ class DynamicRebuildTaskStatus {
   bool get isCompleted => status == 'completed';
   bool get isFailed => status == 'failed';
   bool get isCancelled => status == 'cancelled';
+  bool get hasStageInfo =>
+      currentStageLabel.trim().isNotEmpty ||
+      currentStageDetail.trim().isNotEmpty;
   bool get canContinue =>
       (isFailed || isCancelled) &&
       totalSegments > 0 &&
@@ -104,8 +122,20 @@ class DynamicRebuildTaskStatus {
     if (currentSegmentId > 0) {
       sb.writeln('currentSegmentId: $currentSegmentId');
     }
+    if (currentStageLabel.trim().isNotEmpty) {
+      sb.writeln('currentStage: $currentStageLabel');
+    }
+    if (currentStageDetail.trim().isNotEmpty) {
+      sb.writeln('stageDetail: $currentStageDetail');
+    }
     if (lastError != null) {
       sb.writeln('lastError: $lastError');
+    }
+    if (recentLogs.isNotEmpty) {
+      sb.writeln('recentLogs:');
+      for (final String line in recentLogs) {
+        sb.writeln('- $line');
+      }
     }
     return sb.toString().trimRight();
   }
@@ -1555,12 +1585,14 @@ ORDER BY day ASC
     required int distinctDayCount,
     String? beforeDateKey,
     String? pinnedDateKey,
+    String? maxDateKeyInclusive,
     bool requireSamples = true,
   }) async {
     final db = await database;
     final int safeDayCount = math.max(1, distinctDayCount);
     final String beforeKey = (beforeDateKey ?? '').trim();
     final String pinnedKey = (pinnedDateKey ?? '').trim();
+    final String maxKeyInclusive = (maxDateKeyInclusive ?? '').trim();
     const String hasSamplesCond =
         "EXISTS (SELECT 1 FROM segment_samples ss WHERE ss.segment_id = s.id)";
     const String dayExpr =
@@ -1570,6 +1602,7 @@ ORDER BY day ASC
       String? beforeKey,
       String? exactKey,
       String? minKeyInclusive,
+      String? maxKeyInclusive,
       String? olderThanKey,
     }) {
       final List<String> whereClauses = <String>[
@@ -1591,6 +1624,10 @@ ORDER BY day ASC
       if (minKey.isNotEmpty) {
         whereClauses.add("$dayExpr >= ?");
       }
+      final String maxKey = (maxKeyInclusive ?? '').trim();
+      if (maxKey.isNotEmpty) {
+        whereClauses.add("$dayExpr <= ?");
+      }
       final String olderThan = (olderThanKey ?? '').trim();
       if (olderThan.isNotEmpty) {
         whereClauses.add("$dayExpr < ?");
@@ -1602,6 +1639,7 @@ ORDER BY day ASC
       String? beforeKey,
       String? exactKey,
       String? minKeyInclusive,
+      String? maxKeyInclusive,
       String? olderThanKey,
     }) {
       final List<Object?> whereParams = <Object?>[];
@@ -1617,6 +1655,10 @@ ORDER BY day ASC
       if (minKey.isNotEmpty) {
         whereParams.add(minKey);
       }
+      final String maxKey = (maxKeyInclusive ?? '').trim();
+      if (maxKey.isNotEmpty) {
+        whereParams.add(maxKey);
+      }
       final String olderThan = (olderThanKey ?? '').trim();
       if (olderThan.isNotEmpty) {
         whereParams.add(olderThan);
@@ -1627,15 +1669,18 @@ ORDER BY day ASC
     Future<List<String>> queryDayKeys({
       String? beforeKey,
       String? minKeyInclusive,
+      String? maxKeyInclusive,
       required int limit,
     }) async {
       final List<String> whereClauses = buildWhereClauses(
         beforeKey: beforeKey,
         minKeyInclusive: minKeyInclusive,
+        maxKeyInclusive: maxKeyInclusive,
       );
       final List<Object?> whereParams = buildWhereParams(
         beforeKey: beforeKey,
         minKeyInclusive: minKeyInclusive,
+        maxKeyInclusive: maxKeyInclusive,
       );
       final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
       final List<Map<String, Object?>> rows = await db.rawQuery(
@@ -1660,8 +1705,14 @@ ORDER BY day ASC
     Future<bool> dayKeyExists(String dateKey) async {
       final String normalized = dateKey.trim();
       if (normalized.isEmpty) return false;
-      final List<String> whereClauses = buildWhereClauses(exactKey: normalized);
-      final List<Object?> whereParams = buildWhereParams(exactKey: normalized);
+      final List<String> whereClauses = buildWhereClauses(
+        exactKey: normalized,
+        maxKeyInclusive: maxKeyInclusive,
+      );
+      final List<Object?> whereParams = buildWhereParams(
+        exactKey: normalized,
+        maxKeyInclusive: maxKeyInclusive,
+      );
       final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
       final List<Map<String, Object?>> rows = await db.rawQuery('''
         SELECT 1
@@ -1676,9 +1727,11 @@ ORDER BY day ASC
       final String normalized = dateKey.trim();
       if (normalized.isEmpty) return false;
       final List<String> whereClauses = buildWhereClauses(
+        maxKeyInclusive: maxKeyInclusive,
         olderThanKey: normalized,
       );
       final List<Object?> whereParams = buildWhereParams(
+        maxKeyInclusive: maxKeyInclusive,
         olderThanKey: normalized,
       );
       final String whereSql = 'WHERE ${whereClauses.join(' AND ')}';
@@ -1699,8 +1752,17 @@ ORDER BY day ASC
       return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
     }
 
+    if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
+      return const SegmentTimelineBatch(
+        segments: <Map<String, dynamic>>[],
+        dayKeys: <String>[],
+        hasMoreOlder: false,
+      );
+    }
+
     List<String> dayKeys = await queryDayKeys(
       beforeKey: beforeKey,
+      maxKeyInclusive: maxKeyInclusive,
       limit: safeDayCount,
     );
     if (dayKeys.isEmpty) {
@@ -1718,6 +1780,7 @@ ORDER BY day ASC
       if (pinnedExists) {
         final List<String> expanded = await queryDayKeys(
           minKeyInclusive: pinnedKey,
+          maxKeyInclusive: maxKeyInclusive,
           limit: 1 << 20,
         );
         if (expanded.isNotEmpty) {
@@ -1969,6 +2032,25 @@ ORDER BY day ASC
       } catch (_) {}
       return false;
     }
+  }
+
+  Future<bool> getDynamicAutoRepairEnabled() async {
+    try {
+      final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+        'getDynamicAutoRepairEnabled',
+      );
+      return raw == null ? true : raw == true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> setDynamicAutoRepairEnabled(bool enabled) async {
+    final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
+      'setDynamicAutoRepairEnabled',
+      <String, dynamic>{'enabled': enabled},
+    );
+    return raw == null ? enabled : raw == true;
   }
 
   /// 通过原生接口按ID批量重试生成总结
