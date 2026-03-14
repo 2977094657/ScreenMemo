@@ -1711,49 +1711,45 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 _buildNavItem(
                   context: context,
+                  icon: Icons.verified_user_outlined,
                   title: AppLocalizations.of(context).permissionsSectionTitle,
-                  subtitle: AppLocalizations.of(context).permissionsSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.permissions),
                 ),
                 _buildNavItem(
                   context: context,
+                  icon: Icons.palette_outlined,
                   title: AppLocalizations.of(context).displaySectionTitle,
-                  subtitle: AppLocalizations.of(context).displaySectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.display),
                 ),
                 _buildNavItem(
                   context: context,
+                  icon: Icons.photo_library_outlined,
                   title: AppLocalizations.of(context).screenshotSectionTitle,
-                  subtitle: AppLocalizations.of(context).screenshotSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.screenshot),
                 ),
                 _buildNavItem(
                   context: context,
+                  icon: Icons.insights_outlined,
                   title: AppLocalizations.of(
                     context,
                   ).segmentSummarySectionTitle,
-                  subtitle: AppLocalizations.of(
-                    context,
-                  ).segmentSummarySectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.segmentSummary),
                 ),
                 _buildNavItem(
                   context: context,
+                  icon: Icons.notifications_outlined,
                   title: AppLocalizations.of(context).dailyReminderSectionTitle,
-                  subtitle: AppLocalizations.of(
-                    context,
-                  ).dailyReminderSectionDesc,
                   showBottomBorder: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.dailyReminder),
                 ),
                 _buildNavItem(
                   context: context,
+                  icon: Icons.storage_outlined,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
-                  subtitle: AppLocalizations.of(context).dataBackupSectionDesc,
                   showBottomBorder: false,
                   onTap: () => _switchSubPage(_SettingsSubPage.dataBackup),
                 ),
@@ -1765,8 +1761,8 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 _buildNavItem(
                   context: context,
+                  icon: Icons.tune,
                   title: AppLocalizations.of(context).advancedSectionTitle,
-                  subtitle: AppLocalizations.of(context).advancedSectionDesc,
                   showBottomBorder: false,
                   onTap: () => _switchSubPage(_SettingsSubPage.advanced),
                 ),
@@ -1896,8 +1892,8 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildNavItem({
     required BuildContext context,
+    required IconData icon,
     required String title,
-    String? subtitle,
     required bool showBottomBorder,
     required VoidCallback onTap,
   }) {
@@ -1917,6 +1913,8 @@ class _SettingsPageState extends State<SettingsPage>
         ),
         child: Row(
           children: [
+            _buildSettingsLeadingIcon(context, icon),
+            const SizedBox(width: AppTheme.spacing3),
             Expanded(
               child: Text(
                 title,
@@ -1925,21 +1923,7 @@ class _SettingsPageState extends State<SettingsPage>
                 ),
               ),
             ),
-            if (subtitle != null && subtitle.isNotEmpty) ...[
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppTheme.spacing2),
-            ],
+            const SizedBox(width: AppTheme.spacing2),
             Icon(
               Icons.chevron_right,
               color: theme.colorScheme.onSurfaceVariant,
@@ -1947,6 +1931,19 @@ class _SettingsPageState extends State<SettingsPage>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSettingsLeadingIcon(BuildContext context, IconData icon) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      ),
+      child: Icon(icon, color: colorScheme.onSecondaryContainer, size: 18),
     );
   }
 
