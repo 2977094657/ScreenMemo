@@ -91,7 +91,6 @@ class _SettingsPageState extends State<SettingsPage>
   Map<String, bool> _keepAlivePermissions = {};
   bool _isLoading = true;
   bool _isLoadingKeepAlive = true;
-  bool _permissionsExpanded = true; // 权限下拉菜单展开状态：默认展开，全部授权后自动收起
   int _screenshotInterval = 5;
   bool _privacyMode = true; // 隐私模式，默认开启
   // 段落采样设置
@@ -204,7 +203,6 @@ class _SettingsPageState extends State<SettingsPage>
       if (next == _SettingsSubPage.permissions) {
         _isLoading = true;
         _isLoadingKeepAlive = true;
-        _permissionsExpanded = true;
       }
     });
     widget.controller?._onSubPageChanged(next);
@@ -239,27 +237,6 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadRenderImagesDuringStreaming());
         unawaited(_loadAiChatPerfOverlayEnabled());
         break;
-    }
-  }
-
-  bool _allPermissionsGranted() {
-    try {
-      final basicKeys = [
-        'storage',
-        'notification',
-        'accessibility',
-        'usage_stats',
-      ];
-      final keepKeys = ['battery_optimization', 'autostart'];
-      for (final k in basicKeys) {
-        if (!(_permissions[k] ?? false)) return false;
-      }
-      for (final k in keepKeys) {
-        if (!(_keepAlivePermissions[k] ?? false)) return false;
-      }
-      return true;
-    } catch (_) {
-      return false;
     }
   }
 
@@ -636,144 +613,58 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   Widget _buildPermissionsDropdown(BuildContext context) {
-    final basicItems = [
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.folder_outlined,
-        title: AppLocalizations.of(context).storagePermissionTitle,
-        description: AppLocalizations.of(context).storagePermissionDesc,
-        isGranted: _permissions['storage'] ?? false,
-        onRequest: () => _requestPermission('storage'),
-      ),
-      const SizedBox(height: AppTheme.spacing2),
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.notifications_outlined,
-        title: AppLocalizations.of(context).notificationPermissionTitle,
-        description: AppLocalizations.of(context).notificationPermissionDesc,
-        isGranted: _permissions['notification'] ?? false,
-        onRequest: () => _requestPermission('notification'),
-      ),
-      const SizedBox(height: AppTheme.spacing2),
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.accessibility_new_outlined,
-        title: AppLocalizations.of(context).accessibilityPermissionTitle,
-        description: AppLocalizations.of(context).accessibilityPermissionDesc,
-        isGranted: _permissions['accessibility'] ?? false,
-        onRequest: () => _requestPermission('accessibility'),
-      ),
-      const SizedBox(height: AppTheme.spacing2),
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.analytics_outlined,
-        title: AppLocalizations.of(context).usageStatsPermissionTitle,
-        description: AppLocalizations.of(context).usageStatsPermissionDesc,
-        isGranted: _permissions['usage_stats'] ?? false,
-        onRequest: () => _requestPermission('usage_stats'),
-      ),
-    ];
-    final keepAliveItems = [
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.battery_saver_outlined,
-        title: AppLocalizations.of(context).batteryOptimizationTitle,
-        description: AppLocalizations.of(context).batteryOptimizationDesc,
-        isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
-        onRequest: () => _requestPermission('battery_optimization'),
-      ),
-      const SizedBox(height: AppTheme.spacing2),
-      _buildPermissionItem(
-        context: context,
-        icon: Icons.power_settings_new_outlined,
-        title: AppLocalizations.of(context).autostartPermissionTitle,
-        description: AppLocalizations.of(context).autostartPermissionDesc,
-        isGranted: _keepAlivePermissions['autostart'] ?? false,
-        onRequest: () => _requestPermission('autostart'),
-      ),
-    ];
-    int missingCount = 0;
-    final allPairs = <bool>[];
-    allPairs.add(_permissions['storage'] ?? false);
-    allPairs.add(_permissions['notification'] ?? false);
-    allPairs.add(_permissions['accessibility'] ?? false);
-    allPairs.add(_permissions['usage_stats'] ?? false);
-    allPairs.add(_keepAlivePermissions['battery_optimization'] ?? false);
-    allPairs.add(_keepAlivePermissions['autostart'] ?? false);
-    for (final g in allPairs) {
-      if (!g) missingCount++;
-    }
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _permissionsExpanded = !_permissionsExpanded;
-              });
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  ),
-                  child: Icon(
-                    _allPermissionsGranted()
-                        ? Icons.verified_user_outlined
-                        : Icons.lock_open_outlined,
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.spacing3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        AppLocalizations.of(context).permissionsSectionTitle,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _allPermissionsGranted()
-                            ? AppLocalizations.of(context).allPermissionsGranted
-                            : AppLocalizations.of(
-                                context,
-                              ).permissionsMissingCount(missingCount),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppTheme.spacing2),
-                Icon(
-                  _permissionsExpanded ? Icons.expand_less : Icons.expand_more,
-                ),
-              ],
-            ),
-          ),
-          if (_permissionsExpanded) ...[
-            const SizedBox(height: AppTheme.spacing3),
-            // 基础权限
-            ...basicItems,
-            const SizedBox(height: AppTheme.spacing3),
-            // 保活权限
-            ...keepAliveItems,
-          ],
-        ],
-      ),
+    return Column(
+      children: [
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.folder_outlined,
+          title: AppLocalizations.of(context).storagePermissionTitle,
+          description: AppLocalizations.of(context).storagePermissionDesc,
+          isGranted: _permissions['storage'] ?? false,
+          onRequest: () => _requestPermission('storage'),
+        ),
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.notifications_outlined,
+          title: AppLocalizations.of(context).notificationPermissionTitle,
+          description: AppLocalizations.of(context).notificationPermissionDesc,
+          isGranted: _permissions['notification'] ?? false,
+          onRequest: () => _requestPermission('notification'),
+        ),
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.accessibility_new_outlined,
+          title: AppLocalizations.of(context).accessibilityPermissionTitle,
+          description: AppLocalizations.of(context).accessibilityPermissionDesc,
+          isGranted: _permissions['accessibility'] ?? false,
+          onRequest: () => _requestPermission('accessibility'),
+        ),
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.analytics_outlined,
+          title: AppLocalizations.of(context).usageStatsPermissionTitle,
+          description: AppLocalizations.of(context).usageStatsPermissionDesc,
+          isGranted: _permissions['usage_stats'] ?? false,
+          onRequest: () => _requestPermission('usage_stats'),
+        ),
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.battery_saver_outlined,
+          title: AppLocalizations.of(context).batteryOptimizationTitle,
+          description: AppLocalizations.of(context).batteryOptimizationDesc,
+          isGranted: _keepAlivePermissions['battery_optimization'] ?? false,
+          onRequest: () => _requestPermission('battery_optimization'),
+        ),
+        _buildPermissionItem(
+          context: context,
+          icon: Icons.power_settings_new_outlined,
+          title: AppLocalizations.of(context).autostartPermissionTitle,
+          description: AppLocalizations.of(context).autostartPermissionDesc,
+          isGranted: _keepAlivePermissions['autostart'] ?? false,
+          onRequest: () => _requestPermission('autostart'),
+          showBottomBorder: false,
+        ),
+      ],
     );
   }
 
@@ -1074,7 +965,7 @@ class _SettingsPageState extends State<SettingsPage>
                         ),
                       ),
                       const SizedBox(height: AppTheme.spacing3),
-                      const LinearProgressIndicator(value: null, minHeight: 4),
+                      const UIProgress(value: null, height: 4),
                       const SizedBox(height: AppTheme.spacing2),
                       Text(
                         hint,
@@ -1416,11 +1307,6 @@ class _SettingsPageState extends State<SettingsPage>
 
   Future<void> _loadAllPermissions() async {
     await Future.wait([_loadPermissions(), _loadKeepAlivePermissions()]);
-    if (mounted) {
-      setState(() {
-        _permissionsExpanded = !_allPermissionsGranted();
-      });
-    }
   }
 
   Future<void> _loadPermissions() async {
@@ -1430,10 +1316,6 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() {
           _permissions = permissions;
           _isLoading = false;
-        });
-        // 全部授权后自动收起
-        setState(() {
-          _permissionsExpanded = !_allPermissionsGranted();
         });
       }
     } catch (e) {
@@ -1461,10 +1343,6 @@ class _SettingsPageState extends State<SettingsPage>
           _keepAlivePermissions = Map<String, bool>.from(result ?? {});
           _isLoadingKeepAlive = false;
         });
-        // 全部授权后自动收起
-        setState(() {
-          _permissionsExpanded = !_allPermissionsGranted();
-        });
       }
       print('保活权限状态更新完成: ' + _keepAlivePermissions.toString());
     } catch (e) {
@@ -1478,9 +1356,6 @@ class _SettingsPageState extends State<SettingsPage>
             'battery_whitelist_actual': false,
           };
           _isLoadingKeepAlive = false;
-        });
-        setState(() {
-          _permissionsExpanded = !_allPermissionsGranted();
         });
       }
     }
@@ -1668,19 +1543,22 @@ class _SettingsPageState extends State<SettingsPage>
 
     final bool canPop = Navigator.of(context).canPop();
     return AppBar(
-      centerTitle: false,
+      toolbarHeight: 36,
+      centerTitle: true,
       automaticallyImplyLeading: false,
+      leadingWidth: kToolbarHeight,
       leading: _subPage == _SettingsSubPage.home
           ? (canPop
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () => Navigator.of(context).maybePop(),
                   )
-                : null)
+                : const SizedBox.shrink())
           : IconButton(
               icon: const Icon(Icons.arrow_back),
               onPressed: () => _switchSubPage(_SettingsSubPage.home),
             ),
+      titleSpacing: 0,
       title: Padding(
         padding: const EdgeInsets.only(top: 2.0),
         child: Text(title),
@@ -1696,6 +1574,8 @@ class _SettingsPageState extends State<SettingsPage>
             onPressed: _loadAllPermissions,
             tooltip: l10n.refreshPermissionStatus,
           ),
+        if (_subPage != _SettingsSubPage.permissions)
+          const SizedBox(width: kToolbarHeight),
       ],
     );
   }
@@ -1704,7 +1584,7 @@ class _SettingsPageState extends State<SettingsPage>
     switch (_subPage) {
       case _SettingsSubPage.home:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1714,6 +1594,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.verified_user_outlined,
                   title: AppLocalizations.of(context).permissionsSectionTitle,
                   showBottomBorder: true,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.permissions),
                 ),
                 _buildNavItem(
@@ -1721,6 +1602,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.palette_outlined,
                   title: AppLocalizations.of(context).displaySectionTitle,
                   showBottomBorder: true,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.display),
                 ),
                 _buildNavItem(
@@ -1728,6 +1610,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.photo_library_outlined,
                   title: AppLocalizations.of(context).screenshotSectionTitle,
                   showBottomBorder: true,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.screenshot),
                 ),
                 _buildNavItem(
@@ -1737,6 +1620,7 @@ class _SettingsPageState extends State<SettingsPage>
                     context,
                   ).segmentSummarySectionTitle,
                   showBottomBorder: true,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.segmentSummary),
                 ),
                 _buildNavItem(
@@ -1744,6 +1628,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.notifications_outlined,
                   title: AppLocalizations.of(context).dailyReminderSectionTitle,
                   showBottomBorder: true,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.dailyReminder),
                 ),
                 _buildNavItem(
@@ -1751,6 +1636,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.storage_outlined,
                   title: AppLocalizations.of(context).dataBackupSectionTitle,
                   showBottomBorder: false,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.dataBackup),
                 ),
               ],
@@ -1764,6 +1650,7 @@ class _SettingsPageState extends State<SettingsPage>
                   icon: Icons.tune,
                   title: AppLocalizations.of(context).advancedSectionTitle,
                   showBottomBorder: false,
+                  isRootPageItem: true,
                   onTap: () => _switchSubPage(_SettingsSubPage.advanced),
                 ),
               ],
@@ -1775,7 +1662,7 @@ class _SettingsPageState extends State<SettingsPage>
           return const Center(child: CircularProgressIndicator());
         }
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1785,7 +1672,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.display:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1800,7 +1687,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.screenshot:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1814,7 +1701,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.segmentSummary:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1832,7 +1719,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.dailyReminder:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1846,7 +1733,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.dataBackup:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1862,7 +1749,7 @@ class _SettingsPageState extends State<SettingsPage>
         );
       case _SettingsSubPage.advanced:
         return ListView(
-          padding: const EdgeInsets.all(AppTheme.spacing4),
+          padding: _settingsListPadding(),
           children: [
             _buildCard(
               context: context,
@@ -1890,22 +1777,33 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  EdgeInsets _settingsListPadding() {
+    return const EdgeInsets.fromLTRB(
+      AppTheme.spacing4,
+      AppTheme.spacing2,
+      AppTheme.spacing4,
+      AppTheme.spacing4,
+    );
+  }
+
   Widget _buildNavItem({
     required BuildContext context,
     required IconData icon,
     required String title,
     required bool showBottomBorder,
+    bool isRootPageItem = false,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
     final borderSide = _settingsDividerSide(context);
+    final EdgeInsetsGeometry padding = EdgeInsets.symmetric(
+      horizontal: AppTheme.spacing4,
+      vertical: isRootPageItem ? AppTheme.spacing3 : AppTheme.spacing3 - 2,
+    );
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacing4,
-          vertical: AppTheme.spacing4,
-        ),
+        padding: padding,
         decoration: BoxDecoration(
           border: Border(
             bottom: showBottomBorder ? borderSide : BorderSide.none,
@@ -1918,7 +1816,7 @@ class _SettingsPageState extends State<SettingsPage>
             Expanded(
               child: Text(
                 title,
-                style: theme.textTheme.bodyLarge?.copyWith(
+                style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1926,6 +1824,7 @@ class _SettingsPageState extends State<SettingsPage>
             const SizedBox(width: AppTheme.spacing2),
             Icon(
               Icons.chevron_right,
+              size: 18,
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
@@ -1934,41 +1833,38 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildSettingsLeadingIcon(BuildContext context, IconData icon) {
+  Widget _buildSettingsLeadingIcon(
+    BuildContext context,
+    IconData icon, {
+    Color? color,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(
+        child: Icon(
+          icon,
+          color: color ?? colorScheme.onSurfaceVariant,
+          size: 18,
+        ),
       ),
-      child: Icon(icon, color: colorScheme.onSecondaryContainer, size: 18),
     );
   }
 
   // ===== 时间段总结设置 UI =====
   Widget _buildSegmentSampleItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.photo_library_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.photo_library_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -1998,10 +1894,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2012,22 +1909,13 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildSegmentDurationItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.schedule_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.schedule_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2057,10 +1945,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2072,7 +1961,10 @@ class _SettingsPageState extends State<SettingsPage>
   // ===== 动态合并限制 UI =====
   Widget _buildDynamicMergeMaxSpanItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(
           top: _settingsDividerSide(context),
@@ -2081,19 +1973,7 @@ class _SettingsPageState extends State<SettingsPage>
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.merge_type_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.merge_type_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2123,10 +2003,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2137,25 +2018,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildDynamicMergeMaxGapItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.more_time_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.more_time_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2185,10 +2057,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2199,22 +2072,13 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildDynamicMergeMaxImagesItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.image_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.image_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2244,10 +2108,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2259,25 +2124,16 @@ class _SettingsPageState extends State<SettingsPage>
   // ===== AI请求间隔设置 UI =====
   Widget _buildAiRequestIntervalItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.speed_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.speed_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2307,10 +2163,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2332,25 +2189,16 @@ class _SettingsPageState extends State<SettingsPage>
     })();
 
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.autorenew_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.autorenew_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2380,10 +2228,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2395,25 +2244,16 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildThemeColorItem(BuildContext context) {
     final Color current = widget.themeService.seedColor;
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.palette_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.palette_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2461,10 +2301,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -2590,25 +2431,16 @@ class _SettingsPageState extends State<SettingsPage>
         '#${current.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.format_color_fill_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.format_color_fill_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -2664,10 +2496,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -3543,26 +3376,26 @@ class _SettingsPageState extends State<SettingsPage>
     required String description,
     required bool isGranted,
     required VoidCallback onRequest,
+    bool showBottomBorder = true,
   }) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
-        border: Border(bottom: _settingsDividerSide(context)),
+        border: Border(
+          bottom: showBottomBorder
+              ? _settingsDividerSide(context)
+              : BorderSide.none,
+        ),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              isGranted ? Icons.check : icon,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
+          _buildSettingsLeadingIcon(
+            context,
+            isGranted ? Icons.check : icon,
+            color: isGranted ? AppTheme.success : null,
           ),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
@@ -3599,10 +3432,11 @@ class _SettingsPageState extends State<SettingsPage>
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppTheme.spacing3,
-                  vertical: AppTheme.spacing1,
+                  vertical: AppTheme.spacing1 - 1,
                 ),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 minimumSize: Size.zero,
+                visualDensity: VisualDensity.compact,
               ),
               child: Text(AppLocalizations.of(context).authorizeAction),
             ),
@@ -3615,22 +3449,13 @@ class _SettingsPageState extends State<SettingsPage>
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.storage_outlined,
-              color: theme.colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.storage_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3664,10 +3489,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(l10n.actionEnter),
           ),
@@ -3678,22 +3504,13 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildExportItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.file_download_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.file_download_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3721,10 +3538,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: _exportingDb
                 ? const SizedBox(
@@ -3741,25 +3559,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildImportItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.file_upload_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.file_upload_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3787,10 +3596,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: _importingData
                 ? const SizedBox(
@@ -3809,25 +3619,16 @@ class _SettingsPageState extends State<SettingsPage>
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.fact_check_outlined,
-              color: theme.colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.fact_check_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3863,10 +3664,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(l10n.actionEnter),
           ),
@@ -3878,25 +3680,16 @@ class _SettingsPageState extends State<SettingsPage>
   Widget _buildRecalculateAllItem(BuildContext context) {
     final AppLocalizations t = AppLocalizations.of(context);
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.sync,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.sync),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3924,10 +3717,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: _recalculatingAll
                 ? const SizedBox(
@@ -3944,25 +3738,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildNsfwEntryItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.shield_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.shield_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -3994,10 +3779,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionEnter),
           ),
@@ -4008,25 +3794,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildPrivacyModeItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.privacy_tip_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.privacy_tip_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -4066,7 +3843,10 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildLoggingToggleItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4074,19 +3854,7 @@ class _SettingsPageState extends State<SettingsPage>
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    ),
-                    child: Icon(
-                      Icons.event_note_outlined,
-                      color: Theme.of(context).colorScheme.onSecondaryContainer,
-                      size: 18,
-                    ),
-                  ),
+                  _buildSettingsLeadingIcon(context, Icons.event_note_outlined),
                   const SizedBox(width: AppTheme.spacing3),
                   Expanded(
                     child: Padding(
@@ -4321,7 +4089,10 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildStreamRenderImagesItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
@@ -4330,19 +4101,7 @@ class _SettingsPageState extends State<SettingsPage>
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.image_outlined,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  size: 18,
-                ),
-              ),
+              _buildSettingsLeadingIcon(context, Icons.image_outlined),
               const SizedBox(width: AppTheme.spacing3),
               Expanded(
                 child: Padding(
@@ -4390,7 +4149,10 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildAiChatPerfOverlayItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
@@ -4399,19 +4161,7 @@ class _SettingsPageState extends State<SettingsPage>
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.speed_outlined,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  size: 18,
-                ),
-              ),
+              _buildSettingsLeadingIcon(context, Icons.speed_outlined),
               const SizedBox(width: AppTheme.spacing3),
               Expanded(
                 child: Padding(
@@ -4459,25 +4209,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildScreenshotIntervalItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.timer_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.timer_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -4507,10 +4248,11 @@ class _SettingsPageState extends State<SettingsPage>
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionSet),
           ),
@@ -4521,25 +4263,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildScreenshotQualityItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.image_outlined,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  size: 18,
-                ),
-              ),
+              _buildSettingsLeadingIcon(context, Icons.image_outlined),
               const SizedBox(width: AppTheme.spacing3),
               Expanded(
                 child: Stack(
@@ -4812,25 +4545,16 @@ class _SettingsPageState extends State<SettingsPage>
 
   Widget _buildScreenshotExpireItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(top: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.auto_delete_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.auto_delete_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Stack(
@@ -5423,7 +5147,9 @@ class _SettingsPageState extends State<SettingsPage>
                             color: Theme.of(
                               context,
                             ).colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusSm,
+                            ),
                           ),
                           child: Text(
                             '*.',
@@ -5727,25 +5453,16 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
 
   Widget _buildDailyNotifyItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.schedule_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
-          ),
+          _buildSettingsLeadingIcon(context, Icons.schedule_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
@@ -5829,21 +5546,15 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
 
   Widget _buildDailyNotifyTestItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.notifications_active_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
+          _buildSettingsLeadingIcon(
+            context,
+            Icons.notifications_active_outlined,
           ),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
@@ -5895,10 +5606,11 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionTrigger),
           ),
@@ -5938,24 +5650,18 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
   // 行项：开启横幅/悬浮通知
   Widget _buildDailyNotifyBannerItem(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(AppTheme.spacing3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
       decoration: BoxDecoration(
         border: Border(bottom: _settingsDividerSide(context)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-            ),
-            child: Icon(
-              Icons.notification_important_outlined,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-              size: 18,
-            ),
+          _buildSettingsLeadingIcon(
+            context,
+            Icons.notification_important_outlined,
           ),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
@@ -5984,10 +5690,11 @@ extension _DailySummaryNotifyExt on _SettingsPageState {
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1,
+                vertical: AppTheme.spacing1 - 1,
               ),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
             ),
             child: Text(AppLocalizations.of(context).actionOpen),
           ),

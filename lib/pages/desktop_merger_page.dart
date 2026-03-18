@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_components.dart';
 
 /// 桌面端数据合并工具页面
 /// 支持选择多个 ZIP 文件并合并到指定目录
@@ -156,8 +157,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               ),
             ),
             TextButton(
-              onPressed:
-                  (_isMerging || _isAuditingZipFiles) ? null : _selectOutputDirectory,
+              onPressed: (_isMerging || _isAuditingZipFiles)
+                  ? null
+                  : _selectOutputDirectory,
               child: Text(
                 t.desktopMergerBrowse,
                 style: TextStyle(
@@ -196,8 +198,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               ),
             ),
             TextButton(
-              onPressed:
-                  (_isMerging || _isAuditingZipFiles) ? null : _selectZipFiles,
+              onPressed: (_isMerging || _isAuditingZipFiles)
+                  ? null
+                  : _selectZipFiles,
               child: Text(
                 t.desktopMergerAddFiles,
                 style: TextStyle(
@@ -434,9 +437,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
                 ],
               ),
               const SizedBox(height: AppTheme.spacing2),
-              LinearProgressIndicator(
-                value: _isPacking ? _packingProgress : _progress,
-              ),
+              UIProgress(value: _isPacking ? _packingProgress : _progress),
 
               // 阶段提示信息
               Builder(
@@ -487,7 +488,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               if (!_isPacking && _hasAnyStats()) _buildLiveStatsPanel(context),
             ],
 
-            if (!_isMerging && (_isAuditingZipFiles || _preflightMessage != null))
+            if (!_isMerging &&
+                (_isAuditingZipFiles || _preflightMessage != null))
               _buildPreflightPanel(context),
 
             // 错误信息
@@ -553,8 +555,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
   Widget _buildPreflightPanel(BuildContext context) {
     final theme = Theme.of(context);
-    final bool hasBlockingIssues =
-        _selectedZipFiles.any((File file) => _isAuditBlocking(file.path));
+    final bool hasBlockingIssues = _selectedZipFiles.any(
+      (File file) => _isAuditBlocking(file.path),
+    );
     final Color tone = hasBlockingIssues
         ? theme.colorScheme.error
         : theme.colorScheme.primary;
@@ -562,7 +565,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
         ? theme.colorScheme.errorContainer.withOpacity(0.25)
         : theme.colorScheme.primaryContainer.withOpacity(0.2);
     final String title = _isAuditingZipFiles ? 'ZIP 预检中' : 'ZIP 预检结果';
-    final String body = _preflightMessage ??
+    final String body =
+        _preflightMessage ??
         '正在检查所选 ZIP 是否包含完整的 screen / screenshot_memo.db / smm_*.db。';
 
     return Padding(
@@ -613,9 +617,7 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
               child: SingleChildScrollView(
                 child: SelectableText(
                   body,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: tone,
-                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(color: tone),
                 ),
               ),
             ),
@@ -1049,7 +1051,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
     final bool hasBlockingZip = _selectedZipFiles.any(
       (File file) => _isAuditBlocking(file.path),
     );
-    final bool waitingForAudit = _isAuditingZipFiles ||
+    final bool waitingForAudit =
+        _isAuditingZipFiles ||
         _selectedZipFiles.any((File file) => !_hasFinishedAudit(file.path));
 
     return Column(
@@ -1091,7 +1094,9 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
           ),
         Row(
           children: [
-            if (_selectedZipFiles.isNotEmpty && !_isMerging && !_isAuditingZipFiles)
+            if (_selectedZipFiles.isNotEmpty &&
+                !_isMerging &&
+                !_isAuditingZipFiles)
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
@@ -1218,8 +1223,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
 
     for (final File file in files) {
       try {
-        final MergeZipAuditReport report =
-            await ScreenshotDatabase.instance.auditMergeInputZip(file.path);
+        final MergeZipAuditReport report = await ScreenshotDatabase.instance
+            .auditMergeInputZip(file.path);
         if (!mounted) return;
         setState(() {
           _zipAuditStates[file.path] = _ZipAuditState(
@@ -1517,10 +1522,8 @@ class _DesktopMergerPageState extends State<DesktopMergerPage> {
       setState(() {
         _currentEntry = '最终审计 merged output';
       });
-      final MergeZipAuditReport finalAudit =
-          await ScreenshotDatabase.instance.auditMergedOutputDirectory(
-        baseDirPath: _outputDirectory!,
-      );
+      final MergeZipAuditReport finalAudit = await ScreenshotDatabase.instance
+          .auditMergedOutputDirectory(baseDirPath: _outputDirectory!);
       _allWarnings.addAll(finalAudit.warnings);
       if (!finalAudit.isValidForMerge) {
         throw MergeAuditException(

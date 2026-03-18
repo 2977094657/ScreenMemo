@@ -9,7 +9,7 @@ import 'ui_dialog.dart';
 class AppSelectionWidget extends StatefulWidget {
   final Function(List<AppInfo>)? onSelectionChanged;
   final bool displayAsList;
-  
+
   const AppSelectionWidget({
     super.key,
     this.onSelectionChanged,
@@ -27,7 +27,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     'com.xunmeng.pinduoduo',
     'com.xunmeng.pinduoduo.lite',
   };
-  
+
   List<AppInfo> _allApps = [];
   List<AppInfo> _filteredApps = [];
   List<AppInfo> _selectedApps = [];
@@ -65,18 +65,19 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
       // 触发过期时的后台刷新，不阻塞当前UI
       // ignore: unawaited_futures
       _appService.refreshAppsInBackgroundIfStale();
-      
+
       // 获取之前选中的应用
       final selectedApps = await _appService.getSelectedApps();
-      
+
       // 更新选中状态
       for (final app in _allApps) {
-        app.isSelected = selectedApps.any((selected) => selected.packageName == app.packageName);
+        app.isSelected = selectedApps.any(
+          (selected) => selected.packageName == app.packageName,
+        );
       }
-      
+
       _selectedApps = _allApps.where((app) => app.isSelected).toList();
       _filteredApps = _allApps;
-      
     } catch (e) {
       print('加载应用失败: $e');
     } finally {
@@ -108,10 +109,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
       title: l10n.pinduoduoWarningTitle,
       message: l10n.pinduoduoWarningMessage,
       actions: [
-        UIDialogAction<bool>(
-          text: l10n.pinduoduoWarningCancel,
-          result: false,
-        ),
+        UIDialogAction<bool>(text: l10n.pinduoduoWarningCancel, result: false),
         UIDialogAction<bool>(
           text: l10n.pinduoduoWarningKeep,
           style: UIDialogActionStyle.primary,
@@ -136,7 +134,9 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
       if (app.isSelected) {
         _selectedApps.add(app);
       } else {
-        _selectedApps.removeWhere((selected) => selected.packageName == app.packageName);
+        _selectedApps.removeWhere(
+          (selected) => selected.packageName == app.packageName,
+        );
       }
     });
 
@@ -162,8 +162,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     setState(() {
       for (final app in _filteredApps) {
         // 如果需要跳过拼多多，则仅对非拼多多应用执行全选
-        if (!app.isSelected &&
-            !(skipPinduoduo && _isPinduoduoApp(app))) {
+        if (!app.isSelected && !(skipPinduoduo && _isPinduoduoApp(app))) {
           app.isSelected = true;
           if (!_selectedApps.contains(app)) {
             _selectedApps.add(app);
@@ -171,7 +170,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
         }
       }
     });
-    
+
     widget.onSelectionChanged?.call(_selectedApps);
   }
 
@@ -180,11 +179,13 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
       for (final app in _filteredApps) {
         if (app.isSelected) {
           app.isSelected = false;
-          _selectedApps.removeWhere((selected) => selected.packageName == app.packageName);
+          _selectedApps.removeWhere(
+            (selected) => selected.packageName == app.packageName,
+          );
         }
       }
     });
-    
+
     widget.onSelectionChanged?.call(_selectedApps);
   }
 
@@ -192,7 +193,9 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color surface = isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
+    final Color surface = isDark
+        ? theme.colorScheme.surface
+        : theme.scaffoldBackgroundColor;
     return Column(
       children: [
         // 搜索栏和统计信息
@@ -203,9 +206,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
             AppTheme.spacing4, // right
             AppTheme.spacing2, // bottom
           ),
-          decoration: BoxDecoration(
-            color: surface,
-          ),
+          decoration: BoxDecoration(color: surface),
           child: Column(
             children: [
               // 搜索栏
@@ -239,25 +240,15 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
               // 统计和操作按钮
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing2,
-                      vertical: AppTheme.spacing1,
-                    ),
-                    decoration: BoxDecoration(
+                  Text(
+                    AppLocalizations.of(
+                      context,
+                    ).selectedCount(_selectedApps.length),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: _selectedApps.isNotEmpty
                           ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context).selectedCount(_selectedApps.length),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _selectedApps.isNotEmpty
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSecondaryContainer,
-                        fontWeight: FontWeight.w500,
-                      ),
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const Spacer(),
@@ -266,14 +257,23 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                     tooltip: AppLocalizations.of(context).refreshAppsTooltip,
                     icon: const Icon(Icons.refresh, size: 18),
                     onPressed: () async {
-                      setState(() { _isLoading = true; });
+                      setState(() {
+                        _isLoading = true;
+                      });
                       try {
-                        _allApps = await _appService.getAllInstalledApps(forceRefresh: true);
-                        final selectedApps = await _appService.getSelectedApps();
+                        _allApps = await _appService.getAllInstalledApps(
+                          forceRefresh: true,
+                        );
+                        final selectedApps = await _appService
+                            .getSelectedApps();
                         for (final app in _allApps) {
-                          app.isSelected = selectedApps.any((s) => s.packageName == app.packageName);
+                          app.isSelected = selectedApps.any(
+                            (s) => s.packageName == app.packageName,
+                          );
                         }
-                        _selectedApps = _allApps.where((a) => a.isSelected).toList();
+                        _selectedApps = _allApps
+                            .where((a) => a.isSelected)
+                            .toList();
                         _filteredApps = _searchController.text.isEmpty
                             ? _allApps
                             : _appService.searchApps(_searchController.text);
@@ -281,18 +281,28 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                         // ignore
                       } finally {
                         if (mounted) {
-                          setState(() { _isLoading = false; });
+                          setState(() {
+                            _isLoading = false;
+                          });
                         }
                       }
                     },
                   ),
                   TextButton(
-                    onPressed: () { _selectAll(); },
-                    child: Text(AppLocalizations.of(context).selectAll, style: const TextStyle(fontSize: 14)),
+                    onPressed: () {
+                      _selectAll();
+                    },
+                    child: Text(
+                      AppLocalizations.of(context).selectAll,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   ),
                   TextButton(
                     onPressed: _clearAll,
-                    child: Text(AppLocalizations.of(context).clearAll, style: const TextStyle(fontSize: 14)),
+                    child: Text(
+                      AppLocalizations.of(context).clearAll,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   ),
                 ],
               ),
@@ -305,57 +315,61 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _filteredApps.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.search_off,
-                            size: 48,
-                            color: AppTheme.mutedForeground,
-                          ),
-                          const SizedBox(height: AppTheme.spacing3),
-                          Text(
-                            _searchQuery.isEmpty ? AppLocalizations.of(context).noAppsFound : AppLocalizations.of(context).noAppsMatched,
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: AppTheme.mutedForeground,
-                            ),
-                          ),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.search_off,
+                        size: 48,
+                        color: AppTheme.mutedForeground,
                       ),
-                    )
-                  : (widget.displayAsList
-                      ? ListView.separated(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.spacing2,
-                            vertical: AppTheme.spacing1,
-                          ),
-                          itemCount: _filteredApps.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: AppTheme.spacing1),
-                          itemBuilder: (context, index) {
-                            final app = _filteredApps[index];
-                            return _buildAppListItem(app);
-                          },
-                        )
-                      : GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppTheme.spacing3, // left
-                            AppTheme.spacing2, // top - 减少顶部间距
-                            AppTheme.spacing3, // right
-                            AppTheme.spacing3, // bottom
-                          ),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4, // 4列紧凑布局
-                            crossAxisSpacing: AppTheme.spacing2,
-                            mainAxisSpacing: AppTheme.spacing3, // 稍微增加垂直间距
-                            childAspectRatio: 0.8, // 调整高宽比，给文字更多空间
-                          ),
-                          itemCount: _filteredApps.length,
-                          itemBuilder: (context, index) {
-                            final app = _filteredApps[index];
-                            return _buildAppGridItem(app);
-                          },
-                        )),
+                      const SizedBox(height: AppTheme.spacing3),
+                      Text(
+                        _searchQuery.isEmpty
+                            ? AppLocalizations.of(context).noAppsFound
+                            : AppLocalizations.of(context).noAppsMatched,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: AppTheme.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : (widget.displayAsList
+                    ? ListView.separated(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing2,
+                          vertical: AppTheme.spacing1,
+                        ),
+                        itemCount: _filteredApps.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: AppTheme.spacing1),
+                        itemBuilder: (context, index) {
+                          final app = _filteredApps[index];
+                          return _buildAppListItem(app);
+                        },
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTheme.spacing3, // left
+                          AppTheme.spacing2, // top - 减少顶部间距
+                          AppTheme.spacing3, // right
+                          AppTheme.spacing3, // bottom
+                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4, // 4列紧凑布局
+                              crossAxisSpacing: AppTheme.spacing2,
+                              mainAxisSpacing: AppTheme.spacing3, // 稍微增加垂直间距
+                              childAspectRatio: 0.8, // 调整高宽比，给文字更多空间
+                            ),
+                        itemCount: _filteredApps.length,
+                        itemBuilder: (context, index) {
+                          final app = _filteredApps[index];
+                          return _buildAppGridItem(app);
+                        },
+                      )),
         ),
       ],
     );
@@ -363,15 +377,21 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
 
   Widget _buildAppGridItem(AppInfo app) {
     return GestureDetector(
-      onTap: () { _toggleAppSelection(app); },
+      onTap: () {
+        _toggleAppSelection(app);
+      },
       child: Container(
         decoration: BoxDecoration(
-          color: app.isSelected ? AppTheme.primary.withValues(alpha: 0.1) : Colors.transparent,
+          color: app.isSelected
+              ? AppTheme.primary.withValues(alpha: 0.1)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-          border: app.isSelected ? Border.all(
-            color: AppTheme.primary,
-            width: 1.0, // 进一步减少边框粗细
-          ) : null,
+          border: app.isSelected
+              ? Border.all(
+                  color: AppTheme.primary,
+                  width: 1.0, // 进一步减少边框粗细
+                )
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -402,13 +422,13 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                   Positioned(
                     right: 0,
                     bottom: 0,
-            child: Container(
+                    child: Container(
                       width: 16,
                       height: 16,
                       decoration: BoxDecoration(
                         color: AppTheme.primary,
                         shape: BoxShape.circle,
-                // 去掉白色描边
+                        // 去掉白色描边
                       ),
                       child: const Icon(
                         Icons.check,
@@ -424,11 +444,15 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
 
             // 应用名称
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing1,
+              ),
               child: Text(
                 app.appName,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: app.isSelected ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: app.isSelected
+                      ? FontWeight.w600
+                      : FontWeight.normal,
                   color: app.isSelected ? AppTheme.primary : null,
                 ),
                 textAlign: TextAlign.center,
@@ -446,7 +470,9 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () { _toggleAppSelection(app); },
+        onTap: () {
+          _toggleAppSelection(app);
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing4,
@@ -480,7 +506,9 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
               ),
               Checkbox(
                 value: app.isSelected,
-                onChanged: (_) { _toggleAppSelection(app); },
+                onChanged: (_) {
+                  _toggleAppSelection(app);
+                },
               ),
             ],
           ),

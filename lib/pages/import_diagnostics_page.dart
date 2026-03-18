@@ -19,8 +19,9 @@ class ImportDiagnosticsPage extends StatefulWidget {
 
 class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
   ImportDiagnosticsReport? _report;
-  ImportOcrRepairTaskStatus _ocrTaskStatus =
-      ImportOcrRepairTaskStatus.fromMap(null);
+  ImportOcrRepairTaskStatus _ocrTaskStatus = ImportOcrRepairTaskStatus.fromMap(
+    null,
+  );
   bool _loading = true;
   String? _error;
   bool _repairing = false;
@@ -52,7 +53,8 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     final Stopwatch sw = Stopwatch()..start();
     try {
       final report = await ScreenshotDatabase.instance.diagnoseImportState();
-      final status = await ScreenshotDatabase.instance.getImportOcrRepairTaskStatus();
+      final status = await ScreenshotDatabase.instance
+          .getImportOcrRepairTaskStatus();
       if (!mounted) return;
       setState(() {
         _report = report;
@@ -117,9 +119,9 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           child: SingleChildScrollView(
             child: SelectableText(
               rep.toText(),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
             ),
           ),
         ),
@@ -159,7 +161,8 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     setState(() => _repairingOcr = true);
     try {
       final previous = _ocrTaskStatus;
-      final status = await ScreenshotDatabase.instance.startImportOcrRepairTask();
+      final status = await ScreenshotDatabase.instance
+          .startImportOcrRepairTask();
       try {
         await FlutterLogger.nativeInfo('IMPORT_DIAG', status.toText());
       } catch (_) {}
@@ -201,7 +204,8 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
 
   Future<void> _cancelOcrTask() async {
     try {
-      final status = await ScreenshotDatabase.instance.cancelImportOcrRepairTask();
+      final status = await ScreenshotDatabase.instance
+          .cancelImportOcrRepairTask();
       if (!mounted) return;
       setState(() => _ocrTaskStatus = status);
       UINotifier.info(context, '图片文字修复已停止');
@@ -228,12 +232,15 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     });
   }
 
-  Future<void> _refreshOcrTaskStatus({bool rerunDiagnosticsOnComplete = true}) async {
+  Future<void> _refreshOcrTaskStatus({
+    bool rerunDiagnosticsOnComplete = true,
+  }) async {
     if (_pollingOcrTask) return;
     _pollingOcrTask = true;
     try {
       final previous = _ocrTaskStatus;
-      final status = await ScreenshotDatabase.instance.getImportOcrRepairTaskStatus();
+      final status = await ScreenshotDatabase.instance
+          .getImportOcrRepairTaskStatus();
       if (!mounted) return;
       setState(() => _ocrTaskStatus = status);
       if (rerunDiagnosticsOnComplete &&
@@ -250,9 +257,9 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
 
   Future<void> _openLogConsole() async {
     if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LogConsolePage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const LogConsolePage()));
   }
 
   @override
@@ -293,10 +300,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '诊断失败',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('诊断失败', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppTheme.spacing2),
               SelectableText(
                 _error!,
@@ -326,8 +330,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
       _buildTimelineCard(context, report),
       _buildOcrCard(context, report),
       if (report.suggestions.isNotEmpty) _buildSuggestionsCard(context, report),
-      if (report.warnings.isNotEmpty) _buildListCard(context, '警告', report.warnings),
-      if (report.errors.isNotEmpty) _buildListCard(context, '错误', report.errors),
+      if (report.warnings.isNotEmpty)
+        _buildListCard(context, '警告', report.warnings),
+      if (report.errors.isNotEmpty)
+        _buildListCard(context, '错误', report.errors),
       _buildActionsCard(context, report),
       _buildRawReportCard(context, report),
     ];
@@ -356,10 +362,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant,
-          width: 1,
-        ),
+        border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
       ),
       child: child,
     );
@@ -382,11 +385,16 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     );
   }
 
-  Widget _buildSummaryCard(BuildContext context, ImportDiagnosticsReport report) {
+  Widget _buildSummaryCard(
+    BuildContext context,
+    ImportDiagnosticsReport report,
+  ) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final (label, color, icon) = _levelUi(report.level, cs);
-    final DateTime dt = DateTime.fromMillisecondsSinceEpoch(report.timestampMillis);
+    final DateTime dt = DateTime.fromMillisecondsSinceEpoch(
+      report.timestampMillis,
+    );
 
     return _buildCard(
       context,
@@ -403,7 +411,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
               ),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 border: Border.all(color: color.withValues(alpha: 0.35)),
               ),
               child: Row(
@@ -429,16 +437,15 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
-          Text(
-            '耗时：${report.durationMs}ms',
-            style: theme.textTheme.bodySmall,
-          ),
+          Text('耗时：${report.durationMs}ms', style: theme.textTheme.bodySmall),
           const SizedBox(height: 4),
           Text(
             '可修复索引：${report.canRepairIndex ? '是' : '否'}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: report.canRepairIndex ? cs.primary : cs.onSurfaceVariant,
-              fontWeight: report.canRepairIndex ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: report.canRepairIndex
+                  ? FontWeight.w600
+                  : FontWeight.w400,
             ),
           ),
           const SizedBox(height: 4),
@@ -446,7 +453,9 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             '可修复图片文字：${report.canRepairOcr ? '是' : '否'}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: report.canRepairOcr ? cs.primary : cs.onSurfaceVariant,
-              fontWeight: report.canRepairOcr ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: report.canRepairOcr
+                  ? FontWeight.w600
+                  : FontWeight.w400,
             ),
           ),
         ],
@@ -482,13 +491,13 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             context,
             'expected masterDb',
             '${p.expectedMasterDbPath ?? '(null)'} '
-            '(exists=${p.expectedMasterDbExists} size=${p.expectedMasterDbSizeBytes})',
+                '(exists=${p.expectedMasterDbExists} size=${p.expectedMasterDbSizeBytes})',
           ),
           _kv(
             context,
             'opened masterDb',
             '${p.openedMasterDbPath ?? '(null)'} '
-            '(matchesExpected=${p.openedMasterDbPathMatchesExpected})',
+                '(matchesExpected=${p.openedMasterDbPathMatchesExpected})',
           ),
           if (mismatch) ...[
             const SizedBox(height: AppTheme.spacing2),
@@ -528,7 +537,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             context,
             'screenDir',
             '${fs.screenDirPath ?? '(null)'} '
-            '(exists=${fs.screenDirExists} packages=${fs.screenPackageDirCount})',
+                '(exists=${fs.screenDirExists} packages=${fs.screenPackageDirCount})',
           ),
           if (fs.samplePackages.isNotEmpty)
             _kv(context, 'sample packages', fs.samplePackages.join(', ')),
@@ -536,17 +545,13 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             context,
             'shardsDir',
             '${fs.shardsDirPath ?? '(null)'} '
-            '(exists=${fs.shardsDirExists} dbFiles=${fs.shardDbFileCount})',
+                '(exists=${fs.shardsDirExists} dbFiles=${fs.shardDbFileCount})',
           ),
           if (fs.sampleShardDbFiles.isNotEmpty)
             _kv(context, 'sample shard db', fs.sampleShardDbFiles.join(', ')),
           _kv(context, 'shard smm db', fs.shardSmmDbFileCount.toString()),
           if (fs.sampleShardSmmDbFiles.isNotEmpty)
-            _kv(
-              context,
-              'sample smm db',
-              fs.sampleShardSmmDbFiles.join(', '),
-            ),
+            _kv(context, 'sample smm db', fs.sampleShardSmmDbFiles.join(', ')),
         ],
       ),
     );
@@ -590,12 +595,17 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     );
   }
 
-  Widget _buildTimelineCard(BuildContext context, ImportDiagnosticsReport report) {
+  Widget _buildTimelineCard(
+    BuildContext context,
+    ImportDiagnosticsReport report,
+  ) {
     final theme = Theme.of(context);
     final tl = report.timeline;
     final String latest = tl.latestCaptureMillis == null
         ? '(null)'
-        : DateTime.fromMillisecondsSinceEpoch(tl.latestCaptureMillis!).toString();
+        : DateTime.fromMillisecondsSinceEpoch(
+            tl.latestCaptureMillis!,
+          ).toString();
     final String range =
         '${DateTime.fromMillisecondsSinceEpoch(tl.rangeStartMillis)} ~ '
         '${DateTime.fromMillisecondsSinceEpoch(tl.rangeEndMillis)}';
@@ -656,16 +666,13 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  '后台修复任务',
-                  style: theme.textTheme.titleSmall,
-                ),
+                child: Text('后台修复任务', style: theme.textTheme.titleSmall),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 ),
                 child: Text(
                   _ocrTaskStatusLabel(task),
@@ -688,16 +695,21 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           if (task.candidateRows > 0)
             Padding(
               padding: const EdgeInsets.only(top: 6, bottom: 6),
-              child: LinearProgressIndicator(
+              child: UIProgress(
                 value: task.candidateRows <= 0
                     ? null
                     : (task.processedRows / task.candidateRows).clamp(0, 1),
-                minHeight: 6,
+                height: 6,
               ),
             ),
           if (task.totalWorks > 0)
-            _kv(context, 'workItem', '${task.currentWorkIndex}/${task.totalWorks}'),
-          if (task.currentPackageName.isNotEmpty || task.currentTableName.isNotEmpty)
+            _kv(
+              context,
+              'workItem',
+              '${task.currentWorkIndex}/${task.totalWorks}',
+            ),
+          if (task.currentPackageName.isNotEmpty ||
+              task.currentTableName.isNotEmpty)
             _kv(
               context,
               'current',
@@ -728,10 +740,14 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     return status.status;
   }
 
-  Color _ocrTaskStatusColor(BuildContext context, ImportOcrRepairTaskStatus status) {
+  Color _ocrTaskStatusColor(
+    BuildContext context,
+    ImportOcrRepairTaskStatus status,
+  ) {
     final cs = Theme.of(context).colorScheme;
     if (status.isCompleted) return cs.primary;
-    if (status.isPreparing || status.isPending || status.isRunning) return cs.tertiary;
+    if (status.isPreparing || status.isPending || status.isRunning)
+      return cs.tertiary;
     if (status.isFailed) return cs.error;
     if (status.isCancelled) return cs.onSurfaceVariant;
     return cs.onSurfaceVariant;
@@ -773,7 +789,11 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     );
   }
 
-  Widget _buildListCard(BuildContext context, String title, List<String> items) {
+  Widget _buildListCard(
+    BuildContext context,
+    String title,
+    List<String> items,
+  ) {
     final theme = Theme.of(context);
     return _buildCard(
       context,
@@ -786,9 +806,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             Icon(
               title == '错误' ? Icons.error_outline : Icons.warning_amber_rounded,
               size: 18,
-              color: title == '错误'
-                  ? theme.colorScheme.error
-                  : Colors.orange,
+              color: title == '错误' ? theme.colorScheme.error : Colors.orange,
             ),
           ),
           const SizedBox(height: AppTheme.spacing2),
@@ -808,7 +826,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     );
   }
 
-  Widget _buildActionsCard(BuildContext context, ImportDiagnosticsReport report) {
+  Widget _buildActionsCard(
+    BuildContext context,
+    ImportDiagnosticsReport report,
+  ) {
     return _buildCard(
       context,
       child: Wrap(
@@ -819,12 +840,11 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             onPressed: _runDiagnostics,
             child: const Text('重试'),
           ),
-          FilledButton.tonal(
-            onPressed: _copyReport,
-            child: const Text('复制'),
-          ),
+          FilledButton.tonal(onPressed: _copyReport, child: const Text('复制')),
           FilledButton(
-            onPressed: (!report.canRepairIndex || _repairing) ? null : _repairIndex,
+            onPressed: (!report.canRepairIndex || _repairing)
+                ? null
+                : _repairIndex,
             child: _repairing
                 ? const SizedBox(
                     width: 16,
@@ -836,12 +856,12 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
           FilledButton(
             onPressed:
                 ((!report.canRepairOcr &&
-                            !_ocrTaskStatus.isActive &&
-                            !_ocrTaskStatus.isFailed &&
-                            !_ocrTaskStatus.isCancelled) ||
-                        _repairingOcr)
-                    ? null
-                    : _repairOcr,
+                        !_ocrTaskStatus.isActive &&
+                        !_ocrTaskStatus.isFailed &&
+                        !_ocrTaskStatus.isCancelled) ||
+                    _repairingOcr)
+                ? null
+                : _repairOcr,
             child: _repairingOcr
                 ? const SizedBox(
                     width: 16,
@@ -851,7 +871,8 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
                 : Text(
                     _ocrTaskStatus.isActive
                         ? '后台修复中'
-                        : (_ocrTaskStatus.isFailed || _ocrTaskStatus.isCancelled)
+                        : (_ocrTaskStatus.isFailed ||
+                              _ocrTaskStatus.isCancelled)
                         ? '继续修复图片文字'
                         : '修复图片文字',
                   ),
@@ -871,7 +892,10 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     );
   }
 
-  Widget _buildRawReportCard(BuildContext context, ImportDiagnosticsReport report) {
+  Widget _buildRawReportCard(
+    BuildContext context,
+    ImportDiagnosticsReport report,
+  ) {
     final theme = Theme.of(context);
     return _buildCard(
       context,

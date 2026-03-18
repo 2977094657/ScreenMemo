@@ -463,9 +463,7 @@ class _HomePageState extends State<HomePage>
     _selectedApps = [...appsWithShots, ...appsWithoutShots];
   }
 
-  List<AppInfo> _buildVisibleApps(
-    Map<String, Map<String, dynamic>> appStats,
-  ) {
+  List<AppInfo> _buildVisibleApps(Map<String, Map<String, dynamic>> appStats) {
     final Map<String, AppInfo> visible = <String, AppInfo>{};
     final Set<String> savedPackages = _savedSelectedApps
         .map((app) => app.packageName)
@@ -500,7 +498,8 @@ class _HomePageState extends State<HomePage>
     }
 
     if (_installedAppsLoaded) {
-      for (final MapEntry<String, Map<String, dynamic>> entry in appStats.entries) {
+      for (final MapEntry<String, Map<String, dynamic>> entry
+          in appStats.entries) {
         final String packageName = entry.key.trim();
         if (packageName.isEmpty) continue;
         if (savedPackages.contains(packageName)) continue;
@@ -558,7 +557,9 @@ class _HomePageState extends State<HomePage>
     final String trimmed = value.trim();
     if (trimmed.isEmpty) return true;
     if (trimmed == packageName) return true;
-    if (trimmed.contains(' ') || trimmed.contains('-') || trimmed.contains('_')) {
+    if (trimmed.contains(' ') ||
+        trimmed.contains('-') ||
+        trimmed.contains('_')) {
       return false;
     }
     return RegExp(r'^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$').hasMatch(trimmed);
@@ -1332,6 +1333,33 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  Widget _buildToolbarActionButton({
+    required Widget icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: Tooltip(
+        message: tooltip,
+        child: IconButton(
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          splashRadius: 20,
+          iconSize: 22,
+          visualDensity: VisualDensity.compact,
+          icon: icon,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeToolbarIcon(IconData icon, {Color? color}) {
+    return Icon(icon, size: 22, weight: 300, color: color);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1406,17 +1434,8 @@ class _HomePageState extends State<HomePage>
                 child: Row(
                   children: [
                     // 左侧:语言切换图标
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 24,
-                        height: 36,
-                      ),
-                      visualDensity: const VisualDensity(
-                        horizontal: -4,
-                        vertical: -4,
-                      ),
-                      icon: const Icon(Icons.language, size: 20, weight: 300),
+                    _buildToolbarActionButton(
+                      icon: _buildHomeToolbarIcon(Icons.language),
                       tooltip: AppLocalizations.of(
                         context,
                       ).languageSettingTitle,
@@ -1424,17 +1443,9 @@ class _HomePageState extends State<HomePage>
                     ),
 
                     // 加号按钮
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 24,
-                        height: 36,
-                      ),
-                      visualDensity: const VisualDensity(
-                        horizontal: -4,
-                        vertical: -4,
-                      ),
-                      icon: const Icon(Icons.add, size: 20, weight: 300),
+                    const SizedBox(width: AppTheme.spacing2),
+                    _buildToolbarActionButton(
+                      icon: _buildHomeToolbarIcon(Icons.add),
                       tooltip: AppLocalizations.of(context).navSelectApps,
                       onPressed: () async {
                         await Navigator.of(context).push(
@@ -1576,80 +1587,45 @@ class _HomePageState extends State<HomePage>
                     ),
 
                     // 首页不再显示排序图标，排序在设置页调整
-                    const SizedBox(width: 2),
+                    const SizedBox(width: AppTheme.spacing2),
 
                     // 搜索框 - 大幅增加flex权重
                     Expanded(flex: 7, child: _buildSearchBar(context)),
 
-                    const SizedBox(width: 2),
+                    const SizedBox(width: AppTheme.spacing2),
 
                     // 搜索框右侧：权限提示 或 开关
                     _hasPermissionIssues
-                        ? IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 24,
-                              height: 36,
-                            ),
-                            visualDensity: const VisualDensity(
-                              horizontal: -4,
-                              vertical: -4,
-                            ),
-                            icon: const Icon(
+                        ? _buildToolbarActionButton(
+                            icon: _buildHomeToolbarIcon(
                               Icons.warning,
-                              size: 20,
-                              weight: 300,
                               color: AppTheme.destructive,
                             ),
-                            onPressed: _showPermissionStatus,
                             tooltip: AppLocalizations.of(
                               context,
                             ).permissionMissing,
+                            onPressed: _showPermissionStatus,
                           )
-                        : IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 24,
-                              height: 36,
-                            ),
-                            visualDensity: const VisualDensity(
-                              horizontal: -4,
-                              vertical: -4,
-                            ),
+                        : _buildToolbarActionButton(
                             tooltip: _screenshotEnabled
                                 ? AppLocalizations.of(context).stopScreenshot
                                 : AppLocalizations.of(context).startScreenshot,
-                            iconSize: 22,
                             onPressed: _toggleScreenshotEnabled,
                             icon: _screenshotEnabled
-                                ? const Icon(
+                                ? _buildHomeToolbarIcon(
                                     Icons.camera_alt_outlined,
-                                    size: 22,
-                                    weight: 300,
                                   )
-                                : const Icon(
+                                : _buildHomeToolbarIcon(
                                     Icons.no_photography_outlined,
-                                    size: 22,
-                                    weight: 300,
                                     color: AppTheme.destructive,
                                   ),
                           ),
 
                     // 右侧:主题切换图标
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 24,
-                        height: 36,
-                      ),
-                      visualDensity: const VisualDensity(
-                        horizontal: -4,
-                        vertical: -4,
-                      ),
-                      icon: Icon(
+                    const SizedBox(width: AppTheme.spacing2),
+                    _buildToolbarActionButton(
+                      icon: _buildHomeToolbarIcon(
                         widget.themeService.themeModeIcon,
-                        size: 20,
-                        weight: 300,
                       ),
                       tooltip: _themeModeTooltip(context),
                       onPressed: () async {
@@ -1811,10 +1787,11 @@ class _HomePageState extends State<HomePage>
   Widget _buildSearchBar(BuildContext context) {
     final theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color fillColor =
-        isDark ? theme.colorScheme.surface : theme.scaffoldBackgroundColor;
+    final Color fillColor = isDark
+        ? theme.colorScheme.surface
+        : theme.scaffoldBackgroundColor;
     // Keep border style consistent with Screenshot Gallery search box.
-    final Color borderColor = Colors.grey.withOpacity(0.5);
+    final Color borderColor = Colors.grey.withValues(alpha: 0.5);
     return InkWell(
       borderRadius: const BorderRadius.all(Radius.circular(8.0)),
       onTap: () => Navigator.pushNamed(context, '/search'),
@@ -1861,7 +1838,7 @@ class _HomePageState extends State<HomePage>
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate((context, index) {
                 final app = _selectedApps[index];
-                return _buildAppListItem(app);
+                return _buildAppListItem(app, index);
               }, childCount: _selectedApps.length),
             ),
           )
@@ -2050,7 +2027,30 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildAppListItem(AppInfo app) {
+  BorderRadius _buildAppListItemRadius(AppInfo app, int index) {
+    if (app.isInstalled) {
+      return BorderRadius.circular(AppTheme.radiusMd);
+    }
+    final bool hasPrevUninstalled =
+        index > 0 && !_selectedApps[index - 1].isInstalled;
+    final bool hasNextUninstalled =
+        index + 1 < _selectedApps.length &&
+        !_selectedApps[index + 1].isInstalled;
+    final Radius topRadius = Radius.circular(
+      hasPrevUninstalled ? 0 : AppTheme.radiusMd,
+    );
+    final Radius bottomRadius = Radius.circular(
+      hasNextUninstalled ? 0 : AppTheme.radiusMd,
+    );
+    return BorderRadius.only(
+      topLeft: topRadius,
+      topRight: topRadius,
+      bottomLeft: bottomRadius,
+      bottomRight: bottomRadius,
+    );
+  }
+
+  Widget _buildAppListItem(AppInfo app, int index) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final bool selectable = _isAppSelectable(app);
@@ -2058,6 +2058,7 @@ class _HomePageState extends State<HomePage>
         selectable &&
         _selectionMode &&
         _selectedPackages.contains(app.packageName);
+    final BorderRadius itemRadius = _buildAppListItemRadius(app, index);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2076,7 +2077,7 @@ class _HomePageState extends State<HomePage>
                 _toggleSelect(app.packageName);
               }
             : null,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        borderRadius: itemRadius,
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing4,
@@ -2086,7 +2087,7 @@ class _HomePageState extends State<HomePage>
             color: app.isInstalled
                 ? Colors.transparent
                 : cs.surfaceContainerHighest.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            borderRadius: itemRadius,
           ),
           child: Row(
             children: [
@@ -2197,7 +2198,7 @@ class _HomePageState extends State<HomePage>
                   ),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade500.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   ),
                   child: Text(
                     '未安装',
@@ -2210,27 +2211,18 @@ class _HomePageState extends State<HomePage>
               ],
 
               if (!_selectionMode || !selectable)
-                Icon(
-                  Icons.chevron_right,
-                  color: cs.onSurfaceVariant,
-                )
+                Icon(Icons.chevron_right, color: cs.onSurfaceVariant)
               else
                 Container(
                   width: 22,
                   height: 22,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? cs.primary
-                        : cs.surfaceVariant,
+                    color: isSelected ? cs.primary : cs.surfaceVariant,
                     borderRadius: const BorderRadius.all(Radius.circular(4.0)),
                   ),
                   alignment: Alignment.center,
                   child: isSelected
-                      ? Icon(
-                          Icons.check,
-                          size: 14,
-                          color: cs.onPrimary,
-                        )
+                      ? Icon(Icons.check, size: 14, color: cs.onPrimary)
                       : null,
                 ),
             ],

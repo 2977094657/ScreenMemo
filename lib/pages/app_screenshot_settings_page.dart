@@ -14,7 +14,8 @@ class AppScreenshotSettingsPage extends StatefulWidget {
   const AppScreenshotSettingsPage({super.key});
 
   @override
-  State<AppScreenshotSettingsPage> createState() => _AppScreenshotSettingsPageState();
+  State<AppScreenshotSettingsPage> createState() =>
+      _AppScreenshotSettingsPageState();
 }
 
 class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
@@ -51,7 +52,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     super.didChangeDependencies();
     if (_initialized) return;
     _initialized = true;
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args == null) {
       Navigator.of(context).maybePop();
       return;
@@ -64,7 +66,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
 
   @override
   void dispose() {
-    ScreenshotService.instance.attachCompressionProgressListener(null, replayLatest: false);
+    ScreenshotService.instance.attachCompressionProgressListener(
+      null,
+      replayLatest: false,
+    );
     super.dispose();
   }
 
@@ -102,7 +107,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     int? size;
     DateTime? last;
     try {
-      final stats = await ScreenshotService.instance.getScreenshotStatsCachedFirst();
+      final stats = await ScreenshotService.instance
+          .getScreenshotStatsCachedFirst();
       final appStats = stats['appStatistics'];
       if (appStats is Map) {
         final dynamic raw = appStats[_packageName];
@@ -212,16 +218,18 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     if (!mounted) return;
     setState(() {
       _compressionProgress = progress;
-      _compressingHistory =
-          ScreenshotService.instance.compressionInFlightFor(_packageName);
+      _compressingHistory = ScreenshotService.instance.compressionInFlightFor(
+        _packageName,
+      );
     });
   }
 
   void _restoreCompressionState() {
     final service = ScreenshotService.instance;
     final bool ongoing = service.compressionInFlightFor(_packageName);
-    final CompressionProgress? latest =
-        service.latestCompressionProgressFor(_packageName);
+    final CompressionProgress? latest = service.latestCompressionProgressFor(
+      _packageName,
+    );
     if (!mounted) return;
     setState(() {
       _compressingHistory = ongoing;
@@ -267,8 +275,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
         onProgress: _handleCompressionProgress,
       );
       if (!mounted) return;
-      final int savedBytes =
-          finalResult.savedBytes > 0 ? finalResult.savedBytes : 0;
+      final int savedBytes = finalResult.savedBytes > 0
+          ? finalResult.savedBytes
+          : 0;
       if (finalResult.success > 0) {
         await _loadStats(showSpinner: false);
         UINotifier.success(
@@ -339,7 +348,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       await ScreenshotService.instance.recomputeAppStats(_packageName);
       await _loadStats();
       if (mounted) {
-        UINotifier.success(context, AppLocalizations.of(context).recomputeAppStatsSuccess);
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).recomputeAppStatsSuccess,
+        );
       }
     } catch (_) {
       if (mounted) {
@@ -358,7 +370,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
   }
 
   Future<void> _saveUseCustom(bool v) async {
-    await PerAppScreenshotSettingsService.instance.setUseCustom(_packageName, v);
+    await PerAppScreenshotSettingsService.instance.setUseCustom(
+      _packageName,
+      v,
+    );
     if (mounted) setState(() => _useCustom = v);
   }
 
@@ -372,7 +387,11 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       useTargetSize: _useTargetSize,
       targetSizeKb: _targetSizeKb < 50 ? 50 : _targetSizeKb,
     );
-    if (mounted) UINotifier.success(context, AppLocalizations.of(context).screenshotQualitySettingsSaved);
+    if (mounted)
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).screenshotQualitySettingsSaved,
+      );
   }
 
   Future<void> _saveExpire() async {
@@ -381,15 +400,30 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       enabled: _expireEnabled,
       days: _expireDays < 1 ? 1 : _expireDays,
     );
-    if (mounted) UINotifier.success(context, AppLocalizations.of(context).expireCleanupSaved);
+    if (mounted)
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).expireCleanupSaved,
+      );
   }
 
   Future<void> _saveInterval() async {
-    await PerAppScreenshotSettingsService.instance.saveScreenshotIntervalSeconds(_packageName, _intervalSec);
-    if (mounted) UINotifier.success(context, AppLocalizations.of(context).intervalSavedSuccess(_intervalSec));
+    await PerAppScreenshotSettingsService.instance
+        .saveScreenshotIntervalSeconds(_packageName, _intervalSec);
+    if (mounted)
+      UINotifier.success(
+        context,
+        AppLocalizations.of(context).intervalSavedSuccess(_intervalSec),
+      );
   }
 
-  void _showIntervalDialogStyle({required String title, required String label, required String hint, required int value, required void Function(int) onValid}) {
+  void _showIntervalDialogStyle({
+    required String title,
+    required String label,
+    required String hint,
+    required int value,
+    required void Function(int) onValid,
+  }) {
     final controller = TextEditingController(text: value.toString());
     showUIDialog<void>(
       context: context,
@@ -439,7 +473,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
             final input = controller.text.trim();
             final v = int.tryParse(input);
             if (v == null) {
-              UINotifier.error(ctx, AppLocalizations.of(ctx).intervalInvalidError);
+              UINotifier.error(
+                ctx,
+                AppLocalizations.of(ctx).intervalInvalidError,
+              );
               return;
             }
             onValid(v);
@@ -453,8 +490,12 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
   Widget _buildStatsCard(AppLocalizations l10n) {
     final theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color cardColor = theme.colorScheme.surfaceVariant.withOpacity(isDark ? 0.28 : 0.6);
-    final Color borderColor = theme.colorScheme.outline.withOpacity(isDark ? 0.2 : 0.35);
+    final Color cardColor = theme.colorScheme.surfaceVariant.withOpacity(
+      isDark ? 0.28 : 0.6,
+    );
+    final Color borderColor = theme.colorScheme.outline.withOpacity(
+      isDark ? 0.2 : 0.35,
+    );
 
     Widget buildStatItem(String label, String value) {
       return Column(
@@ -492,7 +533,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                theme.colorScheme.primary,
+              ),
             ),
           ),
         ),
@@ -513,13 +556,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
         ),
         child: Row(
           children: [
-            Expanded(
-              child: buildStatItem(l10n.appStatsCountTitle, countValue),
-            ),
+            Expanded(child: buildStatItem(l10n.appStatsCountTitle, countValue)),
             const SizedBox(width: AppTheme.spacing4),
-            Expanded(
-              child: buildStatItem(l10n.appStatsSizeTitle, sizeValue),
-            ),
+            Expanded(child: buildStatItem(l10n.appStatsSizeTitle, sizeValue)),
             const SizedBox(width: AppTheme.spacing4),
             Expanded(
               child: buildStatItem(l10n.appStatsLastCaptureTitle, lastValue),
@@ -627,7 +666,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
         return Text(
           text,
           style: TextStyle(
-            decoration: enabled ? TextDecoration.underline : TextDecoration.none,
+            decoration: enabled
+                ? TextDecoration.underline
+                : TextDecoration.none,
           ),
         );
       }
@@ -639,8 +680,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
             TextSpan(
               text: value,
               style: TextStyle(
-                decoration:
-                    enabled ? TextDecoration.underline : TextDecoration.none,
+                decoration: enabled
+                    ? TextDecoration.underline
+                    : TextDecoration.none,
               ),
             ),
             TextSpan(text: text.substring(index + value.length)),
@@ -691,7 +733,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      l10n.compressHistoryDescription(_compressDays, _targetSizeKb),
+                      l10n.compressHistoryDescription(
+                        _compressDays,
+                        _targetSizeKb,
+                      ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -746,9 +791,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LinearProgressIndicator(
+                UIProgress(
                   value: _compressionProgress!.ratio.clamp(0.0, 1.0),
-                  minHeight: 4,
+                  height: 4,
                 ),
                 const SizedBox(height: AppTheme.spacing1),
                 Text(
@@ -826,7 +871,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
             padding: const EdgeInsets.all(AppTheme.spacing3),
             decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.6), width: 1),
+                bottom: BorderSide(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                  width: 1,
+                ),
               ),
             ),
             child: Row(
@@ -851,14 +899,16 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                     children: [
                       Text(
                         l10n.customLabel,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         _useCustom ? l10n.customLabel : l10n.defaultLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -889,7 +939,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.6),
                       width: 1,
                     ),
                   ),
@@ -905,7 +957,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                       ),
                       child: Icon(
                         Icons.timer_outlined,
-                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
                         size: 18,
                       ),
                     ),
@@ -915,14 +969,22 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            AppLocalizations.of(context).screenshotIntervalTitle,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                            AppLocalizations.of(
+                              context,
+                            ).screenshotIntervalTitle,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            AppLocalizations.of(context).screenshotIntervalDesc(_intervalSec),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            AppLocalizations.of(
+                              context,
+                            ).screenshotIntervalDesc(_intervalSec),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
                         ],
@@ -932,13 +994,22 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                     TextButton(
                       onPressed: () {
                         _showIntervalDialogStyle(
-                          title: AppLocalizations.of(context).setIntervalDialogTitle,
-                          label: AppLocalizations.of(context).intervalSecondsLabel,
+                          title: AppLocalizations.of(
+                            context,
+                          ).setIntervalDialogTitle,
+                          label: AppLocalizations.of(
+                            context,
+                          ).intervalSecondsLabel,
                           hint: AppLocalizations.of(context).intervalInputHint,
                           value: _intervalSec,
                           onValid: (v) async {
                             if (v < 5 || v > 60) {
-                              UINotifier.error(context, AppLocalizations.of(context).intervalInvalidError);
+                              UINotifier.error(
+                                context,
+                                AppLocalizations.of(
+                                  context,
+                                ).intervalInvalidError,
+                              );
                               return;
                             }
                             setState(() => _intervalSec = v);
@@ -947,7 +1018,10 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                         );
                       },
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing3, vertical: AppTheme.spacing1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTheme.spacing3,
+                          vertical: AppTheme.spacing1,
+                        ),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         minimumSize: Size.zero,
                       ),
@@ -977,12 +1051,18 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusSm,
+                            ),
                           ),
                           child: Icon(
                             Icons.image_outlined,
-                            color: Theme.of(context).colorScheme.onSecondaryContainer,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSecondaryContainer,
                             size: 18,
                           ),
                         ),
@@ -995,7 +1075,15 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(l10n.screenshotQualityTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                                    Text(
+                                      l10n.screenshotQualityTitle,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
                                     const SizedBox(height: 2),
                                     IgnorePointer(
                                       ignoring: !_useTargetSize,
@@ -1003,38 +1091,82 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                                         opacity: _useTargetSize ? 1.0 : 0.5,
                                         child: Row(
                                           children: [
-                                            Text(l10n.currentTimeLabel, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                                            const SizedBox(width: AppTheme.spacing1),
+                                            Text(
+                                              l10n.currentTimeLabel,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                            ),
+                                            const SizedBox(
+                                              width: AppTheme.spacing1,
+                                            ),
                                             GestureDetector(
                                               onTap: _useTargetSize
                                                   ? () => _showIntervalDialogStyle(
-                                                        title: l10n.setTargetSizeDialogTitle,
-                                                        label: l10n.targetSizeKbLabel,
-                                                        hint: l10n.targetSizeInvalidError,
-                                                        value: _targetSizeKb,
-                                                        onValid: (kb) async {
-                                                          if (kb < 50) {
-                                                            UINotifier.error(context, l10n.targetSizeInvalidError);
-                                                            return;
-                                                          }
-                                                          setState(() {
-                                                            _targetSizeKb = kb;
-                                                          });
-                                                          await _saveQuality();
-                                                        },
-                                                      )
+                                                      title: l10n
+                                                          .setTargetSizeDialogTitle,
+                                                      label: l10n
+                                                          .targetSizeKbLabel,
+                                                      hint: l10n
+                                                          .targetSizeInvalidError,
+                                                      value: _targetSizeKb,
+                                                      onValid: (kb) async {
+                                                        if (kb < 50) {
+                                                          UINotifier.error(
+                                                            context,
+                                                            l10n.targetSizeInvalidError,
+                                                          );
+                                                          return;
+                                                        }
+                                                        setState(() {
+                                                          _targetSizeKb = kb;
+                                                        });
+                                                        await _saveQuality();
+                                                      },
+                                                    )
                                                   : null,
                                               child: Text(
                                                 '${_targetSizeKb}KB',
-                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                      color: _useTargetSize ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-                                                      decoration: _useTargetSize ? TextDecoration.underline : TextDecoration.none,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: _useTargetSize
+                                                          ? Theme.of(context)
+                                                                .colorScheme
+                                                                .primary
+                                                          : Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                      decoration: _useTargetSize
+                                                          ? TextDecoration
+                                                                .underline
+                                                          : TextDecoration.none,
                                                     ),
                                               ),
                                             ),
-                                            const SizedBox(width: AppTheme.spacing1),
+                                            const SizedBox(
+                                              width: AppTheme.spacing1,
+                                            ),
                                             Flexible(
-                                              child: Text(l10n.clickToModifyHint, softWrap: false, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                                              child: Text(
+                                                l10n.clickToModifyHint,
+                                                softWrap: false,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -1050,7 +1182,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                                   scale: 0.9,
                                   child: Switch(
                                     value: _useTargetSize,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     onChanged: (v) async {
                                       setState(() => _useTargetSize = v);
                                       await _saveQuality();
@@ -1070,7 +1203,7 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
           ),
 
           const SizedBox(height: AppTheme.spacing4),
-        const SizedBox(height: AppTheme.spacing4),
+          const SizedBox(height: AppTheme.spacing4),
 
           // 截图过期清理（复用样式与交互）
           IgnorePointer(
@@ -1081,7 +1214,12 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                 padding: const EdgeInsets.all(AppTheme.spacing3),
                 decoration: BoxDecoration(
                   border: Border(
-                    top: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.6), width: 1),
+                    top: BorderSide(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.6),
+                      width: 1,
+                    ),
                   ),
                 ),
                 child: Row(
@@ -1095,7 +1233,9 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                       ),
                       child: Icon(
                         Icons.auto_delete_outlined,
-                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
                         size: 18,
                       ),
                     ),
@@ -1108,7 +1248,11 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(l10n.screenshotExpireTitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+                                Text(
+                                  l10n.screenshotExpireTitle,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w500),
+                                ),
                                 const SizedBox(height: 2),
                                 IgnorePointer(
                                   ignoring: !_expireEnabled,
@@ -1116,32 +1260,60 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                                     opacity: _expireEnabled ? 1.0 : 0.5,
                                     child: Row(
                                       children: [
-                                        Text(l10n.currentTimeLabel, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                                        const SizedBox(width: AppTheme.spacing1),
+                                        Text(
+                                          l10n.currentTimeLabel,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
+                                        ),
+                                        const SizedBox(
+                                          width: AppTheme.spacing1,
+                                        ),
                                         GestureDetector(
                                           onTap: _expireEnabled
                                               ? () => _showIntervalDialogStyle(
-                                                    title: l10n.setExpireDaysDialogTitle,
-                                                    label: l10n.expireDaysLabel,
-                                                    hint: l10n.expireDaysInputHint,
-                                                    value: _expireDays,
-                                                    onValid: (d) async {
-                                                      if (d < 1) {
-                                                        UINotifier.error(context, l10n.expireDaysInvalidError);
-                                                        return;
-                                                      }
-                                                      setState(() {
-                                                        _expireDays = d;
-                                                      });
-                                                      await _saveExpire();
-                                                    },
-                                                  )
+                                                  title: l10n
+                                                      .setExpireDaysDialogTitle,
+                                                  label: l10n.expireDaysLabel,
+                                                  hint:
+                                                      l10n.expireDaysInputHint,
+                                                  value: _expireDays,
+                                                  onValid: (d) async {
+                                                    if (d < 1) {
+                                                      UINotifier.error(
+                                                        context,
+                                                        l10n.expireDaysInvalidError,
+                                                      );
+                                                      return;
+                                                    }
+                                                    setState(() {
+                                                      _expireDays = d;
+                                                    });
+                                                    await _saveExpire();
+                                                  },
+                                                )
                                               : null,
                                           child: Text(
                                             l10n.expireDaysUnit(_expireDays),
-                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                  color: _expireEnabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-                                                  decoration: _expireEnabled ? TextDecoration.underline : TextDecoration.none,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: _expireEnabled
+                                                      ? Theme.of(
+                                                          context,
+                                                        ).colorScheme.primary
+                                                      : Theme.of(context)
+                                                            .colorScheme
+                                                            .onSurfaceVariant,
+                                                  decoration: _expireEnabled
+                                                      ? TextDecoration.underline
+                                                      : TextDecoration.none,
                                                 ),
                                           ),
                                         ),
@@ -1159,7 +1331,8 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                               scale: 0.9,
                               child: Switch(
                                 value: _expireEnabled,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
                                 onChanged: (v) async {
                                   setState(() => _expireEnabled = v);
                                   await _saveExpire();
@@ -1180,5 +1353,3 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
     );
   }
 }
-
-

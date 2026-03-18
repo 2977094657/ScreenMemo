@@ -8,6 +8,7 @@ import '../services/backup_inventory_service.dart';
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/byte_formatter.dart';
+import '../widgets/ui_components.dart';
 
 typedef BackupExportExecutor =
     Future<Map<String, dynamic>?> Function({
@@ -421,9 +422,9 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
           ),
           const SizedBox(height: AppTheme.spacing3),
           if (inventory == null || inventory.categories.isEmpty)
-            LinearProgressIndicator(
+            UIProgress(
               value: (_inventoryLoading || _running) ? null : 0,
-              minHeight: 10,
+              height: 10,
             )
           else
             _BackupSegmentedProgressBar(
@@ -544,14 +545,11 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
                         ),
                       ),
                       const SizedBox(height: AppTheme.spacing2),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        child: LinearProgressIndicator(
-                          value: ratio,
-                          minHeight: 6,
-                          backgroundColor: color.withValues(alpha: 0.18),
-                          valueColor: AlwaysStoppedAnimation<Color>(color),
-                        ),
+                      UIProgress(
+                        value: ratio,
+                        height: 6,
+                        backgroundColor: color.withValues(alpha: 0.18),
+                        valueColor: color,
                       ),
                     ],
                   ),

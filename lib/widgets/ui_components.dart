@@ -627,14 +627,11 @@ class _ProgressToastState extends State<_ProgressToast> {
                             height: 6,
                           )
                         else
-                          const SizedBox(
+                          const UIProgress(
+                            value: null,
+                            backgroundColor: Colors.white24,
+                            valueColor: Colors.white,
                             height: 6,
-                            child: LinearProgressIndicator(
-                              value: null,
-                              color: Colors.white,
-                              backgroundColor: Colors.white24,
-                              minHeight: 6,
-                            ),
                           ),
                       ],
                     );
@@ -924,10 +921,11 @@ class UICard extends StatelessWidget {
 
 /// shadcn/ui风格的进度条组件
 class UIProgress extends StatelessWidget {
-  final double value;
+  final double? value;
   final Color? backgroundColor;
   final Color? valueColor;
   final double height;
+  final BorderRadiusGeometry? borderRadius;
 
   const UIProgress({
     super.key,
@@ -935,31 +933,25 @@ class UIProgress extends StatelessWidget {
     this.backgroundColor,
     this.valueColor,
     this.height = 8.0,
+    this.borderRadius,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Builder(
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return Container(
-          height: height,
-          decoration: BoxDecoration(
-            color: backgroundColor ?? cs.surfaceVariant,
-            borderRadius: BorderRadius.circular(height / 2),
-          ),
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: value.clamp(0.0, 1.0),
-            child: Container(
-              decoration: BoxDecoration(
-                color: valueColor ?? cs.primary,
-                borderRadius: BorderRadius.circular(height / 2),
-              ),
-            ),
-          ),
-        );
-      },
+    final cs = Theme.of(context).colorScheme;
+    final BorderRadiusGeometry effectiveRadius =
+        borderRadius ?? BorderRadius.circular(height / 2);
+    return ClipRRect(
+      borderRadius: effectiveRadius,
+      child: SizedBox(
+        height: height,
+        child: LinearProgressIndicator(
+          value: value?.clamp(0.0, 1.0).toDouble(),
+          minHeight: height,
+          backgroundColor: backgroundColor ?? cs.surfaceContainerHighest,
+          valueColor: AlwaysStoppedAnimation<Color>(valueColor ?? cs.primary),
+        ),
+      ),
     );
   }
 }

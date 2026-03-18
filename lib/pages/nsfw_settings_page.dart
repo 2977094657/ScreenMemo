@@ -80,7 +80,8 @@ class _NsfwSettingsPageState extends State<NsfwSettingsPage> {
 
   Future<void> _clearAllRules() async {
     final l10n = AppLocalizations.of(context);
-    final ok = await showUIDialog<bool>(
+    final ok =
+        await showUIDialog<bool>(
           context: context,
           title: l10n.clearAllRulesConfirmTitle,
           message: l10n.clearAllRulesMessage,
@@ -151,7 +152,10 @@ class _NsfwSettingsPageState extends State<NsfwSettingsPage> {
               onPressed: _addDomain,
               style: ElevatedButton.styleFrom(
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
               child: Text(l10n.addRuleAction),
             ),
@@ -169,10 +173,9 @@ class _NsfwSettingsPageState extends State<NsfwSettingsPage> {
           children: [
             Text(
               l10n.blockedDomainListTitle,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const Spacer(),
             TextButton(
@@ -192,20 +195,17 @@ class _NsfwSettingsPageState extends State<NsfwSettingsPage> {
         else if (_rules.isEmpty)
           Text(
             AppLocalizations.of(context).none,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           )
         else
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: _rules.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 1,
-              color: Theme.of(context).dividerColor,
-            ),
+            separatorBuilder: (_, __) =>
+                Divider(height: 1, color: Theme.of(context).dividerColor),
             itemBuilder: (context, index) {
               final r = _rules[index];
               final pattern = (r['pattern'] as String?) ?? '';
@@ -218,10 +218,17 @@ class _NsfwSettingsPageState extends State<NsfwSettingsPage> {
                     Expanded(child: Text(pattern)),
                     if (isWildcard)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(999),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSm,
+                          ),
                         ),
                         child: Text(
                           '*.',
