@@ -218,6 +218,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         lastError: null,
         isActive: false,
         progressPercent: '0%',
+        aiModel: '',
         recentLogs: <String>[],
       );
   Timer? _dynamicRebuildTaskPollTimer;
@@ -835,6 +836,51 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     );
   }
 
+  bool _segmentStatusCanPop(BuildContext context) {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route != null) return route.canPop;
+    return Navigator.of(context).canPop();
+  }
+
+  double? _segmentStatusLeadingWidth(BuildContext context) {
+    final bool canPop = _segmentStatusCanPop(context);
+    final bool showDailySummary = _selectedDateKey != null;
+    double width = 0;
+    if (canPop) width += 52;
+    if (showDailySummary) width += 52;
+    return width;
+  }
+
+  Color _segmentStatusActionIconColor(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return theme.appBarTheme.actionsIconTheme?.color ??
+        theme.appBarTheme.iconTheme?.color ??
+        IconTheme.of(context).color ??
+        theme.colorScheme.onSurfaceVariant;
+  }
+
+  Widget _buildSegmentStatusLeading(BuildContext context) {
+    final bool canPop = _segmentStatusCanPop(context);
+    final bool showDailySummary = _selectedDateKey != null;
+    final Color actionColor = _segmentStatusActionIconColor(context);
+    if (!canPop && !showDailySummary) {
+      return const SizedBox.shrink();
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (canPop) BackButton(color: actionColor),
+        if (showDailySummary)
+          IconButton(
+            style: IconButton.styleFrom(foregroundColor: actionColor),
+            icon: const Icon(Icons.event_note_outlined),
+            tooltip: AppLocalizations.of(context).viewOrGenerateForDay,
+            onPressed: _openSelectedDailySummary,
+          ),
+      ],
+    );
+  }
+
   Future<void> _loadOlderSegmentsFromDbIfNeeded() async {
     if (_onlyNoSummary ||
         _isLoadingMoreDays ||
@@ -1127,6 +1173,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         ? '${status.processedSegments}/${status.totalSegments} (${status.progressPercent})'
         : (status.isCompleted ? '无可重建动态' : status.progressPercent);
     final String currentLine = _dynamicRebuildCurrentLine(status);
+    final String modelLine = _dynamicRebuildModelLine(status);
     final String stageHeadline = _dynamicRebuildStageHeadline(status);
     final String serialHint = _dynamicRebuildSerialHint(status);
 
@@ -1158,7 +1205,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 border: Border.all(color: statusColor.withValues(alpha: 0.25)),
               ),
               child: Text(
@@ -1174,7 +1221,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         const SizedBox(height: AppTheme.spacing3),
         Text(progressText, style: theme.textTheme.bodyMedium),
         const SizedBox(height: AppTheme.spacing2),
-        LinearProgressIndicator(value: progressValue, minHeight: 6),
+        UIProgress(value: progressValue, height: 6),
         if (currentLine.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing3),
@@ -1183,6 +1230,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (modelLine.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: AppTheme.spacing2),
+            child: Text(
+              modelLine,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1793,6 +1851,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     if (label.isEmpty) return '当前环节：$detail';
     if (detail.isEmpty) return '当前环节：$label';
     return '当前环节：$label\n$detail';
+  }
+
+  String _dynamicRebuildModelLine(DynamicRebuildTaskStatus status) {
+    final String model = status.aiModel.trim();
+    if (model.isEmpty) return '';
+    return '当前模型：$model';
   }
 
   Widget _buildDynamicRebuildStageLogsSection(
@@ -2708,6 +2772,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       if (status.isCompleted && status.totalSegments == 0) {
         UINotifier.info(context, '没有可重建的动态');
         await _refresh(triggerSegmentTick: false);
+      } else if (status.isActive && resumeExisting) {
+        final String model = status.aiModel.trim();
+        UINotifier.info(
+          context,
+          model.isNotEmpty ? '已切换到模型 $model 继续重建' : '后台重建任务已恢复',
+        );
+        await _refresh(triggerSegmentTick: false);
       } else if (status.isActive && !previous.isActive) {
         UINotifier.info(context, '已在后台开始重建，可在通知栏查看进度');
         await _refresh(triggerSegmentTick: false);
@@ -2772,15 +2843,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       appBar: AppBar(
         toolbarHeight: 36,
         centerTitle: true,
-        automaticallyImplyLeading: true,
+        automaticallyImplyLeading: false,
+        leadingWidth: _segmentStatusLeadingWidth(context),
+        leading: _buildSegmentStatusLeading(context),
         title: _buildSegmentsProviderModelAppBarTitle(),
         actions: [
-          if (_selectedDateKey != null)
-            IconButton(
-              icon: const Icon(Icons.event_note_outlined),
-              tooltip: AppLocalizations.of(context).viewOrGenerateForDay,
-              onPressed: _openSelectedDailySummary,
-            ),
           IconButton(
             icon: RotationTransition(
               turns: _dynamicRebuildIconController,
@@ -2812,6 +2879,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           onOpenDetail: (seg) => _openDetail(seg),
           openGallery: (samples, index) => _openImageGallery(samples, index),
           activeHeader: _buildHeaderStack(),
+          hasActiveHeader: _active != null,
           onRefreshRequested: _refresh,
           privacyMode: _privacyMode,
           dynamicRebuildActive: _dynamicRebuildTaskStatus.isActive,
@@ -2853,6 +2921,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
   final void Function(Map<String, dynamic>) onOpenDetail;
   final Future<void> Function(List<Map<String, dynamic>>, int) openGallery;
   final Widget activeHeader;
+  final bool hasActiveHeader;
   final Future<void> Function() onRefreshRequested;
   final bool privacyMode;
   final bool dynamicRebuildActive;
@@ -2874,6 +2943,7 @@ class _SegmentTimelineTabView extends StatefulWidget {
     required this.onOpenDetail,
     required this.openGallery,
     required this.activeHeader,
+    required this.hasActiveHeader,
     required this.onRefreshRequested,
     required this.privacyMode,
     required this.dynamicRebuildActive,
@@ -2985,8 +3055,11 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
             sliver: SliverToBoxAdapter(
               child: Column(
                 children: [
-                  widget.activeHeader,
-                  const SizedBox(height: 8),
+                  if (widget.hasActiveHeader) widget.activeHeader,
+                  if (widget.hasActiveHeader &&
+                      widget.onlyNoSummary &&
+                      widget.autoWatching)
+                    const SizedBox(height: 8),
                   if (widget.onlyNoSummary && widget.autoWatching)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -3103,6 +3176,18 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
 
     return Column(
       children: [
+        if (widget.hasActiveHeader) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.spacing4,
+              AppTheme.spacing1,
+              AppTheme.spacing4,
+              0,
+            ),
+            child: widget.activeHeader,
+          ),
+          const SizedBox(height: 8),
+        ],
         Builder(
           builder: (context) {
             final bool showLoadMoreButton =
@@ -3204,8 +3289,6 @@ class _SegmentTimelineTabViewState extends State<_SegmentTimelineTabView>
                     vertical: AppTheme.spacing1,
                   ),
                   children: [
-                    widget.activeHeader,
-                    const SizedBox(height: 8),
                     ...List.generate(
                       (grouped[k] ?? const <Map<String, dynamic>>[]).length,
                       (i) => _SegmentEntryCard(
@@ -4171,7 +4254,6 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
   Widget _buildChip(BuildContext context, String text) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color fg = dark ? AppTheme.darkSelectedAccent : AppTheme.info;
-    // 关键：不设置 alignment，不用 ConstrainedBox 包裹宽度；仅设置最小高度，宽度随文本自适应
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing2,
@@ -4183,10 +4265,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         border: Border.all(color: fg.withOpacity(0.35), width: 1),
       ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      child: _buildTagChipLabel(
+        text: text,
         style: TextStyle(
           fontSize: 12,
           color: fg,
@@ -4250,6 +4330,9 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           key: PageStorageKey<String>('seg:$segmentId:mergeStatus'),
+          dense: true,
+          minTileHeight: 34,
+          visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
           tilePadding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing3,
             vertical: 0,
@@ -4258,10 +4341,11 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
             AppTheme.spacing3,
             0,
             AppTheme.spacing3,
-            AppTheme.spacing3,
+            AppTheme.spacing2,
           ),
           leading: Icon(Icons.merge_type, size: 16, color: cs.onSurfaceVariant),
           title: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: InkWell(
@@ -4273,7 +4357,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                         )
                       : null,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Text.rich(
                       TextSpan(
                         children: [
@@ -4290,6 +4374,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                       style: canOpenOriginals ? titleLinkStyle : titleStyle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      strutStyle: const StrutStyle(
+                        height: 1.15,
+                        forceStrutHeight: true,
+                      ),
                     ),
                   ),
                 ),
@@ -4308,11 +4396,14 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
-                      vertical: 0,
+                      vertical: 2,
                     ),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+                    visualDensity: const VisualDensity(
+                      horizontal: -1,
+                      vertical: -3,
+                    ),
                   ),
                   onPressed: widget.dynamicRebuildActive
                       ? null
@@ -4323,7 +4414,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           ),
           children: [
             if (reasonText.trim().isNotEmpty) ...[
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(reasonText, style: reasonStyle),
             ],
           ],
@@ -4485,15 +4576,32 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
       ),
-      child: Text(
-        AppLocalizations.of(context).mergedEventTag,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      child: _buildTagChipLabel(
+        text: AppLocalizations.of(context).mergedEventTag,
         style: const TextStyle(
           fontSize: 12,
           color: AppTheme.warning,
           height: 1.0,
           fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTagChipLabel({required String text, required TextStyle style}) {
+    final double minLabelHeight =
+        _tagChipMinHeight - _tagChipVerticalPadding * 2;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minLabelHeight),
+      child: Align(
+        alignment: const Alignment(0, -0.14),
+        widthFactor: 1,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          strutStyle: const StrutStyle(height: 1.0, forceStrutHeight: true),
+          style: style,
         ),
       ),
     );
@@ -4693,11 +4801,10 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
           provider: provider,
           model: model,
           createdAt: createdAt,
+          showRawResponsePanel: false,
           scrollable: true,
           maxHeight: viewerHeight,
-          emptyText: isZh
-              ? '（暂无请求/响应记录）'
-              : '(No request/response trace yet)',
+          emptyText: isZh ? '（暂无请求/响应记录）' : '(No request/response trace yet)',
           actions: <AIRequestLogsAction>[
             AIRequestLogsAction(
               label: AppLocalizations.of(context).actionCopy,

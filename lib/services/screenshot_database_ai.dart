@@ -18,6 +18,7 @@ class DynamicRebuildTaskStatus {
   final String? lastError;
   final bool isActive;
   final String progressPercent;
+  final String aiModel;
   final List<String> recentLogs;
 
   const DynamicRebuildTaskStatus({
@@ -38,6 +39,7 @@ class DynamicRebuildTaskStatus {
     required this.lastError,
     required this.isActive,
     required this.progressPercent,
+    required this.aiModel,
     required this.recentLogs,
   });
 
@@ -68,6 +70,7 @@ class DynamicRebuildTaskStatus {
       lastError: lastError,
       isActive: data['isActive'] == true,
       progressPercent: (data['progressPercent'] as String?) ?? '0%',
+      aiModel: (data['aiModel'] as String?)?.trim() ?? '',
       recentLogs: ((data['recentLogs'] as List?) ?? const <Object?>[])
           .map((Object? value) => value?.toString() ?? '')
           .where((String value) => value.trim().isNotEmpty)
@@ -130,6 +133,9 @@ class DynamicRebuildTaskStatus {
     }
     if (lastError != null) {
       sb.writeln('lastError: $lastError');
+    }
+    if (aiModel.trim().isNotEmpty) {
+      sb.writeln('aiModel: $aiModel');
     }
     if (recentLogs.isNotEmpty) {
       sb.writeln('recentLogs:');

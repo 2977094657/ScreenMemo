@@ -191,6 +191,10 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
   Animation<double>? _panelSwipeAnim;
   bool _skipNextPanelAnimation = false;
   double? _panelMeasuredHeight;
+  final Map<String, _RequestViewData> _requestViewDataCache =
+      <String, _RequestViewData>{};
+  final Map<String, _ResponseViewData> _responseViewDataCache =
+      <String, _ResponseViewData>{};
 
   static const int _panelOverview = 0;
   static const int _panelRequest = 1;
@@ -200,9 +204,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
   int get _panelCount => widget.showRawResponsePanel ? 4 : 3;
   int get _lastPanelIndex => _panelCount - 1;
   bool get _usesViewportPanels =>
-      widget.showRawResponsePanel &&
-      widget.scrollable &&
-      (widget.maxHeight ?? 0) > 0;
+      widget.scrollable && (widget.maxHeight ?? 0) > 0;
 
   int _clampPanelIndex(int value) {
     return value.clamp(_panelOverview, _lastPanelIndex).toInt();
@@ -228,6 +230,55 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     controller.addListener(_handlePanelTabChanged);
     _panelTabController = controller;
     _selectedPanelIndex = safeIndex;
+  }
+
+  int? _panelSwipeTargetIndex() {
+    final int current = _selectedPanelIndex;
+    final double dx = _panelSwipeDx;
+    if (dx < 0 && current < _lastPanelIndex) return current + 1;
+    if (dx > 0 && current > _panelOverview) return current - 1;
+    return null;
+  }
+
+  bool _panelNeedsResponseData(int index) {
+    if (index == _panelResponse) return true;
+    return widget.showRawResponsePanel && index == _panelRawResponse;
+  }
+
+  bool _shouldPrepareResponseData() {
+    if (_panelNeedsResponseData(_selectedPanelIndex)) return true;
+    final int? target = _panelSwipeTargetIndex();
+    return target != null && _panelNeedsResponseData(target);
+  }
+
+  _RequestViewData _getRequestViewData(AIRequestTrace tr) {
+    final String cacheKey = _traceSelectionKey(tr);
+    return _requestViewDataCache.putIfAbsent(
+      cacheKey,
+      () => _parseRequestViewData(tr),
+    );
+  }
+
+  _ResponseViewData _getResponseViewData(AIRequestTrace tr) {
+    final String cacheKey = _traceSelectionKey(tr);
+    return _responseViewDataCache.putIfAbsent(
+      cacheKey,
+      () => _parseResponseViewData(tr),
+    );
+  }
+
+  _ResponseViewData? _getCachedResponseViewData(AIRequestTrace tr) {
+    return _responseViewDataCache[_traceSelectionKey(tr)];
+  }
+
+  void _pruneParsedViewCaches() {
+    final Set<String> validKeys = widget.traces.map(_traceSelectionKey).toSet();
+    _requestViewDataCache.removeWhere(
+      (String key, _RequestViewData _) => !validKeys.contains(key),
+    );
+    _responseViewDataCache.removeWhere(
+      (String key, _ResponseViewData _) => !validKeys.contains(key),
+    );
   }
 
   String _traceSelectionKey(AIRequestTrace tr) {
@@ -286,12 +337,15 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       _recreatePanelTabController();
     }
     if (widget.traces.isEmpty) {
+      _requestViewDataCache.clear();
+      _responseViewDataCache.clear();
       _selectedTraceIndex = 0;
       _selectedPanelIndex = _panelOverview;
       _panelSwitchDirection = -1;
       _panelTabController.index = _panelOverview;
       return;
     }
+    _pruneParsedViewCaches();
     final String? selectedTraceKey =
         oldWidget.traces.isNotEmpty &&
             _selectedTraceIndex >= 0 &&
@@ -420,14 +474,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     if (raw.isEmpty) return '';
 
     String text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    text = text.replaceAll(
-      RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'),
-      '',
-    );
-    text = text.replaceAll(
-      RegExp(r'\x1B\][^\x07]*(?:\x07|\x1B\\)'),
-      '',
-    );
+    text = text.replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '');
+    text = text.replaceAll(RegExp(r'\x1B\][^\x07]*(?:\x07|\x1B\\)'), '');
     text = text.replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
 
     final List<String> normalized = <String>[];
@@ -1040,8 +1088,8 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     return zh ? '—' : '-';
   }
 
-  String _responseBadgeText(AIRequestTrace tr, _ResponseViewData rsp) {
-    final int? completion = rsp.completionTokens ?? tr.usageCompletionTokens;
+  String _responseBadgeText(AIRequestTrace tr, _ResponseViewData? rsp) {
+    final int? completion = tr.usageCompletionTokens ?? rsp?.completionTokens;
     if (completion != null) {
       return '${_fmtNum(completion)} tokens';
     }
@@ -1120,9 +1168,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     BuildContext context,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
-    {bool fillBody = false}
-  ) {
+    _ResponseViewData? rsp, {
+    bool fillBody = false,
+  }) {
     final bool zh = _isZhLocale(context);
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
@@ -1145,7 +1193,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                     color: cs.surfaceContainerHighest,
                   ),
                   child: Text(
@@ -1180,7 +1228,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
           controller: _panelTabController,
           height: 36,
           isScrollable: false,
+          tabAlignment: TabAlignment.fill,
           padding: EdgeInsets.zero,
+          labelPadding: EdgeInsets.zero,
           indicatorInsets: const EdgeInsets.symmetric(horizontal: 4.0),
           tabs: tabs,
         ),
@@ -1301,10 +1351,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
                       padding: const EdgeInsets.all(AppTheme.spacing3),
                       child: Align(
                         alignment: Alignment.topLeft,
-                        child: SelectableText(
-                          content,
-                          style: textStyle,
-                        ),
+                        child: SelectableText(content, style: textStyle),
                       ),
                     ),
                   ),
@@ -1365,7 +1412,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     BuildContext context,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
+    _ResponseViewData? rsp,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1385,7 +1432,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     BuildContext context,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
+    _ResponseViewData? rsp,
   ) {
     final Duration duration = _skipNextPanelAnimation
         ? Duration.zero
@@ -1433,13 +1480,11 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     double width,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
+    _ResponseViewData? rsp,
   ) {
     final int current = _selectedPanelIndex;
     final double dx = _panelSwipeDx;
-    int? target;
-    if (dx < 0 && current < _lastPanelIndex) target = current + 1;
-    if (dx > 0 && current > _panelOverview) target = current - 1;
+    final int? target = _panelSwipeTargetIndex();
 
     final Widget currentChild = _buildPanelByIndex(
       context,
@@ -1477,14 +1522,19 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     int index,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
+    _ResponseViewData? rsp,
   ) {
     if (index == _panelRequest) return _buildRequestPanel(context, tr, req);
     if (index == _panelResponse) {
-      return _buildResponsePanel(context, tr, req, rsp);
+      return _buildResponsePanel(
+        context,
+        tr,
+        req,
+        rsp ?? _getResponseViewData(tr),
+      );
     }
     if (index == _panelRawResponse) {
-      return _buildRawResponsePanel(context, rsp);
+      return _buildRawResponsePanel(context, rsp ?? _getResponseViewData(tr));
     }
     return _buildOverviewPanel(context, tr, req, rsp);
   }
@@ -1682,7 +1732,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     BuildContext context,
     AIRequestTrace tr,
     _RequestViewData req,
-    _ResponseViewData rsp,
+    _ResponseViewData? rsp,
   ) {
     final bool zh = _isZhLocale(context);
     final ThemeData theme = Theme.of(context);
@@ -1703,10 +1753,10 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
         ? _fmtTime(createdAtDt, zh: zh)
         : createdAtRaw;
 
-    final int? promptTokens = rsp.promptTokens ?? tr.usagePromptTokens;
+    final int? promptTokens = tr.usagePromptTokens ?? rsp?.promptTokens;
     final int? completionTokens =
-        rsp.completionTokens ?? tr.usageCompletionTokens;
-    int? totalTokens = rsp.totalTokens ?? tr.usageTotalTokens;
+        tr.usageCompletionTokens ?? rsp?.completionTokens;
+    int? totalTokens = tr.usageTotalTokens ?? rsp?.totalTokens;
     totalTokens ??= (promptTokens != null && completionTokens != null)
         ? promptTokens + completionTokens
         : null;
@@ -2146,10 +2196,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
     );
   }
 
-  Widget _buildRawResponsePanel(
-    BuildContext context,
-    _ResponseViewData rsp,
-  ) {
+  Widget _buildRawResponsePanel(BuildContext context, _ResponseViewData rsp) {
     final bool zh = _isZhLocale(context);
     final String raw = rsp.rawText.trimRight();
     if (_usesViewportPanels) {
@@ -2205,7 +2252,9 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       children.add(const SizedBox(height: AppTheme.spacing2));
     }
 
-    final String rawFallback = _sanitizeDisplayText(widget.rawFallbackText ?? '');
+    final String rawFallback = _sanitizeDisplayText(
+      widget.rawFallbackText ?? '',
+    );
     final bool showFallback =
         widget.traces.isEmpty && rawFallback.trim().isNotEmpty;
     if (showFallback) {
@@ -2234,8 +2283,10 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
       );
     } else {
       final AIRequestTrace tr = widget.traces[_selectedTraceIndex];
-      final _RequestViewData req = _parseRequestViewData(tr);
-      final _ResponseViewData rsp = _parseResponseViewData(tr);
+      final _RequestViewData req = _getRequestViewData(tr);
+      final _ResponseViewData? rsp = _shouldPrepareResponseData()
+          ? _getResponseViewData(tr)
+          : _getCachedResponseViewData(tr);
 
       if (_usesViewportPanels) {
         children.add(
@@ -2248,13 +2299,7 @@ class _AIRequestLogsViewerState extends State<AIRequestLogsViewer>
                   const SizedBox(height: AppTheme.spacing2),
                 ],
                 Expanded(
-                  child: _buildPanelTabs(
-                    context,
-                    tr,
-                    req,
-                    rsp,
-                    fillBody: true,
-                  ),
+                  child: _buildPanelTabs(context, tr, req, rsp, fillBody: true),
                 ),
               ],
             ),

@@ -31,6 +31,7 @@ Map<String, Object?> _mockDynamicRebuildStatus = <String, Object?>{
   'lastError': null,
   'isActive': false,
   'progressPercent': '0%',
+  'aiModel': '',
   'recentLogs': <String>[],
 };
 String? _mockTodayLogsDir;
@@ -158,6 +159,7 @@ void main() {
       'lastError': null,
       'isActive': false,
       'progressPercent': '0%',
+      'aiModel': '',
       'recentLogs': <String>[],
     };
     _mockTodayLogsDir = null;
@@ -300,6 +302,7 @@ void main() {
         'lastError': null,
         'isActive': false,
         'progressPercent': '33.3%',
+        'aiModel': 'gemini-2.0-flash',
         'recentLogs': <String>['09:30:00 已停止：已停止后台重建，当前进度可稍后继续'],
       };
 
@@ -368,6 +371,7 @@ void main() {
         'lastError': null,
         'isActive': true,
         'progressPercent': '50%',
+        'aiModel': 'gpt-4.1',
         'recentLogs': <String>[
           '09:05:00 开始重建当前动态：第 2/2 条 · 2026-03-12 09:05-09:35',
           '09:05:00 构建总结提示词：为段落 #102 组织 3 张样本图片',
@@ -384,6 +388,7 @@ void main() {
       await tester.tap(find.byTooltip('重建动态'));
       await tester.pumpAndSettle();
 
+      expect(find.text('当前模型：gpt-4.1'), findsOneWidget);
       expect(find.text('重建请求'), findsOneWidget);
       expect(find.textContaining('AIRequestGateway'), findsOneWidget);
       expect(find.textContaining('segment=102'), findsWidgets);

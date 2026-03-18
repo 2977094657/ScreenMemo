@@ -183,4 +183,72 @@ void main() {
       expect(find.textContaining('data: {"choices"'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'segment trace viewer hides raw tab and keeps three tabs evenly split',
+    (WidgetTester tester) async {
+      final String rawReq = [
+        '=== AI Request ===',
+        'segment_id=123',
+        'provider=openai',
+        'model=gpt-4.1-mini',
+        'prompt:',
+        'first line',
+        'second line',
+      ].join('\n');
+      final String rawResp = [
+        'data: {"choices":[{"delta":{"content":"hello"}}]}',
+        'data: {"choices":[{"delta":{"content":" world"}}]}',
+      ].join('\n');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 360,
+              height: 420,
+              child: AIRequestLogsViewer.fromSegmentTrace(
+                rawRequest: rawReq,
+                rawResponse: rawResp,
+                scrollable: true,
+                maxHeight: 420,
+                showRawResponsePanel: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Overview'), findsOneWidget);
+      expect(find.text('Request'), findsOneWidget);
+      expect(find.text('Response'), findsOneWidget);
+      expect(find.text('Raw Response'), findsNothing);
+
+      final Rect tabBarRect = tester.getRect(find.byType(TabBar));
+      final List<double> tabWidths = find
+          .byType(Tab)
+          .evaluate()
+          .map((element) {
+            return tester.getRect(find.byWidget(element.widget)).width;
+          })
+          .toList(growable: false);
+
+      expect(tabWidths, hasLength(3));
+      final double expectedWidth = tabBarRect.width / 3;
+      for (final double width in tabWidths) {
+        expect((width - expectedWidth).abs(), lessThan(1.0));
+      }
+
+      final Rect rect = tester.getRect(find.byType(AIRequestLogsViewer));
+      final Offset bottomBlankArea = Offset(rect.center.dx, rect.bottom - 12);
+      await tester.dragFrom(bottomBlankArea, const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Prompt'), findsOneWidget);
+
+      await tester.dragFrom(bottomBlankArea, const Offset(-220, 0));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('hello world'), findsOneWidget);
+    },
+  );
 }

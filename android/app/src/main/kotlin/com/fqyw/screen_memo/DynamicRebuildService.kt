@@ -37,7 +37,8 @@ class DynamicRebuildService : Service() {
             context: Context,
             resumeExisting: Boolean = false,
         ): Map<String, Any?> {
-            val current = DynamicRebuildTaskStore.load(context)
+            val appCtx = try { context.applicationContext } catch (_: Exception) { context }
+            val current = DynamicRebuildTaskStore.load(appCtx)
             if (current != null && current.isRecoverable()) {
                 current.currentStage = "resume_requested"
                 current.currentStageLabel = "恢复后台任务"
@@ -48,26 +49,33 @@ class DynamicRebuildService : Service() {
                         "检测到未完成任务，继续在后台执行",
                     ),
                 )
-                DynamicRebuildTaskStore.save(context, current)
-                startService(context, ACTION_RESUME)
+                DynamicRebuildTaskStore.save(appCtx, current)
+                startService(appCtx, ACTION_RESUME)
                 return current.toMap()
             }
             if (current != null && resumeExisting && current.canContinue()) {
+                val aiConfig = AISettingsNative.readConfig(appCtx, "segments")
                 current.status = DynamicRebuildTaskState.STATUS_PENDING
                 current.updatedAt = System.currentTimeMillis()
                 current.completedAt = 0L
                 current.lastError = null
+                current.aiBaseUrl = aiConfig.baseUrl
+                current.aiApiKey = aiConfig.apiKey
+                current.aiModel = aiConfig.model
+                current.aiProviderType = aiConfig.providerType
+                current.aiChatPath = aiConfig.chatPath
                 current.currentStage = "resume_requested"
                 current.currentStageLabel = "继续重建"
-                current.currentStageDetail = "沿用现有进度，等待后台继续处理"
+                current.currentStageDetail =
+                    "已重新读取当前模型 ${aiConfig.model}，沿用现有进度继续处理"
                 current.appendRecentLog(
                     buildStageLogLine(
                         "继续重建",
-                        "沿用现有进度，等待后台继续处理",
+                        "已重新读取当前模型 ${aiConfig.model}，沿用现有进度继续处理",
                     ),
                 )
-                DynamicRebuildTaskStore.save(context, current)
-                startService(context, ACTION_RESUME)
+                DynamicRebuildTaskStore.save(appCtx, current)
+                startService(appCtx, ACTION_RESUME)
                 return current.toMap()
             }
 
@@ -142,12 +150,18 @@ class DynamicRebuildService : Service() {
                 ),
             )
             DynamicRebuildTaskStore.save(context, current)
+            SegmentSummaryManager.cancelDynamicRebuildInFlightRequests("user_stop")
             startService(context, ACTION_CANCEL)
             return current.toMap()
         }
 
         fun isTaskActive(context: Context): Boolean {
             return DynamicRebuildTaskStore.load(context)?.isRecoverable() == true
+        }
+
+        fun isCancellationRequested(context: Context): Boolean {
+            return DynamicRebuildTaskStore.load(context)?.status ==
+                DynamicRebuildTaskState.STATUS_CANCELLED
         }
 
         private fun startService(context: Context, action: String) {
@@ -385,20 +399,7 @@ class DynamicRebuildService : Service() {
     ): DynamicRebuildTaskState {
         while (state.processedSegments < state.works.size) {
             if (isCancellationRequested()) {
-                state.status = DynamicRebuildTaskState.STATUS_CANCELLED
-                state.completedAt = System.currentTimeMillis()
-                state.updatedAt = state.completedAt
-                state.currentStage = "cancelled"
-                state.currentStageLabel = "已停止"
-                state.currentStageDetail = "停止请求已生效，后台任务退出"
-                state.appendRecentLog(
-                    buildStageLogLine(
-                        "已停止",
-                        "停止请求已生效，后台任务退出",
-                    ),
-                )
-                DynamicRebuildTaskStore.save(this, state)
-                return state
+                return markCancelled(state, "停止请求已生效，后台任务退出")
             }
 
             val work = state.works[state.processedSegments]
@@ -441,7 +442,18 @@ class DynamicRebuildService : Service() {
                     label = "当前动态完成",
                     detail = "已完成第 ${state.processedSegments}/${state.totalSegments} 条",
                 )
+            } catch (e: SegmentSummaryManager.DynamicRebuildCancelledException) {
+                if (e.segmentId > 0L) {
+                    state.currentSegmentId = e.segmentId
+                }
+                return markCancelled(state, "已中断当前 AI 请求，后台任务停止")
             } catch (e: SegmentSummaryManager.DynamicRebuildStepException) {
+                if (isCancellationRequested()) {
+                    if (e.segmentId > 0L) {
+                        state.currentSegmentId = e.segmentId
+                    }
+                    return markCancelled(state, "已中断当前 AI 请求，后台任务停止")
+                }
                 state.status = DynamicRebuildTaskState.STATUS_FAILED
                 state.failedSegments += 1
                 state.lastError = e.message ?: e.toString()
@@ -463,6 +475,9 @@ class DynamicRebuildService : Service() {
                 updateNotification(state)
                 return state
             } catch (e: Exception) {
+                if (isCancellationRequested()) {
+                    return markCancelled(state, "已中断当前 AI 请求，后台任务停止")
+                }
                 state.status = DynamicRebuildTaskState.STATUS_FAILED
                 state.failedSegments += 1
                 state.lastError = e.message ?: e.toString()
@@ -500,6 +515,29 @@ class DynamicRebuildService : Service() {
         try {
             SegmentSummaryManager.tick(applicationContext)
         } catch (_: Exception) {}
+        return state
+    }
+
+    private fun markCancelled(
+        state: DynamicRebuildTaskState,
+        detail: String,
+    ): DynamicRebuildTaskState {
+        val normalizedDetail = detail.trim().ifEmpty { "停止请求已生效，后台任务退出" }
+        state.status = DynamicRebuildTaskState.STATUS_CANCELLED
+        state.lastError = null
+        state.completedAt = System.currentTimeMillis()
+        state.updatedAt = state.completedAt
+        state.currentStage = "cancelled"
+        state.currentStageLabel = "已停止"
+        state.currentStageDetail = normalizedDetail
+        state.appendRecentLog(
+            buildStageLogLine(
+                "已停止",
+                normalizedDetail,
+            ),
+        )
+        DynamicRebuildTaskStore.save(this, state)
+        updateNotification(state)
         return state
     }
 
@@ -588,6 +626,7 @@ class DynamicRebuildService : Service() {
                 "$summary\n$currentScope"
             }
         }
+        val detailWithModel = appendNotificationModelDetail(detail, state)
 
         val openIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -603,8 +642,8 @@ class DynamicRebuildService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
-            .setContentText(detail.lineSequence().firstOrNull() ?: detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentText(detailWithModel.lineSequence().firstOrNull() ?: detailWithModel)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detailWithModel))
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -633,6 +672,20 @@ class DynamicRebuildService : Service() {
         }
 
         return builder.build()
+    }
+
+    private fun appendNotificationModelDetail(
+        detail: String,
+        state: DynamicRebuildTaskState,
+    ): String {
+        val model = state.aiModel.trim()
+        if (model.isEmpty()) return detail
+        val modelLine = "模型：$model"
+        return if (detail.isBlank()) {
+            modelLine
+        } else {
+            "$detail\n$modelLine"
+        }
     }
 
     private fun createNotificationChannel() {
@@ -687,6 +740,9 @@ class DynamicRebuildService : Service() {
         sb.appendLine("???: ${state.totalSegments}")
         sb.appendLine("???: ${state.processedSegments}")
         sb.appendLine("????: ${state.failedSegments}")
+        if (state.aiModel.isNotBlank()) {
+            sb.appendLine("model: ${state.aiModel}")
+        }
         if (state.currentDayKey.isNotBlank() || state.currentRangeLabel.isNotBlank()) {
             sb.appendLine("??: 第 ${state.currentWorkOrdinal()}/${state.totalSegments} 条 ${state.currentDayKey} ${state.currentRangeLabel}".trim())
         }
@@ -942,6 +998,7 @@ private data class DynamicRebuildTaskState(
             "lastError" to lastError,
             "isActive" to isRecoverable(),
             "progressPercent" to progressPercentText(),
+            "aiModel" to aiModel,
             "recentLogs" to recentLogs.toList(),
         )
     }
