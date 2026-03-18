@@ -132,6 +132,7 @@ object ReplayVideoComposer {
         nsfwMode: String,
         nsfwTitle: String?,
         nsfwSubtitle: String?,
+        onProgress: ((processed: Int, total: Int) -> Unit)? = null,
     ): Map<String, Any> {
         val started = SystemClock.elapsedRealtime()
         val frames = readFrames(framesJsonlPath)
@@ -149,6 +150,7 @@ object ReplayVideoComposer {
         val bitrate = computeBitrate(outW, outH, fps, quality)
         val replayNsfwMode = ReplayNsfwMode.parse(nsfwMode)
         FileLogger.i(TAG, "compose start frames=${frames.size} out=${outW}x${outH} fps=$fps bitrate=$bitrate overlay=$overlayEnabled progressBar=$appProgressBarEnabled nsfwMode=$replayNsfwMode")
+        onProgress?.invoke(0, frames.size)
 
         val outFile = File(outputPath)
         outFile.parentFile?.mkdirs()
@@ -363,6 +365,7 @@ object ReplayVideoComposer {
             GLES20.glViewport(0, 0, outW, outH)
 
             var frameIndex = 0
+            var lastProgressDispatch = 0L
             for (f in frames) {
                 drawFrameToBitmap(
                     canvas = canvas,
@@ -441,6 +444,15 @@ object ReplayVideoComposer {
                 )
 
                 frameIndex++
+                val now = SystemClock.elapsedRealtime()
+                if (
+                    frameIndex >= frames.size ||
+                    frameIndex == 1 ||
+                    now - lastProgressDispatch >= 180L
+                ) {
+                    onProgress?.invoke(frameIndex, frames.size)
+                    lastProgressDispatch = now
+                }
             }
 
             drainEncoder(

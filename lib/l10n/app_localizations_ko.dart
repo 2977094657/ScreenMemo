@@ -1307,7 +1307,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get timelineReplayNsfw => 'NSFW 콘텐츠';
 
   @override
-  String get timelineReplayNsfwMask => 'NSFW 마스크 표시';
+  String get timelineReplayNsfwMask => '마스크 표시';
 
   @override
   String get timelineReplayNsfwShow => '완전히 표시';
@@ -1337,6 +1337,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get timelineReplayReady => '리플레이가 생성되었습니다';
+
+  @override
+  String get timelineReplayNotificationHint =>
+      '리플레이를 생성 중입니다. 알림에서 진행 상황을 확인할 수 있습니다.';
 
   @override
   String get pressBackAgainToExit => '종료하려면 뒤로를 다시 누르세요.';

@@ -209,6 +209,16 @@ class ReplayExportService {
 
     try {
       exportTaskNotifier.value = ReplayExportTask(start: start, end: end);
+      final String progressHint =
+          l10n?.timelineReplayNotificationHint ??
+          'Replay is generating; check progress in notifications';
+      if (overlay != null && overlay.mounted) {
+        UINotifier.infoOnOverlay(
+          overlay,
+          progressHint,
+          duration: const Duration(seconds: 3),
+        );
+      }
       final int startMillis = start.millisecondsSinceEpoch;
       final int endMillis = end.millisecondsSinceEpoch;
       if (endMillis < startMillis) {
@@ -291,23 +301,23 @@ class ReplayExportService {
         nsfwMaskByFilePath: nsfwMaskByFilePath,
       );
 
-      final Map<dynamic, dynamic>? res = await _channel
-          .invokeMethod('composeReplayVideo', <String, Object?>{
-            'framesJsonlPath': framesJsonl.path,
-            'outputPath': output.path,
-            'fps': fps,
-            'shortSide': options.shortSide,
-            'quality': options.quality.name,
-            'overlayEnabled': options.overlayEnabled,
-            'appProgressBarEnabled': options.appProgressBarEnabled,
-            'appProgressBarPosition': options.appProgressBarPosition.name,
-            'nsfwMode': options.nsfwMode.name,
-            // i18n text for NSFW mask overlay (optional on Android side).
-            'nsfwTitle': l10n?.nsfwWarningTitle ?? 'Content Warning: Adult Content',
-            'nsfwSubtitle':
-                l10n?.nsfwWarningSubtitle ??
-                'This content has been marked as adult content',
-          });
+      final Map<dynamic, dynamic>?
+      res = await _channel.invokeMethod('composeReplayVideo', <String, Object?>{
+        'framesJsonlPath': framesJsonl.path,
+        'outputPath': output.path,
+        'fps': fps,
+        'shortSide': options.shortSide,
+        'quality': options.quality.name,
+        'overlayEnabled': options.overlayEnabled,
+        'appProgressBarEnabled': options.appProgressBarEnabled,
+        'appProgressBarPosition': options.appProgressBarPosition.name,
+        'nsfwMode': options.nsfwMode.name,
+        // i18n text for NSFW mask overlay (optional on Android side).
+        'nsfwTitle': l10n?.nsfwWarningTitle ?? 'Content Warning: Adult Content',
+        'nsfwSubtitle':
+            l10n?.nsfwWarningSubtitle ??
+            'This content has been marked as adult content',
+      });
 
       final String outPath = (res?['outputPath'] as String?) ?? output.path;
       final int width = (res?['width'] as int?) ?? 0;

@@ -1296,7 +1296,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get timelineReplayNsfw => 'NSFW 内容';
 
   @override
-  String get timelineReplayNsfwMask => '显示 NSFW 遮罩';
+  String get timelineReplayNsfwMask => '显示遮罩';
 
   @override
   String get timelineReplayNsfwShow => '完全显示';
@@ -1326,6 +1326,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get timelineReplayReady => '回放已生成';
+
+  @override
+  String get timelineReplayNotificationHint => '正在生成回放，可在通知栏查看进度';
 
   @override
   String get pressBackAgainToExit => '再按一次退出屏忆';

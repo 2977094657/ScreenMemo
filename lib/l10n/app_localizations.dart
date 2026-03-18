@@ -2439,7 +2439,7 @@ abstract class AppLocalizations {
   /// No description provided for @timelineReplayNsfwMask.
   ///
   /// In en, this message translates to:
-  /// **'Mask NSFW'**
+  /// **'Show mask'**
   String get timelineReplayNsfwMask;
 
   /// No description provided for @timelineReplayNsfwShow.
@@ -2495,6 +2495,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Replay generated'**
   String get timelineReplayReady;
+
+  /// No description provided for @timelineReplayNotificationHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Replay is generating; check progress in notifications'**
+  String get timelineReplayNotificationHint;
 
   /// No description provided for @pressBackAgainToExit.
   ///

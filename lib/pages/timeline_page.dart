@@ -628,17 +628,19 @@ class _TimelinePageState extends State<TimelinePage>
             toolbarHeight: 36,
             centerTitle: true,
             automaticallyImplyLeading: false,
+            leadingWidth: Platform.isAndroid ? 40 : 0,
+            leading: Platform.isAndroid
+                ? IconButton(
+                    icon: const Icon(Icons.play_circle_outline),
+                    onPressed: _showReplaySheet,
+                    tooltip: l10n.timelineReplay,
+                  )
+                : null,
             title: Padding(
               padding: const EdgeInsets.only(top: 2.0),
               child: titleWidget,
             ),
             actions: [
-              if (Platform.isAndroid)
-                IconButton(
-                  icon: const Icon(Icons.play_circle_outline),
-                  onPressed: _showReplaySheet,
-                  tooltip: l10n.timelineReplay,
-                ),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: _refresh,

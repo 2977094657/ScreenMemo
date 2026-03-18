@@ -1347,7 +1347,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get timelineReplayNsfw => 'NSFW content';
 
   @override
-  String get timelineReplayNsfwMask => 'Mask NSFW';
+  String get timelineReplayNsfwMask => 'Show mask';
 
   @override
   String get timelineReplayNsfwShow => 'Show all';
@@ -1377,6 +1377,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get timelineReplayReady => 'Replay generated';
+
+  @override
+  String get timelineReplayNotificationHint =>
+      'Replay is generating; check progress in notifications';
 
   @override
   String get pressBackAgainToExit => 'Press back again to exit';

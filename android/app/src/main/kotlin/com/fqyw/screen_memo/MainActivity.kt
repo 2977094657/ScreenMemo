@@ -69,6 +69,7 @@ import kotlin.math.max
 import kotlin.math.min
 import com.fqyw.screen_memo.OutputFileLogger
 import com.fqyw.screen_memo.storage.StorageAnalyzer
+import com.fqyw.screen_memo.replay.ReplayExportNotificationHelper
 import com.fqyw.screen_memo.replay.ReplayVideoComposer
 
 class MainActivity : FlutterActivity() {
@@ -676,6 +677,7 @@ class MainActivity : FlutterActivity() {
                     }
 
                     val pendingResult = result
+                    ReplayExportNotificationHelper.showPreparing(applicationContext)
                     replayExecutor.execute {
                         try {
                             val map = ReplayVideoComposer.compose(
@@ -691,10 +693,22 @@ class MainActivity : FlutterActivity() {
                                 nsfwMode = nsfwMode,
                                 nsfwTitle = nsfwTitle,
                                 nsfwSubtitle = nsfwSubtitle,
+                                onProgress = { processed, total ->
+                                    ReplayExportNotificationHelper.updateProgress(
+                                        applicationContext,
+                                        processed,
+                                        total,
+                                    )
+                                },
                             )
+                            ReplayExportNotificationHelper.showCompleted(applicationContext)
                             mainHandler.post { pendingResult.success(map) }
                         } catch (e: Exception) {
                             FileLogger.e(TAG, "composeReplayVideo 失败", e)
+                            ReplayExportNotificationHelper.showFailed(
+                                applicationContext,
+                                e.message,
+                            )
                             mainHandler.post { pendingResult.error("compose_failed", e.message, null) }
                         }
                     }

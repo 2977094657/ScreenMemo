@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -414,70 +413,16 @@ class _TimelineReplaySheetState extends State<TimelineReplaySheet> {
               if (_appProgressBarEnabled)
                 Padding(
                   padding: const EdgeInsets.only(top: AppTheme.spacing1),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final double segmentWidth =
-                          (constraints.maxWidth - AppTheme.spacing2) / 4;
-                      final TextStyle? baseStyle = theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600);
-
-                      Widget segmentLabel(
-                        String text,
-                        ReplayAppProgressBarPosition position,
-                      ) {
-                        final bool selected =
-                            _appProgressBarPosition == position;
-                        return SizedBox(
-                          width: segmentWidth,
-                          child: Center(
-                            child: Text(
-                              text,
-                              style: baseStyle?.copyWith(
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: selected
-                                    ? cs.onSurface
-                                    : cs.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      return CupertinoSlidingSegmentedControl<
-                        ReplayAppProgressBarPosition
-                      >(
-                        groupValue: _appProgressBarPosition,
-                        backgroundColor: cs.surfaceContainerHighest.withValues(
-                          alpha: 0.55,
-                        ),
-                        thumbColor: cs.surface,
-                        padding: const EdgeInsets.all(AppTheme.spacing1),
-                        children: <ReplayAppProgressBarPosition, Widget>{
-                          ReplayAppProgressBarPosition.top: segmentLabel(
-                            '顶部',
-                            ReplayAppProgressBarPosition.top,
-                          ),
-                          ReplayAppProgressBarPosition.right: segmentLabel(
-                            '右侧',
-                            ReplayAppProgressBarPosition.right,
-                          ),
-                          ReplayAppProgressBarPosition.bottom: segmentLabel(
-                            '底部',
-                            ReplayAppProgressBarPosition.bottom,
-                          ),
-                          ReplayAppProgressBarPosition.left: segmentLabel(
-                            '左侧',
-                            ReplayAppProgressBarPosition.left,
-                          ),
-                        },
-                        onValueChanged: (value) {
-                          if (value == null) return;
-                          setState(() => _appProgressBarPosition = value);
-                        },
-                      );
+                  child: _CompactSegmentedControl<ReplayAppProgressBarPosition>(
+                    value: _appProgressBarPosition,
+                    options: const <ReplayAppProgressBarPosition, String>{
+                      ReplayAppProgressBarPosition.top: '顶部',
+                      ReplayAppProgressBarPosition.right: '右侧',
+                      ReplayAppProgressBarPosition.bottom: '底部',
+                      ReplayAppProgressBarPosition.left: '左侧',
                     },
+                    onChanged: (value) =>
+                        setState(() => _appProgressBarPosition = value),
                   ),
                 ),
 
@@ -489,60 +434,14 @@ class _TimelineReplaySheetState extends State<TimelineReplaySheet> {
                 ),
               ),
               const SizedBox(height: AppTheme.spacing1),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final double segmentWidth =
-                      (constraints.maxWidth - AppTheme.spacing2) / 3;
-                  final TextStyle? baseStyle = theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600);
-
-                  Widget segmentLabel(String text, ReplayNsfwMode mode) {
-                    final bool selected = _nsfwMode == mode;
-                    return SizedBox(
-                      width: segmentWidth,
-                      child: Center(
-                        child: Text(
-                          text,
-                          style: baseStyle?.copyWith(
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w600,
-                            color: selected
-                                ? cs.onSurface
-                                : cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return CupertinoSlidingSegmentedControl<ReplayNsfwMode>(
-                    groupValue: _nsfwMode,
-                    backgroundColor: cs.surfaceContainerHighest.withValues(
-                      alpha: 0.55,
-                    ),
-                    thumbColor: cs.surface,
-                    padding: const EdgeInsets.all(AppTheme.spacing1),
-                    children: <ReplayNsfwMode, Widget>{
-                      ReplayNsfwMode.mask: segmentLabel(
-                        l10n.timelineReplayNsfwMask,
-                        ReplayNsfwMode.mask,
-                      ),
-                      ReplayNsfwMode.show: segmentLabel(
-                        l10n.timelineReplayNsfwShow,
-                        ReplayNsfwMode.show,
-                      ),
-                      ReplayNsfwMode.hide: segmentLabel(
-                        l10n.timelineReplayNsfwHide,
-                        ReplayNsfwMode.hide,
-                      ),
-                    },
-                    onValueChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _nsfwMode = value);
-                    },
-                  );
+              _CompactSegmentedControl<ReplayNsfwMode>(
+                value: _nsfwMode,
+                options: <ReplayNsfwMode, String>{
+                  ReplayNsfwMode.mask: l10n.timelineReplayNsfwMask,
+                  ReplayNsfwMode.show: l10n.timelineReplayNsfwShow,
+                  ReplayNsfwMode.hide: l10n.timelineReplayNsfwHide,
                 },
+                onChanged: (value) => setState(() => _nsfwMode = value),
               ),
 
               const SizedBox(height: AppTheme.spacing4),
@@ -577,6 +476,139 @@ class _TimelineReplaySheetState extends State<TimelineReplaySheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _CompactSegmentedControl<T> extends StatelessWidget {
+  const _CompactSegmentedControl({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final T value;
+  final Map<T, String> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final List<MapEntry<T, String>> entries = options.entries.toList(
+      growable: false,
+    );
+    final int selectedIndex = entries.indexWhere((entry) => entry.key == value);
+    final int currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    final TextStyle baseStyle =
+        theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          height: 1.1,
+        ) ??
+        const TextStyle(fontWeight: FontWeight.w600, height: 1.1);
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing1),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double width = constraints.maxWidth;
+          final double segmentWidth = entries.isEmpty
+              ? width
+              : width / entries.length;
+          final double indicatorLeft = segmentWidth * currentIndex;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: entries.length > 1
+                ? (details) {
+                    if (segmentWidth <= 0) return;
+                    final double clampedDx = details.localPosition.dx
+                        .clamp(0.0, width - 0.001)
+                        .toDouble();
+                    final int nextIndex = (clampedDx / segmentWidth)
+                        .floor()
+                        .clamp(0, entries.length - 1);
+                    if (nextIndex != currentIndex) {
+                      onChanged(entries[nextIndex].key);
+                    }
+                  }
+                : null,
+            child: SizedBox(
+              height: 34,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Stack(
+                  children: [
+                    if (entries.isNotEmpty)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        left: indicatorLeft,
+                        top: 0,
+                        bottom: 0,
+                        width: segmentWidth,
+                        child: IgnorePointer(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 1),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: cs.surface,
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSm,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Row(
+                      children: entries
+                          .map((entry) {
+                            final bool selected = entry.key == value;
+                            return Expanded(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => onChanged(entry.key),
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppTheme.spacing2,
+                                      vertical: 6,
+                                    ),
+                                    child: Text(
+                                      entry.value,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      strutStyle: const StrutStyle(
+                                        height: 1.1,
+                                        forceStrutHeight: true,
+                                      ),
+                                      style: baseStyle.copyWith(
+                                        fontWeight: selected
+                                            ? FontWeight.w700
+                                            : FontWeight.w600,
+                                        color: selected
+                                            ? cs.onSurface
+                                            : cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          })
+                          .toList(growable: false),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
