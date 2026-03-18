@@ -629,7 +629,6 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 val body = org.json.JSONObject()
                     .put("model", cfg.model)
                     .put("messages", messages)
-                    .put("temperature", 0.2)
                     .put("stream", true)
                 val reqBody: RequestBody = body.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 val req = Request.Builder()

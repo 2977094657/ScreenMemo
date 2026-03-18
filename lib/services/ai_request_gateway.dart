@@ -81,7 +81,6 @@ class AIRequestGateway {
 
   static final AIRequestGateway instance = AIRequestGateway._();
 
-  static const double _defaultTemperature = 0.2;
   int _fallbackToolCallSeq = 0;
   String _newFallbackToolCallId() => 'toolu_fallback_${++_fallbackToolCallSeq}';
   int _traceSeq = 0;
@@ -707,7 +706,6 @@ class AIRequestGateway {
     }
     final Map<String, dynamic> payload = <String, dynamic>{
       'contents': contents,
-      'generationConfig': <String, dynamic>{'temperature': _defaultTemperature},
     };
     if (systemParts.isNotEmpty) {
       payload['system_instruction'] = <String, dynamic>{'parts': systemParts};
@@ -725,7 +723,6 @@ class AIRequestGateway {
     final Map<String, dynamic> payload = <String, dynamic>{
       'model': endpoint.model,
       'messages': messages.map((AIMessage m) => m.toJson()).toList(),
-      'temperature': _defaultTemperature,
       'stream': stream,
     };
     if (tools.isNotEmpty) {
@@ -747,7 +744,6 @@ class AIRequestGateway {
     final Map<String, dynamic> payload = <String, dynamic>{
       'model': endpoint.model,
       'input': _buildResponsesInputItems(messages),
-      'temperature': _defaultTemperature,
       'stream': stream,
     };
     if (tools.isNotEmpty) {
@@ -997,16 +993,6 @@ class AIRequestGateway {
     return <String, dynamic>{'type': 'function', 'name': name};
   }
 
-  bool _isLikelyOpenAIHost(Uri baseUri) {
-    final String host = baseUri.host.toLowerCase();
-    if (host.isEmpty) return false;
-    if (host == 'api.openai.com') return true;
-    if (host.endsWith('.openai.com')) return true;
-    // Azure OpenAI endpoints often look like: {resource}.openai.azure.com
-    if (host.contains('openai.azure.com')) return true;
-    return false;
-  }
-
   bool _shouldUseResponsesApi({
     required AIEndpoint endpoint,
     required Uri baseUri,
@@ -1014,18 +1000,6 @@ class AIRequestGateway {
   }) {
     if (endpoint.useResponseApi) return true;
     if (_isResponsesPath(endpoint.chatPath)) return true;
-
-    final String host = baseUri.host.toLowerCase();
-    if (host.contains('codex-api') || host.contains('packycode')) {
-      return true;
-    }
-
-    final String model = endpoint.model.trim().toLowerCase();
-    if (model.startsWith('gpt-5')) {
-      // Keep gpt-5 on Responses for official hosts by default, but do NOT force
-      // Responses for arbitrary proxies unless explicitly enabled.
-      return _isLikelyOpenAIHost(baseUri);
-    }
 
     if (tools.isEmpty) return false;
     return false;
