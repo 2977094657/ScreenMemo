@@ -582,15 +582,6 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
         NotificationListener<ScrollNotification>(
           onNotification: (notification) {
             final metrics = notification.metrics;
-            // 根据位置更新粘底标志：仅在接近底部时视为粘底
-            final double distanceToBottom =
-                (metrics.maxScrollExtent - metrics.pixels).clamp(
-                  0.0,
-                  double.infinity,
-                );
-            _stickToBottom =
-                distanceToBottom <= _AISettingsPageState._autoScrollProximity;
-
             // Scroll-to-top: load older full-transcript pages (best-effort).
             if (metrics.pixels <= 80.0 &&
                 _olderHasMore &&
@@ -616,33 +607,6 @@ extension _AISettingsPageStateChatListExt on _AISettingsPageState {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        if (!_stickToBottom)
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: SafeArea(
-              child: Material(
-                color: Theme.of(context).colorScheme.surface.withOpacity(0.92),
-                elevation: 2,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () {
-                    _stickToBottom = true;
-                    _scrollToBottom(animated: true);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Icon(
-                      Icons.arrow_downward_rounded,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
                   ),
                 ),
               ),

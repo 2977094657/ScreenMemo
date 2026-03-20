@@ -218,20 +218,10 @@ class _AISettingsPageState extends State<AISettingsPage>
   final TextEditingController _modelController = TextEditingController();
   final TextEditingController _inputController = TextEditingController();
 
-  // 聊天列表滚动控制器（用于自动滚动到底部）
+  // 聊天列表滚动控制器
   final ScrollController _chatScrollController = ScrollController();
   // 折叠思考预览的滚动（底部面板）
   final ScrollController _reasoningPanelScrollController = ScrollController();
-
-  // —— 粘底自动滚动策略 ——
-  // 当距离底部在该阈值内，才会触发自动滚动（避免与用户滚动竞争）
-  static const double _autoScrollProximity = 120.0;
-  // 当前是否应粘在底部（由滚动通知动态维护）
-  bool _stickToBottom = true;
-  // 自动滚动节流：在短时间内合并多次请求，减少 jumpTo 频次
-  static const int _autoScrollThrottleMs = 120;
-  DateTime? _lastAutoScrollTime;
-  bool _autoScrollPending = false;
 
   // 动态省略号（思考中）状态
   Timer? _dotsTimer;

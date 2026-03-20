@@ -416,13 +416,6 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         'loadAll.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
       );
-      // Keep chat anchored at the bottom only when the user is already near the
-      // bottom. Do it after layout so maxScrollExtent is valid.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || epoch != _loadAllEpoch) return;
-        if (!_stickToBottom) return;
-        _scrollToBottom(animated: false);
-      });
       // 记录 UI 填充耗时（数据到状态）
       try {
         await FlutterLogger.nativeInfo(
@@ -1015,53 +1008,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     }
   }
 
-  // 自动滚动到底部（在下一帧执行，避免布局未完成）
-  void _scrollToBottom({bool animated = true}) {
-    final c = _chatScrollController;
-    if (!c.hasClients) return;
-    final pos = c.position.maxScrollExtent;
-    if (animated) {
-      c.animateTo(
-        pos,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      c.jumpTo(pos);
-    }
-  }
-
   void _scheduleAutoScroll() {
-    // 仅当粘在底部时，才允许自动滚动；用户上滑后暂停
-    if (!_stickToBottom) return;
-
-    final now = DateTime.now();
-    final last = _lastAutoScrollTime;
-    final elapsed = (last == null)
-        ? const Duration(days: 1)
-        : now.difference(last);
-    if (elapsed.inMilliseconds >= _AISettingsPageState._autoScrollThrottleMs) {
-      _lastAutoScrollTime = now;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_stickToBottom) return;
-        _scrollToBottom(animated: false);
-      });
-    } else if (!_autoScrollPending) {
-      _autoScrollPending = true;
-      final delay = Duration(
-        milliseconds:
-            _AISettingsPageState._autoScrollThrottleMs - elapsed.inMilliseconds,
-      );
-      Future.delayed(delay, () {
-        _autoScrollPending = false;
-        if (!mounted || !_stickToBottom) return;
-        _lastAutoScrollTime = DateTime.now();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_stickToBottom) return;
-          _scrollToBottom(animated: false);
-        });
-      });
-    }
+    // 用户要求关闭聊天页自动粘底，这里保留空实现，避免流式更新时强制抢滚动。
   }
 
   void _scheduleReasoningPreviewScroll() {
