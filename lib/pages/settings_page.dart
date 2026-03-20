@@ -1677,8 +1677,7 @@ class _SettingsPageState extends State<SettingsPage>
             _buildCard(
               context: context,
               children: [
-                _buildThemeColorItem(context),
-                _buildPageBackgroundItem(context),
+                _buildThemeModeItem(context),
                 _buildPrivacyModeItem(context),
                 _buildNsfwEntryItem(context),
               ],
@@ -2241,8 +2240,24 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildThemeColorItem(BuildContext context) {
-    final Color current = widget.themeService.seedColor;
+  String _themeModeLabel(BuildContext context, ThemeMode mode) {
+    final AppLocalizations t = AppLocalizations.of(context);
+    switch (mode) {
+      case ThemeMode.system:
+        return t.themeModeAuto;
+      case ThemeMode.light:
+        return t.themeModeLight;
+      case ThemeMode.dark:
+        return t.themeModeDark;
+    }
+  }
+
+  Widget _buildThemeModeItem(BuildContext context) {
+    final String currentMode = _themeModeLabel(
+      context,
+      widget.themeService.themeMode,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing4,
@@ -2253,51 +2268,31 @@ class _SettingsPageState extends State<SettingsPage>
       ),
       child: Row(
         children: [
-          _buildSettingsLeadingIcon(context, Icons.palette_outlined),
+          _buildSettingsLeadingIcon(context, Icons.brightness_6_outlined),
           const SizedBox(width: AppTheme.spacing3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  AppLocalizations.of(context).themeColorTitle,
+                  AppLocalizations.of(context).themeModeTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      AppLocalizations.of(context).themeColorDesc,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing3),
-                    // 当前色预览
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: current,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline,
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  currentMode,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: AppTheme.spacing2),
           TextButton(
-            onPressed: _showThemeColorSheet,
+            onPressed: _showThemeModeSheet,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacing3,
@@ -2307,475 +2302,122 @@ class _SettingsPageState extends State<SettingsPage>
               minimumSize: Size.zero,
               visualDensity: VisualDensity.compact,
             ),
-            child: Text(AppLocalizations.of(context).actionSet),
+            child: Text(currentMode),
           ),
         ],
       ),
     );
   }
 
-  void _showThemeColorSheet() {
-    final presets = <Color>[
-      const Color(0xFF09090B), // Graphite (legacy default)
-      const Color(0xFF22C55E), // Green 500
-      const Color(0xFFF59E0B), // Amber 500
-      const Color(0xFFEF4444), // Red 500
-      const Color(0xFF06B6D4), // Cyan 500
-      const Color(0xFF9333EA), // Purple 600
-      const Color(0xFF60A5FA), // Blue 400
-      const Color(0xFF10B981), // Emerald 500
-      const Color(0xFFFB7185), // Rose 400
-      const Color(0xFFF97316), // Orange 500
-      const Color(0xFF14B8A6), // Teal 500
-      const Color(0xFF0891B2), // Cyan 600
-    ];
-
-    showModalBottomSheet(
+  void _showThemeModeSheet() {
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        final Color current = widget.themeService.seedColor;
-        return UISheetSurface(
-          child: Padding(
-            padding: const EdgeInsets.all(AppTheme.spacing4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: AppTheme.spacing3),
-                const Center(child: UISheetHandle()),
-                const SizedBox(height: AppTheme.spacing3),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        AppLocalizations.of(context).chooseThemeColorTitle,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        await widget.themeService.resetSeedColor();
-                        if (mounted) Navigator.of(context).pop();
-                        if (mounted) setState(() {});
-                      },
-                      child: Text(AppLocalizations.of(context).defaultLabel),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.spacing3),
-                GridView.count(
-                  crossAxisCount: 6,
-                  shrinkWrap: true,
-                  crossAxisSpacing: AppTheme.spacing3,
-                  mainAxisSpacing: AppTheme.spacing3,
-                  children: presets.map((c) {
-                    final bool selected = current.value == c.value;
-                    return InkWell(
-                      onTap: () async {
-                        await widget.themeService.setSeedColor(c);
-                        if (mounted) Navigator.of(context).pop();
-                        if (mounted) setState(() {});
-                      },
-                      borderRadius: BorderRadius.circular(24),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: selected
-                              ? [
-                                  BoxShadow(
-                                    color: c.withOpacity(0.4),
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        alignment: Alignment.center,
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: c,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.surface,
-                              width: 2,
-                            ),
-                          ),
-                          child: selected
-                              ? const Icon(
-                                  Icons.check,
-                                  color: Colors.white,
-                                  size: 18,
-                                )
-                              : null,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: AppTheme.spacing2),
-              ],
-            ),
-          ),
+      builder: (sheetContext) {
+        final ThemeData theme = Theme.of(sheetContext);
+        final ThemeMode currentMode = widget.themeService.themeMode;
+        final BorderSide dividerSide = BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.45),
+          width: 0.8,
         );
-      },
-    );
-  }
 
-  Widget _buildPageBackgroundItem(BuildContext context) {
-    final Color current = widget.themeService.lightPageBackgroundColor;
-    final String hex =
-        '#${current.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing4,
-        vertical: AppTheme.spacing3 - 2,
-      ),
-      decoration: BoxDecoration(
-        border: Border(bottom: _settingsDividerSide(context)),
-      ),
-      child: Row(
-        children: [
-          _buildSettingsLeadingIcon(context, Icons.format_color_fill_outlined),
-          const SizedBox(width: AppTheme.spacing3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppLocalizations.of(context).pageBackgroundTitle,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        AppLocalizations.of(context).pageBackgroundDesc,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing2),
-                    Text(
-                      hex,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacing2),
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: current,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline,
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacing2),
-          TextButton(
-            onPressed: _showPageBackgroundSheet,
-            style: TextButton.styleFrom(
+        Widget buildOption({
+          required ThemeMode mode,
+          required IconData icon,
+          required String label,
+          required bool showDivider,
+        }) {
+          final bool selected = currentMode == mode;
+          return InkWell(
+            onTap: () async {
+              await widget.themeService.setThemeMode(mode);
+              if (mounted) {
+                Navigator.of(sheetContext).pop();
+                setState(() {});
+              }
+            },
+            child: Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing3,
-                vertical: AppTheme.spacing1 - 1,
+                horizontal: AppTheme.spacing4,
+                vertical: AppTheme.spacing3,
               ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              minimumSize: Size.zero,
-              visualDensity: VisualDensity.compact,
+              decoration: BoxDecoration(
+                border: showDivider ? Border(bottom: dividerSide) : null,
+                color: selected
+                    ? theme.colorScheme.primaryContainer.withValues(alpha: 0.55)
+                    : Colors.transparent,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: selected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: selected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      Icons.check,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
             ),
-            child: Text(AppLocalizations.of(context).actionSet),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showPageBackgroundSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final l10n = AppLocalizations.of(context);
-        final Color initial = widget.themeService.lightPageBackgroundColor;
-        HSVColor hsv = HSVColor.fromColor(initial.withAlpha(0xFF));
-
-        void updateSv(
-          Offset localPos,
-          double size,
-          void Function(void Function()) setSheetState,
-        ) {
-          final double s = (localPos.dx / size).clamp(0.0, 1.0);
-          final double v = (1.0 - (localPos.dy / size)).clamp(0.0, 1.0);
-          setSheetState(() {
-            hsv = hsv.withSaturation(s).withValue(v);
-          });
+          );
         }
 
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final Color selected = hsv.toColor().withAlpha(0xFF);
-            final String hex =
-                '#${selected.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-
-            final presets = <Color>[
-              const Color(0xFFFAF9F5), // Warm white (default)
-              const Color(0xFFEBEBEB), // Neutral light grey
-              const Color(0xFFFFFFFF), // Pure white
-            ];
-
-            return UISheetSurface(
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      AppTheme.spacing4,
-                      AppTheme.spacing4,
-                      AppTheme.spacing4,
-                      AppTheme.spacing4 + MediaQuery.of(context).padding.bottom,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: AppTheme.spacing3),
-                        const Center(child: UISheetHandle()),
-                        const SizedBox(height: AppTheme.spacing3),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                l10n.pageBackgroundTitle,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () async {
-                                await widget.themeService
-                                    .resetLightPageBackgroundColor();
-                                if (mounted) Navigator.of(context).pop();
-                                if (mounted) setState(() {});
-                              },
-                              child: Text(l10n.defaultLabel),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.spacing2),
-                        Row(
-                          children: [
-                            Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: selected,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outline,
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppTheme.spacing2),
-                            Text(
-                              hex,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        Wrap(
-                          spacing: AppTheme.spacing3,
-                          runSpacing: AppTheme.spacing2,
-                          children: presets.map((c) {
-                            final bool isSelected = selected.value == c.value;
-                            return InkWell(
-                              onTap: () {
-                                setSheetState(() {
-                                  hsv = HSVColor.fromColor(c.withAlpha(0xFF));
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(18),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: c,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).colorScheme.outline,
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: AppTheme.spacing4),
-                        // SV 平面（拖动选择饱和度/明度），Hue 通过下方滑杆调整
-                        SizedBox(
-                          height: 220,
-                          child: AspectRatio(
-                            aspectRatio: 1,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final double size = constraints.maxWidth;
-                                final Color hueColor = HSVColor.fromAHSV(
-                                  1,
-                                  hsv.hue,
-                                  1,
-                                  1,
-                                ).toColor();
-                                return GestureDetector(
-                                  onPanDown: (d) => updateSv(
-                                    d.localPosition,
-                                    size,
-                                    setSheetState,
-                                  ),
-                                  onPanUpdate: (d) => updateSv(
-                                    d.localPosition,
-                                    size,
-                                    setSheetState,
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: hueColor,
-                                            borderRadius: BorderRadius.circular(
-                                              AppTheme.radiusMd,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned.fill(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              AppTheme.radiusMd,
-                                            ),
-                                            gradient: const LinearGradient(
-                                              begin: Alignment.centerLeft,
-                                              end: Alignment.centerRight,
-                                              colors: [
-                                                Colors.white,
-                                                Colors.transparent,
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned.fill(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              AppTheme.radiusMd,
-                                            ),
-                                            gradient: const LinearGradient(
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                              colors: [
-                                                Colors.transparent,
-                                                Colors.black,
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        left: (hsv.saturation * size - 10)
-                                            .clamp(0.0, size - 20),
-                                        top: ((1 - hsv.value) * size - 10)
-                                            .clamp(0.0, size - 20),
-                                        child: Container(
-                                          width: 20,
-                                          height: 20,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width: 2,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withOpacity(
-                                                  0.25,
-                                                ),
-                                                blurRadius: 6,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: AppTheme.spacing3),
-                        Slider(
-                          value: hsv.hue,
-                          min: 0,
-                          max: 360,
-                          divisions: 360,
-                          onChanged: (v) {
-                            setSheetState(() {
-                              hsv = hsv.withHue(v);
-                            });
-                          },
-                        ),
-                        const SizedBox(height: AppTheme.spacing2),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: Text(l10n.dialogCancel),
-                            ),
-                            const SizedBox(width: AppTheme.spacing2),
-                            TextButton(
-                              onPressed: () async {
-                                await widget.themeService
-                                    .setLightPageBackgroundColor(selected);
-                                if (mounted) Navigator.of(context).pop();
-                                if (mounted) setState(() {});
-                              },
-                              child: Text(l10n.dialogOk),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+        return UISheetSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: AppTheme.spacing3),
+              const UISheetHandle(),
+              Padding(
+                padding: const EdgeInsets.all(AppTheme.spacing4),
+                child: Text(
+                  AppLocalizations.of(context).themeModeTitle,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            );
-          },
+              buildOption(
+                mode: ThemeMode.system,
+                icon: Icons.brightness_auto_outlined,
+                label: _themeModeLabel(context, ThemeMode.system),
+                showDivider: true,
+              ),
+              buildOption(
+                mode: ThemeMode.light,
+                icon: Icons.brightness_high_outlined,
+                label: _themeModeLabel(context, ThemeMode.light),
+                showDivider: true,
+              ),
+              buildOption(
+                mode: ThemeMode.dark,
+                icon: Icons.brightness_4_outlined,
+                label: _themeModeLabel(context, ThemeMode.dark),
+                showDivider: false,
+              ),
+              const SizedBox(height: AppTheme.spacing2),
+            ],
+          ),
         );
       },
     );

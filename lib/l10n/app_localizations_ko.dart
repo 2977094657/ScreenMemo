@@ -1227,6 +1227,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get generateDailySummary => '오늘 요약 생성';
 
   @override
+  String get dailySummaryGeneratingTitle => '오늘 요약을 생성하는 중입니다';
+
+  @override
+  String get dailySummaryGeneratingHint => '읽기 레이아웃을 유지한 채 생성 결과가 순차적으로 반영됩니다.';
+
+  @override
   String get statisticsTitle => '통계';
 
   @override
@@ -2240,7 +2246,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get displaySectionTitle => '디스플레이';
 
   @override
-  String get displaySectionDesc => '테마/개인정보/NSFW';
+  String get displaySectionDesc => '테마 모드/개인정보/NSFW';
+
+  @override
+  String get themeModeTitle => '테마 모드';
 
   @override
   String get streamRenderImagesTitle => '스트리밍 중 이미지 렌더링';

@@ -13,6 +13,7 @@ import '../services/app_lifecycle_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../widgets/screenshot_item_widget.dart';
+import '../widgets/ui_components.dart';
 import '../services/timeline_jump_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
@@ -625,7 +626,7 @@ class _TimelinePageState extends State<TimelinePage>
         }
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: 36,
+            toolbarHeight: 48,
             centerTitle: true,
             automaticallyImplyLeading: false,
             leadingWidth: Platform.isAndroid ? 40 : 0,
@@ -649,45 +650,12 @@ class _TimelinePageState extends State<TimelinePage>
             ],
           ),
           body: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const UILoadingState(compact: true)
               : _dayTabs.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing6,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.photo_library_outlined,
-                          size: 64,
-                          color: AppTheme.mutedForeground.withOpacity(0.5),
-                        ),
-                        const SizedBox(height: AppTheme.spacing4),
-                        Text(
-                          l10n.noScreenshotsTitle,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            color: AppTheme.mutedForeground,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: AppTheme.spacing2),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 300),
-                          child: Text(
-                            l10n.noScreenshotsSubtitle,
-                            style: const TextStyle(
-                              color: AppTheme.mutedForeground,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+              ? UIEmptyState(
+                  title: l10n.noScreenshotsTitle,
+                  message: l10n.noScreenshotsSubtitle,
+                  icon: Icons.photo_library_outlined,
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

@@ -61,7 +61,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 
   List<BottomNavigationBarItem> _buildNavigationItems(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return [
       const BottomNavigationBarItem(
         icon: Icon(Icons.home_outlined),
@@ -73,23 +72,11 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         activeIcon: Icon(Icons.favorite),
         label: '',
       ),
-      // 事件（AI）Tab：星星图标 + 渐变激活态（随主题主色/次色）
-      BottomNavigationBarItem(
-        icon: const Icon(Icons.auto_awesome_outlined),
-        activeIcon: ShaderMask(
-          shaderCallback: (Rect bounds) {
-            return LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [cs.primary, cs.secondary],
-            ).createShader(bounds);
-          },
-          blendMode: BlendMode.srcIn,
-          child: const Icon(Icons.auto_awesome, color: Colors.white),
-        ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.auto_awesome_outlined),
+        activeIcon: Icon(Icons.auto_awesome),
         label: '',
       ),
-      // 时间线 Tab
       const BottomNavigationBarItem(
         icon: Icon(Icons.timeline_outlined),
         activeIcon: Icon(Icons.timeline),
@@ -168,19 +155,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 
   void _onTabTapped(int index) {
-    // 切换底部标签时，统一取消当前焦点，避免隐藏页的输入框仍然保留焦点导致键盘误弹
     FocusManager.instance.primaryFocus?.unfocus();
-    // 事件（AI）Tab：沉浸式全屏进入，不显示底部菜单
-    if (index == 2) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const EventHomePage()));
-      return;
-    }
     setState(() {
       _currentIndex = index;
     });
-    // 每次进入"时间线"页（索引3，因为收藏页插入到了索引1）都触发刷新事件
     if (index == 3) {
       try {
         FlutterLogger.nativeInfo('MainNav', '切换到时间线Tab，发出timelineShown');

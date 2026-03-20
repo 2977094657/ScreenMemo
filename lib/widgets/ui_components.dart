@@ -3,7 +3,53 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../theme/app_theme.dart';
 
-/// 统一的底部吐司（Overlay）助手 - Android Toast 风格：底部、深色背景、白字、轻圆角、无阴影
+enum _UINotificationTone { neutral, success, info, warning, error }
+
+Color _overlayBackgroundForTheme(ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? const Color(0xE8141413)
+    : const Color(0xE0191816);
+
+Color _overlayTextForTheme(ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? const Color(0xFFF6F1E8)
+    : const Color(0xFFF7F2EA);
+
+Color _overlayTrackForTheme(ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? const Color(0x33FAF9F5)
+    : const Color(0x40FAF9F5);
+
+Color _overlayAccentForTone(ThemeData theme, _UINotificationTone tone) {
+  switch (tone) {
+    case _UINotificationTone.success:
+      return AppTheme.success;
+    case _UINotificationTone.info:
+      return theme.colorScheme.secondary;
+    case _UINotificationTone.warning:
+      return AppTheme.warning;
+    case _UINotificationTone.error:
+      return theme.colorScheme.error;
+    case _UINotificationTone.neutral:
+      return theme.colorScheme.primary;
+  }
+}
+
+Color _overlayBorderForTone(ThemeData theme, _UINotificationTone tone) {
+  final double alpha = tone == _UINotificationTone.neutral ? 0.22 : 0.28;
+  return _overlayAccentForTone(theme, tone).withValues(alpha: alpha);
+}
+
+Color _overlayActionForTone(ThemeData theme, _UINotificationTone tone) {
+  return Color.lerp(
+        _overlayTextForTheme(theme),
+        _overlayAccentForTone(theme, tone),
+        0.48,
+      ) ??
+      _overlayTextForTheme(theme);
+}
+
+/// 统一的底部吐司（Overlay）助手
 class UINotifier {
   static OverlayEntry? _currentEntry;
   static OverlayEntry? _progressEntry;
@@ -24,33 +70,28 @@ class UINotifier {
     _progressNotifier = null;
   }
 
-  static void _showTopToastWithOverlay(
+  static void _showToastWithOverlay(
     OverlayState overlay, {
+    required _UINotificationTone tone,
     required String message,
-    required Color textColor,
-    required Color backgroundColor,
-    Color? borderColor,
-    bool outlined = true,
     Duration? duration,
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    // 移除已有吐司，避免堆叠
+    final theme = Theme.of(overlay.context);
     _removeCurrent();
 
     final entry = OverlayEntry(
       builder: (ctx) => _TopToast(
         message: message,
-        textColor: textColor,
-        backgroundColor: backgroundColor,
-        borderColor: borderColor,
-        outlined: outlined,
+        textColor: _overlayTextForTheme(theme),
+        backgroundColor: _overlayBackgroundForTheme(theme),
+        borderColor: _overlayBorderForTone(theme, tone),
+        actionColor: _overlayActionForTone(theme, tone),
         displayDuration: duration ?? const Duration(seconds: 3),
         actionLabel: actionLabel,
         onAction: onAction,
-        onClosed: () {
-          _removeCurrent();
-        },
+        onClosed: _removeCurrent,
       ),
     );
 
@@ -58,26 +99,19 @@ class UINotifier {
     _currentEntry = entry;
   }
 
-  static void _showTopToast(
+  static void _showToast(
     BuildContext context, {
+    required _UINotificationTone tone,
     required String message,
-    required Color textColor,
-    required Color backgroundColor,
-    Color? borderColor,
-    bool outlined = true,
     Duration? duration,
     String? actionLabel,
     VoidCallback? onAction,
   }) {
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
-    _showTopToastWithOverlay(
+    _showToastWithOverlay(
       overlay,
+      tone: tone,
       message: message,
-      textColor: textColor,
-      backgroundColor: backgroundColor,
-      borderColor: borderColor,
-      outlined: outlined,
       duration: duration,
       actionLabel: actionLabel,
       onAction: onAction,
@@ -91,15 +125,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    // 统一 Toast 样式（更透明的半透明背景）
-    const Color bg = Color(0xCC323232);
-    _showTopToast(
+    _showToast(
       context,
+      tone: _UINotificationTone.success,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -113,14 +142,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToastWithOverlay(
+    _showToastWithOverlay(
       overlay,
+      tone: _UINotificationTone.success,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -134,14 +159,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToast(
+    _showToast(
       context,
+      tone: _UINotificationTone.info,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -155,14 +176,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToastWithOverlay(
+    _showToastWithOverlay(
       overlay,
+      tone: _UINotificationTone.info,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 2),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -176,14 +193,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToast(
+    _showToast(
       context,
+      tone: _UINotificationTone.error,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -197,14 +210,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToastWithOverlay(
+    _showToastWithOverlay(
       overlay,
+      tone: _UINotificationTone.error,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -218,14 +227,10 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToast(
+    _showToast(
       context,
+      tone: _UINotificationTone.warning,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
@@ -239,35 +244,32 @@ class UINotifier {
     String? actionLabel,
     VoidCallback? onAction,
   }) {
-    const Color bg = Color(0xCC323232);
-    _showTopToastWithOverlay(
+    _showToastWithOverlay(
       overlay,
+      tone: _UINotificationTone.warning,
       message: message,
-      textColor: Colors.white,
-      backgroundColor: bg,
-      borderColor: null,
-      outlined: false,
       duration: duration ?? const Duration(seconds: 3),
       actionLabel: actionLabel,
       onAction: onAction,
     );
   }
 
-  /// 居中吐司：用于误触提示等场景，扁平无阴影，轻圆角
   static void center(
     BuildContext context,
     String message, {
     Duration? duration,
   }) {
-    // 移除已有吐司，避免堆叠
     _removeCurrent();
 
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
+    final theme = Theme.of(context);
 
     final entry = OverlayEntry(
       builder: (ctx) => _CenterToast(
         message: message,
+        textColor: _overlayTextForTheme(theme),
+        backgroundColor: _overlayBackgroundForTheme(theme),
+        borderColor: _overlayBorderForTone(theme, _UINotificationTone.neutral),
         displayDuration: duration ?? const Duration(milliseconds: 1500),
         onClosed: _removeCurrent,
       ),
@@ -277,14 +279,12 @@ class UINotifier {
     _currentEntry = entry;
   }
 
-  // ===== 持续进度吐司（手动更新与关闭） =====
   static void showProgress(
     BuildContext context, {
     required String message,
     double? progress,
   }) {
     final overlay = Overlay.of(context);
-    if (overlay == null) return;
     showProgressOnOverlay(overlay, message: message, progress: progress);
   }
 
@@ -296,9 +296,21 @@ class UINotifier {
     final initial = _ProgressState(message: message, progress: progress);
     if (_progressNotifier == null) {
       _progressNotifier = ValueNotifier<_ProgressState>(initial);
+      final theme = Theme.of(overlay.context);
       final entry = OverlayEntry(
         builder: (ctx) => _ProgressToast(
           stateListenable: _progressNotifier!,
+          backgroundColor: _overlayBackgroundForTheme(theme),
+          textColor: _overlayTextForTheme(theme),
+          borderColor: _overlayBorderForTone(
+            theme,
+            _UINotificationTone.neutral,
+          ),
+          trackColor: _overlayTrackForTheme(theme),
+          progressColor: _overlayAccentForTone(
+            theme,
+            _UINotificationTone.neutral,
+          ),
           onClosed: _removeProgress,
         ),
       );
@@ -330,7 +342,7 @@ class _TopToast extends StatefulWidget {
   final Color textColor;
   final Color backgroundColor;
   final Color? borderColor;
-  final bool outlined;
+  final Color? actionColor;
   final Duration displayDuration;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -341,7 +353,7 @@ class _TopToast extends StatefulWidget {
     required this.textColor,
     required this.backgroundColor,
     required this.borderColor,
-    required this.outlined,
+    required this.actionColor,
     required this.displayDuration,
     required this.onClosed,
     this.actionLabel,
@@ -392,10 +404,8 @@ class _TopToastState extends State<_TopToast>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderSide = widget.outlined && widget.borderColor != null
-        ? Border.all(color: widget.borderColor!, width: 1)
-        : null;
-    final interactive = widget.actionLabel != null && widget.onAction != null;
+    final bool interactive =
+        widget.actionLabel != null && widget.onAction != null;
 
     return SafeArea(
       top: false,
@@ -417,12 +427,14 @@ class _TopToastState extends State<_TopToast>
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.spacing4,
-                        vertical: AppTheme.spacing2,
+                        vertical: AppTheme.spacing3,
                       ),
                       decoration: BoxDecoration(
                         color: widget.backgroundColor,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        border: borderSide,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                        border: widget.borderColor == null
+                            ? null
+                            : Border.all(color: widget.borderColor!, width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -430,7 +442,7 @@ class _TopToastState extends State<_TopToast>
                           Flexible(
                             child: Text(
                               widget.message,
-                              maxLines: 2,
+                              maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: widget.textColor,
@@ -446,9 +458,11 @@ class _TopToastState extends State<_TopToast>
                                 _startDismiss();
                               },
                               style: TextButton.styleFrom(
+                                foregroundColor:
+                                    widget.actionColor ?? widget.textColor,
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -456,7 +470,7 @@ class _TopToastState extends State<_TopToast>
                               child: Text(
                                 widget.actionLabel!,
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: widget.textColor,
+                                  color: widget.actionColor ?? widget.textColor,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -479,11 +493,17 @@ class _TopToastState extends State<_TopToast>
 /// 内部组件：居中吐司（仅渐隐显示，自动消失）
 class _CenterToast extends StatefulWidget {
   final String message;
+  final Color textColor;
+  final Color backgroundColor;
+  final Color? borderColor;
   final Duration displayDuration;
   final VoidCallback onClosed;
 
   const _CenterToast({
     required this.message,
+    required this.textColor,
+    required this.backgroundColor,
+    required this.borderColor,
     required this.displayDuration,
     required this.onClosed,
   });
@@ -526,6 +546,8 @@ class _CenterToastState extends State<_CenterToast>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return SafeArea(
       child: IgnorePointer(
         child: Center(
@@ -538,17 +560,20 @@ class _CenterToastState extends State<_CenterToast>
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppTheme.spacing4,
-                    vertical: AppTheme.spacing2,
+                    vertical: AppTheme.spacing3,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xCC323232),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    color: widget.backgroundColor,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: widget.borderColor == null
+                        ? null
+                        : Border.all(color: widget.borderColor!, width: 1),
                   ),
                   child: Text(
                     widget.message,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: widget.textColor,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -564,23 +589,33 @@ class _CenterToastState extends State<_CenterToast>
 
 class _ProgressState {
   final String message;
-  final double? progress; // 0.0 - 1.0，null 表示不确定
+  final double? progress;
   const _ProgressState({required this.message, this.progress});
 }
 
-class _ProgressToast extends StatefulWidget {
+class _ProgressToast extends StatelessWidget {
   final ValueListenable<_ProgressState> stateListenable;
+  final Color backgroundColor;
+  final Color textColor;
+  final Color? borderColor;
+  final Color trackColor;
+  final Color progressColor;
   final VoidCallback onClosed;
 
-  const _ProgressToast({required this.stateListenable, required this.onClosed});
+  const _ProgressToast({
+    required this.stateListenable,
+    required this.backgroundColor,
+    required this.textColor,
+    required this.borderColor,
+    required this.trackColor,
+    required this.progressColor,
+    required this.onClosed,
+  });
 
-  @override
-  State<_ProgressToast> createState() => _ProgressToastState();
-}
-
-class _ProgressToastState extends State<_ProgressToast> {
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return SafeArea(
       top: false,
       bottom: true,
@@ -598,41 +633,36 @@ class _ProgressToastState extends State<_ProgressToast> {
                   vertical: AppTheme.spacing3,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xCC323232),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  color: backgroundColor,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  border: borderColor == null
+                      ? null
+                      : Border.all(color: borderColor!, width: 1),
                 ),
                 child: ValueListenableBuilder<_ProgressState>(
-                  valueListenable: widget.stateListenable,
+                  valueListenable: stateListenable,
                   builder: (context, state, _) {
-                    final message = state.message;
-                    final prog = state.progress;
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          message,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          state.message,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: textColor,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         const SizedBox(height: AppTheme.spacing2),
-                        if (prog != null)
-                          UIProgress(
-                            value: prog,
-                            backgroundColor: Colors.white24,
-                            valueColor: Colors.white,
-                            height: 6,
-                          )
-                        else
-                          const UIProgress(
-                            value: null,
-                            backgroundColor: Colors.white24,
-                            valueColor: Colors.white,
-                            height: 6,
+                        UIProgress(
+                          value: state.progress,
+                          backgroundColor: trackColor,
+                          valueColor: progressColor,
+                          height: 6,
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSm,
                           ),
+                        ),
                       ],
                     );
                   },
@@ -647,6 +677,24 @@ class _ProgressToastState extends State<_ProgressToast> {
 }
 
 /// shadcn/ui风格的按钮组件
+class _UIButtonPalette {
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color disabledBackgroundColor;
+  final Color disabledForegroundColor;
+  final Color overlayColor;
+  final BorderSide? borderSide;
+
+  const _UIButtonPalette({
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.disabledBackgroundColor,
+    required this.disabledForegroundColor,
+    required this.overlayColor,
+    this.borderSide,
+  });
+}
+
 class UIButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
@@ -669,23 +717,37 @@ class UIButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget button;
+    final palette = _resolvePalette(context);
+    final style = _buildStyle(palette);
+    final child = _buildButtonContent(
+      context,
+      foregroundColor: palette.foregroundColor,
+    );
 
+    Widget button;
     switch (variant) {
-      case UIButtonVariant.primary:
-        button = _buildPrimaryButton();
-        break;
-      case UIButtonVariant.secondary:
-        button = _buildSecondaryButton();
-        break;
       case UIButtonVariant.outline:
-        button = _buildOutlineButton();
+        button = OutlinedButton(
+          onPressed: loading ? null : onPressed,
+          style: style,
+          child: child,
+        );
         break;
       case UIButtonVariant.ghost:
-        button = _buildGhostButton();
+        button = TextButton(
+          onPressed: loading ? null : onPressed,
+          style: style,
+          child: child,
+        );
         break;
+      case UIButtonVariant.secondary:
+      case UIButtonVariant.primary:
       case UIButtonVariant.destructive:
-        button = _buildDestructiveButton();
+        button = ElevatedButton(
+          onPressed: loading ? null : onPressed,
+          style: style,
+          child: child,
+        );
         break;
     }
 
@@ -696,132 +758,136 @@ class UIButton extends StatelessWidget {
     return button;
   }
 
-  Widget _buildPrimaryButton() {
-    return Builder(
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return ElevatedButton(
-          onPressed: loading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: cs.primary,
-            foregroundColor: cs.onPrimary,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            padding: _getPadding(),
-          ),
-          child: _buildButtonContent(),
+  _UIButtonPalette _resolvePalette(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    switch (variant) {
+      case UIButtonVariant.primary:
+        return _UIButtonPalette(
+          backgroundColor: isDark ? cs.primary : cs.onSurface,
+          foregroundColor: isDark ? cs.onPrimary : cs.surfaceContainerLowest,
+          disabledBackgroundColor: cs.surfaceContainerHigh,
+          disabledForegroundColor: cs.onSurfaceVariant,
+          overlayColor: (isDark ? cs.onPrimary : cs.surfaceContainerLowest)
+              .withValues(alpha: 0.08),
         );
-      },
+      case UIButtonVariant.secondary:
+        return _UIButtonPalette(
+          backgroundColor: isDark
+              ? cs.surfaceContainerHigh
+              : cs.surfaceContainer,
+          foregroundColor: cs.onSurface,
+          disabledBackgroundColor: cs.surfaceContainerLow,
+          disabledForegroundColor: cs.onSurfaceVariant,
+          overlayColor: cs.onSurface.withValues(alpha: 0.05),
+          borderSide: BorderSide(
+            color: cs.outline.withValues(alpha: 0.78),
+            width: 1,
+          ),
+        );
+      case UIButtonVariant.outline:
+        return _UIButtonPalette(
+          backgroundColor: Colors.transparent,
+          foregroundColor: cs.onSurface,
+          disabledBackgroundColor: Colors.transparent,
+          disabledForegroundColor: cs.onSurfaceVariant,
+          overlayColor: cs.onSurface.withValues(alpha: 0.05),
+          borderSide: BorderSide(color: cs.outline, width: 1),
+        );
+      case UIButtonVariant.ghost:
+        return _UIButtonPalette(
+          backgroundColor: Colors.transparent,
+          foregroundColor: cs.onSurface,
+          disabledBackgroundColor: Colors.transparent,
+          disabledForegroundColor: cs.onSurfaceVariant,
+          overlayColor: cs.onSurface.withValues(alpha: 0.05),
+        );
+      case UIButtonVariant.destructive:
+        return _UIButtonPalette(
+          backgroundColor: cs.error,
+          foregroundColor: cs.onError,
+          disabledBackgroundColor: cs.surfaceContainerHigh,
+          disabledForegroundColor: cs.onSurfaceVariant,
+          overlayColor: cs.onError.withValues(alpha: 0.08),
+        );
+    }
+  }
+
+  ButtonStyle _buildStyle(_UIButtonPalette palette) {
+    return ButtonStyle(
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return palette.disabledBackgroundColor;
+        }
+        return palette.backgroundColor;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return palette.disabledForegroundColor;
+        }
+        return palette.foregroundColor;
+      }),
+      overlayColor: WidgetStatePropertyAll(palette.overlayColor),
+      side: palette.borderSide == null
+          ? null
+          : WidgetStatePropertyAll(palette.borderSide),
+      elevation: const WidgetStatePropertyAll(0),
+      shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      minimumSize: WidgetStatePropertyAll(Size(0, _getMinHeight())),
+      padding: WidgetStatePropertyAll(_getPadding()),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        ),
+      ),
+      textStyle: WidgetStatePropertyAll(
+        TextStyle(fontSize: _getFontSize(), fontWeight: FontWeight.w600),
+      ),
     );
   }
 
-  Widget _buildSecondaryButton() {
-    return Builder(
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return ElevatedButton(
-          onPressed: loading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: cs.surfaceVariant,
-            foregroundColor: cs.onSurfaceVariant,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            padding: _getPadding(),
-          ),
-          child: _buildButtonContent(),
-        );
-      },
-    );
-  }
-
-  Widget _buildOutlineButton() {
-    return Builder(
-      builder: (context) {
-        final theme = Theme.of(context);
-        return OutlinedButton(
-          onPressed: loading ? null : onPressed,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: theme.colorScheme.onSurface,
-            side: BorderSide(color: theme.colorScheme.outline, width: 1),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            padding: _getPadding(),
-          ),
-          child: _buildButtonContent(),
-        );
-      },
-    );
-  }
-
-  Widget _buildGhostButton() {
-    return Builder(
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return TextButton(
-          onPressed: loading ? null : onPressed,
-          style: TextButton.styleFrom(
-            foregroundColor: cs.onSurface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            padding: _getPadding(),
-          ),
-          child: _buildButtonContent(),
-        );
-      },
-    );
-  }
-
-  Widget _buildDestructiveButton() {
-    return Builder(
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return ElevatedButton(
-          onPressed: loading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: cs.error,
-            foregroundColor: cs.onError,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            padding: _getPadding(),
-          ),
-          child: _buildButtonContent(),
-        );
-      },
-    );
-  }
-
-  Widget _buildButtonContent() {
+  Widget _buildButtonContent(
+    BuildContext context, {
+    required Color foregroundColor,
+  }) {
     if (loading) {
       return SizedBox(
         height: _getIconSize(),
         width: _getIconSize(),
-        child: const CircularProgressIndicator(
+        child: CircularProgressIndicator(
           strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryForeground),
+          valueColor: AlwaysStoppedAnimation<Color>(foregroundColor),
         ),
       );
     }
+
+    final textWidget = Text(
+      text,
+      style: TextStyle(fontSize: _getFontSize(), fontWeight: FontWeight.w600),
+    );
 
     if (icon != null) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(height: _getIconSize(), width: _getIconSize(), child: icon),
+          IconTheme.merge(
+            data: IconThemeData(size: _getIconSize(), color: foregroundColor),
+            child: SizedBox(
+              height: _getIconSize(),
+              width: _getIconSize(),
+              child: Center(child: icon),
+            ),
+          ),
           const SizedBox(width: AppTheme.spacing2),
-          Text(text, style: TextStyle(fontSize: _getFontSize())),
+          textWidget,
         ],
       );
     }
 
-    return Text(text, style: TextStyle(fontSize: _getFontSize()));
+    return textWidget;
   }
 
   EdgeInsets _getPadding() {
@@ -863,6 +929,17 @@ class UIButton extends StatelessWidget {
         return 16.0;
       case UIButtonSize.large:
         return 18.0;
+    }
+  }
+
+  double _getMinHeight() {
+    switch (size) {
+      case UIButtonSize.small:
+        return 32.0;
+      case UIButtonSize.medium:
+        return 40.0;
+      case UIButtonSize.large:
+        return 48.0;
     }
   }
 }
@@ -956,6 +1033,224 @@ class UIProgress extends StatelessWidget {
   }
 }
 
+class UILoadingState extends StatelessWidget {
+  final String? label;
+  final EdgeInsetsGeometry padding;
+  final bool compact;
+
+  const UILoadingState({
+    super.key,
+    this.label,
+    this.padding = const EdgeInsets.all(AppTheme.spacing6),
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final double iconBoxSize = compact ? 44 : 52;
+    final double indicatorSize = compact ? 18 : 22;
+
+    return _UIStateLayout(
+      padding: padding,
+      icon: Container(
+        width: iconBoxSize,
+        height: iconBoxSize,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(
+            color: cs.outline.withValues(alpha: 0.75),
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: indicatorSize,
+          height: indicatorSize,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
+          ),
+        ),
+      ),
+      title: label,
+    );
+  }
+}
+
+class UIEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final EdgeInsetsGeometry padding;
+
+  const UIEmptyState({
+    super.key,
+    required this.title,
+    this.message,
+    this.icon = Icons.inbox_outlined,
+    this.actionLabel,
+    this.onAction,
+    this.padding = const EdgeInsets.all(AppTheme.spacing6),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return _UIStateLayout(
+      padding: padding,
+      icon: _buildStateIcon(
+        context,
+        icon: icon,
+        iconColor: cs.onSurfaceVariant,
+        backgroundColor: cs.surfaceContainerHigh,
+      ),
+      title: title,
+      message: message,
+      action: actionLabel != null && onAction != null
+          ? UIButton(
+              text: actionLabel!,
+              onPressed: onAction,
+              variant: UIButtonVariant.outline,
+              size: UIButtonSize.small,
+            )
+          : null,
+    );
+  }
+}
+
+class UIErrorState extends StatelessWidget {
+  final String title;
+  final String? message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final IconData icon;
+  final EdgeInsetsGeometry padding;
+
+  const UIErrorState({
+    super.key,
+    required this.title,
+    this.message,
+    this.actionLabel,
+    this.onAction,
+    this.icon = Icons.error_outline,
+    this.padding = const EdgeInsets.all(AppTheme.spacing6),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return _UIStateLayout(
+      padding: padding,
+      icon: _buildStateIcon(
+        context,
+        icon: icon,
+        iconColor: cs.onErrorContainer,
+        backgroundColor: cs.errorContainer,
+      ),
+      title: title,
+      message: message,
+      action: actionLabel != null && onAction != null
+          ? UIButton(
+              text: actionLabel!,
+              onPressed: onAction,
+              variant: UIButtonVariant.secondary,
+              size: UIButtonSize.small,
+            )
+          : null,
+    );
+  }
+}
+
+class _UIStateLayout extends StatelessWidget {
+  final Widget icon;
+  final String? title;
+  final String? message;
+  final Widget? action;
+  final EdgeInsetsGeometry padding;
+
+  const _UIStateLayout({
+    required this.icon,
+    this.title,
+    this.message,
+    this.action,
+    required this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Center(
+      child: Padding(
+        padding: padding,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              icon,
+              if (title != null) ...[
+                const SizedBox(height: AppTheme.spacing4),
+                Text(
+                  title!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              if (message != null) ...[
+                const SizedBox(height: AppTheme.spacing2),
+                Text(
+                  message!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              if (action != null) ...[
+                const SizedBox(height: AppTheme.spacing4),
+                action!,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildStateIcon(
+  BuildContext context, {
+  required IconData icon,
+  required Color iconColor,
+  required Color backgroundColor,
+}) {
+  final cs = Theme.of(context).colorScheme;
+
+  return Container(
+    width: 52,
+    height: 52,
+    decoration: BoxDecoration(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      border: Border.all(color: cs.outline.withValues(alpha: 0.7), width: 1),
+    ),
+    alignment: Alignment.center,
+    child: Icon(icon, size: 24, color: iconColor),
+  );
+}
+
 /// shadcn/ui风格的徽章组件
 class UIBadge extends StatelessWidget {
   final String text;
@@ -970,49 +1265,52 @@ class UIBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    Color backgroundColor;
-    Color textColor;
+    late final Color backgroundColor;
+    late final Color textColor;
+    BorderSide? borderSide;
 
     switch (variant) {
       case UIBadgeVariant.primary:
-        backgroundColor = cs.primary;
-        textColor = cs.onPrimary;
+        backgroundColor = cs.primaryContainer;
+        textColor = cs.onPrimaryContainer;
         break;
       case UIBadgeVariant.secondary:
-        backgroundColor = cs.secondaryContainer;
-        textColor = cs.onSecondaryContainer;
+        backgroundColor = cs.surfaceContainerHigh;
+        textColor = cs.onSurfaceVariant;
+        borderSide = BorderSide(
+          color: cs.outline.withValues(alpha: 0.72),
+          width: 1,
+        );
         break;
       case UIBadgeVariant.success:
-        backgroundColor = AppTheme.success;
-        textColor = AppTheme.successForeground;
+        backgroundColor = cs.tertiaryContainer;
+        textColor = cs.onTertiaryContainer;
         break;
       case UIBadgeVariant.destructive:
-        backgroundColor = cs.error;
-        textColor = cs.onError;
+        backgroundColor = cs.errorContainer;
+        textColor = cs.onErrorContainer;
         break;
       case UIBadgeVariant.outline:
         backgroundColor = Colors.transparent;
-        textColor = cs.onSurface;
+        textColor = cs.onSurfaceVariant;
+        borderSide = BorderSide(color: cs.outline, width: 1);
         break;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing2,
-        vertical: AppTheme.spacing1,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: variant == UIBadgeVariant.outline
-            ? Border.all(color: AppTheme.border, width: 1)
-            : null,
+        border: borderSide == null
+            ? null
+            : Border.all(color: borderSide.color, width: borderSide.width),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: AppTheme.fontSizeXs,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
           color: textColor,
         ),
       ),
@@ -1084,7 +1382,7 @@ class UISheetHandle extends StatelessWidget {
       width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: cs.onSurfaceVariant.withOpacity(0.4),
+        color: cs.onSurfaceVariant.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -1113,7 +1411,7 @@ class UIRectSwitch extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final Color trackColor = value ? cs.primary : cs.surface;
     final Color thumbColor = value ? cs.onPrimary : cs.onSurface;
-    final Color outline = cs.outline.withOpacity(0.8);
+    final Color outline = cs.outline.withValues(alpha: 0.8);
 
     // 内边距用于给滑块留出边界
     const double padding = 2.0;

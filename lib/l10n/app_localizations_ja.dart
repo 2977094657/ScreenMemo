@@ -1231,6 +1231,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get generateDailySummary => '今日のサマリーを生成';
 
   @override
+  String get dailySummaryGeneratingTitle => '今日の要約を生成しています';
+
+  @override
+  String get dailySummaryGeneratingHint => '読みやすいレイアウトを保ったまま、生成結果を順に反映します。';
+
+  @override
   String get statisticsTitle => '統計';
 
   @override
@@ -2241,7 +2247,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get displaySectionTitle => '表示';
 
   @override
-  String get displaySectionDesc => 'テーマ/プライバシー/NSFW';
+  String get displaySectionDesc => 'テーマモード/プライバシー/NSFW';
+
+  @override
+  String get themeModeTitle => 'テーマモード';
 
   @override
   String get streamRenderImagesTitle => 'ストリーミング中に画像を描画';

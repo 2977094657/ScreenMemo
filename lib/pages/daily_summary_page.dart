@@ -9,6 +9,7 @@ import '../services/daily_summary_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_components.dart';
 
 class DailySummaryPage extends StatefulWidget {
   final String dateKey; // YYYY-MM-DD
@@ -30,6 +31,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   StreamSubscription<AIStreamEvent>? _streamSub;
   bool _streaming = false;
   String _streamingText = '';
+  String? _error;
 
   @override
   void initState() {
@@ -48,10 +50,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
   Future<void> _load({bool initial = false}) async {
     bool startStreaming = false;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final Map<String, dynamic>? daily =
-          await _db.getDailySummary(widget.dateKey);
+      final Map<String, dynamic>? daily = await _db.getDailySummary(
+        widget.dateKey,
+      );
       Map<String, dynamic>? sj;
       if (daily != null) {
         final String raw = (daily['structured_json'] as String?) ?? '';
@@ -67,11 +73,16 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       setState(() {
         _daily = daily;
         _sj = sj;
+        _error = null;
       });
       startStreaming = initial && daily == null && !_streaming;
-    } finally {
+    } catch (e) {
       if (!mounted) return;
-      if (!startStreaming) {
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted && !startStreaming) {
         setState(() => _loading = false);
       }
     }
@@ -94,19 +105,20 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       _daily = null;
       _sj = null;
       _loading = false;
+      _error = null;
     });
 
     bool hadError = false;
     try {
-      final AIStreamingSession? session =
-          await _svc.streamGenerateForDate(widget.dateKey);
+      final AIStreamingSession? session = await _svc.streamGenerateForDate(
+        widget.dateKey,
+      );
       if (session == null) {
         await _load(initial: false);
         if (showSuccessSnack && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).generateSuccess),
-            ),
+          UINotifier.success(
+            context,
+            AppLocalizations.of(context).generateSuccess,
           );
         }
         return;
@@ -124,12 +136,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         onError: (Object error, StackTrace stackTrace) {
           hadError = true;
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                AppLocalizations.of(context).generateFailed,
-              ),
-            ),
+          UINotifier.error(
+            context,
+            AppLocalizations.of(context).generateFailed,
           );
         },
       );
@@ -139,20 +148,15 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
       await _load(initial: false);
       if (showSuccessSnack && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context).generateSuccess),
-          ),
+        UINotifier.success(
+          context,
+          AppLocalizations.of(context).generateSuccess,
         );
       }
     } catch (_) {
       if (!mounted) return;
       if (!hadError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context).generateFailed),
-          ),
-        );
+        UINotifier.error(context, AppLocalizations.of(context).generateFailed);
       }
     } finally {
       await _streamSub?.cancel();
@@ -170,7 +174,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   bool get _isToday {
     final now = DateTime.now();
     String two(int v) => v.toString().padLeft(2, '0');
-    final todayKey = '${now.year.toString().padLeft(4, '0')}-${two(now.month)}-${two(now.day)}';
+    final todayKey =
+        '${now.year.toString().padLeft(4, '0')}-${two(now.month)}-${two(now.day)}';
     return todayKey == widget.dateKey;
   }
 
@@ -188,16 +193,12 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         setState(() => _morningInsights = insights);
       }
       if (regenerate) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(insights != null ? '晨间提示已更新' : '晨间提示生成失败')),
-        );
+        UINotifier.info(context, insights != null ? '晨间提示已更新' : '晨间提示生成失败');
       }
     } catch (_) {
       if (!mounted) return;
       if (regenerate) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('晨间提示生成失败')),
-        );
+        UINotifier.error(context, '晨间提示生成失败');
       }
     } finally {
       if (mounted) setState(() => _morningLoading = false);
@@ -222,8 +223,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           vertical: AppTheme.spacing4,
         ),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.35),
+          color: theme.colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
         ),
         child: Row(
           children: [
@@ -249,8 +251,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
         padding: const EdgeInsets.all(AppTheme.spacing4),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.25),
+          color: theme.colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,10 +265,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
               ),
             ),
             const SizedBox(height: AppTheme.spacing2),
-            Text(
-              l10n.homeMorningTipsEmpty,
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text(l10n.homeMorningTipsEmpty, style: theme.textTheme.bodyMedium),
             const SizedBox(height: AppTheme.spacing3),
             Align(
               alignment: Alignment.centerLeft,
@@ -286,17 +286,17 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     final List<Widget> tipWidgets = <Widget>[];
     if (hasParsedTips) {
       for (int i = 0; i < tips.length; i++) {
-        tipWidgets.add(_buildMorningEntryItem(
-          theme: theme,
-          tip: tips[i],
-          index: i,
-        ));
+        tipWidgets.add(
+          _buildMorningEntryItem(theme: theme, tip: tips[i], index: i),
+        );
         if (i != tips.length - 1) {
           tipWidgets.add(const SizedBox(height: AppTheme.spacing3));
-          tipWidgets.add(Divider(
-            height: AppTheme.spacing4,
-            color: theme.dividerColor.withOpacity(0.4),
-          ));
+          tipWidgets.add(
+            Divider(
+              height: AppTheme.spacing4,
+              color: theme.dividerColor.withValues(alpha: 0.4),
+            ),
+          );
           tipWidgets.add(const SizedBox(height: AppTheme.spacing2));
         }
       }
@@ -306,18 +306,9 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
       padding: const EdgeInsets.all(AppTheme.spacing4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(
-          color: theme.dividerColor.withOpacity(0.4),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.shadowColor.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,26 +364,26 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             ...tipWidgets,
           ] else ...[
             const SizedBox(height: AppTheme.spacing2),
-            Text(
-              l10n.homeMorningTipsEmpty,
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text(l10n.homeMorningTipsEmpty, style: theme.textTheme.bodyMedium),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildMorningRawBlock({required ThemeData theme, required String raw}) {
+  Widget _buildMorningRawBlock({
+    required ThemeData theme,
+    required String raw,
+  }) {
     final cs = theme.colorScheme;
     final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppTheme.spacing3),
       decoration: BoxDecoration(
-        color: cs.surfaceVariant.withValues(alpha: 0.2),
+        color: cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(color: cs.surfaceVariant.withOpacity(0.4)),
+        border: Border.all(color: cs.outlineVariant, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,9 +402,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: raw));
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(l10n.articleCopySuccess)),
-                  );
+                  UINotifier.success(context, l10n.articleCopySuccess);
                 },
                 icon: const Icon(Icons.copy_outlined, size: 18),
                 label: Text(l10n.actionCopy),
@@ -552,7 +541,10 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       final isListStart = listStartRe.hasMatch(trimmed);
 
       // 确保在小节/标题/列表前有一个空行
-      if ((isHeading || isBoldSubtitle || isListStart) && !lastWasBlank && out.isNotEmpty && out.last.trim().isNotEmpty) {
+      if ((isHeading || isBoldSubtitle || isListStart) &&
+          !lastWasBlank &&
+          out.isNotEmpty &&
+          out.last.trim().isNotEmpty) {
         out.add('');
         lastWasBlank = true;
       }
@@ -592,12 +584,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   @override
   Widget build(BuildContext context) {
     final dateKey = widget.dateKey;
-    final title = AppLocalizations.of(context).dailySummaryTitle(dateKey);
+    final l10n = AppLocalizations.of(context);
+    final title = l10n.dailySummaryTitle(dateKey);
     final md = _fixMarkdownLayout(_extractDailySummaryText());
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 36,
+        toolbarHeight: 48,
         centerTitle: true,
         title: Text(title),
         actions: [
@@ -607,13 +601,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             onPressed: (_loading || _streaming)
                 ? null
                 : () async {
+                    final copySuccess = AppLocalizations.of(
+                      context,
+                    ).copySuccess;
                     final text = _extractDailySummaryText().trim();
                     if (text.isEmpty) return;
                     await Clipboard.setData(ClipboardData(text: text));
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(AppLocalizations.of(context).copySuccess)),
-                    );
+                    UINotifier.success(this.context, copySuccess);
                   },
           ),
           IconButton(
@@ -621,124 +616,91 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                 ? AppLocalizations.of(context).actionGenerate
                 : AppLocalizations.of(context).actionRegenerate,
             icon: (_loading || _streaming)
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.refresh_outlined),
-            onPressed: (_loading || _streaming) ? null : () => _generate(force: true),
+            onPressed: (_loading || _streaming)
+                ? null
+                : () => _generate(force: true),
           ),
         ],
       ),
       body: _streaming
           ? _buildStreamingView()
           : _loading
-              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-              : LayoutBuilder(
-              builder: (context, constraints) {
-                final double minHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
-                return SingleChildScrollView(
-                  padding: EdgeInsets.zero,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: minHeight),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.spacing4,
-                        vertical: AppTheme.spacing3,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_shouldRenderMorningInsights && _isToday)
-                            _buildMorningInsightsSection(),
-                          if (md.isEmpty)
-                            _buildEmptySummaryPlaceholder()
-                          else
-                            MarkdownBody(
-                              data: md,
-                              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                                p: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              onTapLink: (text, href, title) async {
-                                if (href == null) return;
-                                final uri = Uri.tryParse(href);
-                                if (uri != null) {
-                                  try {
-                                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                  } catch (_) {}
-                                }
-                              },
-                            ),
-                          const SizedBox(height: AppTheme.spacing4),
-                        ],
-                      ),
+          ? _buildReadingShell(
+              child: const UILoadingState(
+                compact: true,
+                padding: EdgeInsets.zero,
+              ),
+            )
+          : _error != null
+          ? _buildReadingShell(
+              child: UIErrorState(
+                title: l10n.operationFailed,
+                message: _error!,
+                actionLabel: l10n.actionRetry,
+                onAction: _load,
+                padding: EdgeInsets.zero,
+              ),
+            )
+          : _buildReadingShell(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_shouldRenderMorningInsights && _isToday)
+                    _buildMorningInsightsSection(),
+                  if (md.isEmpty)
+                    _buildEmptySummaryPlaceholder()
+                  else
+                    MarkdownBody(
+                      data: md,
+                      styleSheet: _summaryMarkdownStyle(theme),
+                      onTapLink: (text, href, title) async {
+                        if (href == null) return;
+                        final uri = Uri.tryParse(href);
+                        if (uri != null) {
+                          try {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          } catch (_) {}
+                        }
+                      },
                     ),
-                  ),
-                );
-              },
+                  const SizedBox(height: AppTheme.spacing4),
+                ],
+              ),
             ),
     );
   }
 
-  Widget _buildStreamingView() {
-    final theme = Theme.of(context);
-    final String normalized = _fixMarkdownLayout(_streamingText);
-    final bool hasContent = normalized.trim().isNotEmpty;
+  Widget _buildReadingShell({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
+      horizontal: AppTheme.spacing4,
+      vertical: AppTheme.spacing4,
+    ),
+  }) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double minHeight =
-            constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
+        final double minHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 0;
         return SingleChildScrollView(
           padding: EdgeInsets.zero,
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacing4,
-                vertical: AppTheme.spacing3,
-              ),
+              padding: padding,
               child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(height: AppTheme.spacing2),
-                    Text(
-                      '正在生成每日总结…',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppTheme.spacing3),
-                    if (hasContent)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 520),
-                        child: MarkdownBody(
-                          data: normalized,
-                          softLineBreak: true,
-                          styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                            p: theme.textTheme.bodyMedium,
-                          ),
-                          onTapLink: (text, href, title) async {
-                            if (href == null) return;
-                            final uri = Uri.tryParse(href);
-                            if (uri != null) {
-                              try {
-                                await launchUrl(
-                                  uri,
-                                  mode: LaunchMode.externalApplication,
-                                );
-                              } catch (_) {}
-                            }
-                          },
-                        ),
-                      )
-                    else
-                      Text(
-                        '模型正在思考，请稍候…',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                  ],
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: child,
                 ),
               ),
             ),
@@ -748,37 +710,178 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     );
   }
 
-  Widget _buildEmptySummaryPlaceholder() {
+  Widget _buildStreamingView() {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: AppTheme.spacing6),
+    final l10n = AppLocalizations.of(context);
+    final cs = theme.colorScheme;
+    final String normalized = _fixMarkdownLayout(_streamingText);
+    final bool hasContent = normalized.trim().isNotEmpty;
+    return _buildReadingShell(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3,
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.event_note_outlined,
-            size: 56,
-            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Text(AppLocalizations.of(context).noDailySummaryToday),
-          const SizedBox(height: AppTheme.spacing3),
-          SizedBox(
-            height: 36,
-            child: FilledButton.icon(
-              onPressed: () => _generate(force: true),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacing4),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              border: Border.all(color: cs.outlineVariant, width: 1),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-              ),
-              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-              label: Text(AppLocalizations.of(context).generateDailySummary),
+                const SizedBox(width: AppTheme.spacing3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.dailySummaryGeneratingTitle,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        l10n.dailySummaryGeneratingHint,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
+          if (hasContent) ...[
+            const SizedBox(height: AppTheme.spacing5),
+            MarkdownBody(
+              data: normalized,
+              softLineBreak: true,
+              styleSheet: _summaryMarkdownStyle(theme),
+              onTapLink: (text, href, title) async {
+                if (href == null) return;
+                final uri = Uri.tryParse(href);
+                if (uri != null) {
+                  try {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } catch (_) {}
+                }
+              },
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptySummaryPlaceholder() {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppTheme.spacing8),
+      child: UIEmptyState(
+        icon: Icons.event_note_outlined,
+        title: AppLocalizations.of(context).noDailySummaryToday,
+        actionLabel: AppLocalizations.of(context).generateDailySummary,
+        onAction: () => _generate(force: true),
+        padding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  MarkdownStyleSheet _summaryMarkdownStyle(ThemeData theme) {
+    final base = MarkdownStyleSheet.fromTheme(theme);
+    return base.copyWith(
+      a: theme.textTheme.bodyLarge?.copyWith(
+        color: theme.colorScheme.primary,
+        decoration: TextDecoration.underline,
+        decorationColor: theme.colorScheme.primary.withValues(alpha: 0.45),
+      ),
+      p: theme.textTheme.bodyLarge?.copyWith(
+        height: 1.7,
+        color: theme.colorScheme.onSurface,
+      ),
+      pPadding: const EdgeInsets.only(bottom: AppTheme.spacing4),
+      h1: theme.textTheme.headlineMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+      ),
+      h1Padding: const EdgeInsets.only(
+        top: AppTheme.spacing4,
+        bottom: AppTheme.spacing3,
+      ),
+      h2: theme.textTheme.titleLarge?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+      ),
+      h2Padding: const EdgeInsets.only(
+        top: AppTheme.spacing4,
+        bottom: AppTheme.spacing3,
+      ),
+      h3: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+      ),
+      h3Padding: const EdgeInsets.only(
+        top: AppTheme.spacing3,
+        bottom: AppTheme.spacing2,
+      ),
+      strong: theme.textTheme.bodyLarge?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+      ),
+      blockSpacing: AppTheme.spacing4,
+      listIndent: 24,
+      listBullet: theme.textTheme.bodyLarge?.copyWith(
+        color: theme.colorScheme.primary,
+      ),
+      listBulletPadding: const EdgeInsets.only(right: AppTheme.spacing2),
+      blockquote: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+        height: 1.6,
+      ),
+      blockquotePadding: const EdgeInsets.all(AppTheme.spacing4),
+      blockquoteDecoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border(
+          left: BorderSide(color: theme.colorScheme.outline, width: 2),
+          top: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+          right: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+          bottom: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+        ),
+      ),
+      code: theme.textTheme.bodySmall?.copyWith(
+        fontFamily: 'monospace',
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      codeblockPadding: const EdgeInsets.all(AppTheme.spacing4),
+      codeblockDecoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
+      ),
+      horizontalRuleDecoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
+        ),
+      ),
+      unorderedListAlign: WrapAlignment.start,
+      orderedListAlign: WrapAlignment.start,
+      blockquoteAlign: WrapAlignment.start,
+      codeblockAlign: WrapAlignment.start,
     );
   }
 }

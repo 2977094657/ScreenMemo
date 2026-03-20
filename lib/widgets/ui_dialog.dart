@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// iOS风格布局 + shadcn 扁平视觉的通用弹窗
-/// - 无阴影
-/// - 小圆角(6-8px)
-/// - 细边框或无边框
-/// - 动作按钮水平排列（<=2个），超过则纵向排列
 class UIDialogAction<T> {
   final String text;
   final UIDialogActionStyle style;
@@ -22,7 +17,6 @@ class UIDialogAction<T> {
   });
 }
 
-/// Small convenience wrappers for the common dialog patterns used across pages.
 class UIDialogs {
   static Future<void> showInfo(
     BuildContext context, {
@@ -65,7 +59,9 @@ class UIDialogs {
         ),
         UIDialogAction<bool>(
           text: confirmText,
-          style: destructive ? UIDialogActionStyle.destructive : UIDialogActionStyle.primary,
+          style: destructive
+              ? UIDialogActionStyle.destructive
+              : UIDialogActionStyle.primary,
           result: true,
         ),
       ],
@@ -86,70 +82,73 @@ Future<T?> showUIDialog<T>({
   bool barrierDismissible = true,
 }) {
   final theme = Theme.of(context);
-  final surface = theme.colorScheme.surface;
-  final onSurface = theme.colorScheme.onSurface;
-  final borderColor = theme.colorScheme.outline;
+  final cs = theme.colorScheme;
+  final bool isDark = theme.brightness == Brightness.dark;
+  final Color surface = theme.dialogTheme.backgroundColor ?? cs.surface;
+  final Color borderColor = cs.outlineVariant.withValues(
+    alpha: isDark ? 0.95 : 1.0,
+  );
 
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
     barrierLabel: 'Dialog',
-    barrierColor: Colors.black.withOpacity(0.5),
+    barrierColor: cs.scrim.withValues(alpha: isDark ? 0.62 : 0.48),
     pageBuilder: (ctx, _, __) {
       return SafeArea(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing8),
+            padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 300,
-                minWidth: 240,
-              ),
+              constraints: const BoxConstraints(maxWidth: 360, minWidth: 280),
               child: Material(
                 type: MaterialType.transparency,
                 child: Container(
                   decoration: BoxDecoration(
                     color: surface,
                     borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-                    
+                    border: Border.all(color: borderColor, width: 1),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                    if (title != null || titleWidget != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTheme.spacing6,
-                          AppTheme.spacing6,
-                          AppTheme.spacing6,
-                          AppTheme.spacing2,
-                        ),
-                        child: DefaultTextStyle(
-                          style: theme.textTheme.titleLarge!.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: onSurface,
+                      if (title != null || titleWidget != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.spacing6,
+                            AppTheme.spacing6,
+                            AppTheme.spacing6,
+                            AppTheme.spacing2,
                           ),
-                          child: Center(
-                            child: titleWidget ?? Text(title!),
+                          child: DefaultTextStyle(
+                            style: theme.textTheme.titleLarge!.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface,
+                            ),
+                            child: Center(child: titleWidget ?? Text(title!)),
                           ),
                         ),
-                      ),
-                    if (message != null || content != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTheme.spacing6,
-                          AppTheme.spacing2,
-                          AppTheme.spacing6,
-                          AppTheme.spacing4,
+                      if (message != null || content != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppTheme.spacing6,
+                            AppTheme.spacing2,
+                            AppTheme.spacing6,
+                            AppTheme.spacing5,
+                          ),
+                          child: DefaultTextStyle(
+                            style: theme.textTheme.bodyMedium!.copyWith(
+                              color: cs.onSurfaceVariant,
+                              height: 1.45,
+                            ),
+                            child: message != null
+                                ? Text(message, textAlign: TextAlign.center)
+                                : content!,
+                          ),
                         ),
-                        child: DefaultTextStyle(
-                          style: theme.textTheme.bodyMedium!.copyWith(color: onSurface),
-                          child: message != null ? Text(message, textAlign: TextAlign.center) : content!,
-                        ),
-                      ),
-                    _buildActionsSection(context, actions),
+                      _buildActionsSection(context, actions),
                     ],
                   ),
                 ),
@@ -164,42 +163,51 @@ Future<T?> showUIDialog<T>({
       return FadeTransition(
         opacity: curved,
         child: ScaleTransition(
-          scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
+          scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
           child: child,
         ),
       );
     },
-    transitionDuration: const Duration(milliseconds: 160),
+    transitionDuration: const Duration(milliseconds: 170),
   );
 }
 
-Widget _buildActionsSection<T>(BuildContext context, List<UIDialogAction<T>> actions) {
+Widget _buildActionsSection<T>(
+  BuildContext context,
+  List<UIDialogAction<T>> actions,
+) {
   final theme = Theme.of(context);
-  final divider = theme.colorScheme.outline.withOpacity(0.6);
-  final onSurface = theme.colorScheme.onSurface;
+  final cs = theme.colorScheme;
+  final divider = cs.outlineVariant.withValues(alpha: 0.9);
 
-  Color _resolveColor(UIDialogActionStyle style) {
+  Color resolveColor(UIDialogActionStyle style) {
     switch (style) {
       case UIDialogActionStyle.destructive:
-        return AppTheme.destructive;
+        return cs.error;
       case UIDialogActionStyle.primary:
-        // 不使用主题主色，改为固定强调色（使用 onSurface 更稳妥，避免主题色影响）
-        return theme.colorScheme.onSurface;
+        return cs.primary;
       case UIDialogActionStyle.normal:
-      default:
-        return onSurface;
+        return cs.onSurfaceVariant;
     }
   }
 
-  Future<void> _handleTap(UIDialogAction<T> action) async {
+  FontWeight resolveWeight(UIDialogActionStyle style) {
+    switch (style) {
+      case UIDialogActionStyle.normal:
+        return FontWeight.w500;
+      case UIDialogActionStyle.primary:
+      case UIDialogActionStyle.destructive:
+        return FontWeight.w600;
+    }
+  }
+
+  Future<void> handleTap(UIDialogAction<T> action) async {
+    final navigator = Navigator.of(context);
     if (action.onPressed != null) {
       await action.onPressed!(context);
     }
-    if (action.closeOnPress) {
-      // 只有在未自行关闭时才尝试关闭
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop<T>(action.result);
-      }
+    if (action.closeOnPress && navigator.canPop()) {
+      navigator.pop<T>(action.result);
     }
   }
 
@@ -207,34 +215,36 @@ Widget _buildActionsSection<T>(BuildContext context, List<UIDialogAction<T>> act
     return const SizedBox.shrink();
   }
 
+  ButtonStyle actionStyle(UIDialogAction<T> action) {
+    final foreground = resolveColor(action.style);
+    return TextButton.styleFrom(
+      foregroundColor: foreground,
+      overlayColor: foreground.withValues(alpha: 0.08),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+      textStyle: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: resolveWeight(action.style),
+      ),
+    );
+  }
+
   if (actions.length <= 2) {
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: divider, width: 1)),
       ),
       child: Row(
         children: [
           for (int i = 0; i < actions.length; i++) ...[
-            if (i > 0)
-              Container(
-                width: 1,
-                height: 44,
-                color: divider,
-              ),
+            if (i > 0) Container(width: 1, height: 48, color: divider),
             Expanded(
               child: SizedBox(
-                height: 44,
+                height: 48,
                 child: TextButton(
-                  onPressed: () => _handleTap(actions[i]),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _resolveColor(actions[i].style),
-                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                    padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-                  ),
-                  child: Text(
-                    actions[i].text,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                  onPressed: () => handleTap(actions[i]),
+                  style: actionStyle(actions[i]),
+                  child: Text(actions[i].text),
                 ),
               ),
             ),
@@ -244,42 +254,21 @@ Widget _buildActionsSection<T>(BuildContext context, List<UIDialogAction<T>> act
     );
   }
 
-  // 超过2个时纵向排列
   return Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       for (int i = 0; i < actions.length; i++) ...[
-        if (i == 0)
-          Container(
-            height: 1,
-            color: divider,
-          )
-        else
-          Container(
-            height: 1,
-            margin: const EdgeInsets.only(left: 0),
-            color: divider,
-          ),
+        Container(height: 1, color: divider),
         SizedBox(
-          height: 44,
+          height: 48,
           child: TextButton(
-            onPressed: () => _handleTap(actions[i]),
-            style: TextButton.styleFrom(
-              foregroundColor: _resolveColor(actions[i].style),
-              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
-            ),
-            child: Text(
-              actions[i].text,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+            onPressed: () => handleTap(actions[i]),
+            style: actionStyle(actions[i]),
+            child: Text(actions[i].text),
           ),
         ),
       ],
     ],
   );
 }
-
-

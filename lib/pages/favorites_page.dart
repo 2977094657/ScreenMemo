@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart' as path;
@@ -12,10 +11,8 @@ import '../services/screenshot_service.dart';
 import '../services/path_service.dart';
 import '../services/app_selection_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/ui_dialog.dart';
 import '../widgets/ui_components.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/screenshot_item_widget.dart';
 import '../widgets/screenshot_image_widget.dart';
 
 /// 收藏页面
@@ -71,15 +68,17 @@ class _FavoritesPageState extends State<FavoritesPage>
     try {
       final enabled = await AppSelectionService.instance
           .getPrivacyModeEnabled();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _privacyMode = enabled;
         });
+      }
     } catch (_) {}
   }
 
   Future<void> _loadData() async {
     try {
+      final cannotGetAppDir = AppLocalizations.of(context).cannotGetAppDir;
       setState(() {
         _isLoading = true;
         _error = null;
@@ -88,7 +87,7 @@ class _FavoritesPageState extends State<FavoritesPage>
       // 获取基础目录
       final dir = await PathService.getInternalAppDir(null);
       if (dir == null) {
-        throw Exception(AppLocalizations.of(context).cannotGetAppDir);
+        throw Exception(cannotGetAppDir);
       }
 
       _baseDir = dir;
@@ -161,36 +160,11 @@ class _FavoritesPageState extends State<FavoritesPage>
       });
     } catch (e) {
       setState(() {
-        _error =
-            '${AppLocalizations.of(context).loadMoreFailedWithError(e.toString())}';
+        _error = AppLocalizations.of(
+          context,
+        ).loadMoreFailedWithError(e.toString());
         _isLoading = false;
       });
-    }
-  }
-
-  /// 根据全局ID和包名获取截图记录
-  Future<ScreenshotRecord?> _getScreenshotById(
-    int gid,
-    String packageName,
-  ) async {
-    try {
-      // 使用现有的getScreenshotsByApp方法，然后过滤出匹配的ID
-      final screenshots = await ScreenshotDatabase.instance.getScreenshotsByApp(
-        packageName,
-        limit: 500, // 获取足够多的记录以找到目标截图
-        offset: 0,
-      );
-
-      for (final s in screenshots) {
-        if (s.id == gid) {
-          return s;
-        }
-      }
-
-      return null;
-    } catch (e) {
-      print('通过ID获取截图失败: $e');
-      return null;
     }
   }
 
@@ -200,14 +174,11 @@ class _FavoritesPageState extends State<FavoritesPage>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        toolbarHeight: 36,
+        toolbarHeight: 48,
         centerTitle: true,
         automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(
-            '${AppLocalizations.of(context).favoritePageTitle} (${_favorites.length})',
-          ),
+        title: Text(
+          '${AppLocalizations.of(context).favoritePageTitle} (${_favorites.length})',
         ),
         actions: [
           IconButton(
@@ -223,66 +194,23 @@ class _FavoritesPageState extends State<FavoritesPage>
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const UILoadingState(compact: true);
     }
 
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: AppTheme.destructive,
-            ),
-            const SizedBox(height: AppTheme.spacing4),
-            Text(_error!, style: const TextStyle(color: AppTheme.destructive)),
-            const SizedBox(height: AppTheme.spacing4),
-            UIButton(
-              text: AppLocalizations.of(context).actionRetry,
-              onPressed: _loadData,
-              variant: UIButtonVariant.outline,
-            ),
-          ],
-        ),
+      return UIErrorState(
+        title: AppLocalizations.of(context).operationFailed,
+        message: _error!,
+        actionLabel: AppLocalizations.of(context).actionRetry,
+        onAction: _loadData,
       );
     }
 
     if (_favorites.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.favorite_outline,
-                size: 64,
-                color: AppTheme.mutedForeground.withOpacity(0.5),
-              ),
-              const SizedBox(height: AppTheme.spacing4),
-              Text(
-                AppLocalizations.of(context).noFavoritesTitle,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.mutedForeground,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppTheme.spacing2),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 300),
-                child: Text(
-                  AppLocalizations.of(context).noFavoritesSubtitle,
-                  style: const TextStyle(color: AppTheme.mutedForeground),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
+      return UIEmptyState(
+        icon: Icons.favorite_outline,
+        title: AppLocalizations.of(context).noFavoritesTitle,
+        message: AppLocalizations.of(context).noFavoritesSubtitle,
       );
     }
 
@@ -321,62 +249,6 @@ class _FavoritesPageState extends State<FavoritesPage>
         },
       ),
     );
-  }
-
-  Widget _buildErrorItem(String message) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.muted,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              color: AppTheme.destructive,
-              size: 32,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              message,
-              style: const TextStyle(color: AppTheme.destructive, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 紧凑格式时间显示
-  String _formatCompactTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final diff = now.difference(dateTime);
-
-    if (diff.inMinutes < 1) {
-      return AppLocalizations.of(context).justNow;
-    } else if (diff.inHours < 1) {
-      return AppLocalizations.of(context).minutesAgo(diff.inMinutes.toString());
-    } else if (diff.inHours < 24) {
-      return AppLocalizations.of(context).hoursAgo(diff.inHours.toString());
-    } else if (diff.inDays < 7) {
-      return AppLocalizations.of(context).daysAgo(diff.inDays.toString());
-    } else {
-      final hh = dateTime.hour.toString().padLeft(2, '0');
-      final mm = dateTime.minute.toString().padLeft(2, '0');
-      return '${dateTime.month}/${dateTime.day} $hh:$mm';
-    }
-  }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) {
-      return '${bytes}B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    } else {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-    }
   }
 }
 
@@ -527,226 +399,262 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final file = path.isAbsolute(widget.item.screenshot.filePath)
         ? File(widget.item.screenshot.filePath)
         : File(path.join(widget.baseDir.path, widget.item.screenshot.filePath));
+    final bool compactLayout = MediaQuery.of(context).size.width < 720;
+    final Color overlayForeground = const Color(0xFFF6EEDF);
+    final Color overlaySurface = theme.brightness == Brightness.dark
+        ? const Color(0xA8141413)
+        : const Color(0xB8191816);
+    final Color overlayBorder = AppTheme.border.withValues(alpha: 0.28);
 
-    // 计算图片尺寸（与截图列表保持一致）
     final screenWidth = MediaQuery.of(context).size.width;
     final gridPadding = AppTheme.spacing1 * 2;
     final crossAxisSpacing = AppTheme.spacing1;
     final columnWidth = (screenWidth - gridPadding - crossAxisSpacing) / 2;
     final columnHeight = columnWidth / 0.45;
-    final imageWidth = columnWidth;
-    final imageHeight = columnHeight;
+    final imageWidth = compactLayout ? screenWidth : columnWidth;
+    final imageHeight = compactLayout ? screenWidth * 0.62 : columnHeight;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.3),
-          width: 1,
+    Widget buildImageSection(BorderRadius borderRadius) {
+      return SizedBox(
+        width: compactLayout ? double.infinity : imageWidth,
+        height: imageHeight,
+        child: Stack(
+          children: [
+            ScreenshotImageWidget(
+              file: file,
+              privacyMode: widget.privacyMode,
+              screenshot: widget.item.screenshot,
+              width: compactLayout ? screenWidth : imageWidth,
+              height: imageHeight,
+              fit: BoxFit.cover,
+              borderRadius: borderRadius,
+              onTap: _viewScreenshot,
+              errorText: 'Image Error',
+              showTimelineJumpButton: true,
+            ),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: GestureDetector(
+                onTap: _removeFavoriteDirectly,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: overlaySurface,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(color: overlayBorder, width: 1),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.favorite_rounded,
+                    color: overlayForeground,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing2,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: overlaySurface,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  border: Border.all(color: overlayBorder, width: 1),
+                ),
+                child: Text(
+                  _formatCompactTime(widget.item.favorite.favoriteTime),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: overlayForeground,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      );
+    }
+
+    Widget buildAppMeta() {
+      return Wrap(
+        spacing: AppTheme.spacing2,
+        runSpacing: AppTheme.spacing1,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          // 左侧：图片（使用统一的图片组件）
-          SizedBox(
-            width: imageWidth,
-            height: imageHeight,
-            child: Stack(
+          if (widget.item.appInfo?.icon != null)
+            Image.memory(
+              widget.item.appInfo!.icon!,
+              width: 16,
+              height: 16,
+              fit: BoxFit.contain,
+            )
+          else
+            const Icon(
+              Icons.android,
+              size: 16,
+              color: AppTheme.mutedForeground,
+            ),
+          Text(
+            _formatFileSize(widget.item.screenshot.fileSize),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.78),
+            ),
+          ),
+          Text(
+            _formatCompactTime(widget.item.screenshot.captureTime),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.78),
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget buildNoteSection() {
+      final Widget noteField = Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTheme.spacing3,
+          vertical: AppTheme.spacing3,
+        ),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(color: cs.outlineVariant, width: 1),
+        ),
+        child: TextField(
+          controller: _noteController,
+          focusNode: _noteFocusNode,
+          minLines: compactLayout ? 6 : null,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          decoration: InputDecoration(
+            hintText: AppLocalizations.of(context).clickToAddNote,
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              fontSize: 14,
+              height: 1.55,
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: EdgeInsets.zero,
+          ),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontSize: 14,
+            color: cs.onSurface,
+            height: 1.6,
+          ),
+        ),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(AppTheme.spacing4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                ScreenshotImageWidget(
-                  file: file,
-                  privacyMode: widget.privacyMode,
-                  screenshot: widget.item.screenshot,
-                  width: imageWidth,
-                  height: imageHeight,
-                  fit: BoxFit.cover,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(AppTheme.radiusMd),
-                    bottomLeft: Radius.circular(AppTheme.radiusMd),
+                Text(
+                  AppLocalizations.of(context).noteLabel,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
-                  onTap: _viewScreenshot,
-                  errorText: 'Image Error',
-                  showTimelineJumpButton: true,
                 ),
-                // 收藏图标（左上角，点击直接取消收藏）
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: GestureDetector(
-                    onTap: _removeFavoriteDirectly,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                      ),
-                      child: const Icon(
-                        Icons.favorite,
-                        color: Colors.red,
+                const SizedBox(width: AppTheme.spacing2),
+                Expanded(
+                  child: Text(
+                    widget.item.favorite.note != null &&
+                            widget.item.favorite.note!.isNotEmpty
+                        ? '${AppLocalizations.of(context).updatedAt}${_formatCompactTime(widget.item.updatedAt)}'
+                        : '',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.82),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Material(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  child: InkWell(
+                    onTap: _saveNote,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Icon(
+                        Icons.save_outlined,
                         size: 18,
-                      ),
-                    ),
-                  ),
-                ),
-                // 收藏时间（右上角）
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    ),
-                    child: Text(
-                      _formatCompactTime(widget.item.favorite.favoriteTime),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-          // 右侧：备注区域（高度跟随图片）
-          Expanded(
-            child: Container(
-              height: imageHeight,
-              padding: const EdgeInsets.all(AppTheme.spacing3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 备注标题、更新时间和保存按钮
-                  Row(
-                    children: [
-                      Text(
-                        AppLocalizations.of(context).noteLabel,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTheme.mutedForeground,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.spacing2),
-                      Expanded(
-                        child: Text(
-                          widget.item.favorite.note != null &&
-                                  widget.item.favorite.note!.isNotEmpty
-                              ? '${AppLocalizations.of(context).updatedAt}${_formatCompactTime(widget.item.updatedAt)}'
-                              : '',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                fontSize: 10,
-                                color: AppTheme.mutedForeground.withOpacity(
-                                  0.7,
-                                ),
-                              ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // 保存按钮
-                      InkWell(
-                        onTap: _saveNote,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.save_outlined,
-                            size: 18,
-                            color: AppTheme.mutedForeground.withOpacity(0.8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppTheme.spacing1),
-                  // 备注输入框（无边框，点击即可编辑，不限制文字数量）
-                  Expanded(
-                    child: TextField(
-                      controller: _noteController,
-                      focusNode: _noteFocusNode,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context).clickToAddNote,
-                        hintStyle: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.color?.withOpacity(0.5),
-                          fontSize: 13,
-                        ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(fontSize: 13),
-                      maxLines: null,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                    ),
-                  ),
-                  const SizedBox(height: AppTheme.spacing1),
-                  // 底部信息：应用图标、文件大小、截图时间
-                  Row(
-                    children: [
-                      // 应用图标
-                      if (widget.item.appInfo?.icon != null)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Image.memory(
-                            widget.item.appInfo!.icon!,
-                            width: 16,
-                            height: 16,
-                            fit: BoxFit.contain,
-                          ),
-                        )
-                      else
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: Icon(
-                            Icons.android,
-                            size: 16,
-                            color: AppTheme.mutedForeground,
-                          ),
-                        ),
-                      // 文件大小
-                      Text(
-                        _formatFileSize(widget.item.screenshot.fileSize),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: AppTheme.mutedForeground.withOpacity(0.7),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 截图时间
-                      Text(
-                        _formatCompactTime(widget.item.screenshot.captureTime),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: AppTheme.mutedForeground.withOpacity(0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+            const SizedBox(height: AppTheme.spacing3),
+            if (compactLayout) noteField else Expanded(child: noteField),
+            const SizedBox(height: AppTheme.spacing3),
+            buildAppMeta(),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        border: Border.all(color: cs.outlineVariant, width: 1),
       ),
+      child: compactLayout
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                buildImageSection(
+                  const BorderRadius.only(
+                    topLeft: Radius.circular(AppTheme.radiusLg),
+                    topRight: Radius.circular(AppTheme.radiusLg),
+                  ),
+                ),
+                buildNoteSection(),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                buildImageSection(
+                  const BorderRadius.only(
+                    topLeft: Radius.circular(AppTheme.radiusLg),
+                    bottomLeft: Radius.circular(AppTheme.radiusLg),
+                  ),
+                ),
+                Expanded(
+                  child: SizedBox(
+                    height: imageHeight,
+                    child: buildNoteSection(),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 

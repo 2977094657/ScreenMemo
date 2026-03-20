@@ -2280,6 +2280,18 @@ abstract class AppLocalizations {
   /// **'Generate today\'s summary'**
   String get generateDailySummary;
 
+  /// No description provided for @dailySummaryGeneratingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating today\'s summary'**
+  String get dailySummaryGeneratingTitle;
+
+  /// No description provided for @dailySummaryGeneratingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The page stays in reading mode while the summary stream arrives.'**
+  String get dailySummaryGeneratingHint;
+
   /// No description provided for @statisticsTitle.
   ///
   /// In en, this message translates to:
@@ -4095,8 +4107,14 @@ abstract class AppLocalizations {
   /// No description provided for @displaySectionDesc.
   ///
   /// In en, this message translates to:
-  /// **'Theme, privacy mode, NSFW'**
+  /// **'Theme mode, privacy mode, NSFW'**
   String get displaySectionDesc;
+
+  /// No description provided for @themeModeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme mode'**
+  String get themeModeTitle;
 
   /// No description provided for @streamRenderImagesTitle.
   ///

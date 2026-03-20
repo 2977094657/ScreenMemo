@@ -309,7 +309,10 @@ class _SearchPageState extends State<SearchPage>
       data = text.replaceAllMapped(reg, (m) => '<mark>${m[0]}</mark>');
     }
 
-    final Color highlightColor = Colors.orangeAccent.withOpacity(0.28);
+    final theme = Theme.of(context);
+    final Color highlightColor = theme.colorScheme.primary.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.24 : 0.18,
+    );
 
     return MarkdownBody(
       data: data,
@@ -2043,7 +2046,9 @@ class _SearchPageState extends State<SearchPage>
             child: ScreenshotStyleTabBar(
               controller: _tabController,
               isScrollable: false,
-              padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+              ),
               tabs: [
                 Tab(
                   text: '截图 (${_countingTotal ? '...' : _totalResultsCount})',
@@ -4620,11 +4625,11 @@ class _OcrBoxesPainter extends CustomPainter {
 
     final Paint stroke = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.amberAccent.withOpacity(0.95)
+      ..color = AppTheme.warning.withValues(alpha: 0.92)
       ..strokeWidth = 2.0;
     final Paint fill = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.amberAccent.withOpacity(0.18);
+      ..color = AppTheme.warning.withValues(alpha: 0.18);
 
     for (final r in boxes) {
       final Rect mapped = Rect.fromLTRB(

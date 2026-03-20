@@ -34,6 +34,7 @@ class ScreenshotItemWidget extends StatelessWidget {
   static final Map<String, int> _lazyFileSizeCache = <String, int>{};
   static final Map<String, Future<int>> _lazyFileSizeFutures =
       <String, Future<int>>{};
+
   /// 截图记录
   final ScreenshotRecord screenshot;
 
@@ -147,7 +148,8 @@ class ScreenshotItemWidget extends StatelessWidget {
     layers.add(
       _buildBottomOverlay(
         context,
-        showAiMetaBadge: hasAiMeta &&
+        showAiMetaBadge:
+            hasAiMeta &&
             aiMetaBadgePlacement == AiMetaBadgePlacement.bottomOverlay,
       ),
     );
@@ -235,7 +237,7 @@ class ScreenshotItemWidget extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
+              colors: [const Color(0xD9141413), Colors.transparent],
             ),
             borderRadius: const BorderRadius.vertical(
               top: Radius.circular(AppTheme.radiusSm),
@@ -244,13 +246,7 @@ class ScreenshotItemWidget extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(
-                Icons.link,
-                size: 14,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Theme.of(context).textTheme.bodySmall?.color
-                    : Colors.white,
-              ),
+              Icon(Icons.link, size: 14, color: const Color(0xFFF6F1E8)),
               const SizedBox(width: AppTheme.spacing1),
               Expanded(
                 child: Text(
@@ -259,9 +255,7 @@ class ScreenshotItemWidget extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 11,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Theme.of(context).textTheme.bodySmall?.color
-                        : Colors.white,
+                    color: const Color(0xFFF6F1E8),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -290,9 +284,7 @@ class ScreenshotItemWidget extends StatelessWidget {
     File file, {
     required bool showAiMetaBadge,
   }) {
-    final Color? textColor = Theme.of(context).brightness == Brightness.dark
-        ? Theme.of(context).textTheme.bodySmall?.color
-        : Colors.white;
+    final Color textColor = const Color(0xFFF6F1E8);
     final TextStyle infoStyle = TextStyle(
       fontSize: 11,
       color: textColor,
@@ -312,23 +304,23 @@ class ScreenshotItemWidget extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+            colors: [Colors.transparent, const Color(0xD9141413)],
           ),
           borderRadius: const BorderRadius.vertical(
             bottom: Radius.circular(AppTheme.radiusSm),
           ),
         ),
-          child: Row(
-            children: [
-              // 应用图标
-              _buildAppIcon(context),
-              _buildFileSizeInfo(file, infoStyle),
-              if (showAiMetaBadge) ...[
-                const SizedBox(width: 6),
-                _buildAiMetaBadge(context),
-              ],
-              const Spacer(),
-              // 时间
+        child: Row(
+          children: [
+            // 应用图标
+            _buildAppIcon(context),
+            _buildFileSizeInfo(file, infoStyle),
+            if (showAiMetaBadge) ...[
+              const SizedBox(width: 6),
+              _buildAiMetaBadge(context),
+            ],
+            const Spacer(),
+            // 时间
             Text(_formatTime(screenshot.captureTime), style: infoStyle),
           ],
         ),
@@ -337,11 +329,7 @@ class ScreenshotItemWidget extends StatelessWidget {
   }
 
   Widget _buildTopRightAiMetaBadge(BuildContext context) {
-    return Positioned(
-      top: 6,
-      right: 6,
-      child: _buildAiMetaBadge(context),
-    );
+    return Positioned(top: 6, right: 6, child: _buildAiMetaBadge(context));
   }
 
   Widget _buildFileSizeInfo(File file, TextStyle style) {
@@ -420,23 +408,23 @@ class ScreenshotItemWidget extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
+          color: const Color(0xB8141413),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.22),
+            color: AppTheme.primary.withValues(alpha: 0.28),
             width: 1,
           ),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_awesome, size: 12, color: Colors.white),
+            Icon(Icons.auto_awesome, size: 12, color: Color(0xFFF6F1E8)),
             SizedBox(width: 4),
             Text(
               'AI',
               style: TextStyle(
                 fontSize: 10,
-                color: Colors.white,
+                color: Color(0xFFF6F1E8),
                 height: 1.0,
                 fontWeight: FontWeight.w800,
               ),
@@ -470,7 +458,7 @@ class ScreenshotItemWidget extends StatelessWidget {
       width: 18,
       height: 18,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: const Color(0xFFF0EDE6),
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
@@ -479,7 +467,7 @@ class ScreenshotItemWidget extends StatelessWidget {
         style: const TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
-          color: Colors.black,
+          color: Color(0xFF141413),
         ),
       ),
     );
@@ -494,16 +482,20 @@ class ScreenshotItemWidget extends StatelessWidget {
         width: 24,
         height: 24,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.black : Colors.grey.shade200,
+          color: isSelected
+              ? const Color(0xFF141413)
+              : Theme.of(context).colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: isSelected ? Colors.black : Colors.white,
+            color: isSelected
+                ? AppTheme.primary.withValues(alpha: 0.7)
+                : Theme.of(context).colorScheme.outline,
             width: 2,
           ),
         ),
         alignment: Alignment.center,
         child: isSelected
-            ? const Icon(Icons.check, size: 16, color: Colors.white)
+            ? const Icon(Icons.check, size: 16, color: Color(0xFFF6F1E8))
             : null,
       ),
     );
@@ -520,14 +512,18 @@ class ScreenshotItemWidget extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
+            color: const Color(0xA8141413),
             borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            border: Border.all(
+              color: AppTheme.border.withValues(alpha: 0.28),
+              width: 1,
+            ),
           ),
           alignment: Alignment.center,
           child: Icon(
             isFavorited ? Icons.favorite : Icons.favorite_border,
             size: 18,
-            color: isFavorited ? Colors.red : Colors.white,
+            color: isFavorited ? AppTheme.destructive : const Color(0xFFF6F1E8),
           ),
         ),
       ),
@@ -545,14 +541,18 @@ class ScreenshotItemWidget extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
+            color: const Color(0xA8141413),
             borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            border: Border.all(
+              color: AppTheme.border.withValues(alpha: 0.28),
+              width: 1,
+            ),
           ),
           alignment: Alignment.center,
           child: Icon(
             isNsfwFlagged ? Icons.visibility_off : Icons.visibility,
             size: 18,
-            color: isNsfwFlagged ? Colors.amber : Colors.white,
+            color: isNsfwFlagged ? AppTheme.warning : const Color(0xFFF6F1E8),
           ),
         ),
       ),

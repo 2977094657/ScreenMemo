@@ -168,11 +168,8 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
     StartupProfiler.mark('ScreenMemoAppState.build');
     return MaterialApp(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
-      theme: AppTheme.lightThemeFor(
-        _themeService.seedColor,
-        pageBackground: _themeService.lightPageBackgroundColor,
-      ),
-      darkTheme: AppTheme.darkThemeFor(_themeService.seedColor),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       themeMode: _themeService.themeMode,
       locale: _localeService.locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,

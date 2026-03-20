@@ -1267,6 +1267,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get generateDailySummary => 'Generate today\'s summary';
 
   @override
+  String get dailySummaryGeneratingTitle => 'Generating today\'s summary';
+
+  @override
+  String get dailySummaryGeneratingHint =>
+      'The page stays in reading mode while the summary stream arrives.';
+
+  @override
   String get statisticsTitle => 'Statistics';
 
   @override
@@ -2297,7 +2304,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get displaySectionTitle => 'Display';
 
   @override
-  String get displaySectionDesc => 'Theme, privacy mode, NSFW';
+  String get displaySectionDesc => 'Theme mode, privacy mode, NSFW';
+
+  @override
+  String get themeModeTitle => 'Theme mode';
 
   @override
   String get streamRenderImagesTitle => 'Render images during streaming';

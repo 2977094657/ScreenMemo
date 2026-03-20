@@ -1216,6 +1216,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get generateDailySummary => '生成今日总结';
 
   @override
+  String get dailySummaryGeneratingTitle => '正在生成今日总结';
+
+  @override
+  String get dailySummaryGeneratingHint => '内容会保持阅读页排版，并随着生成结果逐步补全。';
+
+  @override
   String get statisticsTitle => '统计';
 
   @override
@@ -2221,7 +2227,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get displaySectionTitle => '显示';
 
   @override
-  String get displaySectionDesc => '主题颜色/隐私模式/NSFW';
+  String get displaySectionDesc => '主题模式/隐私模式/NSFW';
+
+  @override
+  String get themeModeTitle => '主题模式';
 
   @override
   String get streamRenderImagesTitle => '流式期间实时渲染图片';
