@@ -71,57 +71,57 @@ ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant 
 <table>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/home.jpg" alt="Home" width="240" loading="lazy" />
-      <div align="center"><sub>Home</sub></div>
+      <img src="assets/screenshots/home-overview.jpg" alt="Home Overview" width="240" loading="lazy" />
+      <div align="center"><sub>Home Overview</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/search.jpg" alt="Search" width="240" loading="lazy" />
-      <div align="center"><sub>Search</sub></div>
+      <img src="assets/screenshots/search-semantic-results.jpg" alt="Semantic Search" width="240" loading="lazy" />
+      <div align="center"><sub>Semantic Search</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/timeLine.jpg" alt="Timeline" width="240" loading="lazy" />
-      <div align="center"><sub>Timeline</sub></div>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/daySummary.jpg" alt="Daily Summary" width="240" loading="lazy" />
-      <div align="center"><sub>Daily Summary</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/event.jpg" alt="Events" width="240" loading="lazy" />
-      <div align="center"><sub>Events</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/collect.jpg" alt="Favorites" width="240" loading="lazy" />
-      <div align="center"><sub>Favorites</sub></div>
+      <img src="assets/screenshots/timeline-replay-generation.jpg" alt="Timeline & Replay Generation" width="240" loading="lazy" />
+      <div align="center"><sub>Timeline & Replay Generation</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/prompt.jpg" alt="Prompt Manager" width="240" loading="lazy" />
-      <div align="center"><sub>Prompt Manager</sub></div>
+      <img src="assets/screenshots/event-detail.jpg" alt="Event Detail" width="240" loading="lazy" />
+      <div align="center"><sub>Event Detail</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/addAi.jpg" alt="Add AI" width="240" loading="lazy" />
-      <div align="center"><sub>Add AI</sub></div>
+      <img src="assets/screenshots/favorites-notes.jpg" alt="Favorites & Notes" width="240" loading="lazy" />
+      <div align="center"><sub>Favorites & Notes</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/aiChat.jpg" alt="AI Chat" width="240" loading="lazy" />
-      <div align="center"><sub>AI Chat</sub></div>
+      <img src="assets/screenshots/settings-overview.jpg" alt="Settings Overview" width="240" loading="lazy" />
+      <div align="center"><sub>Settings Overview</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/setting.jpg" alt="Settings" width="240" loading="lazy" />
-      <div align="center"><sub>Settings</sub></div>
+      <img src="assets/screenshots/storage-analysis.jpg" alt="Storage Analysis" width="240" loading="lazy" />
+      <div align="center"><sub>Storage Analysis</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/nsfw.jpg" alt="NSFW Filtering" width="240" loading="lazy" />
-      <div align="center"><sub>NSFW Filtering</sub></div>
+      <img src="assets/screenshots/nsfw-search-results.jpg" alt="NSFW Search Results" width="240" loading="lazy" />
+      <div align="center"><sub>NSFW Search Results</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/deepLink.jpg" alt="Deep Link" width="240" loading="lazy" />
+      <img src="assets/screenshots/ai-review-chat.jpg" alt="AI Review Chat" width="240" loading="lazy" />
+      <div align="center"><sub>AI Review Chat</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-sensitive-content-analysis.jpg" alt="Sensitive Content Analysis" width="240" loading="lazy" />
+      <div align="center"><sub>Sensitive Content Analysis</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-tool-calling-report.jpg" alt="AI Tool-Calling Report" width="240" loading="lazy" />
+      <div align="center"><sub>AI Tool-Calling Report</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/deep-link-entry.jpg" alt="Deep Link" width="240" loading="lazy" />
       <div align="center"><sub>Deep Link</sub></div>
     </td>
   </tr>

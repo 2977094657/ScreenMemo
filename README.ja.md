@@ -71,57 +71,57 @@ ScreenMemo はローカルファーストのスクリーンショット・メモ
 <table>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/home.jpg" alt="ホーム" width="240" loading="lazy" />
-      <div align="center"><sub>ホーム</sub></div>
+      <img src="assets/screenshots/home-overview.jpg" alt="ホーム概要" width="240" loading="lazy" />
+      <div align="center"><sub>ホーム概要</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/search.jpg" alt="検索" width="240" loading="lazy" />
-      <div align="center"><sub>検索</sub></div>
+      <img src="assets/screenshots/search-semantic-results.jpg" alt="セマンティック検索" width="240" loading="lazy" />
+      <div align="center"><sub>セマンティック検索</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/timeLine.jpg" alt="タイムライン" width="240" loading="lazy" />
-      <div align="center"><sub>タイムライン</sub></div>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/daySummary.jpg" alt="デイリーサマリー" width="240" loading="lazy" />
-      <div align="center"><sub>デイリーサマリー</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/event.jpg" alt="イベント" width="240" loading="lazy" />
-      <div align="center"><sub>イベント</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/collect.jpg" alt="お気に入り" width="240" loading="lazy" />
-      <div align="center"><sub>お気に入り</sub></div>
+      <img src="assets/screenshots/timeline-replay-generation.jpg" alt="タイムラインとリプレイ生成" width="240" loading="lazy" />
+      <div align="center"><sub>タイムラインとリプレイ生成</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/prompt.jpg" alt="プロンプト管理" width="240" loading="lazy" />
-      <div align="center"><sub>プロンプト管理</sub></div>
+      <img src="assets/screenshots/event-detail.jpg" alt="イベント詳細" width="240" loading="lazy" />
+      <div align="center"><sub>イベント詳細</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/addAi.jpg" alt="AI 追加" width="240" loading="lazy" />
-      <div align="center"><sub>AI 追加</sub></div>
+      <img src="assets/screenshots/favorites-notes.jpg" alt="お気に入りとメモ" width="240" loading="lazy" />
+      <div align="center"><sub>お気に入りとメモ</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/aiChat.jpg" alt="AI チャット" width="240" loading="lazy" />
-      <div align="center"><sub>AI チャット</sub></div>
+      <img src="assets/screenshots/settings-overview.jpg" alt="設定概要" width="240" loading="lazy" />
+      <div align="center"><sub>設定概要</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/setting.jpg" alt="設定" width="240" loading="lazy" />
-      <div align="center"><sub>設定</sub></div>
+      <img src="assets/screenshots/storage-analysis.jpg" alt="ストレージ分析" width="240" loading="lazy" />
+      <div align="center"><sub>ストレージ分析</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/nsfw.jpg" alt="NSFW フィルタ" width="240" loading="lazy" />
-      <div align="center"><sub>NSFW フィルタ</sub></div>
+      <img src="assets/screenshots/nsfw-search-results.jpg" alt="NSFW 検索結果" width="240" loading="lazy" />
+      <div align="center"><sub>NSFW 検索結果</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/deepLink.jpg" alt="ディープリンク" width="240" loading="lazy" />
+      <img src="assets/screenshots/ai-review-chat.jpg" alt="AI 振り返りチャット" width="240" loading="lazy" />
+      <div align="center"><sub>AI 振り返りチャット</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-sensitive-content-analysis.jpg" alt="センシティブ内容分析" width="240" loading="lazy" />
+      <div align="center"><sub>センシティブ内容分析</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-tool-calling-report.jpg" alt="AI ツール呼び出しレポート" width="240" loading="lazy" />
+      <div align="center"><sub>AI ツール呼び出しレポート</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/deep-link-entry.jpg" alt="ディープリンク" width="240" loading="lazy" />
       <div align="center"><sub>ディープリンク</sub></div>
     </td>
   </tr>

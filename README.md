@@ -42,57 +42,57 @@ ScreenMemo 是一款本地优先的截屏备忘与检索工具：在你授权后
 <table>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/home.jpg" alt="首页" width="240" loading="lazy" />
-      <div align="center"><sub>首页</sub></div>
+      <img src="assets/screenshots/home-overview.jpg" alt="首页概览" width="240" loading="lazy" />
+      <div align="center"><sub>首页概览</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/search.jpg" alt="搜索" width="240" loading="lazy" />
-      <div align="center"><sub>搜索</sub></div>
+      <img src="assets/screenshots/search-semantic-results.jpg" alt="语义搜索" width="240" loading="lazy" />
+      <div align="center"><sub>语义搜索</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/timeLine.jpg" alt="时间线" width="240" loading="lazy" />
-      <div align="center"><sub>时间线</sub></div>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/daySummary.jpg" alt="每日总结" width="240" loading="lazy" />
-      <div align="center"><sub>每日总结</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/event.jpg" alt="事件" width="240" loading="lazy" />
-      <div align="center"><sub>事件</sub></div>
-    </td>
-    <td align="center" valign="top">
-      <img src="assets/screenshots/collect.jpg" alt="收藏" width="240" loading="lazy" />
-      <div align="center"><sub>收藏</sub></div>
+      <img src="assets/screenshots/timeline-replay-generation.jpg" alt="时间线与生成回放" width="240" loading="lazy" />
+      <div align="center"><sub>时间线与生成回放</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/prompt.jpg" alt="提示词管理" width="240" loading="lazy" />
-      <div align="center"><sub>提示词管理</sub></div>
+      <img src="assets/screenshots/event-detail.jpg" alt="事件详情" width="240" loading="lazy" />
+      <div align="center"><sub>事件详情</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/addAi.jpg" alt="新增 AI" width="240" loading="lazy" />
-      <div align="center"><sub>新增 AI</sub></div>
+      <img src="assets/screenshots/favorites-notes.jpg" alt="收藏与备注" width="240" loading="lazy" />
+      <div align="center"><sub>收藏与备注</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/aiChat.jpg" alt="AI 对话" width="240" loading="lazy" />
-      <div align="center"><sub>AI 对话</sub></div>
+      <img src="assets/screenshots/settings-overview.jpg" alt="设置概览" width="240" loading="lazy" />
+      <div align="center"><sub>设置概览</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/setting.jpg" alt="设置" width="240" loading="lazy" />
-      <div align="center"><sub>设置</sub></div>
+      <img src="assets/screenshots/storage-analysis.jpg" alt="存储分析" width="240" loading="lazy" />
+      <div align="center"><sub>存储分析</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/nsfw.jpg" alt="NSFW过滤" width="240" loading="lazy" />
-      <div align="center"><sub>NSFW过滤</sub></div>
+      <img src="assets/screenshots/nsfw-search-results.jpg" alt="NSFW 搜索结果" width="240" loading="lazy" />
+      <div align="center"><sub>NSFW 搜索结果</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/deepLink.jpg" alt="深度链接" width="240" loading="lazy" />
+      <img src="assets/screenshots/ai-review-chat.jpg" alt="AI 回顾对话" width="240" loading="lazy" />
+      <div align="center"><sub>AI 回顾对话</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-sensitive-content-analysis.jpg" alt="敏感内容分析" width="240" loading="lazy" />
+      <div align="center"><sub>敏感内容分析</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/ai-tool-calling-report.jpg" alt="AI 工具调用报告" width="240" loading="lazy" />
+      <div align="center"><sub>AI 工具调用报告</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/deep-link-entry.jpg" alt="深度链接" width="240" loading="lazy" />
       <div align="center"><sub>深度链接</sub></div>
     </td>
   </tr>
