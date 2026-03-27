@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'ai_chat_service.dart';
+import 'ai_prompt_time_context.dart';
 import 'ai_settings_service.dart';
 import 'flutter_logger.dart';
 
@@ -149,10 +150,11 @@ class IntentAnalysisService {
   }
 
   String _buildSystemPrompt(DateTime now, String tzName, String tzReadable) {
+    final String localDateTime = buildPromptLocalDateTime(now);
     // 指示严格 JSON 输出与本地时间口语映射
     return [
       'You are an intent parser that outputs STRICT JSON only. No explanations.',
-      'Current local datetime: ${now.toIso8601String()}',
+      'Current local datetime: $localDateTime',
       'Timezone: $tzName ($tzReadable).',
       'Return a FIXED schema. start_local/end_local are OPTIONAL: provide them when confidently inferred, otherwise leave them empty and let downstream tools decide the search window.',
       'If the query mentions a calendar date (e.g., "10月10日"/"10月10号"/"2025年10月10日"), resolve to exact start_local and end_local in ISO-8601 with timezone offset (e.g., 2025-10-10T00:00:00+08:00).',

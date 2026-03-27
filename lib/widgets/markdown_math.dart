@@ -5,12 +5,10 @@ import 'package:flutter_math_fork/flutter_math.dart' as fm;
 import 'package:markdown/markdown.dart' as md;
 import 'package:shimmer/shimmer.dart';
 import 'dart:io';
+import 'chat_markdown_chart.dart';
 import '../widgets/screenshot_image_widget.dart';
-import '../widgets/timeline_jump_overlay.dart';
-import '../services/screenshot_database.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/navigation_service.dart';
-import '../services/timeline_jump_service.dart';
 import '../services/ui_perf_logger.dart';
 import '../models/screenshot_record.dart';
 import '../models/app_info.dart';
@@ -25,6 +23,7 @@ import '../services/flutter_logger.dart';
 ///   * 移除 <think>...</think>（不在可见正文中显示；思考在 UI 的 Reasoning 卡片展示）
 ///   * 跳过代码块 (```...```) 与行内代码 (`...`)
 /// - 使用 flutter_markdown 的 builders 将 <math-inline>/<math-block> 渲染为 TeX。
+/// - 通过自定义 BlockSyntax 将 ```chart-v1``` fenced block 渲染为聊天图表卡片。
 ///
 /// 集成方式：
 /// 1) 在构建聊天 Markdown 时：
@@ -36,6 +35,7 @@ import '../services/flutter_logger.dart';
 ///    MarkdownBody(
 ///      data: data,
 ///      builders: config.builders,
+///      blockSyntaxes: config.blockSyntaxes,
 ///      styleSheet: ...,
 ///    )
 ///
@@ -43,9 +43,6 @@ import '../services/flutter_logger.dart';
 ///    dependencies:
 ///      flutter_math_fork: ^0.7.2
 ///
-/// 注意：本文件不引入 markdown 的自定义 Block/Inline 语法，纯靠预处理 + builders，
-/// 以避免不同 markdown 版本 API 差异导致的编译问题。
-
 // Keep the evidence loading shimmer consistent with the "thinking" shimmer.
 const Color _kThinkingShimmerHighlightColor = Color(0xFFFFFBEB);
 // TEMP (debug-only): show evidence resolve state under each image/placeholder.
@@ -303,6 +300,76 @@ class EvidenceInlineSyntax extends md.InlineSyntax {
   }
 }
 
+class AppInlineSyntax extends md.InlineSyntax {
+  AppInlineSyntax()
+    : super(r'\[\s*app\s*[:：]\s*([^\]]+?)\s*\]', caseSensitive: false);
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final String raw = (match.group(1) ?? '').trim();
+    if (raw.isEmpty) return false;
+    final md.Element el = md.Element.text('app-ref', raw);
+    parser.addNode(el);
+    return true;
+  }
+}
+
+class _ParsedAppRef {
+  const _ParsedAppRef({
+    required this.label,
+    required this.packageName,
+    required this.lookupNameLower,
+  });
+
+  final String label;
+  final String packageName;
+  final String lookupNameLower;
+}
+
+bool _looksLikeAndroidPackageName(String text) {
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  return RegExp(r'^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$').hasMatch(trimmed);
+}
+
+_ParsedAppRef _parseAppRef(String raw) {
+  final List<String> parts = raw
+      .split('|')
+      .map((String e) => e.trim())
+      .where((String e) => e.isNotEmpty)
+      .toList(growable: false);
+
+  String label = '';
+  String packageName = '';
+  for (final String part in parts) {
+    final String lower = part.toLowerCase();
+    if ((lower.startsWith('pkg=') || lower.startsWith('package=')) &&
+        packageName.isEmpty) {
+      packageName = part.substring(part.indexOf('=') + 1).trim();
+      continue;
+    }
+    if (lower.startsWith('name=') && label.isEmpty) {
+      label = part.substring(part.indexOf('=') + 1).trim();
+      continue;
+    }
+    if (_looksLikeAndroidPackageName(part) && packageName.isEmpty) {
+      packageName = part;
+      continue;
+    }
+    if (label.isEmpty) label = part;
+  }
+
+  if (label.isEmpty && packageName.isNotEmpty) {
+    label = packageName;
+  }
+
+  return _ParsedAppRef(
+    label: label,
+    packageName: packageName,
+    lookupNameLower: label.trim().toLowerCase(),
+  );
+}
+
 /// 渲染 <math-inline> 与 <math-block> 的 builder。
 class _MathBuilder extends MarkdownElementBuilder {
   _MathBuilder({this.inlineTextStyle, this.blockTextStyle});
@@ -331,6 +398,155 @@ class _MathBuilder extends MarkdownElementBuilder {
       );
     }
     return null;
+  }
+}
+
+class _ChartBlockBuilder extends MarkdownElementBuilder {
+  @override
+  bool isBlockElement() => true;
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final String encoded = element.textContent.trim();
+    final String? rawJson = decodeChartBlockPayload(encoded);
+    return ChatMarkdownChartBlock(
+      rawJson: rawJson ?? '',
+      spec: rawJson == null ? null : ChatChartSpecV1.tryParseJson(rawJson),
+    );
+  }
+}
+
+class _AppRefBuilder extends MarkdownElementBuilder {
+  _AppRefBuilder({
+    required this.appIconByPackage,
+    required this.appIconByNameLower,
+    required this.appNameByPackage,
+  });
+
+  final Map<String, Uint8List?> appIconByPackage;
+  final Map<String, Uint8List?> appIconByNameLower;
+  final Map<String, String> appNameByPackage;
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final String raw = element.textContent.trim();
+    if (raw.isEmpty) return null;
+
+    final _ParsedAppRef parsed = _parseAppRef(raw);
+    Uint8List? iconBytes;
+    String label = parsed.label.trim();
+
+    if (parsed.packageName.isNotEmpty) {
+      iconBytes = appIconByPackage[parsed.packageName];
+      final String mappedName = (appNameByPackage[parsed.packageName] ?? '')
+          .trim();
+      if (label.isEmpty && mappedName.isNotEmpty) {
+        label = mappedName;
+      }
+    }
+    if (iconBytes == null && parsed.lookupNameLower.isNotEmpty) {
+      iconBytes = appIconByNameLower[parsed.lookupNameLower];
+    }
+
+    if (label.isEmpty) label = raw;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    final TextStyle fallbackStyle =
+        theme.textTheme.bodyMedium ??
+        const TextStyle(fontSize: 13, height: 1.2);
+    final TextStyle textStyle = (preferredStyle ?? parentStyle ?? fallbackStyle)
+        .copyWith(
+          fontSize:
+              (preferredStyle?.fontSize ??
+              parentStyle?.fontSize ??
+              fallbackStyle.fontSize ??
+              13),
+          height:
+              preferredStyle?.height ??
+              parentStyle?.height ??
+              fallbackStyle.height ??
+              1.2,
+          color:
+              preferredStyle?.color ??
+              parentStyle?.color ??
+              fallbackStyle.color ??
+              colorScheme.onSurface,
+        );
+
+    final Widget leading = (iconBytes != null && iconBytes.isNotEmpty)
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            child: Image.memory(
+              iconBytes,
+              width: 16,
+              height: 16,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.low,
+            ),
+          )
+        : Icon(
+            Icons.apps_rounded,
+            size: 16,
+            color:
+                textStyle.color?.withValues(alpha: 0.85) ??
+                colorScheme.onSurfaceVariant,
+          );
+
+    final Widget chip = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          border: Border.all(
+            color: colorScheme.outline.withValues(alpha: 0.55),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              leading,
+              if (label.isNotEmpty) const SizedBox(width: 5),
+              if (label.isNotEmpty)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 180),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textStyle.copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Text.rich(
+      TextSpan(
+        style: textStyle,
+        children: <InlineSpan>[
+          WidgetSpan(alignment: PlaceholderAlignment.middle, child: chip),
+        ],
+      ),
+    );
   }
 }
 
@@ -497,7 +713,9 @@ class _EvidenceBuilder extends MarkdownElementBuilder {
           final ScreenshotRecord? screenshot = screenshotByPath[path];
           final bool extraNsfwMask =
               NsfwPreferenceService.instance.isAiNsfwCached(filePath: path) ||
-              NsfwPreferenceService.instance.isSegmentNsfwCached(filePath: path);
+              NsfwPreferenceService.instance.isSegmentNsfwCached(
+                filePath: path,
+              );
           final ImageProvider imageProvider = ResizeImage(
             FileImage(file),
             width: 192,
@@ -725,19 +943,29 @@ class MarkdownMathConfig {
   MarkdownMathConfig({
     this.inlineTextStyle,
     this.blockTextStyle,
+    Map<String, Uint8List?>? appIconByPackage,
+    Map<String, Uint8List?>? appIconByNameLower,
+    Map<String, String>? appNameByPackage,
     Map<String, String>? evidenceNameToPath,
     List<String>? orderedEvidencePaths,
     Map<String, ScreenshotRecord?>? screenshotByPath,
     this.evidenceLoading = false,
     this.perfLogger,
-  }) : _evidenceNameToPath = evidenceNameToPath ?? const <String, String>{},
+  }) : _appIconByPackage = appIconByPackage ?? const <String, Uint8List?>{},
+       _appIconByNameLower = appIconByNameLower ?? const <String, Uint8List?>{},
+       _appNameByPackage = appNameByPackage ?? const <String, String>{},
+       _evidenceNameToPath = evidenceNameToPath ?? const <String, String>{},
        _orderedEvidencePaths = orderedEvidencePaths ?? const <String>[],
-       _screenshotByPath = screenshotByPath ?? const <String, ScreenshotRecord?>{};
+       _screenshotByPath =
+           screenshotByPath ?? const <String, ScreenshotRecord?>{};
 
   final TextStyle? inlineTextStyle;
   final TextStyle? blockTextStyle;
   final bool evidenceLoading;
   final UiPerfLogger? perfLogger;
+  final Map<String, Uint8List?> _appIconByPackage;
+  final Map<String, Uint8List?> _appIconByNameLower;
+  final Map<String, String> _appNameByPackage;
   final Map<String, String> _evidenceNameToPath;
   final List<String> _orderedEvidencePaths;
   final Map<String, ScreenshotRecord?> _screenshotByPath;
@@ -745,6 +973,12 @@ class MarkdownMathConfig {
   Map<String, MarkdownElementBuilder> get builders => {
     'math-inline': _MathBuilder(inlineTextStyle: inlineTextStyle),
     'math-block': _MathBuilder(blockTextStyle: blockTextStyle),
+    kChartBlockTag: _ChartBlockBuilder(),
+    'app-ref': _AppRefBuilder(
+      appIconByPackage: _appIconByPackage,
+      appIconByNameLower: _appIconByNameLower,
+      appNameByPackage: _appNameByPackage,
+    ),
     'evidence': _EvidenceBuilder(
       evidenceNameToPath: _evidenceNameToPath,
       orderedEvidencePaths: _orderedEvidencePaths,
@@ -755,7 +989,12 @@ class MarkdownMathConfig {
   };
 
   List<md.InlineSyntax> get inlineSyntaxes => <md.InlineSyntax>[
+    AppInlineSyntax(),
     EvidenceInlineSyntax(),
+  ];
+
+  List<md.BlockSyntax> get blockSyntaxes => <md.BlockSyntax>[
+    const ChartBlockSyntax(),
   ];
 }
 

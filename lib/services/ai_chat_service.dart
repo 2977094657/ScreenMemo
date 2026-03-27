@@ -6,11 +6,13 @@ import 'package:flutter/widgets.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'package:screen_memo/models/screenshot_record.dart';
 
-import 'ai_request_gateway.dart';
 import 'ai_context_budgets.dart';
+import 'ai_prompt_time_context.dart';
+import 'ai_request_gateway.dart';
 import 'ai_settings_service.dart';
 import 'chat_context_service.dart';
 import 'chat_history_merge.dart';
+import 'dynamic_entry_perf_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
 import 'nocturne_memory_service.dart';

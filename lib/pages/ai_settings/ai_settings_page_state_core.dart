@@ -1,6 +1,47 @@
 part of '../ai_settings_page.dart';
 
 extension _AISettingsPageStateCoreExt on _AISettingsPageState {
+  void _warmChatAppIconCache() {
+    if (_chatAppIconCacheLoaded || _chatAppIconCacheLoading) return;
+    _chatAppIconCacheLoading = true;
+    unawaited(() async {
+      try {
+        var apps = await AppSelectionService.instance.getSelectedApps();
+        if (apps.isEmpty && Platform.isAndroid) {
+          apps = await AppSelectionService.instance.getAllInstalledApps();
+        }
+
+        final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
+        final Map<String, Uint8List?> byName = <String, Uint8List?>{};
+        final Map<String, String> nameByPkg = <String, String>{};
+        for (final a in apps) {
+          final String pkg = a.packageName.trim();
+          final String name = a.appName.trim();
+          if (pkg.isNotEmpty) {
+            byPkg[pkg] = a.icon;
+            if (name.isNotEmpty) nameByPkg[pkg] = name;
+          }
+          final String nameKey = name.toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = a.icon;
+        }
+        if (!mounted) return;
+        _setState(() {
+          _chatAppIconByPackage = byPkg;
+          _chatAppIconByNameLower = byName;
+          _chatAppNameByPackage = nameByPkg;
+          _chatAppIconCacheLoaded = true;
+          _chatAppIconCacheLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        _setState(() {
+          _chatAppIconCacheLoaded = true;
+          _chatAppIconCacheLoading = false;
+        });
+      }
+    }());
+  }
+
   Widget _withDrawerSwipe(Widget child) {
     // 在任意位置从左向右滑动达到一定阈值后，打开上层 Scaffold 的 Drawer
     return GestureDetector(
@@ -104,14 +145,16 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
   Future<void> _loadAll() async {
     final sw = Stopwatch()..start();
     _uiPerf.log('loadAll.start');
+    _markDynamicEntryPerf('chat.loadAll.start');
     try {
       if (_loadingAllInFlight) {
         _uiPerf.log('loadAll.skip', detail: 'reentry');
         _loadAllQueued = true;
+        _markDynamicEntryPerf('chat.loadAll.skip', detail: 'reentry');
         return; // 防止重入触发的重复加载
       }
       _loadingAllInFlight = true;
-      final int epoch = ++_loadAllEpoch;
+      ++_loadAllEpoch;
       // 并行预取，避免串行等待造成的累计时延
       final Future<List<AISiteGroup>> fGroups = _settings.listSiteGroups();
       final Future<int?> fActiveId = _settings.getActiveGroupId();
@@ -138,36 +181,11 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         onTimeout: () => null,
       );
       final Future<String> fModel = _settings.getModel();
-
-      // 先拿到分组与激活ID
-      final List<AISiteGroup> groups = await fGroups;
-      final int? activeId = await fActiveId;
-      _uiPerf.log(
-        'loadAll.groups.done',
-        detail:
-            'ms=${sw.elapsedMilliseconds} groups=${groups.length} activeId=${activeId ?? -1}',
-      );
-
-      // 基础配置：若存在激活分组，则优先使用分组中的值；否则使用未分组键值
-      String baseUrl;
-      String? apiKey;
-      String model;
-      if (activeId != null) {
-        final g = await _settings.getSiteGroupById(activeId);
-        baseUrl = g?.baseUrl ?? await fBaseUrl;
-        apiKey = g?.apiKey ?? await fApiKey;
-        model = g?.model ?? await fModel;
-      } else {
-        baseUrl = await fBaseUrl;
-        apiKey = await fApiKey;
-        model = await fModel;
-      }
-      _uiPerf.log(
-        'loadAll.config.done',
-        detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
-      );
+      final Future<bool> fRenderImagesDuringStreaming = _settings
+          .getRenderImagesDuringStreaming();
 
       // 收集其余预取结果
+      final String chatCid = (await fChatCid).trim();
       final List<AIMessage> tailHistory = await fTailHistory;
       final FullMessagesPage firstPage = await fFullPage;
 
@@ -311,16 +329,17 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         full: firstPage.messages,
         tail: tailHistory,
       );
-      final String chatCid = (await fChatCid).trim();
       final bool streamEnabled = await fStreamEnabled;
-      final bool renderImgs = await _settings.getRenderImagesDuringStreaming();
-      final String? segPrompt = await fSegPrompt;
-      final String? mergePrompt = await fMergePrompt;
-      final String? dailyPrompt = await fDailyPrompt;
+      final bool renderImgs = await fRenderImagesDuringStreaming;
       _uiPerf.log(
         'loadAll.history.done',
         detail:
             'ms=${sw.elapsedMilliseconds} tail=${tailHistory.length} fullPage=${firstPage.messages.length} merged=${history.length} stream=$streamEnabled renderImgsDuringStreaming=$renderImgs',
+      );
+      _markDynamicEntryPerf(
+        'chat.loadAll.history.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} merged=${history.length} tail=${tailHistory.length}',
       );
 
       // 回填历史消息的深度思考内容与耗时（索引映射到消息）
@@ -363,25 +382,6 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
       _perfLoggedMarkdownMsgKeys.clear();
       _setState(() {
         _activeConversationCid = chatCid.isEmpty ? null : chatCid;
-        _groups = groups;
-        _activeGroupId = activeId;
-
-        // 未分组：默认值隐藏；分组：直接填充实际值
-        if (activeId == null) {
-          _baseUrlController.text = (baseUrl == 'https://api.openai.com')
-              ? ''
-              : baseUrl;
-          _apiKeyController.text = apiKey ?? '';
-          _modelController.text = (model == 'gpt-4o-mini') ? '' : model;
-        } else {
-          _baseUrlController.text = baseUrl;
-          _apiKeyController.text = apiKey ?? '';
-          _modelController.text = model;
-        }
-
-        // Apply the full history in one shot so returning to the page shows the
-        // latest assistant turn immediately (batch microtasks can starve frames
-        // and delay UI updates on route/app switches).
         _messages = List<AIMessage>.from(history);
         _olderBeforeId = firstPage.nextBeforeId;
         _olderHasMore = firstPage.hasMore;
@@ -402,29 +402,114 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
           ..clear()
           ..addAll(rd);
         _streamEnabled = streamEnabled;
-        _promptSegment = segPrompt;
-        _promptMerge = mergePrompt;
-        _promptDaily = dailyPrompt;
         _renderImagesDuringStreaming = renderImgs;
-        // 预填编辑器：仅填充用户补充说明，避免暴露系统默认模板
-        _promptSegmentController.text = _promptSegment?.trim() ?? '';
-        _promptMergeController.text = _promptMerge?.trim() ?? '';
-        _promptDailyController.text = _promptDaily?.trim() ?? '';
         _loading = false;
       });
       _uiPerf.log(
-        'loadAll.setState.done',
+        'loadAll.history.setState.done',
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+      _markDynamicEntryPerf(
+        'chat.loadAll.history.setState.done',
         detail: 'ms=${sw.elapsedMilliseconds}',
       );
       // 记录 UI 填充耗时（数据到状态）
       try {
         await FlutterLogger.nativeInfo(
           'UI',
-          'AISettings._loadAll setState ms=' +
+          'AISettings._loadAll history-setState ms=' +
               sw.elapsedMilliseconds.toString(),
         );
       } catch (_) {}
-    } catch (_) {
+
+      final List<AISiteGroup> groups = await fGroups;
+      final int? activeId = await fActiveId;
+      _uiPerf.log(
+        'loadAll.groups.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} groups=${groups.length} activeId=${activeId ?? -1}',
+      );
+      _markDynamicEntryPerf(
+        'chat.loadAll.groups.done',
+        detail:
+            'ms=${sw.elapsedMilliseconds} groups=${groups.length} activeId=${activeId ?? -1}',
+      );
+
+      // 基础配置：若存在激活分组，则优先使用分组中的值；否则使用未分组键值
+      String baseUrl;
+      String? apiKey;
+      String model;
+      if (activeId != null) {
+        final g = await _settings.getSiteGroupById(activeId);
+        baseUrl = g?.baseUrl ?? await fBaseUrl;
+        apiKey = g?.apiKey ?? await fApiKey;
+        model = g?.model ?? await fModel;
+      } else {
+        baseUrl = await fBaseUrl;
+        apiKey = await fApiKey;
+        model = await fModel;
+      }
+      final String? segPrompt = await fSegPrompt;
+      final String? mergePrompt = await fMergePrompt;
+      final String? dailyPrompt = await fDailyPrompt;
+      _uiPerf.log(
+        'loadAll.config.done',
+        detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
+      );
+      _markDynamicEntryPerf(
+        'chat.loadAll.config.done',
+        detail: 'ms=${sw.elapsedMilliseconds} hasKey=${apiKey != null}',
+      );
+
+      final String latestCid = (_activeConversationCid ?? '').trim();
+      if (latestCid.isNotEmpty && chatCid.isNotEmpty && latestCid != chatCid) {
+        _uiPerf.log(
+          'loadAll.skip',
+          detail:
+              'staleConfig capturedCid=$chatCid currentCid=$latestCid ms=${sw.elapsedMilliseconds}',
+        );
+        return;
+      }
+      if (!mounted) return;
+      _setState(() {
+        _groups = groups;
+        _activeGroupId = activeId;
+
+        // 未分组：默认值隐藏；分组：直接填充实际值
+        if (activeId == null) {
+          _baseUrlController.text = (baseUrl == 'https://api.openai.com')
+              ? ''
+              : baseUrl;
+          _apiKeyController.text = apiKey ?? '';
+          _modelController.text = (model == 'gpt-4o-mini') ? '' : model;
+        } else {
+          _baseUrlController.text = baseUrl;
+          _apiKeyController.text = apiKey ?? '';
+          _modelController.text = model;
+        }
+
+        _promptSegment = segPrompt;
+        _promptMerge = mergePrompt;
+        _promptDaily = dailyPrompt;
+        // 预填编辑器：仅填充用户补充说明，避免暴露系统默认模板
+        _promptSegmentController.text = _promptSegment?.trim() ?? '';
+        _promptMergeController.text = _promptMerge?.trim() ?? '';
+        _promptDailyController.text = _promptDaily?.trim() ?? '';
+      });
+      _uiPerf.log(
+        'loadAll.config.setState.done',
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+      _markDynamicEntryPerf(
+        'chat.loadAll.config.setState.done',
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+    } catch (e) {
+      _markDynamicEntryPerf(
+        'chat.loadAll.error',
+        detail: 'ms=${sw.elapsedMilliseconds} error=$e',
+        finish: true,
+      );
       if (mounted)
         _setState(() {
           _loading = false;
@@ -442,6 +527,11 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     // 首帧绘制完成耗时（状态更新到绘制）
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _uiPerf.log('loadAll.firstFrame', detail: 'ms=${sw.elapsedMilliseconds}');
+      _markDynamicEntryPerf(
+        'chat.loadAll.firstFrame',
+        detail: 'ms=${sw.elapsedMilliseconds}',
+        finish: true,
+      );
       try {
         await FlutterLogger.nativeInfo(
           'UI',

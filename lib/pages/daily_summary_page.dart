@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import '../services/app_selection_service.dart';
 import '../services/daily_summary_service.dart';
+import '../services/dynamic_entry_perf_service.dart';
 import '../services/screenshot_database.dart';
 import '../services/ai_chat_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_ref_markdown.dart';
 import '../widgets/ui_components.dart';
+import '../widgets/markdown_math.dart';
 
 class DailySummaryPage extends StatefulWidget {
   final String dateKey; // YYYY-MM-DD
@@ -32,11 +37,29 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   bool _streaming = false;
   String _streamingText = '';
   String? _error;
+  bool _trackEntryPerf = true;
+  bool _entryPerfFinished = false;
+  bool _streamFirstTokenLogged = false;
+  Map<String, Uint8List?> _appIconByPackage = <String, Uint8List?>{};
+  Map<String, Uint8List?> _appIconByNameLower = <String, Uint8List?>{};
+  Map<String, String> _appNameByPackage = <String, String>{};
+  bool _appIconCacheLoaded = false;
+  bool _appIconCacheLoading = false;
 
   @override
   void initState() {
     super.initState();
+    DynamicEntryPerfService.instance.beginSession(
+      source: 'DailySummaryPage.initState',
+      detail: 'dateKey=${widget.dateKey}',
+    );
+    _markEntryPerf('daily.initState', detail: 'dateKey=${widget.dateKey}');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _markEntryPerf('daily.shell.firstFrame');
+    });
     _load(initial: true);
+    _warmAppIconCache();
     if (_shouldRenderMorningInsights) {
       _refreshMorningInsights();
     }
@@ -44,28 +67,105 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
   @override
   void dispose() {
+    _finishEntryPerf('daily.dispose', detail: 'disposedBeforeComplete');
     _streamSub?.cancel();
     super.dispose();
   }
 
+  void _markEntryPerf(String step, {String? detail}) {
+    if (!_trackEntryPerf || _entryPerfFinished) return;
+    DynamicEntryPerfService.instance.mark(step, detail: detail);
+  }
+
+  void _finishEntryPerf(String step, {String? detail}) {
+    if (!_trackEntryPerf || _entryPerfFinished) return;
+    _entryPerfFinished = true;
+    _trackEntryPerf = false;
+    DynamicEntryPerfService.instance.finish(step, detail: detail);
+  }
+
+  void _finishEntryPerfAfterFrame(String step, {String? detail}) {
+    if (!_trackEntryPerf || _entryPerfFinished) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _finishEntryPerf(step, detail: detail);
+    });
+  }
+
+  void _warmAppIconCache() {
+    if (_appIconCacheLoaded || _appIconCacheLoading) return;
+    _appIconCacheLoading = true;
+    unawaited(() async {
+      try {
+        var apps = await AppSelectionService.instance.getSelectedApps();
+        if (apps.isEmpty && Platform.isAndroid) {
+          apps = await AppSelectionService.instance.getAllInstalledApps();
+        }
+
+        final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
+        final Map<String, Uint8List?> byName = <String, Uint8List?>{};
+        final Map<String, String> nameByPkg = <String, String>{};
+        for (final app in apps) {
+          final String pkg = app.packageName.trim();
+          final String name = app.appName.trim();
+          if (pkg.isNotEmpty) {
+            byPkg[pkg] = app.icon;
+            if (name.isNotEmpty) nameByPkg[pkg] = name;
+          }
+          final String nameKey = name.toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = app.icon;
+        }
+        if (!mounted) return;
+        setState(() {
+          _appIconByPackage = byPkg;
+          _appIconByNameLower = byName;
+          _appNameByPackage = nameByPkg;
+          _appIconCacheLoaded = true;
+          _appIconCacheLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _appIconCacheLoaded = true;
+          _appIconCacheLoading = false;
+        });
+      }
+    }());
+  }
+
   Future<void> _load({bool initial = false}) async {
+    final Stopwatch loadSw = Stopwatch()..start();
+    final String phase = initial ? 'initial' : 'reload';
     bool startStreaming = false;
+    _markEntryPerf('daily.load.start', detail: 'phase=$phase');
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      final Stopwatch dbSw = Stopwatch()..start();
       final Map<String, dynamic>? daily = await _db.getDailySummary(
         widget.dateKey,
+      );
+      _markEntryPerf(
+        'daily.db.getDailySummary.done',
+        detail:
+            'phase=$phase ms=${dbSw.elapsedMilliseconds} hit=${daily != null}',
       );
       Map<String, dynamic>? sj;
       if (daily != null) {
         final String raw = (daily['structured_json'] as String?) ?? '';
         if (raw.isNotEmpty) {
+          final Stopwatch decodeSw = Stopwatch()..start();
           try {
             final dynamic j = jsonDecode(raw);
             if (j is Map<String, dynamic>) sj = j;
           } catch (_) {}
+          _markEntryPerf(
+            'daily.structuredJson.decode.done',
+            detail:
+                'phase=$phase ms=${decodeSw.elapsedMilliseconds} rawLen=${raw.length} parsed=${sj != null}',
+          );
         }
       }
 
@@ -75,19 +175,47 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         _sj = sj;
         _error = null;
       });
+      _markEntryPerf(
+        daily != null ? 'daily.cache.hit' : 'daily.cache.miss',
+        detail: 'phase=$phase ms=${loadSw.elapsedMilliseconds}',
+      );
       startStreaming = initial && daily == null && !_streaming;
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
       });
+      _markEntryPerf(
+        'daily.load.error',
+        detail: 'phase=$phase ms=${loadSw.elapsedMilliseconds} error=$e',
+      );
     } finally {
       if (mounted && !startStreaming) {
         setState(() => _loading = false);
       }
     }
     if (startStreaming) {
+      _markEntryPerf(
+        'daily.stream.autostart',
+        detail: 'phase=$phase ms=${loadSw.elapsedMilliseconds}',
+      );
       await _startStreaming(showSuccessSnack: false);
+      return;
+    }
+
+    if (_trackEntryPerf && !_entryPerfFinished) {
+      final String step;
+      if (_error != null) {
+        step = 'daily.error.firstFrame';
+      } else if (_daily != null) {
+        step = 'daily.content.firstFrame';
+      } else {
+        step = 'daily.empty.firstFrame';
+      }
+      _finishEntryPerfAfterFrame(
+        step,
+        detail: 'phase=$phase ms=${loadSw.elapsedMilliseconds}',
+      );
     }
   }
 
@@ -99,6 +227,12 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   Future<void> _startStreaming({bool showSuccessSnack = true}) async {
     await _streamSub?.cancel();
     if (!mounted) return;
+    _streamFirstTokenLogged = false;
+    final Stopwatch streamSw = Stopwatch()..start();
+    _markEntryPerf(
+      'daily.stream.start',
+      detail: 'dateKey=${widget.dateKey} showSnack=$showSuccessSnack',
+    );
     setState(() {
       _streaming = true;
       _streamingText = '';
@@ -110,8 +244,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
 
     bool hadError = false;
     try {
+      final Stopwatch sessionSw = Stopwatch()..start();
       final AIStreamingSession? session = await _svc.streamGenerateForDate(
         widget.dateKey,
+      );
+      _markEntryPerf(
+        'daily.stream.session.ready',
+        detail:
+            'ms=${sessionSw.elapsedMilliseconds} hasSession=${session != null}',
       );
       if (session == null) {
         await _load(initial: false);
@@ -128,6 +268,14 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         (AIStreamEvent event) {
           if (!mounted) return;
           if (event.kind == 'content' && event.data.isNotEmpty) {
+            if (!_streamFirstTokenLogged) {
+              _streamFirstTokenLogged = true;
+              _markEntryPerf(
+                'daily.stream.firstToken',
+                detail:
+                    'ms=${streamSw.elapsedMilliseconds} chunkChars=${event.data.length}',
+              );
+            }
             setState(() {
               _streamingText += event.data;
             });
@@ -135,6 +283,10 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         },
         onError: (Object error, StackTrace stackTrace) {
           hadError = true;
+          _markEntryPerf(
+            'daily.stream.error',
+            detail: 'ms=${streamSw.elapsedMilliseconds} error=$error',
+          );
           if (!mounted) return;
           UINotifier.error(
             context,
@@ -144,6 +296,10 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       );
 
       await session.completed;
+      _markEntryPerf(
+        'daily.stream.completed',
+        detail: 'ms=${streamSw.elapsedMilliseconds}',
+      );
       if (hadError) return;
 
       await _load(initial: false);
@@ -154,6 +310,10 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         );
       }
     } catch (_) {
+      _markEntryPerf(
+        'daily.stream.catch',
+        detail: 'ms=${streamSw.elapsedMilliseconds}',
+      );
       if (!mounted) return;
       if (!hadError) {
         UINotifier.error(context, AppLocalizations.of(context).generateFailed);
@@ -167,6 +327,12 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
           _streamingText = '';
           _loading = false;
         });
+      }
+      if (hadError) {
+        _finishEntryPerfAfterFrame(
+          'daily.stream.error.firstFrame',
+          detail: 'ms=${streamSw.elapsedMilliseconds}',
+        );
       }
     }
   }
@@ -518,7 +684,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   String _fixMarkdownLayout(String input) {
     if (input.trim().isEmpty) return input;
     // 将字面 "\n" 转换为真实换行，将字面 "\"" 还原为双引号，统一换行符
-    final pre = input
+    final pre = normalizeCodeWrappedAppRefs(input)
         .replaceAll('\\r\\n', '\n')
         .replaceAll('\\r', '\n')
         .replaceAll('\\n', '\n')
@@ -581,17 +747,52 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     return normalized.join('\n');
   }
 
+  MarkdownMathConfig _summaryMarkdownConfig(ThemeData theme) {
+    return MarkdownMathConfig(
+      inlineTextStyle: theme.textTheme.bodyMedium,
+      blockTextStyle: theme.textTheme.bodyMedium,
+      appIconByPackage: _appIconByPackage,
+      appIconByNameLower: _appIconByNameLower,
+      appNameByPackage: _appNameByPackage,
+    );
+  }
+
+  Widget _buildSummaryMarkdown(
+    BuildContext context,
+    String markdown, {
+    bool softLineBreak = false,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final MarkdownMathConfig config = _summaryMarkdownConfig(theme);
+    return MarkdownBody(
+      data: preprocessForChatMarkdown(markdown),
+      builders: config.builders,
+      blockSyntaxes: config.blockSyntaxes,
+      inlineSyntaxes: config.inlineSyntaxes,
+      softLineBreak: softLineBreak,
+      styleSheet: _summaryMarkdownStyle(theme),
+      onTapLink: (text, href, title) async {
+        if (href == null) return;
+        final uri = Uri.tryParse(href);
+        if (uri != null) {
+          try {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } catch (_) {}
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateKey = widget.dateKey;
     final l10n = AppLocalizations.of(context);
     final title = l10n.dailySummaryTitle(dateKey);
     final md = _fixMarkdownLayout(_extractDailySummaryText());
-    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 48,
+        toolbarHeight: 36,
         centerTitle: true,
         title: Text(title),
         actions: [
@@ -631,12 +832,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
       body: _streaming
           ? _buildStreamingView()
           : _loading
-          ? _buildReadingShell(
-              child: const UILoadingState(
-                compact: true,
-                padding: EdgeInsets.zero,
-              ),
-            )
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : _error != null
           ? _buildReadingShell(
               child: UIErrorState(
@@ -647,32 +843,19 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
                 padding: EdgeInsets.zero,
               ),
             )
-          : _buildReadingShell(
+          : md.isEmpty
+          ? _buildEmptySummaryPlaceholder()
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing4,
+                vertical: AppTheme.spacing3,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (_shouldRenderMorningInsights && _isToday)
                     _buildMorningInsightsSection(),
-                  if (md.isEmpty)
-                    _buildEmptySummaryPlaceholder()
-                  else
-                    MarkdownBody(
-                      data: md,
-                      styleSheet: _summaryMarkdownStyle(theme),
-                      onTapLink: (text, href, title) async {
-                        if (href == null) return;
-                        final uri = Uri.tryParse(href);
-                        if (uri != null) {
-                          try {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          } catch (_) {}
-                        }
-                      },
-                    ),
-                  const SizedBox(height: AppTheme.spacing4),
+                  _buildSummaryMarkdown(context, md),
                 ],
               ),
             ),
@@ -683,7 +866,7 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.symmetric(
       horizontal: AppTheme.spacing4,
-      vertical: AppTheme.spacing4,
+      vertical: AppTheme.spacing3,
     ),
   }) {
     return LayoutBuilder(
@@ -697,7 +880,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             constraints: BoxConstraints(minHeight: minHeight),
             child: Padding(
               padding: padding,
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 720),
                   child: child,
@@ -766,21 +950,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
             ),
           ),
           if (hasContent) ...[
-            const SizedBox(height: AppTheme.spacing5),
-            MarkdownBody(
-              data: normalized,
-              softLineBreak: true,
-              styleSheet: _summaryMarkdownStyle(theme),
-              onTapLink: (text, href, title) async {
-                if (href == null) return;
-                final uri = Uri.tryParse(href);
-                if (uri != null) {
-                  try {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  } catch (_) {}
-                }
-              },
-            ),
+            const SizedBox(height: AppTheme.spacing3),
+            _buildSummaryMarkdown(context, normalized, softLineBreak: true),
           ],
         ],
       ),
@@ -801,87 +972,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
   }
 
   MarkdownStyleSheet _summaryMarkdownStyle(ThemeData theme) {
-    final base = MarkdownStyleSheet.fromTheme(theme);
-    return base.copyWith(
-      a: theme.textTheme.bodyLarge?.copyWith(
-        color: theme.colorScheme.primary,
-        decoration: TextDecoration.underline,
-        decorationColor: theme.colorScheme.primary.withValues(alpha: 0.45),
-      ),
-      p: theme.textTheme.bodyLarge?.copyWith(
-        height: 1.7,
-        color: theme.colorScheme.onSurface,
-      ),
-      pPadding: const EdgeInsets.only(bottom: AppTheme.spacing4),
-      h1: theme.textTheme.headlineMedium?.copyWith(
-        color: theme.colorScheme.onSurface,
-        fontWeight: FontWeight.w600,
-      ),
-      h1Padding: const EdgeInsets.only(
-        top: AppTheme.spacing4,
-        bottom: AppTheme.spacing3,
-      ),
-      h2: theme.textTheme.titleLarge?.copyWith(
-        color: theme.colorScheme.onSurface,
-        fontWeight: FontWeight.w600,
-        height: 1.4,
-      ),
-      h2Padding: const EdgeInsets.only(
-        top: AppTheme.spacing4,
-        bottom: AppTheme.spacing3,
-      ),
-      h3: theme.textTheme.titleMedium?.copyWith(
-        color: theme.colorScheme.onSurface,
-        fontWeight: FontWeight.w600,
-      ),
-      h3Padding: const EdgeInsets.only(
-        top: AppTheme.spacing3,
-        bottom: AppTheme.spacing2,
-      ),
-      strong: theme.textTheme.bodyLarge?.copyWith(
-        color: theme.colorScheme.onSurface,
-        fontWeight: FontWeight.w600,
-      ),
-      blockSpacing: AppTheme.spacing4,
-      listIndent: 24,
-      listBullet: theme.textTheme.bodyLarge?.copyWith(
-        color: theme.colorScheme.primary,
-      ),
-      listBulletPadding: const EdgeInsets.only(right: AppTheme.spacing2),
-      blockquote: theme.textTheme.bodyMedium?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-        height: 1.6,
-      ),
-      blockquotePadding: const EdgeInsets.all(AppTheme.spacing4),
-      blockquoteDecoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border(
-          left: BorderSide(color: theme.colorScheme.outline, width: 2),
-          top: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
-          right: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
-          bottom: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
-        ),
-      ),
-      code: theme.textTheme.bodySmall?.copyWith(
-        fontFamily: 'monospace',
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      codeblockPadding: const EdgeInsets.all(AppTheme.spacing4),
-      codeblockDecoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
-      ),
-      horizontalRuleDecoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
-        ),
-      ),
-      unorderedListAlign: WrapAlignment.start,
-      orderedListAlign: WrapAlignment.start,
-      blockquoteAlign: WrapAlignment.start,
-      codeblockAlign: WrapAlignment.start,
-    );
+    return MarkdownStyleSheet.fromTheme(
+      theme,
+    ).copyWith(p: theme.textTheme.bodyMedium);
   }
 }

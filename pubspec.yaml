@@ -69,6 +69,8 @@ dependencies:
   # Markdown 文本渲染
   flutter_markdown: ^0.7.2
   flutter_math_fork: ^0.7.2
+  graphic: ^2.7.0
+  markdown: ^7.3.0
 
   # HTTP 网络请求
   http: ^1.2.2
@@ -155,8 +157,8 @@ flutter_launcher_icons:
   web:
     generate: true
     image_path: "logo.png"
-    background_color: "#ffffff"
-    theme_color: "#ffffff"
+    background_color: "#f4f4e9"
+    theme_color: "#f4f4e9"
   windows:
     generate: true
     image_path: "logo.png"

@@ -628,7 +628,9 @@ extension AIChatServiceSendExt on AIChatService {
 
   bool _isCjkLocale() {
     final String code = _effectivePromptLocale().languageCode.toLowerCase();
-    return code.startsWith('zh') || code.startsWith('ja') || code.startsWith('ko');
+    return code.startsWith('zh') ||
+        code.startsWith('ja') ||
+        code.startsWith('ko');
   }
 
   bool _isCjkRune(int r) {
@@ -670,7 +672,10 @@ extension AIChatServiceSendExt on AIChatService {
       if (decoded is! Map) return 1.0;
       final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
 
-      final String source = (map['source'] ?? '').toString().trim().toLowerCase();
+      final String source = (map['source'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       if (source != 'usage') return 1.0;
 
       final String breakdownModel = (map['model'] ?? '').toString().trim();
@@ -698,7 +703,9 @@ extension AIChatServiceSendExt on AIChatService {
 
     // Prefer empirical calibration: usage_prompt_tokens / prompt_est_sent.
     try {
-      final ChatContextSnapshot snap = await _chatContext.getSnapshot(cid: resolvedCid);
+      final ChatContextSnapshot snap = await _chatContext.getSnapshot(
+        cid: resolvedCid,
+      );
       final double fromUsage = _tokenSafetyFactorFromBreakdown(
         snap.lastPromptBreakdownJson,
         model: model,
@@ -716,7 +723,9 @@ extension AIChatServiceSendExt on AIChatService {
   int _applyTokenSafetyToCap(int capTokens, double safetyFactor) {
     final int cap = capTokens.clamp(0, 1 << 30).toInt();
     if (cap <= 0) return 0;
-    final double f = (safetyFactor.isFinite && safetyFactor > 1.0) ? safetyFactor : 1.0;
+    final double f = (safetyFactor.isFinite && safetyFactor > 1.0)
+        ? safetyFactor
+        : 1.0;
     final int adjusted = (cap / f).floor();
     return adjusted.clamp(256, cap);
   }
@@ -727,8 +736,11 @@ extension AIChatServiceSendExt on AIChatService {
     required int toolsSchemaTokens,
     int? effectivePromptCapTokens,
   }) {
-    final int cap = (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens)
-        .clamp(256, budgets.effectivePromptCapTokens);
+    final int cap =
+        (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens).clamp(
+          256,
+          budgets.effectivePromptCapTokens,
+        );
     final int v = cap - reservedTokens - toolsSchemaTokens;
     if (v <= 0) return 0;
     return v.clamp(0, cap);
@@ -739,8 +751,11 @@ extension AIChatServiceSendExt on AIChatService {
     required int toolsSchemaTokens,
     int? effectivePromptCapTokens,
   }) {
-    final int cap = (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens)
-        .clamp(256, budgets.effectivePromptCapTokens);
+    final int cap =
+        (effectivePromptCapTokens ?? budgets.effectivePromptCapTokens).clamp(
+          256,
+          budgets.effectivePromptCapTokens,
+        );
     final int v = cap - toolsSchemaTokens;
     if (v <= 0) return 0;
     return v.clamp(0, cap);
@@ -990,7 +1005,7 @@ extension AIChatServiceSendExt on AIChatService {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
 
-    final String systemPrompt = _systemPromptForLocale();
+    final String systemPrompt = _systemPromptForLocale(allowCharts: true);
     final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
       _effectivePromptLocale(),
     );
@@ -1421,15 +1436,54 @@ extension AIChatServiceSendExt on AIChatService {
       );
     } catch (_) {}
 
+    final bool trackDailyPerf =
+        displayUserMessage.startsWith('daily_summary_') ||
+        (context == 'segments' && !includeHistory && !persistHistory);
+    final Stopwatch sendSw = Stopwatch()..start();
+    if (trackDailyPerf) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.send.begin',
+        detail:
+            'context=$context includeHistory=$includeHistory persistHistory=$persistHistory',
+      );
+    }
+    final Stopwatch endpointsSw = Stopwatch()..start();
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
+    if (trackDailyPerf) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.endpointCandidates.done',
+        detail:
+            'ms=${endpointsSw.elapsedMilliseconds} count=${endpoints.length} context=$context',
+      );
+    }
+    final Stopwatch cidSw = Stopwatch()..start();
     final String cid = (conversationCid ?? '').trim().isNotEmpty
         ? conversationCid!.trim()
         : await _settings.getActiveConversationCid();
+    if (trackDailyPerf) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.conversationCid.done',
+        detail:
+            'ms=${cidSw.elapsedMilliseconds} hasCid=${cid.isNotEmpty} context=$context',
+      );
+    }
+    final Stopwatch historySw = Stopwatch()..start();
     final List<AIMessage> history = await _settings.getChatHistoryByCid(cid);
+    if (trackDailyPerf) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.chatHistory.done',
+        detail:
+            'ms=${historySw.elapsedMilliseconds} count=${history.length} includeHistory=$includeHistory persistHistory=$persistHistory',
+      );
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.startStreamingSession.start',
+        detail: 'ms=${sendSw.elapsedMilliseconds} context=$context',
+      );
+    }
 
-    return _startStreamingSession(
+    final AIStreamingSession session = await _startStreamingSession(
       conversationCid: cid,
       userMessage: actualUserMessage,
       displayUserMessage: displayUserMessage,
@@ -1445,6 +1499,13 @@ extension AIChatServiceSendExt on AIChatService {
       persistHistoryTail: persistHistoryTail,
       extraSystemMessages: extraSystemMessages,
     );
+    if (trackDailyPerf) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.startStreamingSession.done',
+        detail: 'ms=${sendSw.elapsedMilliseconds} context=$context',
+      );
+    }
+    return session;
   }
 
   Future<AIStreamingSession> _startStreamingSession({
@@ -1515,7 +1576,9 @@ extension AIChatServiceSendExt on AIChatService {
         summaryAppsMsg = await _buildSummaryAppsContextMessage();
       } catch (_) {}
     }
-    final String systemPrompt = _systemPromptForLocale();
+    final String systemPrompt = _systemPromptForLocale(
+      allowCharts: context == 'chat',
+    );
     final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
       _effectivePromptLocale(),
     );
@@ -1896,7 +1959,9 @@ extension AIChatServiceSendExt on AIChatService {
     try {
       await _chatContext.seedFromChatHistoryIfEmpty(cid: cid, history: history);
     } catch (_) {}
-    final String systemPrompt = _systemPromptForLocale();
+    final String systemPrompt = _systemPromptForLocale(
+      allowCharts: context == 'chat',
+    );
     final String memoryAddon = NocturneMemoryPrompts.chatSystemAddon(
       _effectivePromptLocale(),
     );
@@ -3060,7 +3125,9 @@ extension AIChatServiceSendExt on AIChatService {
     final List<AIEndpoint> endpoints = await _settings.getEndpointCandidates(
       context: context,
     );
-    final String systemPrompt = _systemPromptForLocale();
+    final String systemPrompt = _systemPromptForLocale(
+      allowCharts: context == 'chat',
+    );
     final List<AIMessage> requestMessages = _composeMessages(
       systemMessage: systemPrompt,
       history: const <AIMessage>[],

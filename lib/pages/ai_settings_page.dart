@@ -30,6 +30,7 @@ import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
 import '../services/nsfw_preference_service.dart';
 import '../services/ui_perf_logger.dart';
+import '../services/dynamic_entry_perf_service.dart';
 import '../widgets/chat_context_sheet.dart';
 import '../widgets/ai_request_logs_action.dart';
 import '../widgets/ai_request_logs_viewer.dart';
@@ -212,6 +213,11 @@ class _AISettingsPageState extends State<AISettingsPage>
   // Controlled by Settings > Advanced. Defaults to hidden to avoid noisy UI.
   bool _showPerfOverlay = false;
   final Set<String> _perfLoggedMarkdownMsgKeys = <String>{};
+  Map<String, Uint8List?> _chatAppIconByPackage = <String, Uint8List?>{};
+  Map<String, Uint8List?> _chatAppIconByNameLower = <String, Uint8List?>{};
+  Map<String, String> _chatAppNameByPackage = <String, String>{};
+  bool _chatAppIconCacheLoaded = false;
+  bool _chatAppIconCacheLoading = false;
 
   final TextEditingController _baseUrlController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
@@ -366,6 +372,7 @@ class _AISettingsPageState extends State<AISettingsPage>
   bool _pendingChatReload = false;
   // _loadAll() 的批量追加任务防串台标记
   int _loadAllEpoch = 0;
+  bool _trackDynamicEntryPerf = false;
 
   void _setState(VoidCallback fn) => setState(fn);
 
@@ -377,9 +384,37 @@ class _AISettingsPageState extends State<AISettingsPage>
     } catch (_) {}
   }
 
+  void _markDynamicEntryPerf(
+    String step, {
+    String? detail,
+    bool finish = false,
+  }) {
+    if (!_trackDynamicEntryPerf || !widget.embedded) return;
+    DynamicEntryPerfService.instance.ensureSession(
+      source: 'AISettingsPage.embedded',
+    );
+    if (finish) {
+      DynamicEntryPerfService.instance.finish(step, detail: detail);
+      _trackDynamicEntryPerf = false;
+      return;
+    }
+    DynamicEntryPerfService.instance.mark(step, detail: detail);
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.embedded) {
+      _trackDynamicEntryPerf = true;
+      DynamicEntryPerfService.instance.ensureSession(
+        source: 'AISettingsPage.embedded.initState',
+      );
+      _markDynamicEntryPerf('chatPage.initState');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _markDynamicEntryPerf('chatPage.shell.firstFrame');
+      });
+    }
     _uiPerf.clear(restart: true);
     _uiPerf.log('page.initState');
     unawaited(_loadPerfOverlayEnabled());
@@ -387,6 +422,7 @@ class _AISettingsPageState extends State<AISettingsPage>
     ModelIconUtils.preload();
     _loadAll();
     _loadChatContextSelection();
+    _warmChatAppIconCache();
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (!mounted) return;
       if (ctx == 'chat:history' || ctx.startsWith('chat:history:')) {

@@ -336,8 +336,8 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
     for (final p in filePaths) {
       if (_evidenceScreenshotByPath.containsKey(p)) continue;
       try {
-        final ScreenshotRecord? s =
-            await ScreenshotDatabase.instance.getScreenshotByPath(p);
+        final ScreenshotRecord? s = await ScreenshotDatabase.instance
+            .getScreenshotByPath(p);
         _evidenceScreenshotByPath[p] = s;
         if (s != null) found.add(s);
       } catch (_) {
@@ -1374,6 +1374,9 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       blockTextStyle: Theme.of(
         context,
       ).textTheme.bodyMedium?.copyWith(color: fg),
+      appIconByPackage: _chatAppIconByPackage,
+      appIconByNameLower: _chatAppIconByNameLower,
+      appNameByPackage: _chatAppNameByPackage,
       evidenceNameToPath: evidenceNameToPath,
       orderedEvidencePaths: orderedEvidencePathsFromAtts,
       screenshotByPath: _evidenceScreenshotByPath,
@@ -1403,6 +1406,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       return MarkdownBody(
         data: preprocessedMd,
         builders: mathConfig.builders,
+        blockSyntaxes: mathConfig.blockSyntaxes,
         inlineSyntaxes: mathConfig.inlineSyntaxes,
         styleSheet: _mdStyle(context).copyWith(
           p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
@@ -1423,6 +1427,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       return MarkdownBody(
         data: preprocessedMd,
         builders: mathConfig.builders,
+        blockSyntaxes: mathConfig.blockSyntaxes,
         inlineSyntaxes: mathConfig.inlineSyntaxes,
         styleSheet: _mdStyle(context).copyWith(
           p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
@@ -1480,6 +1485,9 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
         blockTextStyle: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: fg),
+        appIconByPackage: _chatAppIconByPackage,
+        appIconByNameLower: _chatAppIconByNameLower,
+        appNameByPackage: _chatAppNameByPackage,
         evidenceNameToPath: baseMap,
         orderedEvidencePaths: orderedEvidencePathsFromMap(baseMap),
         screenshotByPath: _evidenceScreenshotByPath,
@@ -1488,6 +1496,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
       return MarkdownBody(
         data: preprocessedMd,
         builders: resolved.builders,
+        blockSyntaxes: resolved.blockSyntaxes,
         inlineSyntaxes: resolved.inlineSyntaxes,
         styleSheet: _mdStyle(context).copyWith(
           p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
@@ -1527,6 +1536,9 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
           blockTextStyle: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: fg),
+          appIconByPackage: _chatAppIconByPackage,
+          appIconByNameLower: _chatAppIconByNameLower,
+          appNameByPackage: _chatAppNameByPackage,
           // While the future is resolving, avoid flashing raw `[evidence: ...]`
           // text; show a fixed-size shimmer placeholder instead.
           evidenceLoading: snap.connectionState != ConnectionState.done,
@@ -1544,6 +1556,7 @@ extension _AISettingsPageStateThinkingCodecExt on _AISettingsPageState {
           ),
           data: preprocessedMd,
           builders: resolved.builders,
+          blockSyntaxes: resolved.blockSyntaxes,
           inlineSyntaxes: resolved.inlineSyntaxes,
           styleSheet: _mdStyle(context).copyWith(
             p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
