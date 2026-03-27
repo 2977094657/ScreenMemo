@@ -44,15 +44,35 @@ class AppSideDrawer extends StatelessWidget {
                 NavigationService.instance.openSegmentStatus();
               },
             ),
-            _buildMenuItem(
-              context: context,
-              icon: Icons.memory_outlined,
-              title: '记忆',
-              isFirst: false,
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NocturneMemoryPage()),
+            StreamBuilder<String>(
+              stream: AISettingsService.instance.onContextChanged.where(
+                (String evt) =>
+                    evt ==
+                    AISettingsService
+                        .eventNocturneMemorySidebarEntryVisibilityChanged,
+              ),
+              builder: (ctx, _) {
+                return FutureBuilder<bool>(
+                  future: AISettingsService.instance
+                      .getNocturneMemorySidebarEntryVisible(),
+                  builder: (ctx, snap) {
+                    final bool visible = snap.data ?? false;
+                    if (!visible) return const SizedBox.shrink();
+                    return _buildMenuItem(
+                      context: context,
+                      icon: Icons.memory_outlined,
+                      title: '记忆',
+                      isFirst: false,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NocturneMemoryPage(),
+                          ),
+                        );
+                      },
+                    );
+                  },
                 );
               },
             ),

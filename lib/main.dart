@@ -16,6 +16,7 @@ import 'services/app_lifecycle_service.dart';
 import 'services/navigation_service.dart';
 import 'services/daily_summary_service.dart';
 import 'services/locale_service.dart';
+import 'services/nocturne_memory_rebuild_service.dart';
 import 'services/screenshot_database.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'pages/app_screenshot_settings_page.dart';
@@ -131,6 +132,8 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       // 安排每日总结的自动预生成（08:00、12:00、17:00 + 提醒前1分钟）
       // ignore: discarded_futures
       DailySummaryService.instance.refreshAutoRefreshSchedule();
+      // ignore: discarded_futures
+      NocturneMemoryRebuildService.instance.ensureInitialized(autoResume: true);
     });
   }
 
@@ -160,6 +163,8 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       // 回到前台时刷新一次“自动预生成”调度
       // ignore: discarded_futures
       DailySummaryService.instance.refreshAutoRefreshSchedule();
+      // ignore: discarded_futures
+      NocturneMemoryRebuildService.instance.ensureInitialized(autoResume: true);
     }
   }
 

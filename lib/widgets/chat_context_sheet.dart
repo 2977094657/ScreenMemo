@@ -58,6 +58,10 @@ class ChatContextSheet {
       ),
     );
   }
+
+  static Future<void> showDrawerOrSheet(BuildContext context) async {
+    await show(context);
+  }
 }
 
 enum ChatContextPanelPresentation { bottomSheet, drawer }
@@ -78,7 +82,7 @@ class ChatContextDrawer extends StatelessWidget {
   }
 }
 
-/// AppBar action that opens the conversation-context bottom sheet when tapped.
+/// AppBar action that opens the conversation-context bottom sheet.
 ///
 /// The prompt/context usage indicator is shown as a bar under the AppBar (see
 /// [ChatContextAppBarUsageBar]) instead of being overlaid on this icon.
@@ -87,10 +91,16 @@ class ChatContextAppBarAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: ChatContextSheet._loc(context, '对话上下文', 'Conversation context'),
-      onPressed: () => ChatContextSheet.show(context),
-      icon: const Icon(Icons.memory_outlined),
+    return Builder(
+      builder: (ctx) => IconButton(
+        tooltip: ChatContextSheet._loc(
+          context,
+          '对话上下文',
+          'Conversation context',
+        ),
+        onPressed: () => ChatContextSheet.showDrawerOrSheet(ctx),
+        icon: const Icon(Icons.memory_outlined),
+      ),
     );
   }
 }
@@ -365,7 +375,7 @@ class _ChatContextAppBarUsageBarState extends State<ChatContextAppBarUsageBar> {
             message: tooltip,
             child: InkWell(
               borderRadius: BorderRadius.circular(999),
-              onTap: () => ChatContextSheet.show(context),
+              onTap: () => ChatContextSheet.showDrawerOrSheet(context),
               child: Transform.translate(
                 // Lift it further into the toolbar area (reduce the large empty gap).
                 offset: const Offset(0, -AppTheme.spacing2),
@@ -431,6 +441,8 @@ class ChatContextPanel extends StatefulWidget {
 class _ChatContextPanelState extends State<ChatContextPanel> {
   static const int _trimEventsDefaultLimit = 50;
   static const int _trimEventsMaxLimit = 200;
+  static const int _memoryEntryUnlockTapTarget = 10;
+  static const int _memoryEntryUnlockHintThreshold = 3;
 
   Future<ChatContextSnapshot>? _future;
   // Cache the last successful snapshot/token count so periodic refresh won't "flash"
@@ -447,11 +459,14 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   int? _activeModelContextTokens;
   int? _activeModelOutputTokens;
   String _lastPromptModelForCapOverride = '';
+  int _memoryEntryUnlockTapCount = 0;
+  bool _memoryEntryVisible = false;
 
   @override
   void initState() {
     super.initState();
     _reload();
+    unawaited(_loadMemorySidebarEntryVisibility());
     _ctxSub = AISettingsService.instance.onContextChanged.listen((String evt) {
       if (!mounted) return;
       // Fast-path: prompt usage is recorded per request (including tool-loop
@@ -551,6 +566,100 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
   void _reload() {
     _refreshSnapshotOnly();
     _loadModelInfo();
+  }
+
+  Future<void> _loadMemorySidebarEntryVisibility() async {
+    try {
+      final bool visible = await AISettingsService.instance
+          .getNocturneMemorySidebarEntryVisible();
+      if (!mounted) return;
+      setState(() {
+        _memoryEntryVisible = visible;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _onMemoryEntryUnlockTap() async {
+    if (_memoryEntryVisible) return;
+    final int nextCount = (_memoryEntryUnlockTapCount + 1).clamp(
+      0,
+      _memoryEntryUnlockTapTarget,
+    );
+    final int remaining = _memoryEntryUnlockTapTarget - nextCount;
+
+    if (remaining <= 0) {
+      try {
+        await AISettingsService.instance.setNocturneMemorySidebarEntryVisible(
+          true,
+        );
+        if (!mounted) return;
+        setState(() {
+          _memoryEntryVisible = true;
+          _memoryEntryUnlockTapCount = nextCount;
+        });
+        UINotifier.success(
+          context,
+          ChatContextSheet._loc(
+            context,
+            '记忆入口已显示，可在左侧边栏打开',
+            'Memory entry is now visible in the sidebar',
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        UINotifier.error(
+          context,
+          ChatContextSheet._loc(
+            context,
+            '显示记忆入口失败：$e',
+            'Failed to reveal memory entry: $e',
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _memoryEntryUnlockTapCount = nextCount;
+    });
+    if (remaining <= _memoryEntryUnlockHintThreshold) {
+      UINotifier.info(
+        context,
+        ChatContextSheet._loc(
+          context,
+          '再点击 $remaining 次显示记忆入口',
+          'Tap $remaining more times to reveal the memory entry',
+        ),
+      );
+    }
+  }
+
+  Widget _buildPanelTitle(ThemeData theme) {
+    final TextStyle titleStyle =
+        theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700) ??
+        const TextStyle(fontSize: 16, fontWeight: FontWeight.w700);
+    final bool isZh = ChatContextSheet._isZh(context);
+
+    return Text.rich(
+      TextSpan(
+        style: titleStyle,
+        children: <InlineSpan>[
+          TextSpan(text: isZh ? '对话上下文（压缩/' : 'Conversation Context ('),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _onMemoryEntryUnlockTap,
+              child: Text(isZh ? '记忆' : 'Memory', style: titleStyle),
+            ),
+          ),
+          TextSpan(text: isZh ? '）' : ')'),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   Future<void> _loadModelInfo() async {
@@ -1360,18 +1469,7 @@ class _ChatContextPanelState extends State<ChatContextPanel> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        ChatContextSheet._loc(
-                          context,
-                          '对话上下文（压缩/记忆）',
-                          'Conversation Context (Memory)',
-                        ),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+                    Expanded(child: _buildPanelTitle(theme)),
                     IconButton(
                       tooltip: ChatContextSheet._loc(context, '刷新', 'Refresh'),
                       onPressed: _busy ? null : _reload,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../pages/daily_summary_page.dart';
+import '../pages/nocturne_memory_page.dart';
 import '../pages/segment_status_page.dart';
 import 'flutter_logger.dart';
 
@@ -13,14 +14,21 @@ class NavigationService {
 
   /// 打开每日总结页面；dateKey 为空则使用今日
   Future<void> openDailySummary(String? dateKey) async {
-    final dk = (dateKey == null || dateKey.trim().isEmpty) ? _todayKey() : dateKey.trim();
+    final dk = (dateKey == null || dateKey.trim().isEmpty)
+        ? _todayKey()
+        : dateKey.trim();
     try {
       // 记录到原生日志，便于核查
       await FlutterLogger.nativeInfo('Navigation', '打开每日总结 dateKey=$dk');
     } catch (_) {}
     final nav = navigatorKey.currentState;
     if (nav == null) {
-      try { await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开每日总结 dateKey=$dk'); } catch (_) {}
+      try {
+        await FlutterLogger.nativeWarn(
+          'Navigation',
+          '导航器未就绪，忽略打开每日总结 dateKey=$dk',
+        );
+      } catch (_) {}
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => DailySummaryPage(dateKey: dk)));
@@ -29,10 +37,27 @@ class NavigationService {
   Future<void> openSegmentStatus() async {
     final nav = navigatorKey.currentState;
     if (nav == null) {
-      try { await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开动态状态页'); } catch (_) {}
+      try {
+        await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开动态状态页');
+      } catch (_) {}
       return;
     }
     nav.push(MaterialPageRoute(builder: (_) => SegmentStatusPage()));
+  }
+
+  Future<void> openNocturneMemory({int initialTabIndex = 1}) async {
+    final nav = navigatorKey.currentState;
+    if (nav == null) {
+      try {
+        await FlutterLogger.nativeWarn('Navigation', '导航器未就绪，忽略打开记忆页');
+      } catch (_) {}
+      return;
+    }
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => NocturneMemoryPage(initialTabIndex: initialTabIndex),
+      ),
+    );
   }
 
   String _todayKey() {

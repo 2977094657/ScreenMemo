@@ -83,28 +83,43 @@ Use add_alias to create the new path first, then delete_memory to remove the old
 - 最多 {MAX_IMAGES} 张截图（纯图片语料）
 - 一份“当前长期记忆快照”（用于去重）
 
-你的任务：只根据截图中**可见且稳定**的信息，提炼用户长期记忆，并输出写入动作（JSON）。
+你的任务：只根据截图中**可见且稳定**的信息，提炼用户长期记忆，并输出写入动作。
 
-重要：这是单次提取，不是对话。你不能调用工具；你只能输出 JSON。
+重要：这是单次提取，不是对话。
+- 只允许输出 `[]` 或 `[{...}]` 这种紧凑格式（不是 JSON，不要解释）：
+[{update_memory,core://my_user/preferences,- 喜欢深色主题}]
+- `update_memory` 字段顺序固定为：tool, uri, append
+- `create_memory` 字段顺序固定为：tool, parent_uri, title, content
+- 如果没有任何可写入内容，只能输出：[]
 
 规则：
 1) 不要猜测/补全/编造；不确定就跳过。
-2) 输出必须是**纯 JSON**（不要 Markdown、不要解释、不要多余文字）。
-3) 只能输出 update_memory/create_memory（actions 列表）。
+2) 不要输出 Markdown、代码块、解释性文字；不要手写 JSON；不要输出 `NO_ACTIONS`。
+3) 只能输出 update_memory/create_memory。
 4) update_memory 只能用 append（不要 patch）。
-5) 允许写入的范围：只能在以下 6 个根节点及其任意子节点下写入（允许多层级）：
-   - core://my_user/identity/*
-   - core://my_user/preferences/*
-   - core://my_user/projects/*
-   - core://my_user/people/*
-   - core://my_user/habits/*
-   - core://my_user/other/*
+5) 允许写入的范围：只能在以下 10 个根节点及其任意子节点下写入（允许多层级）：
+   - core://my_user/identity/*        （身份、角色、技能、设备、长期背景）
+   - core://my_user/people/*          （家人、朋友、同事、稳定人际关系）
+   - core://my_user/places/*          （城市、住处、公司/学校地点、常去场所、旅行地点）
+   - core://my_user/organizations/*   （公司、学校、团队、社区、品牌、平台等现实实体）
+   - core://my_user/preferences/*     （明确偏好、厌恶、设置、选择倾向）
+   - core://my_user/interests/*       （长期关注主题、兴趣领域、常看内容）
+   - core://my_user/projects/*        （正在做/持续投入的项目、作品、产品）
+   - core://my_user/goals/*           （计划、目标、愿望、长期待办方向）
+   - core://my_user/habits/*          （作息、重复行为、惯常模式）
+   - core://my_user/other/*           （确实无法归类时才放这里）
+   - “兴趣主题”优先归入 core://my_user/interests/*，不要塞进 preferences。
+   - “地点/位置/住处/常去场所”必须归入 core://my_user/places/*，不要混到 other。
+   - “公司/学校/团队/社区/品牌/平台实体”必须归入 core://my_user/organizations/*。
+   - 严禁输出不存在的根目录，例如：core://my_user/location/*、core://my_user/place/*、core://my_user/org/*、core://my_user/interest/*、core://my_user/project/*、core://my_user/person/*。
+   - 如果你想表达“用户对游戏开发内容感兴趣”，正确写法应类似：core://my_user/interests/game_dev_content。
+   - 如果你想表达“用户常去徐汇滨江”，正确写法应类似：core://my_user/places/xuhui_riverside。
    例如：core://my_user/projects/screen_memo/nocturne。
 6) 去重：如果要点已在“记忆快照”里出现（含同义表达），必须跳过，不要重复写入。
-7) append 必须以换行开头，并使用 Markdown 列表（- ...）。
+7) append 直接写成列表项内容即可，使用 `- ...` 开头，不需要额外包 JSON 字符串。
 8) create_memory 必须提供 title，并且 title 只能使用小写 slug（[a-z0-9_-]），不要用纯数字、不要随机编号。
-   - 推荐 args：{"parent_uri":"...","title":"...","content":"...","priority":2}
-   - 尽量不要使用 args.uri；如果你输出了 uri，则 uri 必须是完整目标路径，且 title 必须等于 uri 最后一级。
+   - 推荐字段：parent_uri、title、content、priority
+   - 尽量不要直接提供 uri；如果提供了 uri，则 uri 必须是完整目标路径，且 title 必须等于 uri 最后一级。
 9) 优先更新已有节点（如果快照里已有相近的目录/节点），不确定时写入父级根节点，不要滥建节点。
 10) 生命周期/时序（对象 + 事件，推荐）：当你确认“同一对象”发生状态变化：
    - 为该对象选择一个稳定的主节点（canonical），优先复用快照里已存在的对象节点。
@@ -112,11 +127,9 @@ Use add_alias to create the new path first, then delete_memory to remove the old
    - 主节点 append 一条“状态(YYYY-MM-DD)：...”或“变化(YYYY-MM-DD)：...”以便按时间理解。
    - 若 <object>/events 不存在，先 create_memory 创建 events 节点（content 可写“事件目录/索引”）。
    - 同时在该对象下创建事件节点：<object>/events/<yyyy-mm-dd>_<slug>，用于记录细节。
-11) 每次最多输出 5 条 actions；没有可写入内容则 {"actions": []}。
+11) 每次最多输出 5 条动作；没有可写入内容则输出 []。
 
-输出示例：
-{"actions":[
-  {"tool":"update_memory","args":{"uri":"core://my_user/preferences","append":"\\n- 喜欢深色主题"}}
-]}
+紧凑格式示例：
+[{update_memory,core://my_user/preferences,- 喜欢深色主题}]
 ''';
 }

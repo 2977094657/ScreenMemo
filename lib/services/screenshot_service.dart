@@ -421,6 +421,16 @@ class ScreenshotService {
               print('处理动态重建通知点击失败: $e');
             }
             break;
+          case 'onMemoryRebuildNotificationTap':
+            try {
+              await FlutterLogger.nativeInfo('Navigation', '通知点击：打开记忆重建页');
+              await NavigationService.instance.openNocturneMemory(
+                initialTabIndex: 1,
+              );
+            } catch (e) {
+              print('处理记忆重建通知点击失败: $e');
+            }
+            break;
           case 'onCompressionProgress':
             if (call.arguments is Map) {
               _handleCompressionProgress(

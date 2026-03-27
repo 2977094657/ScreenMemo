@@ -20,7 +20,9 @@ import 'nocturne_memory_view_tab.dart';
 /// - Tab: 一键重建（纯图片语料：来自“动态”里的截图样本）
 /// - AppBar: 像“动态”那样选择提供商与模型（独立上下文：memory）
 class NocturneMemoryPage extends StatefulWidget {
-  const NocturneMemoryPage({super.key});
+  const NocturneMemoryPage({super.key, this.initialTabIndex = 0});
+
+  final int initialTabIndex;
 
   @override
   State<NocturneMemoryPage> createState() => _NocturneMemoryPageState();
@@ -42,7 +44,11 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 1),
+    );
     _loadMemoryContextSelection();
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
       if (ctx == 'memory' && mounted) _loadMemoryContextSelection();
@@ -86,7 +92,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                 .toString()
                 .trim();
       if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
-      if (model.isNotEmpty && sel.models.isNotEmpty && !sel.models.contains(model)) {
+      if (model.isNotEmpty &&
+          sel.models.isNotEmpty &&
+          !sel.models.contains(model)) {
         final String fb =
             ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
                 .toString()
@@ -130,7 +138,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                   final name = p.name.toLowerCase();
                   final type = p.type.toLowerCase();
                   final base = (p.baseUrl ?? '').toString().toLowerCase();
-                  return name.contains(q) || type.contains(q) || base.contains(q);
+                  return name.contains(q) ||
+                      type.contains(q) ||
+                      base.contains(q);
                 }).toList();
                 final selIdx = filtered.indexWhere((e) => e.id == currentId);
                 if (selIdx > 0) {
@@ -155,8 +165,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText:
-                                AppLocalizations.of(context).searchProviderPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchProviderPlaceholder,
                             isDense: true,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -170,7 +181,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withValues(alpha: 0.6),
                           ),
                           itemBuilder: (c, i) {
                             final p = filtered[i];
@@ -189,32 +202,41 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                                     )
                                   : null,
                               onTap: () async {
+                                final NavigatorState navigator = Navigator.of(
+                                  ctx,
+                                );
                                 String model = (_ctxModel ?? '').trim();
-                                if (model.isEmpty) {
-                                  model =
+                                final List<String> available = p.models;
+                                if (model.isEmpty ||
+                                    (available.isNotEmpty &&
+                                        !available.contains(model))) {
+                                  String fb =
                                       (p.extra['active_model'] as String? ??
                                               p.defaultModel)
                                           .toString()
                                           .trim();
+                                  if (fb.isEmpty && available.isNotEmpty) {
+                                    fb = available.first;
+                                  }
+                                  model = fb;
                                 }
-                                if (model.isEmpty && p.models.isNotEmpty) {
-                                  model = p.models.first;
-                                }
-                                await AISettingsService.instance.setAIContextSelection(
-                                  context: 'memory',
-                                  providerId: p.id!,
-                                  model: model,
-                                );
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'memory',
+                                      providerId: p.id!,
+                                      model: model,
+                                    );
                                 if (mounted) {
                                   setState(() {
                                     _ctxProvider = p;
                                     _ctxModel = model;
                                   });
-                                  Navigator.of(ctx).pop();
+                                  navigator.pop();
                                   UINotifier.success(
                                     context,
-                                    AppLocalizations.of(context)
-                                        .providerSelectedToast(p.name),
+                                    AppLocalizations.of(
+                                      context,
+                                    ).providerSelectedToast(p.name),
                                   );
                                 }
                               },
@@ -297,7 +319,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchModelPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchModelPlaceholder,
                             isDense: true,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -311,7 +335,9 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                           itemCount: filtered.length,
                           separatorBuilder: (c, i) => Container(
                             height: 1,
-                            color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                            color: Theme.of(
+                              c,
+                            ).colorScheme.outline.withValues(alpha: 0.6),
                           ),
                           itemBuilder: (c, i) {
                             final m = filtered[i];
@@ -330,17 +356,23 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                                     )
                                   : null,
                               onTap: () async {
-                                await AISettingsService.instance.setAIContextSelection(
-                                  context: 'memory',
-                                  providerId: p.id!,
-                                  model: m,
+                                final NavigatorState navigator = Navigator.of(
+                                  ctx,
                                 );
+                                await AISettingsService.instance
+                                    .setAIContextSelection(
+                                      context: 'memory',
+                                      providerId: p.id!,
+                                      model: m,
+                                    );
                                 if (mounted) {
                                   setState(() => _ctxModel = m);
-                                  Navigator.of(ctx).pop();
+                                  navigator.pop();
                                   UINotifier.success(
                                     context,
-                                    AppLocalizations.of(context).modelSwitchedToast(m),
+                                    AppLocalizations.of(
+                                      context,
+                                    ).modelSwitchedToast(m),
                                   );
                                 }
                               },
@@ -365,7 +397,7 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
     final String modelName = _ctxModel ?? '—';
     final TextStyle? linkStyle = theme.textTheme.labelSmall?.copyWith(
       decoration: TextDecoration.underline,
-      decorationColor: theme.colorScheme.onSurface.withOpacity(0.6),
+      decorationColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
       color: theme.colorScheme.onSurface,
     );
     return Row(
@@ -423,6 +455,7 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                 message:
                     '这里是 Nocturne 风格的“URI 图记忆”。\n\n'
                     '重建时仅使用“动态”里的截图图片作为语料（每次最多 10 张）。\n'
+                    '重建任务现在会在页面外继续运行，并在通知栏显示进度。\n'
                     '当解析响应失败会立刻暂停，并在页面下方显示原始响应，允许你选择继续。',
               );
             },
@@ -441,12 +474,8 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
       ),
       body: TabBarView(
         controller: _tab,
-        children: const [
-          NocturneMemoryViewTab(),
-          NocturneMemoryRebuildTab(),
-        ],
+        children: const [NocturneMemoryViewTab(), NocturneMemoryRebuildTab()],
       ),
     );
   }
 }
-
