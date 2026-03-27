@@ -186,6 +186,16 @@
             android:name=".KeepAliveJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="true" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
  
         <!-- 每日总结提醒闹钟接收器 -->
         <receiver

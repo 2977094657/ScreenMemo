@@ -13,6 +13,9 @@ class ScreenMemoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppContextProvider.init(this)
+        FileLogger.init(this)
+        try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
+        RuntimeDiagnostics.logProcessStart(this, TAG, "application_onCreate", force = true)
 
         // 暂不执行 Dart 入口，避免在 Activity 尚未完成通道注册前出现 MissingPluginException。
         // 如需预热引擎，可在此处仅创建并缓存 FlutterEngine（不执行 Dart）。

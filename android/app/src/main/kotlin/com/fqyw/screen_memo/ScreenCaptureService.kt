@@ -303,6 +303,7 @@ class ScreenCaptureService : Service() {
         super.onCreate()
         isServiceRunning = true
         FileLogger.d(TAG, "前台服务已创建，进程ID: ${android.os.Process.myPid()}")
+        RuntimeDiagnostics.logProcessStart(this, TAG, "fgs_onCreate", force = true)
 
         // 同步文件日志开关（避免 Accessibility 尚未就绪时丢日志）
         try { FileLogger.syncFromFlutterPrefs(this) } catch (_: Exception) {}
@@ -318,6 +319,18 @@ class ScreenCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         FileLogger.e(TAG, "=== 前台服务 onStartCommand 开始 ===")
         FileLogger.e(TAG, "前台服务已启动，进程ID: ${android.os.Process.myPid()}")
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "fgs_onStartCommand",
+            extras = mapOf(
+                "startId" to startId,
+                "flags" to flags,
+                "action" to (intent?.action ?: "-"),
+                "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+            ),
+            force = true,
+        )
 
         try {
             // 启动前台服务
@@ -355,6 +368,7 @@ class ScreenCaptureService : Service() {
         super.onDestroy()
         isServiceRunning = false
         FileLogger.e(TAG, "前台服务已销毁")
+        RuntimeDiagnostics.logSnapshot(this, TAG, "fgs_onDestroy", force = true)
 
         // 更新状态
         ServiceStateManager.setForegroundServiceRunning(this, false)
@@ -367,10 +381,36 @@ class ScreenCaptureService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         FileLogger.e(TAG, "=== 前台服务 onTaskRemoved ===")
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "fgs_onTaskRemoved",
+            extras = mapOf(
+                "rootIntent" to (rootIntent?.toString() ?: "-"),
+                "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+            ),
+            force = true,
+        )
         // 这里不要主动“重启/重复启动”前台服务：
         // - 前台服务本身应在任务移除后继续运行（stopWithTask=false）
         // - 反复 startForeground/重复拉起会造成状态栏通知短暂闪烁
         FileLogger.e(TAG, "应用任务被移除：保持前台服务继续运行（不主动重启）")
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "fgs_onTrimMemory",
+            extras = mapOf("level" to level),
+            force = true,
+        )
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        RuntimeDiagnostics.logSnapshot(this, TAG, "fgs_onLowMemory", force = true)
     }
     
     override fun onBind(intent: Intent?): IBinder? {

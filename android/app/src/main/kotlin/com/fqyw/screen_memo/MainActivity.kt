@@ -42,6 +42,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.view.Gravity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import android.util.TypedValue
 import android.app.Dialog
 import android.graphics.Bitmap
@@ -223,6 +224,22 @@ class MainActivity : FlutterActivity() {
                 "getOutputLogsDirToday" -> {
                     val dir = OutputFileLogger.getTodayDir(this)
                     result.success(dir?.absolutePath)
+                }
+                "getPendingRuntimeDiagnostic" -> {
+                    result.success(RuntimeDiagnostics.getPendingIssueSummary(this))
+                }
+                "markRuntimeDiagnosticHandled" -> {
+                    val issueId = call.argument<String>("id")
+                    RuntimeDiagnostics.markIssueHandled(this, issueId)
+                    result.success(true)
+                }
+                "openDiagnosticFile" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "path is blank", null)
+                    } else {
+                        openDiagnosticFile(path, result)
+                    }
                 }
                 "getSegmentsAIConfig" -> {
                     try {
@@ -632,6 +649,7 @@ class MainActivity : FlutterActivity() {
                     val appName = call.argument<String>("appName") ?: ""
                     val filePath = call.argument<String>("filePath") ?: ""
                     val captureTime = call.argument<Long>("captureTime") ?: System.currentTimeMillis()
+                    val pageUrl = call.argument<String>("pageUrl")
                     
                     FileLogger.i(TAG, "收到截图记录插入请求: $appName - $filePath")
                     
@@ -640,7 +658,8 @@ class MainActivity : FlutterActivity() {
                         "packageName" to packageName,
                         "appName" to appName,
                         "filePath" to filePath,
-                        "captureTime" to captureTime
+                        "captureTime" to captureTime,
+                        "pageUrl" to pageUrl
                     ))
                     
                     result.success(true)
@@ -920,6 +939,45 @@ class MainActivity : FlutterActivity() {
                         result.success(DynamicRebuildService.cancelTask(applicationContext))
                     } catch (e: Exception) {
                         result.error("cancel_dynamic_rebuild_task_failed", e.message, null)
+                    }
+                }
+                "showMemoryRebuildNotification" -> {
+                    try {
+                        val status = call.argument<String>("status") ?: "running"
+                        val processed = call.argument<Int>("processed") ?: 0
+                        val failed = call.argument<Int>("failed") ?: 0
+                        val total = call.argument<Int>("total") ?: 0
+                        val currentPosition = call.argument<Int>("currentPosition") ?: 0
+                        val currentSegmentId = call.argument<Int>("currentSegmentId") ?: 0
+                        val segmentSampleCursor = call.argument<Int>("segmentSampleCursor") ?: 0
+                        val segmentSampleTotal = call.argument<Int>("segmentSampleTotal") ?: 0
+                        val pauseReason = call.argument<String>("pauseReason")
+                        val lastError = call.argument<String>("lastError")
+                        result.success(
+                            MemoryRebuildNotifier.show(
+                                applicationContext,
+                                status,
+                                processed,
+                                failed,
+                                total,
+                                currentPosition,
+                                currentSegmentId,
+                                segmentSampleCursor,
+                                segmentSampleTotal,
+                                pauseReason,
+                                lastError,
+                            )
+                        )
+                    } catch (e: Exception) {
+                        result.error("show_memory_rebuild_notification_failed", e.message, null)
+                    }
+                }
+                "cancelMemoryRebuildNotification" -> {
+                    try {
+                        MemoryRebuildNotifier.cancel(applicationContext)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("cancel_memory_rebuild_notification_failed", e.message, null)
                     }
                 }
                 "compressScreenshotFile" -> {
@@ -1280,6 +1338,17 @@ class MainActivity : FlutterActivity() {
                 } catch (e: Exception) {
                     try { FileLogger.w(TAG, "调用 onDynamicRebuildNotificationTap 失败：${e.message}") } catch (_: Exception) {}
                 }
+                return
+            }
+
+            val fromMemoryRebuild = it.getBooleanExtra("from_memory_rebuild_notification", false)
+            if (fromMemoryRebuild) {
+                try { FileLogger.i(TAG, "通知启动：打开记忆重建页面") } catch (_: Exception) {}
+                try {
+                    methodChannel.invokeMethod("onMemoryRebuildNotificationTap", null)
+                } catch (e: Exception) {
+                    try { FileLogger.w(TAG, "调用 onMemoryRebuildNotificationTap 失败：${e.message}") } catch (_: Exception) {}
+                }
             }
         } catch (_: Exception) {}
     }
@@ -1572,7 +1641,6 @@ class MainActivity : FlutterActivity() {
                         } else {
                             FileLogger.d(TAG, "本次通知未附带URL")
                         }
-                        
                         // 通知Flutter端更新数据库
                         methodChannel.invokeMethod("onScreenshotSaved", mapOf(
                             "packageName" to packageName,
@@ -3015,6 +3083,51 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             try { FileLogger.e(TAG, "切换Launcher别名异常", e) } catch (_: Exception) {}
             false
+        }
+    }
+
+    private fun openDiagnosticFile(path: String, result: MethodChannel.Result) {
+        try {
+            val target = File(path)
+            if (!target.exists()) {
+                result.error("file_not_found", "File does not exist: $path", null)
+                return
+            }
+
+            val uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                target,
+            )
+            val mimeType = when (target.extension.lowercase()) {
+                "log", "txt", "json", "csv" -> "text/plain"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                else -> "*/*"
+            }
+
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            try {
+                startActivity(Intent.createChooser(viewIntent, "打开诊断文件"))
+                result.success(true)
+            } catch (_: Exception) {
+                startActivity(Intent.createChooser(sendIntent, "分享诊断文件"))
+                result.success(true)
+            }
+        } catch (e: Exception) {
+            result.error("open_diagnostic_file_failed", e.message, null)
         }
     }
 }

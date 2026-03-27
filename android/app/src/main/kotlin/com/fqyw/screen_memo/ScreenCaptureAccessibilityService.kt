@@ -88,6 +88,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     // 当前前台应用包名
     private var currentForegroundApp: String? = null
+    private var lastDetailedFailureSnapshotAt: Long = 0L
+    private var lastNoTargetSnapshotAt: Long = 0L
 
     // 简化的应用会话管理
     private var currentSessionApp: String? = null  // 当前会话中的应用
@@ -426,6 +428,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         FileLogger.e(TAG, "无障碍服务已创建，进程ID: ${android.os.Process.myPid()}")
         FileLogger.e(TAG, "当前时间: ${System.currentTimeMillis()}")
         FileLogger.e(TAG, "日志文件路径: ${FileLogger.getLogFilePath()}")
+        RuntimeDiagnostics.logProcessStart(this, TAG, "accessibility_onCreate", force = true)
 
         // 预设instance，以防onServiceConnected没有被调用
         instance = this
@@ -458,6 +461,17 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             AccessibilityServiceWatchdog.startWatchdog(this)
             AccessibilityServiceWatchdog.updateHeartbeat()
             FileLogger.e(TAG, "看门狗监控已启动")
+            RuntimeDiagnostics.logSnapshot(
+                this,
+                TAG,
+                "accessibility_onServiceConnected",
+                extras = mapOf(
+                    "savedServiceState" to getSavedServiceState(),
+                    "timedRunning" to isTimedScreenshotRunning,
+                    "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+                ),
+                force = true,
+            )
 
             // 延迟初始化其他功能，避免阻塞服务启动
             handler.postDelayed({
@@ -520,6 +534,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         FileLogger.e(TAG, "=== 无障碍服务正在断开连接 ===")
         FileLogger.e(TAG, "断开原因: 可能是应用被清理或服务被禁用")
         FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_onUnbind",
+            extras = mapOf(
+                "intent" to (intent?.toString() ?: "-"),
+                "timedRunning" to isTimedScreenshotRunning,
+            ),
+            force = true,
+        )
 
         // 清理资源
         stopScreenCapture()
@@ -544,6 +568,18 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         FileLogger.writeSeparator("AccessibilityService onDestroy - 服务销毁")
         FileLogger.e(TAG, "=== 无障碍服务正在销毁 ===")
         FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_onDestroy",
+            extras = mapOf(
+                "timedRunning" to isTimedScreenshotRunning,
+                "pausedByScreenOff" to pausedByScreenOff,
+                "currentForegroundApp" to (currentForegroundApp ?: "-"),
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+            ),
+            force = true,
+        )
 
         // 停止看门狗监控
         AccessibilityServiceWatchdog.stopWatchdog()
@@ -624,6 +660,20 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         FileLogger.e(TAG, "=== 应用任务被移除 ===")
         FileLogger.e(TAG, "rootIntent: $rootIntent")
         FileLogger.e(TAG, "当前进程ID: ${android.os.Process.myPid()}")
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_onTaskRemoved",
+            extras = mapOf(
+                "rootIntent" to (rootIntent?.toString() ?: "-"),
+                "timedRunning" to isTimedScreenshotRunning,
+                "pausedByScreenOff" to pausedByScreenOff,
+                "currentForegroundApp" to (currentForegroundApp ?: "-"),
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+                "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+            ),
+            force = true,
+        )
 
         try {
             // 保存服务状态，表明服务应该继续运行
@@ -800,6 +850,36 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     
     override fun onInterrupt() {
         FileLogger.d(TAG, "无障碍服务被中断")
+        RuntimeDiagnostics.logSnapshot(this, TAG, "accessibility_onInterrupt", force = true)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_onTrimMemory",
+            extras = mapOf(
+                "level" to level,
+                "timedRunning" to isTimedScreenshotRunning,
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+            ),
+            force = true,
+        )
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_onLowMemory",
+            extras = mapOf(
+                "timedRunning" to isTimedScreenshotRunning,
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+            ),
+            force = true,
+        )
     }
     
     
@@ -810,6 +890,13 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         try {
             // 在截屏前检查屏幕/锁屏状态，避免息屏状态下产生黑图
             if (shouldPauseForScreenState()) {
+                maybeLogDetailedFailure(
+                    "screen_state_blocked",
+                    mapOf(
+                        "timedRunning" to isTimedScreenshotRunning,
+                        "stableApp" to (lastStableMonitoredApp ?: "-"),
+                    )
+                )
                 callback(false, null)
                 return
             }
@@ -863,16 +950,33 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                             captureEnabled = true
                                         )
                                     } catch (_: Exception) {}
+                                    RuntimeDiagnostics.noteCaptureSuccess(
+                                        this@ScreenCaptureAccessibilityService,
+                                        TAG,
+                                        targetApp,
+                                        savedPath
+                                    )
                                     // 释放WakeLock后再回调
                                     releaseWakeLock()
                                     callback(true, savedPath)
                                 } else {
                                     FileLogger.e(TAG, "无法从截屏结果创建Bitmap")
+                                    RuntimeDiagnostics.noteCaptureFailure(
+                                        this@ScreenCaptureAccessibilityService,
+                                        TAG,
+                                        "bitmap_null"
+                                    )
                                     releaseWakeLock()
                                     callback(false, null)
                                 }
                             } catch (e: Exception) {
                                 FileLogger.e(TAG, "处理截屏结果失败", e)
+                                RuntimeDiagnostics.noteCaptureFailure(
+                                    this@ScreenCaptureAccessibilityService,
+                                    TAG,
+                                    "handle_result_exception",
+                                    extras = mapOf("message" to (e.message ?: "-"))
+                                )
                                 releaseWakeLock()
                                 callback(false, null)
                             }
@@ -880,6 +984,21 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
                         override fun onFailure(errorCode: Int) {
                             FileLogger.e(TAG, "截屏失败，错误码: $errorCode")
+                            RuntimeDiagnostics.noteCaptureFailure(
+                                this@ScreenCaptureAccessibilityService,
+                                TAG,
+                                "take_screenshot_failure",
+                                errorCode = errorCode
+                            )
+                            maybeLogDetailedFailure(
+                                "take_screenshot_failure",
+                                mapOf(
+                                    "errorCode" to errorCode,
+                                    "errorName" to RuntimeDiagnostics.accessibilityScreenshotErrorName(errorCode),
+                                    "currentForegroundApp" to (currentForegroundApp ?: "-"),
+                                    "stableApp" to (lastStableMonitoredApp ?: "-"),
+                                )
+                            )
                             releaseWakeLock()
                             callback(false, null)
                         }
@@ -887,10 +1006,21 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 )
             } else {
                 FileLogger.e(TAG, "Android版本过低，不支持无障碍截屏 (需要API 30+)")
+                RuntimeDiagnostics.noteCaptureFailure(this, TAG, "sdk_too_low")
                 callback(false, null)
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "无障碍截屏异常", e)
+            RuntimeDiagnostics.noteCaptureFailure(
+                this,
+                TAG,
+                "take_screenshot_exception",
+                extras = mapOf("message" to (e.message ?: "-"))
+            )
+            maybeLogDetailedFailure(
+                "take_screenshot_exception",
+                mapOf("message" to (e.message ?: "-"))
+            )
             // 出错时确保释放WakeLock（若已获取）
             releaseWakeLock()
             callback(false, null)
@@ -1257,6 +1387,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val targetApp = getScreenshotTargetApp()
             if (targetApp == null) {
                 FileLogger.d(TAG, "没有需要截图的目标应用，跳过截屏")
+                maybeLogNoTargetSnapshot()
                 try {
                     ScreenCaptureService.updateNotificationState(
                         this,
@@ -1326,6 +1457,16 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "执行定时截屏失败", e)
+            RuntimeDiagnostics.noteCaptureFailure(
+                this,
+                TAG,
+                "perform_timed_screenshot_exception",
+                extras = mapOf("message" to (e.message ?: "-"))
+            )
+            maybeLogDetailedFailure(
+                "perform_timed_screenshot_exception",
+                mapOf("message" to (e.message ?: "-"))
+            )
         }
     }
 
@@ -1362,6 +1503,53 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             FileLogger.e(TAG, "检查屏幕状态失败，出于保守策略将跳过截屏", e)
             true
         }
+    }
+
+    private fun maybeLogDetailedFailure(reason: String, extras: Map<String, Any?> = emptyMap()) {
+        val now = System.currentTimeMillis()
+        if (now - lastDetailedFailureSnapshotAt < 30_000L) {
+            return
+        }
+        lastDetailedFailureSnapshotAt = now
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "accessibility_failure_detail",
+            extras = linkedMapOf<String, Any?>(
+                "reason" to reason,
+                "timedRunning" to isTimedScreenshotRunning,
+                "pausedByScreenOff" to pausedByScreenOff,
+                "currentForegroundApp" to (currentForegroundApp ?: "-"),
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+                "sessionApp" to (currentSessionApp ?: "-"),
+                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityEventAt),
+                "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+            ).apply { putAll(extras) },
+            force = true,
+        )
+    }
+
+    private fun maybeLogNoTargetSnapshot() {
+        val now = System.currentTimeMillis()
+        if (now - lastNoTargetSnapshotAt < 30_000L) {
+            return
+        }
+        lastNoTargetSnapshotAt = now
+        RuntimeDiagnostics.logSnapshot(
+            this,
+            TAG,
+            "no_target_app",
+            extras = mapOf(
+                "timedRunning" to isTimedScreenshotRunning,
+                "pausedByScreenOff" to pausedByScreenOff,
+                "currentForegroundApp" to (currentForegroundApp ?: "-"),
+                "stableApp" to (lastStableMonitoredApp ?: "-"),
+                "sessionApp" to (currentSessionApp ?: "-"),
+                "sinceLastAccessibilityEventMs" to (System.currentTimeMillis() - lastAccessibilityEventAt),
+                "onePlus" to OEMCompatibilityHelper.isOnePlusDevice(),
+            ),
+            force = OEMCompatibilityHelper.isOnePlusDevice(),
+        )
     }
 
     /**
@@ -1602,7 +1790,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             val relativePath = File(relativeDir, baseName + "." + finalExt).path 
             FileLogger.i(TAG, "截图已保存，绝对路径: ${file.absolutePath}")
             FileLogger.i(TAG, "返回给Flutter的相对路径: $relativePath")
-            
+
             // 仅当应用识别为浏览器（名称优先，系统包兜底）时，才尝试提取并复用 URL
             val pageUrl = if (isBrowserByNameOrSystemPackage(packageName)) {
                 try {
@@ -2052,7 +2240,12 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     /**
      * 通知Flutter端更新数据库
      */
-    private fun notifyScreenshotSaved(packageName: String, appName: String, filePath: String, pageUrl: String?) {
+    private fun notifyScreenshotSaved(
+        packageName: String,
+        appName: String,
+        filePath: String,
+        pageUrl: String?
+    ) {
         try {
             // 发送广播通知MainActivity
             val intent = Intent("com.fqyw.screen_memo.SCREENSHOT_SAVED").apply {
@@ -2432,6 +2625,9 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                 }
                 OEMCompatibilityHelper.isOppoDevice() -> {
                     FileLogger.w(TAG, "OPPO设备检测：请确保在自启动管理中正确设置")
+                }
+                OEMCompatibilityHelper.isOnePlusDevice() -> {
+                    FileLogger.w(TAG, "OnePlus设备检测：请重点检查自动启动、后台活动/电池不限制，以及最近任务锁定")
                 }
                 OEMCompatibilityHelper.isVivoDevice() -> {
                     FileLogger.w(TAG, "VIVO设备检测：请确保在后台高耗电管理中正确设置")

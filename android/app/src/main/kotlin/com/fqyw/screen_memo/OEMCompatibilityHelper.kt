@@ -39,7 +39,14 @@ object OEMCompatibilityHelper {
      */
     fun isOppoDevice(): Boolean {
         return Build.MANUFACTURER.equals("OPPO", ignoreCase = true) ||
-                Build.BRAND.equals("OPPO", ignoreCase = true) ||
+                Build.BRAND.equals("OPPO", ignoreCase = true)
+    }
+
+    /**
+     * 检查是否为一加设备
+     */
+    fun isOnePlusDevice(): Boolean {
+        return Build.MANUFACTURER.equals("OnePlus", ignoreCase = true) ||
                 Build.BRAND.equals("OnePlus", ignoreCase = true)
     }
     
@@ -228,6 +235,10 @@ object OEMCompatibilityHelper {
                 FileLogger.e(TAG, "检测到OPPO设备，打开OPPO自启动设置")
                 openOppoAutoStartSettings(context)
             }
+            isOnePlusDevice() -> {
+                FileLogger.e(TAG, "检测到OnePlus设备，先打开应用详情页供用户手动设置后台限制")
+                openAppSettings(context)
+            }
             isVivoDevice() -> {
                 FileLogger.e(TAG, "检测到VIVO设备，打开VIVO自启动设置")
                 openVivoAutoStartSettings(context)
@@ -281,6 +292,10 @@ object OEMCompatibilityHelper {
             isOppoDevice() -> {
                 suggestions.add("OPPO设备：请在自启动管理中允许本应用自启动")
                 suggestions.add("OPPO设备：请关闭应用冻结功能")
+            }
+            isOnePlusDevice() -> {
+                suggestions.add("OnePlus设备：请在电池或应用管理中允许后台活动或设为不限制")
+                suggestions.add("OnePlus设备：请开启自启动；如系统提供最近任务锁定，请锁定本应用")
             }
             isVivoDevice() -> {
                 suggestions.add("VIVO设备：请在后台高耗电中允许本应用")

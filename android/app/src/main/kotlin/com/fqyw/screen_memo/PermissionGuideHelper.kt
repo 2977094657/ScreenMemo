@@ -1,5 +1,7 @@
 package com.fqyw.screen_memo
 
+import android.app.ActivityManager
+import android.os.Build
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -13,6 +15,28 @@ import android.provider.Settings
 object PermissionGuideHelper {
     
     private const val TAG = "PermissionGuideHelper"
+    private val configurablePermissionKeys = listOf(
+        "battery_optimization",
+        "autostart",
+        "background",
+    )
+
+    private fun isBackgroundPermissionGranted(context: Context, sharedPrefs: android.content.SharedPreferences): Boolean {
+        val manualGranted = sharedPrefs.getBoolean("background_permission_granted", false)
+        if (manualGranted) {
+            return true
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return false
+        }
+        return try {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val backgroundRestricted = activityManager.isBackgroundRestricted
+            !backgroundRestricted
+        } catch (_: Exception) {
+            false
+        }
+    }
     
     /**
      * 检查是否需要显示权限引导
@@ -20,9 +44,13 @@ object PermissionGuideHelper {
     fun shouldShowPermissionGuide(context: Context): Boolean {
         val sharedPrefs = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
 
-        val needsBatteryOptimization = sharedPrefs.getBoolean("needs_battery_optimization_whitelist", false)
+        val needsBatteryOptimization =
+            sharedPrefs.getBoolean("needs_battery_optimization_whitelist", false) &&
+                !OEMCompatibilityHelper.isIgnoringBatteryOptimizations(context)
         val needsAutostart = sharedPrefs.getBoolean("needs_autostart_permission", false)
-        val needsBackground = sharedPrefs.getBoolean("needs_background_unlimited", false)
+        val needsBackground =
+            sharedPrefs.getBoolean("needs_background_unlimited", false) &&
+                !isBackgroundPermissionGranted(context, sharedPrefs)
 
         return needsBatteryOptimization || needsAutostart || needsBackground
     }
@@ -34,7 +62,10 @@ object PermissionGuideHelper {
         val suggestions = mutableListOf<String>()
         val sharedPrefs = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
 
-        if (sharedPrefs.getBoolean("needs_battery_optimization_whitelist", false)) {
+        if (
+            sharedPrefs.getBoolean("needs_battery_optimization_whitelist", false) &&
+            !OEMCompatibilityHelper.isIgnoringBatteryOptimizations(context)
+        ) {
             suggestions.add("1. 电池优化：将应用加入白名单")
         }
 
@@ -42,7 +73,10 @@ object PermissionGuideHelper {
             suggestions.add("2. 自启动权限：允许应用自启动")
         }
 
-        if (sharedPrefs.getBoolean("needs_background_unlimited", false)) {
+        if (
+            sharedPrefs.getBoolean("needs_background_unlimited", false) &&
+            !isBackgroundPermissionGranted(context, sharedPrefs)
+        ) {
             suggestions.add("3. 后台运行：设置为无限制")
         }
         
@@ -64,6 +98,12 @@ object PermissionGuideHelper {
                 "\n\nOPPO设备设置路径：\n" +
                 "• 设置 → 电池 → 应用耗电管理 → 屏忆 → 允许后台运行\n" +
                 "• 设置 → 应用管理 → 屏忆 → 权限 → 自启动"
+            }
+            OEMCompatibilityHelper.isOnePlusDevice() -> {
+                "\n\nOnePlus设备建议：\n" +
+                "• 设置 → 电池/应用管理 → 屏忆 → 允许后台活动或设为不限制\n" +
+                "• 设置 → 应用管理 → 屏忆 → 开启自动启动\n" +
+                "• 如果最近任务页支持锁定应用，请将屏忆锁定"
             }
             OEMCompatibilityHelper.isVivoDevice() -> {
                 "\n\nVIVO设备设置路径：\n" +
@@ -179,9 +219,9 @@ object PermissionGuideHelper {
         FileLogger.e(TAG, "电池优化白名单检查结果: $batteryOptimizationGranted")
 
         // 对于自启动和后台权限，我们只能依赖用户手动标记
-        // 默认情况下这些权限都是未授权的
+        // 自启动依然依赖用户手动标记；后台运行优先参考系统的实时限制状态
         val autostartGranted = sharedPrefs.getBoolean("autostart_permission_granted", false)
-        val backgroundGranted = sharedPrefs.getBoolean("background_permission_granted", false)
+        val backgroundGranted = isBackgroundPermissionGranted(context, sharedPrefs)
 
         FileLogger.e(TAG, "自启动权限状态: $autostartGranted")
         FileLogger.e(TAG, "后台运行权限状态: $backgroundGranted")
@@ -204,8 +244,8 @@ object PermissionGuideHelper {
      */
     fun getPermissionProgress(context: Context): Pair<Int, Int> {
         val status = checkPermissionStatus(context)
-        val completed = status.values.count { it }
-        val total = status.size - 1 // 减去actual状态检查
+        val completed = configurablePermissionKeys.count { status[it] == true }
+        val total = configurablePermissionKeys.size
         return Pair(completed, total)
     }
     

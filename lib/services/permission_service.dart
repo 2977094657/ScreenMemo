@@ -8,7 +8,9 @@ import 'startup_profiler.dart';
 
 /// 权限管理服务
 class PermissionService with WidgetsBindingObserver {
-  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+  static const MethodChannel _channel = MethodChannel(
+    'com.fqyw.screen_memo/accessibility',
+  );
 
   static PermissionService? _instance;
   static PermissionService get instance => _instance ??= PermissionService._();
@@ -27,7 +29,7 @@ class PermissionService with WidgetsBindingObserver {
   Function(bool)? onAccessibilityChanged;
   Function(bool)? onMediaProjectionChanged;
   Function()? onPermissionsUpdated;
-  
+
   /// 设置方法调用处理器
   void _setupMethodCallHandler() {
     _channel.setMethodCallHandler((call) async {
@@ -40,11 +42,13 @@ class PermissionService with WidgetsBindingObserver {
         case 'onScreenshotSaved':
           try {
             // 将截图保存事件转发给 ScreenshotService 处理并入库
-            final Map<String, dynamic> args =
-                Map<String, dynamic>.from(call.arguments as Map);
+            final Map<String, dynamic> args = Map<String, dynamic>.from(
+              call.arguments as Map,
+            );
             // 允许包含可选的 pageUrl 字段
-            await ScreenshotService.instance
-                .handleScreenshotSavedFromPlatform(args);
+            await ScreenshotService.instance.handleScreenshotSavedFromPlatform(
+              args,
+            );
           } catch (e) {
             // 忽略异常，避免阻断其他事件
             // print('转发onScreenshotSaved失败: $e');
@@ -56,7 +60,7 @@ class PermissionService with WidgetsBindingObserver {
       }
     });
   }
-  
+
   /// 检查所有必要权限
   Future<Map<String, bool>> checkAllPermissions() async {
     StartupProfiler.begin('PermissionService.checkAllPermissions');
@@ -75,20 +79,20 @@ class PermissionService with WidgetsBindingObserver {
     StartupProfiler.end('PermissionService.checkAllPermissions');
     return results;
   }
-  
+
   /// 检查存储权限
   Future<bool> _checkStoragePermission() async {
     // 应用仅写入 app 私有外部目录并在 Android 10+ 使用 MediaStore 导出，
     // 不再需要传统 READ/WRITE_EXTERNAL_STORAGE 运行时权限，统一视为“已授权”。
     return true;
   }
-  
+
   /// 检查通知权限
   Future<bool> _checkNotificationPermission() async {
     final status = await Permission.notification.status;
     return status.isGranted;
   }
-  
+
   /// 请求基础权限
   Future<bool> requestBasicPermissions() async {
     try {
@@ -228,7 +232,9 @@ class PermissionService with WidgetsBindingObserver {
       final savedAccessibilityStatus = await getAccessibilityStatus();
 
       if (currentAccessibilityStatus != savedAccessibilityStatus) {
-        print('检测到无障碍权限状态变化: $savedAccessibilityStatus -> $currentAccessibilityStatus');
+        print(
+          '检测到无障碍权限状态变化: $savedAccessibilityStatus -> $currentAccessibilityStatus',
+        );
         await _saveAccessibilityStatus(currentAccessibilityStatus);
         onAccessibilityChanged?.call(currentAccessibilityStatus);
         onPermissionsUpdated?.call();
@@ -236,7 +242,6 @@ class PermissionService with WidgetsBindingObserver {
 
       // 检查其他权限状态变化
       await _checkOtherPermissionChanges();
-
     } catch (e) {
       print('检查权限变化失败: $e');
     }
@@ -264,7 +269,6 @@ class PermissionService with WidgetsBindingObserver {
         await _saveNotificationStatus(currentNotification);
         onPermissionsUpdated?.call();
       }
-
     } catch (e) {
       print('检查其他权限变化失败: $e');
     }
@@ -275,18 +279,20 @@ class PermissionService with WidgetsBindingObserver {
     _stopPermissionMonitoring();
     WidgetsBinding.instance.removeObserver(this);
   }
-  
+
   /// 检查无障碍服务权限
   Future<bool> checkAccessibilityPermission() async {
     try {
-      final result = await _channel.invokeMethod('checkAccessibilityPermission');
+      final result = await _channel.invokeMethod(
+        'checkAccessibilityPermission',
+      );
       return result as bool;
     } catch (e) {
       print('检查无障碍权限失败: $e');
       return false;
     }
   }
-  
+
   /// 请求无障碍服务权限
   Future<void> requestAccessibilityPermission() async {
     try {
@@ -295,7 +301,7 @@ class PermissionService with WidgetsBindingObserver {
       print('请求无障碍权限失败: $e');
     }
   }
-  
+
   /// 检查服务是否运行
   Future<bool> isServiceRunning() async {
     try {
@@ -309,7 +315,7 @@ class PermissionService with WidgetsBindingObserver {
       return false;
     }
   }
-  
+
   /// 启动前台服务
   Future<void> startForegroundService() async {
     try {
@@ -318,7 +324,7 @@ class PermissionService with WidgetsBindingObserver {
       print('启动前台服务失败: $e');
     }
   }
-  
+
   /// 停止前台服务
   Future<void> stopForegroundService() async {
     try {
@@ -327,7 +333,7 @@ class PermissionService with WidgetsBindingObserver {
       print('停止前台服务失败: $e');
     }
   }
-  
+
   /// 开始屏幕截图服务
   Future<bool> startScreenCapture() async {
     try {
@@ -380,13 +386,13 @@ class PermissionService with WidgetsBindingObserver {
       return null;
     }
   }
-  
+
   /// 保存无障碍服务状态
   Future<void> _saveAccessibilityStatus(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('accessibility_enabled', enabled);
   }
-  
+
   /// 获取无障碍服务状态
   Future<bool> getAccessibilityStatus() async {
     final prefs = await SharedPreferences.getInstance();
@@ -416,7 +422,7 @@ class PermissionService with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('notification_permission_granted') ?? false;
   }
-  
+
   /// 保存首次启动标记
   Future<void> setFirstLaunch(bool isFirst) async {
     final prefs = await SharedPreferences.getInstance();
@@ -440,13 +446,13 @@ class PermissionService with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool('onboarding_completed') ?? false;
   }
-  
+
   /// 检查所有权限是否已授予
   Future<bool> areAllPermissionsGranted() async {
     final permissions = await checkAllPermissions();
     return permissions.values.every((granted) => granted);
   }
-  
+
   /// 获取未授予的权限列表
   Future<List<String>> getMissingPermissions() async {
     final permissions = await checkAllPermissions();
@@ -481,6 +487,51 @@ class PermissionService with WidgetsBindingObserver {
     } catch (e) {
       print('请求使用统计权限失败: $e');
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getPendingRuntimeDiagnostic() async {
+    try {
+      final result = await _channel.invokeMethod('getPendingRuntimeDiagnostic');
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return null;
+    } catch (e) {
+      print('获取待处理运行诊断失败: $e');
+      return null;
+    }
+  }
+
+  Future<void> markRuntimeDiagnosticHandled([String? id]) async {
+    try {
+      await _channel.invokeMethod('markRuntimeDiagnosticHandled', {
+        if (id != null) 'id': id,
+      });
+    } catch (e) {
+      print('标记运行诊断已处理失败: $e');
+    }
+  }
+
+  Future<bool> openDiagnosticFile(String path) async {
+    try {
+      final result = await _channel.invokeMethod('openDiagnosticFile', {
+        'path': path,
+      });
+      return result == true;
+    } catch (e) {
+      print('打开诊断文件失败: $e');
+      return false;
+    }
+  }
+
+  Future<String?> getPermissionReport() async {
+    try {
+      final result = await _channel.invokeMethod<String>('getPermissionReport');
+      return result;
+    } catch (e) {
+      print('获取权限报告失败: $e');
+      return null;
     }
   }
 }

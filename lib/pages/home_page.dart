@@ -1,5 +1,6 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/app_info.dart';
@@ -11,6 +12,7 @@ import '../services/locale_service.dart';
 import '../services/startup_profiler.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
+import '../widgets/selection_checkbox.dart';
 import '../services/ime_exclusion_service.dart';
 import '../widgets/app_selection_widget.dart';
 import '../services/per_app_screenshot_settings_service.dart';
@@ -21,6 +23,28 @@ import 'settings_page.dart';
 import '../services/flutter_logger.dart';
 import 'dart:async';
 import 'dart:math';
+
+class _HomeRuntimeDiagnostic {
+  final String id;
+  final String title;
+  final String summary;
+  final List<String> details;
+  final String copyText;
+  final String? filePath;
+  final String? nativeIssueId;
+  final bool showSettingsAction;
+
+  const _HomeRuntimeDiagnostic({
+    required this.id,
+    required this.title,
+    required this.summary,
+    required this.details,
+    required this.copyText,
+    this.filePath,
+    this.nativeIssueId,
+    this.showSettingsAction = false,
+  });
+}
 
 /// 主应用界面
 class HomePage extends StatefulWidget {
@@ -48,6 +72,10 @@ class _HomePageState extends State<HomePage>
   bool _isLoading = false; // 不显示全屏加载动画
   bool _initialized = true; // 直接认为已初始化，避免首屏Loading
   bool _hasPermissionIssues = false; // 权限问题状态
+  _HomeRuntimeDiagnostic? _runtimeDiagnostic;
+  bool _runtimeDiagnosticExpanded = false;
+  String? _lastAutoOpenedDiagnosticId;
+  final Set<String> _dismissedDiagnosticIds = <String>{};
   Map<String, dynamic> _screenshotStats = {}; // 截图统计数据
   Map<String, dynamic> _totals = {}; // 新增：汇总统计数据
   bool _selectionMode = false;
@@ -91,7 +119,7 @@ class _HomePageState extends State<HomePage>
       // 权限相关检查稍后执行，避免与首帧竞争
       Future.delayed(const Duration(milliseconds: 600), () {
         PermissionService.instance.startMonitoring();
-        _checkPermissionIssues();
+        _checkPermissionIssues(autoOpenDiagnostic: true);
         _checkScreenshotToggleState();
       });
       // 预加载晨间建议，首次展示时可快速切换
@@ -118,7 +146,7 @@ class _HomePageState extends State<HomePage>
     permissionService.onPermissionsUpdated = () async {
       if (mounted) {
         // 立即检查权限问题并更新UI
-        await _checkPermissionIssues();
+        await _checkPermissionIssues(autoOpenDiagnostic: true);
 
         // 检查截屏开关状态是否需要自动关闭
         await _checkScreenshotToggleState();
@@ -136,6 +164,8 @@ class _HomePageState extends State<HomePage>
         // 回到前台后同步刷新自定义标记
         // ignore: unawaited_futures
         _loadPerAppCustomFlags();
+        await _checkPermissionIssues(autoOpenDiagnostic: true);
+        await _checkScreenshotToggleState();
       });
     }
   }
@@ -852,35 +882,293 @@ class _HomePageState extends State<HomePage>
   }
 
   /// 检查是否有权限缺失
-  Future<void> _checkPermissionIssues() async {
+  Future<void> _checkPermissionIssues({bool autoOpenDiagnostic = false}) async {
     try {
       final permissionService = PermissionService.instance;
       final permissions = await permissionService.checkAllPermissions();
-
-      // 检查所有关键权限
-      final storageGranted = permissions['storage'] ?? false;
-      final notificationGranted = permissions['notification'] ?? false;
-      final accessibilityEnabled = permissions['accessibility'] ?? false;
-      final usageStatsGranted = permissions['usage_stats'] ?? false;
-
-      final hasIssues =
-          !storageGranted ||
-          !notificationGranted ||
-          !accessibilityEnabled ||
-          !usageStatsGranted;
+      final hasIssues = _hasPermissionIssuesFrom(permissions);
 
       if (mounted) {
         setState(() {
           _hasPermissionIssues = hasIssues;
         });
       }
+      await _refreshRuntimeDiagnosticDrawer(
+        permissions: permissions,
+        autoOpen: autoOpenDiagnostic,
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
           _hasPermissionIssues = true; // 如果检查失败，认为有问题
         });
       }
+      await _refreshRuntimeDiagnosticDrawer(autoOpen: autoOpenDiagnostic);
     }
+  }
+
+  bool _hasPermissionIssuesFrom(Map<String, bool> permissions) {
+    final storageGranted = permissions['storage'] ?? false;
+    final notificationGranted = permissions['notification'] ?? false;
+    final accessibilityEnabled = permissions['accessibility'] ?? false;
+    final usageStatsGranted = permissions['usage_stats'] ?? false;
+    return !storageGranted ||
+        !notificationGranted ||
+        !accessibilityEnabled ||
+        !usageStatsGranted;
+  }
+
+  List<String> _missingPermissionLabels(Map<String, bool> permissions) {
+    final missing = <String>[];
+    if (!(permissions['notification'] ?? false)) {
+      missing.add('通知权限');
+    }
+    if (!(permissions['accessibility'] ?? false)) {
+      missing.add('无障碍服务');
+    }
+    if (!(permissions['usage_stats'] ?? false)) {
+      missing.add('使用情况访问');
+    }
+    if (!(permissions['storage'] ?? true)) {
+      missing.add('存储权限');
+    }
+    return missing;
+  }
+
+  Future<void> _refreshRuntimeDiagnosticDrawer({
+    Map<String, bool>? permissions,
+    bool autoOpen = false,
+  }) async {
+    final permissionService = PermissionService.instance;
+    Map<String, bool>? resolvedPermissions = permissions;
+    if (resolvedPermissions == null) {
+      try {
+        resolvedPermissions = await permissionService.checkAllPermissions();
+      } catch (_) {
+        resolvedPermissions = null;
+      }
+    }
+
+    final nativeDiagnostic = await permissionService
+        .getPendingRuntimeDiagnostic();
+    final diagnostic = await _buildRuntimeDiagnosticData(
+      permissions: resolvedPermissions,
+      nativeDiagnostic: nativeDiagnostic,
+    );
+
+    if (!mounted) return;
+
+    if (diagnostic == null) {
+      setState(() {
+        _runtimeDiagnostic = null;
+        _runtimeDiagnosticExpanded = false;
+      });
+      return;
+    }
+
+    if (_dismissedDiagnosticIds.contains(diagnostic.id)) {
+      setState(() {
+        _runtimeDiagnostic = null;
+        _runtimeDiagnosticExpanded = false;
+      });
+      return;
+    }
+
+    final shouldAutoOpen =
+        autoOpen && diagnostic.id != _lastAutoOpenedDiagnosticId;
+
+    setState(() {
+      _runtimeDiagnostic = diagnostic;
+      if (shouldAutoOpen) {
+        _runtimeDiagnosticExpanded = true;
+        _lastAutoOpenedDiagnosticId = diagnostic.id;
+      }
+    });
+  }
+
+  Future<_HomeRuntimeDiagnostic?> _buildRuntimeDiagnosticData({
+    required Map<String, bool>? permissions,
+    required Map<String, dynamic>? nativeDiagnostic,
+  }) async {
+    final resolvedPermissions = permissions ?? const <String, bool>{};
+    final missingPermissions = permissions == null
+        ? const <String>[]
+        : _missingPermissionLabels(resolvedPermissions);
+    final hasPermissionIssues = missingPermissions.isNotEmpty;
+    if (!hasPermissionIssues && nativeDiagnostic == null) {
+      return null;
+    }
+
+    final permissionService = PermissionService.instance;
+    final fallbackLogFile =
+        nativeDiagnostic?['logFilePath']?.toString().trim().isNotEmpty == true
+        ? nativeDiagnostic!['logFilePath'].toString()
+        : await _getTodayInfoLogPath();
+    final nativeCopyText = nativeDiagnostic?['copyText']?.toString().trim();
+    final nativeSummary = nativeDiagnostic?['summary']?.toString().trim();
+    final nativeDetectedAt = _formatDiagnosticTime(
+      nativeDiagnostic?['detectedAt'],
+    );
+
+    if (hasPermissionIssues) {
+      final permissionReport = await permissionService.getPermissionReport();
+      final details = <String>[
+        '缺失权限：${missingPermissions.join('、')}',
+        if (nativeSummary != null && nativeSummary.isNotEmpty)
+          '最近异常：$nativeSummary',
+        if (nativeDetectedAt != null) '诊断记录时间：$nativeDetectedAt',
+        if (fallbackLogFile != null && fallbackLogFile.isNotEmpty)
+          '日志文件：$fallbackLogFile',
+      ];
+      final summary = nativeSummary != null && nativeSummary.isNotEmpty
+          ? '检测到权限异常，同时存在最近一次运行异常记录。'
+          : '检测到权限状态异常，可能导致通知还在但无法正常截屏。';
+      final buffer = StringBuffer()
+        ..writeln('首页运行诊断')
+        ..writeln('================')
+        ..writeln('诊断类型: permission_issue')
+        ..writeln('缺失权限: ${missingPermissions.join(', ')}');
+      if (permissionReport != null && permissionReport.trim().isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln(permissionReport.trim());
+      }
+      if (nativeCopyText != null && nativeCopyText.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('最近一次运行异常')
+          ..writeln(nativeCopyText);
+      }
+      if (fallbackLogFile != null && fallbackLogFile.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('建议打开日志文件: $fallbackLogFile');
+      }
+      return _HomeRuntimeDiagnostic(
+        id: 'permission:${missingPermissions.join('|')}:${nativeDiagnostic?['id'] ?? '-'}',
+        title: '检测到权限或运行异常',
+        summary: summary,
+        details: details,
+        copyText: buffer.toString().trim(),
+        filePath: fallbackLogFile,
+        nativeIssueId: nativeDiagnostic?['id']?.toString(),
+        showSettingsAction: true,
+      );
+    }
+
+    final details = <String>[
+      if (nativeDetectedAt != null) '诊断记录时间：$nativeDetectedAt',
+      if (nativeDiagnostic?['summary'] != null &&
+          nativeDiagnostic!['summary'].toString().trim().isNotEmpty)
+        '异常摘要：${nativeDiagnostic['summary']}',
+      if (fallbackLogFile != null && fallbackLogFile.isNotEmpty)
+        '日志文件：$fallbackLogFile',
+    ];
+    return _HomeRuntimeDiagnostic(
+      id:
+          nativeDiagnostic?['id']?.toString() ??
+          'runtime:${DateTime.now().millisecondsSinceEpoch}',
+      title: nativeDiagnostic?['title']?.toString() ?? '检测到运行异常',
+      summary: nativeDiagnostic?['summary']?.toString() ?? '检测到最近一次运行异常。',
+      details: details,
+      copyText: nativeCopyText?.isNotEmpty == true
+          ? nativeCopyText!
+          : [
+              '首页运行诊断',
+              '================',
+              '诊断类型: ${nativeDiagnostic?['type'] ?? 'runtime_issue'}',
+              if (nativeSummary != null && nativeSummary.isNotEmpty)
+                '摘要: $nativeSummary',
+              if (nativeDetectedAt != null) '诊断记录时间: $nativeDetectedAt',
+              if (fallbackLogFile != null && fallbackLogFile.isNotEmpty)
+                '日志文件: $fallbackLogFile',
+            ].join('\n'),
+      filePath: fallbackLogFile,
+      nativeIssueId: nativeDiagnostic?['id']?.toString(),
+    );
+  }
+
+  String? _formatDiagnosticTime(dynamic rawValue) {
+    final millis = rawValue is num
+        ? rawValue.toInt()
+        : int.tryParse(rawValue?.toString() ?? '');
+    if (millis == null || millis <= 0) return null;
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+  }
+
+  Future<String?> _getTodayInfoLogPath() async {
+    final dir = await FlutterLogger.getTodayLogsDir();
+    if (dir == null || dir.trim().isEmpty) return null;
+    final normalized = dir.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    final day = segments.isEmpty ? '' : segments.last;
+    if (day.isEmpty) return null;
+    final separator = dir.contains('\\') ? '\\' : '/';
+    return '$dir$separator${day}_info.log';
+  }
+
+  Future<void> _copyRuntimeDiagnostic() async {
+    final diagnostic = _runtimeDiagnostic;
+    if (diagnostic == null) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: diagnostic.copyText));
+      if (!mounted) return;
+      UINotifier.success(context, '诊断信息已复制');
+    } catch (_) {
+      if (!mounted) return;
+      UINotifier.error(context, '复制诊断信息失败');
+    }
+  }
+
+  Future<void> _openRuntimeDiagnosticFile() async {
+    final diagnostic = _runtimeDiagnostic;
+    final filePath = diagnostic?.filePath;
+    if (diagnostic == null || filePath == null || filePath.trim().isEmpty) {
+      if (!mounted) return;
+      UINotifier.error(context, '当前没有可打开的诊断文件');
+      return;
+    }
+
+    final opened = await PermissionService.instance.openDiagnosticFile(
+      filePath,
+    );
+    if (!mounted) return;
+    if (opened) {
+      UINotifier.info(context, '已尝试打开诊断文件');
+    } else {
+      await Clipboard.setData(ClipboardData(text: filePath));
+      if (!mounted) return;
+      UINotifier.warning(context, '无法直接打开，已复制日志路径');
+    }
+  }
+
+  Future<void> _dismissRuntimeDiagnosticDrawer() async {
+    final diagnostic = _runtimeDiagnostic;
+    if (diagnostic == null) return;
+    _dismissedDiagnosticIds.add(diagnostic.id);
+    final nativeIssueId = diagnostic.nativeIssueId;
+    if (nativeIssueId != null && nativeIssueId.isNotEmpty) {
+      await PermissionService.instance.markRuntimeDiagnosticHandled(
+        nativeIssueId,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _runtimeDiagnostic = null;
+      _runtimeDiagnosticExpanded = false;
+    });
+  }
+
+  Future<void> _openSettingsFromDiagnostic() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsPage(themeService: widget.themeService),
+      ),
+    );
+    if (!mounted) return;
+    await _checkPermissionIssues(autoOpenDiagnostic: true);
   }
 
   /// 检查截屏开关状态是否需要自动关闭
@@ -1211,7 +1499,7 @@ class _HomePageState extends State<HomePage>
       await _loadStats();
 
       // 重新检查权限问题
-      await _checkPermissionIssues();
+      await _checkPermissionIssues(autoOpenDiagnostic: true);
 
       if (mounted) {
         UINotifier.success(
@@ -1351,6 +1639,196 @@ class _HomePageState extends State<HomePage>
           iconSize: 22,
           visualDensity: VisualDensity.compact,
           icon: icon,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRuntimeDiagnosticDrawer() {
+    final diagnostic = _runtimeDiagnostic;
+    if (diagnostic == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final expanded = _runtimeDiagnosticExpanded;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.spacing4,
+        AppTheme.spacing3,
+        AppTheme.spacing4,
+        0,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(
+            color: AppTheme.destructive.withValues(alpha: 0.18),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              onTap: () {
+                setState(() {
+                  _runtimeDiagnosticExpanded = !_runtimeDiagnosticExpanded;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(AppTheme.spacing4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppTheme.destructive.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppTheme.destructive,
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.spacing3),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            diagnostic.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: AppTheme.spacing1),
+                          Text(
+                            diagnostic.summary,
+                            maxLines: expanded ? null : 2,
+                            overflow: expanded
+                                ? TextOverflow.visible
+                                : TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭诊断面板',
+                      onPressed: _dismissRuntimeDiagnosticDrawer,
+                      icon: const Icon(Icons.close),
+                    ),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.spacing4,
+                  0,
+                  AppTheme.spacing4,
+                  AppTheme.spacing4,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final detail in diagnostic.details)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: AppTheme.spacing2,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 7),
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.destructive,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppTheme.spacing2),
+                            Expanded(
+                              child: Text(
+                                detail,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: AppTheme.spacing2),
+                    Wrap(
+                      spacing: AppTheme.spacing2,
+                      runSpacing: AppTheme.spacing2,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _copyRuntimeDiagnostic,
+                          icon: const Icon(
+                            Icons.content_copy_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('复制信息'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: diagnostic.filePath == null
+                              ? null
+                              : _openRuntimeDiagnosticFile,
+                          icon: const Icon(
+                            Icons.insert_drive_file_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('打开此文件'),
+                        ),
+                        if (diagnostic.showSettingsAction)
+                          TextButton.icon(
+                            onPressed: _openSettingsFromDiagnostic,
+                            icon: const Icon(Icons.settings_outlined, size: 18),
+                            label: const Text('打开设置'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              crossFadeState: expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 180),
+              sizeCurve: Curves.easeOutCubic,
+            ),
+          ],
         ),
       ),
     );
@@ -1640,6 +2118,7 @@ class _HomePageState extends State<HomePage>
         children: [
           // 新增：副导航栏
           _buildSubNavigation(),
+          if (_runtimeDiagnostic != null) _buildRuntimeDiagnosticDrawer(),
           Expanded(
             child: EasyRefresh.builder(
               controller: _refreshController,
@@ -2213,18 +2692,7 @@ class _HomePageState extends State<HomePage>
               if (!_selectionMode || !selectable)
                 Icon(Icons.chevron_right, color: cs.onSurfaceVariant)
               else
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: isSelected ? cs.primary : cs.surfaceVariant,
-                    borderRadius: const BorderRadius.all(Radius.circular(4.0)),
-                  ),
-                  alignment: Alignment.center,
-                  child: isSelected
-                      ? Icon(Icons.check, size: 14, color: cs.onPrimary)
-                      : null,
-                ),
+                SelectionCheckbox(selected: isSelected),
             ],
           ),
         ),
