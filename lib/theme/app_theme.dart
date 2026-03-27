@@ -9,7 +9,7 @@ class AppTheme {
   static const Color mutedForeground = Color(0xFF828179);
   static const Color accent = Color(0xFFD97757);
   static const Color accentForeground = Color(0xFF141413);
-  static const Color destructive = Color(0xFFB8644F);
+  static const Color destructive = Color(0xFFD32F2F);
   static const Color destructiveForeground = Color(0xFFFAF9F5);
   static const Color border = Color(0xFFD8D4C9);
   static const Color input = Color(0xFFF0EFEA);
@@ -24,10 +24,11 @@ class AppTheme {
 
   static const Color success = Color(0xFF788C5D);
   static const Color successForeground = Color(0xFFFAF9F5);
-  static const Color warning = Color(0xFF9B7656);
+  static const Color warning = Color(0xFFD32F2F);
   static const Color warningForeground = Color(0xFFFAF9F5);
   static const Color info = Color(0xFF6A9BCC);
   static const Color infoForeground = Color(0xFFFAF9F5);
+  static const Color mergedEventAccent = Color(0xFF9B7656);
 
   static const double radiusXs = 2.0;
   static const double radiusSm = 4.0;
@@ -66,7 +67,7 @@ class AppTheme {
   static const Color darkMutedForeground = Color(0xFFD8D1C4);
   static const Color darkAccent = Color(0xFFD97757);
   static const Color darkAccentForeground = Color(0xFF141413);
-  static const Color darkDestructive = Color(0xFFB66C5A);
+  static const Color darkDestructive = Color(0xFFD32F2F);
   static const Color darkDestructiveForeground = Color(0xFFFAF9F5);
   static const Color darkBorder = Color(0xFF3D3D3A);
   static const Color darkInput = Color(0xFF1F1E1B);
@@ -84,7 +85,7 @@ class AppTheme {
   static const Color _lightPrimaryContainer = Color(0xFFF2E0D7);
   static const Color _lightSecondaryContainer = Color(0xFFDCE7F1);
   static const Color _lightTertiaryContainer = Color(0xFFE2E8D9);
-  static const Color _lightErrorContainer = Color(0xFFF1DED8);
+  static const Color _lightErrorContainer = Color(0xFFFFEBEE);
   static const Color _lightOutlineVariant = Color(0xFFE3DED2);
   static const Color _lightSurfaceHigh = Color(0xFFE3DFD4);
   static const Color _lightSurfaceHighest = Color(0xFFDFDBCF);
@@ -95,7 +96,7 @@ class AppTheme {
   static const Color _darkPrimaryContainer = Color(0xFF5D372D);
   static const Color _darkSecondaryContainer = Color(0xFF243747);
   static const Color _darkTertiaryContainer = Color(0xFF323D28);
-  static const Color _darkErrorContainer = Color(0xFF4A2D27);
+  static const Color _darkErrorContainer = Color(0xFF8C1D18);
   static const Color _darkOutlineVariant = Color(0xFF4A4844);
   static const Color _darkSurfaceHigh = Color(0xFF2F2E2B);
   static const Color _darkSurfaceHighest = Color(0xFF353431);
@@ -182,7 +183,7 @@ class AppTheme {
     appBarBackgroundColor: background,
     cardColor: card,
     inputFillColor: _lightSubtle,
-    primaryButtonBackgroundColor: foreground,
+    primaryButtonBackgroundColor: primary,
     primaryButtonForegroundColor: background,
     secondaryButtonBackgroundColor: _lightCard,
     secondaryButtonForegroundColor: foreground,
@@ -195,7 +196,7 @@ class AppTheme {
     cardColor: darkCard,
     inputFillColor: _darkSubtle,
     primaryButtonBackgroundColor: darkPrimary,
-    primaryButtonForegroundColor: darkPrimaryForeground,
+    primaryButtonForegroundColor: darkForeground,
     secondaryButtonBackgroundColor: _darkCard,
     secondaryButtonForegroundColor: darkForeground,
   );
@@ -381,7 +382,7 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return colorScheme.onPrimary;
+            return isDark ? darkForeground : background;
           }
           return colorScheme.surface;
         }),

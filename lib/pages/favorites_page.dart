@@ -400,11 +400,9 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final file = path.isAbsolute(widget.item.screenshot.filePath)
         ? File(widget.item.screenshot.filePath)
         : File(path.join(widget.baseDir.path, widget.item.screenshot.filePath));
-    final bool compactLayout = MediaQuery.of(context).size.width < 720;
     final Color overlayForeground = const Color(0xFFF6EEDF);
     final Color overlaySurface = theme.brightness == Brightness.dark
         ? const Color(0xA8141413)
@@ -416,12 +414,12 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     final crossAxisSpacing = AppTheme.spacing1;
     final columnWidth = (screenWidth - gridPadding - crossAxisSpacing) / 2;
     final columnHeight = columnWidth / 0.45;
-    final imageWidth = compactLayout ? screenWidth : columnWidth;
-    final imageHeight = compactLayout ? screenWidth * 0.62 : columnHeight;
+    final imageWidth = columnWidth;
+    final imageHeight = columnHeight;
 
     Widget buildImageSection(BorderRadius borderRadius) {
       return SizedBox(
-        width: compactLayout ? double.infinity : imageWidth,
+        width: imageWidth,
         height: imageHeight,
         child: Stack(
           children: [
@@ -429,7 +427,7 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
               file: file,
               privacyMode: widget.privacyMode,
               screenshot: widget.item.screenshot,
-              width: compactLayout ? screenWidth : imageWidth,
+              width: imageWidth,
               height: imageHeight,
               fit: BoxFit.cover,
               borderRadius: borderRadius,
@@ -488,36 +486,40 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     }
 
     Widget buildAppMeta() {
-      return Wrap(
-        spacing: AppTheme.spacing2,
-        runSpacing: AppTheme.spacing1,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      return Row(
         children: [
           if (widget.item.appInfo?.icon != null)
-            Image.memory(
-              widget.item.appInfo!.icon!,
-              width: 16,
-              height: 16,
-              fit: BoxFit.contain,
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Image.memory(
+                widget.item.appInfo!.icon!,
+                width: 16,
+                height: 16,
+                fit: BoxFit.contain,
+              ),
             )
           else
-            const Icon(
-              Icons.android,
-              size: 16,
-              color: AppTheme.mutedForeground,
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.android,
+                size: 16,
+                color: AppTheme.mutedForeground,
+              ),
             ),
           Text(
             _formatFileSize(widget.item.screenshot.fileSize),
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontSize: 11,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.78),
+              color: AppTheme.mutedForeground.withOpacity(0.7),
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             _formatCompactTime(widget.item.screenshot.captureTime),
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontSize: 11,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.78),
+              color: AppTheme.mutedForeground.withOpacity(0.7),
             ),
           ),
         ],
@@ -525,45 +527,9 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     }
 
     Widget buildNoteSection() {
-      final Widget noteField = Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacing3,
-          vertical: AppTheme.spacing3,
-        ),
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-          border: Border.all(color: cs.outlineVariant, width: 1),
-        ),
-        child: TextField(
-          controller: _noteController,
-          focusNode: _noteFocusNode,
-          minLines: compactLayout ? 6 : null,
-          maxLines: null,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          decoration: InputDecoration(
-            hintText: AppLocalizations.of(context).clickToAddNote,
-            hintStyle: theme.textTheme.bodyMedium?.copyWith(
-              color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-              fontSize: 14,
-              height: 1.55,
-            ),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            contentPadding: EdgeInsets.zero,
-          ),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontSize: 14,
-            color: cs.onSurface,
-            height: 1.6,
-          ),
-        ),
-      );
-
       return Container(
-        padding: const EdgeInsets.all(AppTheme.spacing4),
+        height: imageHeight,
+        padding: const EdgeInsets.all(AppTheme.spacing3),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -571,8 +537,8 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
               children: [
                 Text(
                   AppLocalizations.of(context).noteLabel,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.mutedForeground,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -583,35 +549,55 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
                             widget.item.favorite.note!.isNotEmpty
                         ? '${AppLocalizations.of(context).updatedAt}${_formatCompactTime(widget.item.updatedAt)}'
                         : '',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 11,
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.82),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: AppTheme.mutedForeground.withOpacity(0.7),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Material(
-                  color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  child: InkWell(
-                    onTap: _saveNote,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    child: SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: Icon(
-                        Icons.save_outlined,
-                        size: 18,
-                        color: cs.onSurfaceVariant,
-                      ),
+                InkWell(
+                  onTap: _saveNote,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.save_outlined,
+                      size: 18,
+                      color: AppTheme.mutedForeground.withOpacity(0.8),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: AppTheme.spacing3),
-            if (compactLayout) noteField else Expanded(child: noteField),
-            const SizedBox(height: AppTheme.spacing3),
+            const SizedBox(height: AppTheme.spacing1),
+            Expanded(
+              child: TextField(
+                controller: _noteController,
+                focusNode: _noteFocusNode,
+                decoration: InputDecoration(
+                  hintText: AppLocalizations.of(context).clickToAddNote,
+                  hintStyle: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.color?.withOpacity(0.5),
+                    fontSize: 13,
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                maxLines: null,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+              ),
+            ),
+            const SizedBox(height: AppTheme.spacing1),
             buildAppMeta(),
           ],
         ),
@@ -619,42 +605,27 @@ class _FavoriteItemWidgetState extends State<_FavoriteItemWidget> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: AppTheme.spacing4),
+      margin: const EdgeInsets.only(bottom: AppTheme.spacing3),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        border: Border.all(color: cs.outlineVariant, width: 1),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withOpacity(0.3),
+          width: 1,
+        ),
       ),
-      child: compactLayout
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                buildImageSection(
-                  const BorderRadius.only(
-                    topLeft: Radius.circular(AppTheme.radiusLg),
-                    topRight: Radius.circular(AppTheme.radiusLg),
-                  ),
-                ),
-                buildNoteSection(),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                buildImageSection(
-                  const BorderRadius.only(
-                    topLeft: Radius.circular(AppTheme.radiusLg),
-                    bottomLeft: Radius.circular(AppTheme.radiusLg),
-                  ),
-                ),
-                Expanded(
-                  child: SizedBox(
-                    height: imageHeight,
-                    child: buildNoteSection(),
-                  ),
-                ),
-              ],
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildImageSection(
+            const BorderRadius.only(
+              topLeft: Radius.circular(AppTheme.radiusMd),
+              bottomLeft: Radius.circular(AppTheme.radiusMd),
             ),
+          ),
+          Expanded(child: buildNoteSection()),
+        ],
+      ),
     );
   }
 

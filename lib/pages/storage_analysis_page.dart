@@ -75,8 +75,9 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
       appBar: AppBar(
         title: Text(l10n.storageAnalysisPageTitle),
         centerTitle: true,
-        backgroundColor:
-            theme.brightness == Brightness.dark ? theme.colorScheme.surface : pageBg,
+        backgroundColor: theme.brightness == Brightness.dark
+            ? theme.colorScheme.surface
+            : pageBg,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
       ),
@@ -216,7 +217,7 @@ class _StorageAnalysisPageState extends State<StorageAnalysisPage> {
       _StorageUsageSegment(
         label: l10n.storageAnalysisCacheLabel,
         bytes: cacheBytes,
-        color: AppTheme.warning,
+        color: colorScheme.error,
       ),
       _StorageUsageSegment(
         label: l10n.storageAnalysisAppLabel,

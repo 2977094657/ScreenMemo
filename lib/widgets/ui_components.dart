@@ -27,7 +27,7 @@ Color _overlayAccentForTone(ThemeData theme, _UINotificationTone tone) {
     case _UINotificationTone.info:
       return theme.colorScheme.secondary;
     case _UINotificationTone.warning:
-      return AppTheme.warning;
+      return theme.colorScheme.error;
     case _UINotificationTone.error:
       return theme.colorScheme.error;
     case _UINotificationTone.neutral:
@@ -766,11 +766,13 @@ class UIButton extends StatelessWidget {
     switch (variant) {
       case UIButtonVariant.primary:
         return _UIButtonPalette(
-          backgroundColor: isDark ? cs.primary : cs.onSurface,
-          foregroundColor: isDark ? cs.onPrimary : cs.surfaceContainerLowest,
-          disabledBackgroundColor: cs.surfaceContainerHigh,
+          backgroundColor: cs.primary,
+          foregroundColor: isDark ? cs.onSurface : cs.surfaceContainerLowest,
+          disabledBackgroundColor: isDark
+              ? cs.surfaceContainerHigh
+              : cs.surfaceContainer,
           disabledForegroundColor: cs.onSurfaceVariant,
-          overlayColor: (isDark ? cs.onPrimary : cs.surfaceContainerLowest)
+          overlayColor: (isDark ? cs.onSurface : cs.surfaceContainerLowest)
               .withValues(alpha: 0.08),
         );
       case UIButtonVariant.secondary:
@@ -1409,8 +1411,11 @@ class UIRectSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color trackColor = value ? cs.primary : cs.surface;
-    final Color thumbColor = value ? cs.onPrimary : cs.onSurface;
+    final Color thumbColor = value
+        ? (isDark ? AppTheme.darkForeground : AppTheme.background)
+        : cs.onSurface;
     final Color outline = cs.outline.withValues(alpha: 0.8);
 
     // 内边距用于给滑块留出边界
