@@ -5,10 +5,12 @@ import android.database.sqlite.SQLiteDatabase
  
 import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
+import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkRequest
 import androidx.work.Worker
 import androidx.work.WorkerParameters
@@ -64,10 +66,27 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             FileLogger.init(applicationContext)
         } catch (_: Exception) {}
         val dateKey = inputData.getString(KEY_DATE) ?: todayKey()
-        try { FileLogger.i(TAG, "doWork：日期=$dateKey") } catch (_: Exception) {}
+        val task = inputData.getString(KEY_TASK) ?: TASK_DAILY
+        try { FileLogger.i(TAG, "doWork：任务=$task 日期=$dateKey") } catch (_: Exception) {}
         return try {
-            val ok = generateForDate(applicationContext, dateKey)
-            if (ok) Result.success() else Result.retry()
+            when (task) {
+                TASK_MORNING -> {
+                    val record = generateMorningInsightsForDisplayDate(applicationContext, dateKey, force = true)
+                    if (record != null) {
+                        val message = cacheMorningInsightMessage(applicationContext, dateKey, record)
+                        if (!message.isNullOrBlank()) {
+                            showMorningInsightNotification(applicationContext, dateKey, message)
+                        }
+                        Result.success()
+                    } else {
+                        Result.retry()
+                    }
+                }
+                else -> {
+                    val ok = generateForDate(applicationContext, dateKey)
+                    if (ok) Result.success() else Result.retry()
+                }
+            }
         } catch (e: Exception) {
             try { FileLogger.e(TAG, "每日总结 Worker 执行失败：${e.message}", e) } catch (_: Exception) {}
             Result.retry()
@@ -77,24 +96,46 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
     companion object {
         private const val TAG = "DailySummaryWorker"
         private const val KEY_DATE = "dateKey"
+        private const val KEY_TASK = "task"
+        private const val TASK_DAILY = "daily_summary"
+        private const val TASK_MORNING = "morning_insights"
         private const val MASTER_DB_DIR_RELATIVE = "output/databases"
         private const val MASTER_DB_FILE_NAME = "screenshot_memo.db"
         private const val TABLE_MORNING_INSIGHTS = "morning_insights"
 
         fun enqueueOnce(ctx: Context, dateKey: String) {
             try {
-                val data = Data.Builder().putString(KEY_DATE, dateKey).build()
-                val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-                val req: WorkRequest = OneTimeWorkRequestBuilder<DailySummaryWorker>()
-                    .setInputData(data)
-                    .setConstraints(constraints)
-                    .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                    .build()
+                val req: WorkRequest = buildRequest(dateKey, TASK_DAILY)
                 WorkManager.getInstance(ctx).enqueue(req)
                 try { FileLogger.i(TAG, "enqueueOnce：date=$dateKey 已入队") } catch (_: Exception) {}
             } catch (_: Exception) {}
+        }
+
+        fun enqueueMorningInsightsOnce(ctx: Context, dateKey: String) {
+            try {
+                val req = buildRequest(dateKey, TASK_MORNING)
+                WorkManager.getInstance(ctx).enqueueUniqueWork(
+                    "morning_insights_$dateKey",
+                    ExistingWorkPolicy.KEEP,
+                    req
+                )
+                try { FileLogger.i(TAG, "enqueueMorningInsightsOnce：date=$dateKey 已入队") } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
+
+        private fun buildRequest(dateKey: String, task: String): OneTimeWorkRequest {
+            val data = Data.Builder()
+                .putString(KEY_DATE, dateKey)
+                .putString(KEY_TASK, task)
+                .build()
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+            return OneTimeWorkRequestBuilder<DailySummaryWorker>()
+                .setInputData(data)
+                .setConstraints(constraints)
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
         }
 
         private fun todayKey(): String {
@@ -206,6 +247,40 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             } catch (_: Exception) {
                 emptyList()
             }
+        }
+
+        private fun cacheMorningInsightMessage(
+            ctx: Context,
+            dateKey: String,
+            record: MorningInsightsRecord
+        ): String? {
+            val message = record.tips
+                .asSequence()
+                .map { it.trim() }
+                .firstOrNull { it.isNotEmpty() }
+                ?: return null
+            return try {
+                val sp = ctx.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
+                sp.edit().putString("morning_insights_$dateKey", message).apply()
+                try { FileLogger.i(TAG, "晨间洞察缓存已保存：date=$dateKey 长度=${message.length}") } catch (_: Exception) {}
+                message
+            } catch (_: Exception) {
+                message
+            }
+        }
+
+        private fun showMorningInsightNotification(ctx: Context, dateKey: String, message: String) {
+            try {
+                val locale = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    ctx.resources.configuration.locales.get(0)
+                } else {
+                    @Suppress("DEPRECATION")
+                    ctx.resources.configuration.locale
+                }
+                val isZh = locale?.language?.lowercase()?.startsWith("zh") == true
+                val title = if (isZh) "晨间速览 $dateKey" else "Morning Briefing $dateKey"
+                DailySummaryNotifier.showBigText(ctx, title, message)
+            } catch (_: Exception) {}
         }
 
         private fun dayRange(dateKey: String): Pair<Long, Long>? {

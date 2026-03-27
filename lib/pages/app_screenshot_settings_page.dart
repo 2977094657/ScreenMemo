@@ -46,6 +46,7 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
   int _compressDays = 7;
   bool _compressingHistory = false;
   CompressionProgress? _compressionProgress;
+  bool _deletingAllScreenshots = false;
 
   @override
   void didChangeDependencies() {
@@ -311,6 +312,64 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
       if (mounted) {
         setState(() {
           _compressingHistory = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteAllScreenshots() async {
+    if (_deletingAllScreenshots) return;
+    final int count = (_statCount != null && _statCount! > 0)
+        ? _statCount!
+        : await ScreenshotService.instance.getScreenshotCountByApp(
+            _packageName,
+          );
+    if (!mounted) return;
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    if (count <= 0) {
+      UINotifier.info(context, l10n.noScreenshotsTitle);
+      return;
+    }
+    final bool? confirmed = await showUIDialog<bool>(
+      context: context,
+      title: l10n.confirmDeleteAllTitle,
+      message: l10n.deleteAllMessage(count),
+      actions: [
+        UIDialogAction<bool>(text: l10n.dialogCancel, result: false),
+        UIDialogAction<bool>(
+          text: l10n.actionDelete,
+          result: true,
+          style: UIDialogActionStyle.destructive,
+        ),
+      ],
+    );
+    if (confirmed != true || !mounted) return;
+    await _deleteAllScreenshots(count);
+  }
+
+  Future<void> _deleteAllScreenshots(int deletedCount) async {
+    if (_deletingAllScreenshots) return;
+    setState(() {
+      _deletingAllScreenshots = true;
+    });
+    try {
+      final bool success = await ScreenshotService.instance
+          .deleteAllScreenshotsForApp(_packageName);
+      if (!mounted) return;
+      final AppLocalizations l10n = AppLocalizations.of(context);
+      if (!success) {
+        UINotifier.error(context, l10n.deleteFailed);
+        return;
+      }
+      Navigator.of(context).pop(deletedCount);
+    } catch (_) {
+      if (mounted) {
+        UINotifier.error(context, AppLocalizations.of(context).deleteFailed);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingAllScreenshots = false;
         });
       }
     }
@@ -1345,6 +1404,49 @@ class _AppScreenshotSettingsPageState extends State<AppScreenshotSettingsPage> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing6),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _deletingAllScreenshots
+                  ? null
+                  : _confirmDeleteAllScreenshots,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+                disabledBackgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHigh,
+                disabledForegroundColor: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacing4,
+                  vertical: AppTheme.spacing3,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+              ),
+              icon: _deletingAllScreenshots
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.onError,
+                        ),
+                      ),
+                    )
+                  : const Icon(Icons.delete_forever_outlined),
+              label: Text(
+                _deletingAllScreenshots
+                    ? '${l10n.actionDelete}...'
+                    : l10n.confirmDeleteAllTitle,
               ),
             ),
           ),

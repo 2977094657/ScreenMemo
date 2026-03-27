@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'dart:ui' show Canvas, Size, Offset, Rect;
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_dialog.dart';
@@ -19,10 +17,8 @@ import '../services/path_service.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/screenshot_style_tab_bar.dart';
 import '../services/app_selection_service.dart';
-import '../services/screenshot_database.dart';
 import '../services/flutter_logger.dart';
 import '../services/favorite_service.dart';
-import '../widgets/nsfw_guard.dart';
 import '../widgets/screenshot_item_widget.dart';
 import '../services/nsfw_preference_service.dart';
 
@@ -912,6 +908,36 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
     );
   }
 
+  Future<void> _openAppScreenshotSettings() async {
+    final Object? result = await Navigator.of(context).pushNamed(
+      '/app_screenshot_settings',
+      arguments: {'appInfo': _appInfo, 'packageName': _packageName},
+    );
+    if (!mounted || result is! int || result <= 0) return;
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _searchResults.clear();
+      _selectionMode = false;
+      _selectedIds.clear();
+      _isFullySelected = false;
+      _screenshots.clear();
+      _tabCache.clear();
+      _tabOffset.clear();
+      _tabHasMore.clear();
+      _tabScrollOffset.clear();
+      _itemKeys.clear();
+    });
+    await _invalidateScreenshotsCache();
+    await _prepareDayTabs();
+    await _loadScreenshots();
+    if (!mounted) return;
+    UINotifier.success(
+      context,
+      AppLocalizations.of(context).deletedCountToast(result),
+    );
+  }
+
   Future<void> _deleteScreenshot(ScreenshotRecord screenshot) async {
     final confirmed = await showUIDialog<bool>(
       context: context,
@@ -1120,12 +1146,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
           if (!_selectionMode) ...[
             IconButton(
               icon: const Icon(Icons.settings_outlined),
-              onPressed: () {
-                Navigator.of(context).pushNamed(
-                  '/app_screenshot_settings',
-                  arguments: {'appInfo': _appInfo, 'packageName': _packageName},
-                );
-              },
+              onPressed: _openAppScreenshotSettings,
               tooltip: AppLocalizations.of(context).screenshotSectionTitle,
             ),
           ] else ...[
@@ -1409,9 +1430,7 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
                             ),
                             onPressed: _expandDayTabsIfNeeded,
                             icon: const Icon(Icons.more_horiz, size: 18),
-                            label: Text(
-                              AppLocalizations.of(context).loadMore,
-                            ),
+                            label: Text(AppLocalizations.of(context).loadMore),
                           ),
                         ),
                     ],
@@ -1544,8 +1563,9 @@ class _ScreenshotGalleryPageState extends State<ScreenshotGalleryPage>
         screenshot.id != null &&
         _selectedIds.contains(screenshot.id);
     final GlobalKey itemKey = _itemKeys.putIfAbsent(index, () => GlobalKey());
-    final bool isNsfw =
-        NsfwPreferenceService.instance.shouldMaskCached(screenshot);
+    final bool isNsfw = NsfwPreferenceService.instance.shouldMaskCached(
+      screenshot,
+    );
     final bool nsfwMasked = _privacyMode && isNsfw;
     // 手动标记状态（仅 DB）
     final bool isManualNsfw =

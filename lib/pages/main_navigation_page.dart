@@ -37,7 +37,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _pages = [
       HomePage(themeService: widget.themeService),
       const FavoritesPage(),
-      const EventHomePage(),
+      const SizedBox.shrink(),
       const TimelinePage(),
       SettingsPage(
         themeService: widget.themeService,
@@ -156,6 +156,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   void _onTabTapped(int index) {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (index == 2) {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const EventHomePage()));
+      return;
+    }
     setState(() {
       _currentIndex = index;
     });

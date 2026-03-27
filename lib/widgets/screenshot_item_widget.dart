@@ -10,6 +10,7 @@ import 'ai_meta_sheet.dart';
 import 'nsfw_guard.dart';
 import '../services/nsfw_preference_service.dart';
 import 'timeline_jump_overlay.dart';
+import 'selection_checkbox.dart';
 
 /// AI 元数据徽标（可点击打开 AiMetaSheet）的显示位置。
 enum AiMetaBadgePlacement {
@@ -478,26 +479,7 @@ class ScreenshotItemWidget extends StatelessWidget {
     return Positioned(
       top: 6,
       right: 6,
-      child: Container(
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF141413)
-              : Theme.of(context).colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.primary.withValues(alpha: 0.7)
-                : Theme.of(context).colorScheme.outline,
-            width: 2,
-          ),
-        ),
-        alignment: Alignment.center,
-        child: isSelected
-            ? const Icon(Icons.check, size: 16, color: Color(0xFFF6F1E8))
-            : null,
-      ),
+      child: SelectionCheckbox(selected: isSelected, size: 24, iconSize: 16),
     );
   }
 
@@ -532,6 +514,7 @@ class ScreenshotItemWidget extends StatelessWidget {
 
   /// 构建 NSFW 按钮（与收藏并列，位于其右侧）
   Widget _buildNsfwButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Positioned(
       top: 6,
       left: 44, // 6(边距) + 32(收藏按钮宽度) + 6(间距)
@@ -552,7 +535,7 @@ class ScreenshotItemWidget extends StatelessWidget {
           child: Icon(
             isNsfwFlagged ? Icons.visibility_off : Icons.visibility,
             size: 18,
-            color: isNsfwFlagged ? AppTheme.warning : const Color(0xFFF6F1E8),
+            color: isNsfwFlagged ? colorScheme.error : const Color(0xFFF6F1E8),
           ),
         ),
       ),

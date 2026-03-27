@@ -29,7 +29,9 @@ class ScreenshotRecord {
       appPackageName: map['app_package_name'] as String,
       appName: map['app_name'] as String,
       filePath: map['file_path'] as String,
-      captureTime: DateTime.fromMillisecondsSinceEpoch(map['capture_time'] as int),
+      captureTime: DateTime.fromMillisecondsSinceEpoch(
+        map['capture_time'] as int,
+      ),
       fileSize: map['file_size'] as int,
       isDeleted: (map['is_deleted'] as int) == 1,
       pageUrl: map.containsKey('page_url') ? map['page_url'] as String? : null,

@@ -12,7 +12,10 @@ import '../services/flutter_logger.dart' hide LogLevel;
 enum _LogLevelFilter { all, debug, info, warn, error }
 
 class LogConsolePage extends StatefulWidget {
-  const LogConsolePage({super.key});
+  final String title;
+  final String? initialSearch;
+
+  const LogConsolePage({super.key, this.title = '日志面板', this.initialSearch});
 
   @override
   State<LogConsolePage> createState() => _LogConsolePageState();
@@ -27,6 +30,10 @@ class _LogConsolePageState extends State<LogConsolePage> {
   @override
   void initState() {
     super.initState();
+    final String initialSearch = (widget.initialSearch ?? '').trim();
+    if (initialSearch.isNotEmpty) {
+      _searchController.text = initialSearch;
+    }
     _sub = FlutterLogger.talker.stream.listen((_) {
       if (mounted) setState(() {});
     });
@@ -95,7 +102,7 @@ class _LogConsolePageState extends State<LogConsolePage> {
   Color _levelColor(TalkerData data, ColorScheme cs) {
     final level = data.logLevel;
     if (level == LogLevel.critical || level == LogLevel.error) return cs.error;
-    if (level == LogLevel.warning) return Colors.orange;
+    if (level == LogLevel.warning) return cs.error;
     if (level == LogLevel.info) return cs.primary;
     return cs.onSurfaceVariant;
   }
@@ -115,7 +122,9 @@ class _LogConsolePageState extends State<LogConsolePage> {
     for (final e in items) {
       final sp = _splitTag(e.message);
       final tagText = sp.tag != null ? '[${sp.tag}] ' : '';
-      sb.writeln('${_formatTime(e.time)} [${_levelLabel(e)}] $tagText${sp.message}');
+      sb.writeln(
+        '${_formatTime(e.time)} [${_levelLabel(e)}] $tagText${sp.message}',
+      );
       final ex = e.exception ?? e.error;
       if (ex != null) sb.writeln(ex.toString());
       if (e.stackTrace != null && e.stackTrace != StackTrace.empty) {
@@ -127,9 +136,7 @@ class _LogConsolePageState extends State<LogConsolePage> {
   }
 
   void _toast(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   Future<void> _copyOne(TalkerData e) async {
@@ -237,7 +244,7 @@ class _LogConsolePageState extends State<LogConsolePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('日志面板'),
+        title: Text(widget.title),
         actions: [
           PopupMenuButton<_LogLevelFilter>(
             tooltip: '筛选',
@@ -343,7 +350,10 @@ class _LogConsolePageState extends State<LogConsolePage> {
                       await _copyOne(e);
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -353,7 +363,10 @@ class _LogConsolePageState extends State<LogConsolePage> {
                               Container(
                                 width: 10,
                                 height: 10,
-                                margin: const EdgeInsets.only(top: 4, right: 10),
+                                margin: const EdgeInsets.only(
+                                  top: 4,
+                                  right: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: levelColor,
                                   shape: BoxShape.circle,
@@ -367,16 +380,18 @@ class _LogConsolePageState extends State<LogConsolePage> {
                                       title,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       subtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -394,7 +409,9 @@ class _LogConsolePageState extends State<LogConsolePage> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest.withOpacity(0.6),
+                                color: cs.surfaceContainerHighest.withOpacity(
+                                  0.6,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(

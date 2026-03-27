@@ -1387,7 +1387,6 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
 
   void _showImageInfo() {
     final screenshot = _screenshots[_currentIndex];
-    final file = File(screenshot.filePath);
 
     showUIDialog<void>(
       context: context,

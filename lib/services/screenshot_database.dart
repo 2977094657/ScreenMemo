@@ -115,7 +115,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 35,
+          version: 36,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -153,7 +153,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 35,
+          version: 36,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -186,7 +186,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 35,
+          version: 36,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -213,7 +213,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 35,
+        version: 36,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -1112,6 +1112,25 @@ class ScreenshotDatabase {
     if (oldVersion < 35) {
       try {
         await _createNocturneMemoryTables(db);
+      } catch (_) {}
+    }
+
+    // v36: Dynamic timeline query indexes
+    if (oldVersion < 36) {
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_segments_status_id_desc ON segments(status, id DESC)',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_segments_start_id_desc ON segments(start_time DESC, id DESC)',
+        );
+      } catch (_) {}
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_segment_samples_seg_pkg ON segment_samples(segment_id, app_package_name)',
+        );
       } catch (_) {}
     }
   }

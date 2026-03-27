@@ -10,8 +10,10 @@ import 'ai_settings_service.dart';
 import 'ai_providers_service.dart';
 import 'screenshot_database.dart';
 import 'flutter_logger.dart';
+import 'dynamic_entry_perf_service.dart';
 import 'locale_service.dart';
 import 'user_settings_service.dart';
+import '../utils/app_ref_markdown.dart';
 
 String _cleanMorningText(String input) {
   var text = input.trim();
@@ -78,16 +80,16 @@ class MorningInsightEntry {
     String? summary,
     List<String>? actions,
     List<String>? tags,
-  })  : title = _cleanMorningText(title),
-        summary = summary == null ? null : _cleanMorningText(summary),
-        actions = (actions ?? const <String>[])
-            .map(_cleanMorningText)
-            .where((e) => e.isNotEmpty)
-            .toList(growable: false),
-        tags = (tags ?? const <String>[])
-            .map(_cleanMorningText)
-            .where((e) => e.isNotEmpty)
-            .toList(growable: false);
+  }) : title = _cleanMorningText(title),
+       summary = summary == null ? null : _cleanMorningText(summary),
+       actions = (actions ?? const <String>[])
+           .map(_cleanMorningText)
+           .where((e) => e.isNotEmpty)
+           .toList(growable: false),
+       tags = (tags ?? const <String>[])
+           .map(_cleanMorningText)
+           .where((e) => e.isNotEmpty)
+           .toList(growable: false);
 
   final String title;
   final String? summary;
@@ -106,19 +108,21 @@ class MorningInsightEntry {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'title': title,
-        if (hasSummary) 'summary': summary,
-        if (hasActions) 'actions': actions,
-        if (tags.isNotEmpty) 'tags': tags,
-      };
+    'title': title,
+    if (hasSummary) 'summary': summary,
+    if (hasActions) 'actions': actions,
+    if (tags.isNotEmpty) 'tags': tags,
+  };
 
   factory MorningInsightEntry.fromJson(Map<String, dynamic> json) {
-    final String? rawTitle = _stringOrNull(json['title']) ??
+    final String? rawTitle =
+        _stringOrNull(json['title']) ??
         _stringOrNull(json['headline']) ??
         _stringOrNull(json['focus']) ??
         _stringOrNull(json['label']) ??
         _stringOrNull(json['name']);
-    final String? rawSummary = _stringOrNull(json['summary']) ??
+    final String? rawSummary =
+        _stringOrNull(json['summary']) ??
         _stringOrNull(json['description']) ??
         _stringOrNull(json['insight']) ??
         _stringOrNull(json['note']) ??
@@ -132,10 +136,14 @@ class MorningInsightEntry {
           json['followUps'] ??
           json['follow_ups'],
     );
-    final List<String> tags = _stringList(json['tags'] ?? json['keywords'] ?? json['labels']);
+    final List<String> tags = _stringList(
+      json['tags'] ?? json['keywords'] ?? json['labels'],
+    );
 
     String resolvedTitle = rawTitle != null ? _cleanMorningText(rawTitle) : '';
-    final String? resolvedSummary = rawSummary == null ? null : _cleanMorningText(rawSummary);
+    final String? resolvedSummary = rawSummary == null
+        ? null
+        : _cleanMorningText(rawSummary);
 
     if (resolvedTitle.isEmpty) {
       if (resolvedSummary != null && resolvedSummary.isNotEmpty) {
@@ -148,15 +156,19 @@ class MorningInsightEntry {
     final String fallbackTitle = resolvedTitle.isNotEmpty
         ? resolvedTitle
         : (resolvedSummary != null && resolvedSummary.isNotEmpty
-            ? _deriveMorningTitle(resolvedSummary)
-            : (actions.isNotEmpty ? _deriveMorningTitle(actions.first) : ''));
+              ? _deriveMorningTitle(resolvedSummary)
+              : (actions.isNotEmpty ? _deriveMorningTitle(actions.first) : ''));
 
     final String derivedTitle = fallbackTitle.isNotEmpty
         ? fallbackTitle
-        : _deriveMorningTitle(resolvedSummary ?? (actions.isNotEmpty ? actions.first : ''));
+        : _deriveMorningTitle(
+            resolvedSummary ?? (actions.isNotEmpty ? actions.first : ''),
+          );
 
     final bool meaningful =
-        derivedTitle.isNotEmpty || (resolvedSummary != null && resolvedSummary.isNotEmpty) || actions.isNotEmpty;
+        derivedTitle.isNotEmpty ||
+        (resolvedSummary != null && resolvedSummary.isNotEmpty) ||
+        actions.isNotEmpty;
     if (!meaningful) {
       return MorningInsightEntry(title: '', summary: null);
     }
@@ -165,8 +177,8 @@ class MorningInsightEntry {
       title: derivedTitle.isNotEmpty
           ? derivedTitle
           : (resolvedSummary?.isNotEmpty ?? false)
-              ? resolvedSummary!
-              : (actions.isNotEmpty ? actions.first : ''),
+          ? resolvedSummary!
+          : (actions.isNotEmpty ? actions.first : ''),
       summary: resolvedSummary,
       actions: actions,
       tags: tags,
@@ -197,7 +209,8 @@ class MorningInsights {
     required this.createdAt,
     this.rawResponse,
   }) : tips = List<MorningInsightEntry>.unmodifiable(
-            tips.where((element) => element.isMeaningful).toList());
+         tips.where((element) => element.isMeaningful).toList(),
+       );
 
   factory MorningInsights.fromRow(Map<String, dynamic> row) {
     final tipsJson = (row['tips_json'] as String?) ?? '[]';
@@ -232,14 +245,16 @@ class MorningInsights {
 
     Iterable<dynamic>? source;
     if (payload is Map<String, dynamic>) {
-      final dynamic candidate = payload['items'] ?? payload['tips'] ?? payload['entries'];
+      final dynamic candidate =
+          payload['items'] ?? payload['tips'] ?? payload['entries'];
       if (candidate is List) {
         source = candidate;
       } else if (candidate is Map) {
         source = _orderedValuesFromMap(candidate);
       }
     } else if (payload is Map) {
-      final dynamic candidate = payload['items'] ?? payload['tips'] ?? payload['entries'];
+      final dynamic candidate =
+          payload['items'] ?? payload['tips'] ?? payload['entries'];
       if (candidate is List) {
         source = candidate;
       } else if (candidate is Map) {
@@ -253,7 +268,9 @@ class MorningInsights {
     final List<MorningInsightEntry> result = <MorningInsightEntry>[];
     for (final dynamic element in source) {
       final MorningInsightEntry? entry = _entryFromDynamic(element);
-      if (entry != null && entry.isMeaningful && !_containsEntry(result, entry)) {
+      if (entry != null &&
+          entry.isMeaningful &&
+          !_containsEntry(result, entry)) {
         result.add(entry);
       }
     }
@@ -262,9 +279,12 @@ class MorningInsights {
 
   static MorningInsightEntry? _entryFromDynamic(dynamic element) {
     if (element is MorningInsightEntry) return element;
-    if (element is Map<String, dynamic>) return MorningInsightEntry.fromJson(element);
+    if (element is Map<String, dynamic>)
+      return MorningInsightEntry.fromJson(element);
     if (element is Map) {
-      final converted = element.map<String, dynamic>((key, value) => MapEntry(key.toString(), value));
+      final converted = element.map<String, dynamic>(
+        (key, value) => MapEntry(key.toString(), value),
+      );
       return MorningInsightEntry.fromJson(converted);
     }
     if (element is String) {
@@ -272,7 +292,11 @@ class MorningInsights {
       return entry.isMeaningful ? entry : null;
     }
     if (element is List) {
-      final actions = element.whereType<String>().map(_cleanMorningText).where((e) => e.isNotEmpty).toList();
+      final actions = element
+          .whereType<String>()
+          .map(_cleanMorningText)
+          .where((e) => e.isNotEmpty)
+          .toList();
       if (actions.isEmpty) return null;
       final title = _deriveMorningTitle(actions.first);
       return MorningInsightEntry(
@@ -284,11 +308,16 @@ class MorningInsights {
     return null;
   }
 
-  static bool _containsEntry(List<MorningInsightEntry> list, MorningInsightEntry candidate) {
-    return list.any((item) =>
-        item.title == candidate.title &&
-        (item.summary ?? '') == (candidate.summary ?? '') &&
-        listEquals(item.actions, candidate.actions));
+  static bool _containsEntry(
+    List<MorningInsightEntry> list,
+    MorningInsightEntry candidate,
+  ) {
+    return list.any(
+      (item) =>
+          item.title == candidate.title &&
+          (item.summary ?? '') == (candidate.summary ?? '') &&
+          listEquals(item.actions, candidate.actions),
+    );
   }
 
   static Iterable<dynamic> _orderedValuesFromMap(Map<dynamic, dynamic> map) {
@@ -336,34 +365,64 @@ class DailySummaryService {
   final AISettingsService _settings = AISettingsService.instance;
 
   // 原生交互通道：用于调度/触发系统通知
-  static const MethodChannel _channel = MethodChannel('com.fqyw.screen_memo/accessibility');
+  static const MethodChannel _channel = MethodChannel(
+    'com.fqyw.screen_memo/accessibility',
+  );
 
   // 自动刷新定时器：在前台时按计划预生成当天总结
   Timer? _autoRefreshTimer;
 
-  Future<_DailySummaryGenerationContext?> _prepareDailySummaryContext(String dateKey) async {
+  Future<_DailySummaryGenerationContext?> _prepareDailySummaryContext(
+    String dateKey,
+  ) async {
+    final Stopwatch prepareSw = Stopwatch()..start();
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.start',
+      detail: 'dateKey=$dateKey',
+    );
     final range = _dayRangeMillis(dateKey);
     if (range == null) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.prepare.invalidDate',
+        detail: 'ms=${prepareSw.elapsedMilliseconds} dateKey=$dateKey',
+      );
       try {
-        await FlutterLogger.nativeWarn('DailySummary', 'generateForDate 参数 dateKey 无效：$dateKey');
+        await FlutterLogger.nativeWarn(
+          'DailySummary',
+          'generateForDate 参数 dateKey 无效：$dateKey',
+        );
       } catch (_) {}
       return null;
     }
 
+    final Stopwatch segmentsSw = Stopwatch()..start();
     final segments = await _db.listSegmentsWithResultsBetween(
       startMillis: range[0],
       endMillis: range[1],
     );
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.segments.query.done',
+      detail: 'ms=${segmentsSw.elapsedMilliseconds} count=${segments.length}',
+    );
     try {
-      await FlutterLogger.nativeInfo('DailySummary', '上下文片段数=${segments.length}');
+      await FlutterLogger.nativeInfo(
+        'DailySummary',
+        '上下文片段数=${segments.length}',
+      );
     } catch (_) {}
 
+    final Stopwatch promptSw = Stopwatch()..start();
     final String prompt = await _buildDailyPrompt(dateKey, segments);
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.prompt.build.done',
+      detail: 'ms=${promptSw.elapsedMilliseconds} promptLen=${prompt.length}',
+    );
     try {
       await FlutterLogger.nativeDebug('DailySummary', '提示词长度=${prompt.length}');
     } catch (_) {}
 
     // 读取“动态(segments)”上下文的提供商与模型，用于日志与写库，保证与动态一致
+    final Stopwatch providerSw = Stopwatch()..start();
     String providerTypeUsed = 'openai-compatible';
     String modelUsed = await _settings.getModel();
     try {
@@ -374,10 +433,16 @@ class DailySummaryService {
       if (pid is int) {
         try {
           final p = await AIProvidersService.instance.getProvider(pid);
-          if (p != null && (p.type.trim().isNotEmpty)) providerTypeUsed = p.type.trim();
+          if (p != null && (p.type.trim().isNotEmpty))
+            providerTypeUsed = p.type.trim();
         } catch (_) {}
       }
     } catch (_) {}
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.provider.resolve.done',
+      detail:
+          'ms=${providerSw.elapsedMilliseconds} provider=$providerTypeUsed model=$modelUsed',
+    );
 
     try {
       await FlutterLogger.nativeInfo(
@@ -386,18 +451,36 @@ class DailySummaryService {
       );
     } catch (_) {}
     try {
-      final prev = prompt.length <= 1200 ? prompt : (prompt.substring(0, 1200) + '…');
+      final prev = prompt.length <= 1200
+          ? prompt
+          : (prompt.substring(0, 1200) + '…');
       await FlutterLogger.nativeDebug('DailySummary', '提示词预览：$prev');
     } catch (_) {}
+    final Stopwatch promptLogSw = Stopwatch()..start();
+    int promptLogChunks = 0;
     try {
       await FlutterLogger.nativeInfo('DailySummary', '提示词完整内容开始 >>>');
       const int chunk = 1800;
       for (int i = 0; i < prompt.length; i += chunk) {
-        final int end = (i + chunk < prompt.length) ? (i + chunk) : prompt.length;
-        await FlutterLogger.nativeInfo('DailySummary', prompt.substring(i, end));
+        final int end = (i + chunk < prompt.length)
+            ? (i + chunk)
+            : prompt.length;
+        promptLogChunks += 1;
+        await FlutterLogger.nativeInfo(
+          'DailySummary',
+          prompt.substring(i, end),
+        );
       }
       await FlutterLogger.nativeInfo('DailySummary', '提示词完整内容结束 <<<');
     } catch (_) {}
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.prompt.log.done',
+      detail: 'ms=${promptLogSw.elapsedMilliseconds} chunks=$promptLogChunks',
+    );
+    DynamicEntryPerfService.instance.mark(
+      'daily.prepare.done',
+      detail: 'ms=${prepareSw.elapsedMilliseconds}',
+    );
 
     return _DailySummaryGenerationContext(
       dateKey: dateKey,
@@ -411,6 +494,11 @@ class DailySummaryService {
     required _DailySummaryGenerationContext ctx,
     required String raw,
   }) async {
+    final Stopwatch persistSw = Stopwatch()..start();
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.start',
+      detail: 'dateKey=${ctx.dateKey} rawLen=${raw.length}',
+    );
     try {
       await FlutterLogger.nativeInfo('DailySummary', 'AI 原始输出长度=${raw.length}');
     } catch (_) {}
@@ -418,25 +506,35 @@ class DailySummaryService {
       final prev = raw.length <= 1200 ? raw : (raw.substring(0, 1200) + '…');
       await FlutterLogger.nativeDebug('DailySummary', 'AI 响应预览：$prev');
     } catch (_) {}
+    final Stopwatch responseLogSw = Stopwatch()..start();
+    int responseLogChunks = 0;
     try {
       await FlutterLogger.nativeInfo('DailySummary', 'AI 响应完整内容开始 >>>');
       const int chunk = 1800;
       for (int i = 0; i < raw.length; i += chunk) {
         final int end = (i + chunk < raw.length) ? (i + chunk) : raw.length;
+        responseLogChunks += 1;
         await FlutterLogger.nativeInfo('DailySummary', raw.substring(i, end));
       }
       await FlutterLogger.nativeInfo('DailySummary', 'AI 响应完整内容结束 <<<');
     } catch (_) {}
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.response.log.done',
+      detail:
+          'ms=${responseLogSw.elapsedMilliseconds} chunks=$responseLogChunks',
+    );
 
     Map<String, dynamic>? sj;
     String outputText = raw;
+    final Stopwatch parseSw = Stopwatch()..start();
     try {
       final dynamic j = jsonDecode(raw);
       if (j is Map<String, dynamic>) {
         sj = j;
         final dynamic v = j['overall_summary'];
         if (v is String && v.trim().isNotEmpty) {
-          outputText = v.trim();
+          outputText = normalizeCodeWrappedAppRefs(v.trim());
+          sj['overall_summary'] = outputText;
         }
       }
     } catch (e) {
@@ -456,7 +554,8 @@ class DailySummaryService {
           sj = j2;
           final dynamic v2 = j2['overall_summary'];
           if (v2 is String && v2.trim().isNotEmpty) {
-            outputText = v2.trim();
+            outputText = normalizeCodeWrappedAppRefs(v2.trim());
+            sj['overall_summary'] = outputText;
           }
         }
       } catch (_) {
@@ -468,27 +567,45 @@ class DailySummaryService {
           );
           final String? nb2 = _extractLooseField(raw, 'notification_brief');
           if (ov2 != null && ov2.trim().isNotEmpty) {
-            final String ov3 = _unescapeJsonStringCandidate(ov2.trim());
-            final String? nb3 =
-                nb2 == null ? null : _unescapeJsonStringCandidate(nb2.trim());
+            final String ov3 = normalizeCodeWrappedAppRefs(
+              _unescapeJsonStringCandidate(ov2.trim()),
+            );
+            final String? nb3 = nb2 == null
+                ? null
+                : _unescapeJsonStringCandidate(nb2.trim());
             outputText = ov3;
-            final Map<String, dynamic> m = <String, dynamic>{'overall_summary': outputText};
-            if (nb3 != null && nb3.trim().isNotEmpty) m['notification_brief'] = nb3.trim();
+            final Map<String, dynamic> m = <String, dynamic>{
+              'overall_summary': outputText,
+            };
+            if (nb3 != null && nb3.trim().isNotEmpty)
+              m['notification_brief'] = nb3.trim();
             sj = m;
           } else {
             final String? ov = _extractJsonStringValue(raw, 'overall_summary');
-            final String? nb = _extractJsonStringValue(raw, 'notification_brief');
+            final String? nb = _extractJsonStringValue(
+              raw,
+              'notification_brief',
+            );
             if (ov != null && ov.trim().isNotEmpty) {
-              outputText = ov.trim();
-              final Map<String, dynamic> m = <String, dynamic>{'overall_summary': outputText};
-              if (nb != null && nb.trim().isNotEmpty) m['notification_brief'] = nb.trim();
+              outputText = normalizeCodeWrappedAppRefs(ov.trim());
+              final Map<String, dynamic> m = <String, dynamic>{
+                'overall_summary': outputText,
+              };
+              if (nb != null && nb.trim().isNotEmpty)
+                m['notification_brief'] = nb.trim();
               sj = m;
             }
           }
         } catch (_) {}
       }
     }
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.parse.done',
+      detail:
+          'ms=${parseSw.elapsedMilliseconds} structured=${sj != null} outputLen=${outputText.length}',
+    );
 
+    final Stopwatch upsertSw = Stopwatch()..start();
     await _db.upsertDailySummary(
       dateKey: ctx.dateKey,
       aiProvider: ctx.providerType,
@@ -496,7 +613,13 @@ class DailySummaryService {
       outputText: outputText,
       structuredJson: sj == null ? null : jsonEncode(sj),
     );
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.db.upsert.done',
+      detail:
+          'ms=${upsertSw.elapsedMilliseconds} structured=${sj != null} outLen=${outputText.length}',
+    );
 
+    final Stopwatch briefSw = Stopwatch()..start();
     try {
       String briefText = '';
       final dynamic nb = sj?['notification_brief'];
@@ -532,6 +655,10 @@ class DailySummaryService {
         await FlutterLogger.nativeWarn('DailySummary', 'setDailyBrief 失败：$e');
       } catch (_) {}
     }
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.brief.done',
+      detail: 'ms=${briefSw.elapsedMilliseconds}',
+    );
 
     try {
       await FlutterLogger.nativeInfo(
@@ -539,13 +666,22 @@ class DailySummaryService {
         'upsert ok model=${ctx.model} outLen=${outputText.length}',
       );
     } catch (_) {}
+    DynamicEntryPerfService.instance.mark(
+      'daily.persist.done',
+      detail: 'ms=${persistSw.elapsedMilliseconds}',
+    );
   }
 
-
   /// 生成或返回已有的每日总结
-  Future<Map<String, dynamic>?> getOrGenerate(String dateKey, {bool force = false}) async {
+  Future<Map<String, dynamic>?> getOrGenerate(
+    String dateKey, {
+    bool force = false,
+  }) async {
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'getOrGenerate 日期=$dateKey 强制=$force');
+    FlutterLogger.nativeInfo(
+      'DailySummary',
+      'getOrGenerate 日期=$dateKey 强制=$force',
+    );
     if (!force) {
       final existed = await _db.getDailySummary(dateKey);
       if (existed != null) {
@@ -560,7 +696,10 @@ class DailySummaryService {
   /// 生成某日总结（强制重算）
   Future<Map<String, dynamic>?> generateForDate(String dateKey) async {
     // ignore: discarded_futures
-    FlutterLogger.nativeInfo('DailySummary', 'generateForDate 开始 date=$dateKey');
+    FlutterLogger.nativeInfo(
+      'DailySummary',
+      'generateForDate 开始 date=$dateKey',
+    );
     final _DailySummaryGenerationContext? ctx =
         await _prepareDailySummaryContext(dateKey);
     if (ctx == null) return null;
@@ -574,9 +713,15 @@ class DailySummaryService {
       );
     } catch (e, st) {
       // ignore: discarded_futures
-      await FlutterLogger.nativeError('DailySummary', 'AI 请求失败：'+e.toString());
+      await FlutterLogger.nativeError(
+        'DailySummary',
+        'AI 请求失败：' + e.toString(),
+      );
       // ignore: discarded_futures
-      await FlutterLogger.nativeDebug('DailySummary', 'AI 异常堆栈：'+st.toString());
+      await FlutterLogger.nativeDebug(
+        'DailySummary',
+        'AI 异常堆栈：' + st.toString(),
+      );
       rethrow;
     }
     final String raw = _stripFences(resp.content.trim());
@@ -586,19 +731,33 @@ class DailySummaryService {
 
   /// 流式生成每日总结，返回流式会话对象（完成后会自动写入数据库）
   Future<AIStreamingSession?> streamGenerateForDate(String dateKey) async {
+    final Stopwatch streamSw = Stopwatch()..start();
     final _DailySummaryGenerationContext? ctx =
         await _prepareDailySummaryContext(dateKey);
     if (ctx == null) {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.session.skipped',
+        detail: 'ms=${streamSw.elapsedMilliseconds} dateKey=$dateKey',
+      );
       return null;
     }
 
-    final AIStreamingSession baseSession =
-        await _chat.sendMessageStreamedV2WithDisplayOverride(
-      'daily_summary_$dateKey',
-      ctx.prompt,
-      includeHistory: false,
-      persistHistory: false,
-      context: 'segments',
+    final Stopwatch createSw = Stopwatch()..start();
+    DynamicEntryPerfService.instance.mark(
+      'daily.ai.session.create.start',
+      detail: 'dateKey=$dateKey',
+    );
+    final AIStreamingSession baseSession = await _chat
+        .sendMessageStreamedV2WithDisplayOverride(
+          'daily_summary_$dateKey',
+          ctx.prompt,
+          includeHistory: false,
+          persistHistory: false,
+          context: 'segments',
+        );
+    DynamicEntryPerfService.instance.mark(
+      'daily.ai.session.create.done',
+      detail: 'ms=${createSw.elapsedMilliseconds}',
     );
 
     final StreamController<AIStreamEvent> controller =
@@ -619,18 +778,20 @@ class DailySummaryService {
       cancelOnError: false,
     );
 
-    final Future<AIMessage> completed = baseSession.completed.then(
-      (AIMessage message) async {
-        final String raw = _stripFences(message.content.trim());
-        await _persistDailySummary(ctx: ctx, raw: raw);
-        return message;
-      },
-    );
+    final Future<AIMessage> completed = baseSession.completed.then((
+      AIMessage message,
+    ) async {
+      DynamicEntryPerfService.instance.mark(
+        'daily.ai.stream.completed',
+        detail:
+            'ms=${streamSw.elapsedMilliseconds} contentLen=${message.content.length}',
+      );
+      final String raw = _stripFences(message.content.trim());
+      await _persistDailySummary(ctx: ctx, raw: raw);
+      return message;
+    });
 
-    return AIStreamingSession(
-      stream: controller.stream,
-      completed: completed,
-    );
+    return AIStreamingSession(stream: controller.stream, completed: completed);
   }
 
   /// 获取某日的段落（带结果），供页面渲染时间线兜底
@@ -654,7 +815,10 @@ class DailySummaryService {
     await _db.deleteMorningInsights(dateKey);
   }
 
-  Future<MorningInsights?> fetchOrGenerateMorningInsights(String dateKey, {bool force = false}) async {
+  Future<MorningInsights?> fetchOrGenerateMorningInsights(
+    String dateKey, {
+    bool force = false,
+  }) async {
     if (!force) {
       final existed = await loadMorningInsights(dateKey);
       if (existed != null) {
@@ -679,28 +843,50 @@ class DailySummaryService {
     );
 
     final prompt = await _buildMorningPrompt(dateKey, sourceDateKey, segments);
-    try { await FlutterLogger.nativeInfo('MorningInsights', '生成开始 目标=$dateKey 来源=$sourceDateKey 片段数=${segments.length}'); } catch (_) {}
-    final resp = await _chat.sendMessageOneShot(prompt, context: 'segments', timeout: null);
+    try {
+      await FlutterLogger.nativeInfo(
+        'MorningInsights',
+        '生成开始 目标=$dateKey 来源=$sourceDateKey 片段数=${segments.length}',
+      );
+    } catch (_) {}
+    final resp = await _chat.sendMessageOneShot(
+      prompt,
+      context: 'segments',
+      timeout: null,
+    );
     final stripped = _stripFences(resp.content.trim());
-    try { await FlutterLogger.nativeDebug('MorningInsights', 'AI 响应预览：'+(stripped.length > 800 ? stripped.substring(0, 800)+'…' : stripped)); } catch (_) {}
+    try {
+      await FlutterLogger.nativeDebug(
+        'MorningInsights',
+        'AI 响应预览：' +
+            (stripped.length > 800
+                ? stripped.substring(0, 800) + '…'
+                : stripped),
+      );
+    } catch (_) {}
 
     final tips = _parseMorningTips(stripped);
     if (tips.isEmpty) {
-      try { await FlutterLogger.nativeWarn('MorningInsights', '解析出的提示为空'); } catch (_) {}
+      try {
+        await FlutterLogger.nativeWarn('MorningInsights', '解析出的提示为空');
+      } catch (_) {}
       return null;
     }
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final rawJson = jsonEncode({
-      'items': tips.map((e) => e.toJson()).toList(),
-    });
+    final rawJson = jsonEncode({'items': tips.map((e) => e.toJson()).toList()});
     await _db.upsertMorningInsights(
       dateKey: dateKey,
       sourceDateKey: sourceDateKey,
       tipsJson: rawJson,
       rawResponse: stripped,
     );
-    try { await FlutterLogger.nativeInfo('MorningInsights', '已保存提示数量=${tips.length}'); } catch (_) {}
+    try {
+      await FlutterLogger.nativeInfo(
+        'MorningInsights',
+        '已保存提示数量=${tips.length}',
+      );
+    } catch (_) {}
     return MorningInsights(
       dateKey: dateKey,
       sourceDateKey: sourceDateKey,
@@ -710,26 +896,39 @@ class DailySummaryService {
     );
   }
 
-  Future<String> _buildDailyPrompt(String dateKey, List<Map<String, dynamic>> segments) async {
+  Future<String> _buildDailyPrompt(
+    String dateKey,
+    List<Map<String, dynamic>> segments,
+  ) async {
     final custom = await _settings.getPromptDaily();
 
     // 计算当前应用语言并获取“语言策略”系统文案（要求忽略上下文语言，按应用语言输出）
-    final String langCode = (LocaleService.instance.locale?.languageCode ??
-            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-        .toLowerCase();
+    final String langCode =
+        (LocaleService.instance.locale?.languageCode ??
+                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+            .toLowerCase();
     final bool isZh = langCode.startsWith('zh');
     final locale = isZh ? const Locale('zh') : const Locale('en');
-    final String languagePolicy = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+    final String languagePolicy = lookupAppLocalizations(
+      locale,
+    ).aiSystemPromptLanguagePolicy;
 
-    final String defaultTemplate = isZh ? _defaultDailyPromptZh : _defaultDailyPromptEn;
+    final String defaultTemplate = isZh
+        ? _defaultDailyPromptZh
+        : _defaultDailyPromptEn;
     String header;
     final String? trimmedAddon = custom?.trim();
     if (trimmedAddon != null && trimmedAddon.isNotEmpty) {
-      final String beginMarker = isZh ? '【重要附加说明（开始）】' : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***';
-      final String endMarker = isZh ? '【重要附加说明（结束）】' : '***IMPORTANT EXTRA INSTRUCTIONS (END)***';
+      final String beginMarker = isZh
+          ? '【重要附加说明（开始）】'
+          : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***';
+      final String endMarker = isZh
+          ? '【重要附加说明（结束）】'
+          : '***IMPORTANT EXTRA INSTRUCTIONS (END)***';
       final String upperBlock = '$beginMarker\n$trimmedAddon';
       final String lowerBlock = '$endMarker\n$trimmedAddon';
-      header = '$languagePolicy\n\n$upperBlock\n\n$defaultTemplate\n\n$lowerBlock';
+      header =
+          '$languagePolicy\n\n$upperBlock\n\n$defaultTemplate\n\n$lowerBlock';
     } else {
       header = '$languagePolicy\n\n$defaultTemplate';
     }
@@ -770,10 +969,14 @@ class DailySummaryService {
     return '';
   }
 
-  String _notificationTitleForSlot(String dateKey, DailySummaryNotificationSlot slot) {
-    final String langCode = (LocaleService.instance.locale?.languageCode ??
-            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-        .toLowerCase();
+  String _notificationTitleForSlot(
+    String dateKey,
+    DailySummaryNotificationSlot slot,
+  ) {
+    final String langCode =
+        (LocaleService.instance.locale?.languageCode ??
+                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+            .toLowerCase();
     final bool isZh = langCode.startsWith('zh');
     final locale = isZh ? const Locale('zh') : const Locale('en');
     final l10n = lookupAppLocalizations(locale);
@@ -811,7 +1014,7 @@ class DailySummaryService {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
-    }
+  }
 
   String _stripFences(String s) {
     // 去除可能的三引号代码块
@@ -830,7 +1033,10 @@ class DailySummaryService {
   // 从原始文本中近似抽取 JSON 字符串字段（仅用于容错），支持简单转义还原
   String? _extractJsonStringValue(String raw, String key) {
     try {
-      final pattern = RegExp('"'+RegExp.escape(key)+'"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"', dotAll: true);
+      final pattern = RegExp(
+        '"' + RegExp.escape(key) + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"',
+        dotAll: true,
+      );
       final m = pattern.firstMatch(raw);
       if (m == null) return null;
       final captured = m.group(1) ?? '';
@@ -838,7 +1044,9 @@ class DailySummaryService {
       try {
         final wrapped = '{"x":"$captured"}';
         final obj = jsonDecode(wrapped);
-        final val = (obj is Map && obj['x'] is String) ? (obj['x'] as String) : captured;
+        final val = (obj is Map && obj['x'] is String)
+            ? (obj['x'] as String)
+            : captured;
         return val.trim();
       } catch (_) {
         return captured.trim();
@@ -852,7 +1060,11 @@ class DailySummaryService {
   String _repairJsonUnescapedQuotes(String s, {required List<String> keys}) {
     String out = s;
     for (final key in keys) {
-      out = _repairOneField(out, key, nextKeyHint: key == 'overall_summary' ? '"timeline"' : null);
+      out = _repairOneField(
+        out,
+        key,
+        nextKeyHint: key == 'overall_summary' ? '"timeline"' : null,
+      );
     }
     return out;
   }
@@ -915,7 +1127,8 @@ class DailySummaryService {
   // 尝试将形如 "\n" 等 JSON 转义序列反转为真实字符
   String _unescapeJsonStringCandidate(String s) {
     try {
-      final wrapped = '{"x":"' + s.replaceAll('\\', '\\\\').replaceAll('"', '\\"') + '"}';
+      final wrapped =
+          '{"x":"' + s.replaceAll('\\', '\\\\').replaceAll('"', '\\"') + '"}';
       final obj = jsonDecode(wrapped);
       if (obj is Map && obj['x'] is String) {
         return (obj['x'] as String);
@@ -931,7 +1144,10 @@ class DailySummaryService {
     final daily = await _db.getDailySummary(dateKey);
     if (daily == null) {
       // ignore: discarded_futures
-      FlutterLogger.nativeWarn('DailySummary', 'getNotificationBrief：未找到 $dateKey 的 daily 记录');
+      FlutterLogger.nativeWarn(
+        'DailySummary',
+        'getNotificationBrief：未找到 $dateKey 的 daily 记录',
+      );
       return '';
     }
     Map<String, dynamic>? sj;
@@ -948,12 +1164,16 @@ class DailySummaryService {
       if (idx > 0) return s.substring(0, idx + 1);
       return s.length > 120 ? (s.substring(0, 120) + '…') : s;
     }
+
     // 1) notification_brief
     final brief = sj?['notification_brief'];
     if (brief is String && brief.trim().isNotEmpty) {
       final out = brief.trim();
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', '简报来自 structured_json，长度=${out.length}');
+      FlutterLogger.nativeInfo(
+        'DailySummary',
+        '简报来自 structured_json，长度=${out.length}',
+      );
       return out;
     }
     // 2) 回退 overall_summary 的首句
@@ -1024,25 +1244,33 @@ class DailySummaryService {
   }) async {
     try {
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', '安排每日通知 enabled=$enabled time=$hour:$minute');
-      final res = await _channel.invokeMethod('scheduleDailySummaryNotification', {
-        'hour': hour,
-        'minute': minute,
-        'enabled': enabled,
-      });
+      FlutterLogger.nativeInfo(
+        'DailySummary',
+        '安排每日通知 enabled=$enabled time=$hour:$minute',
+      );
+      final res = await _channel.invokeMethod(
+        'scheduleDailySummaryNotification',
+        {'hour': hour, 'minute': minute, 'enabled': enabled},
+      );
       // ignore: discarded_futures
       FlutterLogger.nativeInfo('DailySummary', '安排每日通知结果=$res');
       // 同步安排固定时段（08:00/12:00/17:00/22:00）
       try {
-        final ok = await _channel.invokeMethod('scheduleDailySummaryNotification', {
-          // 复用原生接收器：为固定时段单独调用由原生端恢复时统一设定
-          // 这里仅确保通道可用；具体固定时段在原生 Boot 恢复与 restore 时安排
-          'hour': hour,
-          'minute': minute,
-          'enabled': enabled,
-        });
+        final ok = await _channel.invokeMethod(
+          'scheduleDailySummaryNotification',
+          {
+            // 复用原生接收器：为固定时段单独调用由原生端恢复时统一设定
+            // 这里仅确保通道可用；具体固定时段在原生 Boot 恢复与 restore 时安排
+            'hour': hour,
+            'minute': minute,
+            'enabled': enabled,
+          },
+        );
         // ignore: discarded_futures
-        FlutterLogger.nativeDebug('DailySummary', '通过原生 restore 侧效应安排固定时段 ok=$ok');
+        FlutterLogger.nativeDebug(
+          'DailySummary',
+          '通过原生 restore 侧效应安排固定时段 ok=$ok',
+        );
       } catch (_) {}
       return res == true;
     } catch (e) {
@@ -1093,12 +1321,22 @@ class DailySummaryService {
 
       // 提醒前 1 分钟（若启用）
       if (enabled) {
-        DateTime pre = DateTime(now.year, now.month, now.day, hour, minute)
-            .subtract(const Duration(minutes: 1));
+        DateTime pre = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          hour,
+          minute,
+        ).subtract(const Duration(minutes: 1));
         if (!pre.isAfter(now)) {
           final DateTime tm = now.add(const Duration(days: 1));
-          pre = DateTime(tm.year, tm.month, tm.day, hour, minute)
-              .subtract(const Duration(minutes: 1));
+          pre = DateTime(
+            tm.year,
+            tm.month,
+            tm.day,
+            hour,
+            minute,
+          ).subtract(const Duration(minutes: 1));
         }
         candidates.add(pre);
       }
@@ -1111,7 +1349,10 @@ class DailySummaryService {
 
       // 日志
       // ignore: discarded_futures
-      FlutterLogger.nativeInfo('DailySummary', '自动刷新已安排：${nextAt.toIso8601String()}（${delay.inSeconds}秒后）');
+      FlutterLogger.nativeInfo(
+        'DailySummary',
+        '自动刷新已安排：${nextAt.toIso8601String()}（${delay.inSeconds}秒后）',
+      );
 
       _autoRefreshTimer = Timer(delay, () async {
         try {
@@ -1145,28 +1386,51 @@ class DailySummaryService {
     return _dateKey(prev);
   }
 
-  Future<String> _buildMorningPrompt(String displayDateKey, String sourceDateKey, List<Map<String, dynamic>> segments) async {
+  Future<String> _buildMorningPrompt(
+    String displayDateKey,
+    String sourceDateKey,
+    List<Map<String, dynamic>> segments,
+  ) async {
     final String? custom = await _settings.getPromptMorning();
-    final String langCode = (LocaleService.instance.locale?.languageCode ??
-            WidgetsBinding.instance.platformDispatcher.locale.languageCode)
-        .toLowerCase();
+    final String langCode =
+        (LocaleService.instance.locale?.languageCode ??
+                WidgetsBinding.instance.platformDispatcher.locale.languageCode)
+            .toLowerCase();
     final bool isZh = langCode.startsWith('zh');
     final bool isJa = langCode.startsWith('ja');
     final bool isKo = langCode.startsWith('ko');
     final Locale locale = isZh
         ? const Locale('zh')
-        : (isJa ? const Locale('ja') : (isKo ? const Locale('ko') : const Locale('en')));
-    final String languagePolicy = lookupAppLocalizations(locale).aiSystemPromptLanguagePolicy;
+        : (isJa
+              ? const Locale('ja')
+              : (isKo ? const Locale('ko') : const Locale('en')));
+    final String languagePolicy = lookupAppLocalizations(
+      locale,
+    ).aiSystemPromptLanguagePolicy;
     final String defaultTemplate = isZh
         ? _defaultMorningPromptZh
-        : (isJa ? _defaultMorningPromptJa : (isKo ? _defaultMorningPromptKo : _defaultMorningPromptEn));
+        : (isJa
+              ? _defaultMorningPromptJa
+              : (isKo ? _defaultMorningPromptKo : _defaultMorningPromptEn));
     final String beginMarker = isZh
         ? '【重要附加说明（开始）】'
-        : (isJa ? '【重要な追加指示（開始）】' : (isKo ? '***중요 추가 지침 (시작)***' : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***'));
+        : (isJa
+              ? '【重要な追加指示（開始）】'
+              : (isKo
+                    ? '***중요 추가 지침 (시작)***'
+                    : '***IMPORTANT EXTRA INSTRUCTIONS (BEGIN)***'));
     final String endMarker = isZh
         ? '【重要附加说明（结束）】'
-        : (isJa ? '【重要な追加指示（終了）】' : (isKo ? '***중요 추가 지침 (종료)***' : '***IMPORTANT EXTRA INSTRUCTIONS (END)***'));
-    final String? trimmedAddon = custom == null ? null : custom.trim().isEmpty ? null : custom.trim();
+        : (isJa
+              ? '【重要な追加指示（終了）】'
+              : (isKo
+                    ? '***중요 추가 지침 (종료)***'
+                    : '***IMPORTANT EXTRA INSTRUCTIONS (END)***'));
+    final String? trimmedAddon = custom == null
+        ? null
+        : custom.trim().isEmpty
+        ? null
+        : custom.trim();
     final buffer = StringBuffer()
       ..writeln(languagePolicy)
       ..writeln();
@@ -1192,15 +1456,17 @@ class DailySummaryService {
     final String labelContext = isZh
         ? '上下文（昨日 overall_summary，仅用于理解背景，禁止逐句复述）'
         : (isJa
-            ? 'コンテキスト（前日の overall_summary。理解のためのみで逐語引用禁止）'
-            : (isKo ? '컨텍스트(전날 overall_summary, 참고용, 그대로 반복 금지)' : 'Context (yesterday overall_summary, context only; do not restate verbatim)'));
+              ? 'コンテキスト（前日の overall_summary。理解のためのみで逐語引用禁止）'
+              : (isKo
+                    ? '컨텍스트(전날 overall_summary, 참고용, 그대로 반복 금지)'
+                    : 'Context (yesterday overall_summary, context only; do not restate verbatim)'));
     final String noContext = isZh
         ? '(昨日无可用上下文，请据此给出泛化建议)'
         : (isJa
-            ? '(前日の情報がほぼありません。一般的な継続方針を提案してください)'
-            : (isKo
-                ? '(전날 참고 정보가 거의 없습니다. 실용적인 일반 제안을 제공하세요)'
-                : '(Very little context available; please provide generalized yet actionable suggestions)'));
+              ? '(前日の情報がほぼありません。一般的な継続方針を提案してください)'
+              : (isKo
+                    ? '(전날 참고 정보가 거의 없습니다. 실용적인 일반 제안을 제공하세요)'
+                    : '(Very little context available; please provide generalized yet actionable suggestions)'));
 
     buffer
       ..writeln()
@@ -1237,7 +1503,10 @@ class DailySummaryService {
     if (primary.isNotEmpty) return primary;
 
     try {
-      final repaired = _repairJsonUnescapedQuotes(raw, keys: const ['items', 'tips']);
+      final repaired = _repairJsonUnescapedQuotes(
+        raw,
+        keys: const ['items', 'tips'],
+      );
       final second = tryParse(repaired);
       if (second.isNotEmpty) return second;
     } catch (_) {}
@@ -1264,7 +1533,9 @@ class DailySummaryService {
     final cleaned = _cleanMorningText(raw);
     if (cleaned.isNotEmpty) {
       final entry = MorningInsightEntry.fromLegacy(cleaned);
-      return entry.isMeaningful ? <MorningInsightEntry>[entry] : const <MorningInsightEntry>[];
+      return entry.isMeaningful
+          ? <MorningInsightEntry>[entry]
+          : const <MorningInsightEntry>[];
     }
     return const <MorningInsightEntry>[];
   }
@@ -1283,6 +1554,7 @@ class DailySummaryService {
        "## 主要活动"
        "## 重点内容"
        每个小节至少 3 条要点（使用 “- ” 无序列表）。如信息不足，也必须保留小节，并给出不低于 1 条的“占位但有意义”的要点（如“无明显关键操作”），禁止删除小节。
+  - 若正文中提及应用名称，请直接使用 [app: 应用名] 或 [app: 应用名|应用包名]；不要给该标记再套反引号、代码样式、链接、加粗或其他 Markdown 包裹。
   - timeline 为数组，按时间升序列出 5–12 条关键片段；每条结构：
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "一句话行为（可用简短 Markdown 强调）" }
     如果上下文极少，最少也要 1 条，禁止为空。
@@ -1313,6 +1585,7 @@ class DailySummaryService {
        "## Main Activities"
        "## Key Content"
        Each section must contain at least 3 bullet points using "- ". If context is insufficient, still keep the section and provide at least 1 meaningful placeholder bullet (e.g., "No notable key actions"), never delete sections.
+  - If you mention an app name, use [app: App Name] or [app: App Name|app.package.name] directly; do not wrap the marker in backticks, code style, links, bold text, or any other Markdown wrapper.
   - timeline must be an array in ascending time order with 5–12 key entries. Each item:
     { "time": "HH:mm:ss-HH:mm:ss", "summary": "One-sentence action (may use brief Markdown emphasis)" }
     If context is minimal, at least 1 item is required; it MUST NOT be empty.

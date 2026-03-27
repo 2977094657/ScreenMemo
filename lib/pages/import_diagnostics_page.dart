@@ -8,7 +8,6 @@ import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui_components.dart';
 import '../widgets/ui_dialog.dart';
-import 'log_console_page.dart';
 
 class ImportDiagnosticsPage extends StatefulWidget {
   const ImportDiagnosticsPage({super.key});
@@ -255,13 +254,6 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     }
   }
 
-  Future<void> _openLogConsole() async {
-    if (!mounted) return;
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const LogConsolePage()));
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -324,6 +316,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     final ImportDiagnosticsReport report = _report!;
     final List<Widget> cards = <Widget>[
       _buildSummaryCard(context, report),
+      _buildActionsCard(context, report),
       _buildPathsCard(context, report),
       _buildFsCard(context, report),
       _buildDbCard(context, report),
@@ -334,7 +327,6 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
         _buildListCard(context, '警告', report.warnings),
       if (report.errors.isNotEmpty)
         _buildListCard(context, '错误', report.errors),
-      _buildActionsCard(context, report),
       _buildRawReportCard(context, report),
     ];
 
@@ -725,6 +717,16 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             _kv(context, 'lastError', task.lastError!),
           if (task.warnings.isNotEmpty)
             _kv(context, 'taskWarnings', task.warnings.take(3).join(' | ')),
+          if (task.isActive) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                onPressed: _cancelOcrTask,
+                child: const Text('停止修复'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -795,6 +797,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
     List<String> items,
   ) {
     final theme = Theme.of(context);
+    final bool isAlert = title == '错误' || title == '警告';
     return _buildCard(
       context,
       child: Column(
@@ -806,7 +809,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
             Icon(
               title == '错误' ? Icons.error_outline : Icons.warning_amber_rounded,
               size: 18,
-              color: title == '错误' ? theme.colorScheme.error : Colors.orange,
+              color: theme.colorScheme.error,
             ),
           ),
           const SizedBox(height: AppTheme.spacing2),
@@ -816,7 +819,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
               child: Text(
                 '• $s',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: title == '错误' ? theme.colorScheme.error : null,
+                  color: isAlert ? theme.colorScheme.error : null,
                 ),
               ),
             ),
@@ -876,16 +879,6 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
                         ? '继续修复图片文字'
                         : '修复图片文字',
                   ),
-          ),
-          if (_ocrTaskStatus.isActive)
-            OutlinedButton(
-              onPressed: _cancelOcrTask,
-              child: const Text('停止修复'),
-            ),
-          IconButton(
-            tooltip: '日志面板',
-            onPressed: _openLogConsole,
-            icon: const Icon(Icons.receipt_long_outlined),
           ),
         ],
       ),
@@ -966,7 +959,7 @@ class _ImportDiagnosticsPageState extends State<ImportDiagnosticsPage> {
       case ImportDiagnosticsLevel.ok:
         return ('OK', cs.primary, Icons.check_circle_outline);
       case ImportDiagnosticsLevel.warn:
-        return ('WARN', Colors.orange, Icons.warning_amber_rounded);
+        return ('WARN', cs.error, Icons.warning_amber_rounded);
       case ImportDiagnosticsLevel.error:
         return ('ERROR', cs.error, Icons.error_outline);
     }

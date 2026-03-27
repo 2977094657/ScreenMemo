@@ -11,6 +11,7 @@ import '../widgets/app_side_drawer.dart';
 import 'provider_list_page.dart';
 import '../utils/model_icon_utils.dart';
 import '../services/ai_providers_service.dart';
+import '../services/dynamic_entry_perf_service.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
 import '../services/navigation_service.dart';
@@ -43,16 +44,28 @@ class _EventHomePageState extends State<EventHomePage> {
   List<Map<String, dynamic>> _conversations = <Map<String, dynamic>>[];
   String? _activeConversationCid;
   bool _convLoading = true;
+  bool _trackEntryPerf = true;
+  int _entryPerfPendingLoads = 0;
+  bool _entryPerfShellFrameSeen = false;
+  bool _entryPerfLayoutLogged = false;
 
   @override
   void initState() {
     super.initState();
+    DynamicEntryPerfService.instance.beginSession(
+      source: 'EventHomePage.initState',
+    );
+    DynamicEntryPerfService.instance.mark('event.initState');
     _loadChatContextSelection();
     _loadConversations();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_trackEntryPerf) return;
+      _entryPerfShellFrameSeen = true;
+      DynamicEntryPerfService.instance.mark('event.shell.firstFrame');
+      _completeEntryPerfIfReady();
+    });
     _ctxChangedSub = AISettingsService.instance.onContextChanged.listen((ctx) {
-      if ((ctx == 'chat' ||
-              ctx == 'chat:cleared' ||
-              ctx == 'chat:history') &&
+      if ((ctx == 'chat' || ctx == 'chat:cleared' || ctx == 'chat:history') &&
           mounted) {
         _loadChatContextSelection();
         _loadConversations();
@@ -73,6 +86,36 @@ class _EventHomePageState extends State<EventHomePage> {
     });
     // 不再需要等待旧的模型加载；直接进入正文视图
     _loading = false;
+  }
+
+  void _beginEntryPerfLoad(String step) {
+    if (!_trackEntryPerf) return;
+    _entryPerfPendingLoads += 1;
+    DynamicEntryPerfService.instance.mark('$step.start');
+  }
+
+  void _endEntryPerfLoad(String step, {String? detail}) {
+    if (!_trackEntryPerf) return;
+    if (_entryPerfPendingLoads > 0) _entryPerfPendingLoads -= 1;
+    DynamicEntryPerfService.instance.mark('$step.done', detail: detail);
+    _completeEntryPerfIfReady();
+  }
+
+  void _failEntryPerfLoad(String step, Object error) {
+    if (!_trackEntryPerf) return;
+    if (_entryPerfPendingLoads > 0) _entryPerfPendingLoads -= 1;
+    DynamicEntryPerfService.instance.mark(
+      '$step.error',
+      detail: error.toString(),
+    );
+    _completeEntryPerfIfReady();
+  }
+
+  void _completeEntryPerfIfReady() {
+    if (!_trackEntryPerf) return;
+    if (!_entryPerfShellFrameSeen || _entryPerfPendingLoads > 0) return;
+    _trackEntryPerf = false;
+    DynamicEntryPerfService.instance.mark('event.bootstrap.done');
   }
 
   @override
@@ -106,6 +149,7 @@ class _EventHomePageState extends State<EventHomePage> {
 
   // 载入“动态(segments)”的提供商/模型选择（顶部 AppBar 使用）
   Future<void> _loadChatContextSelection() async {
+    _beginEntryPerfLoad('event.chatContext');
     try {
       final svc = AIProvidersService.instance;
       final providers = await svc.listProviders();
@@ -117,6 +161,7 @@ class _EventHomePageState extends State<EventHomePage> {
             _ctxLoading = false;
           });
         }
+        _endEntryPerfLoad('event.chatContext', detail: 'providers=0');
         return;
       }
       final ctxRow = await _settings.getAIContextRow('chat');
@@ -152,13 +197,20 @@ class _EventHomePageState extends State<EventHomePage> {
           _ctxLoading = false;
         });
       }
-    } catch (_) {
+      _endEntryPerfLoad(
+        'event.chatContext',
+        detail:
+            'providers=${providers.length} provider=${sel.name} model=$model',
+      );
+    } catch (e) {
+      _failEntryPerfLoad('event.chatContext', e);
       if (mounted) setState(() => _ctxLoading = false);
     }
   }
 
   // —— 会话：加载/新建/切换 ——
   Future<void> _loadConversations() async {
+    _beginEntryPerfLoad('event.conversations');
     try {
       final list = await _settings.listAiConversations();
       final active = await _settings.getActiveConversationCid();
@@ -168,7 +220,13 @@ class _EventHomePageState extends State<EventHomePage> {
         _activeConversationCid = active;
         _convLoading = false;
       });
-    } catch (_) {
+      _endEntryPerfLoad(
+        'event.conversations',
+        detail:
+            'count=${list.length} active=${active.isEmpty ? 'none' : active}',
+      );
+    } catch (e) {
+      _failEntryPerfLoad('event.conversations', e);
       if (!mounted) return;
       setState(() => _convLoading = false);
     }
@@ -588,6 +646,14 @@ class _EventHomePageState extends State<EventHomePage> {
           : LayoutBuilder(
               builder: (context, constraints) {
                 final showSidebar = constraints.maxWidth >= 960;
+                if (_trackEntryPerf && !_entryPerfLayoutLogged) {
+                  _entryPerfLayoutLogged = true;
+                  DynamicEntryPerfService.instance.mark(
+                    'event.layout.resolved',
+                    detail:
+                        'maxWidth=${constraints.maxWidth.toStringAsFixed(1)} showSidebar=$showSidebar',
+                  );
+                }
                 if (!showSidebar) {
                   return const AISettingsPage(
                     embedded: true,

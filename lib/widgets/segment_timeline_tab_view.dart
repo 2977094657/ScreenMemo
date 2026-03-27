@@ -998,7 +998,8 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
     bool aiRetryFailed = false,
     String? aiRetryMessage,
   }) {
-    final Color actionColor = AppTheme.warning;
+    final colorScheme = Theme.of(context).colorScheme;
+    final Color actionColor = AppTheme.mergedEventAccent;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1027,9 +1028,7 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
                           ? Icons.error_outline_rounded
                           : Icons.info_outline_rounded,
                       size: 16,
-                      color: aiRetryFailed
-                          ? Theme.of(context).colorScheme.error
-                          : AppTheme.warning,
+                      color: aiRetryFailed ? colorScheme.error : actionColor,
                     ),
                   ),
                 ),
@@ -1097,9 +1096,9 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: fg.withOpacity(0.10),
+        color: fg.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: fg.withOpacity(0.35), width: 1),
+        border: Border.all(color: fg.withValues(alpha: 0.35), width: 1),
       ),
       child: Text(
         text,
@@ -1255,17 +1254,20 @@ class _SegmentEntryCardState extends State<SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: AppTheme.warning.withOpacity(0.12),
+        color: AppTheme.mergedEventAccent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+        border: Border.all(
+          color: AppTheme.mergedEventAccent.withValues(alpha: 0.45),
+          width: 1,
+        ),
       ),
       child: Text(
         AppLocalizations.of(context).mergedEventTag,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: AppTheme.warning,
+          color: AppTheme.mergedEventAccent,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),

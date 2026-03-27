@@ -490,6 +490,12 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_time, end_time)',
     );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_segments_status_id_desc ON segments(status, id DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_segments_start_id_desc ON segments(start_time DESC, id DESC)',
+    );
     try {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_segments_merged_into ON segments(merged_into_id)',
@@ -514,6 +520,9 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     ''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_segment_samples_seg ON segment_samples(segment_id, position_index)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_segment_samples_seg_pkg ON segment_samples(segment_id, app_package_name)',
     );
 
     try {
@@ -1753,11 +1762,6 @@ ORDER BY day ASC
       return rows.isNotEmpty;
     }
 
-    String dayKeyFromMillis(int ms) {
-      final DateTime dt = DateTime.fromMillisecondsSinceEpoch(ms);
-      return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-    }
-
     if (maxKeyInclusive.isEmpty && maxDateKeyInclusive != null) {
       return const SegmentTimelineBatch(
         segments: <Map<String, dynamic>>[],
@@ -1811,26 +1815,97 @@ ORDER BY day ASC
           newestStartMillis,
         ).add(const Duration(days: 1)).millisecondsSinceEpoch -
         1;
-    final Set<String> allowedDayKeys = dayKeys.toSet();
     final List<Map<String, dynamic>> segments =
-        (await listSegmentsEx(
-              limit: 1 << 30,
-              onlyNoSummary: false,
-              requireSamples: requireSamples,
-              startMillis: oldestStartMillis,
-              endMillis: newestEndMillis,
-            ))
-            .where((Map<String, dynamic> row) {
-              final int ms = (row['start_time'] as int?) ?? 0;
-              return ms > 0 && allowedDayKeys.contains(dayKeyFromMillis(ms));
-            })
-            .toList(growable: false);
+        await listSegmentsEx(
+          limit: 1 << 30,
+          onlyNoSummary: false,
+          requireSamples: requireSamples,
+          startMillis: oldestStartMillis,
+          endMillis: newestEndMillis,
+        );
     final bool hasMoreOlder = await hasOlderThan(oldestDayKey);
     return SegmentTimelineBatch(
       segments: segments,
       dayKeys: dayKeys,
       hasMoreOlder: hasMoreOlder,
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _attachSegmentSampleStats(
+    Database db,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    if (rows.isEmpty) return rows;
+
+    final List<int> segmentIds = <int>[];
+    final Set<int> seenSegmentIds = <int>{};
+    for (final Map<String, dynamic> row in rows) {
+      final int segmentId = ((row['id'] as num?) ?? 0).toInt();
+      if (segmentId > 0 && seenSegmentIds.add(segmentId)) {
+        segmentIds.add(segmentId);
+      }
+    }
+
+    final Map<int, int> sampleCountBySegmentId = <int, int>{};
+    final Map<int, String> appPackagesBySegmentId = <int, String>{};
+    if (segmentIds.isNotEmpty) {
+      try {
+        const int chunkSize = 400;
+        for (int i = 0; i < segmentIds.length; i += chunkSize) {
+          final int end = (i + chunkSize) > segmentIds.length
+              ? segmentIds.length
+              : (i + chunkSize);
+          final List<int> chunk = segmentIds.sublist(i, end);
+          final String placeholders = List.filled(chunk.length, '?').join(',');
+          final List<Map<String, Object?>> statsRows = await db.rawQuery(
+            '''
+            SELECT
+              segment_id,
+              COUNT(*) AS sample_count,
+              GROUP_CONCAT(DISTINCT app_package_name) AS app_packages_display
+            FROM segment_samples
+            WHERE segment_id IN ($placeholders)
+            GROUP BY segment_id
+            ''',
+            chunk,
+          );
+          for (final Map<String, Object?> item in statsRows) {
+            final int segmentId = ((item['segment_id'] as num?) ?? 0).toInt();
+            if (segmentId <= 0) continue;
+            sampleCountBySegmentId[segmentId] =
+                ((item['sample_count'] as num?) ?? 0).toInt();
+            final String appPackages =
+                ((item['app_packages_display'] as String?) ?? '').trim();
+            if (appPackages.isNotEmpty) {
+              appPackagesBySegmentId[segmentId] = appPackages;
+            }
+          }
+        }
+      } catch (e) {
+        try {
+          await FlutterLogger.nativeWarn(
+            'DB',
+            'attachSegmentSampleStats failed err=${e.toString()} rows=${rows.length}',
+          );
+        } catch (_) {}
+      }
+    }
+
+    for (final Map<String, dynamic> row in rows) {
+      final int segmentId = ((row['id'] as num?) ?? 0).toInt();
+      final String appPackages =
+          ((row['app_packages'] as String?) ?? '').trim();
+      final String aggregatedPackages =
+          (appPackagesBySegmentId[segmentId] ?? '').trim();
+      row['sample_count'] = sampleCountBySegmentId[segmentId] ?? 0;
+      final String appPackagesDisplay = appPackages.isNotEmpty
+          ? appPackages
+          : aggregatedPackages;
+      row['app_packages_display'] = appPackagesDisplay.isEmpty
+          ? null
+          : appPackagesDisplay;
+    }
+    return rows;
   }
 
   /// 列出段落（带是否有总结标记），可选仅返回“无总结”的事件
@@ -1911,12 +1986,6 @@ ORDER BY day ASC
         SELECT
           s.*,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
-          (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count,
-          -- 若 segments.app_packages 为空，回退为样本表去重聚合
-          COALESCE(
-            NULLIF(TRIM(s.app_packages), ''),
-            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
-          ) AS app_packages_display,
           r.output_text,
           r.structured_json,
           r.categories
@@ -1930,7 +1999,10 @@ ORDER BY day ASC
     try {
       final List<Object?> params = <Object?>[...whereParams, limit, safeOffset];
       final rows = await db.rawQuery(sql, params);
-      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+      return _attachSegmentSampleStats(
+        db,
+        rows.map((e) => Map<String, dynamic>.from(e)).toList(),
+      );
     } catch (e) {
       try {
         await FlutterLogger.nativeError(
@@ -1951,11 +2023,6 @@ ORDER BY day ASC
         SELECT
           s.*,
           CASE WHEN $noSummaryCond THEN 0 ELSE 1 END AS has_summary,
-          (SELECT COUNT(*) FROM segment_samples ss WHERE ss.segment_id = s.id) AS sample_count,
-          COALESCE(
-            NULLIF(TRIM(s.app_packages), ''),
-            (SELECT GROUP_CONCAT(DISTINCT ss.app_package_name) FROM segment_samples ss WHERE ss.segment_id = s.id)
-          ) AS app_packages_display,
           SUBSTR(r.output_text, 1, ?) AS output_text,
           CASE
             WHEN r.structured_json IS NULL THEN NULL
@@ -2000,7 +2067,10 @@ ORDER BY day ASC
             'listSegmentsEx fallback used (truncated result columns) limit=$limit offset=$offset',
           );
         } catch (_) {}
-        return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+        return _attachSegmentSampleStats(
+          db,
+          rows.map((e) => Map<String, dynamic>.from(e)).toList(),
+        );
       } catch (e2) {
         try {
           await FlutterLogger.nativeError(

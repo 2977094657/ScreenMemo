@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
+import 'package:talker/talker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ai_request_log.dart';
@@ -17,9 +18,12 @@ import '../models/screenshot_record.dart';
 import '../services/ai_providers_service.dart';
 import '../services/ai_settings_service.dart';
 import '../services/app_selection_service.dart';
+import '../services/dynamic_entry_perf_service.dart';
 import '../services/flutter_logger.dart';
 import '../services/screenshot_database.dart';
+import '../services/user_settings_service.dart';
 import '../theme/app_theme.dart';
+import '../constants/user_settings_keys.dart';
 import '../utils/native_ai_request_log_parser.dart';
 import '../utils/merged_event_summary.dart';
 import '../utils/model_icon_utils.dart';
@@ -235,6 +239,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   bool _dynamicAutoRepairEnabled = true;
   bool _loadingDynamicAutoRepair = false;
   bool _togglingDynamicAutoRepair = false;
+  bool _trackEntryPerf = true;
+  int _entryPerfPendingLoads = 0;
+  bool _entryPerfShellFrameSeen = false;
 
   // 底部弹窗查询输入持久化，避免失焦或重建清空
   String _segProviderQueryText = '';
@@ -249,6 +256,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
 
   // 隐私模式状态
   bool _privacyMode = true; // 默认开启，初始化时从偏好读取
+  bool _dynamicEntryLogIconEnabled = false;
 
   // 自动轮询：每秒检测"暂无总结"并自动刷新，直到清空
   Timer? _autoTimer;
@@ -325,9 +333,53 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     return '${_shouldGateTimelineToCurrentRebuild(effective)}|${cutoff ?? '(none)'}';
   }
 
+  void _beginEntryPerfLoad(String step, {String? detail}) {
+    if (!_trackEntryPerf) return;
+    _entryPerfPendingLoads += 1;
+    DynamicEntryPerfService.instance.mark('$step.start', detail: detail);
+  }
+
+  void _endEntryPerfLoad(String step, {String? detail}) {
+    if (!_trackEntryPerf) return;
+    if (_entryPerfPendingLoads > 0) {
+      _entryPerfPendingLoads -= 1;
+    }
+    DynamicEntryPerfService.instance.mark('$step.done', detail: detail);
+    _completeEntryPerfIfReady();
+  }
+
+  void _failEntryPerfLoad(String step, Object error, {String? detail}) {
+    if (!_trackEntryPerf) return;
+    if (_entryPerfPendingLoads > 0) {
+      _entryPerfPendingLoads -= 1;
+    }
+    final String base = 'error=$error';
+    final String resolvedDetail = (detail ?? '').trim();
+    DynamicEntryPerfService.instance.mark(
+      '$step.error',
+      detail: resolvedDetail.isEmpty ? base : '$resolvedDetail | $base',
+    );
+    _completeEntryPerfIfReady();
+  }
+
+  void _completeEntryPerfIfReady() {
+    if (!_trackEntryPerf) return;
+    if (!_entryPerfShellFrameSeen || _entryPerfPendingLoads > 0) return;
+    _trackEntryPerf = false;
+    DynamicEntryPerfService.instance.finish(
+      'segment.bootstrap.done',
+      detail:
+          'segments=${_segments.length} selectedDate=${_selectedDateKey ?? ''}',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    DynamicEntryPerfService.instance.beginSession(
+      source: 'SegmentStatusPage.initState',
+    );
+    DynamicEntryPerfService.instance.mark('segment.initState');
     _dynamicRebuildUiSnapshotNotifier =
         ValueNotifier<_DynamicRebuildUiSnapshot>(
           _currentDynamicRebuildUiSnapshot(),
@@ -337,8 +389,15 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       duration: const Duration(milliseconds: 1100),
     );
     _syncDynamicRebuildIconAnimation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_trackEntryPerf) return;
+      _entryPerfShellFrameSeen = true;
+      DynamicEntryPerfService.instance.mark('segment.shell.firstFrame');
+      _completeEntryPerfIfReady();
+    });
     _initApps();
     _loadPrivacyMode();
+    unawaited(_loadDynamicEntryLogIconEnabled());
     _loadSegmentsContextSelection();
     _refresh();
     unawaited(_refreshDynamicAutoRepairEnabled(showLoading: true));
@@ -353,11 +412,29 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     });
   }
 
+  Future<void> _loadDynamicEntryLogIconEnabled() async {
+    try {
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.dynamicEntryLogIconEnabled,
+        defaultValue: false,
+      );
+      if (!mounted) return;
+      setState(() => _dynamicEntryLogIconEnabled = enabled);
+    } catch (_) {}
+  }
+
   // 载入“动态(segments)”的提供商/模型选择（独立于对话页）
   Future<void> _loadSegmentsContextSelection() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad('segment.context');
     try {
       final svc = AIProvidersService.instance;
+      final Stopwatch providersSw = Stopwatch()..start();
       final providers = await svc.listProviders();
+      DynamicEntryPerfService.instance.mark(
+        'segment.context.providers.done',
+        detail: 'ms=${providersSw.elapsedMilliseconds} count=${providers.length}',
+      );
       if (providers.isEmpty) {
         if (mounted) {
           setState(() {
@@ -365,16 +442,34 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
             _ctxSegModel = null;
           });
         }
+        _endEntryPerfLoad(
+          'segment.context',
+          detail: 'ms=${sw.elapsedMilliseconds} providers=0',
+        );
         return;
       }
+      final Stopwatch contextRowSw = Stopwatch()..start();
       final ctxRow = await AISettingsService.instance.getAIContextRow(
         'segments',
       );
+      DynamicEntryPerfService.instance.mark(
+        'segment.context.selection.done',
+        detail:
+            'ms=${contextRowSw.elapsedMilliseconds} hasRow=${ctxRow != null} providerId=${ctxRow?['provider_id'] ?? ''}',
+      );
       AIProvider? sel;
-      if (ctxRow != null && ctxRow['provider_id'] is int) {
-        sel = await svc.getProvider(ctxRow['provider_id'] as int);
+      AIProvider? defaultProvider;
+      final int? selectedProviderId = ctxRow?['provider_id'] as int?;
+      final Stopwatch resolveSw = Stopwatch()..start();
+      for (final AIProvider provider in providers) {
+        if (selectedProviderId != null && provider.id == selectedProviderId) {
+          sel = provider;
+        }
+        if (defaultProvider == null && provider.isDefault) {
+          defaultProvider = provider;
+        }
       }
-      sel ??= await svc.getDefaultProvider();
+      sel ??= defaultProvider;
       sel ??= providers.first;
 
       String model =
@@ -384,6 +479,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           : ((sel.extra['active_model'] as String?) ?? sel.defaultModel)
                 .toString();
       if (model.isEmpty && sel.models.isNotEmpty) model = sel.models.first;
+      DynamicEntryPerfService.instance.mark(
+        'segment.context.resolve.done',
+        detail:
+            'ms=${resolveSw.elapsedMilliseconds} provider=${sel.name} model=$model',
+      );
 
       if (mounted) {
         setState(() {
@@ -391,7 +491,18 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           _ctxSegModel = model;
         });
       }
-    } catch (_) {}
+      _endEntryPerfLoad(
+        'segment.context',
+        detail:
+            'ms=${sw.elapsedMilliseconds} providers=${providers.length} provider=${sel.name} model=$model',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.context',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<void> _showProviderSheetSegments() async {
@@ -721,17 +832,32 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   }
 
   Future<void> _loadPrivacyMode() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad('segment.privacyMode');
     try {
       final enabled = await AppSelectionService.instance
           .getPrivacyModeEnabled();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _privacyMode = enabled;
         });
-    } catch (_) {}
+      }
+      _endEntryPerfLoad(
+        'segment.privacyMode',
+        detail: 'ms=${sw.elapsedMilliseconds} enabled=$enabled',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.privacyMode',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<void> _initApps() async {
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad('segment.apps');
     try {
       final apps = await AppSelectionService.instance.getAllInstalledApps();
       if (!mounted) return;
@@ -740,10 +866,26 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           _appInfoByPackage[a.packageName] = a;
         }
       });
-    } catch (_) {}
+      _endEntryPerfLoad(
+        'segment.apps',
+        detail: 'ms=${sw.elapsedMilliseconds} count=${apps.length}',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.apps',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<void> _refresh({bool triggerSegmentTick = true}) async {
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad(
+      'segment.refresh',
+      detail:
+          'triggerTick=$triggerSegmentTick onlyNoSummary=$_onlyNoSummary selectedDate=${_selectedDateKey ?? ''}',
+    );
     try {
       if (mounted) {
         setState(() {
@@ -756,7 +898,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       if (triggerSegmentTick && !_dynamicRebuildTaskStatus.isActive) {
         _db.triggerSegmentTick();
       }
+      final Stopwatch activeSw = Stopwatch()..start();
       final active = await _db.getActiveSegment();
+      DynamicEntryPerfService.instance.mark(
+        'segment.refresh.active.done',
+        detail:
+            'ms=${activeSw.elapsedMilliseconds} hasActive=${active != null}',
+      );
       final String? rebuildCutoffDayKey = _dynamicRebuildTimelineCutoffDayKey();
       final bool hideAllUntilCurrentDay =
           _shouldHideTimelineUntilRebuildAdvances();
@@ -767,6 +915,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       List<Map<String, dynamic>> segments;
       List<String> loadedDayKeys;
       bool hasMoreOlder = false;
+      final Stopwatch timelineSw = Stopwatch()..start();
 
       if (hideAllUntilCurrentDay) {
         segments = const <Map<String, dynamic>>[];
@@ -792,6 +941,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         loadedDayKeys = batch.dayKeys;
         hasMoreOlder = batch.hasMoreOlder;
       }
+      DynamicEntryPerfService.instance.mark(
+        'segment.refresh.timeline.done',
+        detail:
+            'ms=${timelineSw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length} hasMoreOlder=$hasMoreOlder hideAll=$hideAllUntilCurrentDay',
+      );
 
       if (!mounted) return;
       setState(() {
@@ -817,7 +971,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           _stopAutoWatch();
         }
       }
-    } catch (_) {
+      _endEntryPerfLoad(
+        'segment.refresh',
+        detail:
+            'ms=${sw.elapsedMilliseconds} segments=${segments.length} dayKeys=${loadedDayKeys.length}',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.refresh',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
       // Keep previous state on error.
     } finally {
       if (mounted) {
@@ -848,6 +1012,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     double width = 0;
     if (canPop) width += 52;
     if (showDailySummary) width += 52;
+    if (showDailySummary && _dynamicEntryLogIconEnabled) width += 52;
     return width;
   }
 
@@ -857,6 +1022,143 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         theme.appBarTheme.iconTheme?.color ??
         IconTheme.of(context).color ??
         theme.colorScheme.onSurfaceVariant;
+  }
+
+  String _segmentEntryLogTime(DateTime t) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    String three(int v) => v.toString().padLeft(3, '0');
+    return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}.${three(t.millisecond)}';
+  }
+
+  ({String? tag, String message}) _splitTalkerTag(String? raw) {
+    final String message = raw ?? '';
+    if (!message.startsWith('[')) {
+      return (tag: null, message: message);
+    }
+    final int end = message.indexOf(']');
+    if (end <= 1) {
+      return (tag: null, message: message);
+    }
+    final String tag = message.substring(1, end).trim();
+    final String rest = message.substring(end + 1).trimLeft();
+    return (tag: tag.isEmpty ? null : tag, message: rest);
+  }
+
+  int? _segmentEntrySessionId(TalkerData data) {
+    final String message = _splitTalkerTag(data.message).message;
+    final Match? match = RegExp(r'session#(\d+)').firstMatch(message);
+    if (match == null) return null;
+    return int.tryParse(match.group(1) ?? '');
+  }
+
+  bool _isSegmentEntryPerfLog(TalkerData data) {
+    final ({String? tag, String message}) parts = _splitTalkerTag(data.message);
+    if (parts.tag != DynamicEntryPerfService.logTag) {
+      return false;
+    }
+    return parts.message.contains('source=SegmentStatusPage') ||
+        parts.message.contains('segment.');
+  }
+
+  List<TalkerData> _latestSegmentEntryPerfLogs() {
+    final List<TalkerData> items = FlutterLogger.talker.history
+        .where(_isSegmentEntryPerfLog)
+        .toList(growable: false);
+    if (items.isEmpty) {
+      return const <TalkerData>[];
+    }
+    int? latestSessionId;
+    for (final TalkerData item in items.reversed) {
+      latestSessionId = _segmentEntrySessionId(item);
+      if (latestSessionId != null) {
+        break;
+      }
+    }
+    if (latestSessionId == null) {
+      return items;
+    }
+    final List<TalkerData> sessionItems = items
+        .where(
+          (TalkerData item) => _segmentEntrySessionId(item) == latestSessionId,
+        )
+        .toList(growable: false);
+    return sessionItems.isEmpty ? items : sessionItems;
+  }
+
+  String _buildSegmentEntryPerfExportText(List<TalkerData> items) {
+    final StringBuffer buffer = StringBuffer();
+    for (final TalkerData item in items) {
+      final ({String? tag, String message}) parts = _splitTalkerTag(
+        item.message,
+      );
+      final String tagPrefix = parts.tag == null ? '' : '[${parts.tag}] ';
+      buffer.writeln(
+        '${_segmentEntryLogTime(item.time)} $tagPrefix${parts.message}',
+      );
+      final Object? error = item.exception ?? item.error;
+      if (error != null) {
+        buffer.writeln(error.toString());
+      }
+      if (item.stackTrace != null && item.stackTrace != StackTrace.empty) {
+        buffer.writeln(item.stackTrace.toString());
+      }
+      buffer.writeln();
+    }
+    return buffer.toString().trimRight();
+  }
+
+  Future<void> _openSegmentEntryPerfSheet() async {
+    final List<TalkerData> items = _latestSegmentEntryPerfLogs();
+    final int? sessionId = items.isEmpty
+        ? null
+        : _segmentEntrySessionId(items.last);
+    final String text = _buildSegmentEntryPerfExportText(items);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool hasLogs = text.trim().isNotEmpty;
+
+    await AIRequestLogsSheet.show(
+      context: context,
+      title: '动态进入日志',
+      metaText: sessionId == null
+          ? '显示当前页可用的动态进入日志'
+          : '仅显示最近一次进入会话 session#$sessionId，共 ${items.length} 条',
+      hintText: '直接长按选择文本，或点复制按钮一次性复制。',
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FilledButton.icon(
+            onPressed: !hasLogs
+                ? null
+                : () async {
+                    await Clipboard.setData(ClipboardData(text: text));
+                    if (!mounted) return;
+                    UINotifier.success(context, '已复制动态进入日志');
+                  },
+            icon: const Icon(Icons.copy_all_outlined, size: 18),
+            label: const Text('复制日志'),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: cs.outline.withValues(alpha: 0.25)),
+            ),
+            child: SelectableText(
+              hasLogs ? text : '暂无动态进入日志，请先重新进入动态页再查看。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSegmentStatusLeading(BuildContext context) {
@@ -876,6 +1178,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
             icon: const Icon(Icons.event_note_outlined),
             tooltip: AppLocalizations.of(context).viewOrGenerateForDay,
             onPressed: _openSelectedDailySummary,
+          ),
+        if (showDailySummary && _dynamicEntryLogIconEnabled)
+          IconButton(
+            style: IconButton.styleFrom(foregroundColor: actionColor),
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: '动态进入日志',
+            onPressed: _openSegmentEntryPerfSheet,
           ),
       ],
     );
@@ -1049,6 +1358,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     bool showLoading = false,
   }) async {
     if (_loadingDynamicAutoRepair) return;
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad(
+      'segment.autoRepair',
+      detail: 'showLoading=$showLoading',
+    );
     if (showLoading && mounted) {
       setState(() => _loadingDynamicAutoRepair = true);
       _publishDynamicRebuildUiSnapshot();
@@ -1061,7 +1375,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         _loadingDynamicAutoRepair = false;
       });
       _publishDynamicRebuildUiSnapshot();
-    } catch (_) {
+      _endEntryPerfLoad(
+        'segment.autoRepair',
+        detail: 'ms=${sw.elapsedMilliseconds} enabled=$enabled',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.autoRepair',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
       if (!mounted || !_loadingDynamicAutoRepair) return;
       setState(() => _loadingDynamicAutoRepair = false);
       _publishDynamicRebuildUiSnapshot();
@@ -1330,14 +1653,19 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     _DynamicRebuildUiSnapshot snapshot,
   ) {
     final DynamicRebuildTaskStatus status = snapshot.status;
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final OutlinedBorder shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
     );
     final Widget startButton = SizedBox(
       height: 44,
-      child: FilledButton.tonalIcon(
-        style: ButtonStyle(
-          shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.error,
+          foregroundColor: colorScheme.onError,
+          disabledBackgroundColor: colorScheme.surfaceContainerHigh,
+          disabledForegroundColor: colorScheme.onSurfaceVariant,
+          shape: shape,
         ),
         onPressed: (snapshot.starting || status.isActive)
             ? null
@@ -2226,16 +2554,17 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
                                       vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.orange.withOpacity(0.15),
+                                      color: AppTheme.mergedEventAccent
+                                          .withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       AppLocalizations.of(
                                         context,
                                       ).mergedEventTag,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.orange,
+                                        color: AppTheme.mergedEventAccent,
                                       ),
                                     ),
                                   ),
@@ -2682,6 +3011,11 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     bool refreshSegmentsOnChange = true,
   }) async {
     if (_pollingDynamicRebuildTask) return;
+    final Stopwatch sw = Stopwatch()..start();
+    _beginEntryPerfLoad(
+      'segment.rebuildStatus',
+      detail: 'refreshSegmentsOnChange=$refreshSegmentsOnChange',
+    );
     _pollingDynamicRebuildTask = true;
     try {
       final previous = _dynamicRebuildTaskStatus;
@@ -2700,9 +3034,20 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
             const _DynamicRebuildRequestLogsState();
         _publishDynamicRebuildUiSnapshot();
       }
-      if (!refreshSegmentsOnChange) return;
-      await _handleDynamicRebuildTaskStatusChange(previous, status);
-    } catch (_) {
+      if (refreshSegmentsOnChange) {
+        await _handleDynamicRebuildTaskStatusChange(previous, status);
+      }
+      _endEntryPerfLoad(
+        'segment.rebuildStatus',
+        detail:
+            'ms=${sw.elapsedMilliseconds} status=${status.status} active=${status.isActive}',
+      );
+    } catch (e) {
+      _failEntryPerfLoad(
+        'segment.rebuildStatus',
+        e,
+        detail: 'ms=${sw.elapsedMilliseconds}',
+      );
     } finally {
       _pollingDynamicRebuildTask = false;
     }
@@ -2712,6 +3057,14 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     DynamicRebuildTaskStatus previous,
     DynamicRebuildTaskStatus current,
   ) async {
+    if (_loading) {
+      DynamicEntryPerfService.instance.mark(
+        'segment.rebuildStatus.refreshSkipped',
+        detail:
+            'loading=true prev=${previous.status} current=${current.status}',
+      );
+      return;
+    }
     final bool justStarted = !previous.isActive && current.isActive;
     final bool progressAdvanced =
         current.isActive &&
@@ -2830,6 +3183,13 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
 
   @override
   void dispose() {
+    if (_trackEntryPerf) {
+      DynamicEntryPerfService.instance.finish(
+        'segment.dispose',
+        detail: 'disposedBeforeComplete',
+      );
+      _trackEntryPerf = false;
+    }
     _stopAutoWatch();
     _dynamicRebuildTaskPollTimer?.cancel();
     _dynamicRebuildIconController.dispose();
@@ -4072,7 +4432,8 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
     bool aiRetryFailed = false,
     String? aiRetryMessage,
   }) {
-    final Color actionColor = AppTheme.warning; // 使用更醒目的警告色
+    final colorScheme = Theme.of(context).colorScheme;
+    final Color actionColor = AppTheme.mergedEventAccent;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -4102,9 +4463,7 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
                           ? Icons.error_outline_rounded
                           : Icons.info_outline_rounded,
                       size: 16,
-                      color: aiRetryFailed
-                          ? Theme.of(context).colorScheme.error
-                          : AppTheme.warning,
+                      color: aiRetryFailed ? colorScheme.error : actionColor,
                     ),
                   ),
                 ),
@@ -4261,9 +4620,12 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: fg.withOpacity(0.10),
+        color: fg.withValues(alpha: dark ? 0.24 : 0.18),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: fg.withOpacity(0.35), width: 1),
+        border: Border.all(
+          color: fg.withValues(alpha: dark ? 0.56 : 0.46),
+          width: 1,
+        ),
       ),
       child: _buildTagChipLabel(
         text: text,
@@ -4572,15 +4934,18 @@ class _SegmentEntryCardState extends State<_SegmentEntryCard> {
       ),
       constraints: const BoxConstraints(minHeight: 20),
       decoration: BoxDecoration(
-        color: AppTheme.warning.withOpacity(0.12),
+        color: AppTheme.mergedEventAccent.withValues(alpha: 0.20),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: AppTheme.warning.withOpacity(0.45), width: 1),
+        border: Border.all(
+          color: AppTheme.mergedEventAccent.withValues(alpha: 0.58),
+          width: 1,
+        ),
       ),
       child: _buildTagChipLabel(
         text: AppLocalizations.of(context).mergedEventTag,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: AppTheme.warning,
+          color: AppTheme.mergedEventAccent,
           height: 1.0,
           fontWeight: FontWeight.w500,
         ),

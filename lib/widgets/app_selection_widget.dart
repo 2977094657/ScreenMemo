@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../models/app_info.dart';
 import '../services/app_selection_service.dart';
 import 'ui_dialog.dart';
+import 'selection_checkbox.dart';
 
 /// 应用选择组件
 class AppSelectionWidget extends StatefulWidget {
@@ -418,25 +419,15 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                 ),
 
                 // 选择状态覆盖层 - 更优雅的设计
-                if (app.isSelected)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary,
-                        shape: BoxShape.circle,
-                        // 去掉白色描边
-                      ),
-                      child: const Icon(
-                        Icons.check,
-                        color: Colors.white,
-                        size: 10,
-                      ),
-                    ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: SelectionCheckbox(
+                    selected: app.isSelected,
+                    size: 16,
+                    iconSize: 10,
                   ),
+                ),
               ],
             ),
 
@@ -504,12 +495,7 @@ class _AppSelectionWidgetState extends State<AppSelectionWidget> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Checkbox(
-                value: app.isSelected,
-                onChanged: (_) {
-                  _toggleAppSelection(app);
-                },
-              ),
+              SelectionCheckbox(selected: app.isSelected),
             ],
           ),
         ),

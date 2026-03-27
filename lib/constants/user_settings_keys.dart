@@ -31,6 +31,10 @@ class UserSettingKeys {
   static const String dailyNotifyHour = 'daily_notify_hour';
   static const String dailyNotifyMinute = 'daily_notify_minute';
 
+  // 动态页 UI
+  static const String dynamicEntryLogIconEnabled =
+      'dynamic_entry_log_icon_enabled';
+
   // Nocturne-style memory (URI graph)
   static const String nocturneMemoryLastUri = 'nocturne_memory_last_uri';
   static const String nocturneMemoryRebuildState =

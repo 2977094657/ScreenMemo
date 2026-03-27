@@ -458,18 +458,11 @@ class DailySummaryAlarmReceiver : BroadcastReceiver() {
                     val sp = context.getSharedPreferences("screen_memo_prefs", Context.MODE_PRIVATE)
 
                     if (slotType == DailySummaryScheduler.SLOT_TYPE_FIXED && slotIndex == 0) {
-                        // 晨间提示：尝试生成昨日洞察
-                        val record = DailySummaryWorker.generateMorningInsightsForDisplayDate(context.applicationContext, dateKey, force = true)
-                            ?: DailySummaryWorker.generateMorningInsightsForDisplayDate(context.applicationContext, dateKey, force = false)
-                        message = if (record != null && record.tips.isNotEmpty()) {
-                            val selected = record.tips.first().trim()
-                            sp.edit()
-                                .putString("morning_insights_$dateKey", selected)
-                                .apply()
-                            selected
-                        } else {
-                            sp.getString("morning_insights_$dateKey", null) ?: fallbackMessage
-                        }
+                        // 广播接收器必须快速返回，晨间洞察放到后台 Worker 里生成并回填通知。
+                        message = sp.getString("morning_insights_$dateKey", null) ?: fallbackMessage
+                        try {
+                            DailySummaryWorker.enqueueMorningInsightsOnce(context.applicationContext, dateKey)
+                        } catch (_: Exception) {}
                     } else {
                         val brief = sp.getString("daily_brief_$dateKey", null)
                         message = if (!brief.isNullOrBlank()) brief else fallbackMessage

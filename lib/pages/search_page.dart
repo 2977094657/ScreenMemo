@@ -2318,6 +2318,7 @@ class _SearchPageState extends State<SearchPage>
                                 }
                               }
                               if (rects.isEmpty) return const SizedBox.shrink();
+                              final colorScheme = Theme.of(context).colorScheme;
                               return Positioned.fill(
                                 child: IgnorePointer(
                                   ignoring: true,
@@ -2326,6 +2327,12 @@ class _SearchPageState extends State<SearchPage>
                                       originalWidth: srcW.toDouble(),
                                       originalHeight: srcH.toDouble(),
                                       boxes: rects,
+                                      strokeColor: colorScheme.error.withValues(
+                                        alpha: 0.92,
+                                      ),
+                                      fillColor: colorScheme.error.withValues(
+                                        alpha: 0.18,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -4089,10 +4096,14 @@ class _SearchPageState extends State<SearchPage>
                       ),
                       constraints: const BoxConstraints(minHeight: 20),
                       decoration: BoxDecoration(
-                        color: AppTheme.warning.withOpacity(0.12),
+                        color: AppTheme.mergedEventAccent.withValues(
+                          alpha: 0.12,
+                        ),
                         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                         border: Border.all(
-                          color: AppTheme.warning.withOpacity(0.45),
+                          color: AppTheme.mergedEventAccent.withValues(
+                            alpha: 0.45,
+                          ),
                           width: 1,
                         ),
                       ),
@@ -4100,9 +4111,9 @@ class _SearchPageState extends State<SearchPage>
                         AppLocalizations.of(context).mergedEventTag,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.warning,
+                          color: AppTheme.mergedEventAccent,
                           height: 1.0,
                           fontWeight: FontWeight.w500,
                         ),
@@ -4299,12 +4310,14 @@ class _SearchPageState extends State<SearchPage>
                                     minHeight: 20,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.warning.withOpacity(0.12),
+                                    color: AppTheme.mergedEventAccent
+                                        .withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(
                                       AppTheme.radiusSm,
                                     ),
                                     border: Border.all(
-                                      color: AppTheme.warning.withOpacity(0.45),
+                                      color: AppTheme.mergedEventAccent
+                                          .withValues(alpha: 0.45),
                                       width: 1,
                                     ),
                                   ),
@@ -4312,9 +4325,9 @@ class _SearchPageState extends State<SearchPage>
                                     AppLocalizations.of(context).mergedEventTag,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: AppTheme.warning,
+                                      color: AppTheme.mergedEventAccent,
                                       height: 1.0,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -4604,11 +4617,15 @@ class _OcrBoxesPainter extends CustomPainter {
   final double originalWidth;
   final double originalHeight;
   final List<Rect> boxes;
+  final Color strokeColor;
+  final Color fillColor;
 
   _OcrBoxesPainter({
     required this.originalWidth,
     required this.originalHeight,
     required this.boxes,
+    required this.strokeColor,
+    required this.fillColor,
   });
 
   @override
@@ -4625,11 +4642,11 @@ class _OcrBoxesPainter extends CustomPainter {
 
     final Paint stroke = Paint()
       ..style = PaintingStyle.stroke
-      ..color = AppTheme.warning.withValues(alpha: 0.92)
+      ..color = strokeColor
       ..strokeWidth = 2.0;
     final Paint fill = Paint()
       ..style = PaintingStyle.fill
-      ..color = AppTheme.warning.withValues(alpha: 0.18);
+      ..color = fillColor;
 
     for (final r in boxes) {
       final Rect mapped = Rect.fromLTRB(
@@ -4648,7 +4665,9 @@ class _OcrBoxesPainter extends CustomPainter {
   bool shouldRepaint(covariant _OcrBoxesPainter oldDelegate) {
     return oldDelegate.originalWidth != originalWidth ||
         oldDelegate.originalHeight != originalHeight ||
-        oldDelegate.boxes != boxes;
+        oldDelegate.boxes != boxes ||
+        oldDelegate.strokeColor != strokeColor ||
+        oldDelegate.fillColor != fillColor;
   }
 }
 

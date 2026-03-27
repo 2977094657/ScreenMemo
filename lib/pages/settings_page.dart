@@ -132,6 +132,8 @@ class _SettingsPageState extends State<SettingsPage>
   bool _renderImagesDuringStreaming = false;
   // AIChat 性能日志悬浮窗（默认关闭，避免默认刷屏）
   bool _aiChatPerfOverlayEnabled = false;
+  // 动态页“每日总结”右侧的日志图标（默认关闭）
+  bool _dynamicEntryLogIconEnabled = false;
   // 最近一次导入模式，默认合并
   _ImportMode _lastImportMode = _ImportMode.merge;
   bool _recalculatingAll = false;
@@ -236,6 +238,7 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadLoggingEnabled());
         unawaited(_loadRenderImagesDuringStreaming());
         unawaited(_loadAiChatPerfOverlayEnabled());
+        unawaited(_loadDynamicEntryLogIconEnabled());
         break;
     }
   }
@@ -752,6 +755,30 @@ class _SettingsPageState extends State<SettingsPage>
     try {
       await AISettingsService.instance.setAiChatPerfOverlayEnabled(enabled);
       if (mounted) setState(() => _aiChatPerfOverlayEnabled = enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _loadDynamicEntryLogIconEnabled() async {
+    try {
+      final bool enabled = await UserSettingsService.instance.getBool(
+        UserSettingKeys.dynamicEntryLogIconEnabled,
+        defaultValue: false,
+      );
+      if (mounted) {
+        setState(() => _dynamicEntryLogIconEnabled = enabled);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateDynamicEntryLogIconEnabled(bool enabled) async {
+    try {
+      await UserSettingsService.instance.setBool(
+        UserSettingKeys.dynamicEntryLogIconEnabled,
+        enabled,
+      );
+      if (mounted) {
+        setState(() => _dynamicEntryLogIconEnabled = enabled);
+      }
     } catch (_) {}
   }
 
@@ -1755,6 +1782,7 @@ class _SettingsPageState extends State<SettingsPage>
               children: [
                 _buildStreamRenderImagesItem(context),
                 _buildAiChatPerfOverlayItem(context),
+                _buildDynamicEntryLogIconItem(context),
                 _buildLoggingToggleItem(context),
               ],
             ),
@@ -3564,24 +3592,9 @@ class _SettingsPageState extends State<SettingsPage>
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusSm,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.smart_toy_outlined,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer,
-                                size: 18,
-                              ),
+                            _buildSettingsLeadingIcon(
+                              context,
+                              Icons.smart_toy_outlined,
                             ),
                             const SizedBox(width: AppTheme.spacing3),
                             Expanded(
@@ -3649,24 +3662,9 @@ class _SettingsPageState extends State<SettingsPage>
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusSm,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.image_search_outlined,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer,
-                                size: 18,
-                              ),
+                            _buildSettingsLeadingIcon(
+                              context,
+                              Icons.image_search_outlined,
                             ),
                             const SizedBox(width: AppTheme.spacing3),
                             Expanded(
@@ -3841,6 +3839,76 @@ class _SettingsPageState extends State<SettingsPage>
                 value: _aiChatPerfOverlayEnabled,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onChanged: (v) => _updateAiChatPerfOverlayEnabled(v),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicEntryLogIconItem(BuildContext context) {
+    final bool isZh = AppLocalizations.of(
+      context,
+    ).localeName.toLowerCase().startsWith('zh');
+    final String title = isZh
+        ? '动态页每日总结右侧日志图标'
+        : 'Dynamic page summary-side log icon';
+    final String desc = isZh
+        ? '控制动态页中“每日总结”图标右侧日志入口是否显示，默认关闭。'
+        : 'Show the log entry next to the daily summary icon on the dynamic page. Off by default.';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
+      decoration: BoxDecoration(
+        border: Border(bottom: _settingsDividerSide(context)),
+      ),
+      child: Stack(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _buildSettingsLeadingIcon(context, Icons.receipt_long_outlined),
+              const SizedBox(width: AppTheme.spacing3),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 72),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        desc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            top: -1,
+            right: 0,
+            child: Transform.scale(
+              scale: 0.9,
+              child: Switch(
+                value: _dynamicEntryLogIconEnabled,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (v) => _updateDynamicEntryLogIconEnabled(v),
               ),
             ),
           ),
