@@ -28,6 +28,8 @@ ScreenMemo はローカルで動作するスマートなスクリーンショッ
 
 ## スクリーンショット
 
+以下は利用頻度の高いページの一部です。ここに載せていない画面や細かな機能もまだあるので、ぜひ実際に試してみてください。
+
 <table>
   <tr>
     <td align="center" valign="top">
@@ -103,17 +105,19 @@ ScreenMemo はローカルで動作するスマートなスクリーンショッ
 
 ## コミュニティチャット
 
-<table>
-  <tr>
-    <td align="center" valign="top">
-      <a href="https://qm.qq.com/q/ob2NMRDzna">
-        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ グループ QR コード" width="320" loading="lazy" />
-      </a>
-      <div align="center"><sub>QQ グループ: 640740880</sub></div>
-      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">リンクから「屏忆」グループに参加</a></sub></div>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" valign="top">
+        <a href="https://qm.qq.com/q/ob2NMRDzna">
+          <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ グループ QR コード" width="320" loading="lazy" />
+        </a>
+        <div align="center"><sub>QQ グループ: 640740880</sub></div>
+        <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">リンクから「屏忆」グループに参加</a></sub></div>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## FAQ
 

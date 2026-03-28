@@ -28,6 +28,8 @@ ScreenMemo is a local-first smart screenshot memo and retrieval tool. It automat
 
 ## Screenshots
 
+The screenshots below cover some of the pages people use most often. More details and screens are not shown here, and you are welcome to try the app yourself.
+
 <table>
   <tr>
     <td align="center" valign="top">
@@ -103,17 +105,19 @@ ScreenMemo is a local-first smart screenshot memo and retrieval tool. It automat
 
 ## Community Chat
 
-<table>
-  <tr>
-    <td align="center" valign="top">
-      <a href="https://qm.qq.com/q/ob2NMRDzna">
-        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ Group QR Code" width="320" loading="lazy" />
-      </a>
-      <div align="center"><sub>QQ Group: 640740880</sub></div>
-      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">Join the ScreenMemo group chat</a></sub></div>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" valign="top">
+        <a href="https://qm.qq.com/q/ob2NMRDzna">
+          <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ Group QR Code" width="320" loading="lazy" />
+        </a>
+        <div align="center"><sub>QQ Group: 640740880</sub></div>
+        <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">Join the ScreenMemo group chat</a></sub></div>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## FAQ
 

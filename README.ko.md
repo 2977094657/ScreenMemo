@@ -28,6 +28,8 @@ ScreenMemo는 로컬에서 동작하는 스마트 스크린샷 기록 및 검색
 
 ## 앱 스크린샷
 
+아래 이미지는 자주 쓰는 화면 일부만 보여 줍니다. 여기 담지 못한 세부 기능과 페이지도 더 있으니 직접 사용해 보셔도 좋습니다.
+
 <table>
   <tr>
     <td align="center" valign="top">
@@ -103,17 +105,19 @@ ScreenMemo는 로컬에서 동작하는 스마트 스크린샷 기록 및 검색
 
 ## 커뮤니티 채팅
 
-<table>
-  <tr>
-    <td align="center" valign="top">
-      <a href="https://qm.qq.com/q/ob2NMRDzna">
-        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ 그룹 QR 코드" width="320" loading="lazy" />
-      </a>
-      <div align="center"><sub>QQ 그룹: 640740880</sub></div>
-      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">링크를 눌러 「屏忆」 그룹 채팅에 참여</a></sub></div>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" valign="top">
+        <a href="https://qm.qq.com/q/ob2NMRDzna">
+          <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ 그룹 QR 코드" width="320" loading="lazy" />
+        </a>
+        <div align="center"><sub>QQ 그룹: 640740880</sub></div>
+        <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">링크를 눌러 「屏忆」 그룹 채팅에 참여</a></sub></div>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## FAQ
 

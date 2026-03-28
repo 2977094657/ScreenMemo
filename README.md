@@ -28,6 +28,8 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 
 ## 应用截图
 
+下面展示的是一些高频页面截图，更多细节和页面没有一一展开，欢迎体验。
+
 <table>
   <tr>
     <td align="center" valign="top">
@@ -103,17 +105,19 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 
 ## 社区群聊
 
-<table>
-  <tr>
-    <td align="center" valign="top">
-      <a href="https://qm.qq.com/q/ob2NMRDzna">
-        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ群二维码" width="320" loading="lazy" />
-      </a>
-      <div align="center"><sub>QQ群：640740880</sub></div>
-      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">点击链接加入群聊【屏忆】</a></sub></div>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" valign="top">
+        <a href="https://qm.qq.com/q/ob2NMRDzna">
+          <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ群二维码" width="320" loading="lazy" />
+        </a>
+        <div align="center"><sub>QQ群：640740880</sub></div>
+        <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">点击链接加入群聊【屏忆】</a></sub></div>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## 常见问题（FAQ）
 
