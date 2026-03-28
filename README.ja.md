@@ -8,7 +8,7 @@
 
 「画面に跡は残さず、記憶に刻む」
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ グループ](https://img.shields.io/badge/QQ-%E5%B1%8F%E5%BF%86%20640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
 
 </div>
 
@@ -103,10 +103,17 @@ ScreenMemo はローカルで動作するスマートなスクリーンショッ
 
 ## コミュニティチャット
 
-<div align="center">
-  <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ グループ QR コード" width="320" loading="lazy" />
-  <div><sub>QQ グループ: 640740880</sub></div>
-</div>
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <a href="https://qm.qq.com/q/ob2NMRDzna">
+        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ グループ QR コード" width="320" loading="lazy" />
+      </a>
+      <div align="center"><sub>QQ グループ: 640740880</sub></div>
+      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">リンクから「屏忆」グループに参加</a></sub></div>
+    </td>
+  </tr>
+</table>
 
 ## FAQ
 
@@ -322,7 +329,7 @@ dart run tool/i18n_audit.dart --update-baseline
   </table>
 </div>
 
-## スポンサー謝辞
+### スポンサー謝辞
 
 | スポンサー | 公開リンク |
 | --- | --- |

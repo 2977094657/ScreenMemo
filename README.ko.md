@@ -8,7 +8,7 @@
 
 "화면엔 흔적 없이, 기억엔 흔적을"
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ 그룹](https://img.shields.io/badge/QQ-%E5%B1%8F%E5%BF%86%20640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
 
 </div>
 
@@ -103,10 +103,17 @@ ScreenMemo는 로컬에서 동작하는 스마트 스크린샷 기록 및 검색
 
 ## 커뮤니티 채팅
 
-<div align="center">
-  <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ 그룹 QR 코드" width="320" loading="lazy" />
-  <div><sub>QQ 그룹: 640740880</sub></div>
-</div>
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <a href="https://qm.qq.com/q/ob2NMRDzna">
+        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ 그룹 QR 코드" width="320" loading="lazy" />
+      </a>
+      <div align="center"><sub>QQ 그룹: 640740880</sub></div>
+      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">링크를 눌러 「屏忆」 그룹 채팅에 참여</a></sub></div>
+    </td>
+  </tr>
+</table>
 
 ## FAQ
 
@@ -322,7 +329,7 @@ dart run tool/i18n_audit.dart --update-baseline
   </table>
 </div>
 
-## 후원 감사
+### 후원 감사
 
 | 후원자 | 공개 링크 |
 | --- | --- |

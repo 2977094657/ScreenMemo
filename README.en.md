@@ -8,7 +8,7 @@ Local-first smart screenshot memo and retrieval for Android: automatic capture, 
 
 "Trace-free screen, traceable memory"
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ Group](https://img.shields.io/badge/QQ-ScreenMemo%20640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
 
 </div>
 
@@ -103,10 +103,17 @@ ScreenMemo is a local-first smart screenshot memo and retrieval tool. It automat
 
 ## Community Chat
 
-<div align="center">
-  <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ Group QR Code" width="320" loading="lazy" />
-  <div><sub>QQ Group: 640740880</sub></div>
-</div>
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <a href="https://qm.qq.com/q/ob2NMRDzna">
+        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ Group QR Code" width="320" loading="lazy" />
+      </a>
+      <div align="center"><sub>QQ Group: 640740880</sub></div>
+      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">Join the ScreenMemo group chat</a></sub></div>
+    </td>
+  </tr>
+</table>
 
 ## FAQ
 
@@ -322,7 +329,7 @@ If this project helps you, sponsorship is welcome. Please include a link you wan
   </table>
 </div>
 
-## Sponsor Thanks
+### Sponsor Thanks
 
 | Sponsor | Public Link |
 | --- | --- |

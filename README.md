@@ -8,7 +8,7 @@
 
 「屏幕无痕，记忆有痕」
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ 群](https://img.shields.io/badge/QQ-%E5%B1%8F%E5%BF%86%20640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
 
 </div>
 
@@ -103,10 +103,17 @@ ScreenMemo 是一款在本地运行的智能截屏备忘与检索工具：自动
 
 ## 社区群聊
 
-<div align="center">
-  <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ群二维码" width="320" loading="lazy" />
-  <div><sub>QQ群：640740880</sub></div>
-</div>
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <a href="https://qm.qq.com/q/ob2NMRDzna">
+        <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ群二维码" width="320" loading="lazy" />
+      </a>
+      <div align="center"><sub>QQ群：640740880</sub></div>
+      <div align="center"><sub><a href="https://qm.qq.com/q/ob2NMRDzna">点击链接加入群聊【屏忆】</a></sub></div>
+    </td>
+  </tr>
+</table>
 
 ## 常见问题（FAQ）
 
@@ -322,7 +329,7 @@ dart run tool/i18n_audit.dart --update-baseline
   </table>
 </div>
 
-## 赞助鸣谢
+### 赞助鸣谢
 
 | 赞助者 | 展示链接 |
 | --- | --- |
