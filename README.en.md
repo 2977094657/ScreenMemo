@@ -4,17 +4,13 @@
 
 # ScreenMemo
 
-Intelligent screenshot memo & information management tool
+Local-first smart screenshot memo and retrieval for Android: automatic capture, OCR, and AI-assisted search and review.
 
 "Trace-free screen, traceable memory"
 
 [![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-A local-first screenshot memory tool: automatic capture, OCR full-text search, plus optional AI summaries/replay.
-
 </div>
-
----
 
 <p align="center">
   <b>Languages</b>:
@@ -28,43 +24,7 @@ A local-first screenshot memory tool: automatic capture, OCR full-text search, p
 
 ## Project Overview
 
-ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant permission, it automatically captures your screen on Android and makes it searchable with OCR; you can also enable AI summaries when you need them, turning a time range into reviewable notes so you can quickly find what you saw and restore context.
-
----
-
-## Start Building Your Personal Digital Memory Today
-
-**Why start right now?**
-- **Irreversible Knowledge Loss**: As more people use daily data to train their personal AI, every day you don't record is a loss of "understanding you" for your future AI assistant.
-- **The Quiet Compound Interest of Time**: Data cannot be rushed. Those who start accumulating digital specimens today will naturally possess an irreplaceable, exclusive memory vault when AI achieves its next breakthrough.
-- **Salvaging Your Scattered Digital Self**: Your most precious context is often shattered across various apps and devices—without ScreenMemo to properly collect them, they will eventually fade with time, never to be fully awakened again.
-
----
-
-## How It Works
-
-1. Screen capture: after user authorization, based on Android 11+ Accessibility screenshot capability (`takeScreenshot`), capture the current foreground app at configured intervals; can be enabled/excluded by app or time range.
-2. Local storage: save screenshots to app-private storage, and record metadata (timestamp, foreground app package name, etc.) to a local database (SQLite) to power timeline and filtering. Since recent versions, screenshots/database/cache live under internal `files/output`; logs are written to the app-private external directory `<externalFiles>/output/logs` for easier export/debug; the app migrates older external data on startup.
-3. Text extraction (OCR): run OCR on new screenshots (Android ML Kit), extract text and index with the image for full-text search.
-4. Indexing & search: build inverted indexes by time/app/keywords; the Search page supports keyword match, time range, and app filters to quickly locate historical screens.
-5. AI processing (optional): aggregate multiple screenshots within the same time segment to form “Events” and “Daily Summary”; you can choose and configure different model providers.
-6. Privacy & security: screenshots/OCR/index are stored locally by default; AI summaries only make network requests after you enable them. You can pause capture, purge data, and export backups at any time; NSFW preference for sensitive content masking.
-7. Space management: compress images and clean up expired data by policy to automatically control disk usage and keep the library size manageable.
-8. Deep links: via deep links, jump from Search/Statistics to the image viewer or specific pages to quickly return to the original context.
-9. AI request gateway (when AI is enabled): all model calls go through a streaming-first gateway, with automatic fallback to non-streaming to improve multi-provider compatibility.
-
----
-
-## Flutter Chat Context System (Codex-style)
-
-> Design doc: `docs/CONTEXT_MEMORY.md`
-
-- **Three-layer storage**: UI tail (`ai_messages`) + full transcripts (`ai_messages_full`) + compressed memory (`ai_conversations.summary/tool_memory_json`).
-- **Context injection**: each request injects `<conversation_context>` (summary + tool memory) and appends recent tail transcripts as prompt history.
-- **Auto compression**: when conversations grow, a rolling summary is generated to reduce repetition/looping.
-- **Observability**: estimate tokens (bytes/4) of the last prompt and provide a UI panel to inspect/compress/clear memory.
-
----
+ScreenMemo is a local-first smart screenshot memo and retrieval tool. It automatically records what appears on your Android screen, then uses OCR and an AI assistant to make it searchable so you can quickly recover clues and restore context later.
 
 ## Screenshots
 
@@ -79,14 +39,14 @@ ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant 
       <div align="center"><sub>Semantic Search</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/timeline-replay-generation.jpg" alt="Timeline & Replay Generation" width="240" loading="lazy" />
-      <div align="center"><sub>Timeline & Replay Generation</sub></div>
+      <img src="assets/screenshots/timeline-replay-generation.jpg" alt="Timeline & Replay" width="240" loading="lazy" />
+      <div align="center"><sub>Timeline & Replay</sub></div>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top">
-      <img src="assets/screenshots/event-detail.jpg" alt="Event Detail" width="240" loading="lazy" />
-      <div align="center"><sub>Event Detail</sub></div>
+      <img src="assets/screenshots/event-detail.jpg" alt="Activity Detail" width="240" loading="lazy" />
+      <div align="center"><sub>Activity Detail</sub></div>
     </td>
     <td align="center" valign="top">
       <img src="assets/screenshots/favorites-notes.jpg" alt="Favorites & Notes" width="240" loading="lazy" />
@@ -99,16 +59,30 @@ ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant 
   </tr>
   <tr>
     <td align="center" valign="top">
+      <img src="assets/screenshots/daySummary.jpg" alt="Daily Summary" width="240" loading="lazy" />
+      <div align="center"><sub>Daily Summary</sub></div>
+    </td>
+    <td align="center" valign="top">
       <img src="assets/screenshots/storage-analysis.jpg" alt="Storage Analysis" width="240" loading="lazy" />
       <div align="center"><sub>Storage Analysis</sub></div>
     </td>
     <td align="center" valign="top">
-      <img src="assets/screenshots/nsfw-search-results.jpg" alt="NSFW Search Results" width="240" loading="lazy" />
-      <div align="center"><sub>NSFW Search Results</sub></div>
-    </td>
-    <td align="center" valign="top">
       <img src="assets/screenshots/ai-review-chat.jpg" alt="AI Review Chat" width="240" loading="lazy" />
       <div align="center"><sub>AI Review Chat</sub></div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/addAi.jpg" alt="AI Providers" width="240" loading="lazy" />
+      <div align="center"><sub>AI Providers</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/prompt.jpg" alt="Prompt Manager" width="240" loading="lazy" />
+      <div align="center"><sub>Prompt Manager</sub></div>
+    </td>
+    <td align="center" valign="top">
+      <img src="assets/screenshots/nsfw-search-results.jpg" alt="NSFW Search Results" width="240" loading="lazy" />
+      <div align="center"><sub>NSFW Search Results</sub></div>
     </td>
   </tr>
   <tr>
@@ -127,68 +101,77 @@ ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant 
   </tr>
 </table>
 
+## Community Chat
 
-### Key Features
-
-- Deep links: automatically record browser links and jump back from Search/Stats.
-- NSFW masking: auto-mask common adult domains; customizable rules.
-- App-specific settings: per-app capture strategy (enable/disable, interval, resolution/compression) with presets for gaming/video/reading.
-- Theme & colors: light/dark and seed color switching.
-- Summaries: daily and weekly summaries, plus persona articles (streamed output).
-- Storage analysis: breakdown for app data, cache, screenshots, and logs.
-
----
+<div align="center">
+  <img src="assets/screenshots/qrcode_1774681804122.jpg" alt="QQ Group QR Code" width="320" loading="lazy" />
+  <div><sub>QQ Group: 640740880</sub></div>
+</div>
 
 ## FAQ
 
 <details>
 <summary>How much storage does it take per month?</summary>
 
-- Example: if image compression is enabled to ~50 KB per image and one screenshot per minute, 30 days ≈ 43,200 images, about 2.1 GB/month.
-- Estimation formula: Monthly usage (GB) ≈ (60 ÷ interval seconds) × 60 × 24 × 30 × single image size (KB) ÷ 1024 ÷ 1024.
-- Tips to reduce usage: increase screenshot interval (e.g., ≥ 60s/image), enable image compression, enable expiration cleanup (keep only recent 30/60 days), and exclude unnecessary apps/scenarios.
+- Example: if your compressed image size is about 50 KB and you capture one screenshot per minute, 30 days is about 43,200 images, or roughly 2.1 GB / month
+- Formula: Monthly usage (GB) ≈ `(60 ÷ interval seconds) × 60 × 24 × 30 × image size(KB) ÷ 1024 ÷ 1024`
+- To reduce usage: increase the capture interval, enable target-size compression, enable expiration cleanup, and only capture the apps you actually care about
 </details>
 
 <details>
 <summary>Will my data be uploaded to the cloud?</summary>
 
-- By default, all data (screenshots, OCR text, indexes, statistics) are stored locally and are not uploaded. You can pause capture, clear data, and export backups at any time.
+- No, not by default. Screenshots, OCR, indexes, statistics, and most settings stay local
+- Only the AI features you explicitly enable will send requests to the provider you configured
 </details>
 
 <details>
-<summary>How to exclude sensitive apps?</summary>
+<summary>Which AI providers are supported?</summary>
 
-- You can disable capture for specific apps in settings to avoid recording sensitive content.
+- Built-in provider types currently include `OpenAI`, `Azure OpenAI`, `Claude`, `Gemini`, and `Custom`
+- `Custom` is suitable for OpenAI-compatible self-hosted or third-party endpoints
+- Different AI contexts can use different providers and models
 </details>
 
 <details>
-<summary>What is the impact on battery and performance?</summary>
+<summary>Does the main app support iOS or desktop capture?</summary>
 
-- It mainly relates to the screenshot interval, image size/compression, and foreground recognition frequency. Enabling compression and expiration cleanup is recommended to reduce resource usage.
+- Not today. The main capture pipeline is built around Android Accessibility screenshot APIs
+- The desktop target in this repo is a backup-merger tool, not a full cross-platform capture client
 </details>
 
 <details>
-<summary>How to backup/migrate data?</summary>
+<summary>How do I back up or migrate data?</summary>
 
-- Use “Data Import/Export” to export/import assets and database in one click for migration or archiving.
-- When importing you can choose “Overwrite Import” or “Merge Import”. Merge keeps existing data and deduplicates the archive before merging, which is useful for stitching multiple backups together.
+- Use the “Data & backup” section to export a ZIP backup; ScreenMemo scans the scope first, writes a manifest, and shows categorized progress before and during export
+- Import supports both overwrite and merge modes; merge tries to deduplicate while preserving existing data
+- For very large or multiple backups, use the desktop merger on your computer first, then move the merged result back to Android
+- If imported data is missing OCR or index state, use Import Diagnostics to inspect and repair it
+- Backups intentionally exclude cache, code cache, temporary thumbnails, and external logs
+</details>
+
+<details>
+<summary>What is the battery / performance impact?</summary>
+
+- The biggest factors are capture interval, compression strategy, AI rebuild frequency, and how well the device keeps the app alive in the background
+- A practical setup is target-size compression, expiration cleanup, and app-specific capture policies so low-value apps are not recorded continuously
 </details>
 
 ## Quick Start
 
 ### Requirements
-- **Flutter SDK**: 3.8.1 or higher
-- **Dart SDK**: 3.8.1+
-- **Android Studio** / **VS Code** + Flutter plugin
-- **Android SDK**:
-  - Minimum (minSdkVersion): 21
-  - Target (targetSdkVersion): 34
-- Platform requirement: automatic screenshot relies on Android 11 (API 30)+ via Accessibility `takeScreenshot`
-- **JDK**: 11 or higher
 
-### Installation
+- **Flutter SDK**: `3.35.7` (current CI-verified version)
+- **Dart SDK**: `3.9.2` (bundled with Flutter `3.35.7`; the project constraint is `>=3.8.1`)
+- **JDK**: `17` recommended (CI uses `17`; Android source / target compatibility still emits Java 11 bytecode)
+- **Android SDK**: the release workflow uses `Platform 36`, `Build-Tools 36.0.0`, and `NDK 27.0.12077973`
+- **Current APK build config**: `minSdk 24`, `targetSdk 36`
+- **Main feature platform requirement**: automatic capture requires Android 11 (API 30)+
+- **IDE**: Android Studio / VS Code with the Flutter plugin
 
-1. **Clone the project**
+### Install and Run
+
+1. **Clone the repo**
    ```bash
    git clone <repository-url>
    cd screen_memo
@@ -199,198 +182,171 @@ ScreenMemo is a local-first screenshot memo and retrieval tool. After you grant 
    flutter pub get
    ```
 
-3. **Generate localization files**
+3. **Generate localization code**
    ```bash
    flutter gen-l10n
    ```
 
-4. **Run the app** (development mode)
+4. **Run the app**
    ```bash
-   # Connect an Android device or start an emulator
    flutter run
    ```
 
-### Development Commands
+### Test with an Android Emulator
+
+1. Create an Android 11+ AVD in Android Studio **Device Manager**
+2. Start the emulator, then run:
+   ```bash
+   flutter emulators
+   flutter devices
+   flutter run -d <device_id>
+   ```
+
+### Development and Verification Commands
 
 ```bash
-# Build Debug APK
-flutter build apk --debug
-
-# Install to device
-flutter install
-
-# View logs
-adb logcat | findstr "ScreenMemo"  # Windows
-adb logcat | grep "ScreenMemo"     # Linux/macOS
-
 # Static analysis
 flutter analyze
-```
 
----
+# Flutter tests
+flutter test
 
-## Build
+# i18n audit
+dart run tool/i18n_audit.dart --check
 
-Generate ABI-split optimized APKs (minimized size):
+# Debug APK
+flutter build apk --debug
 
-```powershell
-flutter clean
-flutter pub get
+# Release APKs (split per ABI)
 flutter build apk --release --split-per-abi --tree-shake-icons --obfuscate --split-debug-info=build/symbols
 ```
 
-**Artifacts**:
-- `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
-- `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
-- `build/app/outputs/flutter-apk/app-x86_64-release.apk`
+Android JVM unit tests:
 
----
-
-## Automated Release (GitHub Actions)
-
-This project is configured to automatically build and publish to GitHub Releases when a tag is pushed: it will only build when you push a tag (e.g., `v1.0.0`), and will not trigger on regular pushes/commits.
-
-### Release Steps
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
+**Windows**
+```powershell
+cd android
+.\gradlew.bat test
 ```
 
-After pushing, GitHub Actions will automatically build **ABI-split Release APKs** and create a Release with the same name, attaching the artifacts (APKs, `symbols-*.zip`, and optional `mapping-*.txt`).
+**macOS / Linux**
+```bash
+cd android
+./gradlew test
+```
 
-Version rules: the tag (without the `v` prefix) will be used as `--build-name`, and `github.run_number` as `--build-number`.
+## Desktop Data Merger
 
-### Optional: Configure Production Signature (Recommended)
+Merging multiple large backup ZIPs on a phone can be slow, so the project includes a separate desktop entry at `lib/main_desktop_merger.dart`.
 
-If you want the Release APKs to be signed with a production keystore (instead of the debug key), add the following Secrets in your repository under `Settings -> Secrets and variables -> Actions`:
+- Select multiple ZIP backups and an output directory
+- Run a structural preflight audit before merge starts
+- Merge the backup `output` tree: screenshot files, shard databases, and main metadata while skipping duplicates
+- Merge favorites, NSFW flags, and user settings metadata
+- Show live progress, warnings, affected apps, and dedupe results
+- Pack the merged result back into a new ZIP archive
 
-- `ANDROID_KEYSTORE_BASE64`: Base64 of the `jks`/`keystore` file
-- `ANDROID_KEYSTORE_PASSWORD`: Keystore password
-- `ANDROID_KEY_ALIAS`: Key alias
-- `ANDROID_KEY_PASSWORD`: Key password
+### Build Commands
 
-> The workflow uses the built-in `GITHUB_TOKEN` to publish the Release by default; you do not need to provide a personal token.
-
----
-
-## Desktop Data Merger Tool
-
-Because merging imports on mobile can be slow, ScreenMemo provides a Windows/macOS/Linux desktop data merger tool to efficiently merge multiple exported ZIP backup files.
-
-### Features
-
-- Select multiple exported ZIP backup files
-- Choose an output directory (where the merged data will be saved)
-- Show merge progress and detailed results
-- Full merge of screenshots and databases
-
-### Build executable
-
-**Windows**:
+**Windows**
 ```powershell
 flutter build windows -t lib/main_desktop_merger.dart --release
 ```
 
-**macOS**:
+**macOS**
 ```bash
 flutter build macos -t lib/main_desktop_merger.dart --release
 ```
 
-**Linux**:
+**Linux**
 ```bash
 flutter build linux -t lib/main_desktop_merger.dart --release
 ```
 
-### Output
-
-| Platform | Output directory |
-|------|----------|
-| Windows | `build/windows/x64/runner/Release/` |
-| macOS | `build/macos/Build/Products/Release/` |
-| Linux | `build/linux/x64/release/bundle/` |
-
-> The artifact is a folder. On Windows it contains `screen_memo.exe` and required DLLs. Copy the whole folder to run.
----
-
 ## Permissions
 
-The app may request the following permissions (depending on features you enable):
-
-| Permission | Purpose | Required |
-|-----------|---------|----------|
-| Notifications | Foreground service status & reminders | Required (background capture) |
-| Accessibility Service | Automatic screenshots (`takeScreenshot`, Android 11+) and foreground detection | Required (auto capture) |
-| Usage Stats | Get foreground app (Usage Stats) for tagging/filtering | Required |
-| Photos/Media | Save images/videos to system gallery | Optional |
-| Exact alarm | Scheduled daily/weekly summary reminders | Optional |
-
-> Note: app data is stored in app-private storage; legacy `READ/WRITE_EXTERNAL_STORAGE` runtime permissions are not required. Permissions are requested when needed and can be revoked anytime in system settings.
-
----
+| Permission | Why it is used | Recommendation |
+| --- | --- | --- |
+| Notifications | Foreground service, export / repair / rebuild progress, daily reminders | Recommended |
+| Accessibility service | Automatic capture, activity rebuilding, some background AI flows | Required for core capture |
+| Usage stats | Foreground app detection, app-level filtering and statistics | Strongly recommended |
+| Installed app visibility | Enumerating installed apps for app selection, filtering, and statistics | Needed for the main app-selection flow |
+| Ignore battery optimization / auto-start | Improves background capture and rebuild stability | Strongly recommended |
+| Exact alarm | Daily summary reminders | Optional |
+| Photos / downloads write access | Saving screenshots, replay videos, or export results | Optional |
 
 ## Internationalization
 
-Supported languages:
-- Simplified Chinese (default)
+Both the app UI and the README set currently target these 4 languages:
+
+- Simplified Chinese
 - English
 - Japanese
 - Korean
 
-Add a new language
+Common commands:
 
-1. Create a new `.arb` file in `lib/l10n/` (e.g., `app_ja.arb`)
-2. Copy the content of `app_en.arb` and translate
-3. Run `flutter gen-l10n` to generate code
-4. Register the new locale in `LocaleService`
-
-### i18n Audit (Prevent missing translations/hardcoded regressions)
-
-To avoid introducing new user-visible strings that are not localized, the project provides an audit tool and a test guard:
-
-- **ARB consistency**: all `lib/l10n/*.arb` must have exactly the same keys as the template (`app_en.arb`).
-- **Platform localization**: required iOS/Android locale declarations and resources must be present.
-- **Hardcoded Flutter UI strings**: baseline mode blocks only **new** hardcoded strings; existing ones are recorded in the baseline and can be reduced over time.
-
-Run check:
 ```bash
+# Generate l10n code
+flutter gen-l10n
+
+# Check ARB parity, platform localization, and new hard-coded strings
 dart run tool/i18n_audit.dart --check
-```
 
-Update baseline (use only when it’s truly legacy/intentional):
-```bash
+# Update the audit baseline only after reviewing the exception
 dart run tool/i18n_audit.dart --update-baseline
 ```
 
-Ignore rules (use with care):
-- Add `// i18n-ignore` at end of line to ignore that line
-- Add `// i18n-ignore-file` anywhere in a file to ignore the whole file
+`flutter test` automatically runs `test/i18n_audit_test.dart` to prevent localization regressions.
 
-`flutter test` runs `test/i18n_audit_test.dart` to prevent regressions.
+## Sponsor
 
----
+If this project helps you, sponsorship is welcome. Please include a link you want publicly shown in the payment note, such as a personal homepage, Bilibili profile, or GitHub repository. We will list it in the Sponsor Thanks table in this README.
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <a href="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/wechat.png">
+          <img src="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/wechat.png" alt="WeChat Donation QR" width="220">
+        </a><br>
+        WeChat
+      </td>
+      <td align="center">
+        <a href="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/zfb.jpg">
+          <img src="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/zfb.jpg" alt="Alipay Donation QR" width="220">
+        </a><br>
+        Alipay
+      </td>
+    </tr>
+  </table>
+</div>
+
+## Sponsor Thanks
+
+| Sponsor | Public Link |
+| --- | --- |
+| None yet | None yet |
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome!
+Contributions, bug reports, and suggestions are welcome.
 
-1. Fork this repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'feat: add some amazing feature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/your-change`
+3. Commit your work: `git commit -m "feat: describe your change"`
+4. Push the branch: `git push origin feature/your-change`
 5. Open a Pull Request
 
-Please ensure:
-- Code passes `flutter analyze`
-- Add necessary tests
-- Update relevant documentation
+Before sending a change, it is recommended to run:
 
----
+- `flutter analyze`
+- `flutter test`
+- `dart run tool/i18n_audit.dart --check`
 
 ## Acknowledgements
 
-Thanks to the following open-source projects:
-- [Flutter](https://flutter.dev) - UI framework
-- [Google ML Kit](https://developers.google.com/ml-kit) - Text recognition
-- [SQLite](https://www.sqlite.org/) - Database engine
-- All contributors and maintainers of dependencies
+- [Flutter](https://flutter.dev)
+- [Google ML Kit](https://developers.google.com/ml-kit)
+- [SQLite](https://www.sqlite.org/)
+- All contributors and dependency maintainers
