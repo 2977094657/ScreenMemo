@@ -360,5 +360,5 @@ dart run tool/i18n_audit.dart --update-baseline
 - [Flutter](https://flutter.dev)
 - [Google ML Kit](https://developers.google.com/ml-kit)
 - [SQLite](https://www.sqlite.org/)
-- 感谢 linux.do 社区的交流与讨论支持。
+- 感谢 [linux.do](https://linux.do/) 社区的交流与讨论支持。
 - 所有贡献者与依赖维护者
