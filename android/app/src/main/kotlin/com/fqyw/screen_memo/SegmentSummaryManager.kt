@@ -44,9 +44,12 @@ object SegmentSummaryManager {
     private const val DYNAMIC_AI_STAGE_SUMMARY = "summary"
     private const val DYNAMIC_AI_STAGE_MERGE_DECISION = "merge_decision"
     private const val DYNAMIC_AI_STAGE_MERGE_SUMMARY = "merge_summary"
+    internal const val DYNAMIC_AI_STAGE_STREAM_CHUNK_PREVIEW = "dynamic_ai_stream_chunk_preview"
     private const val DYNAMIC_AI_HEARTBEAT_INTERVAL_MS = 30_000L
     private const val DYNAMIC_AI_REQUEST_TIMEOUT_MS = 3L * 60L * 1000L
     private const val DYNAMIC_AI_STREAM_FIRST_EVENT_TIMEOUT_MS = 180_000L
+    private const val DYNAMIC_AI_STREAM_PREVIEW_FLUSH_LEN = 36
+    private const val DYNAMIC_AI_STREAM_PREVIEW_MAX_LEN = 120
     private val dynamicRebuildInFlightCalls =
         Collections.synchronizedSet(mutableSetOf<Call>())
 
@@ -144,6 +147,23 @@ object SegmentSummaryManager {
     ) {
         val spec = resolveDynamicAiStageSpec(stageScope) ?: return
         stageReporter?.invoke(spec.jsonRetryStage, spec.jsonRetryLabel, detail, segmentId)
+    }
+
+    private fun reportDynamicAiStreamChunk(
+        stageReporter: ((String, String, String, Long) -> Unit)?,
+        stageScope: String?,
+        segmentId: Long,
+        chunkPreview: String,
+    ) {
+        if (resolveDynamicAiStageSpec(stageScope) == null) return
+        val normalized = normalizeDynamicAiStreamPreviewText(chunkPreview)
+        if (normalized.isBlank()) return
+        stageReporter?.invoke(
+            DYNAMIC_AI_STAGE_STREAM_CHUNK_PREVIEW,
+            "流式数据",
+            normalized,
+            segmentId,
+        )
     }
 
     private fun isDynamicAiStage(stageScope: String?): Boolean {
@@ -1896,6 +1916,7 @@ object SegmentSummaryManager {
                                     val reader = responseBody.charStream().buffered()
                                     val aggregated = StringBuilder()
                                     val rawEvents = StringBuilder()
+                                    val previewBuffer = StringBuilder()
                                     var sawData = false
                                     var lastCumulative = ""
                                     var payloadError: String? = null
@@ -1945,6 +1966,18 @@ object SegmentSummaryManager {
                                                 }
                                                 if (delta.isNotBlank()) {
                                                     aggregated.append(delta)
+                                                    appendDynamicAiStreamPreviewChunk(
+                                                        buffer = previewBuffer,
+                                                        rawChunk = delta,
+                                                        emit = { preview ->
+                                                            reportDynamicAiStreamChunk(
+                                                                stageReporter = stageReporter,
+                                                                stageScope = stageScope,
+                                                                segmentId = seg.id,
+                                                                chunkPreview = preview,
+                                                            )
+                                                        },
+                                                    )
                                                 }
                                                 lastCumulative = if (chunkText.startsWith(lastCumulative)) {
                                                     chunkText
@@ -1955,6 +1988,14 @@ object SegmentSummaryManager {
                                                 // ignore malformed event chunk
                                             }
                                         }
+                                    }
+                                    flushDynamicAiStreamPreviewBuffer(previewBuffer) { preview ->
+                                        reportDynamicAiStreamChunk(
+                                            stageReporter = stageReporter,
+                                            stageScope = stageScope,
+                                            segmentId = seg.id,
+                                            chunkPreview = preview,
+                                        )
                                     }
                                     respText = rawEvents.toString()
                                     if (!sawData) {
@@ -2284,6 +2325,14 @@ object SegmentSummaryManager {
                                         onDataEvent = { eventAtMs ->
                                             heartbeatLastEventAtMs.set(eventAtMs)
                                             heartbeatEventCount.incrementAndGet()
+                                        },
+                                        onPreviewChunk = { preview ->
+                                            reportDynamicAiStreamChunk(
+                                                stageReporter = stageReporter,
+                                                stageScope = stageScope,
+                                                segmentId = seg.id,
+                                                chunkPreview = preview,
+                                            )
                                         },
                                     )
                                 val respBodyText = streamRead.body
@@ -5869,8 +5918,10 @@ object SegmentSummaryManager {
         responseBody: okhttp3.ResponseBody,
         requestTimeoutMs: Long?,
         onDataEvent: ((Long) -> Unit)? = null,
+        onPreviewChunk: ((String) -> Unit)? = null,
     ): OpenAiCompatibleStreamReadResult {
         val rawBody = StringBuilder()
+        val previewBuffer = StringBuilder()
         val source = responseBody.source()
         val sourceTimeout = source.timeout()
         sourceTimeout.timeout(
@@ -5900,13 +5951,38 @@ object SegmentSummaryManager {
         }
 
         return try {
+            var currentEventName: String? = null
             while (true) {
                 maybeThrowDynamicAiCancelled(ctx, stageScope, segmentId)
                 val rawLine = source.readUtf8Line() ?: break
                 rawBody.append(rawLine).append('\n')
+                val trimmedLine = rawLine.trimEnd()
+                if (trimmedLine.isEmpty()) {
+                    currentEventName = null
+                    continue
+                }
+                if (trimmedLine.startsWith("event:")) {
+                    currentEventName = trimmedLine.substringAfter(':', "").trim()
+                        .let { if (it.isEmpty()) null else it }
+                    continue
+                }
                 if (isOpenAiCompatibleDataLine(rawLine)) {
                     noteDataEvent()
+                    extractReadablePreviewFromOpenAiStreamLine(
+                        rawLine = rawLine,
+                        eventName = currentEventName,
+                    )?.let { (previewText, forceFlush) ->
+                        appendDynamicAiStreamPreviewChunk(
+                            buffer = previewBuffer,
+                            rawChunk = previewText,
+                            forceFlush = forceFlush,
+                            emit = { preview -> onPreviewChunk?.invoke(preview) },
+                        )
+                    }
                 }
+            }
+            flushDynamicAiStreamPreviewBuffer(previewBuffer) { preview ->
+                onPreviewChunk?.invoke(preview)
             }
             OpenAiCompatibleStreamReadResult(
                 body = rawBody.toString(),
@@ -5936,6 +6012,103 @@ object SegmentSummaryManager {
                 throw e
             }
         }
+    }
+
+    private fun extractReadablePreviewFromOpenAiStreamLine(
+        rawLine: String,
+        eventName: String?,
+    ): Pair<String, Boolean>? {
+        val trimmedLine = rawLine.trim()
+        if (trimmedLine.isEmpty()) return null
+        val payload = when {
+            trimmedLine.startsWith("data:") -> trimmedLine.substring(5).trim()
+            trimmedLine.startsWith("id:") ||
+                trimmedLine.startsWith("retry:") ||
+                trimmedLine.startsWith(":") -> return null
+            else -> trimmedLine
+        }
+        if (payload.isEmpty() || payload == "[DONE]") return null
+        return try {
+            val obj = JSONObject(payload)
+            val eventType = pickNonEmpty(obj.optString("type"), eventName ?: "")
+            val aggregated = StringBuilder()
+            val aggregatedReasoning = StringBuilder()
+            collectTextFromOpenAiCompatibleStreamJson(
+                obj = obj,
+                aggregated = aggregated,
+                aggregatedReasoning = aggregatedReasoning,
+                eventName = eventName,
+            )
+            val preview = pickNonEmpty(
+                aggregated.toString(),
+                aggregatedReasoning.toString(),
+                obj.optString("delta"),
+                obj.optString("text"),
+            )
+            val normalizedPreview = normalizeDynamicAiStreamPreviewText(preview)
+            if (normalizedPreview.isBlank()) {
+                null
+            } else {
+                normalizedPreview to
+                    (eventType.endsWith(".done") || eventType == "response.completed")
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun appendDynamicAiStreamPreviewChunk(
+        buffer: StringBuilder,
+        rawChunk: String,
+        forceFlush: Boolean = false,
+        emit: (String) -> Unit,
+    ) {
+        val normalized = normalizeDynamicAiStreamPreviewText(rawChunk)
+        if (normalized.isBlank()) return
+        if (buffer.isNotEmpty() && shouldInsertSpaceBetweenPreviewChunks(buffer.last(), normalized.first())) {
+            buffer.append(' ')
+        }
+        buffer.append(normalized)
+        if (forceFlush || shouldFlushDynamicAiStreamPreview(normalized, buffer.length)) {
+            flushDynamicAiStreamPreviewBuffer(buffer, emit)
+        }
+    }
+
+    private fun flushDynamicAiStreamPreviewBuffer(
+        buffer: StringBuilder,
+        emit: (String) -> Unit,
+    ) {
+        val normalized = normalizeDynamicAiStreamPreviewText(buffer.toString())
+        buffer.setLength(0)
+        if (normalized.isBlank()) return
+        emit(normalized)
+    }
+
+    private fun normalizeDynamicAiStreamPreviewText(text: String): String {
+        val collapsed = text.replace(Regex("\\s+"), " ").trim()
+        if (collapsed.isEmpty()) return ""
+        return truncateForLog(collapsed, DYNAMIC_AI_STREAM_PREVIEW_MAX_LEN)
+    }
+
+    private fun shouldFlushDynamicAiStreamPreview(
+        chunk: String,
+        totalLength: Int,
+    ): Boolean {
+        if (totalLength >= DYNAMIC_AI_STREAM_PREVIEW_FLUSH_LEN) return true
+        return when (chunk.lastOrNull()) {
+            '。', '！', '？', '；', '.', '!', '?', ';' -> true
+            else -> false
+        }
+    }
+
+    private fun shouldInsertSpaceBetweenPreviewChunks(
+        previous: Char,
+        next: Char,
+    ): Boolean {
+        return previous.isLetterOrDigit() &&
+            next.isLetterOrDigit() &&
+            !previous.isWhitespace() &&
+            !next.isWhitespace()
     }
 
     private fun parseOpenAiCompatibleIncrementalBody(

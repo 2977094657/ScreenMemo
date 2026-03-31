@@ -906,9 +906,11 @@ class MainActivity : FlutterActivity() {
                 "startDynamicRebuildTask" -> {
                     try {
                         val resumeExisting = call.argument<Boolean>("resumeExisting") ?: false
+                        val dayConcurrency = call.argument<Int>("dayConcurrency")
                         val status = DynamicRebuildService.startOrResumeTask(
                             applicationContext,
                             resumeExisting,
+                            dayConcurrency,
                         )
                         result.success(status)
                     } catch (e: Exception) {
