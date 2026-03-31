@@ -135,6 +135,8 @@ class _DynamicRebuildUiSnapshot {
     required this.status,
     required this.starting,
     required this.stopping,
+    required this.selectedDayConcurrency,
+    required this.savingDayConcurrency,
     required this.autoRepairEnabled,
     required this.autoRepairLoading,
     required this.autoRepairToggling,
@@ -144,6 +146,8 @@ class _DynamicRebuildUiSnapshot {
   final DynamicRebuildTaskStatus status;
   final bool starting;
   final bool stopping;
+  final int selectedDayConcurrency;
+  final bool savingDayConcurrency;
   final bool autoRepairEnabled;
   final bool autoRepairLoading;
   final bool autoRepairToggling;
@@ -201,6 +205,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   bool _loading = false;
   bool _startingDynamicRebuild = false;
   bool _stoppingDynamicRebuild = false;
+  int _selectedDynamicRebuildDayConcurrency = 1;
+  bool _savingDynamicRebuildDayConcurrency = false;
   bool _onlyNoSummary = false; // 仅看暂无AI总结
   String? _selectedDateKey;
   DynamicRebuildTaskStatus _dynamicRebuildTaskStatus =
@@ -210,10 +216,16 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         startedAt: 0,
         updatedAt: 0,
         completedAt: 0,
+        dayConcurrency: 1,
         totalSegments: 0,
         processedSegments: 0,
         failedSegments: 0,
+        totalDays: 0,
+        completedDays: 0,
+        pendingDays: 0,
+        failedDays: 0,
         currentDayKey: '',
+        timelineCutoffDayKey: '',
         currentSegmentId: 0,
         currentRangeLabel: '',
         currentStage: '',
@@ -224,6 +236,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         progressPercent: '0%',
         aiModel: '',
         recentLogs: <String>[],
+        workers: <DynamicRebuildWorkerState>[],
       );
   Timer? _dynamicRebuildTaskPollTimer;
   bool _pollingDynamicRebuildTask = false;
@@ -298,7 +311,9 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final DynamicRebuildTaskStatus effective =
         status ?? _dynamicRebuildTaskStatus;
     if (!_shouldGateTimelineToCurrentRebuild(effective)) return null;
-    final String key = effective.currentDayKey.trim();
+    final String key = effective.timelineCutoffDayKey.trim().isNotEmpty
+        ? effective.timelineCutoffDayKey.trim()
+        : effective.currentDayKey.trim();
     return key.isEmpty ? '' : key;
   }
 
@@ -398,6 +413,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     _initApps();
     _loadPrivacyMode();
     unawaited(_loadDynamicEntryLogIconEnabled());
+    unawaited(_loadDynamicRebuildDayConcurrency());
     _loadSegmentsContextSelection();
     _refresh();
     unawaited(_refreshDynamicAutoRepairEnabled(showLoading: true));
@@ -433,7 +449,8 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       final providers = await svc.listProviders();
       DynamicEntryPerfService.instance.mark(
         'segment.context.providers.done',
-        detail: 'ms=${providersSw.elapsedMilliseconds} count=${providers.length}',
+        detail:
+            'ms=${providersSw.elapsedMilliseconds} count=${providers.length}',
       );
       if (providers.isEmpty) {
         if (mounted) {
@@ -1324,10 +1341,79 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       status: _dynamicRebuildTaskStatus,
       starting: _startingDynamicRebuild,
       stopping: _stoppingDynamicRebuild,
+      selectedDayConcurrency: _selectedDynamicRebuildDayConcurrency,
+      savingDayConcurrency: _savingDynamicRebuildDayConcurrency,
       autoRepairEnabled: _dynamicAutoRepairEnabled,
       autoRepairLoading: _loadingDynamicAutoRepair,
       autoRepairToggling: _togglingDynamicAutoRepair,
       requestLogs: _dynamicRebuildRequestLogsState,
+    );
+  }
+
+  Future<void> _loadDynamicRebuildDayConcurrency() async {
+    try {
+      final int raw = await UserSettingsService.instance.getInt(
+        UserSettingKeys.dynamicRebuildDayConcurrency,
+        defaultValue: 1,
+      );
+      if (!mounted) return;
+      final int normalized = math.max(1, math.min(10, raw));
+      setState(() => _selectedDynamicRebuildDayConcurrency = normalized);
+      _publishDynamicRebuildUiSnapshot();
+    } catch (_) {}
+  }
+
+  bool _canEditDynamicRebuildDayConcurrency(
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    return !snapshot.status.isActive &&
+        !snapshot.starting &&
+        !snapshot.stopping &&
+        !snapshot.savingDayConcurrency;
+  }
+
+  int _effectiveDynamicRebuildDayConcurrency(
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final int preferred = snapshot.status.isActive
+        ? (snapshot.status.dayConcurrency > 0
+              ? snapshot.status.dayConcurrency
+              : snapshot.selectedDayConcurrency)
+        : snapshot.selectedDayConcurrency;
+    return math.max(1, math.min(10, preferred));
+  }
+
+  Future<void> _setDynamicRebuildDayConcurrency(int value) async {
+    final _DynamicRebuildUiSnapshot snapshot =
+        _currentDynamicRebuildUiSnapshot();
+    if (!_canEditDynamicRebuildDayConcurrency(snapshot)) return;
+    final int normalized = math.max(1, math.min(10, value));
+    if (normalized == _selectedDynamicRebuildDayConcurrency) return;
+    final int previous = _selectedDynamicRebuildDayConcurrency;
+    setState(() {
+      _selectedDynamicRebuildDayConcurrency = normalized;
+      _savingDynamicRebuildDayConcurrency = true;
+    });
+    _publishDynamicRebuildUiSnapshot();
+    try {
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.dynamicRebuildDayConcurrency,
+        normalized,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _selectedDynamicRebuildDayConcurrency = previous);
+      UINotifier.error(context, '保存并发天数失败');
+    } finally {
+      if (!mounted) return;
+      setState(() => _savingDynamicRebuildDayConcurrency = false);
+      _publishDynamicRebuildUiSnapshot();
+    }
+  }
+
+  Future<void> _changeDynamicRebuildDayConcurrency(int delta) async {
+    await _setDynamicRebuildDayConcurrency(
+      _selectedDynamicRebuildDayConcurrency + delta,
     );
   }
 
@@ -1488,13 +1574,19 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final status = snapshot.status;
+    final int dayConcurrency = _effectiveDynamicRebuildDayConcurrency(snapshot);
     final Color statusColor = _dynamicRebuildTaskColor(status);
     final double? progressValue = status.totalSegments > 0
         ? (status.processedSegments / status.totalSegments).clamp(0, 1)
         : (status.isCompleted ? 1 : null);
     final String progressText = status.totalSegments > 0
         ? '${status.processedSegments}/${status.totalSegments} (${status.progressPercent})'
-        : (status.isCompleted ? '无可重建动态' : status.progressPercent);
+        : (status.isCompleted ? '无可重建动态' : '0/0 (${status.progressPercent})');
+    final String summaryLine =
+        '已完成 ${status.processedSegments}/${status.totalSegments} 条动态 · '
+        '已完成 ${status.completedDays}/${status.totalDays} 天 · '
+        '并发 $dayConcurrency · '
+        '待续失败天数 ${status.failedDays}';
     final String currentLine = _dynamicRebuildCurrentLine(status);
     final String modelLine = _dynamicRebuildModelLine(status);
     final String stageHeadline = _dynamicRebuildStageHeadline(status);
@@ -1542,9 +1634,24 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
           ],
         ),
         const SizedBox(height: AppTheme.spacing3),
-        Text(progressText, style: theme.textTheme.bodyMedium),
+        Text(
+          progressText,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: AppTheme.spacing2),
         UIProgress(value: progressValue, height: 6),
+        Padding(
+          padding: const EdgeInsets.only(top: AppTheme.spacing2),
+          child: Text(
+            summaryLine,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ),
         if (currentLine.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spacing3),
@@ -1635,6 +1742,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
         const SizedBox(height: AppTheme.spacing4),
         _buildDynamicRebuildTaskActionRow(context, snapshot),
         const SizedBox(height: AppTheme.spacing3),
+        _buildDynamicRebuildDayConcurrencySection(context, snapshot),
+        const SizedBox(height: AppTheme.spacing3),
+        _buildDynamicRebuildWorkersSection(context, snapshot),
+        const SizedBox(height: AppTheme.spacing3),
         _buildDynamicAutoRepairSection(context, snapshot),
         if (status.recentLogs.isNotEmpty) ...[
           const SizedBox(height: AppTheme.spacing4),
@@ -1717,6 +1828,316 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       );
     }
     return SizedBox(width: double.infinity, child: startButton);
+  }
+
+  Widget _buildDynamicRebuildDayConcurrencySection(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool editable = _canEditDynamicRebuildDayConcurrency(snapshot);
+    final int value = _effectiveDynamicRebuildDayConcurrency(snapshot);
+
+    Widget buildStepButton({
+      required IconData icon,
+      required VoidCallback? onPressed,
+    }) {
+      return SizedBox(
+        width: 34,
+        height: 34,
+        child: OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            side: BorderSide(
+              color: cs.outline.withValues(
+                alpha: onPressed == null ? 0.18 : 0.34,
+              ),
+            ),
+          ),
+          onPressed: onPressed,
+          child: Icon(icon, size: 16),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '并发天数',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  editable ? '可设置 1-10 天' : '任务运行中不可修改',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacing2),
+          buildStepButton(
+            icon: Icons.remove,
+            onPressed: editable && value > 1
+                ? () {
+                    unawaited(_changeDynamicRebuildDayConcurrency(-1));
+                  }
+                : null,
+          ),
+          Container(
+            width: 48,
+            alignment: Alignment.center,
+            child: Text(
+              '$value',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          buildStepButton(
+            icon: Icons.add,
+            onPressed: editable && value < 10
+                ? () {
+                    unawaited(_changeDynamicRebuildDayConcurrency(1));
+                  }
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicRebuildWorkersSection(
+    BuildContext context,
+    _DynamicRebuildUiSnapshot snapshot,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final int slotCount = math.max(
+      _effectiveDynamicRebuildDayConcurrency(snapshot),
+      snapshot.status.workers.length,
+    );
+    final Map<int, DynamicRebuildWorkerState> workersBySlot =
+        <int, DynamicRebuildWorkerState>{
+          for (final DynamicRebuildWorkerState worker
+              in snapshot.status.workers)
+            worker.slotId: worker,
+        };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '线程进度',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacing1),
+        Text(
+          '每个线程会串行跑完当天全部动态，完成后再领取下一个未完成日期。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: cs.onSurfaceVariant,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacing3),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final bool useTwoColumns = constraints.maxWidth >= 680;
+            final double cardWidth = useTwoColumns
+                ? (constraints.maxWidth - AppTheme.spacing3) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: AppTheme.spacing3,
+              runSpacing: AppTheme.spacing3,
+              children: [
+                for (int slotId = 1; slotId <= slotCount; slotId++)
+                  SizedBox(
+                    width: cardWidth,
+                    child: _buildDynamicRebuildWorkerCard(
+                      context,
+                      slotId,
+                      workersBySlot[slotId],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDynamicRebuildWorkerCard(
+    BuildContext context,
+    int slotId,
+    DynamicRebuildWorkerState? worker,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final Color accent = _dynamicRebuildWorkerColor(context, worker);
+    final String statusLine = _dynamicRebuildWorkerStatusLine(worker);
+    final String stageLabel = worker?.currentStageLabel.trim() ?? '';
+    final String stageDetail = worker?.currentStageDetail.trim() ?? '';
+    final String rangeLabel = worker?.currentRangeLabel.trim() ?? '';
+    final int processed = worker?.processedSegments ?? 0;
+    final int total = worker?.totalSegments ?? 0;
+    final List<String> recentStreamChunks =
+        (worker?.recentStreamChunks ?? const <String>[]).reversed
+            .take(3)
+            .toList(growable: false);
+    final double? progressValue = total > 0
+        ? (processed / total).clamp(0, 1)
+        : null;
+    final String progressText = total > 0 ? '$processed/$total' : '0/0';
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '线程 $slotId',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Text(
+                  _dynamicRebuildWorkerChipLabel(worker),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            statusLine,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            '当天进度 $progressText',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          UIProgress(value: progressValue, height: 5),
+          if (rangeLabel.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              '时间窗：$rangeLabel',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (stageLabel.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.spacing2),
+            Text(
+              '当前阶段：$stageLabel',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (stageDetail.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              stageDetail,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (recentStreamChunks.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            Text(
+              '最近 3 条流式数据',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTheme.spacing1),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTheme.spacing2),
+              decoration: BoxDecoration(
+                color: cs.surface.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                border: Border.all(color: cs.outline.withValues(alpha: 0.14)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (
+                    int index = 0;
+                    index < recentStreamChunks.length;
+                    index++
+                  ) ...[
+                    if (index > 0) const SizedBox(height: 6),
+                    Text(
+                      '${index + 1}. ${recentStreamChunks[index]}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildDynamicAutoRepairSection(
@@ -2158,18 +2579,35 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   }
 
   String _dynamicRebuildCurrentLine(DynamicRebuildTaskStatus status) {
+    final List<String> activeDays =
+        status.workers
+            .where(
+              (DynamicRebuildWorkerState worker) =>
+                  worker.isRunning || worker.isRetrying,
+            )
+            .map((DynamicRebuildWorkerState worker) => worker.dayKey.trim())
+            .where((String dayKey) => dayKey.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((String a, String b) => b.compareTo(a));
+    if (activeDays.isNotEmpty) {
+      return '当前活跃日期：${activeDays.join(' / ')}';
+    }
     final String scope = [
       if (status.currentDayKey.isNotEmpty) status.currentDayKey,
       if (status.currentRangeLabel.isNotEmpty) status.currentRangeLabel,
     ].join(' · ');
-    if (status.totalSegments <= 0) return scope;
-    final int currentOrdinal = _dynamicRebuildCurrentOrdinal(status);
-    if (currentOrdinal <= 0) return scope;
-    final String prefix = status.isActive ? '当前正在重建' : '当前停留在';
-    if (scope.isEmpty) {
-      return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态';
+    if (scope.isNotEmpty) {
+      final String prefix = status.isActive ? '当前正在重建' : '当前停留在';
+      return '$prefix：$scope';
     }
-    return '$prefix：第 $currentOrdinal/${status.totalSegments} 条动态 · $scope';
+    if (status.timelineCutoffDayKey.trim().isNotEmpty) {
+      return '时间线当前可见到：${status.timelineCutoffDayKey.trim()}';
+    }
+    if (status.totalSegments <= 0) return '';
+    final int currentOrdinal = _dynamicRebuildCurrentOrdinal(status);
+    if (currentOrdinal <= 0) return '';
+    return '当前进度停留在第 $currentOrdinal/${status.totalSegments} 条动态';
   }
 
   String _dynamicRebuildStageHeadline(DynamicRebuildTaskStatus status) {
@@ -2185,6 +2623,41 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final String model = status.aiModel.trim();
     if (model.isEmpty) return '';
     return '当前模型：$model';
+  }
+
+  String _dynamicRebuildWorkerStatusLine(DynamicRebuildWorkerState? worker) {
+    if (worker == null) return '等待分配';
+    if (worker.isRetrying) {
+      final int retryLimit = worker.retryLimit > 0 ? worker.retryLimit : 3;
+      final int retryCount = worker.retryCount > 0 ? worker.retryCount : 1;
+      return '重试 $retryCount/$retryLimit';
+    }
+    if (worker.dayKey.trim().isNotEmpty) return worker.dayKey.trim();
+    if (worker.isFailedWaiting) return '等待手动继续';
+    if (worker.isCompleted) return '当天完成';
+    return '等待分配';
+  }
+
+  String _dynamicRebuildWorkerChipLabel(DynamicRebuildWorkerState? worker) {
+    if (worker == null || worker.isIdle) return '空闲';
+    if (worker.isRetrying) return '重试中';
+    if (worker.isRunning) return '运行中';
+    if (worker.isCompleted) return '已完成';
+    if (worker.isFailedWaiting) return '待继续';
+    return worker.status;
+  }
+
+  Color _dynamicRebuildWorkerColor(
+    BuildContext context,
+    DynamicRebuildWorkerState? worker,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    if (worker == null || worker.isIdle) return cs.outline;
+    if (worker.isRunning) return cs.tertiary;
+    if (worker.isRetrying) return cs.secondary;
+    if (worker.isCompleted) return cs.primary;
+    if (worker.isFailedWaiting) return cs.error;
+    return cs.onSurfaceVariant;
   }
 
   Widget _buildDynamicRebuildStageLogsSection(
@@ -2233,7 +2706,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
 
   String _dynamicRebuildSerialHint(DynamicRebuildTaskStatus status) {
     if (status.isPreparing || status.isPending || status.isRunning) {
-      return '按时间顺序串行重建中，当前只处理这一条动态，不会提前触发后面的动态。';
+      return '按天并发重建中：线程会先串行跑完当天全部动态，再领取下一个未完成日期。';
+    }
+    if (status.canContinue || status.isCompletedWithFailures) {
+      return '继续重建只会续跑未完成或失败待续的日期，不会重新清空已完成结果。';
     }
     return '';
   }
@@ -2243,6 +2719,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     if (status.isPreparing) return '准备中';
     if (status.isPending || status.isRunning) return '运行中';
     if (status.isCompleted) return '已完成';
+    if (status.isCompletedWithFailures) return '部分完成';
     if (status.isFailed) return '失败';
     if (status.isCancelled) return '已停止';
     return status.status;
@@ -2251,6 +2728,7 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
   Color _dynamicRebuildTaskColor(DynamicRebuildTaskStatus status) {
     final cs = Theme.of(context).colorScheme;
     if (status.isCompleted) return cs.primary;
+    if (status.isCompletedWithFailures) return cs.secondary;
     if (status.isPreparing || status.isPending || status.isRunning) {
       return cs.tertiary;
     }
@@ -3072,7 +3550,10 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final bool becameTerminal = previous.isActive && !current.isActive;
     final bool terminalChanged =
         previous.status != current.status &&
-        (current.isCompleted || current.isFailed || current.isCancelled);
+        (current.isCompleted ||
+            current.isCompletedWithFailures ||
+            current.isFailed ||
+            current.isCancelled);
     final bool timelineVisibilityChanged =
         _dynamicRebuildTimelineVisibilityFingerprint(previous) !=
         _dynamicRebuildTimelineVisibilityFingerprint(current);
@@ -3118,9 +3599,18 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
       final previous = _dynamicRebuildTaskStatus;
       final status = await _db.startDynamicRebuildTask(
         resumeExisting: resumeExisting,
+        dayConcurrency: _selectedDynamicRebuildDayConcurrency,
       );
       if (!mounted) return;
-      setState(() => _dynamicRebuildTaskStatus = status);
+      setState(() {
+        _dynamicRebuildTaskStatus = status;
+        if (status.dayConcurrency > 0) {
+          _selectedDynamicRebuildDayConcurrency = math.max(
+            1,
+            math.min(10, status.dayConcurrency),
+          );
+        }
+      });
       _publishDynamicRebuildUiSnapshot();
       if (status.isCompleted && status.totalSegments == 0) {
         UINotifier.info(context, '没有可重建的动态');

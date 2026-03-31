@@ -22,6 +22,8 @@ class UserSettingKeys {
   static const String segmentDurationSec = 'segment_duration_sec';
   static const String aiMinRequestIntervalSec = 'ai_min_request_interval_sec';
   static const String dynamicAutoRepairEnabled = 'dynamic_auto_repair_enabled';
+  static const String dynamicRebuildDayConcurrency =
+      'dynamic_rebuild_day_concurrency';
   // 动态合并（仅自动合并；强制合并不受限）
   static const String mergeDynamicMaxSpanSec = 'merge_dynamic_max_span_sec';
   static const String mergeDynamicMaxGapSec = 'merge_dynamic_max_gap_sec';

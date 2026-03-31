@@ -19,10 +19,16 @@ Map<String, Object?> _mockDynamicRebuildStatus = <String, Object?>{
   'startedAt': 0,
   'updatedAt': 0,
   'completedAt': 0,
+  'dayConcurrency': 1,
   'totalSegments': 0,
   'processedSegments': 0,
   'failedSegments': 0,
+  'totalDays': 0,
+  'completedDays': 0,
+  'pendingDays': 0,
+  'failedDays': 0,
   'currentDayKey': '',
+  'timelineCutoffDayKey': '',
   'currentSegmentId': 0,
   'currentRangeLabel': '',
   'currentStage': '',
@@ -33,6 +39,7 @@ Map<String, Object?> _mockDynamicRebuildStatus = <String, Object?>{
   'progressPercent': '0%',
   'aiModel': '',
   'recentLogs': <String>[],
+  'workers': <Object?>[],
 };
 String? _mockTodayLogsDir;
 
@@ -147,10 +154,16 @@ void main() {
       'startedAt': 0,
       'updatedAt': 0,
       'completedAt': 0,
+      'dayConcurrency': 1,
       'totalSegments': 0,
       'processedSegments': 0,
       'failedSegments': 0,
+      'totalDays': 0,
+      'completedDays': 0,
+      'pendingDays': 0,
+      'failedDays': 0,
       'currentDayKey': '',
+      'timelineCutoffDayKey': '',
       'currentSegmentId': 0,
       'currentRangeLabel': '',
       'currentStage': '',
@@ -161,6 +174,7 @@ void main() {
       'progressPercent': '0%',
       'aiModel': '',
       'recentLogs': <String>[],
+      'workers': <Object?>[],
     };
     _mockTodayLogsDir = null;
   });
@@ -290,10 +304,16 @@ void main() {
         'startedAt': DateTime(2024, 4, 8, 9).millisecondsSinceEpoch,
         'updatedAt': DateTime(2024, 4, 8, 9, 30).millisecondsSinceEpoch,
         'completedAt': DateTime(2024, 4, 8, 9, 31).millisecondsSinceEpoch,
+        'dayConcurrency': 1,
         'totalSegments': 6,
         'processedSegments': 2,
         'failedSegments': 0,
+        'totalDays': 6,
+        'completedDays': 2,
+        'pendingDays': 4,
+        'failedDays': 0,
         'currentDayKey': _dateKey(cutoffDay),
+        'timelineCutoffDayKey': _dateKey(cutoffDay),
         'currentSegmentId': 0,
         'currentRangeLabel': '12:00:00-12:30:00',
         'currentStage': 'cancelled',
@@ -304,6 +324,7 @@ void main() {
         'progressPercent': '33.3%',
         'aiModel': 'gemini-2.0-flash',
         'recentLogs': <String>['09:30:00 已停止：已停止后台重建，当前进度可稍后继续'],
+        'workers': <Object?>[],
       };
 
       await tester.pumpWidget(_buildHarness());
@@ -359,10 +380,16 @@ void main() {
         'startedAt': DateTime(2026, 3, 12, 9).millisecondsSinceEpoch,
         'updatedAt': DateTime(2026, 3, 12, 9, 5, 1).millisecondsSinceEpoch,
         'completedAt': 0,
+        'dayConcurrency': 1,
         'totalSegments': 2,
         'processedSegments': 1,
         'failedSegments': 0,
+        'totalDays': 1,
+        'completedDays': 0,
+        'pendingDays': 1,
+        'failedDays': 0,
         'currentDayKey': '2026-03-12',
+        'timelineCutoffDayKey': '2026-03-12',
         'currentSegmentId': 102,
         'currentRangeLabel': '09:05-09:35',
         'currentStage': 'summary_wait_ai',
@@ -376,6 +403,21 @@ void main() {
           '09:05:00 开始重建当前动态：第 2/2 条 · 2026-03-12 09:05-09:35',
           '09:05:00 构建总结提示词：为段落 #102 组织 3 张样本图片',
           '09:05:01 等待 AI 总结：已准备请求模型，总图片 3 张',
+        ],
+        'workers': <Object?>[
+          <String, Object?>{
+            'slotId': 1,
+            'status': 'running',
+            'dayKey': '2026-03-12',
+            'totalSegments': 2,
+            'processedSegments': 1,
+            'currentRangeLabel': '09:05-09:35',
+            'currentStageLabel': '等待 AI 总结',
+            'currentStageDetail': '已准备请求模型，总图片 3 张',
+            'currentSegmentId': 102,
+            'retryCount': 0,
+            'retryLimit': 3,
+          },
         ],
       };
 
@@ -401,4 +443,121 @@ void main() {
       }
     }
   });
+
+  testWidgets(
+    'dynamic rebuild sheet shows concurrency controls and worker cards',
+    (WidgetTester tester) async {
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'screen_memo_segment_page_concurrency_',
+      );
+      try {
+        final Directory root = Directory(p.join(tmp.path, 'root'));
+        await root.create(recursive: true);
+        await _prepareDesktopDbRoot(root);
+        await _seedTimelineDays(<DateTime>[DateTime(2024, 4, 10)]);
+        _mockDynamicRebuildStatus = <String, Object?>{
+          'taskId': 'dynamic_rebuild_parallel',
+          'status': 'running',
+          'startedAt': DateTime(2026, 3, 12, 9).millisecondsSinceEpoch,
+          'updatedAt': DateTime(2026, 3, 12, 9, 6).millisecondsSinceEpoch,
+          'completedAt': 0,
+          'dayConcurrency': 3,
+          'totalSegments': 7,
+          'processedSegments': 3,
+          'failedSegments': 0,
+          'totalDays': 4,
+          'completedDays': 1,
+          'pendingDays': 3,
+          'failedDays': 1,
+          'currentDayKey': '2026-03-12',
+          'timelineCutoffDayKey': '2026-03-12',
+          'currentSegmentId': 302,
+          'currentRangeLabel': '09:30:00-10:00:00',
+          'currentStage': 'summary_wait_ai',
+          'currentStageLabel': '等待 AI 总结',
+          'currentStageDetail': '线程正在并发处理缺失日期',
+          'lastError': null,
+          'isActive': true,
+          'progressPercent': '42.9%',
+          'aiModel': 'gpt-4.1',
+          'recentLogs': <String>[
+            '09:05:00 [T1][2026-03-12] 领取日期任务：准备处理 2026-03-12 的 3 条动态',
+            '09:05:01 [T2][2026-03-10] 领取日期任务：准备处理 2026-03-10 的 2 条动态',
+          ],
+          'workers': <Object?>[
+            <String, Object?>{
+              'slotId': 1,
+              'status': 'running',
+              'dayKey': '2026-03-12',
+              'totalSegments': 3,
+              'processedSegments': 1,
+              'currentRangeLabel': '09:30:00-10:00:00',
+              'currentStageLabel': '等待 AI 总结',
+              'currentStageDetail': '线程 1 正在处理 2026-03-12',
+              'currentSegmentId': 302,
+              'retryCount': 0,
+              'retryLimit': 3,
+              'recentStreamChunks': <String>['第一条流式预览', '第二条流式预览', '第三条流式预览'],
+            },
+            <String, Object?>{
+              'slotId': 2,
+              'status': 'retrying',
+              'dayKey': '2026-03-10',
+              'totalSegments': 2,
+              'processedSegments': 1,
+              'currentRangeLabel': '14:00:00-14:30:00',
+              'currentStageLabel': '恢复失败日期',
+              'currentStageDetail': '准备从失败位置继续第 1/3 次续跑',
+              'currentSegmentId': 401,
+              'retryCount': 1,
+              'retryLimit': 3,
+              'recentStreamChunks': <String>[],
+            },
+            <String, Object?>{
+              'slotId': 3,
+              'status': 'idle',
+              'dayKey': '',
+              'totalSegments': 0,
+              'processedSegments': 0,
+              'currentRangeLabel': '',
+              'currentStageLabel': '',
+              'currentStageDetail': '',
+              'currentSegmentId': 0,
+              'retryCount': 0,
+              'retryLimit': 3,
+              'recentStreamChunks': <String>[],
+            },
+          ],
+        };
+
+        await tester.pumpWidget(_buildHarness());
+        await _pumpUntilFound(
+          tester,
+          find.text(_summaryText(DateTime(2024, 4, 10))),
+        );
+
+        await tester.tap(find.byTooltip('重建动态'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('并发天数'), findsOneWidget);
+        expect(find.text('线程 1'), findsOneWidget);
+        expect(find.text('线程 2'), findsOneWidget);
+        expect(find.text('线程 3'), findsOneWidget);
+        expect(find.text('重试 1/3'), findsOneWidget);
+        expect(find.textContaining('并发 3'), findsOneWidget);
+        expect(find.textContaining('待续失败天数 1'), findsOneWidget);
+        expect(find.text('最近 3 条流式数据'), findsOneWidget);
+        expect(find.textContaining('1. 第三条流式预览'), findsOneWidget);
+        expect(find.textContaining('2. 第二条流式预览'), findsOneWidget);
+        expect(find.textContaining('3. 第一条流式预览'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      } finally {
+        if (await tmp.exists()) {
+          await tmp.delete(recursive: true);
+        }
+      }
+    },
+  );
 }

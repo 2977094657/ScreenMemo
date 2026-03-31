@@ -1,15 +1,99 @@
 part of 'screenshot_database.dart';
 
+class DynamicRebuildWorkerStatus {
+  DynamicRebuildWorkerStatus._();
+
+  static const String idle = 'idle';
+  static const String running = 'running';
+  static const String retrying = 'retrying';
+  static const String completed = 'completed';
+  static const String failedWaiting = 'failed_waiting';
+}
+
+class DynamicRebuildWorkerState {
+  final int slotId;
+  final String status;
+  final String dayKey;
+  final int totalSegments;
+  final int processedSegments;
+  final String currentRangeLabel;
+  final String currentStageLabel;
+  final String currentStageDetail;
+  final int currentSegmentId;
+  final int retryCount;
+  final int retryLimit;
+  final List<String> recentStreamChunks;
+
+  const DynamicRebuildWorkerState({
+    required this.slotId,
+    required this.status,
+    required this.dayKey,
+    required this.totalSegments,
+    required this.processedSegments,
+    required this.currentRangeLabel,
+    required this.currentStageLabel,
+    required this.currentStageDetail,
+    required this.currentSegmentId,
+    required this.retryCount,
+    required this.retryLimit,
+    required this.recentStreamChunks,
+  });
+
+  factory DynamicRebuildWorkerState.fromMap(Map<dynamic, dynamic>? map) {
+    final data = map ?? const <dynamic, dynamic>{};
+    return DynamicRebuildWorkerState(
+      slotId: DynamicRebuildTaskStatus.safeTaskInt(data['slotId']),
+      status: (data['status'] as String?)?.trim().isNotEmpty == true
+          ? (data['status'] as String).trim()
+          : DynamicRebuildWorkerStatus.idle,
+      dayKey: (data['dayKey'] as String?)?.trim() ?? '',
+      totalSegments: DynamicRebuildTaskStatus.safeTaskInt(
+        data['totalSegments'],
+      ),
+      processedSegments: DynamicRebuildTaskStatus.safeTaskInt(
+        data['processedSegments'],
+      ),
+      currentRangeLabel: (data['currentRangeLabel'] as String?)?.trim() ?? '',
+      currentStageLabel: (data['currentStageLabel'] as String?)?.trim() ?? '',
+      currentStageDetail: (data['currentStageDetail'] as String?)?.trim() ?? '',
+      currentSegmentId: DynamicRebuildTaskStatus.safeTaskInt(
+        data['currentSegmentId'],
+      ),
+      retryCount: DynamicRebuildTaskStatus.safeTaskInt(data['retryCount']),
+      retryLimit: DynamicRebuildTaskStatus.safeTaskInt(data['retryLimit']),
+      recentStreamChunks:
+          ((data['recentStreamChunks'] as List?) ?? const <Object?>[])
+              .map((Object? value) => value?.toString().trim() ?? '')
+              .where((String value) => value.isNotEmpty)
+              .take(3)
+              .toList(growable: false),
+    );
+  }
+
+  bool get isIdle => status == DynamicRebuildWorkerStatus.idle;
+  bool get isRunning => status == DynamicRebuildWorkerStatus.running;
+  bool get isRetrying => status == DynamicRebuildWorkerStatus.retrying;
+  bool get isCompleted => status == DynamicRebuildWorkerStatus.completed;
+  bool get isFailedWaiting =>
+      status == DynamicRebuildWorkerStatus.failedWaiting;
+}
+
 class DynamicRebuildTaskStatus {
   final String taskId;
   final String status;
   final int startedAt;
   final int updatedAt;
   final int completedAt;
+  final int dayConcurrency;
   final int totalSegments;
   final int processedSegments;
   final int failedSegments;
+  final int totalDays;
+  final int completedDays;
+  final int pendingDays;
+  final int failedDays;
   final String currentDayKey;
+  final String timelineCutoffDayKey;
   final int currentSegmentId;
   final String currentRangeLabel;
   final String currentStage;
@@ -20,6 +104,7 @@ class DynamicRebuildTaskStatus {
   final String progressPercent;
   final String aiModel;
   final List<String> recentLogs;
+  final List<DynamicRebuildWorkerState> workers;
 
   const DynamicRebuildTaskStatus({
     required this.taskId,
@@ -27,10 +112,16 @@ class DynamicRebuildTaskStatus {
     required this.startedAt,
     required this.updatedAt,
     required this.completedAt,
+    required this.dayConcurrency,
     required this.totalSegments,
     required this.processedSegments,
     required this.failedSegments,
+    required this.totalDays,
+    required this.completedDays,
+    required this.pendingDays,
+    required this.failedDays,
     required this.currentDayKey,
+    required this.timelineCutoffDayKey,
     required this.currentSegmentId,
     required this.currentRangeLabel,
     required this.currentStage,
@@ -41,6 +132,7 @@ class DynamicRebuildTaskStatus {
     required this.progressPercent,
     required this.aiModel,
     required this.recentLogs,
+    required this.workers,
   });
 
   factory DynamicRebuildTaskStatus.fromMap(Map<dynamic, dynamic>? map) {
@@ -58,10 +150,18 @@ class DynamicRebuildTaskStatus {
       startedAt: _safeTaskInt(data['startedAt']),
       updatedAt: _safeTaskInt(data['updatedAt']),
       completedAt: _safeTaskInt(data['completedAt']),
+      dayConcurrency: _safeTaskInt(data['dayConcurrency']) <= 0
+          ? 1
+          : _safeTaskInt(data['dayConcurrency']),
       totalSegments: _safeTaskInt(data['totalSegments']),
       processedSegments: _safeTaskInt(data['processedSegments']),
       failedSegments: _safeTaskInt(data['failedSegments']),
+      totalDays: _safeTaskInt(data['totalDays']),
+      completedDays: _safeTaskInt(data['completedDays']),
+      pendingDays: _safeTaskInt(data['pendingDays']),
+      failedDays: _safeTaskInt(data['failedDays']),
       currentDayKey: (data['currentDayKey'] as String?) ?? '',
+      timelineCutoffDayKey: (data['timelineCutoffDayKey'] as String?) ?? '',
       currentSegmentId: _safeTaskInt(data['currentSegmentId']),
       currentRangeLabel: (data['currentRangeLabel'] as String?) ?? '',
       currentStage: (data['currentStage'] as String?) ?? '',
@@ -75,6 +175,26 @@ class DynamicRebuildTaskStatus {
           .map((Object? value) => value?.toString() ?? '')
           .where((String value) => value.trim().isNotEmpty)
           .toList(growable: false),
+      workers: ((data['workers'] as List?) ?? const <Object?>[])
+          .map((Object? value) {
+            if (value is Map) return DynamicRebuildWorkerState.fromMap(value);
+            return const DynamicRebuildWorkerState(
+              slotId: 0,
+              status: DynamicRebuildWorkerStatus.idle,
+              dayKey: '',
+              totalSegments: 0,
+              processedSegments: 0,
+              currentRangeLabel: '',
+              currentStageLabel: '',
+              currentStageDetail: '',
+              currentSegmentId: 0,
+              retryCount: 0,
+              retryLimit: 0,
+              recentStreamChunks: <String>[],
+            );
+          })
+          .where((DynamicRebuildWorkerState value) => value.slotId > 0)
+          .toList(growable: false),
     );
   }
 
@@ -84,20 +204,33 @@ class DynamicRebuildTaskStatus {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  static int safeTaskInt(Object? value) => _safeTaskInt(value);
+
   bool get isIdle => status == 'idle' || taskId.isEmpty;
   bool get isPreparing => status == 'preparing';
   bool get isPending => status == 'pending';
   bool get isRunning => status == 'running';
   bool get isCompleted => status == 'completed';
+  bool get isCompletedWithFailures => status == 'completed_with_failures';
   bool get isFailed => status == 'failed';
   bool get isCancelled => status == 'cancelled';
   bool get hasStageInfo =>
       currentStageLabel.trim().isNotEmpty ||
       currentStageDetail.trim().isNotEmpty;
-  bool get canContinue =>
-      (isFailed || isCancelled) &&
-      totalSegments > 0 &&
-      processedSegments < totalSegments;
+  bool get canContinue {
+    if (taskId.isEmpty || isActive || isIdle) {
+      return false;
+    }
+    final bool hasRemainingDays =
+        pendingDays > 0 || failedDays > 0 || completedDays < totalDays;
+    final bool hasRemainingSegments =
+        totalSegments > 0 && processedSegments < totalSegments;
+    final bool canResumeFromPreparing =
+        (isFailed || isCancelled || isCompletedWithFailures) &&
+        totalSegments <= 0 &&
+        totalDays <= 0;
+    return hasRemainingDays || hasRemainingSegments || canResumeFromPreparing;
+  }
 
   String toText() {
     final StringBuffer sb = StringBuffer();
@@ -113,14 +246,21 @@ class DynamicRebuildTaskStatus {
     sb.writeln(
       'completedAt: ${completedAt > 0 ? _fmtTaskTime(completedAt) : '(null)'}',
     );
+    sb.writeln('dayConcurrency: $dayConcurrency');
     sb.writeln(
       'progress: $processedSegments/$totalSegments ($progressPercent)',
     );
     sb.writeln('failedSegments: $failedSegments');
+    sb.writeln(
+      'days: completed=$completedDays total=$totalDays pending=$pendingDays failed=$failedDays',
+    );
     if (currentDayKey.isNotEmpty || currentRangeLabel.isNotEmpty) {
       sb.writeln(
         'current: ${[if (currentDayKey.isNotEmpty) currentDayKey, if (currentRangeLabel.isNotEmpty) currentRangeLabel].join(' / ')}',
       );
+    }
+    if (timelineCutoffDayKey.isNotEmpty) {
+      sb.writeln('timelineCutoffDayKey: $timelineCutoffDayKey');
     }
     if (currentSegmentId > 0) {
       sb.writeln('currentSegmentId: $currentSegmentId');
@@ -141,6 +281,14 @@ class DynamicRebuildTaskStatus {
       sb.writeln('recentLogs:');
       for (final String line in recentLogs) {
         sb.writeln('- $line');
+      }
+    }
+    if (workers.isNotEmpty) {
+      sb.writeln('workers:');
+      for (final DynamicRebuildWorkerState worker in workers) {
+        sb.writeln(
+          '- T${worker.slotId} ${worker.status} ${worker.dayKey} ${worker.processedSegments}/${worker.totalSegments} retry=${worker.retryCount}/${worker.retryLimit}',
+        );
       }
     }
     return sb.toString().trimRight();
@@ -1815,14 +1963,13 @@ ORDER BY day ASC
           newestStartMillis,
         ).add(const Duration(days: 1)).millisecondsSinceEpoch -
         1;
-    final List<Map<String, dynamic>> segments =
-        await listSegmentsEx(
-          limit: 1 << 30,
-          onlyNoSummary: false,
-          requireSamples: requireSamples,
-          startMillis: oldestStartMillis,
-          endMillis: newestEndMillis,
-        );
+    final List<Map<String, dynamic>> segments = await listSegmentsEx(
+      limit: 1 << 30,
+      onlyNoSummary: false,
+      requireSamples: requireSamples,
+      startMillis: oldestStartMillis,
+      endMillis: newestEndMillis,
+    );
     final bool hasMoreOlder = await hasOlderThan(oldestDayKey);
     return SegmentTimelineBatch(
       segments: segments,
@@ -1857,8 +2004,7 @@ ORDER BY day ASC
               : (i + chunkSize);
           final List<int> chunk = segmentIds.sublist(i, end);
           final String placeholders = List.filled(chunk.length, '?').join(',');
-          final List<Map<String, Object?>> statsRows = await db.rawQuery(
-            '''
+          final List<Map<String, Object?>> statsRows = await db.rawQuery('''
             SELECT
               segment_id,
               COUNT(*) AS sample_count,
@@ -1866,9 +2012,7 @@ ORDER BY day ASC
             FROM segment_samples
             WHERE segment_id IN ($placeholders)
             GROUP BY segment_id
-            ''',
-            chunk,
-          );
+            ''', chunk);
           for (final Map<String, Object?> item in statsRows) {
             final int segmentId = ((item['segment_id'] as num?) ?? 0).toInt();
             if (segmentId <= 0) continue;
@@ -1893,8 +2037,8 @@ ORDER BY day ASC
 
     for (final Map<String, dynamic> row in rows) {
       final int segmentId = ((row['id'] as num?) ?? 0).toInt();
-      final String appPackages =
-          ((row['app_packages'] as String?) ?? '').trim();
+      final String appPackages = ((row['app_packages'] as String?) ?? '')
+          .trim();
       final String aggregatedPackages =
           (appPackagesBySegmentId[segmentId] ?? '').trim();
       row['sample_count'] = sampleCountBySegmentId[segmentId] ?? 0;
@@ -2147,10 +2291,14 @@ ORDER BY day ASC
 
   Future<DynamicRebuildTaskStatus> startDynamicRebuildTask({
     bool resumeExisting = false,
+    int dayConcurrency = 1,
   }) async {
     final dynamic raw = await ScreenshotDatabase._channel.invokeMethod(
       'startDynamicRebuildTask',
-      <String, dynamic>{'resumeExisting': resumeExisting},
+      <String, dynamic>{
+        'resumeExisting': resumeExisting,
+        'dayConcurrency': dayConcurrency,
+      },
     );
     if (raw is Map) {
       return DynamicRebuildTaskStatus.fromMap(raw);
