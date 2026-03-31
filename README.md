@@ -8,7 +8,7 @@
 
 「屏幕无痕，记忆有痕」
 
-[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ 群](https://img.shields.io/badge/QQ-%E5%B1%8F%E5%BF%86%20640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
+[![Dart](https://img.shields.io/badge/Dart-3.8.1+-0175C2?logo=dart)](https://dart.dev) [![Android](https://img.shields.io/badge/Android-3DDC84?logo=android)](https://www.android.com) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![QQ 群](https://img.shields.io/badge/QQ-屏忆 640740880-12B7F5?logo=tencentqq&logoColor=white)](https://qm.qq.com/q/ob2NMRDzna) [<img src="https://gh-down-badges.linkof.link/297709457/ScreenMemo" alt="Downloads" />](https://github.com/2977094657/ScreenMemo/releases)
 
 </div>
 
@@ -360,4 +360,5 @@ dart run tool/i18n_audit.dart --update-baseline
 - [Flutter](https://flutter.dev)
 - [Google ML Kit](https://developers.google.com/ml-kit)
 - [SQLite](https://www.sqlite.org/)
+- 感谢 linux.do 社区的交流与讨论支持。
 - 所有贡献者与依赖维护者
