@@ -26,6 +26,14 @@ Local-first smart screenshot memo and retrieval for Android: automatic capture, 
 
 ScreenMemo is a local-first smart screenshot memo and retrieval tool. It automatically records what appears on your Android screen, then uses OCR and an AI assistant to make it searchable so you can quickly recover clues and restore context later.
 
+### Start Building Your Personal Digital Memory Today
+
+**Why start now?**
+
+- **Irreversible knowledge loss**: As more people begin feeding their personal AI with everyday data, every unrecorded day leaves your future AI assistant with a little less grounding to truly understand you.
+- **The quiet compounding power of time**: Data cannot be crammed at the last minute. People who start preserving digital specimens today will naturally own a personal memory vault that others will struggle to catch up with when AI reaches its next leap.
+- **Recover your scattered digital self**: Your most valuable context is often fragmented across different apps and devices. Without ScreenMemo to preserve it, much of it will fade with time and become difficult to fully awaken again.
+
 ## Screenshots
 
 The screenshots below cover some of the pages people use most often. More details and screens are not shown here, and you are welcome to try the app yourself.
