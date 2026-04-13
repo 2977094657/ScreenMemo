@@ -17,6 +17,7 @@ import 'services/navigation_service.dart';
 import 'services/daily_summary_service.dart';
 import 'services/locale_service.dart';
 import 'services/nocturne_memory_rebuild_service.dart';
+import 'services/nocturne_memory_maintenance_service.dart';
 import 'services/screenshot_database.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import 'pages/app_screenshot_settings_page.dart';
@@ -134,6 +135,10 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       DailySummaryService.instance.refreshAutoRefreshSchedule();
       // ignore: discarded_futures
       NocturneMemoryRebuildService.instance.ensureInitialized(autoResume: true);
+      // ignore: discarded_futures
+      NocturneMemoryMaintenanceService.instance.ensureInitialized(
+        autoResume: true,
+      );
     });
   }
 
@@ -165,6 +170,10 @@ class _ScreenMemoAppState extends State<ScreenMemoApp>
       DailySummaryService.instance.refreshAutoRefreshSchedule();
       // ignore: discarded_futures
       NocturneMemoryRebuildService.instance.ensureInitialized(autoResume: true);
+      // ignore: discarded_futures
+      NocturneMemoryMaintenanceService.instance.ensureInitialized(
+        autoResume: true,
+      );
     }
   }
 
