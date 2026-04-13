@@ -8,10 +8,16 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../constants/user_settings_keys.dart';
-import 'ai_request_gateway.dart';
-import 'ai_settings_service.dart';
-import 'flutter_logger.dart';
-import 'nocturne_memory_prompts.dart';
+import 'memory_entity_audit_service.dart';
+import 'memory_entity_merge_planner_service.dart';
+import 'memory_entity_models.dart';
+import 'memory_entity_policy.dart';
+import 'memory_entity_resolution_service.dart';
+import 'memory_entity_retrieval_service.dart';
+import 'memory_entity_store.dart';
+import 'memory_visual_extraction_service.dart';
+import 'nocturne_memory_roots.dart';
+import 'nocturne_memory_signal_service.dart';
 import 'nocturne_memory_service.dart';
 import 'screenshot_database.dart';
 import 'user_settings_service.dart';
@@ -27,56 +33,24 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
     'com.fqyw.screen_memo/accessibility',
   );
 
-  static const List<String> _rootCategories = <String>[
-    'identity',
-    'people',
-    'places',
-    'organizations',
-    'preferences',
-    'interests',
-    'projects',
-    'goals',
-    'habits',
-    'other',
-  ];
-
-  static const List<NocturneMemorySnapshotTarget>
-  snapshotTargets = <NocturneMemorySnapshotTarget>[
-    NocturneMemorySnapshotTarget(
-      name: 'identity',
-      uri: 'core://my_user/identity',
-    ),
-    NocturneMemorySnapshotTarget(name: 'people', uri: 'core://my_user/people'),
-    NocturneMemorySnapshotTarget(name: 'places', uri: 'core://my_user/places'),
-    NocturneMemorySnapshotTarget(
-      name: 'organizations',
-      uri: 'core://my_user/organizations',
-    ),
-    NocturneMemorySnapshotTarget(
-      name: 'preferences',
-      uri: 'core://my_user/preferences',
-    ),
-    NocturneMemorySnapshotTarget(
-      name: 'interests',
-      uri: 'core://my_user/interests',
-    ),
-    NocturneMemorySnapshotTarget(
-      name: 'projects',
-      uri: 'core://my_user/projects',
-    ),
-    NocturneMemorySnapshotTarget(name: 'goals', uri: 'core://my_user/goals'),
-    NocturneMemorySnapshotTarget(name: 'habits', uri: 'core://my_user/habits'),
-    NocturneMemorySnapshotTarget(name: 'other', uri: 'core://my_user/other'),
-  ];
-
-  static const Set<String> _actionToolNames = <String>{
-    'update_memory',
-    'create_memory',
-  };
+  static const List<NocturneMemoryRootSpec> snapshotTargets =
+      NocturneMemoryRoots.all;
 
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
   final NocturneMemoryService _mem = NocturneMemoryService.instance;
-  final AIRequestGateway _gateway = AIRequestGateway.instance;
+  final NocturneMemorySignalService _signals =
+      NocturneMemorySignalService.instance;
+  final MemoryEntityStore _entityStore = MemoryEntityStore.instance;
+  final MemoryEntityRetrievalService _entityRetrieval =
+      MemoryEntityRetrievalService.instance;
+  final MemoryVisualExtractionService _visualExtractor =
+      MemoryVisualExtractionService.instance;
+  final MemoryEntityResolutionService _entityResolver =
+      MemoryEntityResolutionService.instance;
+  final MemoryEntityMergePlannerService _mergePlanner =
+      MemoryEntityMergePlannerService.instance;
+  final MemoryEntityAuditService _entityAudit =
+      MemoryEntityAuditService.instance;
   final UserSettingsService _settings = UserSettingsService.instance;
 
   bool _initialized = false;
@@ -111,10 +85,6 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
   bool _notificationSyncInFlight = false;
   bool _notificationSyncPending = false;
   bool _runLoopInFlight = false;
-
-  final Map<String, String> _memoryContentCache = <String, String>{};
-  bool _allowedUriIndexLoaded = false;
-  final Set<String> _knownAllowedUris = <String>{};
 
   bool get initialized => _initialized;
   bool get running => _running;
@@ -170,15 +140,13 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
     _lastError = null;
     _lastSegmentId = null;
     _logs.clear();
-    _memoryContentCache.clear();
-    _allowedUriIndexLoaded = false;
-    _knownAllowedUris.clear();
     _publish(forceNotification: true);
 
     _appendLog('开始：重建记忆（纯图片语料，每次<=$maxImagesPerCall张）');
 
     try {
       await _mem.resetAll();
+      await _signals.resetAll();
       _appendLog('已清空记忆库');
       await _bootstrapAnchors();
       _appendLog('已创建基础节点（core://agent, core://my_user, ...）');
@@ -488,41 +456,43 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
   }
 
   Future<void> _bootstrapAnchors() async {
-    await _mem.createMemory(
-      parentUri: 'core://',
-      title: 'agent',
-      priority: 0,
-      content:
-          '你是 ScreenMemo 内置的助手。\n'
-          '- 目标：帮助用户回忆、检索、总结。\n'
-          '- 记忆：使用 Nocturne 风格的 URI 图结构。',
-    );
-    await _mem.createMemory(
-      parentUri: 'core://',
-      title: 'my_user',
-      priority: 0,
-      content:
-          '这里存放“用户长期记忆”（由动态截图自动构建）。\n'
-          '- 写入规则：仅记录稳定、可复用的信息；不确定就不写。',
-    );
-    await _mem.createMemory(
-      parentUri: 'core://agent',
-      title: 'my_user',
-      priority: 0,
-      content:
-          '与用户交互时：\n'
-          '- 优先尊重用户的偏好与约束。\n'
-          '- 需要时可引用长期记忆，但避免臆测。',
-    );
-
-    for (final String c in _rootCategories) {
+    await _mem.runBootstrapWrite(() async {
       await _mem.createMemory(
-        parentUri: 'core://my_user',
-        title: c,
-        priority: 1,
-        content: '（自动构建中）',
+        parentUri: 'core://',
+        title: 'agent',
+        priority: 0,
+        content:
+            '你是 ScreenMemo 内置的助手。\n'
+            '- 目标：帮助用户回忆、检索、总结。\n'
+            '- 记忆：使用 Nocturne 风格的 URI 图结构。',
       );
-    }
+      await _mem.createMemory(
+        parentUri: 'core://',
+        title: 'my_user',
+        priority: 0,
+        content:
+            '这里存放“用户长期记忆”（由动态截图自动构建）。\n'
+            '- 写入规则：仅记录稳定、可复用的信息；不确定就不写。',
+      );
+      await _mem.createMemory(
+        parentUri: 'core://agent',
+        title: 'my_user',
+        priority: 0,
+        content:
+            '与用户交互时：\n'
+            '- 优先尊重用户的偏好与约束。\n'
+            '- 需要时可引用长期记忆，但避免臆测。',
+      );
+
+      for (final NocturneMemoryRootSpec root in snapshotTargets) {
+        await _mem.createMemory(
+          parentUri: 'core://my_user',
+          title: root.name,
+          priority: 1,
+          content: '（自动构建中）',
+        );
+      }
+    });
   }
 
   Future<void> _runLoop() async {
@@ -531,6 +501,29 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
     try {
       while (_running && !_stopRequested && !_paused) {
         if (_cursor >= _segments.length) {
+          _phase = 'finalizing';
+          _appendLog('收尾：根据信号物化长期记忆');
+          _publish();
+          try {
+            await _signals.materializeProfiles(
+              shouldStop: () => _stopRequested,
+            );
+            if (_stopRequested) {
+              break;
+            }
+            _appendLog('已完成信号物化与封存整理');
+          } catch (e) {
+            _appendLog('信号物化失败：$e');
+            _failed += 1;
+            _paused = true;
+            _running = false;
+            _phase = 'paused';
+            _pauseReason = 'finalize_failed';
+            _lastError = e.toString();
+            await _persistState(force: true);
+            _publish(forceNotification: true);
+            return;
+          }
           _appendLog('完成：所有段落已处理');
           _running = false;
           _stopRequested = false;
@@ -553,7 +546,8 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
             seg,
           );
           if (outcome == NocturneMemorySegmentOutcome.paused) return;
-          if (_paused || !_running || _stopRequested) return;
+          if (_paused || !_running) return;
+          if (_stopRequested) break;
         } catch (e) {
           _appendLog('段落 #$sid 处理失败：$e');
           _failed += 1;
@@ -577,18 +571,22 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
       }
 
       if (_stopRequested) {
-        _appendLog('已停止');
-        _running = false;
-        _stopRequested = false;
-        _paused = true;
-        _phase = 'stopped';
-        _pauseReason = 'stopped';
-        await _persistState(force: true);
-        _publish(forceNotification: true);
+        await _finalizeStopped();
       }
     } finally {
       _runLoopInFlight = false;
     }
+  }
+
+  Future<void> _finalizeStopped() async {
+    _appendLog('已停止');
+    _running = false;
+    _stopRequested = false;
+    _paused = true;
+    _phase = 'stopped';
+    _pauseReason = 'stopped';
+    await _persistState(force: true);
+    _publish(forceNotification: true);
   }
 
   Future<NocturneMemorySegmentOutcome> _processSegment(
@@ -600,6 +598,7 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
     final List<Map<String, dynamic>> samplesRaw = await _db.listSegmentSamples(
       sid,
     );
+    if (_stopRequested) return NocturneMemorySegmentOutcome.ok;
     final List<Map<String, dynamic>> samples =
         List<Map<String, dynamic>>.from(samplesRaw)..sort((a, b) {
           final int ai = (a['position_index'] as int?) ?? 0;
@@ -625,14 +624,6 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
       return NocturneMemorySegmentOutcome.skipped;
     }
 
-    final List<AIEndpoint> endpoints = await AISettingsService.instance
-        .getEndpointCandidates(context: 'memory');
-    if (endpoints.isEmpty) {
-      throw StateError('未配置可用的 AI Endpoint（memory 上下文）');
-    }
-
-    final String sysPrompt = _systemPrompt();
-
     final int total = filtered.length;
     int cursor = (_segmentSampleCursorSegmentId == sid)
         ? _segmentSampleCursor
@@ -650,46 +641,26 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
       if (_stopRequested) break;
       batchIndex += 1;
       final int batchStart = cursor;
-
-      final List<Map<String, Object?>> parts = <Map<String, Object?>>[
-        <String, Object?>{
-          'type': 'text',
-          'text':
-              '以下是同一段时间窗口内的截图（本批次最多 $maxImagesPerCall 张）。你可能会在同一段落收到多个批次，请逐批输出紧凑格式动作列表。',
-        },
-      ];
-      try {
-        final String snapshot = await _buildUserMemorySnapshot();
-        if (snapshot.trim().isNotEmpty) {
-          parts.add(<String, Object?>{'type': 'text', 'text': snapshot});
-        }
-      } catch (_) {}
-
+      final List<Map<String, dynamic>> attachedSamples =
+          <Map<String, dynamic>>[];
       int attached = 0;
       while (attached < maxImagesPerCall && cursor < total) {
+        if (_stopRequested) break;
         final Map<String, dynamic> m = filtered[cursor];
         cursor += 1;
         final String path = (m['file_path'] as String?) ?? '';
         if (path.trim().isEmpty) continue;
-
-        final int ts = (m['capture_time'] as int?) ?? 0;
-        final DateTime dt = DateTime.fromMillisecondsSinceEpoch(ts).toLocal();
-        final String app = ((m['app_name'] as String?) ?? '').trim();
-        final String label =
-            '截图：${DateFormat('yyyy-MM-dd HH:mm:ss').format(dt)} ${app.isEmpty ? '' : '· $app'}';
-
-        final String dataUrl;
         try {
-          dataUrl = await _readAsDataUrl(path);
+          final File file = File(path);
+          if (!await file.exists()) {
+            _skippedMissingFiles += 1;
+            continue;
+          }
         } catch (_) {
           _skippedMissingFiles += 1;
           continue;
         }
-        parts.add(<String, Object?>{'type': 'text', 'text': label.trim()});
-        parts.add(<String, Object?>{
-          'type': 'image_url',
-          'image_url': <String, Object?>{'url': dataUrl},
-        });
+        attachedSamples.add(m);
         attached += 1;
       }
 
@@ -697,6 +668,7 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
       _segmentSampleTotal = total;
       _segmentSampleCursor = cursor;
       _publish();
+      if (_stopRequested) return NocturneMemorySegmentOutcome.ok;
 
       if (attached <= 0) {
         if (!anyAttachedOverall) {
@@ -711,87 +683,137 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
       anyAttachedOverall = true;
 
       final int batchEnd = cursor;
+      final String batchEvidenceSummary = _buildBatchEvidenceSummary(
+        sid: sid,
+        batchIndex: batchIndex,
+        batchStart: batchStart,
+        batchEnd: batchEnd,
+        total: total,
+        attachedSamples: attachedSamples,
+      );
+      final NocturneMemorySignalContext signalContext =
+          NocturneMemorySignalContext(
+            segmentId: sid,
+            batchIndex: batchIndex,
+            segmentStartMs: _toInt(seg['start_time']),
+            segmentEndMs: _resolveSignalSegmentEndMs(
+              seg: seg,
+              attachedSamples: attachedSamples,
+            ),
+            evidenceSummary: batchEvidenceSummary,
+            appNames:
+                attachedSamples
+                    .map(
+                      (sample) =>
+                          ((sample['app_name'] as String?) ?? '').trim(),
+                    )
+                    .where((app) => app.isNotEmpty)
+                    .toSet()
+                    .toList()
+                  ..sort(),
+          );
       _appendLog(
         '段落 #$sid 批次 #$batchIndex：样本 ${batchStart + 1}-$batchEnd/$total，实际附上=$attached',
       );
-
-      final List<AIMessage> messages = <AIMessage>[
-        AIMessage(role: 'system', content: sysPrompt),
-        AIMessage(role: 'user', content: '', apiContent: parts),
-      ];
-
-      AIGatewayResult result;
+      final MemoryBatchExtractionResult extraction;
       try {
-        result = await _gateway.complete(
-          endpoints: endpoints,
-          messages: messages,
-          responseStartMarker: '',
-          timeout: const Duration(minutes: 2),
-          logContext: 'memory_rebuild_segment_${sid}_batch_$batchIndex',
+        extraction = await _visualExtractor.extractBatch(
+          segmentId: sid,
+          batchIndex: batchIndex,
+          samples: attachedSamples,
         );
       } catch (e) {
-        try {
-          await FlutterLogger.nativeWarn('Memory', 'AI 调用失败 sid=$sid err=$e');
-        } catch (_) {}
-        rethrow;
-      }
-
-      final String raw = (result.content).trim();
-      if (raw.isEmpty) {
-        throw StateError('AI 返回为空');
-      }
-
-      final List<NocturneMemoryAction> actions;
-      try {
-        actions = parseModelOutput(content: raw);
-      } catch (e) {
-        _appendLog('解析失败（批次 #$batchIndex），暂停：$e');
+        await _recordBatchRunSafe(
+          segmentId: sid,
+          batchIndex: batchIndex,
+          status: 'extract_failed',
+          sampleCount: attachedSamples.length,
+          candidateCount: 0,
+          appliedCount: 0,
+          reviewCount: 0,
+          skippedCount: 0,
+        );
+        _appendLog('AI 视觉提取失败（批次 #$batchIndex），暂停：$e');
         _failed += 1;
         _paused = true;
         _running = false;
         _phase = 'paused';
-        _pauseReason = 'parse_failed';
-        _lastRawResponse = raw;
+        _pauseReason = 'extract_failed';
         _lastError = e.toString();
         await _persistState(force: true);
         _publish(forceNotification: true);
         return NocturneMemorySegmentOutcome.paused;
       }
+      _lastRawResponse = extraction.rawPayload;
 
-      if (actions.isEmpty) {
-        _appendLog('段落 #$sid 批次 #$batchIndex 无可写入记忆（actions=0）');
+      if (_stopRequested) {
+        _appendLog('停止：已跳过段落 #$sid 批次 #$batchIndex 的实体写入');
+        return NocturneMemorySegmentOutcome.ok;
+      }
+
+      if (extraction.entities.isEmpty) {
+        _appendLog('段落 #$sid 批次 #$batchIndex 未提取到可进入候选层的实体');
+        await _recordBatchRunSafe(
+          segmentId: sid,
+          batchIndex: batchIndex,
+          status: 'empty',
+          sampleCount: attachedSamples.length,
+          candidateCount: 0,
+          appliedCount: 0,
+          reviewCount: 0,
+          skippedCount: 0,
+          modelName: extraction.modelUsed,
+        );
         await Future<void>.delayed(Duration.zero);
         continue;
       }
 
-      final List<NocturneMemoryAction> ordered = <NocturneMemoryAction>[
-        ...actions.where((a) => a.tool == 'create_memory'),
-        ...actions.where((a) => a.tool == 'update_memory'),
-        ...actions.where(
-          (a) => a.tool != 'create_memory' && a.tool != 'update_memory',
-        ),
-      ];
-
-      for (int i = 0; i < ordered.length; i++) {
-        final NocturneMemoryAction a = ordered[i];
+      int appliedCount = 0;
+      int reviewCount = 0;
+      int skippedCount = 0;
+      for (final MemoryVisualCandidate candidate in extraction.entities) {
+        if (_stopRequested) {
+          _appendLog('停止：段落 #$sid 批次 #$batchIndex 在实体处理前终止');
+          return NocturneMemorySegmentOutcome.ok;
+        }
         try {
-          if (a.tool == 'update_memory') {
-            await _applyUpdateMemoryAction(a.args);
-          } else if (a.tool == 'create_memory') {
-            await _applyCreateMemoryAction(a.args);
-          } else {
-            _appendLog('忽略不支持的 tool=${a.tool}');
+          final _EntityCandidateApplyOutcome outcome =
+              await _applyEntityCandidate(
+                sid: sid,
+                batchIndex: batchIndex,
+                candidate: candidate,
+                signalContext: signalContext,
+                attachedSamples: attachedSamples,
+              );
+          if (outcome.applied) {
+            appliedCount += 1;
+          }
+          if (outcome.queuedForReview) {
+            reviewCount += 1;
+          }
+          if (outcome.skipped) {
+            skippedCount += 1;
           }
         } catch (e) {
+          await _recordBatchRunSafe(
+            segmentId: sid,
+            batchIndex: batchIndex,
+            status: 'entity_apply_failed',
+            sampleCount: attachedSamples.length,
+            candidateCount: extraction.entities.length,
+            appliedCount: appliedCount,
+            reviewCount: reviewCount,
+            skippedCount: skippedCount,
+            modelName: extraction.modelUsed,
+          );
           _appendLog(
-            '应用失败（批次 #$batchIndex 第${i + 1}/${ordered.length}条），暂停：$e',
+            '实体应用失败（批次 #$batchIndex，${candidate.preferredName}），暂停：$e',
           );
           _failed += 1;
           _paused = true;
           _running = false;
           _phase = 'paused';
-          _pauseReason = 'apply_failed';
-          _lastRawResponse = raw;
+          _pauseReason = 'entity_apply_failed';
           _lastError = e.toString();
           await _persistState(force: true);
           _publish(forceNotification: true);
@@ -799,11 +821,161 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
         }
       }
 
-      _appendLog('段落 #$sid 批次 #$batchIndex 写入完成（actions=${ordered.length}）');
+      await _recordBatchRunSafe(
+        segmentId: sid,
+        batchIndex: batchIndex,
+        status: 'completed',
+        sampleCount: attachedSamples.length,
+        candidateCount: extraction.entities.length,
+        appliedCount: appliedCount,
+        reviewCount: reviewCount,
+        skippedCount: skippedCount,
+        modelName: extraction.modelUsed,
+      );
+      _appendLog(
+        '段落 #$sid 批次 #$batchIndex 写入完成（applied=$appliedCount, review=$reviewCount, skipped=$skippedCount）',
+      );
       await Future<void>.delayed(Duration.zero);
     }
 
     return NocturneMemorySegmentOutcome.ok;
+  }
+
+  Future<_EntityCandidateApplyOutcome> _applyEntityCandidate({
+    required int sid,
+    required int batchIndex,
+    required MemoryVisualCandidate candidate,
+    required NocturneMemorySignalContext signalContext,
+    required List<Map<String, dynamic>> attachedSamples,
+  }) async {
+    if (candidate.shouldSkip) {
+      final String reason = (candidate.skipReason ?? '').trim();
+      _appendLog(
+        '段落 #$sid 批次 #$batchIndex 跳过候选 ${candidate.preferredName}：${reason.isEmpty ? 'AI 判定不值得进入候选层' : reason}',
+      );
+      return const _EntityCandidateApplyOutcome.skipped();
+    }
+
+    final MemoryEntityRootPolicy? policy = MemoryEntityPolicies.forRootKey(
+      candidate.rootKey,
+    );
+    if (policy == null) {
+      _appendLog('段落 #$sid 批次 #$batchIndex 忽略未知 root_key=${candidate.rootKey}');
+      return const _EntityCandidateApplyOutcome.skipped();
+    }
+
+    final List<MemoryEntityExemplar> allExemplars = <MemoryEntityExemplar>[
+      for (int index = 0; index < attachedSamples.length; index += 1)
+        MemoryEntityExemplar.fromMap(<String, dynamic>{
+          ...attachedSamples[index],
+          'position_index': index,
+        }),
+    ].where((item) => item.filePath.isNotEmpty).toList(growable: false);
+    final List<MemoryEntityExemplar> evidenceExemplars =
+        candidate.evidenceFrames.isEmpty
+        ? allExemplars
+        : <MemoryEntityExemplar>[
+            for (final int frame in candidate.evidenceFrames)
+              if (frame >= 0 && frame < allExemplars.length)
+                allExemplars[frame],
+          ];
+    final List<MemoryEntityExemplar> candidateExemplars =
+        evidenceExemplars.isEmpty ? allExemplars : evidenceExemplars;
+
+    final List<MemoryEntityDossier> shortlist = await _entityRetrieval
+        .retrieveShortlist(policy: policy, candidate: candidate);
+    final MemoryEntityResolutionWorkflowResult resolutionWorkflow =
+        await _entityResolver.resolve(
+          candidate: candidate,
+          shortlist: shortlist,
+          currentExemplars: candidateExemplars,
+        );
+    final MemoryStructuredDecisionResult<MemoryEntityResolutionDecision>
+    resolutionResult = resolutionWorkflow.finalResult;
+    final MemoryEntityResolutionDecision resolution = resolutionResult.value;
+    final MemoryEntityDossier? matched = resolution.matchedEntityId == null
+        ? null
+        : shortlist.cast<MemoryEntityDossier?>().firstWhere(
+            (item) => item?.entityId == resolution.matchedEntityId,
+            orElse: () => null,
+          );
+    final MemoryStructuredDecisionResult<MemoryEntityMergePlan>
+    mergePlanResult = await _mergePlanner.plan(
+      candidate: candidate,
+      resolution: resolution,
+      matched: matched,
+      currentExemplars: candidateExemplars,
+    );
+    final MemoryEntityMergePlan mergePlan = mergePlanResult.value;
+    final MemoryStructuredDecisionResult<MemoryEntityAuditDecision>
+    auditResult = await _entityAudit.audit(
+      candidate: candidate,
+      resolution: resolution,
+      mergePlan: mergePlan,
+      shortlist: shortlist,
+      currentExemplars: candidateExemplars,
+    );
+    final MemoryEntityApplyResult applied = await _entityStore
+        .applyAIPipelineResult(
+          visualCandidate: candidate,
+          resolutionWorkflow: resolutionWorkflow,
+          mergePlanResult: mergePlanResult,
+          auditResult: auditResult,
+          shortlist: shortlist,
+          segmentId: signalContext.segmentId,
+          batchIndex: signalContext.batchIndex,
+          segmentStartMs: signalContext.segmentStartMs,
+          segmentEndMs: signalContext.segmentEndMs,
+          evidenceSummary: signalContext.evidenceSummary,
+          appNames: signalContext.appNames,
+          exemplars: candidateExemplars,
+        );
+    if (applied.queuedForReview || applied.record == null) {
+      _appendLog(
+        '实体候选 ${candidate.preferredName} 已进入 review 队列'
+        '${(applied.reviewReason ?? '').trim().isEmpty ? '' : '：${applied.reviewReason!.trim()}'}',
+      );
+      return const _EntityCandidateApplyOutcome.queuedReview();
+    }
+    final MemoryEntityRecord record = applied.record!;
+    final String state = record.status == MemoryEntityStatus.active
+        ? 'active'
+        : record.status == MemoryEntityStatus.archived
+        ? 'archived'
+        : 'candidate';
+    _appendLog(
+      '实体 ${record.preferredName} -> ${record.displayUri} '
+      '(${applied.created ? 'new' : 'merge'}, $state${applied.needsReview ? ', review' : ''})',
+    );
+    return const _EntityCandidateApplyOutcome.applied();
+  }
+
+  Future<void> _recordBatchRunSafe({
+    required int segmentId,
+    required int batchIndex,
+    required String status,
+    required int sampleCount,
+    required int candidateCount,
+    required int appliedCount,
+    required int reviewCount,
+    required int skippedCount,
+    String? modelName,
+  }) async {
+    try {
+      await _entityStore.recordBatchRun(
+        segmentId: segmentId,
+        batchIndex: batchIndex,
+        status: status,
+        sampleCount: sampleCount,
+        candidateCount: candidateCount,
+        appliedCount: appliedCount,
+        reviewCount: reviewCount,
+        skippedCount: skippedCount,
+        modelName: modelName,
+      );
+    } catch (e) {
+      _appendLog('批次指标写入失败（段落 #$segmentId 批次 #$batchIndex）：$e');
+    }
   }
 
   static int? _toInt(Object? v) {
@@ -813,603 +985,62 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
     return int.tryParse(v.toString());
   }
 
-  static final RegExp _slugRe = RegExp(r'^[a-z0-9_-]+$');
-  static final RegExp _digitsOnlyRe = RegExp(r'^[0-9]+$');
-
-  static String? _toTrimmedOrNull(Object? v) {
-    if (v == null) return null;
-    final String s = v.toString().trim();
-    return s.isEmpty ? null : s;
-  }
-
-  bool _isAllowedUpdateTarget(String uri) {
-    final String u = uri.trim();
-    if (u.isEmpty) return false;
-    try {
-      final NocturneUri parsed = _mem.parseUri(u);
-      if (parsed.domain != 'core') return false;
-      final String canon = _mem.makeUri(parsed.domain, parsed.path);
-      return snapshotTargets.any(
-        (t) => canon == t.uri || canon.startsWith('${t.uri}/'),
-      );
-    } catch (_) {
-      return false;
-    }
-  }
-
-  bool _isAllowedCreateParent(String parentUri) {
-    final String u = parentUri.trim();
-    if (u.isEmpty) return false;
-    try {
-      final NocturneUri parsed = _mem.parseUri(u);
-      if (parsed.domain != 'core') return false;
-      final String canon = _mem.makeUri(parsed.domain, parsed.path);
-      return snapshotTargets.any(
-        (t) => canon == t.uri || canon.startsWith('${t.uri}/'),
-      );
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<String> _readMemoryContentCached(String uri) async {
-    final String u = uri.trim();
-    final String? cached = _memoryContentCache[u];
-    if (cached != null) return cached;
-    final Map<String, dynamic> node = await _mem.readMemory(u);
-    final String content = (node['content'] is String)
-        ? (node['content'] as String)
-        : '';
-    _memoryContentCache[u] = content;
-    return content;
-  }
-
-  static String _normLine(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
-
-  List<String> _extractBulletLines(String append) {
-    final String t = append
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .trim();
-    if (t.isEmpty) return const <String>[];
-    final List<String> out = <String>[];
-    final Set<String> used = <String>{};
-    for (final String raw in t.split('\n')) {
-      String line = raw.trim();
-      if (line.isEmpty) continue;
-      if (line.startsWith('-')) {
-        line = '- ${line.substring(1).trimLeft()}';
-      } else if (line.startsWith('•') || line.startsWith('*')) {
-        line = '- ${line.substring(1).trimLeft()}';
-      } else {
-        line = '- $line';
-      }
-      if (line == '-' || line == '- ' || line.trim() == '-') continue;
-      final String key = _normLine(line);
-      if (!used.add(key)) continue;
-      out.add(line);
-      if (out.length >= 60) break;
-    }
-    return out;
-  }
-
-  Future<void> _applyUpdateMemoryAction(Map<String, dynamic> args) async {
-    final String uriRaw = (args['uri'] ?? '').toString().trim();
-    if (uriRaw.isEmpty) return;
-    final NocturneUri parsed = _mem.parseUri(uriRaw);
-    final String uri = _mem.makeUri(parsed.domain, parsed.path);
-    if (!_isAllowedUpdateTarget(uri)) {
-      throw StateError('illegal update target uri: $uri');
-    }
-    _knownAllowedUris.add(uri);
-
-    final String appendRaw = (args['append'] ?? '').toString();
-    final List<String> bulletLines = _extractBulletLines(appendRaw);
-    if (bulletLines.isEmpty) return;
-
-    final String existing = await _readMemoryContentCached(uri);
-    final Set<String> existingSet = existing
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split('\n')
-        .map(_normLine)
-        .where((e) => e.isNotEmpty)
-        .toSet();
-
-    final List<String> newLines = <String>[];
-    for (final String line in bulletLines) {
-      final String k = _normLine(line);
-      if (k.isEmpty) continue;
-      if (existingSet.contains(k)) continue;
-      existingSet.add(k);
-      newLines.add(line);
-      if (newLines.length >= 20) break;
-    }
-    if (newLines.isEmpty) {
-      _appendLog('去重：$uri 没有新增要点，跳过');
-      return;
-    }
-
-    String append = '\n${newLines.join('\n')}';
-    if (append.length > 6000) {
-      append = append.substring(0, 6000);
-    }
-    await _mem.updateMemory(uri: uri, append: append);
-    _memoryContentCache[uri] = existing + append;
-    _appendLog('产出记忆：${_formatMemoryPathForLog(uri)}（追加 ${newLines.length} 条）');
-  }
-
-  String _formatMemoryPathForLog(String uri) {
-    final String u = uri.trim();
-    if (u.isEmpty) return u;
-    try {
-      final NocturneUri parsed = _mem.parseUri(u);
-      final String path = parsed.path.trim();
-      return path.isEmpty ? parsed.uri : path;
-    } catch (_) {
-      return u;
-    }
-  }
-
-  String? _allowedRootForUri(String uri) {
-    final String u = uri.trim();
-    if (u.isEmpty) return null;
-    for (final NocturneMemorySnapshotTarget t in snapshotTargets) {
-      if (u == t.uri) return t.uri;
-      final String prefix = '${t.uri}/';
-      if (u.startsWith(prefix)) return t.uri;
-    }
-    return null;
-  }
-
-  Future<void> _ensureParentChainExists(String parentUri) async {
-    final String p = parentUri.trim();
-    if (p.isEmpty) return;
-    await _ensureAllowedUriIndexLoaded();
-
-    final String? root = _allowedRootForUri(p);
-    if (root == null) {
-      throw StateError('illegal parent_uri: $parentUri');
-    }
-    if (p == root) return;
-
-    final String rel = p.substring(root.length + 1);
-    final List<String> parts = rel
-        .split('/')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return;
-    if (parts.length > 10) {
-      throw StateError('create_memory parent path too deep (>10): $parentUri');
-    }
-
-    String cur = root;
-    for (final String part in parts) {
-      if (!_slugRe.hasMatch(part) || _digitsOnlyRe.hasMatch(part)) {
-        throw StateError('create_memory invalid slug in parent path: $part');
-      }
-      final String next = '$cur/$part';
-      if (_knownAllowedUris.contains(next)) {
-        cur = next;
-        continue;
-      }
-
-      const String dirContent = '（自动创建的目录节点，用于组织子记忆）';
-      try {
-        final Map<String, dynamic> created = await _mem.createMemory(
-          parentUri: cur,
-          title: part,
-          priority: 5,
-          content: dirContent,
-        );
-        final String createdUri = (created['uri'] ?? '').toString().trim();
-        final String u = createdUri.isNotEmpty ? createdUri : next;
-        _knownAllowedUris.add(u);
-        _memoryContentCache[u] = dirContent;
-        _appendLog('产出记忆：${_formatMemoryPathForLog(u)}（新建目录）');
-      } catch (e) {
-        final String msg = e.toString();
-        if (!msg.contains('path already exists')) rethrow;
-        _knownAllowedUris.add(next);
-        _memoryContentCache[next] = dirContent;
-      }
-      cur = next;
-    }
-  }
-
-  Future<void> _applyCreateMemoryAction(Map<String, dynamic> args) async {
-    final String? parentUriArg = _toTrimmedOrNull(args['parent_uri']);
-    final String? uriArg = _toTrimmedOrNull(args['uri']);
-    String content = (args['content'] ?? '').toString();
-    if ((parentUriArg == null && uriArg == null) || content.trim().isEmpty) {
-      return;
-    }
-
-    String parentUri;
-    String? titleRaw = _toTrimmedOrNull(args['title']);
-
-    if (parentUriArg != null) {
-      final NocturneUri parsedParent = _mem.parseUri(parentUriArg);
-      parentUri = _mem.makeUri(parsedParent.domain, parsedParent.path);
-    } else {
-      final NocturneUri parsed = _mem.parseUri(uriArg!);
-      final String targetUri = _mem.makeUri(parsed.domain, parsed.path);
-      if (!_isUnderAllowedRootsUri(targetUri)) {
-        throw StateError('illegal uri for create_memory: $targetUri');
-      }
-      final String path = parsed.path.trim();
-      if (path.isEmpty) {
-        throw StateError('create_memory invalid uri (empty path): $targetUri');
-      }
-      final int cut = path.lastIndexOf('/');
-      final String parentPath = cut >= 0 ? path.substring(0, cut) : '';
-      final String leaf = cut >= 0 ? path.substring(cut + 1) : path;
-      parentUri = _mem.makeUri(parsed.domain, parentPath);
-      if (titleRaw == null) {
-        titleRaw = leaf;
-      } else if (titleRaw != leaf) {
-        throw StateError(
-          'create_memory title must match uri leaf: title=$titleRaw uri=$targetUri',
-        );
-      }
-    }
-
-    if (!_isAllowedCreateParent(parentUri)) {
-      throw StateError('illegal parent_uri for create_memory: $parentUri');
-    }
-
-    final int priority = ((_toInt(args['priority']) ?? 2).clamp(0, 9)).toInt();
-    if (titleRaw == null) {
-      throw StateError('create_memory missing required title (slug)');
-    }
-    final String title = titleRaw;
-    if (!_slugRe.hasMatch(title) || _digitsOnlyRe.hasMatch(title)) {
-      throw StateError('create_memory invalid title slug: $title');
-    }
-    if (title.length > 64) {
-      throw StateError('create_memory title too long (max 64): $title');
-    }
-    final String? disclosure = _toTrimmedOrNull(args['disclosure']);
-    content = content.trimRight();
-    if (content.length > 6000) {
-      content = content.substring(0, 6000);
-    }
-    try {
-      await _ensureParentChainExists(parentUri);
-      final Map<String, dynamic> created = await _mem.createMemory(
-        parentUri: parentUri,
-        content: content,
-        priority: priority,
-        title: title,
-        disclosure: disclosure,
-      );
-      final String createdUri = (created['uri'] ?? '').toString().trim();
-      if (createdUri.isNotEmpty) {
-        _knownAllowedUris.add(createdUri);
-        _memoryContentCache[createdUri] = content;
-        _appendLog('产出记忆：${_formatMemoryPathForLog(createdUri)}（新建）');
-      }
-    } catch (e) {
-      final String msg = e.toString();
-      if (msg.contains('path already exists')) {
-        _appendLog('create_memory 已存在，跳过：$parentUri/$title');
-        return;
-      }
-      rethrow;
-    }
-  }
-
-  String _tailContent(
-    String content, {
-    required int maxLines,
-    required int maxChars,
+  String _buildBatchEvidenceSummary({
+    required int sid,
+    required int batchIndex,
+    required int batchStart,
+    required int batchEnd,
+    required int total,
+    required List<Map<String, dynamic>> attachedSamples,
   }) {
-    final String t = content
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .trim();
-    if (t.isEmpty) return '';
-    final List<String> lines = t
-        .split('\n')
-        .map((e) => e.trimRight())
-        .where((e) => e.trim().isNotEmpty)
-        .toList();
-    if (lines.isEmpty) return '';
-    final List<String> tail = (lines.length <= maxLines)
-        ? lines
-        : lines.sublist(lines.length - maxLines);
-    String joined = tail.join('\n');
-    if (joined.length > maxChars) {
-      joined = joined.substring(joined.length - maxChars);
-    }
-    return joined.trim();
-  }
-
-  bool _isUnderAllowedRootsUri(String uri) {
-    final String u = uri.trim();
-    if (u.isEmpty) return false;
-    return snapshotTargets.any((t) => u == t.uri || u.startsWith('${t.uri}/'));
-  }
-
-  Future<void> _ensureAllowedUriIndexLoaded() async {
-    if (_allowedUriIndexLoaded) return;
-    _allowedUriIndexLoaded = true;
-    try {
-      final List<Map<String, dynamic>> paths = await _mem.getAllPaths(
-        domain: 'core',
-      );
-      for (final Map<String, dynamic> p in paths) {
-        final String uri = (p['uri'] ?? '').toString().trim();
-        if (uri.isEmpty) continue;
-        if (_isUnderAllowedRootsUri(uri)) {
-          _knownAllowedUris.add(uri);
-        }
-      }
-      for (final NocturneMemorySnapshotTarget t in snapshotTargets) {
-        _knownAllowedUris.add(t.uri);
-      }
-    } catch (_) {
-      _allowedUriIndexLoaded = false;
-    }
-  }
-
-  List<String> _buildSubtreeIndexLines(
-    String rootUri, {
-    required int maxDepth,
-    required int maxLines,
-  }) {
-    final String root = rootUri.trim();
-    if (root.isEmpty) return const <String>[];
-    final String prefix = '$root/';
-
-    final _IndexTreeNode tree = _IndexTreeNode();
-    for (final String u in _knownAllowedUris) {
-      if (!u.startsWith(prefix)) continue;
-      final String rel = u.substring(prefix.length).trim();
-      if (rel.isEmpty) continue;
-      final List<String> parts = rel
-          .split('/')
-          .where((e) => e.trim().isNotEmpty)
-          .toList();
-      if (parts.isEmpty) continue;
-      _IndexTreeNode cur = tree;
-      for (int i = 0; i < parts.length && i < maxDepth; i++) {
-        cur = cur.children.putIfAbsent(parts[i], () => _IndexTreeNode());
-      }
-    }
-
-    if (tree.children.isEmpty) {
-      return const <String>['（无子节点）'];
-    }
-
-    final List<String> out = <String>[];
-    bool clipped = false;
-
-    void walk(_IndexTreeNode node, int depth) {
-      if (out.length >= maxLines) {
-        clipped = true;
-        return;
-      }
-      final List<String> keys = node.children.keys.toList()..sort();
-      for (final String k in keys) {
-        if (out.length >= maxLines) {
-          clipped = true;
-          return;
-        }
-        final String indent = depth <= 0
-            ? ''
-            : List<String>.filled(depth, '  ').join();
-        out.add('$indent- $k');
-        walk(node.children[k]!, depth + 1);
-        if (out.length >= maxLines) {
-          clipped = true;
-          return;
-        }
-      }
-    }
-
-    walk(tree, 0);
-    if (clipped) out.add('...');
-    return out;
-  }
-
-  Future<String> _buildUserMemorySnapshot() async {
-    await _ensureAllowedUriIndexLoaded();
-    final List<String> out = <String>[
-      '【当前长期记忆快照（用于去重）】',
-      '如果你准备写入的要点已经出现在快照里（含同义表达），必须跳过，不要重复写入。',
-    ];
-    for (final NocturneMemorySnapshotTarget t in snapshotTargets) {
-      String content = '';
-      try {
-        content = await _readMemoryContentCached(t.uri);
-      } catch (_) {
-        content = '';
-      }
-      final String tail = _tailContent(content, maxLines: 12, maxChars: 900);
-      out.add('');
-      out.add('[${t.name}] ${t.uri}');
-      out.add('目录索引（深度<=3，最多18行；用于避免重复建节点）：');
-      out.addAll(_buildSubtreeIndexLines(t.uri, maxDepth: 3, maxLines: 18));
-      out.add('内容尾部：');
-      out.add(tail.isEmpty ? '（空）' : tail);
-    }
-    return out.join('\n');
-  }
-
-  String _systemPrompt() {
-    return NocturneMemoryPrompts.rebuildSystemPrompt(
-      maxImages: maxImagesPerCall,
+    final List<DateTime> captureTimes =
+        attachedSamples
+            .map((sample) => _toInt(sample['capture_time']))
+            .whereType<int>()
+            .where((ts) => ts > 0)
+            .map((ts) => DateTime.fromMillisecondsSinceEpoch(ts).toLocal())
+            .toList()
+          ..sort();
+    final LinkedHashSet<String> appNames = LinkedHashSet<String>.from(
+      attachedSamples
+          .map((sample) => ((sample['app_name'] as String?) ?? '').trim())
+          .where((app) => app.isNotEmpty),
     );
-  }
 
-  static String _detectImageMimeByExt(String path) {
-    final String p = path.toLowerCase();
-    if (p.endsWith('.png')) return 'image/png';
-    if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg';
-    if (p.endsWith('.webp')) return 'image/webp';
-    return 'image/png';
-  }
-
-  Future<String> _readAsDataUrl(String path) async {
-    final File f = File(path);
-    if (!await f.exists()) {
-      throw StateError('file not found');
-    }
-    final String mime = _detectImageMimeByExt(path);
-    final List<int> bytes = await f.readAsBytes();
-    final String b64 = base64Encode(bytes);
-    return 'data:$mime;base64,$b64';
-  }
-
-  @visibleForTesting
-  static List<NocturneMemoryAction> parseModelOutput({
-    required String content,
-  }) {
-    final String raw = content.trim();
-    if (raw.isEmpty) throw const FormatException('empty response');
-    if (raw == '[]') return const <NocturneMemoryAction>[];
-
-    final ({bool matched, List<NocturneMemoryAction> actions}) compactParsed =
-        _tryParseCompactActions(raw);
-    if (compactParsed.matched) return compactParsed.actions;
-    throw const FormatException('compact action parse failed');
-  }
-
-  static ({bool matched, List<NocturneMemoryAction> actions})
-  _tryParseCompactActions(String raw) {
-    final String t = raw.trim();
-    if (!t.startsWith('[') || !t.endsWith(']')) {
-      return (matched: false, actions: const <NocturneMemoryAction>[]);
-    }
-    final String body = t.substring(1, t.length - 1).trim();
-    if (body.isEmpty) {
-      return (matched: true, actions: const <NocturneMemoryAction>[]);
-    }
-
-    final List<String> blocks = <String>[];
-    int depth = 0;
-    int blockStart = -1;
-    int consumed = 0;
-    for (int i = 0; i < body.length; i++) {
-      final String ch = body[i];
-      if (ch == '{') {
-        if (depth == 0) {
-          if (!_onlyCompactSeparators(body.substring(consumed, i))) {
-            return (matched: false, actions: const <NocturneMemoryAction>[]);
-          }
-          blockStart = i;
-        }
-        depth += 1;
-      } else if (ch == '}') {
-        if (depth <= 0) {
-          return (matched: false, actions: const <NocturneMemoryAction>[]);
-        }
-        depth -= 1;
-        if (depth == 0 && blockStart >= 0) {
-          blocks.add(body.substring(blockStart, i + 1));
-          blockStart = -1;
-          consumed = i + 1;
-        }
-      }
-    }
-    if (depth != 0) {
-      return (matched: false, actions: const <NocturneMemoryAction>[]);
-    }
-    if (!_onlyCompactSeparators(body.substring(consumed))) {
-      return (matched: false, actions: const <NocturneMemoryAction>[]);
-    }
-    if (blocks.isEmpty) {
-      return (matched: false, actions: const <NocturneMemoryAction>[]);
-    }
-
-    final List<NocturneMemoryAction> out = <NocturneMemoryAction>[];
-    for (final String block in blocks) {
-      final String inner = block.substring(1, block.length - 1).trim();
-      if (inner.isEmpty) {
-        return (matched: false, actions: const <NocturneMemoryAction>[]);
-      }
-
-      final String tool;
-      final String rest;
-      final int firstComma = inner.indexOf(',');
-      if (firstComma < 0) {
-        return (matched: false, actions: const <NocturneMemoryAction>[]);
+    final StringBuffer summary = StringBuffer(
+      '来自动态段 #$sid 批次 #$batchIndex 的截图',
+    );
+    summary.write('（样本 ${batchStart + 1}-$batchEnd/$total');
+    if (captureTimes.isNotEmpty) {
+      final DateFormat fmt = DateFormat('yyyy-MM-dd HH:mm:ss');
+      final String first = fmt.format(captureTimes.first);
+      final String last = fmt.format(captureTimes.last);
+      if (captureTimes.length == 1) {
+        summary.write('，时间：$first');
       } else {
-        tool = inner.substring(0, firstComma).trim().toLowerCase();
-        rest = inner.substring(firstComma + 1).trim();
+        summary.write('，时间：$first 至 $last');
       }
-      if (!_actionToolNames.contains(tool)) {
-        return (matched: false, actions: const <NocturneMemoryAction>[]);
-      }
-
-      if (tool == 'update_memory') {
-        final List<String> parts = _splitN(rest, ',', 2);
-        if (parts.length != 2) {
-          return (matched: false, actions: const <NocturneMemoryAction>[]);
-        }
-        final String uri = parts[0].trim();
-        final String append = parts[1].trim();
-        if (uri.isEmpty || append.isEmpty) {
-          return (matched: false, actions: const <NocturneMemoryAction>[]);
-        }
-        out.add(
-          NocturneMemoryAction(
-            tool: tool,
-            args: <String, dynamic>{'uri': uri, 'append': append},
-          ),
-        );
-      } else if (tool == 'create_memory') {
-        final List<String> parts = _splitN(rest, ',', 3);
-        if (parts.length != 3) {
-          return (matched: false, actions: const <NocturneMemoryAction>[]);
-        }
-        final String parentUri = parts[0].trim();
-        final String title = parts[1].trim();
-        final String content = parts[2].trim();
-        if (parentUri.isEmpty || title.isEmpty || content.isEmpty) {
-          return (matched: false, actions: const <NocturneMemoryAction>[]);
-        }
-        out.add(
-          NocturneMemoryAction(
-            tool: tool,
-            args: <String, dynamic>{
-              'parent_uri': parentUri,
-              'title': title,
-              'content': content,
-            },
-          ),
-        );
-      }
-      if (out.length >= 20) break;
     }
-    return (matched: true, actions: out);
+    summary.write('，共${attachedSamples.length}张');
+    if (appNames.isNotEmpty) {
+      summary.write('；应用：${appNames.join('、')}');
+    }
+    summary.write('）');
+    return summary.toString();
   }
 
-  static bool _onlyCompactSeparators(String value) {
-    for (int i = 0; i < value.length; i++) {
-      final String ch = value[i];
-      if (ch == ',' || ch.trim().isEmpty) continue;
-      return false;
+  int? _resolveSignalSegmentEndMs({
+    required Map<String, dynamic> seg,
+    required List<Map<String, dynamic>> attachedSamples,
+  }) {
+    final int? segmentEnd = _toInt(seg['end_time']);
+    if (segmentEnd != null && segmentEnd > 0) return segmentEnd;
+    int latest = 0;
+    for (final Map<String, dynamic> sample in attachedSamples) {
+      final int ts = _toInt(sample['capture_time']) ?? 0;
+      if (ts > latest) latest = ts;
     }
-    return true;
-  }
-
-  static List<String> _splitN(String input, String delimiter, int maxSplits) {
-    if (maxSplits <= 0) return <String>[input];
-    final List<String> out = <String>[];
-    int start = 0;
-    int splits = 0;
-    while (splits < maxSplits) {
-      final int idx = input.indexOf(delimiter, start);
-      if (idx < 0) break;
-      out.add(input.substring(start, idx));
-      start = idx + delimiter.length;
-      splits += 1;
-    }
-    out.add(input.substring(start));
-    return out;
+    return latest > 0 ? latest : null;
   }
 
   String _notificationStatus() {
@@ -1468,20 +1099,31 @@ class NocturneMemoryRebuildService extends ChangeNotifier {
   }
 }
 
-class NocturneMemorySnapshotTarget {
-  final String name;
-  final String uri;
-  const NocturneMemorySnapshotTarget({required this.name, required this.uri});
-}
-
-class _IndexTreeNode {
-  final Map<String, _IndexTreeNode> children = <String, _IndexTreeNode>{};
-}
-
-class NocturneMemoryAction {
-  final String tool;
-  final Map<String, dynamic> args;
-  const NocturneMemoryAction({required this.tool, required this.args});
-}
-
 enum NocturneMemorySegmentOutcome { ok, skipped, paused }
+
+class _EntityCandidateApplyOutcome {
+  const _EntityCandidateApplyOutcome({
+    required this.applied,
+    required this.queuedForReview,
+    required this.skipped,
+  });
+
+  const _EntityCandidateApplyOutcome.applied()
+    : applied = true,
+      queuedForReview = false,
+      skipped = false;
+
+  const _EntityCandidateApplyOutcome.queuedReview()
+    : applied = false,
+      queuedForReview = true,
+      skipped = false;
+
+  const _EntityCandidateApplyOutcome.skipped()
+    : applied = false,
+      queuedForReview = false,
+      skipped = true;
+
+  final bool applied;
+  final bool queuedForReview;
+  final bool skipped;
+}

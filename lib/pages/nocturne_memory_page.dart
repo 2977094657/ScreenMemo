@@ -456,7 +456,7 @@ class _NocturneMemoryPageState extends State<NocturneMemoryPage>
                     '这里是 Nocturne 风格的“URI 图记忆”。\n\n'
                     '重建时仅使用“动态”里的截图图片作为语料（每次最多 10 张）。\n'
                     '重建任务现在会在页面外继续运行，并在通知栏显示进度。\n'
-                    '当解析响应失败会立刻暂停，并在页面下方显示原始响应，允许你选择继续。',
+                    '当解析响应格式错误时，系统会持续自动修复并重试；只有修复过程本身出错或你主动停止时，任务才会退出当前批次。',
               );
             },
             icon: const Icon(Icons.info_outline, size: 20),

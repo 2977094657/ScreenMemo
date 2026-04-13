@@ -20,6 +20,7 @@ part 'screenshot_database_ai.dart';
 part 'screenshot_database_meta.dart';
 part 'screenshot_database_import_diagnostics.dart';
 part 'screenshot_database_nocturne_memory.dart';
+part 'screenshot_database_memory_entities.dart';
 part 'screenshot_database_search.dart';
 part 'screenshot_database_merge.dart';
 part 'screenshot_database_query.dart';
@@ -115,7 +116,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 36,
+          version: 42,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -153,7 +154,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 36,
+          version: 42,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -186,7 +187,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 36,
+          version: 42,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -213,7 +214,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 36,
+        version: 42,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -655,10 +656,14 @@ class ScreenshotDatabase {
 
     // Nocturne Memory（URI 图谱记忆）表结构
     await _createNocturneMemoryTables(db);
+    await _createMemoryEntityTables(db);
   }
 
   /// 升级回调：按版本增量迁移
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 42) {
+      await _renameLegacyUriFirstSignalTables(db);
+    }
     if (oldVersion < 2) {
       await _createAiTables(db);
     } else if (oldVersion < 4) {
@@ -1133,6 +1138,85 @@ class ScreenshotDatabase {
         );
       } catch (_) {}
     }
+
+    // v38: Entity-centric memory rebuild pipeline tables
+    if (oldVersion < 38) {
+      try {
+        await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+
+    // v39: fully switched to entity-first memory signals.
+    // Legacy signal tables are no longer created for fresh installs; any
+    // existing legacy signal rows are migrated lazily into the entity tables
+    // by MemoryEntityStore on first use.
+    if (oldVersion < 39) {
+      try {
+        await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+
+    // v40: persist claim evidence frames, event notes, and richer pipeline
+    // audit payloads for the entity-first memory pipeline.
+    if (oldVersion < 40) {
+      try {
+        await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+
+    // v41: align entity schema with the AI-first pipeline, add retrieval FTS,
+    // and persist per-batch quality metrics.
+    if (oldVersion < 41) {
+      try {
+        await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+    if (oldVersion < 42) {
+      try {
+        await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _renameLegacyUriFirstSignalTables(DatabaseExecutor db) async {
+    await _renameLegacyUriFirstSignalTable(
+      db,
+      sourceName: 'memory_signal_profiles',
+      legacyName: 'legacy_memory_signal_profiles',
+    );
+    await _renameLegacyUriFirstSignalTable(
+      db,
+      sourceName: 'memory_signal_episodes',
+      legacyName: 'legacy_memory_signal_episodes',
+    );
+  }
+
+  Future<void> _renameLegacyUriFirstSignalTable(
+    DatabaseExecutor db, {
+    required String sourceName,
+    required String legacyName,
+  }) async {
+    if (!await _tableExists(db, sourceName)) return;
+    final List<Map<String, Object?>> columns = await db.rawQuery(
+      'PRAGMA table_info($sourceName)',
+    );
+    final Set<String> columnNames = columns
+        .map((row) => (row['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final bool looksLegacy =
+        columnNames.contains('uri') && !columnNames.contains('entity_id');
+    if (!looksLegacy) return;
+    if (await _tableExists(db, legacyName)) {
+      try {
+        await db.execute(
+          'INSERT OR IGNORE INTO $legacyName SELECT * FROM $sourceName',
+        );
+      } catch (_) {}
+      await db.execute('DROP TABLE IF EXISTS $sourceName');
+      return;
+    }
+    await db.execute('ALTER TABLE $sourceName RENAME TO $legacyName');
   }
 
   /// 创建汇总统计表（用于版本升级）

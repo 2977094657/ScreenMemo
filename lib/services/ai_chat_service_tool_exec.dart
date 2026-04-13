@@ -1,6 +1,45 @@
 part of 'ai_chat_service.dart';
 
 extension AIChatServiceToolExecExt on AIChatService {
+  bool _isManagedMemoryUri(String uri) {
+    final String value = uri.trim();
+    if (value.isEmpty) return false;
+    try {
+      final NocturneUri parsed = NocturneMemoryService.instance.parseUri(value);
+      final String normalized = NocturneMemoryService.instance.makeUri(
+        parsed.domain,
+        parsed.path,
+      );
+      if (normalized == 'core://my_user' ||
+          normalized.startsWith('core://my_user/')) {
+        return true;
+      }
+      return MemoryEntityPolicies.forRootUri(normalized) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  List<AIMessage> _blockedManagedMemoryWriteResponse(
+    AIToolCall call, {
+    required String tool,
+    required Map<String, dynamic> details,
+  }) {
+    return <AIMessage>[
+      AIMessage(
+        role: 'tool',
+        content: jsonEncode(<String, dynamic>{
+          'tool': tool,
+          ...details,
+          'error': 'managed_memory_write_blocked',
+          'message':
+              'Entity-managed core://my_user/* memory is a read-only materialization view. Change the entity layer through the entity pipeline or maintenance flow instead of direct graph write tools.',
+        }),
+        toolCallId: call.id,
+      ),
+    ];
+  }
+
   Future<List<AIMessage>> _executeGetImagesTool(AIToolCall call) async {
     final Map<String, dynamic> args = _safeJsonObject(call.argumentsJson);
     final dynamic raw = args['filenames'];
@@ -177,8 +216,8 @@ extension AIChatServiceToolExecExt on AIChatService {
     }
 
     try {
-      final Map<String, dynamic> result =
-          await NocturneMemoryService.instance.readMemory(uri);
+      final Map<String, dynamic> result = await NocturneMemoryService.instance
+          .readMemory(uri);
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -212,8 +251,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final String titleRaw = (args['title'] ?? '').toString();
     final String disclosureRaw = (args['disclosure'] ?? '').toString();
     final String? title = titleRaw.trim().isEmpty ? null : titleRaw.trim();
-    final String? disclosure =
-        disclosureRaw.trim().isEmpty ? null : disclosureRaw.trim();
+    final String? disclosure = disclosureRaw.trim().isEmpty
+        ? null
+        : disclosureRaw.trim();
 
     if (parentUri.isEmpty || content.trim().isEmpty) {
       return <AIMessage>[
@@ -228,15 +268,23 @@ extension AIChatServiceToolExecExt on AIChatService {
       ];
     }
 
-    try {
-      final Map<String, dynamic> created =
-          await NocturneMemoryService.instance.createMemory(
-        parentUri: parentUri,
-        content: content,
-        priority: priority,
-        title: title,
-        disclosure: disclosure,
+    if (_isManagedMemoryUri(parentUri)) {
+      return _blockedManagedMemoryWriteResponse(
+        call,
+        tool: 'create_memory',
+        details: <String, dynamic>{'parent_uri': parentUri},
       );
+    }
+
+    try {
+      final Map<String, dynamic> created = await NocturneMemoryService.instance
+          .createMemory(
+            parentUri: parentUri,
+            content: content,
+            priority: priority,
+            title: title,
+            disclosure: disclosure,
+          );
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -278,16 +326,30 @@ extension AIChatServiceToolExecExt on AIChatService {
       ];
     }
 
-    try {
-      final Map<String, dynamic> updated =
-          await NocturneMemoryService.instance.updateMemory(
-        uri: uri,
-        oldString: args['old_string'] == null ? null : args['old_string'].toString(),
-        newString: args['new_string'] == null ? null : args['new_string'].toString(),
-        append: args['append'] == null ? null : args['append'].toString(),
-        priority: _toInt(args['priority']),
-        disclosure: args['disclosure'] == null ? null : args['disclosure'].toString(),
+    if (_isManagedMemoryUri(uri)) {
+      return _blockedManagedMemoryWriteResponse(
+        call,
+        tool: 'update_memory',
+        details: <String, dynamic>{'uri': uri},
       );
+    }
+
+    try {
+      final Map<String, dynamic> updated = await NocturneMemoryService.instance
+          .updateMemory(
+            uri: uri,
+            oldString: args['old_string'] == null
+                ? null
+                : args['old_string'].toString(),
+            newString: args['new_string'] == null
+                ? null
+                : args['new_string'].toString(),
+            append: args['append'] == null ? null : args['append'].toString(),
+            priority: _toInt(args['priority']),
+            disclosure: args['disclosure'] == null
+                ? null
+                : args['disclosure'].toString(),
+          );
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -328,9 +390,18 @@ extension AIChatServiceToolExecExt on AIChatService {
         ),
       ];
     }
+
+    if (_isManagedMemoryUri(uri)) {
+      return _blockedManagedMemoryWriteResponse(
+        call,
+        tool: 'delete_memory',
+        details: <String, dynamic>{'uri': uri},
+      );
+    }
+
     try {
-      final Map<String, dynamic> deleted =
-          await NocturneMemoryService.instance.deleteMemory(uri: uri);
+      final Map<String, dynamic> deleted = await NocturneMemoryService.instance
+          .deleteMemory(uri: uri);
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -362,8 +433,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final String targetUri = (args['target_uri'] ?? '').toString().trim();
     final int priority = _toInt(args['priority']) ?? 0;
     final String disclosureRaw = (args['disclosure'] ?? '').toString();
-    final String? disclosure =
-        disclosureRaw.trim().isEmpty ? null : disclosureRaw.trim();
+    final String? disclosure = disclosureRaw.trim().isEmpty
+        ? null
+        : disclosureRaw.trim();
     if (newUri.isEmpty || targetUri.isEmpty) {
       return <AIMessage>[
         AIMessage(
@@ -377,21 +449,26 @@ extension AIChatServiceToolExecExt on AIChatService {
       ];
     }
 
-    try {
-      final Map<String, dynamic> res =
-          await NocturneMemoryService.instance.addAlias(
-        newUri: newUri,
-        targetUri: targetUri,
-        priority: priority,
-        disclosure: disclosure,
+    if (_isManagedMemoryUri(newUri) || _isManagedMemoryUri(targetUri)) {
+      return _blockedManagedMemoryWriteResponse(
+        call,
+        tool: 'add_alias',
+        details: <String, dynamic>{'new_uri': newUri, 'target_uri': targetUri},
       );
+    }
+
+    try {
+      final Map<String, dynamic> res = await NocturneMemoryService.instance
+          .addAlias(
+            newUri: newUri,
+            targetUri: targetUri,
+            priority: priority,
+            disclosure: disclosure,
+          );
       return <AIMessage>[
         AIMessage(
           role: 'tool',
-          content: jsonEncode(<String, dynamic>{
-            'tool': 'add_alias',
-            ...res,
-          }),
+          content: jsonEncode(<String, dynamic>{'tool': 'add_alias', ...res}),
           toolCallId: call.id,
         ),
       ];
@@ -431,12 +508,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     }
 
     try {
-      final List<Map<String, dynamic>> results =
-          await NocturneMemoryService.instance.searchMemory(
-        query,
-        domain: domain,
-        limit: limit,
-      );
+      final List<Map<String, dynamic>> results = await NocturneMemoryService
+          .instance
+          .searchMemory(query, domain: domain, limit: limit);
       return <AIMessage>[
         AIMessage(
           role: 'tool',
@@ -631,8 +705,9 @@ extension AIChatServiceToolExecExt on AIChatService {
       args['query_advanced'],
     );
     final bool hasQuery = query.isNotEmpty || queryAdv != null;
-    final String queryText =
-        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    final String queryText = query.isNotEmpty
+        ? query
+        : (queryAdv?.toPlainText() ?? '');
     final List<String> requestedAppNames = _normalizeAppNamesArg(args);
     final List<String> requestedAppPackages = await _resolveAppPackagesFromArgs(
       args,
@@ -916,8 +991,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
       args['query_advanced'],
     );
-    final String queryText =
-        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    final String queryText = query.isNotEmpty
+        ? query
+        : (queryAdv?.toPlainText() ?? '');
     if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
@@ -1450,8 +1526,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
       args['query_advanced'],
     );
-    final String queryText =
-        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    final String queryText = query.isNotEmpty
+        ? query
+        : (queryAdv?.toPlainText() ?? '');
     if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(
@@ -1696,8 +1773,9 @@ extension AIChatServiceToolExecExt on AIChatService {
     final AdvancedSearchQuery? queryAdv = AdvancedSearchQuery.tryParse(
       args['query_advanced'],
     );
-    final String queryText =
-        query.isNotEmpty ? query : (queryAdv?.toPlainText() ?? '');
+    final String queryText = query.isNotEmpty
+        ? query
+        : (queryAdv?.toPlainText() ?? '');
     if (queryText.isEmpty) {
       return <AIMessage>[
         AIMessage(

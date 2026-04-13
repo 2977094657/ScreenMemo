@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'nocturne_memory_roots.dart';
 import 'screenshot_database.dart';
 
 class NocturneUri {
@@ -15,12 +17,14 @@ class NocturneUri {
 
 class NocturneMemoryService {
   NocturneMemoryService._internal();
-  static final NocturneMemoryService instance = NocturneMemoryService._internal();
+  static final NocturneMemoryService instance =
+      NocturneMemoryService._internal();
 
   final ScreenshotDatabase _db = ScreenshotDatabase.instance;
 
   static final RegExp _domainRe = RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$');
   static final RegExp _titleRe = RegExp(r'^[a-z0-9_-]+$');
+  static final Object _managedWriteIntentZoneKey = Object();
 
   NocturneUri parseUri(String uri) {
     final String u = uri.trim();
@@ -31,10 +35,10 @@ class NocturneMemoryService {
       return NocturneUri(domain: 'core', path: p);
     }
     final String domain = u.substring(0, idx).trim().toLowerCase();
-    final String path = u.substring(idx + 3).trim().replaceAll(
-          RegExp(r'^/+|/+$'),
-          '',
-        );
+    final String path = u
+        .substring(idx + 3)
+        .trim()
+        .replaceAll(RegExp(r'^/+|/+$'), '');
     if (domain.isEmpty || !_domainRe.hasMatch(domain)) {
       throw ArgumentError('invalid domain in uri: $uri');
     }
@@ -45,6 +49,73 @@ class NocturneMemoryService {
     final String d = domain.trim().toLowerCase();
     final String p = path.trim().replaceAll(RegExp(r'^/+|/+$'), '');
     return p.isEmpty ? '$d://' : '$d://$p';
+  }
+
+  bool isManagedEntityUri(String uri) {
+    final String normalized;
+    try {
+      final NocturneUri parsed = parseUri(uri);
+      normalized = makeUri(parsed.domain, parsed.path);
+    } catch (_) {
+      return false;
+    }
+    for (final NocturneMemoryRootSpec root in NocturneMemoryRoots.all) {
+      if (normalized == root.uri || normalized.startsWith('${root.uri}/')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<T> runBootstrapWrite<T>(Future<T> Function() action) {
+    return _runManagedWrite(_ManagedWriteIntent.bootstrap, action);
+  }
+
+  Future<T> runEntityMaterializationWrite<T>(Future<T> Function() action) {
+    return _runManagedWrite(_ManagedWriteIntent.materialization, action);
+  }
+
+  Future<T> _runManagedWrite<T>(
+    _ManagedWriteIntent intent,
+    Future<T> Function() action,
+  ) {
+    if (Zone.current[_managedWriteIntentZoneKey] == intent) {
+      return action();
+    }
+    return runZoned<Future<T>>(
+      action,
+      zoneValues: <Object?, Object?>{_managedWriteIntentZoneKey: intent},
+    );
+  }
+
+  bool _isBootstrapManagedUri(String uri) {
+    final String normalized;
+    try {
+      final NocturneUri parsed = parseUri(uri);
+      normalized = makeUri(parsed.domain, parsed.path);
+    } catch (_) {
+      return false;
+    }
+    for (final NocturneMemoryRootSpec root in NocturneMemoryRoots.all) {
+      if (normalized == root.uri) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _assertManagedWriteAllowed(String uri, {required String operation}) {
+    if (!isManagedEntityUri(uri)) return;
+    final _ManagedWriteIntent? intent =
+        Zone.current[_managedWriteIntentZoneKey] as _ManagedWriteIntent?;
+    if (intent == _ManagedWriteIntent.materialization) return;
+    if (intent == _ManagedWriteIntent.bootstrap &&
+        _isBootstrapManagedUri(uri)) {
+      return;
+    }
+    throw StateError(
+      'managed entity URI is read-only for direct graph writes; use the entity pipeline or materialization flow instead ($operation: $uri)',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -122,8 +193,7 @@ class NocturneMemoryService {
     }
     args.add(limit);
 
-    final List<Map<String, Object?>> rows = await db.rawQuery(
-      '''
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
       SELECT
         m.id AS memory_id,
         e.child_uuid AS node_uuid,
@@ -139,9 +209,7 @@ class NocturneMemoryService {
       WHERE ${where.toString()}
       ORDER BY e.priority ASC, m.created_at DESC
       LIMIT ?
-      ''',
-      args,
-    );
+      ''', args);
 
     final Set<int> seenMemoryIds = <int>{};
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
@@ -177,8 +245,7 @@ class NocturneMemoryService {
       args.add(domain.trim().toLowerCase());
     }
 
-    final List<Map<String, Object?>> rows = await db.rawQuery(
-      '''
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
       SELECT
         p.domain AS domain,
         p.path AS path,
@@ -190,9 +257,7 @@ class NocturneMemoryService {
       JOIN memories m ON m.node_uuid = e.child_uuid AND m.deprecated = 0
       ${where.toString()}
       ORDER BY p.domain ASC, p.path ASC
-      ''',
-      args,
-    );
+      ''', args);
 
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -214,8 +279,7 @@ class NocturneMemoryService {
   Future<List<Map<String, dynamic>>> getRecentMemories({int limit = 10}) async {
     limit = limit.clamp(1, 100);
     final Database db = await _db.database;
-    final List<Map<String, Object?>> rows = await db.rawQuery(
-      '''
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
       SELECT
         m.id AS memory_id,
         m.created_at AS created_at,
@@ -227,8 +291,7 @@ class NocturneMemoryService {
       JOIN edges e ON p.edge_id = e.id
       JOIN memories m ON m.node_uuid = e.child_uuid AND m.deprecated = 0
       ORDER BY m.created_at DESC
-      ''',
-    );
+      ''');
 
     final Set<int> seen = <int>{};
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
@@ -263,6 +326,17 @@ class NocturneMemoryService {
     final Database db = await _db.database;
     final int now = DateTime.now().millisecondsSinceEpoch;
     await db.transaction((txn) async {
+      // Best-effort cleanup for users upgrading from the old uri-first signal
+      // schema. The entity-first pipeline only treats signal tables as
+      // entity-derived read models during normal operation.
+      try {
+        await txn.delete('memory_signal_episodes');
+        await txn.delete('memory_signal_profiles');
+      } catch (_) {}
+      try {
+        await txn.delete('legacy_memory_signal_episodes');
+        await txn.delete('legacy_memory_signal_profiles');
+      } catch (_) {}
       await txn.delete('paths');
       await txn.delete('edges');
       await txn.delete('memories');
@@ -272,11 +346,10 @@ class NocturneMemoryService {
         whereArgs: <Object?>[nocturneRootNodeUuid],
       );
       try {
-        await txn.insert(
-          'nodes',
-          <String, Object?>{'uuid': nocturneRootNodeUuid, 'created_at': now},
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await txn.insert('nodes', <String, Object?>{
+          'uuid': nocturneRootNodeUuid,
+          'created_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       } catch (_) {}
     });
   }
@@ -322,6 +395,10 @@ class NocturneMemoryService {
         final int nextNum = await _getNextChildNumber(txn, parentUuid);
         finalPath = parentPath.isEmpty ? '$nextNum' : '$parentPath/$nextNum';
       }
+      _assertManagedWriteAllowed(
+        makeUri(domain, finalPath),
+        operation: 'create_memory',
+      );
 
       final bool exists = await _pathExists(txn, domain, finalPath);
       if (exists) {
@@ -384,6 +461,10 @@ class NocturneMemoryService {
     if (u.path.isEmpty) {
       throw ArgumentError('cannot update domain root');
     }
+    _assertManagedWriteAllowed(
+      makeUri(u.domain, u.path),
+      operation: 'update_memory',
+    );
 
     final bool hasPatch = (oldString != null || newString != null);
     final bool hasAppend = append != null;
@@ -441,7 +522,9 @@ class NocturneMemoryService {
           }
           final int second = oldContent.indexOf(os, first + os.length);
           if (second >= 0) {
-            throw StateError('old_string matches multiple locations; must be unique');
+            throw StateError(
+              'old_string matches multiple locations; must be unique',
+            );
           }
           newContent = oldContent.replaceFirst(os, newString ?? '');
         } else {
@@ -495,13 +578,24 @@ class NocturneMemoryService {
     if (n.path.isEmpty) {
       throw ArgumentError('new_uri must include a non-empty path');
     }
+    _assertManagedWriteAllowed(
+      makeUri(n.domain, n.path),
+      operation: 'add_alias',
+    );
+    _assertManagedWriteAllowed(
+      makeUri(t.domain, t.path),
+      operation: 'add_alias',
+    );
 
     final int now = DateTime.now().millisecondsSinceEpoch;
     final Database db = await _db.database;
 
     return db.transaction((txn) async {
-      final String targetNodeUuid =
-          await _requireNodeUuidByPath(txn, t.domain, t.path);
+      final String targetNodeUuid = await _requireNodeUuidByPath(
+        txn,
+        t.domain,
+        t.path,
+      );
 
       final String parentUuid;
       if (n.path.contains('/')) {
@@ -574,6 +668,10 @@ class NocturneMemoryService {
     if (u.path.isEmpty) {
       throw ArgumentError('cannot delete domain root');
     }
+    _assertManagedWriteAllowed(
+      makeUri(u.domain, u.path),
+      operation: 'delete_memory',
+    );
 
     final Database db = await _db.database;
     return db.transaction((txn) async {
@@ -669,12 +767,15 @@ class NocturneMemoryService {
       final String? domainFilter = p == 'index'
           ? null
           : p.substring('index/'.length).trim().isEmpty
-              ? null
-              : p.substring('index/'.length).trim();
-      final List<Map<String, dynamic>> items =
-          await getAllPaths(domain: domainFilter);
+          ? null
+          : p.substring('index/'.length).trim();
+      final List<Map<String, dynamic>> items = await getAllPaths(
+        domain: domainFilter,
+      );
       return <String, dynamic>{
-        'uri': domainFilter == null ? 'system://index' : 'system://index/$domainFilter',
+        'uri': domainFilter == null
+            ? 'system://index'
+            : 'system://index/$domainFilter',
         'domain_filter': domainFilter,
         'count': items.length,
         'items': items,
@@ -689,8 +790,9 @@ class NocturneMemoryService {
         if (n != null) limit = n;
       }
       limit = limit.clamp(1, 100);
-      final List<Map<String, dynamic>> items =
-          await getRecentMemories(limit: limit);
+      final List<Map<String, dynamic>> items = await getRecentMemories(
+        limit: limit,
+      );
       return <String, dynamic>{
         'uri': p == 'recent' ? 'system://recent' : 'system://recent/$limit',
         'count': items.length,
@@ -766,7 +868,10 @@ class NocturneMemoryService {
     final int aliasCount = max(0, incomingPaths - 1);
 
     return <String, dynamic>{
-      'uri': makeUri((r['domain'] ?? '').toString(), (r['path'] ?? '').toString()),
+      'uri': makeUri(
+        (r['domain'] ?? '').toString(),
+        (r['path'] ?? '').toString(),
+      ),
       'domain': (r['domain'] ?? '').toString(),
       'path': (r['path'] ?? '').toString(),
       'node_uuid': nodeUuid,
@@ -914,12 +1019,12 @@ class NocturneMemoryService {
 
     final String? prefix =
         (contextPath != null && contextPath.trim().isNotEmpty)
-            ? '${contextPath.trim()}/'
-            : null;
+        ? '${contextPath.trim()}/'
+        : null;
     final String? dom =
         (contextDomain != null && contextDomain.trim().isNotEmpty)
-            ? contextDomain.trim().toLowerCase()
-            : null;
+        ? contextDomain.trim().toLowerCase()
+        : null;
 
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -932,8 +1037,9 @@ class NocturneMemoryService {
       final String bestPath = best?['path'] ?? (r['name'] ?? '').toString();
 
       final String content = (r['content'] ?? '').toString();
-      final String snippet =
-          content.length > 100 ? '${content.substring(0, 100)}...' : content;
+      final String snippet = content.length > 100
+          ? '${content.substring(0, 100)}...'
+          : content;
 
       out.add(<String, dynamic>{
         'node_uuid': child,
@@ -1009,15 +1115,12 @@ class NocturneMemoryService {
     if (parentUuids.isEmpty) return <String, int>{};
     final List<String> uniq = <String>{...parentUuids}.toList();
     final List<String> qs = List<String>.filled(uniq.length, '?');
-    final List<Map<String, Object?>> rows = await db.rawQuery(
-      '''
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
       SELECT parent_uuid, COUNT(id) AS cnt
       FROM edges
       WHERE parent_uuid IN (${qs.join(',')})
       GROUP BY parent_uuid
-      ''',
-      uniq,
-    );
+      ''', uniq);
     final Map<String, int> out = <String, int>{};
     for (final r in rows) {
       out[(r['parent_uuid'] ?? '').toString()] = _toInt(r['cnt']);
@@ -1040,7 +1143,10 @@ class NocturneMemoryService {
     return rows.isNotEmpty;
   }
 
-  Future<int> _getNextChildNumber(DatabaseExecutor db, String parentUuid) async {
+  Future<int> _getNextChildNumber(
+    DatabaseExecutor db,
+    String parentUuid,
+  ) async {
     final List<Map<String, Object?>> rows = await db.query(
       'edges',
       columns: const <String>['name'],
@@ -1190,15 +1296,12 @@ class NocturneMemoryService {
       args.add(like);
     }
 
-    final List<Map<String, Object?>> rows = await db.rawQuery(
-      '''
+    final List<Map<String, Object?>> rows = await db.rawQuery('''
       SELECT COUNT(*) AS cnt
       FROM paths p
       JOIN edges e ON p.edge_id = e.id
       WHERE ${where.toString()}
-      ''',
-      args,
-    );
+      ''', args);
     if (rows.isEmpty) return 0;
     return _toInt(rows.first['cnt']);
   }
@@ -1346,3 +1449,5 @@ class NocturneMemoryService {
     return '${s.substring(0, 8)}-${s.substring(8, 12)}-${s.substring(12, 16)}-${s.substring(16, 20)}-${s.substring(20)}';
   }
 }
+
+enum _ManagedWriteIntent { bootstrap, materialization }

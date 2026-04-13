@@ -15,6 +15,7 @@ import 'chat_history_merge.dart';
 import 'dynamic_entry_perf_service.dart';
 import 'flutter_logger.dart';
 import 'locale_service.dart';
+import 'memory_entity_policy.dart';
 import 'nocturne_memory_service.dart';
 import 'nocturne_memory_prompts.dart';
 import 'prompt_budget.dart';

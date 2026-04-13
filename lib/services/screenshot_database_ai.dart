@@ -2418,21 +2418,50 @@ ORDER BY day ASC
   Future<List<Map<String, dynamic>>> listSegmentSamples(int segmentId) async {
     final db = await database;
     try {
-      final String sql =
-          'SELECT id, segment_id, capture_time, file_path, app_package_name, app_name, position_index FROM segment_samples WHERE segment_id = ? ORDER BY position_index ASC';
+      final String sql = '''
+        SELECT
+          s.id,
+          s.segment_id,
+          s.capture_time,
+          s.file_path,
+          s.app_package_name,
+          s.app_name,
+          s.position_index,
+          totals.appearance_count,
+          totals.appearance_count AS segment_occurrence_count,
+          totals.distinct_day_count,
+          totals.distinct_day_count AS cross_day_count
+        FROM segment_samples s
+        JOIN (
+          SELECT
+            segment_id,
+            COUNT(*) AS appearance_count,
+            COUNT(
+              DISTINCT strftime(
+                '%Y-%m-%d',
+                datetime(capture_time / 1000, 'unixepoch', 'localtime')
+              )
+            ) AS distinct_day_count
+          FROM segment_samples
+          WHERE segment_id = ?
+          GROUP BY segment_id
+        ) totals ON totals.segment_id = s.segment_id
+        WHERE s.segment_id = ?
+        ORDER BY s.position_index ASC
+      ''';
       try {
         await FlutterLogger.nativeDebug(
           'DB',
-          'SQL: ' + sql.replaceAll('?', segmentId.toString()),
+          'SQL: ${sql.replaceAll('?', segmentId.toString())}',
         );
       } catch (_) {}
-      final rows = await db.query(
-        'segment_samples',
-        where: 'segment_id = ?',
-        whereArgs: [segmentId],
-        orderBy: 'position_index ASC',
-      );
-      return rows;
+      final List<Map<String, Object?>> rows = await db.rawQuery(sql, <Object?>[
+        segmentId,
+        segmentId,
+      ]);
+      return rows
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
     } catch (_) {
       return <Map<String, dynamic>>[];
     }

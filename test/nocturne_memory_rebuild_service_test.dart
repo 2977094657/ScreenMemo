@@ -1,71 +1,44 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:screen_memo/services/nocturne_memory_rebuild_service.dart';
+import 'package:screen_memo/services/nocturne_memory_entity_prompts.dart';
 
 void main() {
-  test('memory rebuild parser accepts compact tuple format', () {
-    const String raw = '''
-[
-  {create_memory,core://my_user/organizations,shuixingbozi_dayuan,用户会在哔哩哔哩浏览 UP 主“水星波子大圆”的内容。},
-  {update_memory,core://my_user/interests,- 会持续浏览《戴森球计划》相关内容}
-]
-''';
+  test('visual extraction prompt enforces visual-only evidence contract', () {
+    final String prompt =
+        NocturneMemoryEntityPrompts.visualExtractionSystemPrompt(maxImages: 10);
 
-    final List<NocturneMemoryAction> actions =
-        NocturneMemoryRebuildService.parseModelOutput(content: raw);
-
-    expect(actions, hasLength(2));
-    expect(actions.first.tool, 'create_memory');
-    expect(actions.first.args['title'], 'shuixingbozi_dayuan');
-    expect(actions.last.tool, 'update_memory');
-    expect(actions.last.args['append'], contains('戴森球计划'));
+    expect(prompt, contains('只能依据截图本身可见信息做判断'));
+    expect(prompt, contains('严禁把截图理解为 OCR 纯文本任务'));
+    expect(prompt, contains('facts: 只写稳定事实'));
+    expect(prompt, contains('每条 fact 都必须给出 evidence_frames'));
+    expect(prompt, isNot(contains('create_memory')));
+    expect(prompt, isNot(contains('update_memory')));
   });
 
-  test('memory rebuild parser accepts empty list sentinel', () {
-    final List<NocturneMemoryAction> none =
-        NocturneMemoryRebuildService.parseModelOutput(content: '[]');
-    expect(none, isEmpty);
+  test('resolution prompt describes entity-first match decisions', () {
+    final String prompt = NocturneMemoryEntityPrompts.resolutionSystemPrompt();
+
+    expect(prompt, contains('MATCH_EXISTING'));
+    expect(prompt, contains('CREATE_NEW'));
+    expect(prompt, contains('ADD_ALIAS_TO_EXISTING'));
+    expect(prompt, contains('REVIEW_REQUIRED'));
+    expect(prompt, contains('规则检索只是 shortlist'));
   });
 
-  test('memory rebuild parser preserves commas in compact fields', () {
-    const String raw = '''
-[
-  {create_memory,core://my_user/organizations,shuixingbozi_dayuan,用户会在哔哩哔哩浏览 UP 主“水星波子大圆”的内容，也会看评论区讨论。},
-  {update_memory,core://my_user/interests,- 会持续浏览《戴森球计划》相关内容，包括玩法优化、战斗/航行画面与评论区讨论。}
-]
-''';
+  test('merge plan prompt requires structured claims and events evidence', () {
+    final String prompt = NocturneMemoryEntityPrompts.mergePlanSystemPrompt();
 
-    final List<NocturneMemoryAction> actions =
-        NocturneMemoryRebuildService.parseModelOutput(content: raw);
-
-    expect(actions, hasLength(2));
-    expect(actions.first.args['content'], contains('评论区讨论'));
-    expect(actions.last.args['append'], contains('玩法优化、战斗/航行画面'));
+    expect(prompt, contains('claims_to_upsert'));
+    expect(prompt, contains('events_to_append'));
+    expect(prompt, contains('每条 claim 都必须给 evidence_frames'));
+    expect(prompt, contains('每条 event 都必须给 evidence_frames'));
   });
 
-  test('memory rebuild parser rejects NO_ACTIONS sentinel', () {
-    expect(
-      () =>
-          NocturneMemoryRebuildService.parseModelOutput(content: 'NO_ACTIONS'),
-      throwsA(isA<FormatException>()),
-    );
-  });
+  test('audit prompt blocks duplicate, ambiguous, and low-evidence writes', () {
+    final String prompt = NocturneMemoryEntityPrompts.auditSystemPrompt();
 
-  test('memory rebuild parser rejects malformed compact format', () {
-    expect(
-      () => NocturneMemoryRebuildService.parseModelOutput(
-        content: '[{update_memory,core://my_user/interests,- 会持续浏览《戴森球计划》相关内容}',
-      ),
-      throwsA(isA<FormatException>()),
-    );
-  });
-
-  test('memory rebuild parser rejects legacy json format', () {
-    expect(
-      () => NocturneMemoryRebuildService.parseModelOutput(
-        content:
-            '{"actions":[{"tool":"update_memory","args":{"uri":"core://my_user/preferences","append":"\\n- 喜欢深色主题"}}]}',
-      ),
-      throwsA(isA<FormatException>()),
-    );
+    expect(prompt, contains('APPROVE'));
+    expect(prompt, contains('BLOCK_DUPLICATE'));
+    expect(prompt, contains('BLOCK_AMBIGUOUS'));
+    expect(prompt, contains('BLOCK_LOW_EVIDENCE'));
   });
 }

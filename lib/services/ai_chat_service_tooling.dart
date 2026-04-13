@@ -207,7 +207,8 @@ extension AIChatServiceToolingExt on AIChatService {
           'properties': <String, dynamic>{
             'uri': <String, dynamic>{
               'type': 'string',
-              'description': 'Memory URI like core://agent or dynamic://2026/03/10.',
+              'description':
+                  'Memory URI like core://agent or dynamic://2026/03/10.',
             },
           },
           'required': <String>['uri'],
@@ -219,7 +220,7 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'create_memory',
         'description':
-            'Create a new memory under a parent URI. Parent MUST exist. Use core:// or dynamic:// (ending with //) to create at domain root.',
+            'Create a new graph memory under a parent URI. Parent MUST exist. Use core:// or dynamic:// (ending with //) to create at domain root. Never use this for entity-managed core://my_user/* roots; those are read-only materialization outputs owned by the entity pipeline.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -255,7 +256,7 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'update_memory',
         'description':
-            'Update a memory. Content editing modes are mutually exclusive: patch (old_string+new_string) OR append. Metadata updates (priority/disclosure) are allowed. Recommended: read_memory first.',
+            'Update a graph memory. Content editing modes are mutually exclusive: patch (old_string+new_string) OR append. Metadata updates (priority/disclosure) are allowed. Recommended: read_memory first. Never use this on entity-managed core://my_user/* roots; those are read-only materialization outputs.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -295,13 +296,14 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'delete_memory',
         'description':
-            'Delete a memory access path (URI). This removes the URI path (and descendant paths in the same domain) but preserves historical content versions for recovery.',
+            'Delete a graph memory access path (URI). This removes the URI path (and descendant paths in the same domain) but preserves historical content versions for recovery. Never use this on entity-managed core://my_user/* roots; those are read-only materialization outputs.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
             'uri': <String, dynamic>{
               'type': 'string',
-              'description': 'Memory URI to delete, e.g. core://agent/old_note.',
+              'description':
+                  'Memory URI to delete, e.g. core://agent/old_note.',
             },
           },
           'required': <String>['uri'],
@@ -313,7 +315,7 @@ extension AIChatServiceToolingExt on AIChatService {
       'function': <String, dynamic>{
         'name': 'add_alias',
         'description':
-            'Create an alias URI pointing to the same memory as target_uri (not a copy). Automatically cascades descendant path mappings under the new alias.',
+            'Create an alias URI pointing to the same graph memory as target_uri (not a copy). Automatically cascades descendant path mappings under the new alias. Never use this when either URI is under entity-managed core://my_user/* roots; those are read-only materialization outputs.',
         'parameters': <String, dynamic>{
           'type': 'object',
           'properties': <String, dynamic>{
@@ -327,7 +329,8 @@ extension AIChatServiceToolingExt on AIChatService {
             },
             'priority': <String, dynamic>{
               'type': 'integer',
-              'description': 'Optional priority for the alias edge (default 0).',
+              'description':
+                  'Optional priority for the alias edge (default 0).',
             },
             'disclosure': <String, dynamic>{
               'type': 'string',
@@ -386,7 +389,8 @@ extension AIChatServiceToolingExt on AIChatService {
                 'must': <String, dynamic>{
                   'type': 'array',
                   'items': <String, dynamic>{'type': 'string'},
-                  'description': 'All of these keyword groups must match (AND).',
+                  'description':
+                      'All of these keyword groups must match (AND).',
                 },
                 'any': <String, dynamic>{
                   'type': 'array',
@@ -423,8 +427,7 @@ extension AIChatServiceToolingExt on AIChatService {
                       },
                       'distance': <String, dynamic>{
                         'type': 'integer',
-                        'description':
-                            'Optional max distance for NEAR (1-50).',
+                        'description': 'Optional max distance for NEAR (1-50).',
                       },
                     },
                     'required': <String>['terms'],
@@ -552,7 +555,8 @@ extension AIChatServiceToolingExt on AIChatService {
                 'must': <String, dynamic>{
                   'type': 'array',
                   'items': <String, dynamic>{'type': 'string'},
-                  'description': 'All of these keyword groups must match (AND).',
+                  'description':
+                      'All of these keyword groups must match (AND).',
                 },
                 'any': <String, dynamic>{
                   'type': 'array',
