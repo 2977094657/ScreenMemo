@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:talker/talker.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/backup_inventory_service.dart';
+import '../services/flutter_logger.dart' hide LogLevel;
 import '../services/screenshot_database.dart';
 import '../theme/app_theme.dart';
 import '../utils/byte_formatter.dart';
@@ -12,6 +15,7 @@ import '../widgets/ui_components.dart';
 
 typedef BackupExportExecutor =
     Future<Map<String, dynamic>?> Function({
+      required BackupExportScope exportScope,
       required void Function(ExportProgressSnapshot snapshot) onProgress,
       required bool Function() isCancelled,
     });
@@ -37,19 +41,29 @@ class ExportBackupPage extends StatefulWidget {
 
 class _ExportBackupPageState extends State<ExportBackupPage> {
   ExportProgressSnapshot? _snapshot;
+  BackupInventory? _fullInventory;
   Map<String, dynamic>? _result;
   Object? _error;
+  StreamSubscription<TalkerData>? _exportLogSubscription;
+  Future<void> _exportLogWriteChain = Future<void>.value();
   bool _inventoryLoading = false;
   bool _running = false;
   bool _cancelRequested = false;
+  int _exportLogSessionNonce = 0;
+  int? _activeExportLogSessionId;
+  BackupExportScope _selectedScope = BackupExportScope.full;
+  String? _exportLogPath;
+  String? _lastExportLogDedupeKey;
 
   BackupExportExecutor get _executor =>
       widget.exportExecutor ??
       ({
+        required BackupExportScope exportScope,
         required void Function(ExportProgressSnapshot snapshot) onProgress,
         required bool Function() isCancelled,
       }) {
         return ScreenshotDatabase.instance.exportDatabaseToDownloads(
+          exportScope: exportScope,
           onDetailedProgress: onProgress,
           shouldCancel: isCancelled,
         );
@@ -64,7 +78,16 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
   @override
   void initState() {
     super.initState();
+    _exportLogSubscription = FlutterLogger.talker.stream.listen(
+      _handleTalkerLogEvent,
+    );
     unawaited(_loadInventoryPreview());
+  }
+
+  @override
+  void dispose() {
+    _exportLogSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadInventoryPreview() async {
@@ -73,8 +96,10 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     }
     if (mounted) {
       setState(() {
+        _clearExportLogs();
         _inventoryLoading = true;
         _cancelRequested = false;
+        _fullInventory = null;
         _error = null;
         _result = null;
         _snapshot = const ExportProgressSnapshot(
@@ -93,40 +118,38 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
           if (!mounted) {
             return;
           }
+          final ExportProgressSnapshot nextSnapshot = ExportProgressSnapshot(
+            phase: ExportPhase.scanning,
+            overallProgress: 0,
+            completedBytes: 0,
+            totalBytes: 0,
+            categoryCompletedBytes: const <String, int>{},
+            currentCategoryId: scopeId,
+            currentEntry: currentPath,
+          );
           setState(() {
-            _snapshot = ExportProgressSnapshot(
-              phase: ExportPhase.scanning,
-              overallProgress: 0,
-              completedBytes: 0,
-              totalBytes: 0,
-              categoryCompletedBytes: const <String, int>{},
-              currentCategoryId: scopeId,
-              currentEntry: currentPath,
-            );
+            _recordSnapshotLogs(previous: _snapshot, next: nextSnapshot);
+            _snapshot = nextSnapshot;
           });
         },
       );
+      final BackupInventory scopedInventory = _inventoryForScope(inventory);
       if (!mounted) {
         return;
       }
       setState(() {
+        _fullInventory = inventory;
         _inventoryLoading = false;
         _error = null;
         _result = null;
-        _snapshot = ExportProgressSnapshot(
-          phase: ExportPhase.idle,
-          overallProgress: 0,
-          completedBytes: 0,
-          totalBytes: inventory.totalBytes,
-          categoryCompletedBytes: _zeroCategoryProgress(inventory),
-          inventory: inventory,
-        );
+        _snapshot = _buildIdleSnapshot(scopedInventory);
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
+        _fullInventory = null;
         _inventoryLoading = false;
         _error = error;
         _snapshot = ExportProgressSnapshot(
@@ -156,6 +179,21 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
 
     if (mounted) {
       setState(() {
+        _beginExportLogSession();
+        _pushExportLog(
+          _ExportLogLevel.info,
+          'Export requested: scope=${_selectedScope.name}',
+          dedupeKey: 'export-start:${_selectedScope.name}',
+        );
+        final BackupInventory? inventory = _inventory;
+        if (inventory != null) {
+          _pushExportLog(
+            _ExportLogLevel.info,
+            'Inventory confirmed: categories=${inventory.categories.length}, files=${inventory.totalFiles}, bytes=${formatBytes(inventory.totalBytes)}',
+            dedupeKey:
+                'export-inventory:${inventory.totalFiles}:${inventory.totalBytes}',
+          );
+        }
         _running = true;
         _cancelRequested = false;
         _error = null;
@@ -173,11 +211,13 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
 
     try {
       final Map<String, dynamic>? result = await _executor(
+        exportScope: _selectedScope,
         onProgress: (ExportProgressSnapshot snapshot) {
           if (!mounted) {
             return;
           }
           setState(() {
+            _recordSnapshotLogs(previous: _snapshot, next: snapshot);
             _snapshot = snapshot;
           });
         },
@@ -190,6 +230,12 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
         _result = result;
         _running = false;
         _cancelRequested = false;
+        _pushExportLog(
+          _ExportLogLevel.info,
+          'Export completed: ${_resolvedOutputPath ?? result?['humanPath'] ?? '-'}',
+          dedupeKey:
+              'export-complete:${result?['humanPath'] ?? _resolvedOutputPath ?? '-'}',
+        );
       });
     } on BackupExportCancelledException {
       if (!mounted) {
@@ -213,6 +259,11 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
                 ),
                 inventory: _inventory,
               );
+        _pushExportLog(
+          _ExportLogLevel.warn,
+          'Export cancelled by user. Partial files should be cleaned up.',
+          dedupeKey: 'export-cancelled',
+        );
       });
       ScaffoldMessenger.of(
         context,
@@ -225,6 +276,11 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
         _error = error;
         _running = false;
         _cancelRequested = false;
+        _pushExportLog(
+          _ExportLogLevel.error,
+          'Export failed: $error',
+          dedupeKey: 'export-failed:$error',
+        );
       });
     }
   }
@@ -237,6 +293,38 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
       for (final BackupInventoryCategory category in inventory.categories)
         category.id: 0,
     };
+  }
+
+  BackupInventory _inventoryForScope(BackupInventory inventory) {
+    return BackupInventoryService.filterInventoryByScope(
+      inventory,
+      _selectedScope,
+    );
+  }
+
+  ExportProgressSnapshot _buildIdleSnapshot(BackupInventory? inventory) {
+    return ExportProgressSnapshot(
+      phase: ExportPhase.idle,
+      overallProgress: 0,
+      completedBytes: 0,
+      totalBytes: inventory?.totalBytes ?? 0,
+      categoryCompletedBytes: _zeroCategoryProgress(inventory),
+      inventory: inventory,
+    );
+  }
+
+  void _handleScopeChanged(BackupExportScope scope) {
+    if (_running || _selectedScope == scope) {
+      return;
+    }
+    setState(() {
+      _selectedScope = scope;
+      _result = null;
+      _error = null;
+      if (_fullInventory != null) {
+        _snapshot = _buildIdleSnapshot(_inventoryForScope(_fullInventory!));
+      }
+    });
   }
 
   Future<void> _copyExportPath() async {
@@ -259,6 +347,346 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(_copyFailedText(context))));
+    }
+  }
+
+  Future<void> _copyExportLogPath() async {
+    final String? path = _exportLogPath;
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    try {
+      await Clipboard.setData(ClipboardData(text: path));
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_copyLogPathSuccessText(context))));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_copyLogPathFailedText(context))));
+    }
+  }
+
+  void _handleTalkerLogEvent(TalkerData data) {
+    if (_activeExportLogSessionId == null) {
+      return;
+    }
+    final ({String? tag, String message}) parsed = _splitTalkerTag(
+      data.message?.toString(),
+    );
+    if ((parsed.tag ?? '').toUpperCase() != 'EXPORT') {
+      return;
+    }
+    _pushExportLog(
+      _mapTalkerLevel(data),
+      parsed.message,
+      dedupeKey:
+          'talker:${data.time.microsecondsSinceEpoch}:${data.logLevel}:${parsed.message}',
+    );
+  }
+
+  void _recordSnapshotLogs({
+    required ExportProgressSnapshot? previous,
+    required ExportProgressSnapshot next,
+  }) {
+    final String? currentEntry = next.currentEntry?.trim();
+    final String? previousEntry = previous?.currentEntry?.trim();
+    final ExportPhase? previousPhase = previous?.phase;
+    final int previousCompleted = previous?.completedBytes ?? 0;
+    final int nextCompleted = next.completedBytes;
+
+    if (previousPhase != next.phase) {
+      _pushExportLog(
+        _phaseLogLevel(next.phase),
+        'Phase -> ${next.phase.name}${_phaseSummarySuffix(next)}',
+        dedupeKey:
+            'phase:${next.phase.name}:${next.currentCategoryId ?? ''}:${currentEntry ?? ''}:$nextCompleted',
+      );
+    }
+
+    switch (next.phase) {
+      case ExportPhase.scanning:
+        if (currentEntry != null &&
+            currentEntry.isNotEmpty &&
+            currentEntry != previousEntry) {
+          final String scopeText =
+              next.currentCategoryId?.trim().isNotEmpty == true
+              ? next.currentCategoryId!.trim()
+              : 'scope';
+          _pushExportLog(
+            _ExportLogLevel.info,
+            'Scanning $scopeText :: $currentEntry',
+            dedupeKey: 'scan:$scopeText:$currentEntry',
+          );
+        }
+        break;
+      case ExportPhase.packing:
+        if (currentEntry != null && currentEntry.isNotEmpty) {
+          final String categoryText =
+              next.currentCategoryId?.trim().isNotEmpty == true
+              ? next.currentCategoryId!.trim()
+              : 'entry';
+          final int? entryBytes = _entryBytesForArchivePath(currentEntry);
+          if ((previousPhase != ExportPhase.packing ||
+                  previousEntry != currentEntry) &&
+              nextCompleted == previousCompleted) {
+            final String sizeText = entryBytes != null
+                ? ' (${formatBytes(entryBytes)})'
+                : '';
+            _pushExportLog(
+              _ExportLogLevel.info,
+              'Packing start $categoryText :: $currentEntry$sizeText',
+              dedupeKey: 'pack-start:$currentEntry:$nextCompleted',
+            );
+          }
+          if (nextCompleted > previousCompleted) {
+            _pushExportLog(
+              _ExportLogLevel.info,
+              'Packing done $categoryText :: $currentEntry (${_formatCompletedBytes(nextCompleted, next.totalBytes)})',
+              dedupeKey: 'pack-done:$currentEntry:$nextCompleted',
+            );
+          }
+        }
+        break;
+      case ExportPhase.verifying:
+        if (previousPhase != ExportPhase.verifying) {
+          _pushExportLog(
+            _ExportLogLevel.info,
+            currentEntry?.isNotEmpty == true
+                ? 'Verifying archive :: $currentEntry'
+                : 'Verifying archive integrity',
+            dedupeKey: 'verify:${currentEntry ?? ''}',
+          );
+        }
+        break;
+      case ExportPhase.completed:
+        if (previousPhase != ExportPhase.completed) {
+          _pushExportLog(
+            _ExportLogLevel.info,
+            next.outputPath?.trim().isNotEmpty == true
+                ? 'Archive saved :: ${next.outputPath!.trim()}'
+                : 'Export completed',
+            dedupeKey: 'completed:${next.outputPath ?? ''}',
+          );
+        }
+        break;
+      case ExportPhase.failed:
+        if (previousPhase != ExportPhase.failed ||
+            next.errorMessage != previous?.errorMessage) {
+          _pushExportLog(
+            _ExportLogLevel.error,
+            next.errorMessage?.trim().isNotEmpty == true
+                ? 'Phase failed :: ${next.errorMessage!.trim()}'
+                : 'Export failed',
+            dedupeKey: 'phase-failed:${next.errorMessage ?? ''}',
+          );
+        }
+        break;
+      case ExportPhase.cancelled:
+        if (previousPhase != ExportPhase.cancelled) {
+          _pushExportLog(
+            _ExportLogLevel.warn,
+            'Export cancelled and cleanup started',
+            dedupeKey: 'phase-cancelled',
+          );
+        }
+        break;
+      case ExportPhase.idle:
+        break;
+    }
+  }
+
+  void _beginExportLogSession() {
+    _exportLogSessionNonce++;
+    _activeExportLogSessionId = _exportLogSessionNonce;
+    _exportLogPath = null;
+    _lastExportLogDedupeKey = null;
+    _exportLogWriteChain = Future<void>.value();
+  }
+
+  void _clearExportLogs() {
+    _activeExportLogSessionId = null;
+    _exportLogPath = null;
+    _lastExportLogDedupeKey = null;
+    _exportLogWriteChain = Future<void>.value();
+  }
+
+  void _pushExportLog(
+    _ExportLogLevel level,
+    String message, {
+    String? dedupeKey,
+  }) {
+    final int? sessionId = _activeExportLogSessionId;
+    if (sessionId == null) {
+      return;
+    }
+    final String normalized = message.trimRight();
+    if (normalized.isEmpty) {
+      return;
+    }
+    final String key = dedupeKey ?? '${level.name}|$normalized';
+    if (_lastExportLogDedupeKey == key) {
+      return;
+    }
+    _lastExportLogDedupeKey = key;
+    final String line =
+        '${_formatLogTime(DateTime.now())} [${_exportLogLevelFileLabel(level)}] $normalized';
+    _exportLogWriteChain = _exportLogWriteChain
+        .then((_) async {
+          final String? path = await _ensureExportLogPathForSession(sessionId);
+          if (path == null || _activeExportLogSessionId != sessionId) {
+            return;
+          }
+          await File(
+            path,
+          ).writeAsString('$line\n', mode: FileMode.append, flush: true);
+        })
+        .catchError((_) {});
+  }
+
+  Future<String?> _ensureExportLogPathForSession(int sessionId) async {
+    if (_activeExportLogSessionId != sessionId) {
+      return null;
+    }
+    final String? existingPath = _exportLogPath?.trim();
+    if (existingPath != null && existingPath.isNotEmpty) {
+      return existingPath;
+    }
+
+    String? todayDir;
+    try {
+      todayDir = await FlutterLogger.getTodayLogsDir();
+    } catch (_) {
+      todayDir = null;
+    }
+    final String trimmedTodayDir = (todayDir ?? '').trim();
+    final Directory dir = trimmedTodayDir.isNotEmpty
+        ? Directory(
+            '$trimmedTodayDir${Platform.pathSeparator}backup_export_sessions',
+          )
+        : Directory(
+            '${Directory.systemTemp.path}${Platform.pathSeparator}screen_memo_backup_export_sessions',
+          );
+    await dir.create(recursive: true);
+
+    final String filePath =
+        '${dir.path}${Platform.pathSeparator}backup_export_${_formatFileTimestamp(DateTime.now())}.log';
+    final File file = File(filePath);
+    if (!await file.exists()) {
+      await file.writeAsString('', flush: true);
+    }
+    if (_activeExportLogSessionId != sessionId) {
+      return null;
+    }
+
+    if (mounted) {
+      setState(() {
+        _exportLogPath = file.path;
+      });
+    } else {
+      _exportLogPath = file.path;
+    }
+    return file.path;
+  }
+
+  String _phaseSummarySuffix(ExportProgressSnapshot snapshot) {
+    if (snapshot.totalBytes <= 0) {
+      return '';
+    }
+    return ' (${_formatCompletedBytes(snapshot.completedBytes, snapshot.totalBytes)})';
+  }
+
+  int? _entryBytesForArchivePath(String? archivePath) {
+    if (archivePath == null || archivePath.isEmpty) {
+      return null;
+    }
+    final BackupInventory? inventory = _inventory;
+    if (inventory == null) {
+      return null;
+    }
+    for (final BackupInventoryCategory category in inventory.categories) {
+      for (final BackupInventoryFile file in category.files) {
+        if (file.archivePath == archivePath) {
+          return file.bytes;
+        }
+      }
+    }
+    return null;
+  }
+
+  String _formatCompletedBytes(int completedBytes, int totalBytes) {
+    if (totalBytes <= 0) {
+      return formatBytes(completedBytes);
+    }
+    return '${formatBytes(completedBytes)} / ${formatBytes(totalBytes)}';
+  }
+
+  String _formatLogTime(DateTime time) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    String three(int value) => value.toString().padLeft(3, '0');
+    return '${two(time.hour)}:${two(time.minute)}:${two(time.second)}.${three(time.millisecond)}';
+  }
+
+  String _formatFileTimestamp(DateTime time) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    String three(int value) => value.toString().padLeft(3, '0');
+    return '${time.year}-${two(time.month)}-${two(time.day)}_${two(time.hour)}-${two(time.minute)}-${two(time.second)}-${three(time.millisecond)}';
+  }
+
+  _ExportLogLevel _phaseLogLevel(ExportPhase phase) {
+    switch (phase) {
+      case ExportPhase.failed:
+        return _ExportLogLevel.error;
+      case ExportPhase.cancelled:
+        return _ExportLogLevel.warn;
+      case ExportPhase.idle:
+      case ExportPhase.scanning:
+      case ExportPhase.packing:
+      case ExportPhase.verifying:
+      case ExportPhase.completed:
+        return _ExportLogLevel.info;
+    }
+  }
+
+  _ExportLogLevel _mapTalkerLevel(TalkerData data) {
+    final LogLevel level = data.logLevel ?? LogLevel.info;
+    if (level == LogLevel.error || level == LogLevel.critical) {
+      return _ExportLogLevel.error;
+    }
+    if (level == LogLevel.warning) {
+      return _ExportLogLevel.warn;
+    }
+    return _ExportLogLevel.info;
+  }
+
+  ({String? tag, String message}) _splitTalkerTag(String? raw) {
+    final String text = raw ?? '';
+    if (!text.startsWith('[')) {
+      return (tag: null, message: text);
+    }
+    final int end = text.indexOf(']');
+    if (end <= 1) {
+      return (tag: null, message: text);
+    }
+    final String tag = text.substring(1, end).trim();
+    final String message = text.substring(end + 1).trimLeft();
+    return (tag: tag.isEmpty ? null : tag, message: message);
+  }
+
+  String _exportLogLevelFileLabel(_ExportLogLevel level) {
+    switch (level) {
+      case _ExportLogLevel.info:
+        return 'INFO';
+      case _ExportLogLevel.warn:
+        return 'WARN';
+      case _ExportLogLevel.error:
+        return 'ERROR';
     }
   }
 
@@ -304,6 +732,8 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
             children: [
               _buildHeaderCard(context),
               const SizedBox(height: AppTheme.spacing3),
+              _buildScopeCard(context),
+              const SizedBox(height: AppTheme.spacing3),
               _buildProgressCard(context),
               const SizedBox(height: AppTheme.spacing3),
               _buildCategoryList(context),
@@ -312,6 +742,11 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
               if (_warnings.isNotEmpty) ...[
                 const SizedBox(height: AppTheme.spacing3),
                 _buildWarningsCard(context),
+              ],
+              if (_activeExportLogSessionId != null ||
+                  _exportLogPath != null) ...[
+                const SizedBox(height: AppTheme.spacing3),
+                _buildLogPathCard(context),
               ],
               if (_error != null) ...[
                 const SizedBox(height: AppTheme.spacing3),
@@ -468,6 +903,121 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScopeCard(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool scopeLocked = _running;
+    final List<_ExportScopeChoice> choices = <_ExportScopeChoice>[
+      _ExportScopeChoice(
+        scope: BackupExportScope.full,
+        label: _scopeLabel(context, BackupExportScope.full),
+        description: _scopeDescription(context, BackupExportScope.full),
+      ),
+      _ExportScopeChoice(
+        scope: BackupExportScope.databasesOnly,
+        label: _scopeLabel(context, BackupExportScope.databasesOnly),
+        description: _scopeDescription(
+          context,
+          BackupExportScope.databasesOnly,
+        ),
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _scopeTitle(context),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            _scopeSummary(context),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          for (int i = 0; i < choices.length; i++) ...[
+            _buildScopeOption(context, choices[i], scopeLocked),
+            if (i != choices.length - 1)
+              const SizedBox(height: AppTheme.spacing2),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeOption(
+    BuildContext context,
+    _ExportScopeChoice choice,
+    bool scopeLocked,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool selected = _selectedScope == choice.scope;
+    final Color borderColor = selected ? cs.primary : cs.outlineVariant;
+    final Color bgColor = selected
+        ? cs.primaryContainer.withValues(
+            alpha: (cs.primaryContainer.a * 0.38).clamp(0.0, 1.0),
+          )
+        : cs.surface;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      onTap: scopeLocked ? null : () => _handleScopeChanged(choice.scope),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.all(AppTheme.spacing3),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? cs.primary : cs.onSurfaceVariant,
+              size: 20,
+            ),
+            const SizedBox(width: AppTheme.spacing3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    choice.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    choice.description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -698,6 +1248,74 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     );
   }
 
+  Widget _buildLogPathCard(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final String? logPath = _exportLogPath?.trim().isNotEmpty == true
+        ? _exportLogPath!.trim()
+        : null;
+    final bool pathReady = logPath != null;
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _logPathTitle(context),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: pathReady ? _copyExportLogPath : null,
+                icon: const Icon(Icons.content_copy_outlined, size: 18),
+                label: Text(_copyLogPathText(context)),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Text(
+            _logPathSummaryText(context),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTheme.spacing3),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(
+                alpha: (cs.surfaceContainerHighest.a * 0.78).clamp(0.0, 1.0),
+              ),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: SelectionArea(
+              child: Text(
+                logPath ?? _logPathPreparingText(context),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  color: pathReady ? null : cs.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildErrorCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
@@ -776,7 +1394,9 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     }
 
     final bool scanFailed = _error != null && _inventory == null;
-    final bool canStartExport = !_inventoryLoading && _inventory != null;
+    final bool inventoryEmpty = _inventory?.isEmpty ?? true;
+    final bool canStartExport =
+        !_inventoryLoading && _inventory != null && !inventoryEmpty;
     return FilledButton.icon(
       style: actionStyle,
       onPressed: _inventoryLoading
@@ -785,12 +1405,16 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
           ? _loadInventoryPreview
           : canStartExport
           ? _startExport
+          : inventoryEmpty && _inventory != null
+          ? null
           : _loadInventoryPreview,
       icon: Icon(
         _inventoryLoading
             ? Icons.hourglass_top
             : scanFailed
             ? Icons.refresh
+            : inventoryEmpty && _inventory != null
+            ? Icons.inventory_2_outlined
             : Icons.play_arrow_rounded,
       ),
       label: Text(
@@ -798,6 +1422,8 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
             ? _scanningScopeButtonText(context)
             : scanFailed
             ? _rescanButtonText(context)
+            : inventoryEmpty && _inventory != null
+            ? _emptyScopeButtonText(context)
             : _startExportButtonText(context),
       ),
     );
@@ -860,6 +1486,9 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     if (_snapshot?.phase == ExportPhase.cancelled) {
       return _cancelledSummary(context);
     }
+    if (!_running && inventory != null && inventory.isEmpty) {
+      return _emptyScopeSummary(context);
+    }
     if (!_running && inventory != null) {
       return _readySummary(context);
     }
@@ -907,9 +1536,9 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
       case ExportPhase.idle:
         return isZh ? '范围已确认，点击开始导出。' : 'Scope confirmed. Tap Start Export.';
       case ExportPhase.scanning:
-        return isZh ? '正在扫描全部持久化数据…' : 'Scanning persistent data...';
+        return _scanningPhaseText(context);
       case ExportPhase.packing:
-        return isZh ? '正在按类型打包备份…' : 'Packing backup by data type...';
+        return _packingPhaseText(context);
       case ExportPhase.verifying:
         return isZh ? '正在校验备份文件…' : 'Verifying backup archive...';
       case ExportPhase.completed:
@@ -961,6 +1590,14 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     return 'Scan Notes';
   }
 
+  String _logPathTitle(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '导出日志文件';
+    }
+    return 'Export Log File';
+  }
+
   String _errorTitle(BuildContext context) {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
     if (code.startsWith('zh')) {
@@ -977,6 +1614,14 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     return 'Copy Path';
   }
 
+  String _copyLogPathText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '复制日志路径';
+    }
+    return 'Copy Log Path';
+  }
+
   String _copySuccessText(BuildContext context) {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
     if (code.startsWith('zh')) {
@@ -991,6 +1636,22 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
       return '复制路径失败';
     }
     return 'Failed to copy backup path';
+  }
+
+  String _copyLogPathSuccessText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '导出日志路径已复制';
+    }
+    return 'Export log path copied';
+  }
+
+  String _copyLogPathFailedText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '复制导出日志路径失败';
+    }
+    return 'Failed to copy export log path';
   }
 
   String _cancelButtonText(BuildContext context) {
@@ -1040,18 +1701,32 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
 
   String _scanningSummary(BuildContext context) {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
-    if (code.startsWith('zh')) {
-      return '正在遍历截图、数据库、偏好设置与其他持久化目录。';
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh
+            ? '正在遍历截图、数据库、偏好设置与其他持久化目录。'
+            : 'Scanning screenshots, databases, preferences, and other persistent folders.';
+      case BackupExportScope.databasesOnly:
+        return isZh
+            ? '正在遍历主库、分片库、设置库与应用数据库目录。'
+            : 'Scanning the main database, shards, settings stores, and app database directory.';
     }
-    return 'Scanning screenshots, databases, preferences, and other persistent folders.';
   }
 
   String _preparingSummary(BuildContext context) {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
-    if (code.startsWith('zh')) {
-      return '正在扫描本次导出范围，确认无遗漏后才会允许开始导出。';
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh
+            ? '正在扫描本次完整导出范围，确认无遗漏后才会允许开始导出。'
+            : 'Scanning the full backup scope first so export starts only after everything is confirmed.';
+      case BackupExportScope.databasesOnly:
+        return isZh
+            ? '正在扫描数据库导出范围，只会预估数据库相关内容。'
+            : 'Scanning the database-only export scope and estimating database content only.';
     }
-    return 'Scanning the backup scope first so export can start only after the full range is confirmed.';
   }
 
   String _progressSummary(BuildContext context) {
@@ -1060,10 +1735,17 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     if (inventory == null) {
       return _scanningSummary(context);
     }
-    if (code.startsWith('zh')) {
-      return '已统计 ${inventory.categories.length} 类数据，正在按字节进度写入 ZIP。';
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh
+            ? '已统计 ${inventory.categories.length} 类数据，正在按字节进度写入 ZIP。'
+            : 'Found ${inventory.categories.length} data groups and now writing them into the ZIP by bytes.';
+      case BackupExportScope.databasesOnly:
+        return isZh
+            ? '已统计 ${inventory.categories.length} 类数据库内容，正在按字节进度写入 ZIP。'
+            : 'Found ${inventory.categories.length} database groups and now writing them into the ZIP by bytes.';
     }
-    return 'Found ${inventory.categories.length} data groups and now writing them into the ZIP by bytes.';
   }
 
   String _readySummary(BuildContext context) {
@@ -1072,10 +1754,29 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     if (inventory == null) {
       return _preparingSummary(context);
     }
-    if (code.startsWith('zh')) {
-      return '已确认 ${inventory.categories.length} 类持久化数据，点击底部按钮开始导出。';
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh
+            ? '已确认 ${inventory.categories.length} 类持久化数据，点击底部按钮开始导出。'
+            : 'Confirmed ${inventory.categories.length} persistent data groups. Tap the button below to start export.';
+      case BackupExportScope.databasesOnly:
+        return isZh
+            ? '已确认 ${inventory.categories.length} 类数据库内容，点击底部按钮开始导出。'
+            : 'Confirmed ${inventory.categories.length} database groups. Tap the button below to start export.';
     }
-    return 'Confirmed ${inventory.categories.length} persistent data groups. Tap the button below to start export.';
+  }
+
+  String _emptyScopeSummary(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return _selectedScope == BackupExportScope.databasesOnly
+          ? '当前设备上没有扫描到可导出的数据库内容，可以切回完整导出查看其他数据。'
+          : '当前导出范围内没有可导出的持久化数据。';
+    }
+    return _selectedScope == BackupExportScope.databasesOnly
+        ? 'No exportable database content was found. Switch back to Full Export to see other data.'
+        : 'No exportable persistent data was found in the current scope.';
   }
 
   String _completedSummary(BuildContext context) {
@@ -1114,9 +1815,13 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
     final bool isZh = code.startsWith('zh');
     if (_snapshot?.phase == ExportPhase.cancelled || _error != null) {
-      return isZh ? '重新开始导出' : 'Start Export Again';
+      return _selectedScope == BackupExportScope.databasesOnly
+          ? (isZh ? '重新导出数据库' : 'Export Databases Again')
+          : (isZh ? '重新开始导出' : 'Start Export Again');
     }
-    return isZh ? '开始导出' : 'Start Export';
+    return _selectedScope == BackupExportScope.databasesOnly
+        ? (isZh ? '开始导出数据库' : 'Export Databases')
+        : (isZh ? '开始导出' : 'Start Export');
   }
 
   String _scanningScopeButtonText(BuildContext context) {
@@ -1135,6 +1840,18 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     return 'Rescan Scope';
   }
 
+  String _emptyScopeButtonText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return _selectedScope == BackupExportScope.databasesOnly
+          ? '当前没有数据库可导出'
+          : '当前范围无可导出数据';
+    }
+    return _selectedScope == BackupExportScope.databasesOnly
+        ? 'No Databases To Export'
+        : 'Nothing To Export';
+  }
+
   String _cancelledCleanupText(BuildContext context) {
     final String code = AppLocalizations.of(context).localeName.toLowerCase();
     if (code.startsWith('zh')) {
@@ -1149,6 +1866,94 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
       return '$count 个文件';
     }
     return '$count files';
+  }
+
+  String _logPathSummaryText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '本次导出的关键进度和错误会直接写入这个文件，出问题时把它发出来就能排查。';
+    }
+    return 'Progress and failures for this export are written directly into this file for troubleshooting.';
+  }
+
+  String _logPathPreparingText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '正在创建本次导出的日志文件…';
+    }
+    return 'Creating the export log file...';
+  }
+
+  String _scopeTitle(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    if (code.startsWith('zh')) {
+      return '导出范围';
+    }
+    return 'Export Scope';
+  }
+
+  String _scopeSummary(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    final BackupInventory? inventory = _inventory;
+    final String selectedLabel = _scopeLabel(context, _selectedScope);
+    if (code.startsWith('zh')) {
+      if (inventory == null) {
+        return '先选择本次导出的范围，扫描完成后会显示该范围内的预估体积与分类。';
+      }
+      return '当前选择：$selectedLabel，预计 ${formatBytes(inventory.totalBytes)}，共 ${_fileCountText(context, inventory.totalFiles)}。';
+    }
+    if (inventory == null) {
+      return 'Choose what this export should contain. The scanned estimate will update for the selected scope.';
+    }
+    return 'Selected: $selectedLabel, estimated ${formatBytes(inventory.totalBytes)} across ${_fileCountText(context, inventory.totalFiles)}.';
+  }
+
+  String _scopeLabel(BuildContext context, BackupExportScope scope) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    switch (scope) {
+      case BackupExportScope.full:
+        return isZh ? '完整导出' : 'Full Export';
+      case BackupExportScope.databasesOnly:
+        return isZh ? '仅导出数据库' : 'Databases Only';
+    }
+  }
+
+  String _scopeDescription(BuildContext context, BackupExportScope scope) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    switch (scope) {
+      case BackupExportScope.full:
+        return isZh
+            ? '包含截图、数据库、偏好设置和其他持久化目录。'
+            : 'Includes screenshots, databases, preferences, and other persistent folders.';
+      case BackupExportScope.databasesOnly:
+        return isZh
+            ? '只包含主数据库、分片数据库、每应用设置库和应用级数据库目录。'
+            : 'Includes only the main database, shard databases, per-app settings, and app database directory.';
+    }
+  }
+
+  String _scanningPhaseText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh ? '正在扫描全部持久化数据…' : 'Scanning persistent data...';
+      case BackupExportScope.databasesOnly:
+        return isZh ? '正在扫描数据库相关内容…' : 'Scanning database content...';
+    }
+  }
+
+  String _packingPhaseText(BuildContext context) {
+    final String code = AppLocalizations.of(context).localeName.toLowerCase();
+    final bool isZh = code.startsWith('zh');
+    switch (_selectedScope) {
+      case BackupExportScope.full:
+        return isZh ? '正在按类型打包备份…' : 'Packing backup by data type...';
+      case BackupExportScope.databasesOnly:
+        return isZh ? '正在打包数据库备份…' : 'Packing database backup...';
+    }
   }
 
   String _categoryLabel(BuildContext context, String id) {
@@ -1220,6 +2025,8 @@ class _ExportBackupPageState extends State<ExportBackupPage> {
     }
   }
 }
+
+enum _ExportLogLevel { info, warn, error }
 
 class _BackupSegmentedProgressBar extends StatelessWidget {
   const _BackupSegmentedProgressBar({
@@ -1294,6 +2101,18 @@ class _BackupSegmentedProgressBar extends StatelessWidget {
         return Theme.of(context).colorScheme.primary;
     }
   }
+}
+
+class _ExportScopeChoice {
+  const _ExportScopeChoice({
+    required this.scope,
+    required this.label,
+    required this.description,
+  });
+
+  final BackupExportScope scope;
+  final String label;
+  final String description;
 }
 
 class _SegmentFill extends StatelessWidget {

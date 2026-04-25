@@ -111,6 +111,7 @@ void main() {
               },
           exportExecutor:
               ({
+                required BackupExportScope exportScope,
                 required void Function(ExportProgressSnapshot snapshot)
                 onProgress,
                 required bool Function() isCancelled,
@@ -138,6 +139,7 @@ void main() {
     int exportCalls = 0;
 
     Future<Map<String, dynamic>?> executor({
+      required BackupExportScope exportScope,
       required void Function(ExportProgressSnapshot snapshot) onProgress,
       required bool Function() isCancelled,
     }) async {
@@ -231,6 +233,7 @@ void main() {
     final _TestNavigatorObserver observer = _TestNavigatorObserver();
 
     Future<Map<String, dynamic>?> executor({
+      required BackupExportScope exportScope,
       required void Function(ExportProgressSnapshot snapshot) onProgress,
       required bool Function() isCancelled,
     }) async {
@@ -309,6 +312,7 @@ void main() {
     final BackupInventory inventory = inventoryFixture();
 
     Future<Map<String, dynamic>?> executor({
+      required BackupExportScope exportScope,
       required void Function(ExportProgressSnapshot snapshot) onProgress,
       required bool Function() isCancelled,
     }) async {
@@ -347,6 +351,50 @@ void main() {
     expect(find.text('导出失败'), findsOneWidget);
     expect(find.textContaining('boom'), findsOneWidget);
     expect(find.text('重新开始导出'), findsOneWidget);
+  });
+
+  testWidgets('database-only scope updates preview and executor scope', (
+    WidgetTester tester,
+  ) async {
+    final BackupInventory inventory = inventoryFixture();
+    BackupExportScope? receivedScope;
+
+    await tester.pumpWidget(
+      buildHarness(
+        ExportBackupPage(
+          inventoryLoader:
+              ({
+                void Function(String scopeId, String? currentPath)? onProgress,
+              }) async => inventory,
+          exportExecutor:
+              ({
+                required BackupExportScope exportScope,
+                required void Function(ExportProgressSnapshot snapshot)
+                onProgress,
+                required bool Function() isCancelled,
+              }) async {
+                receivedScope = exportScope;
+                return null;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('截图文件'), findsOneWidget);
+    expect(find.text('主数据库'), findsOneWidget);
+
+    await tester.tap(find.text('仅导出数据库'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('截图文件'), findsNothing);
+    expect(find.text('主数据库'), findsOneWidget);
+    expect(find.text('开始导出数据库'), findsOneWidget);
+
+    await tester.tap(find.text('开始导出数据库'));
+    await tester.pump();
+
+    expect(receivedScope, BackupExportScope.databasesOnly);
   });
 }
 

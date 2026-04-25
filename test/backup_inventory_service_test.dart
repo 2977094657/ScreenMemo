@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:screen_memo/services/backup_inventory_service.dart';
 
@@ -125,5 +126,121 @@ void main() {
     } finally {
       await tempDir.delete(recursive: true);
     }
+  });
+
+  test(
+    'inspectArchiveFile reads backup roots from central directory only',
+    () async {
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'screenmemo_backup_inspect_',
+      );
+      try {
+        final File manifest = await File(
+          '${tempDir.path}/$backupManifestFileName',
+        ).create(recursive: true);
+        await manifest.writeAsString('{"version":2}');
+
+        final File outputFile = await File(
+          '${tempDir.path}/output/screen/demo/a.png',
+        ).create(recursive: true);
+        await outputFile.writeAsBytes(List<int>.filled(32, 7));
+
+        final File sharedPrefsFile = await File(
+          '${tempDir.path}/shared_prefs/FlutterSharedPreferences.xml',
+        ).create(recursive: true);
+        await sharedPrefsFile.writeAsString('<prefs />');
+
+        final String zipPath = '${tempDir.path}/backup.zip';
+        final ZipFileEncoder encoder = ZipFileEncoder();
+        encoder.create(zipPath, level: 0);
+        encoder.addFile(manifest, backupManifestFileName);
+        encoder.addFile(outputFile, 'output/screen/demo/a.png');
+        encoder.addFile(
+          sharedPrefsFile,
+          'shared_prefs/FlutterSharedPreferences.xml',
+        );
+        encoder.close();
+
+        final BackupArchiveInspection inspection =
+            await BackupInventoryService.inspectArchiveFile(zipPath);
+
+        expect(inspection.hasManifest, isTrue);
+        expect(inspection.rootEntries, contains('output'));
+        expect(inspection.rootEntries, contains('shared_prefs'));
+        expect(inspection.manifestRequiresRestart, isTrue);
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test('filterInventoryByScope keeps only database categories', () async {
+    const BackupRootPaths roots = BackupRootPaths(
+      filesDirPath: '/data/files',
+      dataRootPath: '/data',
+      outputDirPath: '/data/files/output',
+      appDatabasesDirPath: '/data/databases',
+    );
+    const BackupInventory inventory = BackupInventory(
+      roots: roots,
+      categories: <BackupInventoryCategory>[
+        BackupInventoryCategory(
+          id: BackupCategoryIds.screenshots,
+          files: <BackupInventoryFile>[
+            BackupInventoryFile(
+              sourcePath: '/tmp/a.png',
+              archivePath: 'output/screen/demo/a.png',
+              bytes: 10,
+              categoryId: BackupCategoryIds.screenshots,
+            ),
+          ],
+          totalBytes: 10,
+          fileCount: 1,
+        ),
+        BackupInventoryCategory(
+          id: BackupCategoryIds.mainDatabase,
+          files: <BackupInventoryFile>[
+            BackupInventoryFile(
+              sourcePath: '/tmp/main.db',
+              archivePath: 'output/databases/screenshot_memo.db',
+              bytes: 20,
+              categoryId: BackupCategoryIds.mainDatabase,
+            ),
+          ],
+          totalBytes: 20,
+          fileCount: 1,
+        ),
+        BackupInventoryCategory(
+          id: BackupCategoryIds.appDatabases,
+          files: <BackupInventoryFile>[
+            BackupInventoryFile(
+              sourcePath: '/tmp/plugin.db',
+              archivePath: 'databases/plugin.db',
+              bytes: 30,
+              categoryId: BackupCategoryIds.appDatabases,
+            ),
+          ],
+          totalBytes: 30,
+          fileCount: 1,
+        ),
+      ],
+      excludedItems: <BackupExcludedItem>[],
+      totalBytes: 60,
+      totalFiles: 3,
+      warnings: <String>[],
+    );
+
+    final BackupInventory filtered =
+        BackupInventoryService.filterInventoryByScope(
+          inventory,
+          BackupExportScope.databasesOnly,
+        );
+
+    expect(
+      filtered.categories.map((BackupInventoryCategory e) => e.id).toList(),
+      <String>[BackupCategoryIds.mainDatabase, BackupCategoryIds.appDatabases],
+    );
+    expect(filtered.totalBytes, 50);
+    expect(filtered.totalFiles, 2);
   });
 }

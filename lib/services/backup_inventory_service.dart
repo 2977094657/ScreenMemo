@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -31,6 +32,13 @@ class BackupCategoryIds {
     noBackup,
     appDatabases,
   ];
+
+  static const Set<String> databaseOnly = <String>{
+    mainDatabase,
+    shardDatabases,
+    perAppSettings,
+    appDatabases,
+  };
 }
 
 class BackupExcludedIds {
@@ -200,6 +208,8 @@ class BackupArchiveInspection {
   final Set<String> rootEntries;
   final bool manifestRequiresRestart;
 }
+
+enum BackupExportScope { full, databasesOnly }
 
 enum ExportPhase {
   idle,
@@ -519,6 +529,63 @@ class BackupInventoryService {
     );
   }
 
+  static Future<BackupArchiveInspection> inspectArchiveFile(
+    String zipPath,
+  ) async {
+    final InputFileStream input = InputFileStream(zipPath);
+    try {
+      final _ZipCentralDirectoryMetadata directory =
+          _readZipCentralDirectoryMetadata(input);
+      final InputStreamBase dirStream = input.subset(
+        directory.centralDirectoryOffset,
+        directory.centralDirectorySize,
+      );
+      final List<String> entryNames = <String>[];
+      while (!dirStream.isEOS) {
+        final int fileSig = dirStream.readUint32();
+        if (fileSig != ZipFileHeader.SIGNATURE) {
+          break;
+        }
+        entryNames.add(ZipFileHeader(dirStream).filename);
+      }
+      return inspectArchiveEntries(entryNames);
+    } finally {
+      await input.close();
+    }
+  }
+
+  static BackupInventory filterInventoryByScope(
+    BackupInventory inventory,
+    BackupExportScope scope,
+  ) {
+    if (scope == BackupExportScope.full) {
+      return inventory;
+    }
+
+    final List<BackupInventoryCategory> categories = inventory.categories
+        .where(
+          (BackupInventoryCategory category) =>
+              BackupCategoryIds.databaseOnly.contains(category.id),
+        )
+        .toList(growable: false);
+    final int totalBytes = categories.fold<int>(
+      0,
+      (int sum, BackupInventoryCategory category) => sum + category.totalBytes,
+    );
+    final int totalFiles = categories.fold<int>(
+      0,
+      (int sum, BackupInventoryCategory category) => sum + category.fileCount,
+    );
+    return BackupInventory(
+      roots: inventory.roots,
+      categories: List<BackupInventoryCategory>.unmodifiable(categories),
+      excludedItems: inventory.excludedItems,
+      totalBytes: totalBytes,
+      totalFiles: totalFiles,
+      warnings: inventory.warnings,
+    );
+  }
+
   static String encodeManifestJson(
     BackupInventory inventory, {
     required DateTime createdAt,
@@ -702,4 +769,152 @@ class BackupInventoryService {
     }
     return BackupCategoryIds.otherOutput;
   }
+
+  static _ZipCentralDirectoryMetadata _readZipCentralDirectoryMetadata(
+    InputStreamBase input,
+  ) {
+    final int filePosition = _findZipEocdrSignature(input);
+    final int originalPosition = input.position;
+    input.position = filePosition;
+
+    input.readUint32(); // EOCD signature
+    int numberOfThisDisk = input.readUint16();
+    int diskWithTheStartOfTheCentralDirectory = input.readUint16();
+    int totalCentralDirectoryEntriesOnThisDisk = input.readUint16();
+    int totalCentralDirectoryEntries = input.readUint16();
+    int centralDirectorySize = input.readUint32();
+    int centralDirectoryOffset = input.readUint32();
+
+    final int commentLength = input.readUint16();
+    if (commentLength > 0) {
+      input.skip(commentLength);
+    }
+
+    if (centralDirectoryOffset == 0xffffffff ||
+        centralDirectorySize == 0xffffffff ||
+        totalCentralDirectoryEntriesOnThisDisk == 0xffff ||
+        numberOfThisDisk == 0xffff) {
+      final _ZipCentralDirectoryMetadata? zip64Metadata =
+          _readZip64CentralDirectoryMetadata(input, filePosition);
+      if (zip64Metadata != null) {
+        numberOfThisDisk = zip64Metadata.numberOfThisDisk;
+        diskWithTheStartOfTheCentralDirectory =
+            zip64Metadata.diskWithTheStartOfTheCentralDirectory;
+        totalCentralDirectoryEntriesOnThisDisk =
+            zip64Metadata.totalCentralDirectoryEntriesOnThisDisk;
+        totalCentralDirectoryEntries =
+            zip64Metadata.totalCentralDirectoryEntries;
+        centralDirectorySize = zip64Metadata.centralDirectorySize;
+        centralDirectoryOffset = zip64Metadata.centralDirectoryOffset;
+      }
+    }
+
+    input.position = originalPosition;
+    return _ZipCentralDirectoryMetadata(
+      numberOfThisDisk: numberOfThisDisk,
+      diskWithTheStartOfTheCentralDirectory:
+          diskWithTheStartOfTheCentralDirectory,
+      totalCentralDirectoryEntriesOnThisDisk:
+          totalCentralDirectoryEntriesOnThisDisk,
+      totalCentralDirectoryEntries: totalCentralDirectoryEntries,
+      centralDirectorySize: centralDirectorySize,
+      centralDirectoryOffset: centralDirectoryOffset,
+    );
+  }
+
+  static _ZipCentralDirectoryMetadata? _readZip64CentralDirectoryMetadata(
+    InputStreamBase input,
+    int filePosition,
+  ) {
+    final int originalPosition = input.position;
+    final int locatorPosition =
+        filePosition - _ZipCentralDirectoryMetadata.zip64EocdLocatorSize;
+    if (locatorPosition < 0) {
+      input.position = originalPosition;
+      return null;
+    }
+
+    final InputStreamBase zip64Locator = input.subset(
+      locatorPosition,
+      _ZipCentralDirectoryMetadata.zip64EocdLocatorSize,
+    );
+    final int locatorSignature = zip64Locator.readUint32();
+    if (locatorSignature != _ZipCentralDirectoryMetadata.zip64EocdLocatorSig) {
+      input.position = originalPosition;
+      return null;
+    }
+
+    zip64Locator.readUint32(); // disk number with zip64 EOCD
+    final int zip64DirectoryOffset = zip64Locator.readUint64();
+    zip64Locator.readUint32(); // total number of disks
+
+    input.position = zip64DirectoryOffset;
+    final int zip64Signature = input.readUint32();
+    if (zip64Signature != _ZipCentralDirectoryMetadata.zip64EocdSig) {
+      input.position = originalPosition;
+      return null;
+    }
+
+    input.readUint64(); // zip64 EOCD record size
+    input.readUint16(); // version made by
+    input.readUint16(); // version needed to extract
+    final int numberOfThisDisk = input.readUint32();
+    final int diskWithTheStartOfTheCentralDirectory = input.readUint32();
+    final int totalCentralDirectoryEntriesOnThisDisk = input.readUint64();
+    final int totalCentralDirectoryEntries = input.readUint64();
+    final int centralDirectorySize = input.readUint64();
+    final int centralDirectoryOffset = input.readUint64();
+
+    input.position = originalPosition;
+    return _ZipCentralDirectoryMetadata(
+      numberOfThisDisk: numberOfThisDisk,
+      diskWithTheStartOfTheCentralDirectory:
+          diskWithTheStartOfTheCentralDirectory,
+      totalCentralDirectoryEntriesOnThisDisk:
+          totalCentralDirectoryEntriesOnThisDisk,
+      totalCentralDirectoryEntries: totalCentralDirectoryEntries,
+      centralDirectorySize: centralDirectorySize,
+      centralDirectoryOffset: centralDirectoryOffset,
+    );
+  }
+
+  static int _findZipEocdrSignature(InputStreamBase input) {
+    final int originalPosition = input.position;
+    final int length = input.length;
+
+    for (int position = length - 5; position >= 0; position--) {
+      input.position = position;
+      final int signature = input.readUint32();
+      if (signature == _ZipCentralDirectoryMetadata.eocdLocatorSig) {
+        input.position = originalPosition;
+        return position;
+      }
+    }
+
+    input.position = originalPosition;
+    throw ArchiveException('Could not find End of Central Directory Record');
+  }
+}
+
+class _ZipCentralDirectoryMetadata {
+  const _ZipCentralDirectoryMetadata({
+    required this.numberOfThisDisk,
+    required this.diskWithTheStartOfTheCentralDirectory,
+    required this.totalCentralDirectoryEntriesOnThisDisk,
+    required this.totalCentralDirectoryEntries,
+    required this.centralDirectorySize,
+    required this.centralDirectoryOffset,
+  });
+
+  static const int eocdLocatorSig = 0x06054b50;
+  static const int zip64EocdLocatorSig = 0x07064b50;
+  static const int zip64EocdSig = 0x06064b50;
+  static const int zip64EocdLocatorSize = 20;
+
+  final int numberOfThisDisk;
+  final int diskWithTheStartOfTheCentralDirectory;
+  final int totalCentralDirectoryEntriesOnThisDisk;
+  final int totalCentralDirectoryEntries;
+  final int centralDirectorySize;
+  final int centralDirectoryOffset;
 }

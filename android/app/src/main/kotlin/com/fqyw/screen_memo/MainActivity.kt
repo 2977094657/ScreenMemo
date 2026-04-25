@@ -578,29 +578,31 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "exportFileToDownloads" -> {
-                    try {
-                        val sourcePath = call.argument<String>("sourcePath")
-                        val displayName = call.argument<String>("displayName")
-                        val subDir = call.argument<String>("subDir")
+                    val sourcePath = call.argument<String>("sourcePath")
+                    val displayName = call.argument<String>("displayName")
+                    val subDir = call.argument<String>("subDir")
 
-                        if (sourcePath.isNullOrEmpty()) {
-                            result.error("invalid_args", "sourcePath is required", null)
-                            return@setMethodCallHandler
-                        }
-
-                        val src = File(sourcePath)
-                        if (!src.exists()) {
-                            result.error("source_not_found", "Source file not found", sourcePath)
-                            return@setMethodCallHandler
-                        }
-
-                        val name = if (!displayName.isNullOrEmpty()) displayName else src.name
-                        val exportResult = exportFileToDownloadsInternal(src, name, subDir)
-                        result.success(exportResult)
-                    } catch (e: Exception) {
-                        FileLogger.e(TAG, "导出文件到下载目录失败", e)
-                        result.error("export_failed", e.message, null)
+                    if (sourcePath.isNullOrEmpty()) {
+                        result.error("invalid_args", "sourcePath is required", null)
+                        return@setMethodCallHandler
                     }
+
+                    val src = File(sourcePath)
+                    if (!src.exists()) {
+                        result.error("source_not_found", "Source file not found", sourcePath)
+                        return@setMethodCallHandler
+                    }
+
+                    val name = if (!displayName.isNullOrEmpty()) displayName else src.name
+                    Thread {
+                        try {
+                            val exportResult = exportFileToDownloadsInternal(src, name, subDir)
+                            runOnUiThread { result.success(exportResult) }
+                        } catch (e: Exception) {
+                            FileLogger.e(TAG, "导出文件到下载目录失败", e)
+                            runOnUiThread { result.error("export_failed", e.message, null) }
+                        }
+                    }.start()
                 }
                 "deleteExportedArtifact" -> {
                     try {
@@ -2529,6 +2531,7 @@ class MainActivity : FlutterActivity() {
         val size = sourceFile.length()
         val targetSubDir = (subDir ?: "").trim('/').ifEmpty { "ScreenMemory" }
         val displayPath = if (targetSubDir.isNotEmpty()) "Download/$targetSubDir/$displayName" else "Download/$displayName"
+        val copyBufferSize = 1024 * 1024
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
@@ -2542,7 +2545,9 @@ class MainActivity : FlutterActivity() {
                 ?: throw IllegalStateException("Failed to create item in MediaStore")
             try {
                 resolver.openOutputStream(uri)?.use { out ->
-                    FileInputStream(sourceFile).use { input -> input.copyTo(out) }
+                    FileInputStream(sourceFile).use { input ->
+                        input.copyTo(out, copyBufferSize)
+                    }
                 } ?: throw IllegalStateException("Failed to open output stream")
 
                 values.clear()
@@ -2575,7 +2580,9 @@ class MainActivity : FlutterActivity() {
 
             try {
                 FileInputStream(sourceFile).use { input ->
-                    FileOutputStream(dest).use { output -> input.copyTo(output) }
+                    FileOutputStream(dest).use { output ->
+                        input.copyTo(output, copyBufferSize)
+                    }
                 }
             } catch (e: Exception) {
                 try {
