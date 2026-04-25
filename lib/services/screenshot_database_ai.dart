@@ -313,6 +313,69 @@ class SegmentTimelineBatch {
 
 // 将 AI 配置、消息、会话、提供商与上下文相关方法拆分为扩展
 extension ScreenshotDatabaseAI on ScreenshotDatabase {
+  Future<void> _createAiProviderKeysTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_provider_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        models_json TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 100,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        cooldown_until_ms INTEGER,
+        last_error_type TEXT,
+        last_error_message TEXT,
+        last_failed_at INTEGER,
+        last_success_at INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_provider ON ai_provider_keys(provider_id, enabled, priority, order_index, id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_cooldown ON ai_provider_keys(cooldown_until_ms)',
+    );
+  }
+
+  Future<void> _migrateLegacyProviderKeys(DatabaseExecutor db) async {
+    try {
+      final providers = await db.query(
+        'ai_providers',
+        columns: ['id', 'api_key', 'models_json'],
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final row in providers) {
+        final int? providerId = row['id'] as int?;
+        if (providerId == null) continue;
+        final existing = await db.query(
+          'ai_provider_keys',
+          columns: ['id'],
+          where: 'provider_id = ?',
+          whereArgs: <Object?>[providerId],
+          limit: 1,
+        );
+        if (existing.isNotEmpty) continue;
+        final String key = ((row['api_key'] as String?) ?? '').trim();
+        if (key.isEmpty) continue;
+        await db.insert('ai_provider_keys', <String, Object?>{
+          'provider_id': providerId,
+          'name': 'Default key',
+          'api_key': key,
+          'models_json': (row['models_json'] as String?) ?? '[]',
+          'enabled': 1,
+          'priority': 100,
+          'order_index': 0,
+          'failure_count': 0,
+          'created_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _createAiTables(DatabaseExecutor db) async {
     // ai_settings: 单行键值存储
     await db.execute('''
@@ -601,6 +664,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_providers_default ON ai_providers(is_default)',
     );
+    await _createAiProviderKeysTable(db);
+    await _migrateLegacyProviderKeys(db);
 
     // AI 上下文选中（chat/segments 等各自独立）
     await db.execute('''
@@ -1644,6 +1709,198 @@ ORDER BY day ASC
   }
 
   // ===================== AI 上下文选中（chat / segments） =====================
+
+  Future<int> cleanupExpiredRawResponses({
+    required int cutoffMs,
+    bool includeMorningInsights = true,
+  }) async {
+    final db = await database;
+    int total = 0;
+    Future<void> clearTable(String table, String column) async {
+      try {
+        total += await db.update(
+          table,
+          <String, Object?>{column: null},
+          where: 'created_at < ? AND $column IS NOT NULL',
+          whereArgs: <Object?>[cutoffMs],
+        );
+      } catch (_) {}
+    }
+
+    await clearTable('segment_results', 'raw_response');
+    if (includeMorningInsights) {
+      await clearTable('morning_insights', 'raw_response');
+    }
+    try {
+      total += await db.delete(
+        'ai_messages_raw',
+        where: 'created_at < ?',
+        whereArgs: <Object?>[cutoffMs],
+      );
+    } catch (_) {}
+    return total;
+  }
+
+  Future<List<Map<String, dynamic>>> listAIProviderKeys(int providerId) async {
+    final db = await database;
+    try {
+      return await db.query(
+        'ai_provider_keys',
+        where: 'provider_id = ?',
+        whereArgs: <Object?>[providerId],
+        orderBy: 'enabled DESC, priority ASC, order_index ASC, id ASC',
+      );
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getAIProviderKeyById(int id) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'ai_provider_keys',
+        where: 'id = ?',
+        whereArgs: <Object?>[id],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<int?> insertAIProviderKey({
+    required int providerId,
+    required String name,
+    required String apiKey,
+    String? modelsJson,
+    bool enabled = true,
+    int priority = 100,
+    int? orderIndex,
+  }) async {
+    final db = await database;
+    try {
+      return await db.insert('ai_provider_keys', <String, Object?>{
+        'provider_id': providerId,
+        'name': name.trim(),
+        'api_key': apiKey.trim(),
+        'models_json': modelsJson ?? '[]',
+        'enabled': enabled ? 1 : 0,
+        'priority': priority,
+        'order_index': orderIndex ?? 0,
+        'failure_count': 0,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> updateAIProviderKey({
+    required int id,
+    String? name,
+    String? apiKey,
+    String? modelsJson,
+    bool? enabled,
+    int? priority,
+    int? orderIndex,
+    bool clearErrorState = false,
+  }) async {
+    final db = await database;
+    try {
+      final data = <String, Object?>{};
+      if (name != null) data['name'] = name.trim();
+      if (apiKey != null) data['api_key'] = apiKey.trim();
+      if (modelsJson != null) data['models_json'] = modelsJson;
+      if (enabled != null) data['enabled'] = enabled ? 1 : 0;
+      if (priority != null) data['priority'] = priority;
+      if (orderIndex != null) data['order_index'] = orderIndex;
+      if (clearErrorState) {
+        data['failure_count'] = 0;
+        data['cooldown_until_ms'] = null;
+        data['last_error_type'] = null;
+        data['last_error_message'] = null;
+        data['last_failed_at'] = null;
+      }
+      if (data.isEmpty) return (await getAIProviderKeyById(id)) != null;
+      final count = await db.update(
+        'ai_provider_keys',
+        data,
+        where: 'id = ?',
+        whereArgs: <Object?>[id],
+      );
+      return count > 0 || (await getAIProviderKeyById(id)) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteAIProviderKey(int id) async {
+    final db = await database;
+    try {
+      final count = await db.delete(
+        'ai_provider_keys',
+        where: 'id = ?',
+        whereArgs: <Object?>[id],
+      );
+      return count > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> markAIProviderKeySuccess(int keyId) async {
+    final db = await database;
+    try {
+      await db.update(
+        'ai_provider_keys',
+        <String, Object?>{
+          'failure_count': 0,
+          'cooldown_until_ms': null,
+          'last_error_type': null,
+          'last_error_message': null,
+          'last_failed_at': null,
+          'last_success_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: <Object?>[keyId],
+      );
+    } catch (_) {}
+  }
+
+  Future<void> markAIProviderKeyFailure({
+    required int keyId,
+    required String errorType,
+    required String errorMessage,
+    bool incrementFailure = true,
+    int? cooldownUntilMs,
+    bool resetFailureCount = false,
+  }) async {
+    final db = await database;
+    try {
+      final row = await getAIProviderKeyById(keyId);
+      final int current = (row?['failure_count'] as int?) ?? 0;
+      final int nextCount = resetFailureCount
+          ? 0
+          : (incrementFailure ? current + 1 : current);
+      await db.update(
+        'ai_provider_keys',
+        <String, Object?>{
+          'failure_count': nextCount,
+          'cooldown_until_ms': cooldownUntilMs,
+          'last_error_type': errorType,
+          'last_error_message': errorMessage.length > 1000
+              ? errorMessage.substring(0, 1000)
+              : errorMessage,
+          'last_failed_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: <Object?>[keyId],
+      );
+    } catch (_) {}
+  }
+
   Future<Map<String, dynamic>?> getAIContext(String context) async {
     final db = await database;
     try {

@@ -116,7 +116,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 42,
+          version: 44,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -154,7 +154,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 42,
+          version: 44,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -187,7 +187,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 42,
+          version: 44,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -214,7 +214,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 42,
+        version: 44,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -321,12 +321,9 @@ class ScreenshotDatabase {
     await shardDb.execute(
       'CREATE INDEX IF NOT EXISTS idx_${table}_file_path ON $table(file_path)',
     );
-    // 可选：为 ocr_text 建立索引（对前缀匹配有帮助；LIKE '%term%' 仍会扫描）
-    try {
-      await shardDb.execute(
-        'CREATE INDEX IF NOT EXISTS idx_${table}_ocr_text ON $table(ocr_text)',
-      );
-    } catch (_) {}
+    // 不再为 ocr_text 建立普通索引：
+    // - 中文/子串搜索主要依赖 FTS 或 LIKE 回退
+    // - LIKE '%term%' 无法有效利用普通 B-Tree 索引
     // 兜底：老表添加缺失列
     try {
       await shardDb.execute("ALTER TABLE $table ADD COLUMN ocr_text TEXT");
@@ -493,6 +490,79 @@ class ScreenshotDatabase {
       return res.isNotEmpty;
     } catch (_) {
       return false;
+    }
+  }
+
+  String _quoteIdentifier(String value) {
+    return '"${value.replaceAll('"', '""')}"';
+  }
+
+  Future<void> _dropLegacyShardOcrTextIndexes(DatabaseExecutor masterDb) async {
+    try {
+      final List<Map<String, Object?>> rows = await masterDb.query(
+        'shard_registry',
+        columns: const <String>['db_path'],
+      );
+      final Set<String> shardPaths = <String>{};
+      for (final Map<String, Object?> row in rows) {
+        final String path = (row['db_path'] as String? ?? '').trim();
+        if (path.isNotEmpty) {
+          shardPaths.add(path);
+        }
+      }
+      for (final String path in shardPaths) {
+        await _dropLegacyShardOcrTextIndexesInShard(path);
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn('DB', '删除旧 shard OCR 索引失败：$e');
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _dropLegacyShardOcrTextIndexesInShard(String dbPath) async {
+    if (dbPath.trim().isEmpty) return;
+    Database? shardDb;
+    bool closeAfter = false;
+    try {
+      try {
+        for (final Database cached in _shardDbCache.values) {
+          if (cached.path == dbPath) {
+            shardDb = cached;
+            break;
+          }
+        }
+      } catch (_) {}
+      if (shardDb == null) {
+        if (!await File(dbPath).exists()) return;
+        shardDb = await openDatabase(dbPath, version: 1);
+        closeAfter = true;
+      }
+      final List<Map<String, Object?>> rows = await shardDb.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_shots_%_ocr_text'",
+      );
+      for (final Map<String, Object?> row in rows) {
+        final String name = (row['name'] as String? ?? '').trim();
+        if (name.isEmpty) continue;
+        try {
+          await shardDb.execute(
+            'DROP INDEX IF EXISTS ${_quoteIdentifier(name)}',
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'DB',
+          '删除 shard OCR 索引失败：path=$dbPath err=$e',
+        );
+      } catch (_) {}
+    } finally {
+      if (closeAfter) {
+        try {
+          await shardDb?.close();
+        } catch (_) {}
+      }
     }
   }
 
@@ -663,6 +733,10 @@ class ScreenshotDatabase {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 42) {
       await _renameLegacyUriFirstSignalTables(db);
+    }
+    if (oldVersion < 44) {
+      await _createAiProviderKeysTable(db);
+      await _migrateLegacyProviderKeys(db);
     }
     if (oldVersion < 2) {
       await _createAiTables(db);
@@ -1174,6 +1248,11 @@ class ScreenshotDatabase {
     if (oldVersion < 42) {
       try {
         await _createMemoryEntityTables(db);
+      } catch (_) {}
+    }
+    if (oldVersion < 43) {
+      try {
+        await _dropLegacyShardOcrTextIndexes(db);
       } catch (_) {}
     }
   }

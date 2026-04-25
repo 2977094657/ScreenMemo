@@ -5,7 +5,9 @@ import 'locale_service.dart';
 import 'ai_providers_service.dart';
 import 'ai_context_budgets.dart';
 import 'package:flutter/services.dart'; // Added for MethodChannel
+import '../constants/user_settings_keys.dart';
 import 'flutter_logger.dart';
+import 'user_settings_service.dart';
 
 /// 站点分组实体（用户可配置多个接口站点作为备用）
 class AISiteGroup {
@@ -67,6 +69,9 @@ class AIEndpoint {
   final int? providerId;
   final String? providerName;
   final String? providerType;
+  final int? providerKeyId;
+  final String? providerKeyName;
+  final int? providerKeyPriority;
   final String baseUrl;
   final String? apiKey;
   final String model;
@@ -78,6 +83,9 @@ class AIEndpoint {
     this.providerId,
     this.providerName,
     this.providerType,
+    this.providerKeyId,
+    this.providerKeyName,
+    this.providerKeyPriority,
     required this.baseUrl,
     required this.apiKey,
     required this.model,
@@ -154,11 +162,14 @@ class AISettingsService {
   static const String _defaultBaseUrl = 'https://api.openai.com';
   static const String _defaultModel = 'gpt-4o-mini';
   static const int _defaultSegmentsJsonAutoRetryMax = 1;
+  static const int _defaultRawResponseCleanupDays = 30;
+  static const int _rawResponseCleanupThrottleMs = 12 * 60 * 60 * 1000;
   static const String eventNocturneMemorySidebarEntryVisibilityChanged =
       'ui:nocturne_memory_sidebar_entry_visibility_changed';
 
   // 历史限制（仅保存最近 N 条，避免无限膨胀）
   static const int _maxHistoryMessages = 40;
+  bool _rawResponseCleanupRunning = false;
 
   // ========== 基础布尔设置（流式开关） ==========
   Future<bool> getStreamEnabled() async {
@@ -238,6 +249,79 @@ class AISettingsService {
     final db = ScreenshotDatabase.instance;
     final int v = value.clamp(0, 5);
     await db.setAiSetting(_keySegmentsJsonAutoRetryMax, v.toString());
+  }
+
+  Future<bool> getRawResponseCleanupEnabled() async {
+    return UserSettingsService.instance.getBool(
+      UserSettingKeys.aiRawResponseCleanupEnabled,
+      defaultValue: true,
+    );
+  }
+
+  Future<int> getRawResponseCleanupDays() async {
+    final int raw = await UserSettingsService.instance.getInt(
+      UserSettingKeys.aiRawResponseCleanupDays,
+      defaultValue: _defaultRawResponseCleanupDays,
+    );
+    return raw < 1 ? 1 : raw;
+  }
+
+  Future<void> setRawResponseCleanupEnabled(bool value) async {
+    await UserSettingsService.instance.setBool(
+      UserSettingKeys.aiRawResponseCleanupEnabled,
+      value,
+    );
+  }
+
+  Future<void> setRawResponseCleanupDays(int value) async {
+    await UserSettingsService.instance.setInt(
+      UserSettingKeys.aiRawResponseCleanupDays,
+      value < 1 ? 1 : value,
+    );
+  }
+
+  Future<int> cleanupExpiredRawResponsesIfNeeded({bool force = false}) async {
+    if (_rawResponseCleanupRunning) return 0;
+    try {
+      final bool enabled = await getRawResponseCleanupEnabled();
+      if (!enabled) return 0;
+      final int days = await getRawResponseCleanupDays();
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int lastRunMs = await UserSettingsService.instance.getInt(
+        UserSettingKeys.aiRawResponseCleanupLastTs,
+        defaultValue: 0,
+      );
+      if (!force &&
+          lastRunMs > 0 &&
+          (now - lastRunMs) < _rawResponseCleanupThrottleMs) {
+        return 0;
+      }
+      _rawResponseCleanupRunning = true;
+      final int cutoffMs = now - days * 24 * 60 * 60 * 1000;
+      final int cleaned = await ScreenshotDatabase.instance
+          .cleanupExpiredRawResponses(
+            cutoffMs: cutoffMs,
+            includeMorningInsights: true,
+          );
+      await UserSettingsService.instance.setInt(
+        UserSettingKeys.aiRawResponseCleanupLastTs,
+        now,
+      );
+      try {
+        await FlutterLogger.nativeInfo(
+          'AI_SETTINGS',
+          'raw_response 自动清理执行完成：days=$days cleaned=$cleaned force=$force',
+        );
+      } catch (_) {}
+      return cleaned;
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn('AI_SETTINGS', 'raw_response 自动清理失败：$e');
+      } catch (_) {}
+      return 0;
+    } finally {
+      _rawResponseCleanupRunning = false;
+    }
   }
 
   // ========== 分组管理（v6 起移除 legacy，统一使用提供商+上下文） ==========
@@ -509,7 +593,6 @@ class AISettingsService {
   }) async {
     final providers = await AIProvidersService.instance.listProviders();
     if (providers.isEmpty) {
-      // 对于 segments 上下文，尝试直接从原生配置复用（确保与动态一致）
       if (context == 'segments') {
         try {
           const MethodChannel ch = MethodChannel(
@@ -544,9 +627,8 @@ class AISettingsService {
       return <AIEndpoint>[];
     }
 
-    // 读取上下文选择：优先 ai_contexts(context)，否则默认提供商，否则列表首项
     final db = ScreenshotDatabase.instance;
-    Map<String, dynamic>? ctx = await db.getAIContext(context);
+    final Map<String, dynamic>? ctx = await db.getAIContext(context);
     AIProvider? pSelected;
     final int? ctxProviderId = (ctx != null && ctx['provider_id'] is int)
         ? (ctx['provider_id'] as int)
@@ -561,7 +643,6 @@ class AISettingsService {
         (await AIProvidersService.instance.getDefaultProvider()) ??
         providers.first;
 
-    // 解析模型：上下文显式 -> extra.active_model -> default_model -> models.first -> 默认
     final String ctxModel = (ctx == null)
         ? ''
         : ((ctx['model'] as String?)?.trim() ?? '');
@@ -571,7 +652,10 @@ class AISettingsService {
               .toString()
               .trim();
     if (model.isEmpty ||
-        (pSelected.models.isNotEmpty && !pSelected.models.contains(model))) {
+        (pSelected.models.isNotEmpty &&
+            !pSelected.models.any(
+              (m) => m.trim().toLowerCase() == model.toLowerCase(),
+            ))) {
       final String fb =
           (pSelected.extra['active_model'] as String? ?? pSelected.defaultModel)
               .toString()
@@ -583,14 +667,17 @@ class AISettingsService {
                 : _defaultModel);
     }
 
-    // 读取 API Key
-    String? apiKey = await AIProvidersService.instance.getApiKey(pSelected.id!);
-    // 对于“动态(segments)”上下文：
-    // 1) 优先原生配置（与动态完全一致）
-    // 2) 其次 DB 中的 ai_settings.api_key_segments
-    String baseUrlOverride = '';
+    String baseUrl =
+        (pSelected.baseUrl == null || pSelected.baseUrl!.trim().isEmpty)
+        ? _defaultBaseUrl
+        : pSelected.baseUrl!.trim();
+    final String chatPath =
+        (pSelected.chatPath == null || pSelected.chatPath!.trim().isEmpty)
+        ? '/v1/chat/completions'
+        : pSelected.chatPath!.trim();
+    final int groupId = -1 * (pSelected.id ?? 0).abs();
+
     if (context == 'segments') {
-      bool setFromNative = false;
       try {
         const MethodChannel ch = MethodChannel(
           'com.fqyw.screen_memo/accessibility',
@@ -603,58 +690,105 @@ class AISettingsService {
               .trim();
           final String modelFromNative = ((segCfg['model'] as String?) ?? '')
               .trim();
-          final String? keyFromNative = ((segCfg['apiKey'] as String?) ?? '')
-              .trim();
-          if ((keyFromNative != null && keyFromNative.isNotEmpty)) {
-            apiKey = keyFromNative;
-            setFromNative = true;
-          }
           if (modelFromNative.isNotEmpty) model = modelFromNative;
-          if (baseFromNative.isNotEmpty) baseUrlOverride = baseFromNative;
+          if (baseFromNative.isNotEmpty) baseUrl = baseFromNative;
         }
       } catch (_) {}
-      if (!setFromNative) {
+    }
+
+    final List<AIProviderKey> keys = await AIProvidersService.instance
+        .listProviderKeys(pSelected.id!, includeDisabled: false);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<AIProviderKey> usableKeys = keys.where((k) {
+      if (k.apiKey.trim().isEmpty) return false;
+      if (k.isAuthFailed) return false;
+      if (k.isCoolingDown(now)) return false;
+      return k.supportsModel(model);
+    }).toList();
+
+    if (usableKeys.isEmpty) {
+      final String? legacyKey = await AIProvidersService.instance.getApiKey(
+        pSelected.id!,
+      );
+      if (legacyKey != null && legacyKey.trim().isNotEmpty) {
+        return <AIEndpoint>[
+          AIEndpoint(
+            groupId: groupId,
+            providerId: pSelected.id,
+            providerName: pSelected.name,
+            providerType: pSelected.type,
+            baseUrl: baseUrl,
+            apiKey: legacyKey,
+            model: model,
+            chatPath: chatPath,
+            useResponseApi: pSelected.useResponseApi,
+          ),
+        ];
+      }
+      return <AIEndpoint>[];
+    }
+
+    usableKeys.sort((a, b) {
+      final p = a.priority.compareTo(b.priority);
+      if (p != 0) return p;
+      final o = a.orderIndex.compareTo(b.orderIndex);
+      if (o != 0) return o;
+      return (a.id ?? 0).compareTo(b.id ?? 0);
+    });
+
+    final List<AIProviderKey> ordered = <AIProviderKey>[];
+    int i = 0;
+    while (i < usableKeys.length) {
+      final int priority = usableKeys[i].priority;
+      final group = <AIProviderKey>[];
+      while (i < usableKeys.length && usableKeys[i].priority == priority) {
+        group.add(usableKeys[i]);
+        i++;
+      }
+      final String cursorKey =
+          'ai_key_rr_${pSelected.id}_${model.toLowerCase()}_$priority';
+      final int cursor =
+          int.tryParse((await db.getAiSetting(cursorKey)) ?? '') ?? 0;
+      if (group.isNotEmpty) {
+        final int start = cursor % group.length;
+        ordered.addAll(<AIProviderKey>[
+          ...group.skip(start),
+          ...group.take(start),
+        ]);
         try {
-          final k = await ScreenshotDatabase.instance.getAiSetting(
-            'api_key_segments',
+          await db.setAiSetting(
+            cursorKey,
+            ((cursor + 1) % group.length).toString(),
           );
-          if (k != null && k.trim().isNotEmpty) {
-            apiKey = k.trim();
-          }
         } catch (_) {}
       }
     }
 
-    // 规范化 base 与 chatPath（若上方从原生覆盖 model/base，应在此处理）
-    String baseUrl =
-        (pSelected.baseUrl == null || pSelected.baseUrl!.trim().isEmpty)
-        ? _defaultBaseUrl
-        : pSelected.baseUrl!.trim();
-    if (baseUrlOverride.isNotEmpty) baseUrl = baseUrlOverride;
-    final String chatPath =
-        (pSelected.chatPath == null || pSelected.chatPath!.trim().isEmpty)
-        ? '/v1/chat/completions'
-        : pSelected.chatPath!.trim();
-
-    // 使用负的 ProviderID 作为 groupId，隔离会话历史
-    final int groupId = -1 * (pSelected.id ?? 0).abs();
-
-    return <AIEndpoint>[
-      AIEndpoint(
-        groupId: groupId,
-        providerId: pSelected.id,
-        providerName: pSelected.name,
-        providerType: pSelected.type,
-        baseUrl: baseUrl,
-        apiKey: apiKey,
-        model: model,
-        chatPath: chatPath,
-        useResponseApi: pSelected.useResponseApi,
-      ),
-    ];
+    final endpoints = <AIEndpoint>[];
+    for (final key in ordered) {
+      for (int attempt = 0; attempt < 3; attempt++) {
+        endpoints.add(
+          AIEndpoint(
+            groupId: groupId,
+            providerId: pSelected.id,
+            providerName: pSelected.name,
+            providerType: pSelected.type,
+            providerKeyId: key.id,
+            providerKeyName: key.name,
+            providerKeyPriority: key.priority,
+            baseUrl: baseUrl,
+            apiKey: key.apiKey,
+            model: model,
+            chatPath: chatPath,
+            useResponseApi: pSelected.useResponseApi,
+          ),
+        );
+      }
+    }
+    return endpoints;
   }
 
-  // ========== 会话（Conversation）管理与历史 ==========
+  // ========== ???Conversation?????? ==========
 
   String _conversationIdForGroup(int? groupId) =>
       groupId == null ? 'default' : 'group:$groupId';

@@ -59,6 +59,88 @@ class AIProviderTypes {
 }
 
 /// 提供商实体（来自 ai_providers 表 + 衍生字段）
+
+class AIProviderKey {
+  final int? id;
+  final int providerId;
+  final String name;
+  final String apiKey;
+  final List<String> models;
+  final bool enabled;
+  final int priority;
+  final int orderIndex;
+  final int failureCount;
+  final int? cooldownUntilMs;
+  final String? lastErrorType;
+  final String? lastErrorMessage;
+  final int? lastFailedAt;
+  final int? lastSuccessAt;
+
+  const AIProviderKey({
+    required this.id,
+    required this.providerId,
+    required this.name,
+    required this.apiKey,
+    required this.models,
+    required this.enabled,
+    required this.priority,
+    required this.orderIndex,
+    required this.failureCount,
+    required this.cooldownUntilMs,
+    required this.lastErrorType,
+    required this.lastErrorMessage,
+    required this.lastFailedAt,
+    required this.lastSuccessAt,
+  });
+
+  factory AIProviderKey.fromDbRow(Map<String, dynamic> row) {
+    final modelsJson = (row['models_json'] as String?) ?? '[]';
+    List<String> parsedModels;
+    try {
+      final v = jsonDecode(modelsJson);
+      parsedModels = v is List ? v.map((e) => '$e').toList() : <String>[];
+    } catch (_) {
+      parsedModels = <String>[];
+    }
+    return AIProviderKey(
+      id: row['id'] as int?,
+      providerId: (row['provider_id'] as int?) ?? 0,
+      name: ((row['name'] as String?) ?? 'Key').trim(),
+      apiKey: ((row['api_key'] as String?) ?? '').trim(),
+      models: parsedModels,
+      enabled: ((row['enabled'] as int?) ?? 1) != 0,
+      priority: (row['priority'] as int?) ?? 100,
+      orderIndex: (row['order_index'] as int?) ?? 0,
+      failureCount: (row['failure_count'] as int?) ?? 0,
+      cooldownUntilMs: row['cooldown_until_ms'] as int?,
+      lastErrorType: row['last_error_type'] as String?,
+      lastErrorMessage: row['last_error_message'] as String?,
+      lastFailedAt: row['last_failed_at'] as int?,
+      lastSuccessAt: row['last_success_at'] as int?,
+    );
+  }
+
+  bool supportsModel(String model) {
+    final target = model.trim().toLowerCase();
+    if (target.isEmpty) return false;
+    return models.any((m) => m.trim().toLowerCase() == target);
+  }
+
+  bool get isAuthFailed => (lastErrorType ?? '').trim() == 'auth_failed';
+
+  bool isCoolingDown([int? nowMs]) {
+    final until = cooldownUntilMs;
+    if (until == null || until <= 0) return false;
+    return until > (nowMs ?? DateTime.now().millisecondsSinceEpoch);
+  }
+
+  String get fingerprint {
+    final k = apiKey.trim();
+    if (k.length <= 4) return k;
+    return '?${k.substring(k.length - 4)}';
+  }
+}
+
 class AIProvider {
   final int? id;
   final String name;
@@ -110,7 +192,9 @@ class AIProvider {
       parsedExtra = <String, dynamic>{};
     }
     final typeValue = (row['type'] as String?) ?? AIProviderTypes.openai;
-    final normalizedModelsPath = _normalizeModelsPathOrNull(row['models_path'] as String?);
+    final normalizedModelsPath = _normalizeModelsPathOrNull(
+      row['models_path'] as String?,
+    );
     return AIProvider(
       id: row['id'] as int?,
       name: (row['name'] as String?) ?? '',
@@ -217,6 +301,10 @@ class AIProvidersService {
     try {
       await SecureStorageService.instance.delete(_apiKeyKey(id));
     } catch (_) {}
+    final keys = await listProviderKeys(id);
+    for (final key in keys) {
+      if (key.id != null) await _db.deleteAIProviderKey(key.id!);
+    }
     return _db.deleteAIProvider(id);
   }
 
@@ -252,7 +340,18 @@ class AIProvidersService {
       apiKey: apiKey?.trim(),
     );
     if (id != null && apiKey != null && apiKey.trim().isNotEmpty) {
+      await createProviderKey(
+        providerId: id,
+        name: 'Default key',
+        apiKey: apiKey.trim(),
+        models: models ?? const <String>[],
+        enabled: enabled,
+        priority: 100,
+        orderIndex: 0,
+      );
       await saveApiKey(id, apiKey.trim());
+    } else if (id != null) {
+      await syncProviderModelsFromKeys(id);
     }
     if (isDefault && id != null) {
       await setDefault(id);
@@ -276,11 +375,15 @@ class AIProvidersService {
     int? orderIndex,
     String? apiKey, // 可选更新安全存储
   }) async {
-    final normalizedBase = baseUrl != null ? _normalizeBaseUrlOrNull(baseUrl) : null;
+    final normalizedBase = baseUrl != null
+        ? _normalizeBaseUrlOrNull(baseUrl)
+        : null;
     final serializedModels = models != null ? jsonEncode(models) : null;
     final serializedExtra = extra != null ? jsonEncode(extra) : null;
     final trimmedApiKey = apiKey?.trim();
-    final normalizedModelsPath = modelsPath != null ? _normalizeModelsPathForStorage(modelsPath) : null;
+    final normalizedModelsPath = modelsPath != null
+        ? _normalizeModelsPathForStorage(modelsPath)
+        : null;
     final bool shouldUpdateModelsPath = modelsPath != null;
 
     bool updated = await _db.updateAIProvider(
@@ -312,26 +415,33 @@ class AIProvidersService {
         return false;
       }
       bool alreadyUpToDate = true;
-      if (name != null && ((exists['name'] as String?) ?? '').trim() != name.trim()) {
+      if (name != null &&
+          ((exists['name'] as String?) ?? '').trim() != name.trim()) {
         alreadyUpToDate = false;
       }
-      if (type != null && ((exists['type'] as String?) ?? '').trim() != type.trim()) {
+      if (type != null &&
+          ((exists['type'] as String?) ?? '').trim() != type.trim()) {
         alreadyUpToDate = false;
       }
-      if (normalizedBase != null && ((exists['base_url'] as String?) ?? '').trim() != normalizedBase.trim()) {
+      if (normalizedBase != null &&
+          ((exists['base_url'] as String?) ?? '').trim() !=
+              normalizedBase.trim()) {
         alreadyUpToDate = false;
       }
       if (normalizedBase == null && (exists['base_url'] as String?) != null) {
         alreadyUpToDate = false;
       }
-      if (chatPath != null && ((exists['chat_path'] as String?) ?? '').trim() != chatPath.trim()) {
+      if (chatPath != null &&
+          ((exists['chat_path'] as String?) ?? '').trim() != chatPath.trim()) {
         alreadyUpToDate = false;
       }
       if (chatPath == null && (exists['chat_path'] as String?) != null) {
         alreadyUpToDate = false;
       }
       if (modelsPath != null) {
-        final stored = _normalizeModelsPathForStorage(exists['models_path'] as String?);
+        final stored = _normalizeModelsPathForStorage(
+          exists['models_path'] as String?,
+        );
         if (stored != normalizedModelsPath) {
           alreadyUpToDate = false;
         }
@@ -389,31 +499,182 @@ class AIProvidersService {
         await deleteApiKey(id);
       } else {
         await saveApiKey(id, trimmedApiKey);
+        final keys = await listProviderKeys(id);
+        if (keys.isEmpty) {
+          await createProviderKey(
+            providerId: id,
+            name: 'Default key',
+            apiKey: trimmedApiKey,
+            models: models ?? const <String>[],
+          );
+        } else if (keys.length == 1 && keys.first.name == 'Default key') {
+          await updateProviderKey(
+            id: keys.first.id!,
+            apiKey: trimmedApiKey,
+            models: models,
+          );
+        }
       }
     }
+    await syncProviderModelsFromKeys(id);
     if (isDefault == true) {
       await setDefault(id);
     }
     return updated;
   }
 
+  List<String> _normalizeModelList(Iterable<String> raw) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final item in raw) {
+      final model = item.trim();
+      if (model.isEmpty) continue;
+      final key = model.toLowerCase();
+      if (seen.add(key)) out.add(model);
+    }
+    return out;
+  }
+
+  Future<void> syncProviderModelsFromKeys(int providerId) async {
+    final keys = await listProviderKeys(providerId, includeDisabled: false);
+    final models = _normalizeModelList(keys.expand((k) => k.models));
+    await _db.saveAIProviderModelsJson(
+      id: providerId,
+      modelsJson: jsonEncode(models),
+    );
+  }
+
+  Future<List<AIProviderKey>> listProviderKeys(
+    int providerId, {
+    bool includeDisabled = true,
+  }) async {
+    final rows = await _db.listAIProviderKeys(providerId);
+    final keys = rows.map((e) => AIProviderKey.fromDbRow(e)).toList();
+    return includeDisabled ? keys : keys.where((k) => k.enabled).toList();
+  }
+
+  Future<AIProviderKey?> getProviderKey(int keyId) async {
+    final row = await _db.getAIProviderKeyById(keyId);
+    return row == null ? null : AIProviderKey.fromDbRow(row);
+  }
+
+  Future<int?> createProviderKey({
+    required int providerId,
+    required String name,
+    required String apiKey,
+    List<String> models = const <String>[],
+    bool enabled = true,
+    int priority = 100,
+    int? orderIndex,
+  }) async {
+    final id = await _db.insertAIProviderKey(
+      providerId: providerId,
+      name: name.trim().isEmpty ? 'Key' : name.trim(),
+      apiKey: apiKey.trim(),
+      modelsJson: jsonEncode(_normalizeModelList(models)),
+      enabled: enabled,
+      priority: priority,
+      orderIndex: orderIndex,
+    );
+    await syncProviderModelsFromKeys(providerId);
+    return id;
+  }
+
+  Future<bool> updateProviderKey({
+    required int id,
+    String? name,
+    String? apiKey,
+    List<String>? models,
+    bool? enabled,
+    int? priority,
+    int? orderIndex,
+    bool clearErrorState = true,
+  }) async {
+    final before = await getProviderKey(id);
+    final ok = await _db.updateAIProviderKey(
+      id: id,
+      name: name,
+      apiKey: apiKey,
+      modelsJson: models == null
+          ? null
+          : jsonEncode(_normalizeModelList(models)),
+      enabled: enabled,
+      priority: priority,
+      orderIndex: orderIndex,
+      clearErrorState: clearErrorState,
+    );
+    final providerId =
+        before?.providerId ?? (await getProviderKey(id))?.providerId;
+    if (providerId != null) await syncProviderModelsFromKeys(providerId);
+    return ok;
+  }
+
+  Future<bool> deleteProviderKey(int id) async {
+    final before = await getProviderKey(id);
+    final ok = await _db.deleteAIProviderKey(id);
+    if (before != null) await syncProviderModelsFromKeys(before.providerId);
+    return ok;
+  }
+
+  Future<List<String>> refreshModelsForKey({
+    required int providerId,
+    required int keyId,
+  }) async {
+    final provider = await getProvider(providerId);
+    final key = await getProviderKey(keyId);
+    if (provider == null) throw Exception('Provider not found');
+    if (key == null) throw Exception('Provider key not found');
+    final models = await fetchModels(provider: provider, apiKey: key.apiKey);
+    await updateProviderKey(id: keyId, models: models, clearErrorState: true);
+    return models;
+  }
+
+  Future<void> markProviderKeySuccess(int keyId) =>
+      _db.markAIProviderKeySuccess(keyId);
+
+  Future<void> markProviderKeyFailure({
+    required int keyId,
+    required String errorType,
+    required String errorMessage,
+    bool incrementFailure = true,
+    int? cooldownUntilMs,
+    bool resetFailureCount = false,
+  }) => _db.markAIProviderKeyFailure(
+    keyId: keyId,
+    errorType: errorType,
+    errorMessage: errorMessage,
+    incrementFailure: incrementFailure,
+    cooldownUntilMs: cooldownUntilMs,
+    resetFailureCount: resetFailureCount,
+  );
+
   // ---------------- API Key 存储（数据库） + 兼容迁移 ----------------
 
   Future<void> saveApiKey(int providerId, String apiKey) async {
     await _db.setAIProviderApiKey(id: providerId, apiKey: apiKey);
     // 清理旧版安全存储
-    try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
+    try {
+      await SecureStorageService.instance.delete(_apiKeyKey(providerId));
+    } catch (_) {}
   }
 
   Future<String?> getApiKey(int providerId) async {
+    final keys = await listProviderKeys(providerId, includeDisabled: false);
+    if (keys.isNotEmpty && keys.first.apiKey.trim().isNotEmpty) {
+      return keys.first.apiKey.trim();
+    }
     final v = await _db.getAIProviderApiKey(providerId);
     if (v != null && v.trim().isNotEmpty) return v.trim();
     // 一次性迁移：若 DB 为空，尝试从安全存储读取并写回 DB
     try {
-      final old = await SecureStorageService.instance.read(_apiKeyKey(providerId));
+      final old = await SecureStorageService.instance.read(
+        _apiKeyKey(providerId),
+      );
       if (old != null && old.trim().isNotEmpty) {
         await _db.setAIProviderApiKey(id: providerId, apiKey: old.trim());
-        try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
+        try {
+          await SecureStorageService.instance.delete(_apiKeyKey(providerId));
+        } catch (_) {}
         return old.trim();
       }
     } catch (_) {}
@@ -422,7 +683,9 @@ class AIProvidersService {
 
   Future<void> deleteApiKey(int providerId) async {
     await _db.setAIProviderApiKey(id: providerId, apiKey: null);
-    try { await SecureStorageService.instance.delete(_apiKeyKey(providerId)); } catch (_) {}
+    try {
+      await SecureStorageService.instance.delete(_apiKeyKey(providerId));
+    } catch (_) {}
   }
 
   // ---------------- 名称唯一性校验 ----------------
@@ -447,9 +710,21 @@ class AIProvidersService {
     if (provider == null) {
       throw Exception('Provider not found');
     }
+    final keys = await listProviderKeys(providerId, includeDisabled: false);
+    if (keys.isNotEmpty) {
+      final models = await refreshModelsForKey(
+        providerId: providerId,
+        keyId: keys.first.id!,
+      );
+      await syncProviderModelsFromKeys(providerId);
+      return models;
+    }
     final apiKey = await getApiKey(providerId) ?? '';
     final models = await fetchModels(provider: provider, apiKey: apiKey);
-    await _db.saveAIProviderModelsJson(id: providerId, modelsJson: jsonEncode(models));
+    await _db.saveAIProviderModelsJson(
+      id: providerId,
+      modelsJson: jsonEncode(models),
+    );
     return models;
   }
 
@@ -491,13 +766,20 @@ class AIProvidersService {
         );
       case AIProviderTypes.gemini:
         return _fetchGeminiModels(
-          baseUrl: _ensureBase(provider.baseUrl, 'https://generativelanguage.googleapis.com'),
+          baseUrl: _ensureBase(
+            provider.baseUrl,
+            'https://generativelanguage.googleapis.com',
+          ),
           apiKey: apiKey,
         );
       case AIProviderTypes.azureOpenAI:
-        final apiVersion = (provider.extra['azure_api_version'] as String?) ?? '2024-02-15';
+        final apiVersion =
+            (provider.extra['azure_api_version'] as String?) ?? '2024-02-15';
         return _fetchAzureOpenAIModels(
-          baseUrl: _requireBase(provider.baseUrl, hint: 'https://{resource}.openai.azure.com'),
+          baseUrl: _requireBase(
+            provider.baseUrl,
+            hint: 'https://{resource}.openai.azure.com',
+          ),
           apiKey: apiKey,
           apiVersion: apiVersion,
         );
@@ -525,12 +807,12 @@ class AIProvidersService {
     );
     final resp = await http.get(
       uri,
-      headers: <String, String>{
-        'Authorization': 'Bearer $apiKey',
-      },
+      headers: <String, String>{'Authorization': 'Bearer $apiKey'},
     );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('OpenAI models request failed: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'OpenAI models request failed: ${resp.statusCode} ${resp.body}',
+      );
     }
     return _parseModelsFlexible(resp.body);
   }
@@ -553,7 +835,9 @@ class AIProvidersService {
       },
     );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('Claude models request failed: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Claude models request failed: ${resp.statusCode} ${resp.body}',
+      );
     }
     return _parseModelsFlexible(resp.body);
   }
@@ -565,19 +849,26 @@ class AIProvidersService {
     final uri = Uri.parse('$baseUrl/v1beta/models');
     final resp = await http.get(
       uri,
-      headers: <String, String>{
-        'x-goog-api-key': apiKey,
-      },
+      headers: <String, String>{'x-goog-api-key': apiKey},
     );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       try {
-        final String bodyPreview = resp.body.length <= 4000 ? resp.body : (resp.body.substring(0, 4000) + '…');
-        await FlutterLogger.nativeError('AI', '获取 Gemini 模型列表失败(${resp.statusCode}): ' + bodyPreview);
-        if (bodyPreview.toLowerCase().contains('user location is not supported')) {
+        final String bodyPreview = resp.body.length <= 4000
+            ? resp.body
+            : (resp.body.substring(0, 4000) + '…');
+        await FlutterLogger.nativeError(
+          'AI',
+          '获取 Gemini 模型列表失败(${resp.statusCode}): ' + bodyPreview,
+        );
+        if (bodyPreview.toLowerCase().contains(
+          'user location is not supported',
+        )) {
           await FlutterLogger.nativeError('AI', 'Gemini 请求因地区策略被阻止');
         }
       } catch (_) {}
-      throw Exception('Gemini models request failed: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Gemini models request failed: ${resp.statusCode} ${resp.body}',
+      );
     }
     try {
       final decoded = jsonDecode(resp.body);
@@ -588,10 +879,21 @@ class AIProvidersService {
             final name = (m['name']?.toString() ?? '');
             if (name.isEmpty) continue;
             // 仅保留支持文本生成的模型（尽量兼容）
-            final methods = (m['supportedGenerationMethods'] as List?)?.map((e) => '$e').toList() ?? const <String>[];
-            final canText = methods.isEmpty || methods.contains('generateContent') || methods.contains('generateText');
+            final methods =
+                (m['supportedGenerationMethods'] as List?)
+                    ?.map((e) => '$e')
+                    .toList() ??
+                const <String>[];
+            final canText =
+                methods.isEmpty ||
+                methods.contains('generateContent') ||
+                methods.contains('generateText');
             if (!canText) continue;
-            out.add(name.startsWith('models/') ? name.substring('models/'.length) : name);
+            out.add(
+              name.startsWith('models/')
+                  ? name.substring('models/'.length)
+                  : name,
+            );
           }
         }
       }
@@ -608,15 +910,17 @@ class AIProvidersService {
     required String apiVersion,
   }) async {
     // 例： https://{resource}.openai.azure.com/openai/deployments?api-version=2024-02-15
-    final uri = Uri.parse('$baseUrl/openai/deployments?api-version=$apiVersion');
+    final uri = Uri.parse(
+      '$baseUrl/openai/deployments?api-version=$apiVersion',
+    );
     final resp = await http.get(
       uri,
-      headers: <String, String>{
-        'api-key': apiKey,
-      },
+      headers: <String, String>{'api-key': apiKey},
     );
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('Azure OpenAI deployments request failed: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Azure OpenAI deployments request failed: ${resp.statusCode} ${resp.body}',
+      );
     }
     try {
       final decoded = jsonDecode(resp.body);
@@ -651,7 +955,8 @@ class AIProvidersService {
   }) {
     final normalizedPath = _normalizeModelsPathOrNull(modelsPath);
     if (normalizedPath != null &&
-        (normalizedPath.startsWith('http://') || normalizedPath.startsWith('https://'))) {
+        (normalizedPath.startsWith('http://') ||
+            normalizedPath.startsWith('https://'))) {
       return Uri.parse(normalizedPath);
     }
     final effectivePath = normalizedPath ?? fallbackPath;
@@ -674,8 +979,10 @@ class AIProvidersService {
             if (e is Map) {
               final id = (e['id']?.toString() ?? '').trim();
               final name = (e['name']?.toString() ?? '').trim();
-              if (id.isNotEmpty) out.add(id);
-              else if (name.isNotEmpty) out.add(name);
+              if (id.isNotEmpty)
+                out.add(id);
+              else if (name.isNotEmpty)
+                out.add(name);
             } else if (e is String) {
               if (e.trim().isNotEmpty) out.add(e.trim());
             }
@@ -687,8 +994,10 @@ class AIProvidersService {
             if (e is Map) {
               final id = (e['id']?.toString() ?? '').trim();
               final name = (e['name']?.toString() ?? '').trim();
-              if (name.isNotEmpty) out.add(name);
-              else if (id.isNotEmpty) out.add(id);
+              if (name.isNotEmpty)
+                out.add(name);
+              else if (id.isNotEmpty)
+                out.add(id);
             } else if (e is String) {
               if (e.trim().isNotEmpty) out.add(e.trim());
             }
@@ -703,8 +1012,10 @@ class AIProvidersService {
                 if (e is Map) {
                   final id = (e['id']?.toString() ?? '').trim();
                   final name = (e['name']?.toString() ?? '').trim();
-                  if (id.isNotEmpty) out.add(id);
-                  else if (name.isNotEmpty) out.add(name);
+                  if (id.isNotEmpty)
+                    out.add(id);
+                  else if (name.isNotEmpty)
+                    out.add(name);
                 } else if (e is String) {
                   if (e.trim().isNotEmpty) out.add(e.trim());
                 }
@@ -722,8 +1033,10 @@ class AIProvidersService {
           if (e is Map) {
             final id = (e['id']?.toString() ?? '').trim();
             final name = (e['name']?.toString() ?? '').trim();
-            if (id.isNotEmpty) out.add(id);
-            else if (name.isNotEmpty) out.add(name);
+            if (id.isNotEmpty)
+              out.add(id);
+            else if (name.isNotEmpty)
+              out.add(name);
           } else if (e is String) {
             if (e.trim().isNotEmpty) out.add(e.trim());
           }
@@ -753,7 +1066,9 @@ class AIProvidersService {
   }
 
   String _ensureBase(String? baseUrl, String fallback) {
-    final b = (baseUrl == null || baseUrl.trim().isEmpty) ? fallback : baseUrl.trim();
+    final b = (baseUrl == null || baseUrl.trim().isEmpty)
+        ? fallback
+        : baseUrl.trim();
     return _normalizeBaseUrlOrNull(b) ?? fallback;
   }
 

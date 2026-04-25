@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'ai_settings_service.dart';
+import 'ai_providers_service.dart';
 import 'flutter_logger.dart';
 import 'openai_responses_extract.dart';
 
@@ -81,6 +82,97 @@ class AIRequestGateway {
 
   static final AIRequestGateway instance = AIRequestGateway._();
 
+  static const int _keyRetryLimit = 3;
+  static const int _keyCooldownMs = 10 * 60 * 1000;
+
+  String _classifyFailure(Object error) {
+    final text = error.toString().toLowerCase();
+    final codeMatch = RegExp(r'request failed:\s*(\d{3})').firstMatch(text);
+    final int? code = codeMatch == null
+        ? null
+        : int.tryParse(codeMatch.group(1)!);
+    if (code == 401 || code == 403) return 'auth_failed';
+    if (text.contains('model_not_found') ||
+        text.contains('unsupported_model') ||
+        text.contains('does not exist') ||
+        text.contains('not found') && text.contains('model')) {
+      return 'model_not_found';
+    }
+    if (code == 408 || code == 429 || (code != null && code >= 500)) {
+      return 'retryable';
+    }
+    if (text.contains('timeout') ||
+        text.contains('socket') ||
+        text.contains('connection') ||
+        text.contains('network')) {
+      return 'retryable';
+    }
+    if (code != null && code >= 400 && code < 500) return 'fatal';
+    return 'retryable';
+  }
+
+  bool _shouldStopEndpointFallback(String errorType) => errorType == 'fatal';
+
+  bool _shouldCooldown(String errorType) => errorType == 'retryable';
+
+  Future<void> _markEndpointSuccess(AIEndpoint endpoint) async {
+    final int? keyId = endpoint.providerKeyId;
+    if (keyId == null) return;
+    await AIProvidersService.instance.markProviderKeySuccess(keyId);
+  }
+
+  Future<void> _markEndpointFailure({
+    required AIEndpoint endpoint,
+    required String errorType,
+    required Object error,
+    required int attemptCountForKey,
+  }) async {
+    final int? keyId = endpoint.providerKeyId;
+    if (keyId == null) return;
+    final bool auth = errorType == 'auth_failed';
+    final bool model = errorType == 'model_not_found';
+    final bool retryable = _shouldCooldown(errorType);
+    final int? cooldownUntil = retryable && attemptCountForKey >= _keyRetryLimit
+        ? DateTime.now().millisecondsSinceEpoch + _keyCooldownMs
+        : null;
+    await AIProvidersService.instance.markProviderKeyFailure(
+      keyId: keyId,
+      errorType: errorType,
+      errorMessage: error.toString(),
+      incrementFailure: retryable,
+      cooldownUntilMs: auth ? null : cooldownUntil,
+      resetFailureCount: auth || model,
+    );
+  }
+
+  String _summarizeEndpointFailures(
+    List<AIGatewayEndpointFailure> failures,
+    Exception? lastError,
+  ) {
+    if (failures.isEmpty)
+      return lastError?.toString() ?? 'No valid AI endpoint available';
+    final String model = failures.first.endpoint.model;
+    final Map<String, List<AIGatewayEndpointFailure>> byKey =
+        <String, List<AIGatewayEndpointFailure>>{};
+    for (final f in failures) {
+      final e = f.endpoint;
+      final String label =
+          (e.providerKeyName == null || e.providerKeyName!.trim().isEmpty)
+          ? 'key#${e.providerKeyId ?? '-'}'
+          : '${e.providerKeyName}#${e.providerKeyId ?? '-'}';
+      byKey.putIfAbsent(label, () => <AIGatewayEndpointFailure>[]).add(f);
+    }
+    final parts = <String>['AI request failed for model $model.'];
+    parts.add('Candidate keys: ${byKey.keys.join(', ')}.');
+    byKey.forEach((key, items) {
+      final last = items.last;
+      parts.add(
+        '$key: ${items.length} attempt(s), ${last.errorType}, ${last.message}',
+      );
+    });
+    return parts.join(' ');
+  }
+
   int _fallbackToolCallSeq = 0;
   String _newFallbackToolCallId() => 'toolu_fallback_${++_fallbackToolCallSeq}';
   int _traceSeq = 0;
@@ -121,6 +213,8 @@ class AIRequestGateway {
     final int imagesCount = _countInputImages(messages);
     final int toolsCount = tools.length;
     Exception? lastError;
+    final failures = <AIGatewayEndpointFailure>[];
+    final attemptsByKey = <int, int>{};
     for (final AIEndpoint endpoint in endpoints) {
       final AIEndpoint effectiveEndpoint = forceChatCompletions
           ? _forceChatCompletionsEndpoint(endpoint)
@@ -146,6 +240,7 @@ class AIRequestGateway {
             imagesCount: imagesCount,
             toolsCount: toolsCount,
           );
+          await _markEndpointSuccess(endpoint);
           return AIGatewayResult(
             content: aggregate.content,
             toolCalls: aggregate.toolCalls,
@@ -158,6 +253,25 @@ class AIRequestGateway {
           );
         } catch (e) {
           lastError = e is Exception ? e : Exception(e.toString());
+          final String errorType = _classifyFailure(e);
+          if (endpoint.providerKeyId != null) {
+            final int attemptCount =
+                (attemptsByKey[endpoint.providerKeyId!] ?? 0) + 1;
+            attemptsByKey[endpoint.providerKeyId!] = attemptCount;
+            failures.add(
+              AIGatewayEndpointFailure(
+                endpoint: endpoint,
+                errorType: errorType,
+                message: e.toString(),
+              ),
+            );
+            await _markEndpointFailure(
+              endpoint: endpoint,
+              errorType: errorType,
+              error: e,
+              attemptCountForKey: attemptCount,
+            );
+          }
           try {
             await FlutterLogger.nativeWarn(
               'AI',
@@ -186,6 +300,7 @@ class AIRequestGateway {
           imagesCount: imagesCount,
           toolsCount: toolsCount,
         );
+        await _markEndpointSuccess(endpoint);
         return AIGatewayResult(
           content: aggregate.content,
           toolCalls: aggregate.toolCalls,
@@ -198,6 +313,28 @@ class AIRequestGateway {
         );
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
+        final String errorType = _classifyFailure(e);
+        if (endpoint.providerKeyId != null) {
+          final int attemptCount =
+              (attemptsByKey[endpoint.providerKeyId!] ?? 0) + 1;
+          attemptsByKey[endpoint.providerKeyId!] = attemptCount;
+          failures.add(
+            AIGatewayEndpointFailure(
+              endpoint: endpoint,
+              errorType: errorType,
+              message: e.toString(),
+            ),
+          );
+          await _markEndpointFailure(
+            endpoint: endpoint,
+            errorType: errorType,
+            error: e,
+            attemptCountForKey: attemptCount,
+          );
+        }
+        if (_shouldStopEndpointFallback(errorType)) {
+          throw Exception(_summarizeEndpointFailures(failures, lastError));
+        }
 
         // Some OpenAI-compatible relays incorrectly type `tool_choice` as a string
         // in the Responses API response DTOs, and crash when OpenAI returns an object
@@ -233,6 +370,7 @@ class AIRequestGateway {
               imagesCount: imagesCount,
               toolsCount: toolsCount,
             );
+            await _markEndpointSuccess(endpoint);
             return AIGatewayResult(
               content: aggregate.content,
               toolCalls: aggregate.toolCalls,
@@ -289,6 +427,7 @@ class AIRequestGateway {
                 imagesCount: imagesCount,
                 toolsCount: toolsCount,
               );
+              await _markEndpointSuccess(endpoint);
               return AIGatewayResult(
                 content: aggregate.content,
                 toolCalls: aggregate.toolCalls,
@@ -309,7 +448,7 @@ class AIRequestGateway {
         continue;
       }
     }
-    throw lastError ?? Exception('No valid AI endpoint available');
+    throw Exception(_summarizeEndpointFailures(failures, lastError));
   }
 
   AIGatewayStreamingSession startStreaming({
@@ -343,6 +482,8 @@ class AIRequestGateway {
 
     () async {
       Exception? lastError;
+      final failures = <AIGatewayEndpointFailure>[];
+      final attemptsByKey = <int, int>{};
       for (final AIEndpoint endpoint in endpoints) {
         final AIEndpoint effectiveEndpoint = forceChatCompletions
             ? _forceChatCompletionsEndpoint(endpoint)
@@ -377,6 +518,7 @@ class AIRequestGateway {
             imagesCount: imagesCount,
             toolsCount: toolsCount,
           );
+          await _markEndpointSuccess(endpoint);
           if (!completer.isCompleted) {
             completer.complete(
               AIGatewayResult(
@@ -395,6 +537,25 @@ class AIRequestGateway {
           return;
         } catch (e) {
           lastError = e is Exception ? e : Exception(e.toString());
+          final String errorType = _classifyFailure(e);
+          if (endpoint.providerKeyId != null) {
+            final int attemptCount =
+                (attemptsByKey[endpoint.providerKeyId!] ?? 0) + 1;
+            attemptsByKey[endpoint.providerKeyId!] = attemptCount;
+            failures.add(
+              AIGatewayEndpointFailure(
+                endpoint: endpoint,
+                errorType: errorType,
+                message: e.toString(),
+              ),
+            );
+            await _markEndpointFailure(
+              endpoint: endpoint,
+              errorType: errorType,
+              error: e,
+              attemptCountForKey: attemptCount,
+            );
+          }
           try {
             await FlutterLogger.nativeWarn(
               'AI',
@@ -435,6 +596,7 @@ class AIRequestGateway {
               imagesCount: imagesCount,
               toolsCount: toolsCount,
             );
+            await _markEndpointSuccess(endpoint);
             if (!completer.isCompleted) {
               completer.complete(
                 AIGatewayResult(
@@ -455,6 +617,26 @@ class AIRequestGateway {
             lastError = fallbackErr is Exception
                 ? fallbackErr
                 : Exception(fallbackErr.toString());
+            final String fallbackType = _classifyFailure(fallbackErr);
+            if (endpoint.providerKeyId != null) {
+              final int attemptCount =
+                  (attemptsByKey[endpoint.providerKeyId!] ?? 0) + 1;
+              attemptsByKey[endpoint.providerKeyId!] = attemptCount;
+              failures.add(
+                AIGatewayEndpointFailure(
+                  endpoint: endpoint,
+                  errorType: fallbackType,
+                  message: fallbackErr.toString(),
+                ),
+              );
+              await _markEndpointFailure(
+                endpoint: endpoint,
+                errorType: fallbackType,
+                error: fallbackErr,
+                attemptCountForKey: attemptCount,
+              );
+            }
+            if (_shouldStopEndpointFallback(fallbackType)) break;
             continue;
           }
         } finally {
@@ -468,7 +650,7 @@ class AIRequestGateway {
       }
       if (!completer.isCompleted) {
         completer.completeError(
-          lastError ?? Exception('No valid AI endpoint available'),
+          Exception(_summarizeEndpointFailures(failures, lastError)),
         );
       }
       if (!controller.isClosed) {
@@ -598,6 +780,9 @@ class AIRequestGateway {
       providerId: endpoint.providerId,
       providerName: endpoint.providerName,
       providerType: endpoint.providerType,
+      providerKeyId: endpoint.providerKeyId,
+      providerKeyName: endpoint.providerKeyName,
+      providerKeyPriority: endpoint.providerKeyPriority,
       baseUrl: endpoint.baseUrl,
       apiKey: endpoint.apiKey,
       model: endpoint.model,
@@ -2936,4 +3121,16 @@ String _trimLeadingIgnorable(String text) {
   }
   if (index == 0) return text;
   return text.substring(index);
+}
+
+class AIGatewayEndpointFailure {
+  const AIGatewayEndpointFailure({
+    required this.endpoint,
+    required this.errorType,
+    required this.message,
+  });
+
+  final AIEndpoint endpoint;
+  final String errorType;
+  final String message;
 }

@@ -19,7 +19,9 @@ object AISettingsNative {
         val apiKey: String,
         val model: String,
         val providerType: String? = null,
-        val chatPath: String? = null
+        val chatPath: String? = null,
+        val providerKeyId: Long? = null,
+        val providerKeyName: String? = null
     )
 
     private fun resolveMasterDbPath(context: Context): String? {
@@ -48,6 +50,110 @@ object AISettingsNative {
             val c = db.query("ai_settings", arrayOf("value"), "key = ?", arrayOf(key), null, null, null, "1")
             c.use { cur -> if (cur.moveToFirst()) cur.getString(0) else null }
         } catch (_: Exception) { null }
+    }
+
+
+    data class ProviderKeyCandidate(
+        val id: Long,
+        val name: String,
+        val apiKey: String,
+        val models: List<String>,
+        val priority: Int,
+        val orderIndex: Int,
+        val failureCount: Int,
+        val cooldownUntilMs: Long?,
+        val lastErrorType: String?
+    )
+
+    private fun parseModelsJson(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val out = ArrayList<String>()
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i).trim()
+                if (v.isNotEmpty()) out.add(v)
+            }
+            out
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private fun selectProviderKey(db: SQLiteDatabase, providerId: Int, model: String): ProviderKeyCandidate? {
+        return try {
+            val now = System.currentTimeMillis()
+            val target = model.trim().lowercase()
+            val c = db.query(
+                "ai_provider_keys",
+                arrayOf("id", "name", "api_key", "models_json", "priority", "order_index", "failure_count", "cooldown_until_ms", "last_error_type", "enabled"),
+                "provider_id = ? AND enabled != 0",
+                arrayOf(providerId.toString()),
+                null, null,
+                "priority ASC, order_index ASC, id ASC"
+            )
+            c.use { cur ->
+                while (cur.moveToNext()) {
+                    val models = parseModelsJson(cur.getString(cur.getColumnIndexOrThrow("models_json")))
+                    if (models.none { it.trim().lowercase() == target }) continue
+                    val err = cur.getString(cur.getColumnIndexOrThrow("last_error_type"))
+                    if (err == "auth_failed") continue
+                    val cooldownIdx = cur.getColumnIndexOrThrow("cooldown_until_ms")
+                    val cooldown = if (cur.isNull(cooldownIdx)) null else cur.getLong(cooldownIdx)
+                    if (cooldown != null && cooldown > now) continue
+                    val apiKey = cur.getString(cur.getColumnIndexOrThrow("api_key"))?.trim().orEmpty()
+                    if (apiKey.isEmpty()) continue
+                    return ProviderKeyCandidate(
+                        id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+                        name = cur.getString(cur.getColumnIndexOrThrow("name")) ?: "Key",
+                        apiKey = apiKey,
+                        models = models,
+                        priority = cur.getInt(cur.getColumnIndexOrThrow("priority")),
+                        orderIndex = cur.getInt(cur.getColumnIndexOrThrow("order_index")),
+                        failureCount = cur.getInt(cur.getColumnIndexOrThrow("failure_count")),
+                        cooldownUntilMs = cooldown,
+                        lastErrorType = err
+                    )
+                }
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    fun markProviderKeySuccess(context: Context, keyId: Long?) {
+        if (keyId == null) return
+        var db: SQLiteDatabase? = null
+        try {
+            val path = resolveMasterDbPath(context) ?: return
+            db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+            val values = android.content.ContentValues().apply {
+                put("failure_count", 0)
+                putNull("cooldown_until_ms")
+                putNull("last_error_type")
+                putNull("last_error_message")
+                putNull("last_failed_at")
+                put("last_success_at", System.currentTimeMillis())
+            }
+            db.update("ai_provider_keys", values, "id = ?", arrayOf(keyId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    fun markProviderKeyFailure(context: Context, keyId: Long?, errorType: String, message: String, attemptCount: Int) {
+        if (keyId == null) return
+        var db: SQLiteDatabase? = null
+        try {
+            val path = resolveMasterDbPath(context) ?: return
+            db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+            val retryable = errorType == "retryable"
+            val values = android.content.ContentValues().apply {
+                if (retryable) put("failure_count", attemptCount) else put("failure_count", 0)
+                if (retryable && attemptCount >= 3) put("cooldown_until_ms", System.currentTimeMillis() + 10L * 60L * 1000L) else putNull("cooldown_until_ms")
+                put("last_error_type", errorType)
+                put("last_error_message", message.take(1000))
+                put("last_failed_at", System.currentTimeMillis())
+            }
+            db.update("ai_provider_keys", values, "id = ?", arrayOf(keyId.toString()))
+        } catch (_: Exception) {
+        } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
     fun readConfig(context: Context): AIConfig = readConfig(context, "segments")
@@ -109,7 +215,9 @@ object AISettingsNative {
 
                         val keyCtx = readSetting(db!!, "api_key_$aiContext")?.trim()
                         val keyLegacy = readSetting(db!!, "api_key")?.trim()
+                        val selectedKey = selectProviderKey(db!!, providerId, model)
                         val apiKey = when {
+                            selectedKey != null -> selectedKey.apiKey
                             !providerApiKey.isNullOrEmpty() -> providerApiKey
                             !keyCtx.isNullOrEmpty() -> keyCtx
                             else -> keyLegacy
@@ -130,7 +238,9 @@ object AISettingsNative {
                                 apiKey = apiKey!!,
                                 model = model,
                                 providerType = providerType,
-                                chatPath = effectiveChatPath
+                                chatPath = effectiveChatPath,
+                                providerKeyId = selectedKey?.id,
+                                providerKeyName = selectedKey?.name
                             )
                         }
                     }

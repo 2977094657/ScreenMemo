@@ -1503,6 +1503,53 @@ object SegmentSummaryManager {
         stageScope: String? = null,
     ): AiCallResult {
         val cfg = aiConfigOverride ?: AISettingsNative.readConfig(ctx)
+        try {
+            val result = callGeminiWithImagesSingleKey(
+                ctx = ctx,
+                seg = seg,
+                samples = samples,
+                prompt = prompt,
+                isMerge = isMerge,
+                injectDynamicRules = injectDynamicRules,
+                maxImagesOverride = maxImagesOverride,
+                allowJsonAutoRetry = allowJsonAutoRetry,
+                jsonRetryCount = jsonRetryCount,
+                aiConfigOverride = cfg,
+                strictFailure = strictFailure,
+                stageReporter = stageReporter,
+                stageScope = stageScope,
+            )
+            AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
+            return result
+        } catch (e: Exception) {
+            val msg = e.message ?: e.toString()
+            val errorType = when {
+                msg.contains("401") || msg.contains("403") -> "auth_failed"
+                msg.contains("model_not_found", ignoreCase = true) || msg.contains("unsupported_model", ignoreCase = true) -> "model_not_found"
+                msg.contains("429") || msg.contains("408") || msg.contains("timeout", ignoreCase = true) || msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504") -> "retryable"
+                else -> "fatal"
+            }
+            AISettingsNative.markProviderKeyFailure(ctx, cfg.providerKeyId, errorType, msg, 3)
+            throw e
+        }
+    }
+
+    private fun callGeminiWithImagesSingleKey(
+        ctx: Context,
+        seg: SegmentDatabaseHelper.Segment,
+        samples: List<SegmentDatabaseHelper.Sample>,
+        prompt: String,
+        isMerge: Boolean = false,
+        injectDynamicRules: Boolean = true,
+        maxImagesOverride: Int? = null,
+        allowJsonAutoRetry: Boolean = true,
+        jsonRetryCount: Int = 0,
+        aiConfigOverride: AISettingsNative.AIConfig? = null,
+        strictFailure: Boolean = false,
+        stageReporter: ((String, String, String, Long) -> Unit)? = null,
+        stageScope: String? = null,
+    ): AiCallResult {
+        val cfg = aiConfigOverride ?: AISettingsNative.readConfig(ctx)
         val apiKey = cfg.apiKey
         val requestTimeoutMs = resolveDynamicAiRequestTimeoutMs(stageScope)
         val clientBuilder = OkHttpClientFactory.newBuilder(ctx)

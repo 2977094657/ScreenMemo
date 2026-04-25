@@ -16,6 +16,11 @@ class UserSettingKeys {
   static const String targetSizeKb = 'target_size_kb';
   static const String screenshotExpireEnabled = 'screenshot_expire_enabled';
   static const String screenshotExpireDays = 'screenshot_expire_days';
+  static const String aiRawResponseCleanupEnabled =
+      'ai_raw_response_cleanup_enabled';
+  static const String aiRawResponseCleanupDays = 'ai_raw_response_cleanup_days';
+  static const String aiRawResponseCleanupLastTs =
+      'ai_raw_response_cleanup_last_ts';
 
   // 时间段总结（Segment）与 AI 请求限制
   static const String segmentSampleIntervalSec = 'segment_sample_interval_sec';
