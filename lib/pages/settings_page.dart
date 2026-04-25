@@ -100,6 +100,8 @@ class _SettingsPageState extends State<SettingsPage>
   int _aiRequestIntervalSec = 3; // 默认3秒，最低1秒
   // 动态(segments) structured_json 解析失败时的自动重试次数（0=关闭）
   int _segmentsJsonAutoRetryMax = 1; // 默认 1
+  bool _aiRawResponseCleanupEnabled = true; // 默认开启
+  int _aiRawResponseCleanupDays = 30; // 默认保留 30 天
   // 动态合并限制（分钟；0 表示不限制）
   int _dynamicMergeMaxSpanMin = 180; // 默认 3h
   int _dynamicMergeMaxGapMin = 60; // 默认 1h
@@ -228,6 +230,7 @@ class _SettingsPageState extends State<SettingsPage>
         unawaited(_loadDynamicMergeLimits());
         unawaited(_loadAiRequestInterval());
         unawaited(_loadSegmentsJsonAutoRetryMax());
+        unawaited(_loadAiRawResponseCleanupSettings());
         break;
       case _SettingsSubPage.dailyReminder:
         unawaited(_loadDailyNotifySettings());
@@ -1739,6 +1742,7 @@ class _SettingsPageState extends State<SettingsPage>
                 _buildDynamicMergeMaxImagesItem(context),
                 _buildAiRequestIntervalItem(context),
                 _buildSegmentsJsonAutoRetryMaxItem(context),
+                _buildAiRawResponseCleanupItem(context),
               ],
             ),
           ],
@@ -2268,6 +2272,122 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  bool _isZhLocale(BuildContext context) {
+    try {
+      return Localizations.localeOf(
+        context,
+      ).languageCode.toLowerCase().startsWith('zh');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Widget _buildAiRawResponseCleanupItem(BuildContext context) {
+    final bool isZh = _isZhLocale(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3 - 2,
+      ),
+      decoration: BoxDecoration(
+        border: Border(top: _settingsDividerSide(context)),
+      ),
+      child: Row(
+        children: [
+          _buildSettingsLeadingIcon(context, Icons.cleaning_services_outlined),
+          const SizedBox(width: AppTheme.spacing3),
+          Expanded(
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 72),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isZh ? '原始响应自动清理' : 'Auto Clean Raw Responses',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            isZh ? '保留' : 'Keep',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          GestureDetector(
+                            onTap: _showAiRawResponseCleanupDaysDialog,
+                            child: Text(
+                              isZh
+                                  ? '$_aiRawResponseCleanupDays 天'
+                                  : '$_aiRawResponseCleanupDays days',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: AppTheme.spacing1),
+                          Flexible(
+                            child: Text(
+                              isZh
+                                  ? '仅清理旧 raw_response，不影响摘要与 structured_json'
+                                  : 'Only clears old raw_response; summaries and structured_json stay untouched',
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: -1,
+                  right: 0,
+                  child: Transform.scale(
+                    scale: 0.9,
+                    child: Switch(
+                      value: _aiRawResponseCleanupEnabled,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (v) async {
+                        if (v) {
+                          _showAiRawResponseCleanupEnableConfirmDialog();
+                        } else {
+                          setState(() {
+                            _aiRawResponseCleanupEnabled = false;
+                          });
+                          await _saveAiRawResponseCleanupSettings();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _themeModeLabel(BuildContext context, ThemeMode mode) {
     final AppLocalizations t = AppLocalizations.of(context);
     switch (mode) {
@@ -2608,6 +2728,120 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
+  void _showAiRawResponseCleanupEnableConfirmDialog() {
+    final bool isZh = _isZhLocale(context);
+    showUIDialog<void>(
+      context: context,
+      title: isZh ? '开启原始响应自动清理' : 'Enable Raw Response Cleanup',
+      content: Text(
+        isZh
+            ? '将自动清理 $_aiRawResponseCleanupDays 天前的 raw_response，仅释放调试/原始响应占用，不影响摘要与 structured_json。'
+            : 'This will automatically clear raw_response older than $_aiRawResponseCleanupDays days. Summaries and structured_json are not affected.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: isZh ? '开启并立即清理' : 'Enable & Clean Now',
+          style: UIDialogActionStyle.primary,
+          onPressed: (ctx) async {
+            setState(() {
+              _aiRawResponseCleanupEnabled = true;
+            });
+            await _saveAiRawResponseCleanupSettings();
+            unawaited(
+              AISettingsService.instance.cleanupExpiredRawResponsesIfNeeded(
+                force: true,
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showAiRawResponseCleanupDaysDialog() {
+    final bool isZh = _isZhLocale(context);
+    final TextEditingController controller = TextEditingController(
+      text: _aiRawResponseCleanupDays.toString(),
+    );
+    showUIDialog<void>(
+      context: context,
+      title: isZh ? '设置保留天数' : 'Set Retention Days',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: isZh ? '保留天数' : 'Retention Days',
+                hintText: isZh ? '请输入大于 0 的天数' : 'Enter a number > 0',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(AppTheme.spacing3),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+                hintStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: AppTheme.fontSizeBase,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        UIDialogAction(text: AppLocalizations.of(context).dialogCancel),
+        UIDialogAction(
+          text: AppLocalizations.of(context).dialogOk,
+          style: UIDialogActionStyle.primary,
+          closeOnPress: false,
+          onPressed: (ctx) async {
+            final int? days = int.tryParse(controller.text.trim());
+            if (days == null || days < 1) {
+              UINotifier.error(
+                ctx,
+                isZh ? '请输入大于 0 的天数' : 'Please enter a number greater than 0.',
+              );
+              return;
+            }
+            setState(() {
+              _aiRawResponseCleanupDays = days;
+            });
+            await _saveAiRawResponseCleanupSettings();
+            if (ctx.mounted) {
+              Navigator.of(ctx).pop();
+              UINotifier.success(
+                ctx,
+                isZh ? '已更新为保留 $days 天' : 'Retention updated to $days days.',
+              );
+            }
+            if (_aiRawResponseCleanupEnabled) {
+              unawaited(
+                AISettingsService.instance.cleanupExpiredRawResponsesIfNeeded(
+                  force: true,
+                ),
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   void _showDynamicMergeMaxSpanDialog() {
     final TextEditingController controller = TextEditingController(
       text: _dynamicMergeMaxSpanMin.toString(),
@@ -2813,6 +3047,28 @@ class _SettingsPageState extends State<SettingsPage>
     }
   }
 
+  Future<void> _loadAiRawResponseCleanupSettings() async {
+    try {
+      final bool enabled = await AISettingsService.instance
+          .getRawResponseCleanupEnabled();
+      final int days = await AISettingsService.instance
+          .getRawResponseCleanupDays();
+      if (mounted) {
+        setState(() {
+          _aiRawResponseCleanupEnabled = enabled;
+          _aiRawResponseCleanupDays = days < 1 ? 1 : days;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _aiRawResponseCleanupEnabled = true;
+          _aiRawResponseCleanupDays = 30;
+        });
+      }
+    }
+  }
+
   void _showSegmentSampleDialog() {
     final TextEditingController controller = TextEditingController(
       text: _segmentSampleIntervalSec.toString(),
@@ -2969,6 +3225,29 @@ class _SettingsPageState extends State<SettingsPage>
         await FlutterLogger.nativeError('Settings', 'setSegmentSettings 失败：$e');
       } catch (_) {}
       return false;
+    }
+  }
+
+  Future<void> _saveAiRawResponseCleanupSettings() async {
+    final bool isZh = _isZhLocale(context);
+    try {
+      final int days = _aiRawResponseCleanupDays < 1
+          ? 1
+          : _aiRawResponseCleanupDays;
+      await AISettingsService.instance.setRawResponseCleanupEnabled(
+        _aiRawResponseCleanupEnabled,
+      );
+      await AISettingsService.instance.setRawResponseCleanupDays(days);
+      if (mounted) {
+        UINotifier.success(
+          context,
+          isZh ? '原始响应清理设置已保存' : 'Raw response cleanup settings saved.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        UINotifier.error(context, isZh ? '保存失败：$e' : 'Failed to save: $e');
+      }
     }
   }
 

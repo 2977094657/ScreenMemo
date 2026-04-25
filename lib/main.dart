@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'services/ai_settings_service.dart';
 import 'services/startup_profiler.dart';
 import 'theme/app_theme.dart';
 import 'services/permission_service.dart';
@@ -233,6 +234,9 @@ class _AppInitializerState extends State<AppInitializer> {
     // 非首次启动时，在后台异步清理一次过期截图（不阻塞首屏）
     if (!widget.isFirstLaunch) {
       unawaited(ScreenshotService.instance.cleanupExpiredScreenshotsIfNeeded());
+      unawaited(
+        AISettingsService.instance.cleanupExpiredRawResponsesIfNeeded(),
+      );
     }
     unawaited(_resumeBackgroundTasksIfNeeded());
   }
