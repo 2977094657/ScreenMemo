@@ -1185,6 +1185,12 @@ class ScreenshotService {
     }
   }
 
+  bool _isLikelyCjkNoSpacesQuery(String query) {
+    final String q = query.trim();
+    if (q.isEmpty || RegExp(r'\s').hasMatch(q)) return false;
+    return RegExp(r'[\u4e00-\u9fff]').hasMatch(q);
+  }
+
   // ========== 带回退的全局 OCR 搜索与计数 ==========
   Future<List<ScreenshotRecord>> searchScreenshotsByOcrWithFallback(
     String query, {
@@ -1196,10 +1202,26 @@ class ScreenshotService {
     int? maxSize,
   }) async {
     try {
-      // 首选 FTS；若抛错或不可用，回退 LIKE
+      bool indexAvailable = false;
       try {
-        if (await _database.isOcrIndexAvailable()) {
-          return await _database.searchScreenshotsByOcr(
+        indexAvailable = await _database.isOcrIndexAvailable();
+      } catch (_) {}
+      if (_isLikelyCjkNoSpacesQuery(query)) {
+        int? likeCount;
+        if (indexAvailable) {
+          try {
+            likeCount = await _database.countScreenshotsByOcrLike(
+              query,
+              startMillis: startMillis,
+              endMillis: endMillis,
+              minSize: minSize,
+              maxSize: maxSize,
+            );
+          } catch (_) {}
+        }
+        List<ScreenshotRecord> likeResults = <ScreenshotRecord>[];
+        try {
+          likeResults = await _database.searchScreenshotsByOcrLike(
             query,
             limit: limit,
             offset: offset,
@@ -1208,8 +1230,45 @@ class ScreenshotService {
             minSize: minSize,
             maxSize: maxSize,
           );
+        } catch (_) {}
+        if (!indexAvailable ||
+            likeResults.isNotEmpty ||
+            (likeCount != null && likeCount > 0)) {
+          return likeResults;
         }
-      } catch (_) {}
+        try {
+          final List<ScreenshotRecord> ftsResults = await _database
+              .searchScreenshotsByOcr(
+                query,
+                limit: limit,
+                offset: offset,
+                startMillis: startMillis,
+                endMillis: endMillis,
+                minSize: minSize,
+                maxSize: maxSize,
+              );
+          return ftsResults.isNotEmpty ? ftsResults : likeResults;
+        } catch (_) {
+          return likeResults;
+        }
+      }
+      if (indexAvailable) {
+        try {
+          final List<ScreenshotRecord> ftsResults = await _database
+              .searchScreenshotsByOcr(
+                query,
+                limit: limit,
+                offset: offset,
+                startMillis: startMillis,
+                endMillis: endMillis,
+                minSize: minSize,
+                maxSize: maxSize,
+              );
+          if (ftsResults.isNotEmpty) {
+            return ftsResults;
+          }
+        } catch (_) {}
+      }
       return await _database.searchScreenshotsByOcrLike(
         query,
         limit: limit,
@@ -1232,17 +1291,51 @@ class ScreenshotService {
     int? maxSize,
   }) async {
     try {
+      bool indexAvailable = false;
       try {
-        if (await _database.isOcrIndexAvailable()) {
-          return await _database.countScreenshotsByOcr(
+        indexAvailable = await _database.isOcrIndexAvailable();
+      } catch (_) {}
+      if (_isLikelyCjkNoSpacesQuery(query)) {
+        int likeCount = 0;
+        try {
+          likeCount = await _database.countScreenshotsByOcrLike(
             query,
             startMillis: startMillis,
             endMillis: endMillis,
             minSize: minSize,
             maxSize: maxSize,
           );
+        } catch (_) {}
+        if (likeCount > 0 || !indexAvailable) {
+          return likeCount;
         }
-      } catch (_) {}
+        try {
+          final int ftsCount = await _database.countScreenshotsByOcr(
+            query,
+            startMillis: startMillis,
+            endMillis: endMillis,
+            minSize: minSize,
+            maxSize: maxSize,
+          );
+          return ftsCount > 0 ? ftsCount : likeCount;
+        } catch (_) {
+          return likeCount;
+        }
+      }
+      if (indexAvailable) {
+        try {
+          final int ftsCount = await _database.countScreenshotsByOcr(
+            query,
+            startMillis: startMillis,
+            endMillis: endMillis,
+            minSize: minSize,
+            maxSize: maxSize,
+          );
+          if (ftsCount > 0) {
+            return ftsCount;
+          }
+        } catch (_) {}
+      }
       return await _database.countScreenshotsByOcrLike(
         query,
         startMillis: startMillis,
