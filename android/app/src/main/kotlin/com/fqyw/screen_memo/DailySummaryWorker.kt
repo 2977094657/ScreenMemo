@@ -489,7 +489,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
 
         private fun providerName(ctx: Context): String {
             return try {
-                val cfg = AISettingsNative.readConfig(ctx)
+                val cfg = AISettingsNative.readConfigSnapshot(ctx)
                 val base = cfg.baseUrl.lowercase()
                 when {
                     base.contains("googleapis.com") || base.contains("generativelanguage") -> "gemini"
@@ -590,8 +590,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
             } catch (_: Exception) { s }
         }
 
-        private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
-            val cfg = AISettingsNative.readConfig(ctx)
+        private fun callTextModelWithConfig(ctx: Context, prompt: String, lang: String, cfg: AISettingsNative.AIConfig): Pair<String, String> {
             val client = OkHttpClientFactory.newBuilder(ctx)
                 .connectTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -1065,6 +1064,50 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                 cursor?.close()
                 try { db?.close() } catch (_: Exception) {}
             }
+        }
+
+        private fun classifyAiFailure(message: String): String {
+            val msg = message.lowercase()
+            return when {
+                msg.contains("401") || msg.contains("403") -> "auth_failed"
+                msg.contains("model_not_found") || msg.contains("unsupported_model") -> "model_not_found"
+                msg.contains("does not exist") && msg.contains("model") -> "model_not_found"
+                msg.contains("not found") && msg.contains("model") -> "model_not_found"
+                msg.contains("429") || msg.contains("408") || msg.contains("timeout") ||
+                    msg.contains("socket") || msg.contains("connection") || msg.contains("network") ||
+                    msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504") -> "retryable"
+                else -> "fatal"
+            }
+        }
+
+        private fun shouldTryNextProviderKey(errorType: String): Boolean {
+            return errorType == "auth_failed" || errorType == "model_not_found" || errorType == "retryable"
+        }
+
+        private fun callTextModel(ctx: Context, prompt: String, lang: String): Pair<String, String> {
+            val configs = try {
+                AISettingsNative.readConfigCandidates(ctx, "segments")
+            } catch (_: Exception) {
+                listOf(AISettingsNative.readConfig(ctx))
+            }
+            var lastError: Exception? = null
+            for ((index, cfg) in configs.withIndex()) {
+                try {
+                    if (configs.size > 1) {
+                        FileLogger.i(TAG, "DailySummary AI key candidate ${index + 1}/${configs.size}: key_id=${cfg.providerKeyId ?: 0} key_name=${cfg.providerKeyName ?: "legacy"} model=${cfg.model}")
+                    }
+                    val result = callTextModelWithConfig(ctx, prompt, lang, cfg)
+                    AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
+                    return result
+                } catch (e: Exception) {
+                    lastError = e
+                    val msg = e.message ?: e.toString()
+                    val errorType = classifyAiFailure(msg)
+                    AISettingsNative.markProviderKeyFailure(ctx, cfg.providerKeyId, errorType, msg, 3)
+                    if (!shouldTryNextProviderKey(errorType) || index == configs.lastIndex) throw e
+                }
+            }
+            throw lastError ?: IllegalStateException("No AI config available")
         }
 
         private fun resolveEffectiveLang(ctx: Context): String {

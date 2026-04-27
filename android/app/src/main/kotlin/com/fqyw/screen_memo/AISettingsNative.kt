@@ -21,7 +21,8 @@ object AISettingsNative {
         val providerType: String? = null,
         val chatPath: String? = null,
         val providerKeyId: Long? = null,
-        val providerKeyName: String? = null
+        val providerKeyName: String? = null,
+        val providerId: Int? = null
     )
 
     private fun resolveMasterDbPath(context: Context): String? {
@@ -78,10 +79,17 @@ object AISettingsNative {
         } catch (_: Exception) { emptyList() }
     }
 
-    private fun selectProviderKey(db: SQLiteDatabase, providerId: Int, model: String): ProviderKeyCandidate? {
+    private fun selectProviderKeys(
+        context: Context,
+        db: SQLiteDatabase,
+        providerId: Int,
+        model: String,
+        rotateKey: Boolean,
+    ): List<ProviderKeyCandidate> {
         return try {
             val now = System.currentTimeMillis()
             val target = model.trim().lowercase()
+            val candidates = ArrayList<ProviderKeyCandidate>()
             val c = db.query(
                 "ai_provider_keys",
                 arrayOf("id", "name", "api_key", "models_json", "priority", "order_index", "failure_count", "cooldown_until_ms", "last_error_type", "enabled"),
@@ -101,21 +109,82 @@ object AISettingsNative {
                     if (cooldown != null && cooldown > now) continue
                     val apiKey = cur.getString(cur.getColumnIndexOrThrow("api_key"))?.trim().orEmpty()
                     if (apiKey.isEmpty()) continue
-                    return ProviderKeyCandidate(
-                        id = cur.getLong(cur.getColumnIndexOrThrow("id")),
-                        name = cur.getString(cur.getColumnIndexOrThrow("name")) ?: "Key",
-                        apiKey = apiKey,
-                        models = models,
-                        priority = cur.getInt(cur.getColumnIndexOrThrow("priority")),
-                        orderIndex = cur.getInt(cur.getColumnIndexOrThrow("order_index")),
-                        failureCount = cur.getInt(cur.getColumnIndexOrThrow("failure_count")),
-                        cooldownUntilMs = cooldown,
-                        lastErrorType = err
+                    candidates.add(
+                        ProviderKeyCandidate(
+                            id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+                            name = cur.getString(cur.getColumnIndexOrThrow("name")) ?: "Key",
+                            apiKey = apiKey,
+                            models = models,
+                            priority = cur.getInt(cur.getColumnIndexOrThrow("priority")),
+                            orderIndex = cur.getInt(cur.getColumnIndexOrThrow("order_index")),
+                            failureCount = cur.getInt(cur.getColumnIndexOrThrow("failure_count")),
+                            cooldownUntilMs = cooldown,
+                            lastErrorType = err
+                        )
                     )
                 }
             }
-            null
-        } catch (_: Exception) { null }
+            if (candidates.isEmpty()) return emptyList()
+
+            val ordered = ArrayList<ProviderKeyCandidate>()
+            var index = 0
+            while (index < candidates.size) {
+                val priority = candidates[index].priority
+                val group = ArrayList<ProviderKeyCandidate>()
+                while (index < candidates.size && candidates[index].priority == priority) {
+                    group.add(candidates[index])
+                    index += 1
+                }
+                val cursorKey = "ai_key_rr_${providerId}_${target}_${priority}"
+                val cursor = readSetting(db, cursorKey)?.trim()?.toIntOrNull() ?: 0
+                val start = if (group.isEmpty()) 0 else Math.floorMod(cursor, group.size)
+                for (i in group.indices) {
+                    ordered.add(group[(start + i) % group.size])
+                }
+                if (rotateKey && group.size > 1) {
+                    writeSettingValue(context, cursorKey, ((cursor + 1) % group.size).toString())
+                }
+            }
+            ordered
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun selectProviderKey(
+        context: Context,
+        db: SQLiteDatabase,
+        providerId: Int,
+        model: String,
+        rotateKey: Boolean,
+    ): ProviderKeyCandidate? = selectProviderKeys(context, db, providerId, model, rotateKey).firstOrNull()
+
+    private fun writeSettingValue(context: Context, key: String, value: String?) {
+        var writable: SQLiteDatabase? = null
+        try {
+            val path = resolveMasterDbPath(context) ?: return
+            writable = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+            if (value == null) {
+                writable.delete("ai_settings", "key = ?", arrayOf(key))
+            } else {
+                val values = android.content.ContentValues().apply { put("key", key); put("value", value) }
+                writable.insertWithOnConflict("ai_settings", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { writable?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun ensureProviderKeyStatsColumns(db: SQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN success_count INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {
+        }
+        try {
+            db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN failure_total_count INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {
+        }
     }
 
     fun markProviderKeySuccess(context: Context, keyId: Long?) {
@@ -124,16 +193,23 @@ object AISettingsNative {
         try {
             val path = resolveMasterDbPath(context) ?: return
             db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
-            val values = android.content.ContentValues().apply {
-                put("failure_count", 0)
-                putNull("cooldown_until_ms")
-                putNull("last_error_type")
-                putNull("last_error_message")
-                putNull("last_failed_at")
-                put("last_success_at", System.currentTimeMillis())
-            }
-            db.update("ai_provider_keys", values, "id = ?", arrayOf(keyId.toString()))
-        } catch (_: Exception) {
+            ensureProviderKeyStatsColumns(db!!)
+            db!!.execSQL(
+                """
+                UPDATE ai_provider_keys
+                SET failure_count = 0,
+                    success_count = COALESCE(success_count, 0) + 1,
+                    cooldown_until_ms = NULL,
+                    last_error_type = NULL,
+                    last_error_message = NULL,
+                    last_failed_at = NULL,
+                    last_success_at = ?
+                WHERE id = ?
+                """.trimIndent(),
+                arrayOf<Any>(System.currentTimeMillis(), keyId)
+            )
+        } catch (e: Exception) {
+            try { FileLogger.w(TAG, "更新 Key 成功统计失败：${e.message}") } catch (_: Exception) {}
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
@@ -143,26 +219,147 @@ object AISettingsNative {
         try {
             val path = resolveMasterDbPath(context) ?: return
             db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+            ensureProviderKeyStatsColumns(db!!)
             val retryable = errorType == "retryable"
-            val values = android.content.ContentValues().apply {
-                if (retryable) put("failure_count", attemptCount) else put("failure_count", 0)
-                if (retryable && attemptCount >= 3) put("cooldown_until_ms", System.currentTimeMillis() + 10L * 60L * 1000L) else putNull("cooldown_until_ms")
-                put("last_error_type", errorType)
-                put("last_error_message", message.take(1000))
-                put("last_failed_at", System.currentTimeMillis())
+            val failureCount = if (retryable) attemptCount else 0
+            val cooldownUntil = if (retryable && attemptCount >= 3) {
+                System.currentTimeMillis() + 10L * 60L * 1000L
+            } else {
+                null
             }
-            db.update("ai_provider_keys", values, "id = ?", arrayOf(keyId.toString()))
-        } catch (_: Exception) {
+            db!!.execSQL(
+                """
+                UPDATE ai_provider_keys
+                SET failure_count = ?,
+                    failure_total_count = COALESCE(failure_total_count, 0) + 1,
+                    cooldown_until_ms = ?,
+                    last_error_type = ?,
+                    last_error_message = ?,
+                    last_failed_at = ?
+                WHERE id = ?
+                """.trimIndent(),
+                arrayOf<Any?>(
+                    failureCount,
+                    cooldownUntil,
+                    errorType,
+                    message.take(1000),
+                    System.currentTimeMillis(),
+                    keyId,
+                )
+            )
+        } catch (e: Exception) {
+            try { FileLogger.w(TAG, "更新 Key 失败统计失败：${e.message}") } catch (_: Exception) {}
         } finally { try { db?.close() } catch (_: Exception) {} }
     }
 
-    fun readConfig(context: Context): AIConfig = readConfig(context, "segments")
+    fun readConfig(context: Context): AIConfig = readConfig(context, "segments", rotateKey = true)
+
+    fun readConfigSnapshot(context: Context, aiContext: String = "segments"): AIConfig =
+        readConfig(context, aiContext, rotateKey = false)
+
+    fun readConfigCandidates(context: Context, aiContext: String = "segments", maxCandidates: Int = 32): List<AIConfig> {
+        var db: SQLiteDatabase? = null
+        return try {
+            db = openMasterDb(context)
+            if (db == null) return listOf(readConfig(context, aiContext, rotateKey = true))
+            val limit = maxCandidates.coerceIn(1, 64)
+            val ctxCursor = db!!.query(
+                "ai_contexts",
+                arrayOf("provider_id", "model"),
+                "context = ?",
+                arrayOf(aiContext),
+                null, null, null, "1"
+            )
+            ctxCursor.use { cc ->
+                if (!cc.moveToFirst()) return listOf(readConfig(context, aiContext, rotateKey = true))
+                val providerId = cc.getInt(cc.getColumnIndexOrThrow("provider_id"))
+                val model = cc.getString(cc.getColumnIndexOrThrow("model"))?.trim().orEmpty()
+                if (providerId <= 0 || model.isBlank()) return listOf(readConfig(context, aiContext, rotateKey = true))
+
+                var baseUrl: String? = null
+                var providerApiKey: String? = null
+                var providerType: String? = null
+                var chatPath: String? = null
+                val prov = db!!.query(
+                    "ai_providers",
+                    arrayOf("base_url", "api_key", "type", "chat_path"),
+                    "id = ?",
+                    arrayOf(providerId.toString()),
+                    null, null, null, "1"
+                )
+                prov.use { cp ->
+                    if (cp.moveToFirst()) {
+                        baseUrl = cp.getString(cp.getColumnIndexOrThrow("base_url"))?.trim()
+                        providerApiKey = cp.getString(cp.getColumnIndexOrThrow("api_key"))?.trim()
+                        providerType = cp.getString(cp.getColumnIndexOrThrow("type"))?.trim()
+                        chatPath = cp.getString(cp.getColumnIndexOrThrow("chat_path"))?.trim()
+                    }
+                }
+
+                val typeLower = (providerType ?: "").trim().lowercase()
+                val effectiveBase = when {
+                    !baseUrl.isNullOrEmpty() -> baseUrl!!
+                    typeLower == "gemini" -> "https://generativelanguage.googleapis.com"
+                    typeLower == "claude" -> "https://api.anthropic.com"
+                    typeLower == "azure_openai" -> throw IllegalStateException("AI base_url missing for Azure OpenAI")
+                    else -> "https://api.openai.com"
+                }
+                val effectiveChatPath = chatPath?.trim()?.takeIf { it.isNotEmpty() }
+                val selectedKeys = selectProviderKeys(context, db!!, providerId, model, rotateKey = true)
+                val out = ArrayList<AIConfig>()
+                for (key in selectedKeys.take(limit)) {
+                    out.add(
+                        AIConfig(
+                            baseUrl = effectiveBase,
+                            apiKey = key.apiKey,
+                            model = model,
+                            providerType = providerType,
+                            chatPath = effectiveChatPath,
+                            providerKeyId = key.id,
+                            providerKeyName = key.name,
+                            providerId = providerId,
+                        )
+                    )
+                }
+                if (out.isNotEmpty()) return out
+
+                val keyCtx = readSetting(db!!, "api_key_$aiContext")?.trim()
+                val keyLegacy = readSetting(db!!, "api_key")?.trim()
+                val fallbackKey = when {
+                    !providerApiKey.isNullOrEmpty() -> providerApiKey!!
+                    !keyCtx.isNullOrEmpty() -> keyCtx!!
+                    !keyLegacy.isNullOrEmpty() -> keyLegacy!!
+                    else -> ""
+                }
+                if (fallbackKey.isNotBlank()) {
+                    return listOf(
+                        AIConfig(
+                            baseUrl = effectiveBase,
+                            apiKey = fallbackKey,
+                            model = model,
+                            providerType = providerType,
+                            chatPath = effectiveChatPath,
+                            providerId = providerId,
+                        )
+                    )
+                }
+            }
+            listOf(readConfig(context, aiContext, rotateKey = true))
+        } catch (_: Exception) {
+            try { listOf(readConfig(context, aiContext, rotateKey = true)) } catch (e: Exception) { throw e }
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
 
     /**
      * 读取指定 AI 上下文的配置。
      * - aiContext: 'segments' | 'weekly' | 'memory' | ...（对应 Flutter 侧 ai_contexts.context）
      */
-    fun readConfig(context: Context, aiContext: String): AIConfig {
+    fun readConfig(context: Context, aiContext: String): AIConfig =
+        readConfig(context, aiContext, rotateKey = true)
+
+    private fun readConfig(context: Context, aiContext: String, rotateKey: Boolean): AIConfig {
         var db: SQLiteDatabase? = null
         return try {
             db = openMasterDb(context)
@@ -215,7 +412,7 @@ object AISettingsNative {
 
                         val keyCtx = readSetting(db!!, "api_key_$aiContext")?.trim()
                         val keyLegacy = readSetting(db!!, "api_key")?.trim()
-                        val selectedKey = selectProviderKey(db!!, providerId, model)
+                        val selectedKey = selectProviderKey(context, db!!, providerId, model, rotateKey)
                         val apiKey = when {
                             selectedKey != null -> selectedKey.apiKey
                             !providerApiKey.isNullOrEmpty() -> providerApiKey
@@ -240,7 +437,8 @@ object AISettingsNative {
                                 providerType = providerType,
                                 chatPath = effectiveChatPath,
                                 providerKeyId = selectedKey?.id,
-                                providerKeyName = selectedKey?.name
+                                providerKeyName = selectedKey?.name,
+                                providerId = providerId
                             )
                         }
                     }

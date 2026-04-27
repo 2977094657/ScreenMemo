@@ -325,6 +325,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         priority INTEGER NOT NULL DEFAULT 100,
         order_index INTEGER NOT NULL DEFAULT 0,
         failure_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_total_count INTEGER NOT NULL DEFAULT 0,
         cooldown_until_ms INTEGER,
         last_error_type TEXT,
         last_error_message TEXT,
@@ -339,6 +341,30 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_cooldown ON ai_provider_keys(cooldown_until_ms)',
     );
+    await _ensureAiProviderKeyStatsColumns(db);
+  }
+
+  Future<void> _ensureAiProviderKeyStatsColumns(DatabaseExecutor db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN success_count INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN failure_total_count INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'UPDATE ai_provider_keys SET success_count = 1 WHERE last_success_at IS NOT NULL AND COALESCE(success_count, 0) = 0',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'UPDATE ai_provider_keys SET failure_total_count = 1 WHERE last_failed_at IS NOT NULL AND COALESCE(failure_total_count, 0) = 0',
+      );
+    } catch (_) {}
   }
 
   Future<void> _migrateLegacyProviderKeys(DatabaseExecutor db) async {
@@ -370,6 +396,8 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
           'priority': 100,
           'order_index': 0,
           'failure_count': 0,
+          'success_count': 0,
+          'failure_total_count': 0,
           'created_at': now,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
@@ -1744,6 +1772,7 @@ ORDER BY day ASC
   Future<List<Map<String, dynamic>>> listAIProviderKeys(int providerId) async {
     final db = await database;
     try {
+      await _ensureAiProviderKeyStatsColumns(db);
       return await db.query(
         'ai_provider_keys',
         where: 'provider_id = ?',
@@ -1790,6 +1819,8 @@ ORDER BY day ASC
         'priority': priority,
         'order_index': orderIndex ?? 0,
         'failure_count': 0,
+        'success_count': 0,
+        'failure_total_count': 0,
         'created_at': DateTime.now().millisecondsSinceEpoch,
       });
     } catch (_) {
@@ -1850,21 +1881,36 @@ ORDER BY day ASC
     }
   }
 
+  Future<int> deleteAIProviderKeysForProvider(int providerId) async {
+    final db = await database;
+    try {
+      return await db.delete(
+        'ai_provider_keys',
+        where: 'provider_id = ?',
+        whereArgs: <Object?>[providerId],
+      );
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<void> markAIProviderKeySuccess(int keyId) async {
     final db = await database;
     try {
-      await db.update(
-        'ai_provider_keys',
-        <String, Object?>{
-          'failure_count': 0,
-          'cooldown_until_ms': null,
-          'last_error_type': null,
-          'last_error_message': null,
-          'last_failed_at': null,
-          'last_success_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'id = ?',
-        whereArgs: <Object?>[keyId],
+      await _ensureAiProviderKeyStatsColumns(db);
+      await db.rawUpdate(
+        '''
+        UPDATE ai_provider_keys
+        SET failure_count = 0,
+            success_count = COALESCE(success_count, 0) + 1,
+            cooldown_until_ms = NULL,
+            last_error_type = NULL,
+            last_error_message = NULL,
+            last_failed_at = NULL,
+            last_success_at = ?
+        WHERE id = ?
+        ''',
+        <Object?>[DateTime.now().millisecondsSinceEpoch, keyId],
       );
     } catch (_) {}
   }
@@ -1879,24 +1925,33 @@ ORDER BY day ASC
   }) async {
     final db = await database;
     try {
+      await _ensureAiProviderKeyStatsColumns(db);
       final row = await getAIProviderKeyById(keyId);
       final int current = (row?['failure_count'] as int?) ?? 0;
       final int nextCount = resetFailureCount
           ? 0
           : (incrementFailure ? current + 1 : current);
-      await db.update(
-        'ai_provider_keys',
-        <String, Object?>{
-          'failure_count': nextCount,
-          'cooldown_until_ms': cooldownUntilMs,
-          'last_error_type': errorType,
-          'last_error_message': errorMessage.length > 1000
+      await db.rawUpdate(
+        '''
+        UPDATE ai_provider_keys
+        SET failure_count = ?,
+            failure_total_count = COALESCE(failure_total_count, 0) + 1,
+            cooldown_until_ms = ?,
+            last_error_type = ?,
+            last_error_message = ?,
+            last_failed_at = ?
+        WHERE id = ?
+        ''',
+        <Object?>[
+          nextCount,
+          cooldownUntilMs,
+          errorType,
+          errorMessage.length > 1000
               ? errorMessage.substring(0, 1000)
               : errorMessage,
-          'last_failed_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'id = ?',
-        whereArgs: <Object?>[keyId],
+          DateTime.now().millisecondsSinceEpoch,
+          keyId,
+        ],
       );
     } catch (_) {}
   }

@@ -1309,7 +1309,7 @@ object SegmentSummaryManager {
                     var modelName = "unknown"
                     var baseUrl = ""
                     try {
-                        val cfg = AISettingsNative.readConfig(ctx)
+                        val cfg = AISettingsNative.readConfigSnapshot(ctx)
                         if (cfg.model.isNotBlank()) modelName = cfg.model
                         baseUrl = cfg.baseUrl
                     } catch (_: Exception) {}
@@ -1486,7 +1486,43 @@ object SegmentSummaryManager {
         }
     }
 
-    // 返回 (model, outputText, structuredJson, categories, rawRequest, rawResponse)
+    private fun classifyAiFailure(message: String): String {
+        val msg = message.lowercase()
+        return when {
+            msg.contains("401") || msg.contains("403") -> "auth_failed"
+            msg.contains("model_not_found") || msg.contains("unsupported_model") -> "model_not_found"
+            msg.contains("does not exist") && msg.contains("model") -> "model_not_found"
+            msg.contains("not found") && msg.contains("model") -> "model_not_found"
+            msg.contains("429") || msg.contains("408") || msg.contains("timeout") ||
+                msg.contains("socket") || msg.contains("connection") || msg.contains("network") ||
+                msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504") -> "retryable"
+            else -> "fatal"
+        }
+    }
+
+    private fun shouldTryNextProviderKey(errorType: String): Boolean {
+        return errorType == "auth_failed" || errorType == "model_not_found" || errorType == "retryable"
+    }
+
+    private fun resolveAiConfigCandidates(
+        ctx: Context,
+        aiConfigOverride: AISettingsNative.AIConfig?,
+    ): List<AISettingsNative.AIConfig> {
+        if (aiConfigOverride == null) {
+            return try { AISettingsNative.readConfigCandidates(ctx, "segments") } catch (_: Exception) { listOf(AISettingsNative.readConfig(ctx)) }
+        }
+        // 如果传入配置没有绑定 provider key，则重新展开候选 key，避免动态重建沿用快照后无法切换 key。
+        if (aiConfigOverride.providerKeyId != null) return listOf(aiConfigOverride)
+        val candidates = try { AISettingsNative.readConfigCandidates(ctx, "segments") } catch (_: Exception) { emptyList() }
+        if (candidates.isEmpty()) return listOf(aiConfigOverride)
+        val filtered = candidates.filter { cfg ->
+            cfg.model.trim().equals(aiConfigOverride.model.trim(), ignoreCase = true) &&
+                (aiConfigOverride.providerId == null || cfg.providerId == aiConfigOverride.providerId)
+        }
+        return if (filtered.isNotEmpty()) filtered else listOf(aiConfigOverride)
+    }
+
+    // 返回结果 (model, outputText, structuredJson, categories, rawRequest, rawResponse)
     private fun callGeminiWithImages(
         ctx: Context,
         seg: SegmentDatabaseHelper.Segment,
@@ -1502,36 +1538,50 @@ object SegmentSummaryManager {
         stageReporter: ((String, String, String, Long) -> Unit)? = null,
         stageScope: String? = null,
     ): AiCallResult {
-        val cfg = aiConfigOverride ?: AISettingsNative.readConfig(ctx)
-        try {
-            val result = callGeminiWithImagesSingleKey(
-                ctx = ctx,
-                seg = seg,
-                samples = samples,
-                prompt = prompt,
-                isMerge = isMerge,
-                injectDynamicRules = injectDynamicRules,
-                maxImagesOverride = maxImagesOverride,
-                allowJsonAutoRetry = allowJsonAutoRetry,
-                jsonRetryCount = jsonRetryCount,
-                aiConfigOverride = cfg,
-                strictFailure = strictFailure,
-                stageReporter = stageReporter,
-                stageScope = stageScope,
-            )
-            AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
-            return result
-        } catch (e: Exception) {
-            val msg = e.message ?: e.toString()
-            val errorType = when {
-                msg.contains("401") || msg.contains("403") -> "auth_failed"
-                msg.contains("model_not_found", ignoreCase = true) || msg.contains("unsupported_model", ignoreCase = true) -> "model_not_found"
-                msg.contains("429") || msg.contains("408") || msg.contains("timeout", ignoreCase = true) || msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504") -> "retryable"
-                else -> "fatal"
+        val configs = resolveAiConfigCandidates(ctx, aiConfigOverride)
+        var lastError: Exception? = null
+        for ((index, cfg) in configs.withIndex()) {
+            try {
+                if (configs.size > 1) {
+                    FileLogger.i(
+                        TAG,
+                        "AI key candidate ${index + 1}/${configs.size}: key_id=${cfg.providerKeyId ?: 0} key_name=${cfg.providerKeyName ?: "legacy"} model=${cfg.model} seg=${seg.id}"
+                    )
+                }
+                val result = callGeminiWithImagesSingleKey(
+                    ctx = ctx,
+                    seg = seg,
+                    samples = samples,
+                    prompt = prompt,
+                    isMerge = isMerge,
+                    injectDynamicRules = injectDynamicRules,
+                    maxImagesOverride = maxImagesOverride,
+                    allowJsonAutoRetry = allowJsonAutoRetry,
+                    jsonRetryCount = jsonRetryCount,
+                    aiConfigOverride = cfg,
+                    strictFailure = strictFailure,
+                    stageReporter = stageReporter,
+                    stageScope = stageScope,
+                )
+                AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
+                return result
+            } catch (e: Exception) {
+                lastError = e
+                val msg = e.message ?: e.toString()
+                val errorType = classifyAiFailure(msg)
+                AISettingsNative.markProviderKeyFailure(ctx, cfg.providerKeyId, errorType, msg, 3)
+                if (configs.size > 1) {
+                    FileLogger.w(
+                        TAG,
+                        "AI key candidate failed: key_id=${cfg.providerKeyId ?: 0} type=$errorType candidate=${index + 1}/${configs.size} seg=${seg.id} message=${truncateForLog(msg, 500)}"
+                    )
+                }
+                if (!shouldTryNextProviderKey(errorType) || index == configs.lastIndex) {
+                    throw e
+                }
             }
-            AISettingsNative.markProviderKeyFailure(ctx, cfg.providerKeyId, errorType, msg, 3)
-            throw e
         }
+        throw lastError ?: IllegalStateException("No AI config available")
     }
 
     private fun callGeminiWithImagesSingleKey(
@@ -3043,7 +3093,7 @@ object SegmentSummaryManager {
             maxAiImages = maxAiImages
         )
         val mergedAiSamples = mergePlan.aiSamples
-        val mergeAiConfig = AISettingsNative.readConfig(ctx)
+        val mergeAiConfig = AISettingsNative.readConfigSnapshot(ctx)
         val slimOpenAiMergePrompt = shouldUseSlimOpenAiMergePrompt(mergeAiConfig)
         val mergePrompt = buildMergePrompt(
             ctx,
@@ -3070,7 +3120,6 @@ object SegmentSummaryManager {
                 mergePrompt,
                 isMerge = true,
                 maxImagesOverride = maxAiImages,
-                aiConfigOverride = mergeAiConfig,
             )
         } catch (e: Exception) {
             try {

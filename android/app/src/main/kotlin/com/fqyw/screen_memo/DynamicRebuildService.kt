@@ -78,7 +78,7 @@ class DynamicRebuildService : Service() {
                 return current.toMap()
             }
             if (current != null && resumeExisting && current.canContinue()) {
-                val aiConfig = AISettingsNative.readConfig(appCtx, "segments")
+                val aiConfig = AISettingsNative.readConfigSnapshot(appCtx, "segments")
                 current.status = DynamicRebuildTaskState.STATUS_PENDING
                 current.updatedAt = System.currentTimeMillis()
                 current.completedAt = 0L
@@ -110,6 +110,7 @@ class DynamicRebuildService : Service() {
                 current.aiModel = aiConfig.model
                 current.aiProviderType = aiConfig.providerType
                 current.aiChatPath = aiConfig.chatPath
+                current.aiProviderId = aiConfig.providerId
                 current.currentStage = "resume_requested"
                 current.currentStageLabel = "继续重建"
                 current.currentStageDetail =
@@ -152,6 +153,7 @@ class DynamicRebuildService : Service() {
                 aiModel = "",
                 aiProviderType = null,
                 aiChatPath = null,
+                aiProviderId = null,
                 recentLogs = mutableListOf(
                     buildStageLogLine(
                         "等待后台启动",
@@ -177,7 +179,7 @@ class DynamicRebuildService : Service() {
         ): Map<String, Any?> {
             val current = DynamicRebuildTaskStore.load(context)
             if (current != null && current.isRecoverable()) {
-                FileLogger.i(TAG, "??????????????????reason=$reason")
+                FileLogger.i(TAG, "检测到可恢复的动态重建任务，尝试恢复执行，reason=$reason")
                 startService(context, ACTION_RESUME)
                 return current.toMap()
             }
@@ -234,7 +236,7 @@ class DynamicRebuildService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
-                FileLogger.e(TAG, "?? DynamicRebuildService ??", e)
+                FileLogger.e(TAG, "启动动态重建服务失败", e)
             }
         }
     }
@@ -301,7 +303,7 @@ class DynamicRebuildService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        FileLogger.i(TAG, "??????????????????")
+        FileLogger.i(TAG, "系统移除任务，动态重建服务保持后台状态")
         super.onTaskRemoved(rootIntent)
     }
 
@@ -372,7 +374,7 @@ class DynamicRebuildService : Service() {
                 ),
             )
             DynamicRebuildTaskStore.save(this, failed)
-            FileLogger.e(TAG, "??????????", e)
+            FileLogger.e(TAG, "动态重建后台任务失败", e)
             finalState = failed
         } finally {
             workerStarted.set(false)
@@ -415,7 +417,7 @@ class DynamicRebuildService : Service() {
                 label = "读取 AI 配置",
                 detail = "准备动态重建所需的模型配置",
             )
-            AISettingsNative.readConfig(this, "segments")
+            AISettingsNative.readConfigSnapshot(this, "segments")
         } else {
             null
         }
@@ -435,6 +437,7 @@ class DynamicRebuildService : Service() {
         state.aiModel = aiConfig?.model ?: ""
         state.aiProviderType = aiConfig?.providerType
         state.aiChatPath = aiConfig?.chatPath
+        state.aiProviderId = aiConfig?.providerId
         state.dayWorks.clear()
         state.dayWorks.addAll(dayWorks)
         state.workerSlots.clear()
@@ -1235,19 +1238,19 @@ class DynamicRebuildService : Service() {
 
     private fun buildTaskReport(state: DynamicRebuildTaskState): String {
         val sb = StringBuilder()
-        sb.appendLine("ScreenMemo ??????")
-        sb.appendLine("??: ${state.status}")
-        sb.appendLine("??: ${state.startedAt}")
-        sb.appendLine("??: ${state.completedAt}")
+        sb.appendLine("ScreenMemo 动态重建报告")
+        sb.appendLine("状态: ${state.status}")
+        sb.appendLine("开始时间: ${state.startedAt}")
+        sb.appendLine("完成时间: ${state.completedAt}")
         sb.appendLine("并发天数: ${state.dayConcurrency}")
-        sb.appendLine("???: ${state.totalSegments}")
-        sb.appendLine("???: ${state.processedSegments}")
+        sb.appendLine("总段落数: ${state.totalSegments}")
+        sb.appendLine("已处理段落: ${state.processedSegments}")
         sb.appendLine("待继续天数: ${state.failedDayCount()}/${state.totalDays()}")
         if (state.aiModel.isNotBlank()) {
             sb.appendLine("model: ${state.aiModel}")
         }
         if (state.currentDayKey.isNotBlank() || state.currentRangeLabel.isNotBlank()) {
-            sb.appendLine("??: 第 ${state.currentWorkOrdinal()}/${state.totalSegments} 条 ${state.currentDayKey} ${state.currentRangeLabel}".trim())
+            sb.appendLine("当前位置: 第 ${state.currentWorkOrdinal()}/${state.totalSegments} 条 ${state.currentDayKey} ${state.currentRangeLabel}".trim())
         }
         if (state.timelineCutoffDayKey.isNotBlank()) {
             sb.appendLine("timelineCutoffDayKey: ${state.timelineCutoffDayKey}")
@@ -1667,6 +1670,7 @@ private data class DynamicRebuildTaskState(
     var aiModel: String,
     var aiProviderType: String?,
     var aiChatPath: String?,
+    var aiProviderId: Int?,
     val recentLogs: MutableList<String>,
     val dayWorks: MutableList<DynamicRebuildDayWorkItem>,
     val workerSlots: MutableList<DynamicRebuildWorkerSlotState>,
@@ -1707,6 +1711,7 @@ private data class DynamicRebuildTaskState(
                 aiModel = "",
                 aiProviderType = null,
                 aiChatPath = null,
+                aiProviderId = null,
                 recentLogs = mutableListOf(),
                 dayWorks = mutableListOf(),
                 workerSlots = mutableListOf(),
@@ -1786,7 +1791,7 @@ private data class DynamicRebuildTaskState(
 
     fun requireAiConfig(): AISettingsNative.AIConfig {
         if (aiBaseUrl.isBlank() || aiApiKey.isBlank() || aiModel.isBlank()) {
-            throw IllegalStateException("???? AI ????")
+            throw IllegalStateException("缺少 AI 配置")
         }
         return AISettingsNative.AIConfig(
             baseUrl = aiBaseUrl,
@@ -1794,6 +1799,7 @@ private data class DynamicRebuildTaskState(
             model = aiModel,
             providerType = aiProviderType,
             chatPath = aiChatPath,
+            providerId = aiProviderId,
         )
     }
 
@@ -1981,6 +1987,7 @@ private object DynamicRebuildTaskStore {
                 aiModel = obj.optString("aiModel", ""),
                 aiProviderType = obj.optString("aiProviderType", "").takeIf { it.isNotBlank() },
                 aiChatPath = obj.optString("aiChatPath", "").takeIf { it.isNotBlank() },
+                aiProviderId = if (obj.has("aiProviderId") && !obj.isNull("aiProviderId")) obj.optInt("aiProviderId") else null,
                 recentLogs = recentLogs,
                 dayWorks = dayWorks,
                 workerSlots = workerSlots,
@@ -2000,7 +2007,7 @@ private object DynamicRebuildTaskStore {
                 state.refreshDerivedFields()
             }
         } catch (e: Exception) {
-            FileLogger.e("DynamicRebuildTaskStore", "??????????", e)
+            FileLogger.e("DynamicRebuildTaskStore", "读取动态重建任务状态失败", e)
             null
         }
     }
@@ -2039,6 +2046,7 @@ private object DynamicRebuildTaskStore {
             .put("aiModel", state.aiModel)
             .put("aiProviderType", state.aiProviderType ?: JSONObject.NULL)
             .put("aiChatPath", state.aiChatPath ?: JSONObject.NULL)
+            .put("aiProviderId", state.aiProviderId ?: JSONObject.NULL)
             .put("recentLogs", recentLogs)
             .put("dayWorks", dayWorks)
             .put("workerSlots", workerSlots)

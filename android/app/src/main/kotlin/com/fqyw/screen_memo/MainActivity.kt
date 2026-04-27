@@ -243,7 +243,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "getSegmentsAIConfig" -> {
                     try {
-                        val cfg = AISettingsNative.readConfig(this)
+                        val cfg = AISettingsNative.readConfigSnapshot(this)
                         val map = mapOf(
                             "baseUrl" to (cfg.baseUrl ?: ""),
                             "model" to (cfg.model ?: ""),

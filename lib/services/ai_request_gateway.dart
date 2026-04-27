@@ -206,6 +206,7 @@ class AIRequestGateway {
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
     bool forceChatCompletions = false,
+    bool trackKeyStats = true,
   }) async {
     if (endpoints.isEmpty) {
       throw Exception('No AI endpoints configured');
@@ -240,7 +241,7 @@ class AIRequestGateway {
             imagesCount: imagesCount,
             toolsCount: toolsCount,
           );
-          await _markEndpointSuccess(endpoint);
+          if (trackKeyStats) await _markEndpointSuccess(endpoint);
           return AIGatewayResult(
             content: aggregate.content,
             toolCalls: aggregate.toolCalls,
@@ -265,12 +266,14 @@ class AIRequestGateway {
                 message: e.toString(),
               ),
             );
-            await _markEndpointFailure(
-              endpoint: endpoint,
-              errorType: errorType,
-              error: e,
-              attemptCountForKey: attemptCount,
-            );
+            if (trackKeyStats) {
+              await _markEndpointFailure(
+                endpoint: endpoint,
+                errorType: errorType,
+                error: e,
+                attemptCountForKey: attemptCount,
+              );
+            }
           }
           try {
             await FlutterLogger.nativeWarn(
@@ -300,7 +303,7 @@ class AIRequestGateway {
           imagesCount: imagesCount,
           toolsCount: toolsCount,
         );
-        await _markEndpointSuccess(endpoint);
+        if (trackKeyStats) await _markEndpointSuccess(endpoint);
         return AIGatewayResult(
           content: aggregate.content,
           toolCalls: aggregate.toolCalls,
@@ -325,12 +328,14 @@ class AIRequestGateway {
               message: e.toString(),
             ),
           );
-          await _markEndpointFailure(
-            endpoint: endpoint,
-            errorType: errorType,
-            error: e,
-            attemptCountForKey: attemptCount,
-          );
+          if (trackKeyStats) {
+            await _markEndpointFailure(
+              endpoint: endpoint,
+              errorType: errorType,
+              error: e,
+              attemptCountForKey: attemptCount,
+            );
+          }
         }
         if (_shouldStopEndpointFallback(errorType)) {
           throw Exception(_summarizeEndpointFailures(failures, lastError));
@@ -370,7 +375,7 @@ class AIRequestGateway {
               imagesCount: imagesCount,
               toolsCount: toolsCount,
             );
-            await _markEndpointSuccess(endpoint);
+            if (trackKeyStats) await _markEndpointSuccess(endpoint);
             return AIGatewayResult(
               content: aggregate.content,
               toolCalls: aggregate.toolCalls,
@@ -427,7 +432,7 @@ class AIRequestGateway {
                 imagesCount: imagesCount,
                 toolsCount: toolsCount,
               );
-              await _markEndpointSuccess(endpoint);
+              if (trackKeyStats) await _markEndpointSuccess(endpoint);
               return AIGatewayResult(
                 content: aggregate.content,
                 toolCalls: aggregate.toolCalls,
@@ -460,6 +465,7 @@ class AIRequestGateway {
     List<Map<String, dynamic>> tools = const <Map<String, dynamic>>[],
     Object? toolChoice,
     bool forceChatCompletions = false,
+    bool trackKeyStats = true,
   }) {
     if (endpoints.isEmpty) {
       final StreamController<AIGatewayEvent> empty =
@@ -518,7 +524,7 @@ class AIRequestGateway {
             imagesCount: imagesCount,
             toolsCount: toolsCount,
           );
-          await _markEndpointSuccess(endpoint);
+          if (trackKeyStats) await _markEndpointSuccess(endpoint);
           if (!completer.isCompleted) {
             completer.complete(
               AIGatewayResult(
@@ -549,12 +555,14 @@ class AIRequestGateway {
                 message: e.toString(),
               ),
             );
-            await _markEndpointFailure(
-              endpoint: endpoint,
-              errorType: errorType,
-              error: e,
-              attemptCountForKey: attemptCount,
-            );
+            if (trackKeyStats) {
+              await _markEndpointFailure(
+                endpoint: endpoint,
+                errorType: errorType,
+                error: e,
+                attemptCountForKey: attemptCount,
+              );
+            }
           }
           try {
             await FlutterLogger.nativeWarn(
@@ -596,7 +604,7 @@ class AIRequestGateway {
               imagesCount: imagesCount,
               toolsCount: toolsCount,
             );
-            await _markEndpointSuccess(endpoint);
+            if (trackKeyStats) await _markEndpointSuccess(endpoint);
             if (!completer.isCompleted) {
               completer.complete(
                 AIGatewayResult(
@@ -629,12 +637,14 @@ class AIRequestGateway {
                   message: fallbackErr.toString(),
                 ),
               );
-              await _markEndpointFailure(
-                endpoint: endpoint,
-                errorType: fallbackType,
-                error: fallbackErr,
-                attemptCountForKey: attemptCount,
-              );
+              if (trackKeyStats) {
+                await _markEndpointFailure(
+                  endpoint: endpoint,
+                  errorType: fallbackType,
+                  error: fallbackErr,
+                  attemptCountForKey: attemptCount,
+                );
+              }
             }
             if (_shouldStopEndpointFallback(fallbackType)) break;
             continue;

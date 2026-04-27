@@ -788,7 +788,7 @@ class AISettingsService {
     return endpoints;
   }
 
-  // ========== ???Conversation?????? ==========
+  // ========== 多会话 Conversation 管理 ==========
 
   String _conversationIdForGroup(int? groupId) =>
       groupId == null ? 'default' : 'group:$groupId';

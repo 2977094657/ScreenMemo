@@ -116,7 +116,7 @@ class ScreenshotDatabase {
         final path = join(databasesDir.path, 'screenshot_memo.db');
         final db = await openDatabase(
           path,
-          version: 44,
+          version: 45,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -154,7 +154,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 44,
+          version: 45,
           onConfigure: (db) async {
             // 启用 WAL 提升并发写入与长事务期间读取能力
             try {
@@ -187,7 +187,7 @@ class ScreenshotDatabase {
 
         final db = await openDatabase(
           path,
-          version: 44,
+          version: 45,
           onConfigure: (db) async {
             try {
               await db.execute('PRAGMA journal_mode=WAL');
@@ -214,7 +214,7 @@ class ScreenshotDatabase {
 
       final db = await openDatabase(
         path,
-        version: 44,
+        version: 45,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -738,6 +738,9 @@ class ScreenshotDatabase {
       await _createAiProviderKeysTable(db);
       await _migrateLegacyProviderKeys(db);
     }
+    if (oldVersion < 45) {
+      await _ensureAiProviderKeyStatsColumns(db);
+    }
     if (oldVersion < 2) {
       await _createAiTables(db);
     } else if (oldVersion < 4) {
@@ -1253,6 +1256,11 @@ class ScreenshotDatabase {
     if (oldVersion < 43) {
       try {
         await _dropLegacyShardOcrTextIndexes(db);
+      } catch (_) {}
+    }
+    if (oldVersion < 45) {
+      try {
+        await _ensureAiProviderKeyStatsColumns(db);
       } catch (_) {}
     }
   }

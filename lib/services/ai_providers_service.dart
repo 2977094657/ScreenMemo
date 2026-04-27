@@ -70,6 +70,8 @@ class AIProviderKey {
   final int priority;
   final int orderIndex;
   final int failureCount;
+  final int successCount;
+  final int failureTotalCount;
   final int? cooldownUntilMs;
   final String? lastErrorType;
   final String? lastErrorMessage;
@@ -86,6 +88,8 @@ class AIProviderKey {
     required this.priority,
     required this.orderIndex,
     required this.failureCount,
+    required this.successCount,
+    required this.failureTotalCount,
     required this.cooldownUntilMs,
     required this.lastErrorType,
     required this.lastErrorMessage,
@@ -112,6 +116,8 @@ class AIProviderKey {
       priority: (row['priority'] as int?) ?? 100,
       orderIndex: (row['order_index'] as int?) ?? 0,
       failureCount: (row['failure_count'] as int?) ?? 0,
+      successCount: (row['success_count'] as int?) ?? 0,
+      failureTotalCount: (row['failure_total_count'] as int?) ?? 0,
       cooldownUntilMs: row['cooldown_until_ms'] as int?,
       lastErrorType: row['last_error_type'] as String?,
       lastErrorMessage: row['last_error_message'] as String?,
@@ -616,6 +622,13 @@ class AIProvidersService {
     return ok;
   }
 
+  Future<int> deleteAllProviderKeys(int providerId) async {
+    final count = await _db.deleteAIProviderKeysForProvider(providerId);
+    await syncProviderModelsFromKeys(providerId);
+    await deleteApiKey(providerId);
+    return count;
+  }
+
   Future<List<String>> refreshModelsForKey({
     required int providerId,
     required int keyId,
@@ -624,9 +637,19 @@ class AIProvidersService {
     final key = await getProviderKey(keyId);
     if (provider == null) throw Exception('Provider not found');
     if (key == null) throw Exception('Provider key not found');
-    final models = await fetchModels(provider: provider, apiKey: key.apiKey);
-    await updateProviderKey(id: keyId, models: models, clearErrorState: true);
-    return models;
+    try {
+      final models = await fetchModels(provider: provider, apiKey: key.apiKey);
+      await updateProviderKey(id: keyId, models: models, clearErrorState: true);
+      await markProviderKeySuccess(keyId);
+      return models;
+    } catch (e) {
+      await markProviderKeyFailure(
+        keyId: keyId,
+        errorType: 'models_fetch_failed',
+        errorMessage: e.toString(),
+      );
+      rethrow;
+    }
   }
 
   Future<void> markProviderKeySuccess(int keyId) =>
