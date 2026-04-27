@@ -3,11 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:screen_memo/widgets/ui_components.dart';
 import 'package:screen_memo/l10n/app_localizations.dart';
 import '../services/ai_providers_service.dart';
+import '../services/provider_key_batch_maintenance_service.dart';
 import '../theme/app_theme.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../utils/model_icon_utils.dart';
 import '../widgets/ui_dialog.dart';
 import '../services/flutter_logger.dart';
+
+enum _ProviderKeySortMode {
+  runtime,
+  successDesc,
+  recentSuccessDesc,
+  failureDesc,
+  continuousFailureDesc,
+  newestDesc,
+}
 
 /// 提供商编辑页（新建/编辑）
 class ProviderEditPage extends StatefulWidget {
@@ -21,6 +31,7 @@ class ProviderEditPage extends StatefulWidget {
 
 class _ProviderEditPageState extends State<ProviderEditPage> {
   final _svc = AIProvidersService.instance;
+  final _batchSvc = ProviderKeyBatchMaintenanceService.instance;
 
   final _nameCtrl = TextEditingController();
   final _baseUrlCtrl = TextEditingController();
@@ -37,6 +48,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   bool _loading = true;
   bool _saving = false;
   bool _fetching = false;
+  bool _batchRunning = false;
+  ProviderKeyBatchProgress? _batchProgress;
+
+  _ProviderKeySortMode _keySortMode = _ProviderKeySortMode.runtime;
 
   List<String> _models = <String>[];
   List<AIProviderKey> _keys = <AIProviderKey>[];
@@ -154,6 +169,121 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       _keys = keys;
       _models = _aggregateKeyModels(keys);
     });
+  }
+
+  List<AIProviderKey> get _displayKeys {
+    if (_keys.length <= 1) return List<AIProviderKey>.from(_keys);
+    final list = List<AIProviderKey>.from(_keys);
+    switch (_keySortMode) {
+      case _ProviderKeySortMode.runtime:
+        return list;
+      case _ProviderKeySortMode.successDesc:
+        list.sort((a, b) {
+          final int success = b.successCount.compareTo(a.successCount);
+          if (success != 0) return success;
+          final int last = (b.lastSuccessAt ?? 0).compareTo(
+            a.lastSuccessAt ?? 0,
+          );
+          if (last != 0) return last;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+      case _ProviderKeySortMode.recentSuccessDesc:
+        list.sort((a, b) {
+          final int last = (b.lastSuccessAt ?? 0).compareTo(
+            a.lastSuccessAt ?? 0,
+          );
+          if (last != 0) return last;
+          final int success = b.successCount.compareTo(a.successCount);
+          if (success != 0) return success;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+      case _ProviderKeySortMode.failureDesc:
+        list.sort((a, b) {
+          final int failure = b.failureTotalCount.compareTo(
+            a.failureTotalCount,
+          );
+          if (failure != 0) return failure;
+          final int last = (b.lastFailedAt ?? 0).compareTo(a.lastFailedAt ?? 0);
+          if (last != 0) return last;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+      case _ProviderKeySortMode.continuousFailureDesc:
+        list.sort((a, b) {
+          final int failure = b.failureCount.compareTo(a.failureCount);
+          if (failure != 0) return failure;
+          final int last = (b.lastFailedAt ?? 0).compareTo(a.lastFailedAt ?? 0);
+          if (last != 0) return last;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+      case _ProviderKeySortMode.newestDesc:
+        list.sort((a, b) {
+          final int newest = (b.id ?? 0).compareTo(a.id ?? 0);
+          if (newest != 0) return newest;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+    }
+  }
+
+  int _compareDefaultKeyOrder(AIProviderKey a, AIProviderKey b) {
+    final int enabled = (b.enabled ? 1 : 0).compareTo(a.enabled ? 1 : 0);
+    if (enabled != 0) return enabled;
+    final int priority = a.priority.compareTo(b.priority);
+    if (priority != 0) return priority;
+    final int order = a.orderIndex.compareTo(b.orderIndex);
+    if (order != 0) return order;
+    return (a.id ?? 0).compareTo(b.id ?? 0);
+  }
+
+  String _keySortModeLabel(_ProviderKeySortMode mode) {
+    switch (mode) {
+      case _ProviderKeySortMode.runtime:
+        return '默认顺序';
+      case _ProviderKeySortMode.successDesc:
+        return '成功次数';
+      case _ProviderKeySortMode.recentSuccessDesc:
+        return '最近成功';
+      case _ProviderKeySortMode.failureDesc:
+        return '失败总数';
+      case _ProviderKeySortMode.continuousFailureDesc:
+        return '连续失败';
+      case _ProviderKeySortMode.newestDesc:
+        return '最新添加';
+    }
+  }
+
+  AIProvider? _currentProviderSnapshot() {
+    final int? providerId = _loaded?.id;
+    if (providerId == null) return null;
+    final String base = _baseUrlCtrl.text.trim();
+    return AIProvider(
+      id: providerId,
+      name: _nameCtrl.text.trim().isEmpty
+          ? (_loaded?.name ?? 'Provider')
+          : _nameCtrl.text.trim(),
+      type: _type,
+      baseUrl: base.isEmpty ? null : base,
+      chatPath: _chatPathCtrl.text.trim().isEmpty
+          ? null
+          : _chatPathCtrl.text.trim(),
+      modelsPath: _effectiveModelsPath(),
+      useResponseApi: _useResponseApi,
+      enabled: true,
+      isDefault: false,
+      models: List<String>.from(_models),
+      extra: _buildExtra(),
+      orderIndex: _loaded?.orderIndex ?? 0,
+    );
+  }
+
+  String _clipDialogText(String value, [int max = 240]) {
+    final String text = value.trim();
+    if (text.length <= max) return text;
+    return '${text.substring(0, max)}...';
   }
 
   void _applyTypeDefaults(String t, {bool initial = false}) {
@@ -313,6 +443,162 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return map;
   }
 
+  Future<void> _refreshAllKeysAndProbeFailures() async {
+    if (_batchRunning || _saving || _fetching) return;
+    final AIProvider? provider = _currentProviderSnapshot();
+    if (provider == null) {
+      UINotifier.warning(context, '请先保存提供商，再执行批量测试。');
+      return;
+    }
+    final enabledKeys = _keys
+        .where((key) => key.enabled && key.apiKey.trim().isNotEmpty)
+        .toList(growable: false);
+    if (enabledKeys.isEmpty) {
+      UINotifier.error(context, '请至少保留一个已启用且非空的 API Key。');
+      return;
+    }
+    final String base = _baseUrlCtrl.text.trim();
+    if ((_type == AIProviderTypes.azureOpenAI ||
+            _type == AIProviderTypes.claude ||
+            _type == AIProviderTypes.gemini ||
+            _type == AIProviderTypes.custom) &&
+        base.isEmpty) {
+      UINotifier.error(
+        context,
+        AppLocalizations.of(context).baseUrlRequiredForAzureError,
+      );
+      return;
+    }
+
+    final bool confirm =
+        await showUIDialog<bool>(
+          context: context,
+          title: '确认批量测试',
+          message:
+              '即将检查 ${enabledKeys.length} 个已启用 Key。系统会先刷新模型列表，再对失败的 Key 最多连续测试 3 次；若仍失败，将自动删除该 Key。',
+          actions: [
+            UIDialogAction<bool>(text: '取消', result: false),
+            UIDialogAction<bool>(text: '开始测试', result: true),
+          ],
+        ) ??
+        false;
+    if (!confirm) return;
+
+    setState(() {
+      _batchRunning = true;
+      _batchProgress = ProviderKeyBatchProgress(
+        phaseLabel: '准备中',
+        current: 0,
+        total: enabledKeys.length,
+        message: '正在准备批量测试任务...',
+      );
+    });
+    try {
+      final ProviderKeyBatchRefreshResult result = await _batchSvc
+          .refreshModelsAndProbeFailures(
+            provider: provider,
+            keys: _keys,
+            probeAttempts: 3,
+            deleteAfterFailedProbe: true,
+            onProgress: (progress) {
+              if (!mounted) return;
+              setState(() => _batchProgress = progress);
+            },
+          );
+      await _reloadKeys();
+      if (!mounted) return;
+      UINotifier.success(
+        context,
+        '批量测试完成：刷新 ${result.refreshedCount} 个 Key，恢复 ${result.rescuedCount} 个，删除 ${result.deletedCount} 个。',
+      );
+      await _showBatchMaintenanceResult(result);
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeError(
+          'AI',
+          '批量测试失败 provider=${provider.id} type=${provider.type} error=$e',
+        );
+      } catch (_) {}
+      if (mounted) {
+        UINotifier.error(context, '批量测试执行失败，请稍后重试。');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _batchRunning = false;
+          _batchProgress = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _showBatchMaintenanceResult(
+    ProviderKeyBatchRefreshResult result,
+  ) async {
+    if (!mounted) return;
+    final String summary = _buildBatchMaintenanceSummary(result);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量测试结果'),
+        content: SizedBox(
+          width: 620,
+          child: SingleChildScrollView(child: SelectableText(summary)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _buildBatchMaintenanceSummary(ProviderKeyBatchRefreshResult result) {
+    final lines = <String>[
+      '已处理 Key：${result.processedKeyCount}',
+      '刷新成功：${result.refreshedCount}',
+      '模型刷新失败：${result.modelFailures.length}',
+      '连续测试恢复：${result.rescuedCount}',
+      '已删除：${result.deletedCount}',
+      '跳过测试：${result.skippedProbeCount}',
+    ];
+
+    if (result.modelFailures.isNotEmpty) {
+      lines.add('');
+      lines.add('模型刷新失败明细：');
+      for (final item in result.modelFailures) {
+        lines.add(
+          '- ${item.key.name} (${item.key.fingerprint}): ${_clipDialogText(item.errorMessage)}',
+        );
+      }
+    }
+
+    if (result.probeResults.isNotEmpty) {
+      lines.add('');
+      lines.add('失败 Key 连续测试结果：');
+      for (final item in result.probeResults) {
+        final String models = item.modelsTried.isEmpty
+            ? '-'
+            : item.modelsTried.join(', ');
+        final String status = item.success
+            ? '恢复成功'
+            : (item.deleted ? '已删除' : (item.skipped ? '已跳过' : '仍然失败'));
+        final String detail = item.success
+            ? '成功模型：${item.successModel ?? '-'}；返回片段：${item.responsePreview ?? '-'}'
+            : (item.failureMessages.isEmpty
+                  ? '未记录失败原因'
+                  : _clipDialogText(item.failureMessages.last));
+        lines.add(
+          '- ${item.key.name} (${item.key.fingerprint}) [$status] 连续测试：${item.attemptsUsed} 次；模型：$models；$detail',
+        );
+      }
+    }
+
+    return lines.join('\n');
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final name = _nameCtrl.text.trim();
@@ -423,6 +709,34 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     });
   }
 
+  List<String> _parseApiKeys(String raw) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final line in raw.split(RegExp(r'[\r\n]+'))) {
+      final key = line.trim();
+      if (key.isEmpty) continue;
+      if (seen.add(key)) out.add(key);
+    }
+    return out;
+  }
+
+  String _keyNameForBatch({
+    required String baseName,
+    required int batchIndex,
+    required int batchTotal,
+    required int existingCount,
+  }) {
+    final trimmed = baseName.trim();
+    if (batchTotal <= 1) {
+      return trimmed.isEmpty ? 'Key ${existingCount + 1}' : trimmed;
+    }
+    final defaultPrefix = RegExp(r'^Key\s+\d+$').hasMatch(trimmed);
+    if (trimmed.isEmpty || defaultPrefix) {
+      return 'Key ${existingCount + batchIndex + 1}';
+    }
+    return '$trimmed ${batchIndex + 1}';
+  }
+
   Future<void> _openKeyDialog({AIProviderKey? key}) async {
     final providerId = _loaded?.id;
     if (providerId == null) {
@@ -447,10 +761,17 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       BuildContext dialogContext,
       void Function(void Function()) setDialogState,
     ) async {
-      final apiKey = apiCtrl.text.trim();
-      if (apiKey.isEmpty) {
-        UINotifier.error(context, 'API Key 必填');
+      final apiKeys = _parseApiKeys(apiCtrl.text);
+      if (apiKeys.isEmpty) {
+        UINotifier.error(context, 'API Key is required');
         return;
+      }
+      final apiKey = apiKeys.first;
+      if (apiKeys.length > 1) {
+        UINotifier.warning(
+          context,
+          'Multiple keys detected; using the first line to fetch models.',
+        );
       }
       final base = _baseUrlCtrl.text.trim();
       if (_type == AIProviderTypes.azureOpenAI && base.isEmpty) {
@@ -520,8 +841,11 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                   ),
                   _buildKeyDialogTextField(
                     controller: apiCtrl,
-                    label: 'API Key',
-                    obscure: true,
+                    label: key == null ? 'API Key（可一行一个批量导入）' : 'API Key',
+                    hint: key == null ? '一行一个 API Key；获取模型时默认使用第一行' : null,
+                    obscure: key != null,
+                    minLines: key == null ? 3 : 1,
+                    maxLines: key == null ? 8 : 1,
                   ),
                   _buildKeyDialogTextField(
                     controller: priorityCtrl,
@@ -570,9 +894,13 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     );
     if (ok != true) return;
     if (!mounted) return;
-    final apiKey = apiCtrl.text.trim();
-    if (apiKey.isEmpty) {
+    final apiKeys = _parseApiKeys(apiCtrl.text);
+    if (apiKeys.isEmpty) {
       UINotifier.error(context, 'API Key 必填');
+      return;
+    }
+    if (key != null && apiKeys.length > 1) {
+      UINotifier.error(context, '编辑单个 Key 时请只填写一个 API Key');
       return;
     }
     final models = modelsCtrl.text
@@ -586,20 +914,44 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     }
     final priority = int.tryParse(priorityCtrl.text.trim()) ?? 100;
     if (key == null) {
-      await _svc.createProviderKey(
-        providerId: providerId,
-        name: nameCtrl.text.trim(),
-        apiKey: apiKey,
-        models: models,
-        enabled: enabled,
-        priority: priority,
-        orderIndex: _keys.length,
-      );
+      final existingApiKeys = _keys.map((k) => k.apiKey.trim()).toSet();
+      final keysToCreate = apiKeys
+          .where((item) => !existingApiKeys.contains(item.trim()))
+          .toList(growable: false);
+      final skipped = apiKeys.length - keysToCreate.length;
+      if (keysToCreate.isEmpty) {
+        UINotifier.warning(context, '没有新增 Key：输入的 API Key 已存在。');
+        return;
+      }
+      for (var i = 0; i < keysToCreate.length; i++) {
+        await _svc.createProviderKey(
+          providerId: providerId,
+          name: _keyNameForBatch(
+            baseName: nameCtrl.text,
+            batchIndex: i,
+            batchTotal: keysToCreate.length,
+            existingCount: _keys.length,
+          ),
+          apiKey: keysToCreate[i],
+          models: models,
+          enabled: enabled,
+          priority: priority,
+          orderIndex: _keys.length + i,
+        );
+      }
+      if (mounted && keysToCreate.length > 1) {
+        UINotifier.success(
+          context,
+          '已导入 ${keysToCreate.length} 个 API Key${skipped > 0 ? '，跳过 $skipped 个重复 Key' : ''}',
+        );
+      } else if (mounted && skipped > 0) {
+        UINotifier.success(context, '已添加 API Key，跳过 $skipped 个重复 Key');
+      }
     } else {
       await _svc.updateProviderKey(
         id: key.id!,
         name: nameCtrl.text.trim(),
-        apiKey: apiKey,
+        apiKey: apiKeys.first,
         models: models,
         enabled: enabled,
         priority: priority,
@@ -629,6 +981,281 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     await _reloadKeys();
   }
 
+  Future<void> _deleteAllProviderKeys() async {
+    final providerId = _loaded?.id;
+    if (providerId == null || _keys.isEmpty) return;
+    final confirm =
+        await showUIDialog<bool>(
+          context: context,
+          title: '删除全部 API Key',
+          message: '确定删除当前提供商下的全部 ${_keys.length} 个 API Key 吗？此操作不可恢复。',
+          actions: [
+            UIDialogAction<bool>(text: '取消', result: false),
+            UIDialogAction<bool>(
+              text: '全部删除',
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
+          ],
+        ) ??
+        false;
+    if (!confirm) return;
+    final deleted = await _svc.deleteAllProviderKeys(providerId);
+    if (!mounted) return;
+    await _reloadKeys();
+    if (!mounted) return;
+    UINotifier.success(context, '已删除 $deleted 个 API Key');
+  }
+
+  String _formatKeyTime(int? millis) {
+    if (millis == null || millis <= 0) return '—';
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.month}/${dt.day} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  Widget _buildKeyUsageChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        border: Border.all(color: color.withOpacity(0.20), width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProviderKeyCard(AIProviderKey key, int displayIndex) {
+    final theme = Theme.of(context);
+    final cooling = key.isCoolingDown();
+    final statusText = key.enabled ? (cooling ? '冷却中' : '已启用') : '已停用';
+    final statusColor = key.enabled
+        ? (cooling ? AppTheme.info : AppTheme.success)
+        : theme.colorScheme.onSurfaceVariant;
+    final lastError = (key.lastErrorType ?? '').trim();
+    final errorMessage = (key.lastErrorMessage ?? '').trim();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing2),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.spacing3),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceVariant.withOpacity(0.22),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(
+            color: theme.colorScheme.outline.withOpacity(0.20),
+            width: 0.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  ),
+                  child: Icon(
+                    key.enabled ? Icons.vpn_key_rounded : Icons.key_off_rounded,
+                    color: statusColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: AppTheme.spacing3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              key.name,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface.withOpacity(
+                                0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
+                            ),
+                            child: Text(
+                              '#${displayIndex + 1}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        children: [
+                          Text(
+                            '优先级 ${key.priority}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '指纹 ${key.fingerprint}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '${key.models.length} 个模型',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            statusText,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: key.enabled,
+                  onChanged: (_fetching || _batchRunning)
+                      ? null
+                      : (v) => _toggleProviderKey(key, v),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildKeyUsageChip(
+                  icon: Icons.check_circle_outline,
+                  label: '成功 ${key.successCount}',
+                  color: AppTheme.success,
+                ),
+                _buildKeyUsageChip(
+                  icon: Icons.error_outline,
+                  label: '失败 ${key.failureTotalCount}',
+                  color: theme.colorScheme.error,
+                ),
+                _buildKeyUsageChip(
+                  icon: Icons.repeat_rounded,
+                  label: '连续失败 ${key.failureCount}',
+                  color: key.failureCount > 0
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            Wrap(
+              spacing: 10,
+              runSpacing: 6,
+              children: [
+                Text(
+                  '上次成功：${_formatKeyTime(key.lastSuccessAt)}',
+                  style: theme.textTheme.bodySmall,
+                ),
+                Text(
+                  '上次失败：${_formatKeyTime(key.lastFailedAt)}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+            if (lastError.isNotEmpty) ...[
+              const SizedBox(height: AppTheme.spacing2),
+              Text(
+                errorMessage.isEmpty
+                    ? '最近错误：$lastError'
+                    : '最近错误：$lastError  $errorMessage',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: AppTheme.spacing2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                spacing: 4,
+                children: [
+                  IconButton(
+                    tooltip: '刷新模型',
+                    icon: const Icon(Icons.refresh, size: 18),
+                    onPressed: (_fetching || _batchRunning)
+                        ? null
+                        : () => _refreshProviderKey(key),
+                  ),
+                  IconButton(
+                    tooltip: '编辑',
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: (_fetching || _batchRunning)
+                        ? null
+                        : () => _openKeyDialog(key: key),
+                  ),
+                  IconButton(
+                    tooltip: '删除',
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    color: theme.colorScheme.error,
+                    onPressed: (_fetching || _batchRunning)
+                        ? null
+                        : () => _deleteProviderKey(key),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleProviderKey(AIProviderKey key, bool enabled) async {
     if (key.id == null) return;
     final ok = await _svc.updateProviderKey(id: key.id!, enabled: enabled);
@@ -646,6 +1273,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         ? AppLocalizations.of(context).createProviderTitle
         : AppLocalizations.of(context).editProviderTitle;
     final theme = Theme.of(context);
+    final displayKeys = _displayKeys;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -674,385 +1302,421 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : GestureDetector(
               onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(AppTheme.spacing4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSectionCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildTextInput(
-                            label: AppLocalizations.of(context).groupNameLabel,
-                            controller: _nameCtrl,
-                            hint: AppLocalizations.of(context).groupNameHint,
-                          ),
-                          const SizedBox(height: AppTheme.spacing3),
-                          _buildTypePicker(),
-                          const SizedBox(height: AppTheme.spacing3),
-                          _buildTextInput(
-                            label: AppLocalizations.of(context).baseUrlLabel,
-                            controller: _baseUrlCtrl,
-                            hint: _baseUrlHint(),
-                          ),
-                          if (_supportsModelsPath) ...[
-                            const SizedBox(height: AppTheme.spacing3),
-                            _buildTextInput(
-                              label: AppLocalizations.of(
-                                context,
-                              ).modelsPathOptionalLabel,
-                              controller: _modelsPathCtrl,
-                              hint: _modelsPathHint(),
-                            ),
-                          ],
-                          if (_type == AIProviderTypes.openai ||
-                              _type == AIProviderTypes.custom) ...[
-                            const SizedBox(height: AppTheme.spacing3),
-                            _buildTextInput(
-                              label: AppLocalizations.of(
-                                context,
-                              ).chatPathOptionalLabel,
-                              controller: _chatPathCtrl,
-                              hint: '/v1/chat/completions',
-                            ),
-                            const SizedBox(height: AppTheme.spacing2),
-                            _buildSwitchRow(
-                              label: (() {
-                                final s = AppLocalizations.of(
-                                  context,
-                                ).useResponseApiLabel;
-                                return s
-                                    .replaceAll(RegExp(r'（.*?）|\(.*?\)'), '')
-                                    .trim();
-                              })(),
-                              value: _useResponseApi,
-                              onChanged: (v) =>
-                                  setState(() => _useResponseApi = v),
-                            ),
-                          ],
-                          if (_type == AIProviderTypes.azureOpenAI) ...[
-                            const SizedBox(height: AppTheme.spacing3),
-                            _buildTextInput(
-                              label: AppLocalizations.of(
-                                context,
-                              ).azureApiVersionLabel,
-                              controller: _azureApiVerCtrl,
-                              hint: AppLocalizations.of(
-                                context,
-                              ).azureApiVersionHint,
-                            ),
-                          ],
-                        ],
-                      ),
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      0,
                     ),
-
-                    const SizedBox(height: AppTheme.spacing4),
-
-                    _buildSectionCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                'API Key（${_keys.length}）',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton.icon(
-                                onPressed: _saving
-                                    ? null
-                                    : () => _openKeyDialog(),
-                                icon: const Icon(Icons.add, size: 18),
-                                label: const Text('添加 Key'),
-                              ),
-                            ],
-                          ),
-                          if (_loaded == null)
-                            Text(
-                              '请先保存提供商，再在这里添加 API Key 并获取模型。',
-                              style: theme.textTheme.bodySmall,
-                            )
-                          else if (_keys.isEmpty)
-                            Text(
-                              '暂无 API Key。',
-                              style: theme.textTheme.bodySmall,
-                            )
-                          else
-                            ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _keys.length,
-                              separatorBuilder: (c, i) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (c, i) {
-                                final key = _keys[i];
-                                final cooling = key.isCoolingDown();
-                                final subtitle =
-                                    '优先级 ${key.priority} · ${key.models.length} 个模型 · ${key.enabled ? '已启用' : '已停用'}${cooling ? ' · 冷却中' : ''}${key.lastErrorType == null ? '' : ' · ${key.lastErrorType}'}';
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Icon(
-                                    key.enabled
-                                        ? Icons.vpn_key_rounded
-                                        : Icons.key_off_rounded,
-                                  ),
-                                  title: Text(
-                                    '${key.name} ${key.fingerprint}',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                  subtitle: Text(
-                                    subtitle,
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                  trailing: Wrap(
-                                    spacing: 4,
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    children: [
-                                      Switch.adaptive(
-                                        value: key.enabled,
-                                        onChanged: (v) =>
-                                            _toggleProviderKey(key, v),
-                                      ),
-                                      IconButton(
-                                        tooltip: '刷新模型',
-                                        icon: const Icon(
-                                          Icons.refresh,
-                                          size: 18,
-                                        ),
-                                        onPressed: _fetching
-                                            ? null
-                                            : () => _refreshProviderKey(key),
-                                      ),
-                                      IconButton(
-                                        tooltip: '编辑',
-                                        icon: const Icon(Icons.edit, size: 18),
-                                        onPressed: () =>
-                                            _openKeyDialog(key: key),
-                                      ),
-                                      IconButton(
-                                        tooltip: '删除',
-                                        icon: const Icon(
-                                          Icons.delete_outline,
-                                          size: 18,
-                                        ),
-                                        onPressed: () =>
-                                            _deleteProviderKey(key),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: AppTheme.spacing4),
-
-                    _buildSectionCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                AppLocalizations.of(
-                                  context,
-                                ).modelsCountLabel(_models.length),
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton.icon(
-                                onPressed: _fetching ? null : _refreshModels,
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppTheme.spacing2,
-                                    vertical: AppTheme.spacing1,
-                                  ),
-                                ),
-                                icon: _fetching
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.refresh, size: 18),
-                                label: Text(
-                                  AppLocalizations.of(context).actionRefresh,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppTheme.spacing3),
-
-                          // 手动添加模型（移到最前面）
-                          Text(
-                            AppLocalizations.of(context).manualAddModelLabel,
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: AppTheme.spacing1),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: SizedBox(
-                                  height: 40,
-                                  child: TextField(
-                                    controller: _modelInputCtrl,
-                                    textAlignVertical: TextAlignVertical.center,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                    decoration: InputDecoration(
-                                      isDense: false,
-                                      hintText: AppLocalizations.of(
-                                        context,
-                                      ).inputAndAddModelHint,
-                                      hintStyle: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: AppTheme.mutedForeground,
-                                          ),
-                                      filled: true,
-                                      fillColor:
-                                          Theme.of(context).brightness ==
-                                              Brightness.dark
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.surface
-                                          : Theme.of(
-                                              context,
-                                            ).scaffoldBackgroundColor,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: AppTheme.spacing3,
-                                            vertical: 0,
-                                          ),
-                                    ),
-                                    onSubmitted: (_) => _addModelChip(),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: AppTheme.spacing2),
-                              SizedBox(
-                                height: 40,
-                                child: ElevatedButton(
-                                  onPressed: _addModelChip,
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppTheme.spacing4,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    AppLocalizations.of(context).actionAdd,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          if (_models.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                top: AppTheme.spacing3,
-                              ),
-                              child: Text(
-                                AppLocalizations.of(context).fetchModelsHint,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            )
-                          else ...[
-                            const SizedBox(height: AppTheme.spacing3),
-                            ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: _models.length,
-                              separatorBuilder: (c, i) => Container(
-                                height: 1,
-                                color: Theme.of(
-                                  c,
-                                ).colorScheme.outline.withOpacity(0.6),
-                              ),
-                              itemBuilder: (c, i) {
-                                final m = _models[i];
-                                return ListTile(
-                                  leading: SvgPicture.asset(
-                                    ModelIconUtils.getIconPath(m),
-                                    width: 20,
-                                    height: 20,
-                                  ),
-                                  title: Text(
-                                    m,
-                                    style: Theme.of(c).textTheme.bodyMedium,
-                                  ),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.close, size: 18),
-                                    onPressed: () {
-                                      setState(() {
-                                        _models = List<String>.from(_models)
-                                          ..removeAt(i);
-                                      });
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: AppTheme.spacing6),
-
-                    Row(
+                    sliver: SliverList.list(
                       children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _saving
-                                ? null
-                                : () => Navigator.of(context).pop(false),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppTheme.spacing3,
-                              ),
-                            ),
-                            child: Text(
-                              AppLocalizations.of(context).dialogCancel,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppTheme.spacing3),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _saving ? null : _save,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppTheme.spacing3,
-                              ),
-                            ),
-                            child: Text(
-                              AppLocalizations.of(context).actionSave,
-                            ),
-                          ),
-                        ),
+                        _buildProviderConfigCard(theme),
+                        const SizedBox(height: AppTheme.spacing4),
+                        _buildKeysHeaderCard(theme),
                       ],
                     ),
-                    const SizedBox(height: AppTheme.spacing4),
-                  ],
-                ),
+                  ),
+                  if (_loaded != null && displayKeys.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing4,
+                      ),
+                      sliver: SliverList.builder(
+                        itemCount: displayKeys.length,
+                        itemBuilder: (context, index) =>
+                            _buildProviderKeyCard(displayKeys[index], index),
+                      ),
+                    ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                      AppTheme.spacing4,
+                    ),
+                    sliver: SliverList.list(
+                      children: [
+                        _buildModelsCard(theme),
+                        const SizedBox(height: AppTheme.spacing6),
+                        _buildBottomActions(),
+                        const SizedBox(height: AppTheme.spacing4),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
+    );
+  }
+
+  Widget _buildProviderConfigCard(ThemeData theme) {
+    return _buildSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTextInput(
+            label: AppLocalizations.of(context).groupNameLabel,
+            controller: _nameCtrl,
+            hint: AppLocalizations.of(context).groupNameHint,
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          _buildTypePicker(),
+          const SizedBox(height: AppTheme.spacing3),
+          _buildTextInput(
+            label: AppLocalizations.of(context).baseUrlLabel,
+            controller: _baseUrlCtrl,
+            hint: _baseUrlHint(),
+          ),
+          if (_supportsModelsPath) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            _buildTextInput(
+              label: AppLocalizations.of(context).modelsPathOptionalLabel,
+              controller: _modelsPathCtrl,
+              hint: _modelsPathHint(),
+            ),
+          ],
+          if (_type == AIProviderTypes.openai ||
+              _type == AIProviderTypes.custom) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            _buildTextInput(
+              label: AppLocalizations.of(context).chatPathOptionalLabel,
+              controller: _chatPathCtrl,
+              hint: '/v1/chat/completions',
+            ),
+            const SizedBox(height: AppTheme.spacing2),
+            _buildSwitchRow(
+              label: (() {
+                final s = AppLocalizations.of(context).useResponseApiLabel;
+                return s
+                    .replaceAll(
+                      RegExp('[\uFF08][^\uFF09]*[\uFF09]|\\([^)]*\\)'),
+                      '',
+                    )
+                    .trim();
+              })(),
+              value: _useResponseApi,
+              onChanged: (v) => setState(() => _useResponseApi = v),
+            ),
+          ],
+          if (_type == AIProviderTypes.azureOpenAI) ...[
+            const SizedBox(height: AppTheme.spacing3),
+            _buildTextInput(
+              label: AppLocalizations.of(context).azureApiVersionLabel,
+              controller: _azureApiVerCtrl,
+              hint: AppLocalizations.of(context).azureApiVersionHint,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKeysHeaderCard(ThemeData theme) {
+    return _buildSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  'API Key (${_keys.length})',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              PopupMenuButton<_ProviderKeySortMode>(
+                initialValue: _keySortMode,
+                onSelected: (mode) => setState(() => _keySortMode = mode),
+                itemBuilder: (context) => [
+                  for (final mode in _ProviderKeySortMode.values)
+                    PopupMenuItem<_ProviderKeySortMode>(
+                      value: mode,
+                      child: Text(_keySortModeLabel(mode)),
+                    ),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withOpacity(0.18),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.sort_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        _keySortModeLabel(_keySortMode),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (_keys.isNotEmpty)
+                TextButton.icon(
+                  onPressed: (_saving || _fetching || _batchRunning)
+                      ? null
+                      : _refreshAllKeysAndProbeFailures,
+                  icon: _batchRunning
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_fix_high_outlined, size: 18),
+                  label: const Text('批量测试'),
+                ),
+              if (_keys.isNotEmpty)
+                TextButton.icon(
+                  onPressed: (_saving || _fetching || _batchRunning)
+                      ? null
+                      : _deleteAllProviderKeys,
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                  label: const Text('删除全部'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                  ),
+                ),
+              TextButton.icon(
+                onPressed: (_saving || _fetching || _batchRunning)
+                    ? null
+                    : () => _openKeyDialog(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('新增 Key'),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          if (_batchRunning)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
+              child: Builder(
+                builder: (context) {
+                  final progress =
+                      _batchProgress ??
+                      const ProviderKeyBatchProgress(
+                        phaseLabel: '准备中',
+                        current: 0,
+                        total: 1,
+                        message: '正在准备批量测试任务...',
+                      );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LinearProgressIndicator(
+                        value: progress.progressValue,
+                        minHeight: 4,
+                      ),
+                      const SizedBox(height: AppTheme.spacing1),
+                      Text(
+                        '${progress.phaseLabel} ${progress.fractionLabel}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        progress.message,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          if (_loaded == null)
+            Text(
+              '请先保存当前提供商，然后再添加或批量测试 API Key。',
+              style: theme.textTheme.bodySmall,
+            )
+          else if (_keys.isEmpty)
+            Text('暂无 API Key。', style: theme.textTheme.bodySmall)
+          else
+            Text(
+              '当前按${_keySortModeLabel(_keySortMode)}查看。批量测试会先刷新模型列表，再对失败 Key 最多连续测试 3 次。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModelsCard(ThemeData theme) {
+    return _buildSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                AppLocalizations.of(context).modelsCountLabel(_models.length),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: (_fetching || _batchRunning) ? null : _refreshModels,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.spacing2,
+                    vertical: AppTheme.spacing1,
+                  ),
+                ),
+                icon: _fetching
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh, size: 18),
+                label: Text(AppLocalizations.of(context).actionRefresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing3),
+          Text(
+            AppLocalizations.of(context).manualAddModelLabel,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: AppTheme.spacing1),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: TextField(
+                    controller: _modelInputCtrl,
+                    textAlignVertical: TextAlignVertical.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    decoration: InputDecoration(
+                      isDense: false,
+                      hintText: AppLocalizations.of(
+                        context,
+                      ).inputAndAddModelHint,
+                      hintStyle: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: AppTheme.mutedForeground),
+                      filled: true,
+                      fillColor: Theme.of(context).brightness == Brightness.dark
+                          ? Theme.of(context).colorScheme.surface
+                          : Theme.of(context).scaffoldBackgroundColor,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppTheme.spacing3,
+                        vertical: 0,
+                      ),
+                    ),
+                    onSubmitted: (_) => _addModelChip(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTheme.spacing2),
+              SizedBox(
+                height: 40,
+                child: ElevatedButton(
+                  onPressed: _addModelChip,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTheme.spacing4,
+                    ),
+                  ),
+                  child: Text(AppLocalizations.of(context).actionAdd),
+                ),
+              ),
+            ],
+          ),
+          if (_models.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: AppTheme.spacing3),
+              child: Text(
+                AppLocalizations.of(context).fetchModelsHint,
+                style: theme.textTheme.bodySmall,
+              ),
+            )
+          else ...[
+            const SizedBox(height: AppTheme.spacing3),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _models.length,
+              separatorBuilder: (c, i) => Container(
+                height: 1,
+                color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+              ),
+              itemBuilder: (c, i) {
+                final m = _models[i];
+                return ListTile(
+                  leading: SvgPicture.asset(
+                    ModelIconUtils.getIconPath(m),
+                    width: 20,
+                    height: 20,
+                  ),
+                  title: Text(m, style: Theme.of(c).textTheme.bodyMedium),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      setState(() {
+                        _models = List<String>.from(_models)..removeAt(i);
+                      });
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+            ),
+            child: Text(AppLocalizations.of(context).dialogCancel),
+          ),
+        ),
+        const SizedBox(width: AppTheme.spacing3),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _saving ? null : _save,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing3),
+            ),
+            child: Text(AppLocalizations.of(context).actionSave),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1080,6 +1744,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   Widget _buildKeyDialogTextField({
     required TextEditingController controller,
     required String label,
+    String? hint,
     bool obscure = false,
     TextInputType? keyboardType,
     int minLines = 1,
@@ -1095,6 +1760,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         maxLines: obscure ? 1 : maxLines,
         decoration: InputDecoration(
           labelText: label,
+          hintText: hint,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: AppTheme.spacing3,

@@ -28,6 +28,8 @@ class _ProviderListPageState extends State<ProviderListPage> {
 
   bool _loading = true;
   List<AIProvider> _list = <AIProvider>[];
+  final Map<int, List<AIProviderKey>> _keysByProvider =
+      <int, List<AIProviderKey>>{};
   // 查询文本持久化
   String _modelQueryText = '';
 
@@ -43,7 +45,18 @@ class _ProviderListPageState extends State<ProviderListPage> {
     setState(() => _loading = true);
     try {
       final rows = await _svc.listProviders();
-      setState(() => _list = rows);
+      final nextKeys = <int, List<AIProviderKey>>{};
+      for (final provider in rows) {
+        final id = provider.id;
+        if (id == null) continue;
+        nextKeys[id] = await _svc.listProviderKeys(id);
+      }
+      setState(() {
+        _list = rows;
+        _keysByProvider
+          ..clear()
+          ..addAll(nextKeys);
+      });
     } catch (e) {
       UINotifier.error(context, AppLocalizations.of(context).pleaseTryAgain);
     } finally {
@@ -71,13 +84,251 @@ class _ProviderListPageState extends State<ProviderListPage> {
   String _briefUrl(String? url) {
     final s = (url ?? '').trim();
     if (s.isEmpty) return '-';
-    return s.length > 48 ? '${s.substring(0, 48)}…' : s;
+    return s.length > 48 ? '${s.substring(0, 48)}' + '…' : s;
+  }
+
+  Widget _buildProviderKeySummary(AIProvider p) {
+    final theme = Theme.of(context);
+    final keys = _keysByProvider[p.id ?? -1] ?? const <AIProviderKey>[];
+    final totalCount = keys.length;
+    final enabledCount = keys.where((key) => key.enabled).length;
+    final coolingCount = keys.where((key) => key.isCoolingDown()).length;
+    final errorCount = keys
+        .where((key) => (key.lastErrorType ?? '').trim().isNotEmpty)
+        .length;
+    final successTotal = keys.fold<int>(
+      0,
+      (sum, key) => sum + key.successCount,
+    );
+    final failureTotal = keys.fold<int>(
+      0,
+      (sum, key) => sum + key.failureTotalCount,
+    );
+    final totalAttempts = successTotal + failureTotal;
+    final successRate = totalAttempts == 0
+        ? 1.0
+        : successTotal / totalAttempts.clamp(1, 1 << 30);
+    final availableCount = keys
+        .where(
+          (key) =>
+              key.enabled &&
+              !key.isCoolingDown() &&
+              (key.lastErrorType ?? '').trim().isEmpty,
+        )
+        .length;
+
+    late final String statusLabel;
+    late final Color statusColor;
+    if (totalCount == 0) {
+      statusLabel = '无密钥';
+      statusColor = theme.colorScheme.onSurfaceVariant;
+    } else if (enabledCount == 0) {
+      statusLabel = '已停用';
+      statusColor = theme.colorScheme.onSurfaceVariant;
+    } else if (totalAttempts == 0) {
+      statusLabel = '从未调用';
+      statusColor = AppTheme.info;
+    } else if (coolingCount > 0) {
+      statusLabel = '冷却中';
+      statusColor = AppTheme.warning;
+    } else if (errorCount > 0 && availableCount > 0) {
+      statusLabel = '部分异常';
+      statusColor = AppTheme.warning;
+    } else if (failureTotal > 0 && successTotal == 0) {
+      statusLabel = '最近失败';
+      statusColor = theme.colorScheme.error;
+    } else if (successRate < 0.90) {
+      statusLabel = '低成功率';
+      statusColor = AppTheme.warning;
+    } else if (errorCount > 0) {
+      statusLabel = '部分异常';
+      statusColor = AppTheme.warning;
+    } else {
+      statusLabel = '运行正常';
+      statusColor = AppTheme.success;
     }
 
-  Future<void> _onNew() async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const ProviderEditPage()),
+    final uptimeText = totalAttempts == 0
+        ? '暂无调用记录'
+        : '成功率 ${(successRate * 100).toStringAsFixed(2)}%';
+    final availableText = '可用 $availableCount / 总计 $totalCount';
+
+    return Container(
+      margin: const EdgeInsets.only(top: AppTheme.spacing2),
+      padding: const EdgeInsets.all(AppTheme.spacing3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.20),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.18),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                totalCount == 0 ? '密钥' : '$totalCount 个密钥 / $enabledCount 个启用',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                statusLabel,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: statusColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTheme.spacing2),
+          _buildStatusBars(
+            keys: keys,
+            enabledCount: enabledCount,
+            successTotal: successTotal,
+            failureTotal: failureTotal,
+            errorCount: errorCount,
+            coolingCount: coolingCount,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                totalAttempts == 0
+                    ? '暂无记录'
+                    : '成功 $successTotal / 失败 $failureTotal',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Divider(height: 1),
+                ),
+              ),
+              Text(
+                uptimeText,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Divider(height: 1),
+                ),
+              ),
+              Text(
+                availableText,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildStatusBars({
+    required List<AIProviderKey> keys,
+    required int enabledCount,
+    required int successTotal,
+    required int failureTotal,
+    required int errorCount,
+    required int coolingCount,
+  }) {
+    final theme = Theme.of(context);
+    const barCount = 72;
+    if (keys.isEmpty || enabledCount == 0) {
+      return Row(
+        children: List.generate(
+          barCount,
+          (index) => Expanded(
+            child: Container(
+              height: 32,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outline.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(1.5),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalAttempts = successTotal + failureTotal;
+    if (totalAttempts == 0) {
+      return Row(
+        children: List.generate(
+          barCount,
+          (index) => Expanded(
+            child: Container(
+              height: 32,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: AppTheme.info.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(1.5),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final failureRatio = failureTotal / totalAttempts.clamp(1, 1 << 30);
+    final issueRatio =
+        ((failureRatio * barCount).ceil() + errorCount + coolingCount).clamp(
+          0,
+          barCount,
+        );
+    final coolingStart = (barCount * 0.56).round();
+    final errorSeed =
+        (failureTotal + errorCount * 7 + coolingCount * 11) % barCount;
+
+    Color colorFor(int index) {
+      if (issueRatio == 0) return AppTheme.success;
+      final seededError =
+          ((index + errorSeed) % 23 == 0) && index < barCount - 3;
+      final recentError = index >= barCount - issueRatio;
+      final cooling =
+          coolingCount > 0 &&
+          index >= coolingStart &&
+          index < coolingStart + coolingCount.clamp(1, 6);
+      if (recentError || seededError) return theme.colorScheme.error;
+      if (cooling) return AppTheme.warning;
+      return AppTheme.success;
+    }
+
+    return Row(
+      children: List.generate(
+        barCount,
+        (index) => Expanded(
+          child: Container(
+            height: 32,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(
+              color: colorFor(index),
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onNew() async {
+    final ok = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const ProviderEditPage()));
     if (ok == true) await _load();
   }
 
@@ -109,13 +360,18 @@ class _ProviderListPageState extends State<ProviderListPage> {
 
   Future<void> _onDelete(AIProvider p) async {
     final t = AppLocalizations.of(context);
-    final confirm = await showUIDialog<bool>(
+    final confirm =
+        await showUIDialog<bool>(
           context: context,
           title: t.deleteGroup,
           message: t.confirmDeleteProviderMessage(p.name),
           actions: [
             UIDialogAction<bool>(text: t.dialogCancel, result: false),
-            UIDialogAction<bool>(text: t.actionDelete, style: UIDialogActionStyle.destructive, result: true),
+            UIDialogAction<bool>(
+              text: t.actionDelete,
+              style: UIDialogActionStyle.destructive,
+              result: true,
+            ),
           ],
         ) ??
         false;
@@ -137,15 +393,17 @@ class _ProviderListPageState extends State<ProviderListPage> {
   String _vendorIconPath(String type) {
     return ModelIconUtils.getProviderIconPath(type);
   }
- 
+
   // 当前启用模型（兼容旧字段）
   String _activeModelOf(AIProvider p) {
-    final act = (p.extra['active_model'] as String?) ?? (p.extra['default_model'] as String?);
+    final act =
+        (p.extra['active_model'] as String?) ??
+        (p.extra['default_model'] as String?);
     if (act != null && act.trim().isNotEmpty) return act.trim();
     if (p.models.isNotEmpty) return p.models.first;
     return '—';
   }
- 
+
   Future<void> _openModelSheet(AIProvider p) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -156,7 +414,9 @@ class _ProviderListPageState extends State<ProviderListPage> {
         final active = _activeModelOf(p);
 
         // 控制器与文本持久化，避免键盘折叠时内容丢失
-        final TextEditingController queryCtrl = TextEditingController(text: _modelQueryText);
+        final TextEditingController queryCtrl = TextEditingController(
+          text: _modelQueryText,
+        );
         return StatefulBuilder(
           builder: (c, setModalState) {
             return DraggableScrollableSheet(
@@ -186,8 +446,13 @@ class _ProviderListPageState extends State<ProviderListPage> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                         child: Text(
-                          AppLocalizations.of(context).selectModelWithCounts(filtered.length, models.length),
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                          AppLocalizations.of(context).selectModelWithCounts(
+                            filtered.length,
+                            models.length,
+                          ),
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       Padding(
@@ -201,9 +466,13 @@ class _ProviderListPageState extends State<ProviderListPage> {
                           },
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(context).searchModelPlaceholder,
+                            hintText: AppLocalizations.of(
+                              context,
+                            ).searchModelPlaceholder,
                             isDense: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
                       ),
@@ -222,7 +491,9 @@ class _ProviderListPageState extends State<ProviderListPage> {
                             itemCount: filtered.length,
                             separatorBuilder: (c, i) => Container(
                               height: 1,
-                              color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                              color: Theme.of(
+                                c,
+                              ).colorScheme.outline.withOpacity(0.6),
                             ),
                             itemBuilder: (c, i) {
                               final m = filtered[i];
@@ -242,25 +513,42 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                   style: Theme.of(ctx).textTheme.bodyMedium,
                                 ),
                                 trailing: selected
-                                  ? Icon(
-                                      Icons.check_circle,
-                                      color: Theme.of(ctx).colorScheme.onSurface,
-                                      size: 22,
-                                    )
-                                  : null,
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Theme.of(
+                                          ctx,
+                                        ).colorScheme.onSurface,
+                                        size: 22,
+                                      )
+                                    : null,
                                 onTap: () async {
-                                  final newExtra = Map<String, dynamic>.from(p.extra);
+                                  final newExtra = Map<String, dynamic>.from(
+                                    p.extra,
+                                  );
                                   newExtra['active_model'] = m;
                                   if (newExtra.containsKey('default_model')) {
                                     newExtra.remove('default_model');
                                   }
-                                  final ok = await _svc.updateProvider(id: p.id!, extra: newExtra);
+                                  final ok = await _svc.updateProvider(
+                                    id: p.id!,
+                                    extra: newExtra,
+                                  );
                                   if (ok && mounted) {
                                     Navigator.of(ctx).pop();
-                                    UINotifier.success(context, AppLocalizations.of(context).modelSwitchedToast(m));
+                                    UINotifier.success(
+                                      context,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).modelSwitchedToast(m),
+                                    );
                                     await _load();
                                   } else {
-                                    UINotifier.error(context, AppLocalizations.of(context).operationFailed);
+                                    UINotifier.error(
+                                      context,
+                                      AppLocalizations.of(
+                                        context,
+                                      ).operationFailed,
+                                    );
                                   }
                                 },
                               );
@@ -278,7 +566,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
       },
     );
   }
- 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -302,151 +590,224 @@ class _ProviderListPageState extends State<ProviderListPage> {
                       children: [
                         const SizedBox(height: 80),
                         Center(
-                          child: Text(AppLocalizations.of(context).noProvidersYetHint,
-                              style: Theme.of(context).textTheme.bodySmall),
+                          child: Text(
+                            AppLocalizations.of(context).noProvidersYetHint,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
                       ],
                     )
                   : ListView.separated(
-                   padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing2),
-                   itemCount: _list.length,
-                   separatorBuilder: (context, _) => Container(
-                     height: 1,
-                     color: Theme.of(context).colorScheme.outline.withOpacity(0.6),
-                   ),
-                   itemBuilder: (context, index) {
-                       final p = _list[index];
-                       final modelsCount = p.models.length;
-                       final activeModel = _activeModelOf(p);
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTheme.spacing2,
+                      ),
+                      itemCount: _list.length,
+                      separatorBuilder: (context, _) => Container(
+                        height: 1,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outline.withOpacity(0.6),
+                      ),
+                      itemBuilder: (context, index) {
+                        final p = _list[index];
+                        final modelsCount = p.models.length;
+                        final activeModel = _activeModelOf(p);
 
-                       return Container(
-                         margin: const EdgeInsets.symmetric(
-                           horizontal: AppTheme.spacing2,
-                           vertical: 2,
-                         ),
-                         decoration: BoxDecoration(
-                           borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                         ),
-                         child: Material(
-                           color: Colors.transparent,
-                           child: InkWell(
-                             borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                             onTap: () => _onEdit(p),
-                             child: Padding(
-                               padding: const EdgeInsets.symmetric(
-                                 horizontal: AppTheme.spacing3,
-                                 vertical: AppTheme.spacing3,
-                               ),
-                               child: Row(
-                                 children: [
-                                   // 提供商图标
-                                   Container(
-                                     width: 44,
-                                     height: 44,
-                                     decoration: BoxDecoration(
-                                       color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                                       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                                     ),
-                                     padding: const EdgeInsets.all(10),
-                                     child: SvgPicture.asset(
-                                       _vendorIconPath(p.type),
-                                       width: 24,
-                                       height: 24,
-                                     ),
-                                   ),
-                                   const SizedBox(width: AppTheme.spacing3),
-                                   // 名称和模型信息
-                                   Expanded(
-                                     child: Column(
-                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                       children: [
-                                         Text(
-                                           p.name,
-                                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                                 fontWeight: FontWeight.w600,
-                                                 letterSpacing: 0.15,
-                                               ),
-                                         ),
-                                         const SizedBox(height: 4),
-                                         GestureDetector(
-                                           onTap: () => _openModelSheet(p),
-                          child: Row(
-                                             children: [
-                                               SvgPicture.asset(
-                                                 ModelIconUtils.getIconPath(activeModel),
-                                                 width: 14,
-                                                 height: 14,
-                                               ),
-                                               const SizedBox(width: 6),
-                                               Flexible(
-                                                 child: Text(
-                                                   activeModel,
-                                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                         color: Theme.of(context).colorScheme.onSurface,
-                                                         fontWeight: FontWeight.w500,
-                                                         decoration: TextDecoration.underline,
-                                        decorationColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                                                       ),
-                                                   overflow: TextOverflow.ellipsis,
-                                                 ),
-                                               ),
-                                             ],
-                                           ),
-                                         ),
-                                       ],
-                                     ),
-                                   ),
-                                   // 模型数量标签
-                                   Container(
-                                     padding: const EdgeInsets.symmetric(
-                                       horizontal: 10,
-                                       vertical: 6,
-                                     ),
-                                     decoration: BoxDecoration(
-                                       color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.6),
-                                       borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                                       border: Border.all(
-                                         color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                                         width: 0.5,
-                                       ),
-                                     ),
-                                     child: Row(
-                                       mainAxisSize: MainAxisSize.min,
-                                       children: [
-                                         Icon(
-                                           Icons.inventory_2_outlined,
-                                           size: 15,
-                                           color: Theme.of(context).colorScheme.onSecondaryContainer,
-                                         ),
-                                         const SizedBox(width: 5),
-                                         Text(
-                                           modelsCount.toString(),
-                                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                                 color: Theme.of(context).colorScheme.onSecondaryContainer,
-                                                 fontWeight: FontWeight.w600,
-                                                 fontSize: 13,
-                                               ),
-                                         ),
-                                       ],
-                                     ),
-                                   ),
-                                  const SizedBox(width: AppTheme.spacing2),
-                                  IconButton(
-                                    tooltip: AppLocalizations.of(context).actionDelete,
-                                    icon: Icon(
-                                      Icons.delete_outline,
-                                      color: Theme.of(context).colorScheme.error,
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: AppTheme.spacing2,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusMd,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusMd,
+                              ),
+                              onTap: () => _onEdit(p),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppTheme.spacing3,
+                                  vertical: AppTheme.spacing3,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceVariant
+                                                .withOpacity(0.5),
+                                            borderRadius: BorderRadius.circular(
+                                              AppTheme.radiusMd,
+                                            ),
+                                          ),
+                                          padding: const EdgeInsets.all(10),
+                                          child: SvgPicture.asset(
+                                            _vendorIconPath(p.type),
+                                            width: 24,
+                                            height: 24,
+                                          ),
+                                        ),
+                                        const SizedBox(
+                                          width: AppTheme.spacing3,
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                p.name,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyLarge
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      letterSpacing: 0.15,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              GestureDetector(
+                                                onTap: () => _openModelSheet(p),
+                                                child: Row(
+                                                  children: [
+                                                    SvgPicture.asset(
+                                                      ModelIconUtils.getIconPath(
+                                                        activeModel,
+                                                      ),
+                                                      width: 14,
+                                                      height: 14,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Flexible(
+                                                      child: Text(
+                                                        activeModel,
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .onSurface,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w500,
+                                                              decoration:
+                                                                  TextDecoration
+                                                                      .underline,
+                                                              decorationColor:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .onSurface
+                                                                      .withOpacity(
+                                                                        0.5,
+                                                                      ),
+                                                            ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .secondaryContainer
+                                                .withOpacity(0.6),
+                                            borderRadius: BorderRadius.circular(
+                                              AppTheme.radiusSm,
+                                            ),
+                                            border: Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .outline
+                                                  .withOpacity(0.2),
+                                              width: 0.5,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.inventory_2_outlined,
+                                                size: 15,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSecondaryContainer,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                modelsCount.toString(),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSecondaryContainer,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 13,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(
+                                          width: AppTheme.spacing2,
+                                        ),
+                                        IconButton(
+                                          tooltip: AppLocalizations.of(
+                                            context,
+                                          ).actionDelete,
+                                          icon: Icon(
+                                            Icons.delete_outline,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                          onPressed: () => _onDelete(p),
+                                        ),
+                                      ],
                                     ),
-                                    onPressed: () => _onDelete(p),
-                                  ),
-                                 ],
-                               ),
-                             ),
-                           ),
-                         ),
-                       );
-                     },
-                   ),
+                                    const SizedBox(height: AppTheme.spacing2),
+                                    _buildProviderKeySummary(p),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
     );
   }
