@@ -332,23 +332,6 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     _models = <String>[];
   }
 
-  String _friendlyType(String t) {
-    switch (t) {
-      case AIProviderTypes.openai:
-        return 'OpenAI';
-      case AIProviderTypes.azureOpenAI:
-        return 'Azure OpenAI';
-      case AIProviderTypes.claude:
-        return 'Claude';
-      case AIProviderTypes.gemini:
-        return 'Gemini';
-      case AIProviderTypes.custom:
-        return AppLocalizations.of(context).customLabel;
-      default:
-        return t;
-    }
-  }
-
   bool get _supportsModelsPath {
     return _type == AIProviderTypes.openai ||
         _type == AIProviderTypes.custom ||
@@ -1013,33 +996,65 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return '${dt.month}/${dt.day} ${two(dt.hour)}:${two(dt.minute)}';
   }
 
-  Widget _buildKeyUsageChip({
+  String _normalizeOptionalLabel(String label) {
+    return label
+        .replaceAll(RegExp(r'（\s*可选\s*）'), '')
+        .replaceAll(RegExp(r'\(\s*optional\s*\)', caseSensitive: false), '')
+        .trim();
+  }
+
+  bool _labelLooksOptional(String label) {
+    final lower = label.toLowerCase();
+    return label.contains('可选') || lower.contains('optional');
+  }
+
+  String _priorityText(AIProviderKey key) {
+    return key.usesDefaultPriority ? '动态分配' : '${key.priority}';
+  }
+
+  Widget _buildKeyStatCell({
     required IconData icon,
+    required String value,
     required String label,
     required Color color,
   }) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: color.withOpacity(0.20), width: 0.5),
-      ),
-      child: Row(
+    return Expanded(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: color),
-          const SizedBox(width: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                value,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
           Text(
             label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildThinVerticalDivider(ThemeData theme) {
+    return Container(
+      width: 1,
+      height: 32,
+      color: theme.colorScheme.outline.withValues(alpha: 0.45),
     );
   }
 
@@ -1055,189 +1070,211 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing2),
       child: Container(
-        padding: const EdgeInsets.all(AppTheme.spacing3),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.22),
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           border: Border.all(
-            color: theme.colorScheme.outline.withOpacity(0.20),
-            width: 0.5,
+            color: theme.colorScheme.outline.withValues(alpha: 0.55),
+            width: 1,
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: Icon(
-                    key.enabled ? Icons.vpn_key_rounded : Icons.key_off_rounded,
-                    color: statusColor,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: AppTheme.spacing3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              key.name,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surface.withOpacity(
-                                0.55,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                AppTheme.radiusSm,
-                              ),
-                            ),
-                            child: Text(
-                              '#${displayIndex + 1}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(
+                        color: statusColor.withValues(alpha: 0.22),
+                        width: 0.5,
                       ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 2,
-                        children: [
-                          Text(
-                            key.usesDefaultPriority
-                                ? '优先级 动态分配'
-                                : '优先级 ${key.priority}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                    ),
+                    child: Icon(
+                      key.enabled
+                          ? Icons.vpn_key_rounded
+                          : Icons.key_off_rounded,
+                      color: statusColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.spacing3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          key.name,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
-                          Text(
-                            '${key.models.length} 个模型',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '优先级 · ${_priorityText(key)} · ${key.models.length} 个模型',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                          if (!key.enabled || cooling)
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.spacing2),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.scaffoldBackgroundColor.withValues(
+                        alpha: 0.8,
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                      border: Border.all(
+                        color: theme.colorScheme.outline.withValues(
+                          alpha: 0.45,
+                        ),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      '#${displayIndex + 1}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Transform.scale(
+                    scale: 0.86,
+                    child: Switch.adaptive(
+                      value: key.enabled,
+                      onChanged: (_fetching || _batchRunning)
+                          ? null
+                          : (v) => _toggleProviderKey(key, v),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: theme.scaffoldBackgroundColor.withValues(alpha: 0.72),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacing3,
+                vertical: AppTheme.spacing2,
+              ),
+              child: Row(
+                children: [
+                  _buildKeyStatCell(
+                    icon: Icons.check_rounded,
+                    value: '${key.successCount}',
+                    label: '成功',
+                    color: AppTheme.success,
+                  ),
+                  _buildThinVerticalDivider(theme),
+                  _buildKeyStatCell(
+                    icon: Icons.error_outline_rounded,
+                    value: '${key.failureTotalCount}',
+                    label: '失败',
+                    color: theme.colorScheme.error,
+                  ),
+                  _buildThinVerticalDivider(theme),
+                  _buildKeyStatCell(
+                    icon: Icons.sync_alt_rounded,
+                    value: '${key.failureCount}',
+                    label: '连续失败',
+                    color: key.failureCount > 0
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
                             Text(
-                              cooling ? '冷却中' : '已停用',
+                              '上次成功',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                        ],
-                      ),
-                    ],
+                            const SizedBox(width: 12),
+                            Text(
+                              _formatKeyTime(key.lastSuccessAt),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              '上次失败',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _formatKeyTime(key.lastFailedAt),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Switch.adaptive(
-                  value: key.enabled,
-                  onChanged: (_fetching || _batchRunning)
-                      ? null
-                      : (v) => _toggleProviderKey(key, v),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacing2),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildKeyUsageChip(
-                  icon: Icons.check_circle_outline,
-                  label: '成功 ${key.successCount}',
-                  color: AppTheme.success,
-                ),
-                _buildKeyUsageChip(
-                  icon: Icons.error_outline,
-                  label: '失败 ${key.failureTotalCount}',
-                  color: theme.colorScheme.error,
-                ),
-                _buildKeyUsageChip(
-                  icon: Icons.repeat_rounded,
-                  label: '连续失败 ${key.failureCount}',
-                  color: key.failureCount > 0
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacing2),
-            Wrap(
-              spacing: 10,
-              runSpacing: 6,
-              children: [
-                Text(
-                  '上次成功：${_formatKeyTime(key.lastSuccessAt)}',
-                  style: theme.textTheme.bodySmall,
-                ),
-                Text(
-                  '上次失败：${_formatKeyTime(key.lastFailedAt)}',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-            if (lastError.isNotEmpty) ...[
-              const SizedBox(height: AppTheme.spacing2),
-              Text(
-                errorMessage.isEmpty
-                    ? '最近错误：$lastError'
-                    : '最近错误：$lastError  $errorMessage',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            const SizedBox(height: AppTheme.spacing2),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                spacing: 4,
-                children: [
                   IconButton(
                     tooltip: '刷新模型',
-                    icon: const Icon(Icons.refresh, size: 18),
+                    icon: const Icon(Icons.refresh, size: 20),
+                    visualDensity: VisualDensity.compact,
                     onPressed: (_fetching || _batchRunning)
                         ? null
                         : () => _refreshProviderKey(key),
                   ),
                   IconButton(
                     tooltip: '编辑',
-                    icon: const Icon(Icons.edit, size: 18),
+                    icon: const Icon(Icons.edit_outlined, size: 20),
+                    visualDensity: VisualDensity.compact,
                     onPressed: (_fetching || _batchRunning)
                         ? null
                         : () => _openKeyDialog(key: key),
                   ),
                   IconButton(
                     tooltip: '删除',
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    color: theme.colorScheme.error,
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    color: theme.colorScheme.onSurfaceVariant,
+                    visualDensity: VisualDensity.compact,
                     onPressed: (_fetching || _batchRunning)
                         ? null
                         : () => _deleteProviderKey(key),
@@ -1245,6 +1282,24 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                 ],
               ),
             ),
+            if (cooling || !key.enabled || lastError.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Text(
+                  lastError.isEmpty
+                      ? (cooling ? '当前状态：冷却中' : '当前状态：已停用')
+                      : (errorMessage.isEmpty
+                            ? '最近错误：$lastError'
+                            : '最近错误：$lastError  $errorMessage'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: lastError.isEmpty
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.error,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
           ],
         ),
       ),
@@ -1309,7 +1364,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                     sliver: SliverList.list(
                       children: [
                         _buildProviderConfigCard(theme),
-                        const SizedBox(height: AppTheme.spacing4),
+                        const SizedBox(height: AppTheme.spacing5),
                         _buildKeysHeaderCard(theme),
                       ],
                     ),
@@ -1348,211 +1403,278 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   }
 
   Widget _buildProviderConfigCard(ThemeData theme) {
-    return _buildSectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildTextInput(
+          label: AppLocalizations.of(context).groupNameLabel,
+          controller: _nameCtrl,
+          hint: AppLocalizations.of(context).groupNameHint,
+        ),
+        const SizedBox(height: AppTheme.spacing4),
+        _buildTypePicker(),
+        const SizedBox(height: AppTheme.spacing4),
+        _buildTextInput(
+          label: AppLocalizations.of(context).baseUrlLabel,
+          controller: _baseUrlCtrl,
+          hint: _baseUrlHint(),
+        ),
+        if (_supportsModelsPath) ...[
+          const SizedBox(height: AppTheme.spacing4),
           _buildTextInput(
-            label: AppLocalizations.of(context).groupNameLabel,
-            controller: _nameCtrl,
-            hint: AppLocalizations.of(context).groupNameHint,
+            label: AppLocalizations.of(context).modelsPathOptionalLabel,
+            controller: _modelsPathCtrl,
+            hint: _modelsPathHint(),
           ),
-          const SizedBox(height: AppTheme.spacing3),
-          _buildTypePicker(),
-          const SizedBox(height: AppTheme.spacing3),
-          _buildTextInput(
-            label: AppLocalizations.of(context).baseUrlLabel,
-            controller: _baseUrlCtrl,
-            hint: _baseUrlHint(),
-          ),
-          if (_supportsModelsPath) ...[
-            const SizedBox(height: AppTheme.spacing3),
-            _buildTextInput(
-              label: AppLocalizations.of(context).modelsPathOptionalLabel,
-              controller: _modelsPathCtrl,
-              hint: _modelsPathHint(),
-            ),
-          ],
-          if (_type == AIProviderTypes.openai ||
-              _type == AIProviderTypes.custom) ...[
-            const SizedBox(height: AppTheme.spacing3),
-            _buildTextInput(
-              label: AppLocalizations.of(context).chatPathOptionalLabel,
-              controller: _chatPathCtrl,
-              hint: '/v1/chat/completions',
-            ),
-            const SizedBox(height: AppTheme.spacing2),
-            _buildSwitchRow(
-              label: (() {
-                final s = AppLocalizations.of(context).useResponseApiLabel;
-                return s
-                    .replaceAll(
-                      RegExp('[\uFF08][^\uFF09]*[\uFF09]|\\([^)]*\\)'),
-                      '',
-                    )
-                    .trim();
-              })(),
-              value: _useResponseApi,
-              onChanged: (v) => setState(() => _useResponseApi = v),
-            ),
-          ],
-          if (_type == AIProviderTypes.azureOpenAI) ...[
-            const SizedBox(height: AppTheme.spacing3),
-            _buildTextInput(
-              label: AppLocalizations.of(context).azureApiVersionLabel,
-              controller: _azureApiVerCtrl,
-              hint: AppLocalizations.of(context).azureApiVersionHint,
-            ),
-          ],
         ],
-      ),
+        if (_type == AIProviderTypes.openai ||
+            _type == AIProviderTypes.custom) ...[
+          const SizedBox(height: AppTheme.spacing4),
+          _buildTextInput(
+            label: AppLocalizations.of(context).chatPathOptionalLabel,
+            controller: _chatPathCtrl,
+            hint: '/v1/chat/completions',
+          ),
+          const SizedBox(height: AppTheme.spacing5),
+          _buildSwitchRow(
+            label: (() {
+              final s = AppLocalizations.of(context).useResponseApiLabel;
+              return s
+                  .replaceAll(
+                    RegExp('[\uFF08][^\uFF09]*[\uFF09]|\\([^)]*\\)'),
+                    '',
+                  )
+                  .trim();
+            })(),
+            value: _useResponseApi,
+            onChanged: (v) => setState(() => _useResponseApi = v),
+          ),
+        ],
+        if (_type == AIProviderTypes.azureOpenAI) ...[
+          const SizedBox(height: AppTheme.spacing4),
+          _buildTextInput(
+            label: AppLocalizations.of(context).azureApiVersionLabel,
+            controller: _azureApiVerCtrl,
+            hint: AppLocalizations.of(context).azureApiVersionHint,
+          ),
+        ],
+      ],
     );
   }
 
   Widget _buildKeysHeaderCard(ThemeData theme) {
-    return _buildSectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  'API Key (${_keys.length})',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+    final badgeText = _keys.length > 99 ? '99+' : '${_keys.length}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: theme.colorScheme.outline.withValues(alpha: 0.65),
+        ),
+        const SizedBox(height: AppTheme.spacing4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'API Key',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.65),
+                  width: 1,
                 ),
               ),
-              PopupMenuButton<_ProviderKeySortMode>(
-                initialValue: _keySortMode,
-                onSelected: (mode) => setState(() => _keySortMode = mode),
-                itemBuilder: (context) => [
-                  for (final mode in _ProviderKeySortMode.values)
-                    PopupMenuItem<_ProviderKeySortMode>(
-                      value: mode,
-                      child: Text(_keySortModeLabel(mode)),
-                    ),
-                ],
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacing2,
-                    vertical: AppTheme.spacing1,
+              child: Text(
+                badgeText,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const Spacer(),
+            PopupMenuButton<_ProviderKeySortMode>(
+              initialValue: _keySortMode,
+              onSelected: (mode) => setState(() => _keySortMode = mode),
+              itemBuilder: (context) => [
+                for (final mode in _ProviderKeySortMode.values)
+                  PopupMenuItem<_ProviderKeySortMode>(
+                    value: mode,
+                    child: Text(_keySortModeLabel(mode)),
                   ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    border: Border.all(
-                      color: theme.colorScheme.outline.withOpacity(0.18),
-                      width: 0.5,
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.sort_rounded,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.sort_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        _keySortModeLabel(_keySortMode),
-                        style: theme.textTheme.bodySmall,
+                    const SizedBox(width: 6),
+                    Text(
+                      _keySortModeLabel(_keySortMode),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacing2),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (_keys.isNotEmpty)
-                TextButton.icon(
-                  onPressed: (_saving || _fetching || _batchRunning)
-                      ? null
-                      : _refreshAllKeysAndProbeFailures,
-                  icon: _batchRunning
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_fix_high_outlined, size: 18),
-                  label: const Text('批量测试'),
-                ),
-              if (_keys.isNotEmpty)
-                TextButton.icon(
-                  onPressed: (_saving || _fetching || _batchRunning)
-                      ? null
-                      : _deleteAllProviderKeys,
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  label: const Text('删除全部'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                  ),
-                ),
-              TextButton.icon(
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing4),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
                 onPressed: (_saving || _fetching || _batchRunning)
                     ? null
                     : () => _openKeyDialog(),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('新增 Key'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.primary,
+                  side: BorderSide(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppTheme.spacing2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed:
+                    (_keys.isEmpty || _saving || _fetching || _batchRunning)
+                    ? null
+                    : _refreshAllKeysAndProbeFailures,
+                icon: _batchRunning
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome_outlined, size: 18),
+                label: const Text('批量测试'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppTheme.spacing2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacing2),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed:
+                    (_keys.isEmpty || _saving || _fetching || _batchRunning)
+                    ? null
+                    : _deleteAllProviderKeys,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('删除全部'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  side: BorderSide(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.75),
+                    width: 1,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppTheme.spacing2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing4),
+        if (_batchRunning)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.spacing3),
+            child: Builder(
+              builder: (context) {
+                final progress =
+                    _batchProgress ??
+                    const ProviderKeyBatchProgress(
+                      phaseLabel: '准备中',
+                      current: 0,
+                      total: 1,
+                      message: '正在准备批量测试任务...',
+                    );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LinearProgressIndicator(
+                      value: progress.progressValue,
+                      minHeight: 4,
+                    ),
+                    const SizedBox(height: AppTheme.spacing1),
+                    Text(
+                      '${progress.phaseLabel} ${progress.fractionLabel}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(progress.message, style: theme.textTheme.bodySmall),
+                  ],
+                );
+              },
+            ),
+          ),
+        if (_loaded == null)
+          Text(
+            '请先保存当前提供商，然后再添加或批量测试 API Key。',
+            style: theme.textTheme.bodySmall,
+          )
+        else if (_keys.isEmpty)
+          Text('暂无 API Key。', style: theme.textTheme.bodySmall)
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '批量测试会先刷新模型列表，再对失败 Key 最多连续测试 3 次。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: AppTheme.spacing2),
-          if (_batchRunning)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppTheme.spacing2),
-              child: Builder(
-                builder: (context) {
-                  final progress =
-                      _batchProgress ??
-                      const ProviderKeyBatchProgress(
-                        phaseLabel: '准备中',
-                        current: 0,
-                        total: 1,
-                        message: '正在准备批量测试任务...',
-                      );
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LinearProgressIndicator(
-                        value: progress.progressValue,
-                        minHeight: 4,
-                      ),
-                      const SizedBox(height: AppTheme.spacing1),
-                      Text(
-                        '${progress.phaseLabel} ${progress.fractionLabel}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(progress.message, style: theme.textTheme.bodySmall),
-                    ],
-                  );
-                },
-              ),
-            ),
-          if (_loaded == null)
-            Text(
-              '请先保存当前提供商，然后再添加或批量测试 API Key。',
-              style: theme.textTheme.bodySmall,
-            )
-          else if (_keys.isEmpty)
-            Text('暂无 API Key。', style: theme.textTheme.bodySmall)
-          else
-            Text(
-              '当前按${_keySortModeLabel(_keySortMode)}查看。批量测试会先刷新模型列表，再对失败 Key 最多连续测试 3 次。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1658,7 +1780,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
               itemCount: _models.length,
               separatorBuilder: (c, i) => Container(
                 height: 1,
-                color: Theme.of(c).colorScheme.outline.withOpacity(0.6),
+                color: Theme.of(c).colorScheme.outline.withValues(alpha: 0.6),
               ),
               itemBuilder: (c, i) {
                 final m = _models[i];
@@ -1724,7 +1846,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       decoration: BoxDecoration(
         color: surface,
         border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.3),
+          color: theme.colorScheme.outline.withValues(alpha: 0.3),
           width: 1,
         ),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
@@ -1774,14 +1896,42 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     final Color fieldBg = isDark
         ? theme.colorScheme.surface
         : theme.scaffoldBackgroundColor;
+    final normalizedLabel = _normalizeOptionalLabel(label);
+    final optional = _labelLooksOptional(label);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+        Row(
+          children: [
+            Text(
+              normalizedLabel,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (optional) ...[
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: fieldBg,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.55),
+                    width: 0.5,
+                  ),
+                ),
+                child: Text(
+                  '可选',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: AppTheme.spacing1),
         TextField(
@@ -1845,11 +1995,11 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               AppLocalizations.of(context).interfaceTypeLabel,
               style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1872,8 +2022,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         ),
         const SizedBox(height: AppTheme.spacing1),
         DropdownButtonFormField<String>(
-          value: _type,
+          initialValue: _type,
           isDense: true,
+          style: theme.textTheme.bodyMedium,
           items: items,
           onChanged: (v) {
             if (v == null) return;
@@ -1891,11 +2042,6 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             ),
           ),
         ),
-        const SizedBox(height: AppTheme.spacing1),
-        Text(
-          AppLocalizations.of(context).currentTypeLabel(_friendlyType(_type)),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
       ],
     );
   }
@@ -1905,54 +2051,45 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacing1),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-          Switch.adaptive(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModelChip(String model) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacing2,
-        vertical: AppTheme.spacing1,
+        horizontal: AppTheme.spacing4,
+        vertical: AppTheme.spacing3,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+          color: theme.colorScheme.outline.withValues(alpha: 0.55),
           width: 1,
         ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            model,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '启用 OpenAI Responses 接口（实验性）',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: AppTheme.spacing1),
-          InkWell(
-            onTap: () {
-              setState(() {
-                _models = List<String>.from(_models)..remove(model);
-              });
-            },
-            child: Icon(
-              Icons.close,
-              size: 14,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-            ),
+          Transform.scale(
+            scale: 0.88,
+            child: Switch.adaptive(value: value, onChanged: onChanged),
           ),
         ],
       ),
