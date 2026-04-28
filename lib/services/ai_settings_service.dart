@@ -676,6 +676,7 @@ class AISettingsService {
         ? '/v1/chat/completions'
         : pSelected.chatPath!.trim();
     final int groupId = -1 * (pSelected.id ?? 0).abs();
+    final int selectedProviderId = pSelected.id ?? 0;
 
     if (context == 'segments') {
       try {
@@ -728,33 +729,62 @@ class AISettingsService {
       return <AIEndpoint>[];
     }
 
-    usableKeys.sort((a, b) {
-      final p = a.priority.compareTo(b.priority);
-      if (p != 0) return p;
-      final o = a.orderIndex.compareTo(b.orderIndex);
-      if (o != 0) return o;
+    int fixedOrder(AIProviderKey a, AIProviderKey b) {
+      final int priority = a.priority.compareTo(b.priority);
+      if (priority != 0) return priority;
+      final int order = a.orderIndex.compareTo(b.orderIndex);
+      if (order != 0) return order;
       return (a.id ?? 0).compareTo(b.id ?? 0);
-    });
+    }
 
-    final List<AIProviderKey> ordered = <AIProviderKey>[];
-    int i = 0;
-    while (i < usableKeys.length) {
-      final int priority = usableKeys[i].priority;
-      final group = <AIProviderKey>[];
-      while (i < usableKeys.length && usableKeys[i].priority == priority) {
-        group.add(usableKeys[i]);
-        i++;
-      }
-      final String cursorKey =
-          'ai_key_rr_${pSelected.id}_${model.toLowerCase()}_$priority';
-      final int cursor =
-          int.tryParse((await db.getAiSetting(cursorKey)) ?? '') ?? 0;
-      if (group.isNotEmpty) {
+    int dynamicDefaultOrder(AIProviderKey a, AIProviderKey b) {
+      // 默认优先级代表“交给系统分配”：先避免连续失败，再选更久未尝试的 Key。
+      final int failures = a.failureCount.compareTo(b.failureCount);
+      if (failures != 0) return failures;
+
+      final int aLastUse = <int>[
+        a.lastSuccessAt ?? 0,
+        a.lastFailedAt ?? 0,
+      ].reduce((value, element) => value > element ? value : element);
+      final int bLastUse = <int>[
+        b.lastSuccessAt ?? 0,
+        b.lastFailedAt ?? 0,
+      ].reduce((value, element) => value > element ? value : element);
+      final int lastUse = aLastUse.compareTo(bLastUse);
+      if (lastUse != 0) return lastUse;
+
+      final double aRate =
+          (a.successCount + 1) /
+          (a.successCount + a.failureTotalCount + 2).clamp(1, 1 << 30);
+      final double bRate =
+          (b.successCount + 1) /
+          (b.successCount + b.failureTotalCount + 2).clamp(1, 1 << 30);
+      final int rate = bRate.compareTo(aRate);
+      if (rate != 0) return rate;
+
+      return fixedOrder(a, b);
+    }
+
+    Future<List<AIProviderKey>> rotateFixedPriorityGroups(
+      List<AIProviderKey> keys,
+    ) async {
+      if (keys.isEmpty) return <AIProviderKey>[];
+      keys.sort(fixedOrder);
+      final List<AIProviderKey> out = <AIProviderKey>[];
+      int i = 0;
+      while (i < keys.length) {
+        final int priority = keys[i].priority;
+        final group = <AIProviderKey>[];
+        while (i < keys.length && keys[i].priority == priority) {
+          group.add(keys[i]);
+          i++;
+        }
+        final String cursorKey =
+            'ai_key_fixed_${selectedProviderId}_${model.toLowerCase()}_$priority';
+        final int cursor =
+            int.tryParse((await db.getAiSetting(cursorKey)) ?? '') ?? 0;
         final int start = cursor % group.length;
-        ordered.addAll(<AIProviderKey>[
-          ...group.skip(start),
-          ...group.take(start),
-        ]);
+        out.addAll(<AIProviderKey>[...group.skip(start), ...group.take(start)]);
         try {
           await db.setAiSetting(
             cursorKey,
@@ -762,7 +792,50 @@ class AISettingsService {
           );
         } catch (_) {}
       }
+      return out;
     }
+
+    Future<List<AIProviderKey>> rotateDynamicDefaultKeys(
+      List<AIProviderKey> keys,
+    ) async {
+      if (keys.isEmpty) return <AIProviderKey>[];
+      keys.sort(dynamicDefaultOrder);
+      final String cursorKey =
+          'ai_key_dynamic_${selectedProviderId}_${model.toLowerCase()}';
+      final int cursor =
+          int.tryParse((await db.getAiSetting(cursorKey)) ?? '') ?? 0;
+      final int start = cursor % keys.length;
+      final List<AIProviderKey> out = <AIProviderKey>[
+        ...keys.skip(start),
+        ...keys.take(start),
+      ];
+      try {
+        await db.setAiSetting(
+          cursorKey,
+          ((cursor + 1) % keys.length).toString(),
+        );
+      } catch (_) {}
+      return out;
+    }
+
+    final List<AIProviderKey> fixedHighPriority = <AIProviderKey>[];
+    final List<AIProviderKey> dynamicDefaultPriority = <AIProviderKey>[];
+    final List<AIProviderKey> fixedLowPriority = <AIProviderKey>[];
+    for (final key in usableKeys) {
+      if (key.usesDefaultPriority) {
+        dynamicDefaultPriority.add(key);
+      } else if (key.priority < AIProviderKey.defaultPriority) {
+        fixedHighPriority.add(key);
+      } else {
+        fixedLowPriority.add(key);
+      }
+    }
+
+    final List<AIProviderKey> ordered = <AIProviderKey>[
+      ...await rotateFixedPriorityGroups(fixedHighPriority),
+      ...await rotateDynamicDefaultKeys(dynamicDefaultPriority),
+      ...await rotateFixedPriorityGroups(fixedLowPriority),
+    ];
 
     final endpoints = <AIEndpoint>[];
     for (final key in ordered) {

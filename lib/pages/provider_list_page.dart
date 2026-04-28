@@ -248,16 +248,19 @@ class _ProviderListPageState extends State<ProviderListPage> {
     final theme = Theme.of(context);
     const barCount = 72;
     if (keys.isEmpty || enabledCount == 0) {
-      return Row(
-        children: List.generate(
-          barCount,
-          (index) => Expanded(
-            child: Container(
-              height: 32,
-              margin: const EdgeInsets.symmetric(horizontal: 1.5),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.outline.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(1.5),
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          children: List.generate(
+            barCount,
+            (index) => Expanded(
+              child: Container(
+                height: 32,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outline.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(1.5),
+                ),
               ),
             ),
           ),
@@ -267,16 +270,19 @@ class _ProviderListPageState extends State<ProviderListPage> {
 
     final totalAttempts = successTotal + failureTotal;
     if (totalAttempts == 0) {
-      return Row(
-        children: List.generate(
-          barCount,
-          (index) => Expanded(
-            child: Container(
-              height: 32,
-              margin: const EdgeInsets.symmetric(horizontal: 1.5),
-              decoration: BoxDecoration(
-                color: AppTheme.info.withOpacity(0.55),
-                borderRadius: BorderRadius.circular(1.5),
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          children: List.generate(
+            barCount,
+            (index) => Expanded(
+              child: Container(
+                height: 32,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  color: AppTheme.info.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(1.5),
+                ),
               ),
             ),
           ),
@@ -293,12 +299,30 @@ class _ProviderListPageState extends State<ProviderListPage> {
     final coolingStart = (barCount * 0.56).round();
     final errorSeed =
         (failureTotal + errorCount * 7 + coolingCount * 11) % barCount;
+    final latestSuccessAt = keys.fold<int>(0, (latest, key) {
+      final value = key.lastSuccessAt ?? 0;
+      return value > latest ? value : latest;
+    });
+    final latestFailureAt = keys.fold<int>(0, (latest, key) {
+      final value = key.lastFailedAt ?? 0;
+      return value > latest ? value : latest;
+    });
+    final latestKnownResultIsFailure = latestFailureAt > latestSuccessAt;
+    final placeIssueAtEnd =
+        latestKnownResultIsFailure ||
+        (latestSuccessAt == 0 && latestFailureAt == 0 && successTotal == 0);
+
+    bool isIssueSlot(int index) {
+      if (issueRatio == 0) return false;
+      return placeIssueAtEnd
+          ? index >= barCount - issueRatio
+          : index < issueRatio;
+    }
 
     Color colorFor(int index) {
       if (issueRatio == 0) return AppTheme.success;
-      final seededError =
-          ((index + errorSeed) % 23 == 0) && index < barCount - 3;
-      final recentError = index >= barCount - issueRatio;
+      final seededError = isIssueSlot(index) && ((index + errorSeed) % 23 == 0);
+      final recentError = isIssueSlot(index);
       final cooling =
           coolingCount > 0 &&
           index >= coolingStart &&
@@ -308,16 +332,19 @@ class _ProviderListPageState extends State<ProviderListPage> {
       return AppTheme.success;
     }
 
-    return Row(
-      children: List.generate(
-        barCount,
-        (index) => Expanded(
-          child: Container(
-            height: 32,
-            margin: const EdgeInsets.symmetric(horizontal: 1.5),
-            decoration: BoxDecoration(
-              color: colorFor(index),
-              borderRadius: BorderRadius.circular(1.5),
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: List.generate(
+          barCount,
+          (index) => Expanded(
+            child: Container(
+              height: 32,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: colorFor(index),
+                borderRadius: BorderRadius.circular(1.5),
+              ),
             ),
           ),
         ),

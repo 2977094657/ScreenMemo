@@ -61,6 +61,8 @@ class AIProviderTypes {
 /// 提供商实体（来自 ai_providers 表 + 衍生字段）
 
 class AIProviderKey {
+  static const int defaultPriority = 100;
+
   final int? id;
   final int providerId;
   final String name;
@@ -113,7 +115,7 @@ class AIProviderKey {
       apiKey: ((row['api_key'] as String?) ?? '').trim(),
       models: parsedModels,
       enabled: ((row['enabled'] as int?) ?? 1) != 0,
-      priority: (row['priority'] as int?) ?? 100,
+      priority: (row['priority'] as int?) ?? defaultPriority,
       orderIndex: (row['order_index'] as int?) ?? 0,
       failureCount: (row['failure_count'] as int?) ?? 0,
       successCount: (row['success_count'] as int?) ?? 0,
@@ -133,6 +135,8 @@ class AIProviderKey {
   }
 
   bool get isAuthFailed => (lastErrorType ?? '').trim() == 'auth_failed';
+
+  bool get usesDefaultPriority => priority == defaultPriority;
 
   bool isCoolingDown([int? nowMs]) {
     final until = cooldownUntilMs;

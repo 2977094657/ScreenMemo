@@ -569,9 +569,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       lines.add('');
       lines.add('模型刷新失败明细：');
       for (final item in result.modelFailures) {
-        lines.add(
-          '- ${item.key.name} (${item.key.fingerprint}): ${_clipDialogText(item.errorMessage)}',
-        );
+        lines.add('- ${item.key.name}: ${_clipDialogText(item.errorMessage)}');
       }
     }
 
@@ -591,7 +589,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                   ? '未记录失败原因'
                   : _clipDialogText(item.failureMessages.last));
         lines.add(
-          '- ${item.key.name} (${item.key.fingerprint}) [$status] 连续测试：${item.attemptsUsed} 次；模型：$models；$detail',
+          '- ${item.key.name} [$status] 连续测试：${item.attemptsUsed} 次；模型：$models；$detail',
         );
       }
     }
@@ -748,7 +746,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     );
     final apiCtrl = TextEditingController(text: key?.apiKey ?? '');
     final priorityCtrl = TextEditingController(
-      text: (key?.priority ?? 100).toString(),
+      text: (key?.priority ?? AIProviderKey.defaultPriority).toString(),
     );
     final modelsCtrl = TextEditingController(
       text: (key?.models ?? const <String>[]).join('\n'),
@@ -849,7 +847,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                   ),
                   _buildKeyDialogTextField(
                     controller: priorityCtrl,
-                    label: '优先级（数字越小越优先）',
+                    label: '优先级（默认 100 参与动态分配，其他数字固定排序）',
                     keyboardType: TextInputType.number,
                   ),
                   _buildKeyDialogTextField(
@@ -912,7 +910,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       UINotifier.error(context, '至少需要填写一个模型');
       return;
     }
-    final priority = int.tryParse(priorityCtrl.text.trim()) ?? 100;
+    final priority =
+        int.tryParse(priorityCtrl.text.trim()) ?? AIProviderKey.defaultPriority;
     if (key == null) {
       final existingApiKeys = _keys.map((k) => k.apiKey.trim()).toSet();
       final keysToCreate = apiKeys
@@ -1047,7 +1046,6 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
   Widget _buildProviderKeyCard(AIProviderKey key, int displayIndex) {
     final theme = Theme.of(context);
     final cooling = key.isCoolingDown();
-    final statusText = key.enabled ? (cooling ? '冷却中' : '已启用') : '已停用';
     final statusColor = key.enabled
         ? (cooling ? AppTheme.info : AppTheme.success)
         : theme.colorScheme.onSurfaceVariant;
@@ -1131,13 +1129,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                         runSpacing: 2,
                         children: [
                           Text(
-                            '优先级 ${key.priority}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            '指纹 ${key.fingerprint}',
+                            key.usesDefaultPriority
+                                ? '优先级 动态分配'
+                                : '优先级 ${key.priority}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -1148,12 +1142,13 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          Text(
-                            statusText,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          if (!key.enabled || cooling)
+                            Text(
+                              cooling ? '冷却中' : '已停用',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ],
@@ -1536,10 +1531,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        progress.message,
-                        style: theme.textTheme.bodySmall,
-                      ),
+                      Text(progress.message, style: theme.textTheme.bodySmall),
                     ],
                   );
                 },
