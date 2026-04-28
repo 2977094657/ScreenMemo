@@ -299,7 +299,7 @@ flutter build linux -t lib/main_desktop_merger.dart --release
 当前 README 与应用界面都维护以下四种语言：
 
 - 简体中文
-- English
+- 英文
 - 日本語
 - 한국어
 
@@ -317,35 +317,6 @@ dart run tool/i18n_audit.dart --update-baseline
 ```
 
 `flutter test` 会自动运行 `test/i18n_audit_test.dart`，用于阻止新的多语言回归。
-
-## 赞助与支持
-
-如果本项目对你有帮助，欢迎通过以下方式赞助。付款时请在备注中填写“希望公开展示的链接”（如个人主页、B 站空间、GitHub 仓库等），我们会在 README 的“赞助鸣谢”表格中展示。
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center">
-        <a href="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/wechat.png">
-          <img src="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/wechat.png" alt="微信收款码" width="220">
-        </a><br>
-        微信赞助
-      </td>
-      <td align="center">
-        <a href="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/zfb.jpg">
-          <img src="https://github.com/LifeArchiveProject/BilibiliHistoryFetcher/raw/master/public/zfb.jpg" alt="支付宝收款码" width="220">
-        </a><br>
-        支付宝赞助
-      </td>
-    </tr>
-  </table>
-</div>
-
-### 赞助鸣谢
-
-| 赞助者 | 展示链接 |
-| --- | --- |
-| 暂无 | 暂无 |
 
 ## 贡献指南
 
