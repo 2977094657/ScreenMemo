@@ -13,7 +13,7 @@ import 'provider_edit_page.dart';
 
 /// 提供商列表页：
 /// - 右上角「新建」
-/// - 列表展示：名称、类型、Base URL 简述、模型数量
+/// - 列表展示：名称、模型数量、Key 服务状态
 /// - 操作：编辑、删除、设为默认、启用/禁用
 /// - 点击列表项或编辑进入详情
 class ProviderListPage extends StatefulWidget {
@@ -30,9 +30,6 @@ class _ProviderListPageState extends State<ProviderListPage> {
   List<AIProvider> _list = <AIProvider>[];
   final Map<int, List<AIProviderKey>> _keysByProvider =
       <int, List<AIProviderKey>>{};
-  // 查询文本持久化
-  String _modelQueryText = '';
-
   @override
   void initState() {
     super.initState();
@@ -421,179 +418,6 @@ class _ProviderListPageState extends State<ProviderListPage> {
     return ModelIconUtils.getProviderIconPath(type);
   }
 
-  // 当前启用模型（兼容旧字段）
-  String _activeModelOf(AIProvider p) {
-    final act =
-        (p.extra['active_model'] as String?) ??
-        (p.extra['default_model'] as String?);
-    if (act != null && act.trim().isNotEmpty) return act.trim();
-    if (p.models.isNotEmpty) return p.models.first;
-    return '—';
-  }
-
-  Future<void> _openModelSheet(AIProvider p) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final models = p.models;
-        final active = _activeModelOf(p);
-
-        // 控制器与文本持久化，避免键盘折叠时内容丢失
-        final TextEditingController queryCtrl = TextEditingController(
-          text: _modelQueryText,
-        );
-        return StatefulBuilder(
-          builder: (c, setModalState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.85,
-              minChildSize: 0.5,
-              maxChildSize: 0.95,
-              expand: false,
-              builder: (_, scrollCtrl) {
-                final q = queryCtrl.text.trim().toLowerCase();
-                final filtered = q.isEmpty
-                    ? List<String>.from(models)
-                    : models.where((m) => m.toLowerCase().contains(q)).toList();
-                // 选中的模型置顶展示
-                final idx = filtered.indexWhere((e) => e == active);
-                if (idx > 0) {
-                  final sel = filtered.removeAt(idx);
-                  filtered.insert(0, sel);
-                }
-
-                return UISheetSurface(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: AppTheme.spacing3),
-                      const Center(child: UISheetHandle()),
-                      const SizedBox(height: AppTheme.spacing3),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                        child: Text(
-                          AppLocalizations.of(context).selectModelWithCounts(
-                            filtered.length,
-                            models.length,
-                          ),
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: TextField(
-                          controller: queryCtrl,
-                          autofocus: true,
-                          onChanged: (_) {
-                            _modelQueryText = queryCtrl.text;
-                            setModalState(() {});
-                          },
-                          decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.search),
-                            hintText: AppLocalizations.of(
-                              context,
-                            ).searchModelPlaceholder,
-                            isDense: true,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (models.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
-                          child: Text(
-                            AppLocalizations.of(context).noModelsDetectedHint,
-                            style: Theme.of(ctx).textTheme.bodySmall,
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: ListView.separated(
-                            controller: scrollCtrl,
-                            itemCount: filtered.length,
-                            separatorBuilder: (c, i) => Container(
-                              height: 1,
-                              color: Theme.of(
-                                c,
-                              ).colorScheme.outline.withOpacity(0.6),
-                            ),
-                            itemBuilder: (c, i) {
-                              final m = filtered[i];
-                              final selected = m == active;
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppTheme.spacing4,
-                                  vertical: AppTheme.spacing1,
-                                ),
-                                leading: SvgPicture.asset(
-                                  ModelIconUtils.getIconPath(m),
-                                  width: 22,
-                                  height: 22,
-                                ),
-                                title: Text(
-                                  m,
-                                  style: Theme.of(ctx).textTheme.bodyMedium,
-                                ),
-                                trailing: selected
-                                    ? Icon(
-                                        Icons.check_circle,
-                                        color: Theme.of(
-                                          ctx,
-                                        ).colorScheme.onSurface,
-                                        size: 22,
-                                      )
-                                    : null,
-                                onTap: () async {
-                                  final newExtra = Map<String, dynamic>.from(
-                                    p.extra,
-                                  );
-                                  newExtra['active_model'] = m;
-                                  if (newExtra.containsKey('default_model')) {
-                                    newExtra.remove('default_model');
-                                  }
-                                  final ok = await _svc.updateProvider(
-                                    id: p.id!,
-                                    extra: newExtra,
-                                  );
-                                  if (ok && mounted) {
-                                    Navigator.of(ctx).pop();
-                                    UINotifier.success(
-                                      context,
-                                      AppLocalizations.of(
-                                        context,
-                                      ).modelSwitchedToast(m),
-                                    );
-                                    await _load();
-                                  } else {
-                                    UINotifier.error(
-                                      context,
-                                      AppLocalizations.of(
-                                        context,
-                                      ).operationFailed,
-                                    );
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -638,7 +462,6 @@ class _ProviderListPageState extends State<ProviderListPage> {
                       itemBuilder: (context, index) {
                         final p = _list[index];
                         final modelsCount = p.models.length;
-                        final activeModel = _activeModelOf(p);
 
                         return Container(
                           margin: const EdgeInsets.symmetric(
@@ -667,7 +490,7 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                   children: [
                                     Row(
                                       crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                          CrossAxisAlignment.center,
                                       children: [
                                         Container(
                                           width: 44,
@@ -706,55 +529,6 @@ class _ProviderListPageState extends State<ProviderListPage> {
                                                           FontWeight.w600,
                                                       letterSpacing: 0.15,
                                                     ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              GestureDetector(
-                                                onTap: () => _openModelSheet(p),
-                                                child: Row(
-                                                  children: [
-                                                    SvgPicture.asset(
-                                                      ModelIconUtils.getIconPath(
-                                                        activeModel,
-                                                      ),
-                                                      width: 14,
-                                                      height: 14,
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Flexible(
-                                                      child: Text(
-                                                        activeModel,
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodySmall
-                                                            ?.copyWith(
-                                                              color:
-                                                                  Theme.of(
-                                                                        context,
-                                                                      )
-                                                                      .colorScheme
-                                                                      .onSurface,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500,
-                                                              decoration:
-                                                                  TextDecoration
-                                                                      .underline,
-                                                              decorationColor:
-                                                                  Theme.of(
-                                                                        context,
-                                                                      )
-                                                                      .colorScheme
-                                                                      .onSurface
-                                                                      .withOpacity(
-                                                                        0.5,
-                                                                      ),
-                                                            ),
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
                                               ),
                                             ],
                                           ),
