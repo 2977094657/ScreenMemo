@@ -1,7 +1,7 @@
 // ignore_for_file: constant_identifier_names, unnecessary_null_in_if_null_operators
 
+import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'secure_storage_service.dart';
 import 'package:http/http.dart' as http;
 
@@ -58,6 +58,32 @@ class AIProviderTypes {
   ];
 }
 
+/// 余额查询接口类型：仅适配 new-api 与 sub2api 两个开源项目。
+class AIBalanceEndpointTypes {
+  /// 不查询余额。
+  static const String none = 'none';
+
+  /// new-api：GET /dashboard/billing/subscription + /dashboard/billing/usage，
+  /// Bearer 鉴权，主余额 = hard_limit_usd - total_usage / 100。
+  static const String newApi = 'new_api';
+
+  /// sub2api：GET /v1/usage，Bearer 鉴权，
+  /// 顶层 remaining 字段（USD），unrestricted 模式还包含 balance。
+  static const String sub2api = 'sub2api';
+
+  static const List<String> all = <String>[none, newApi, sub2api];
+
+  /// 规范化字符串：把空 / null / 未识别值都归一为 [none]。
+  static String normalize(String? value) {
+    final v = (value ?? '').trim().toLowerCase();
+    if (v == newApi) return newApi;
+    if (v == sub2api) return sub2api;
+    return none;
+  }
+
+  static bool isQueryable(String? value) => normalize(value) != none;
+}
+
 /// 提供商实体（来自 ai_providers 表 + 衍生字段）
 
 class AIProviderKey {
@@ -80,6 +106,18 @@ class AIProviderKey {
   final int? lastFailedAt;
   final int? lastSuccessAt;
 
+  /// 余额展示文本（如 "$5.23 USD"），来自 ai_provider_keys.balance_display。
+  final String? balanceDisplay;
+
+  /// 余额数值（保留原始单位，通常 USD），来自 balance_total。
+  final double? balanceTotal;
+
+  /// 货币代码（USD/CNY 等），来自 balance_currency。
+  final String? balanceCurrency;
+
+  /// 余额最后更新时间（毫秒时间戳）。
+  final int? balanceUpdatedAt;
+
   const AIProviderKey({
     required this.id,
     required this.providerId,
@@ -97,6 +135,10 @@ class AIProviderKey {
     required this.lastErrorMessage,
     required this.lastFailedAt,
     required this.lastSuccessAt,
+    this.balanceDisplay,
+    this.balanceTotal,
+    this.balanceCurrency,
+    this.balanceUpdatedAt,
   });
 
   factory AIProviderKey.fromDbRow(Map<String, dynamic> row) {
@@ -108,6 +150,16 @@ class AIProviderKey {
     } catch (_) {
       parsedModels = <String>[];
     }
+    final Object? totalRaw = row['balance_total'];
+    double? balanceTotal;
+    if (totalRaw is num) {
+      balanceTotal = totalRaw.toDouble();
+    } else if (totalRaw is String) {
+      balanceTotal = double.tryParse(totalRaw);
+    }
+    final String? balanceDisplay = (row['balance_display'] as String?)?.trim();
+    final String? balanceCurrency = (row['balance_currency'] as String?)
+        ?.trim();
     return AIProviderKey(
       id: row['id'] as int?,
       providerId: (row['provider_id'] as int?) ?? 0,
@@ -125,6 +177,14 @@ class AIProviderKey {
       lastErrorMessage: row['last_error_message'] as String?,
       lastFailedAt: row['last_failed_at'] as int?,
       lastSuccessAt: row['last_success_at'] as int?,
+      balanceDisplay: (balanceDisplay == null || balanceDisplay.isEmpty)
+          ? null
+          : balanceDisplay,
+      balanceTotal: balanceTotal,
+      balanceCurrency: (balanceCurrency == null || balanceCurrency.isEmpty)
+          ? null
+          : balanceCurrency,
+      balanceUpdatedAt: row['balance_updated_at'] as int?,
     );
   }
 
@@ -149,6 +209,19 @@ class AIProviderKey {
     if (k.length <= 4) return k;
     return '?${k.substring(k.length - 4)}';
   }
+
+  /// 是否已查询到余额（display 或 total 任一非空即可视为有数据）。
+  bool get hasBalance =>
+      (balanceDisplay != null && balanceDisplay!.isNotEmpty) ||
+      balanceTotal != null;
+
+  /// 余额是否为 0（仅在 [balanceTotal] 已知时判断）。
+  bool get isBalanceZero {
+    final t = balanceTotal;
+    if (t == null) return false;
+    // 允许 1e-6 的浮点误差
+    return t <= 0.000001;
+  }
 }
 
 class AIProvider {
@@ -165,6 +238,14 @@ class AIProvider {
   final Map<String, dynamic> extra; // 额外配置（如 azure apiVersion、默认模型等）
   final int? orderIndex;
 
+  /// 余额查询接口类型（[AIBalanceEndpointTypes] 之一）。
+  ///
+  /// 仅当不为 [AIBalanceEndpointTypes.none] 时，才会发起余额查询。
+  final String balanceEndpointType;
+
+  /// 是否在余额为 0 时自动删除该 key。
+  final bool balanceAutoDeleteZeroKey;
+
   AIProvider({
     required this.id,
     required this.name,
@@ -178,6 +259,8 @@ class AIProvider {
     required this.models,
     required this.extra,
     required this.orderIndex,
+    this.balanceEndpointType = AIBalanceEndpointTypes.none,
+    this.balanceAutoDeleteZeroKey = false,
   });
 
   factory AIProvider.fromDbRow(Map<String, dynamic> row) {
@@ -218,10 +301,19 @@ class AIProvider {
       models: parsedModels,
       extra: parsedExtra,
       orderIndex: row['order_index'] as int?,
+      balanceEndpointType: AIBalanceEndpointTypes.normalize(
+        row['balance_endpoint_type'] as String?,
+      ),
+      balanceAutoDeleteZeroKey:
+          ((row['balance_auto_delete_zero_key'] as int?) ?? 0) == 1,
     );
   }
 
   String get defaultModel => (extra['default_model'] as String?) ?? '';
+
+  /// 是否启用余额查询（即 [balanceEndpointType] 不是 [AIBalanceEndpointTypes.none]）。
+  bool get hasBalanceQuery =>
+      AIBalanceEndpointTypes.isQueryable(balanceEndpointType);
 
   AIProvider copyWith({
     int? id,
@@ -236,6 +328,8 @@ class AIProvider {
     Map<String, dynamic>? extra,
     String? modelsPath,
     int? orderIndex,
+    String? balanceEndpointType,
+    bool? balanceAutoDeleteZeroKey,
   }) {
     return AIProvider(
       id: id ?? this.id,
@@ -250,6 +344,9 @@ class AIProvider {
       models: models ?? this.models,
       extra: extra ?? this.extra,
       orderIndex: orderIndex ?? this.orderIndex,
+      balanceEndpointType: balanceEndpointType ?? this.balanceEndpointType,
+      balanceAutoDeleteZeroKey:
+          balanceAutoDeleteZeroKey ?? this.balanceAutoDeleteZeroKey,
     );
   }
 
@@ -261,6 +358,11 @@ class AIProvider {
       'base_url': baseUrl,
       'chat_path': chatPath,
       'models_path': normalizedModelsPath,
+      'balance_endpoint_type':
+          balanceEndpointType == AIBalanceEndpointTypes.none
+          ? null
+          : balanceEndpointType,
+      'balance_auto_delete_zero_key': balanceAutoDeleteZeroKey ? 1 : 0,
       'use_response_api': useResponseApi ? 1 : 0,
       'enabled': enabled ? 1 : 0,
       'is_default': isDefault ? 1 : 0,
@@ -268,6 +370,32 @@ class AIProvider {
       'extra_json': jsonEncode(extra),
       'order_index': orderIndex ?? 0,
     };
+  }
+}
+
+/// 余额查询结果。
+///
+/// - [display]：用于 UI 展示的字符串，如 `"$5.23 USD"`。
+/// - [total]：余额数值（通常 USD），用于"=0 自动删除"判断与排序。
+/// - [currency]：货币代码（USD / CNY 等），可选。
+/// - [raw]：响应体的简短预览，便于调试。
+class ProviderKeyBalance {
+  final String display;
+  final double? total;
+  final String? currency;
+  final String? raw;
+
+  const ProviderKeyBalance({
+    required this.display,
+    this.total,
+    this.currency,
+    this.raw,
+  });
+
+  bool get isZero {
+    final t = total;
+    if (t == null) return false;
+    return t <= 0.000001;
   }
 }
 
@@ -333,14 +461,23 @@ class AIProvidersService {
     List<String>? models,
     String? apiKey, // 将写入安全存储
     int? orderIndex,
+    String? balanceEndpointType,
+    bool balanceAutoDeleteZeroKey = false,
   }) async {
     final normalizedModelsPath = _normalizeModelsPathForStorage(modelsPath);
+    final String normalizedBalanceType = AIBalanceEndpointTypes.normalize(
+      balanceEndpointType,
+    );
     final id = await _db.insertAIProvider(
       name: name,
       type: type,
       baseUrl: _normalizeBaseUrlOrNull(baseUrl),
       chatPath: chatPath,
       modelsPath: normalizedModelsPath,
+      balanceEndpointType: normalizedBalanceType == AIBalanceEndpointTypes.none
+          ? null
+          : normalizedBalanceType,
+      balanceAutoDeleteZeroKey: balanceAutoDeleteZeroKey,
       useResponseApi: useResponseApi,
       enabled: enabled,
       isDefault: isDefault,
@@ -377,6 +514,9 @@ class AIProvidersService {
     String? baseUrl,
     String? chatPath,
     String? modelsPath,
+    String? balanceEndpointType,
+    bool setBalanceEndpointType = false,
+    bool? balanceAutoDeleteZeroKey,
     bool? useResponseApi,
     bool? enabled,
     bool? isDefault,
@@ -395,6 +535,9 @@ class AIProvidersService {
         ? _normalizeModelsPathForStorage(modelsPath)
         : null;
     final bool shouldUpdateModelsPath = modelsPath != null;
+    final String? normalizedBalanceType = setBalanceEndpointType
+        ? AIBalanceEndpointTypes.normalize(balanceEndpointType)
+        : null;
 
     bool updated = await _db.updateAIProvider(
       id: id,
@@ -404,6 +547,11 @@ class AIProvidersService {
       chatPath: chatPath,
       modelsPath: normalizedModelsPath,
       setModelsPath: shouldUpdateModelsPath,
+      balanceEndpointType: normalizedBalanceType == AIBalanceEndpointTypes.none
+          ? null
+          : normalizedBalanceType,
+      setBalanceEndpointType: setBalanceEndpointType,
+      balanceAutoDeleteZeroKey: balanceAutoDeleteZeroKey,
       useResponseApi: useResponseApi,
       enabled: enabled,
       isDefault: isDefault,
@@ -645,6 +793,11 @@ class AIProvidersService {
       final models = await fetchModels(provider: provider, apiKey: key.apiKey);
       await updateProviderKey(id: keyId, models: models, clearErrorState: true);
       await markProviderKeySuccess(keyId);
+      // Best-effort：若提供商配置了余额查询接口，顺带刷新该 key 的余额。
+      // 失败不影响模型刷新结果。
+      if (provider.hasBalanceQuery) {
+        unawaited(refreshBalanceForKey(providerId: providerId, keyId: keyId));
+      }
       return models;
     } catch (e) {
       await markProviderKeyFailure(
@@ -674,6 +827,232 @@ class AIProvidersService {
     cooldownUntilMs: cooldownUntilMs,
     resetFailureCount: resetFailureCount,
   );
+
+  // ---------------- 余额查询（new-api / sub2api） ----------------
+
+  /// 调用提供商的余额接口，返回 [ProviderKeyBalance]。
+  ///
+  /// - 仅支持 [AIBalanceEndpointTypes.newApi] 与 [AIBalanceEndpointTypes.sub2api]
+  ///   两种接口类型；其他类型会抛出异常。
+  /// - 失败时抛出 [Exception]，调用方应捕获并降级处理。
+  Future<ProviderKeyBalance> fetchBalance({
+    required AIProvider provider,
+    required String apiKey,
+  }) async {
+    final type = AIBalanceEndpointTypes.normalize(provider.balanceEndpointType);
+    if (type == AIBalanceEndpointTypes.none) {
+      throw Exception('Provider has no balance endpoint configured');
+    }
+    final trimmedKey = apiKey.trim();
+    if (trimmedKey.isEmpty) {
+      throw Exception('API key is empty');
+    }
+    final baseUrl = _baseUrlOrDefaultOpenAI(provider.baseUrl);
+    switch (type) {
+      case AIBalanceEndpointTypes.newApi:
+        return _fetchNewApiBalance(baseUrl: baseUrl, apiKey: trimmedKey);
+      case AIBalanceEndpointTypes.sub2api:
+        return _fetchSub2ApiBalance(baseUrl: baseUrl, apiKey: trimmedKey);
+      default:
+        throw Exception('Unsupported balance endpoint type: $type');
+    }
+  }
+
+  /// 刷新指定 key 的余额并写入数据库。
+  ///
+  /// 行为：
+  /// 1. 若 provider 未配置余额接口（[AIBalanceEndpointTypes.none]），直接返回 null。
+  /// 2. 调用 [fetchBalance]，写入 ai_provider_keys.balance_*。
+  /// 3. 若 provider.balanceAutoDeleteZeroKey 开启且余额为 0，则删除该 key 并返回 null。
+  /// 4. 失败仅记日志，不抛出（不阻塞调用方）。
+  ///
+  /// 返回最新余额；删除或失败时返回 null。
+  Future<ProviderKeyBalance?> refreshBalanceForKey({
+    required int providerId,
+    required int keyId,
+    AIProvider? providerOverride,
+  }) async {
+    final provider = providerOverride ?? await getProvider(providerId);
+    final key = await getProviderKey(keyId);
+    if (provider == null || key == null) return null;
+    if (!provider.hasBalanceQuery) return null;
+    if (key.apiKey.trim().isEmpty) return null;
+
+    ProviderKeyBalance balance;
+    try {
+      balance = await fetchBalance(provider: provider, apiKey: key.apiKey);
+    } catch (e) {
+      try {
+        await FlutterLogger.nativeWarn(
+          'AI',
+          'refreshBalanceForKey 失败 provider=${provider.name} key=${key.name}#$keyId error=$e',
+        );
+      } catch (_) {}
+      return null;
+    }
+
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await _db.updateAIProviderKeyBalance(
+      keyId: keyId,
+      balanceDisplay: balance.display,
+      balanceTotal: balance.total,
+      balanceCurrency: balance.currency,
+      balanceRaw: balance.raw,
+      balanceUpdatedAt: now,
+    );
+
+    // 余额为 0 且开启了"自动删除"，则移除该 key
+    if (provider.balanceAutoDeleteZeroKey && balance.isZero) {
+      try {
+        await FlutterLogger.nativeInfo(
+          'AI',
+          'auto-delete zero-balance key provider=${provider.name} key=${key.name}#$keyId',
+        );
+      } catch (_) {}
+      await deleteProviderKey(keyId);
+      return null;
+    }
+
+    return balance;
+  }
+
+  /// new-api 兼容：
+  /// - GET {baseUrl}/dashboard/billing/subscription → hard_limit_usd
+  /// - GET {baseUrl}/dashboard/billing/usage        → total_usage（usage*100）
+  /// 主余额 = hard_limit_usd - total_usage / 100。
+  Future<ProviderKeyBalance> _fetchNewApiBalance({
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    final headers = <String, String>{'Authorization': 'Bearer $apiKey'};
+    final subUri = Uri.parse('$baseUrl/dashboard/billing/subscription');
+    final usageUri = Uri.parse('$baseUrl/dashboard/billing/usage');
+
+    final subResp = await http.get(subUri, headers: headers);
+    if (subResp.statusCode < 200 || subResp.statusCode >= 300) {
+      throw Exception(
+        'new-api subscription request failed: ${subResp.statusCode} ${subResp.body}',
+      );
+    }
+    double? hardLimit;
+    try {
+      final body = jsonDecode(subResp.body);
+      if (body is Map) {
+        final v =
+            body['hard_limit_usd'] ??
+            body['system_hard_limit_usd'] ??
+            body['soft_limit_usd'];
+        hardLimit = _coerceDouble(v);
+      }
+    } catch (_) {}
+    if (hardLimit == null) {
+      throw Exception(
+        'new-api subscription parse failed: ${_clipBody(subResp.body)}',
+      );
+    }
+
+    double totalUsage = 0;
+    try {
+      final usageResp = await http.get(usageUri, headers: headers);
+      if (usageResp.statusCode >= 200 && usageResp.statusCode < 300) {
+        final body = jsonDecode(usageResp.body);
+        if (body is Map) {
+          // total_usage 单位是 amount * 100（美分级），实际美元 = total_usage / 100
+          final v = _coerceDouble(body['total_usage']);
+          if (v != null) totalUsage = v;
+        }
+      }
+    } catch (_) {
+      // usage 查询失败时按 0 处理（仍可显示总额度，余额=hard_limit）
+    }
+
+    final remaining = hardLimit - (totalUsage / 100.0);
+    final formatted = _formatUsd(remaining);
+    return ProviderKeyBalance(
+      display: '\$$formatted',
+      total: remaining,
+      currency: 'USD',
+      raw: _clipBody(subResp.body),
+    );
+  }
+
+  /// sub2api 兼容：
+  /// - GET {baseUrl}/v1/usage → 顶层 remaining/balance（USD）
+  /// - 不同模式（quota_limited / unrestricted）字段略有差异，统一取 remaining。
+  Future<ProviderKeyBalance> _fetchSub2ApiBalance({
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    final uri = Uri.parse('$baseUrl/v1/usage');
+    final resp = await http.get(
+      uri,
+      headers: <String, String>{'Authorization': 'Bearer $apiKey'},
+    );
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception(
+        'sub2api usage request failed: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    double? remaining;
+    String? currency = 'USD';
+    try {
+      final body = jsonDecode(resp.body);
+      if (body is Map) {
+        // 优先 remaining；若不存在再退回 balance / quota.remaining
+        remaining = _coerceDouble(body['remaining']);
+        remaining ??= _coerceDouble(body['balance']);
+        if (remaining == null && body['quota'] is Map) {
+          final quota = body['quota'] as Map;
+          remaining = _coerceDouble(quota['remaining']);
+        }
+        final unit = (body['unit'] as String?)?.trim();
+        if (unit != null && unit.isNotEmpty) currency = unit;
+      }
+    } catch (_) {}
+
+    if (remaining == null) {
+      throw Exception('sub2api usage parse failed: ${_clipBody(resp.body)}');
+    }
+    // sub2api 在订阅模式无限额时返回 -1 表示"无限制"。
+    if (remaining < 0) {
+      return ProviderKeyBalance(
+        display: '∞ ${currency ?? ''}'.trim(),
+        total: null,
+        currency: currency,
+        raw: _clipBody(resp.body),
+      );
+    }
+    final formatted = _formatUsd(remaining);
+    return ProviderKeyBalance(
+      display: '\$$formatted',
+      total: remaining,
+      currency: currency,
+      raw: _clipBody(resp.body),
+    );
+  }
+
+  static double? _coerceDouble(Object? v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
+  }
+
+  static String _formatUsd(double v) {
+    if (v.abs() >= 1000) {
+      return v.toStringAsFixed(2);
+    }
+    return v
+        .toStringAsFixed(4)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  static String? _clipBody(String body) {
+    if (body.isEmpty) return null;
+    return body.length > 240 ? body.substring(0, 240) : body;
+  }
 
   // ---------------- API Key 存储（数据库） + 兼容迁移 ----------------
 

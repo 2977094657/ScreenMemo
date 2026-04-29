@@ -4,6 +4,8 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
  
 import java.io.File
+import okhttp3.Request
+import org.json.JSONObject
 
 /**
  * 原生侧读取 AI 配置（与 Flutter 侧 ai_settings 共用主库）
@@ -22,7 +24,9 @@ object AISettingsNative {
         val chatPath: String? = null,
         val providerKeyId: Long? = null,
         val providerKeyName: String? = null,
-        val providerId: Int? = null
+        val providerId: Int? = null,
+        val balanceEndpointType: String? = null,
+        val balanceAutoDeleteZeroKey: Boolean = false
     )
 
     private fun resolveMasterDbPath(context: Context): String? {
@@ -187,6 +191,138 @@ object AISettingsNative {
         }
     }
 
+
+    private fun normalizeBalanceEndpointType(value: String?): String {
+        val v = value?.trim()?.lowercase().orEmpty()
+        return when (v) {
+            "new_api" -> "new_api"
+            "sub2api" -> "sub2api"
+            else -> "none"
+        }
+    }
+
+    private fun normalizeBaseUrl(value: String?): String {
+        val raw = value?.trim().orEmpty().ifEmpty { "https://api.openai.com" }
+        return raw.trimEnd('/')
+    }
+
+    private fun formatUsd(value: Double): String {
+        val digits = if (kotlin.math.abs(value) >= 1000.0) 2 else 4
+        return java.lang.String.format(java.util.Locale.US, "%.${digits}f", value)
+            .trimEnd('0')
+            .trimEnd('.')
+    }
+
+    private fun refreshProviderKeyBalanceAsync(context: Context, cfg: AIConfig) {
+        val keyId = cfg.providerKeyId ?: return
+        val providerId = cfg.providerId ?: return
+        val endpointType = normalizeBalanceEndpointType(cfg.balanceEndpointType)
+        if (endpointType == "none") return
+        val appContext = context.applicationContext
+        Thread {
+            var db: SQLiteDatabase? = null
+            try {
+                val baseUrl = normalizeBaseUrl(cfg.baseUrl)
+                val client = OkHttpClientFactory.newBuilder(appContext)
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                var display: String
+                var total: Double? = null
+                var currency = "USD"
+                var rawPreview = ""
+                if (endpointType == "new_api") {
+                    val subReq = Request.Builder()
+                        .url("$baseUrl/dashboard/billing/subscription")
+                        .addHeader("Authorization", "Bearer ${cfg.apiKey}")
+                        .get()
+                        .build()
+                    client.newCall(subReq).execute().use { resp ->
+                        val body = resp.body?.string().orEmpty()
+                        rawPreview = body.take(1000)
+                        if (!resp.isSuccessful) throw IllegalStateException("new-api subscription request failed: ${resp.code} $body")
+                        val obj = JSONObject(body)
+                        val hardLimit = when {
+                            obj.has("hard_limit_usd") -> obj.optDouble("hard_limit_usd")
+                            obj.has("system_hard_limit_usd") -> obj.optDouble("system_hard_limit_usd")
+                            else -> obj.optDouble("soft_limit_usd")
+                        }
+                        var totalUsage = 0.0
+                        try {
+                            val usageReq = Request.Builder()
+                                .url("$baseUrl/dashboard/billing/usage")
+                                .addHeader("Authorization", "Bearer ${cfg.apiKey}")
+                                .get()
+                                .build()
+                            client.newCall(usageReq).execute().use { usageResp ->
+                                val usageBody = usageResp.body?.string().orEmpty()
+                                if (usageResp.isSuccessful) totalUsage = JSONObject(usageBody).optDouble("total_usage", 0.0)
+                            }
+                        } catch (_: Exception) {}
+                        total = hardLimit - totalUsage / 100.0
+                    }
+                    display = "\$${formatUsd(total ?: 0.0)}"
+                } else {
+                    val req = Request.Builder()
+                        .url("$baseUrl/v1/usage")
+                        .addHeader("Authorization", "Bearer ${cfg.apiKey}")
+                        .get()
+                        .build()
+                    client.newCall(req).execute().use { resp ->
+                        val body = resp.body?.string().orEmpty()
+                        rawPreview = body.take(1000)
+                        if (!resp.isSuccessful) throw IllegalStateException("sub2api usage request failed: ${resp.code} $body")
+                        val obj = JSONObject(body)
+                        currency = obj.optString("unit", "USD").ifBlank { "USD" }
+                        val remaining = when {
+                            obj.has("remaining") -> obj.optDouble("remaining")
+                            obj.has("balance") -> obj.optDouble("balance")
+                            obj.optJSONObject("quota")?.has("remaining") == true -> obj.optJSONObject("quota")!!.optDouble("remaining")
+                            else -> Double.NaN
+                        }
+                        if (remaining.isNaN()) throw IllegalStateException("sub2api usage parse failed: $body")
+                        if (remaining < 0) {
+                            display = "∞ $currency".trim()
+                            total = null
+                        } else {
+                            total = remaining
+                            display = "\$${formatUsd(remaining)}"
+                        }
+                    }
+                }
+
+                val path = resolveMasterDbPath(appContext) ?: return@Thread
+                db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+                ensureProviderKeyBalanceColumns(db!!)
+                val values = android.content.ContentValues().apply {
+                    put("balance_display", display)
+                    if (total != null) put("balance_total", total!!) else putNull("balance_total")
+                    put("balance_currency", currency)
+                    put("balance_raw", rawPreview)
+                    put("balance_updated_at", System.currentTimeMillis())
+                }
+                db!!.update("ai_provider_keys", values, "id = ?", arrayOf(keyId.toString()))
+                if (cfg.balanceAutoDeleteZeroKey && total != null && (total ?: 0.0) <= 0.000001) {
+                    db!!.delete("ai_provider_keys", "id = ?", arrayOf(keyId.toString()))
+                    FileLogger.i(TAG, "auto-delete zero-balance key provider=$providerId key=$keyId")
+                }
+            } catch (e: Exception) {
+                try { FileLogger.w(TAG, "刷新 Key 余额失败：key=$keyId error=${e.message}") } catch (_: Exception) {}
+            } finally {
+                try { db?.close() } catch (_: Exception) {}
+            }
+        }.start()
+    }
+
+    private fun ensureProviderKeyBalanceColumns(db: SQLiteDatabase) {
+        try { db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN balance_display TEXT") } catch (_: Exception) {}
+        try { db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN balance_total REAL") } catch (_: Exception) {}
+        try { db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN balance_currency TEXT") } catch (_: Exception) {}
+        try { db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN balance_raw TEXT") } catch (_: Exception) {}
+        try { db.execSQL("ALTER TABLE ai_provider_keys ADD COLUMN balance_updated_at INTEGER") } catch (_: Exception) {}
+    }
+
     fun markProviderKeySuccess(context: Context, keyId: Long?) {
         if (keyId == null) return
         var db: SQLiteDatabase? = null
@@ -211,6 +347,12 @@ object AISettingsNative {
         } catch (e: Exception) {
             try { FileLogger.w(TAG, "更新 Key 成功统计失败：${e.message}") } catch (_: Exception) {}
         } finally { try { db?.close() } catch (_: Exception) {} }
+    }
+
+    fun markProviderKeySuccess(context: Context, cfg: AIConfig?) {
+        if (cfg == null) return
+        markProviderKeySuccess(context, cfg.providerKeyId)
+        refreshProviderKeyBalanceAsync(context, cfg)
     }
 
     fun markProviderKeyFailure(context: Context, keyId: Long?, errorType: String, message: String, attemptCount: Int) {
@@ -280,9 +422,11 @@ object AISettingsNative {
                 var providerApiKey: String? = null
                 var providerType: String? = null
                 var chatPath: String? = null
+                var balanceEndpointType: String? = null
+                var balanceAutoDeleteZeroKey = false
                 val prov = db!!.query(
                     "ai_providers",
-                    arrayOf("base_url", "api_key", "type", "chat_path"),
+                    arrayOf("base_url", "api_key", "type", "chat_path", "balance_endpoint_type", "balance_auto_delete_zero_key"),
                     "id = ?",
                     arrayOf(providerId.toString()),
                     null, null, null, "1"
@@ -293,6 +437,10 @@ object AISettingsNative {
                         providerApiKey = cp.getString(cp.getColumnIndexOrThrow("api_key"))?.trim()
                         providerType = cp.getString(cp.getColumnIndexOrThrow("type"))?.trim()
                         chatPath = cp.getString(cp.getColumnIndexOrThrow("chat_path"))?.trim()
+                        val beIdx = cp.getColumnIndex("balance_endpoint_type")
+                        balanceEndpointType = if (beIdx >= 0) cp.getString(beIdx)?.trim() else null
+                        val bdIdx = cp.getColumnIndex("balance_auto_delete_zero_key")
+                        balanceAutoDeleteZeroKey = bdIdx >= 0 && cp.getInt(bdIdx) != 0
                     }
                 }
 
@@ -318,6 +466,8 @@ object AISettingsNative {
                             providerKeyId = key.id,
                             providerKeyName = key.name,
                             providerId = providerId,
+                            balanceEndpointType = balanceEndpointType,
+                            balanceAutoDeleteZeroKey = balanceAutoDeleteZeroKey,
                         )
                     )
                 }
@@ -340,6 +490,8 @@ object AISettingsNative {
                             providerType = providerType,
                             chatPath = effectiveChatPath,
                             providerId = providerId,
+                            balanceEndpointType = balanceEndpointType,
+                            balanceAutoDeleteZeroKey = balanceAutoDeleteZeroKey,
                         )
                     )
                 }
@@ -388,10 +540,12 @@ object AISettingsNative {
                         var providerApiKey: String? = null
                         var providerType: String? = null
                         var chatPath: String? = null
+                        var balanceEndpointType: String? = null
+                        var balanceAutoDeleteZeroKey = false
                         try {
                             val prov = db!!.query(
                                 "ai_providers",
-                                arrayOf("base_url", "api_key", "type", "chat_path"),
+                                arrayOf("base_url", "api_key", "type", "chat_path", "balance_endpoint_type", "balance_auto_delete_zero_key"),
                                 "id = ?",
                                 arrayOf(providerId.toString()),
                                 null, null, null, "1"
@@ -406,6 +560,10 @@ object AISettingsNative {
                                     providerType = if (tIdx >= 0) cp.getString(tIdx)?.trim() else null
                                     val pIdx = cp.getColumnIndex("chat_path")
                                     chatPath = if (pIdx >= 0) cp.getString(pIdx)?.trim() else null
+                                    val beIdx = cp.getColumnIndex("balance_endpoint_type")
+                                    balanceEndpointType = if (beIdx >= 0) cp.getString(beIdx)?.trim() else null
+                                    val bdIdx = cp.getColumnIndex("balance_auto_delete_zero_key")
+                                    balanceAutoDeleteZeroKey = bdIdx >= 0 && cp.getInt(bdIdx) != 0
                                 }
                             }
                         } catch (_: Exception) { }
@@ -438,7 +596,9 @@ object AISettingsNative {
                                 chatPath = effectiveChatPath,
                                 providerKeyId = selectedKey?.id,
                                 providerKeyName = selectedKey?.name,
-                                providerId = providerId
+                                providerId = providerId,
+                                balanceEndpointType = balanceEndpointType,
+                                balanceAutoDeleteZeroKey = balanceAutoDeleteZeroKey
                             )
                         }
                     }

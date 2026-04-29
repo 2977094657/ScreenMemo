@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -161,6 +162,16 @@ class ProviderKeyBatchMaintenanceService {
         await _providers.markProviderKeySuccess(key.id!);
         refreshedKeys.add(key);
         successfulModelPool.addAll(models);
+        // Best-effort：若提供商配置了余额接口，顺带刷新该 key 的余额。
+        // 失败仅由 refreshBalanceForKey 内部记日志，不阻塞批量流程。
+        if (provider.hasBalanceQuery && provider.id != null) {
+          unawaited(
+            _providers.refreshBalanceForKey(
+              providerId: provider.id!,
+              keyId: key.id!,
+            ),
+          );
+        }
         emitProgress(
           phaseLabel: '刷新模型',
           current: index + 1,
@@ -205,9 +216,11 @@ class ProviderKeyBatchMaintenanceService {
     ]);
 
     final probeResults = <ProviderKeyProbeResult>[];
-    for (int failureIndex = 0;
-        failureIndex < modelFailures.length;
-        failureIndex++) {
+    for (
+      int failureIndex = 0;
+      failureIndex < modelFailures.length;
+      failureIndex++
+    ) {
       final failure = modelFailures[failureIndex];
       final AIProviderKey latestKey = currentKeys.firstWhere(
         (item) => item.id == failure.key.id,
@@ -243,8 +256,7 @@ class ProviderKeyBatchMaintenanceService {
         phaseLabel: '连续测试',
         current: failureIndex + 1,
         total: modelFailures.length,
-        message:
-            '检测到 ${latestKey.name} 刷新失败，准备进行最多 $probeAttempts 次连续测试',
+        message: '检测到 ${latestKey.name} 刷新失败，准备进行最多 $probeAttempts 次连续测试',
       );
       final ProviderKeyProbeResult probe = await _probeKey(
         provider: provider,
@@ -431,6 +443,14 @@ class ProviderKeyBatchMaintenanceService {
           );
         }
         await _providers.markProviderKeySuccess(key.id!);
+        if (provider.hasBalanceQuery && provider.id != null) {
+          unawaited(
+            _providers.refreshBalanceForKey(
+              providerId: provider.id!,
+              keyId: key.id!,
+            ),
+          );
+        }
         return ProviderKeyProbeResult(
           key: key,
           success: true,

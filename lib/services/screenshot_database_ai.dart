@@ -332,6 +332,11 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
         last_error_message TEXT,
         last_failed_at INTEGER,
         last_success_at INTEGER,
+        balance_display TEXT,
+        balance_total REAL,
+        balance_currency TEXT,
+        balance_raw TEXT,
+        balance_updated_at INTEGER,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
@@ -342,6 +347,61 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       'CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_cooldown ON ai_provider_keys(cooldown_until_ms)',
     );
     await _ensureAiProviderKeyStatsColumns(db);
+    await _ensureAiProviderKeyBalanceColumns(db);
+  }
+
+  /// 保证 ai_provider_keys 表拥有余额相关列（增量迁移、幂等）。
+  Future<void> _ensureAiProviderKeyBalanceColumns(DatabaseExecutor db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN balance_display TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN balance_total REAL',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN balance_currency TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN balance_raw TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_provider_keys ADD COLUMN balance_updated_at INTEGER',
+      );
+    } catch (_) {}
+  }
+
+  /// 保证 ai_providers 表拥有余额相关列（增量迁移、幂等）。
+  ///
+  /// 存在两个列：
+  /// - balance_endpoint_type: 余额查询接口类型（'none' / 'new_api' / 'sub2api'）
+  /// - balance_auto_delete_zero_key: 余额为 0 时是否自动删除该 key（0/1）
+  ///
+  /// 另保留一个历史字段 balance_path（早期实现预留、当前未使用）。
+  Future<void> _ensureAiProvidersBalanceColumns(DatabaseExecutor db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE ai_providers ADD COLUMN balance_path TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_providers ADD COLUMN balance_endpoint_type TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ai_providers ADD COLUMN balance_auto_delete_zero_key INTEGER NOT NULL DEFAULT 0',
+      );
+    } catch (_) {}
   }
 
   Future<void> _ensureAiProviderKeyStatsColumns(DatabaseExecutor db) async {
@@ -669,20 +729,24 @@ extension ScreenshotDatabaseAI on ScreenshotDatabase {
       CREATE TABLE IF NOT EXISTS ai_providers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
-        type TEXT NOT NULL,                           -- openai | gemini | claude | azure_openai | custom
+        type TEXT NOT NULL,                                       -- openai | gemini | claude | azure_openai | custom
         base_url TEXT,
         chat_path TEXT,
         models_path TEXT,
-        use_response_api INTEGER NOT NULL DEFAULT 0,  -- OpenAI Response API 兼容
+        balance_endpoint_type TEXT,                               -- 余额接口类型：none | new_api | sub2api
+        balance_auto_delete_zero_key INTEGER NOT NULL DEFAULT 0,  -- 余额=0 时自动删除 key
+        use_response_api INTEGER NOT NULL DEFAULT 0,              -- OpenAI Response API 兼容
         enabled INTEGER NOT NULL DEFAULT 1,
         is_default INTEGER NOT NULL DEFAULT 0,
         api_key TEXT,
-        models_json TEXT,                             -- 缓存的模型列表，JSON 数组
-        extra_json TEXT,                              -- 各类型特定配置（如 Vertex 字段等）
+        models_json TEXT,                                         -- 缓存的模型列表，JSON 数组
+        extra_json TEXT,                                          -- 各类型特定配置（如 Vertex 字段等）
         order_index INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
       )
     ''');
+    // 老库增量迁移：补上余额相关列
+    await _ensureAiProvidersBalanceColumns(db);
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_providers_enabled ON ai_providers(enabled, order_index, id)',
     );
@@ -1530,6 +1594,8 @@ ORDER BY day ASC
     String? baseUrl,
     String? chatPath,
     String? modelsPath,
+    String? balanceEndpointType,
+    bool? balanceAutoDeleteZeroKey,
     bool useResponseApi = false,
     bool enabled = true,
     bool isDefault = false,
@@ -1540,12 +1606,16 @@ ORDER BY day ASC
   }) async {
     final db = await database;
     try {
+      await _ensureAiProvidersBalanceColumns(db);
       final id = await db.insert('ai_providers', {
         'name': name.trim(),
         'type': type.trim(),
         'base_url': baseUrl?.trim(),
         'chat_path': chatPath?.trim(),
         'models_path': modelsPath?.trim(),
+        'balance_endpoint_type': balanceEndpointType?.trim(),
+        'balance_auto_delete_zero_key':
+            (balanceAutoDeleteZeroKey ?? false) ? 1 : 0,
         'use_response_api': useResponseApi ? 1 : 0,
         'enabled': enabled ? 1 : 0,
         'is_default': isDefault ? 1 : 0,
@@ -1573,6 +1643,9 @@ ORDER BY day ASC
     String? chatPath,
     String? modelsPath,
     bool setModelsPath = false,
+    String? balanceEndpointType,
+    bool setBalanceEndpointType = false,
+    bool? balanceAutoDeleteZeroKey,
     bool? useResponseApi,
     bool? enabled,
     bool? isDefault,
@@ -1583,12 +1656,22 @@ ORDER BY day ASC
   }) async {
     final db = await database;
     try {
+      await _ensureAiProvidersBalanceColumns(db);
       final data = <String, Object?>{};
       if (name != null) data['name'] = name.trim();
       if (type != null) data['type'] = type.trim();
       if (baseUrl != null) data['base_url'] = baseUrl.trim();
       if (chatPath != null) data['chat_path'] = chatPath.trim();
       if (setModelsPath) data['models_path'] = modelsPath?.trim();
+      if (setBalanceEndpointType) {
+        final t = balanceEndpointType?.trim();
+        data['balance_endpoint_type'] = (t == null || t.isEmpty) ? null : t;
+      }
+      if (balanceAutoDeleteZeroKey != null) {
+        data['balance_auto_delete_zero_key'] = balanceAutoDeleteZeroKey
+            ? 1
+            : 0;
+      }
       if (useResponseApi != null)
         data['use_response_api'] = useResponseApi ? 1 : 0;
       if (enabled != null) data['enabled'] = enabled ? 1 : 0;
@@ -1952,6 +2035,63 @@ ORDER BY day ASC
           DateTime.now().millisecondsSinceEpoch,
           keyId,
         ],
+      );
+    } catch (_) {}
+  }
+
+  /// 更新某个 key 的余额信息（display/total/currency/raw + updated_at）。
+  ///
+  /// - 任意字段为 null 时表示不修改对应列。
+  /// - 仅当至少一项非 null 时才发起 UPDATE。
+  Future<void> updateAIProviderKeyBalance({
+    required int keyId,
+    String? balanceDisplay,
+    double? balanceTotal,
+    String? balanceCurrency,
+    String? balanceRaw,
+    int? balanceUpdatedAt,
+  }) async {
+    final db = await database;
+    try {
+      await _ensureAiProviderKeyBalanceColumns(db);
+      final data = <String, Object?>{};
+      if (balanceDisplay != null) data['balance_display'] = balanceDisplay;
+      if (balanceTotal != null) data['balance_total'] = balanceTotal;
+      if (balanceCurrency != null) data['balance_currency'] = balanceCurrency;
+      if (balanceRaw != null) {
+        data['balance_raw'] = balanceRaw.length > 1000
+            ? balanceRaw.substring(0, 1000)
+            : balanceRaw;
+      }
+      if (balanceUpdatedAt != null) {
+        data['balance_updated_at'] = balanceUpdatedAt;
+      }
+      if (data.isEmpty) return;
+      await db.update(
+        'ai_provider_keys',
+        data,
+        where: 'id = ?',
+        whereArgs: <Object?>[keyId],
+      );
+    } catch (_) {}
+  }
+
+  /// 清空某个 key 的余额信息。
+  Future<void> clearAIProviderKeyBalance(int keyId) async {
+    final db = await database;
+    try {
+      await _ensureAiProviderKeyBalanceColumns(db);
+      await db.update(
+        'ai_provider_keys',
+        <String, Object?>{
+          'balance_display': null,
+          'balance_total': null,
+          'balance_currency': null,
+          'balance_raw': null,
+          'balance_updated_at': null,
+        },
+        where: 'id = ?',
+        whereArgs: <Object?>[keyId],
       );
     } catch (_) {}
   }

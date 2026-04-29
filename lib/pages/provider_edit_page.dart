@@ -12,6 +12,8 @@ import '../services/flutter_logger.dart';
 
 enum _ProviderKeySortMode {
   runtime,
+  balanceDesc,
+  balanceAsc,
   successDesc,
   recentSuccessDesc,
   failureDesc,
@@ -44,6 +46,12 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
 
   String _type = AIProviderTypes.openai;
   bool _useResponseApi = false;
+
+  /// 余额查询接口类型，'none' / 'new_api' / 'sub2api'。
+  String _balanceEndpointType = AIBalanceEndpointTypes.none;
+
+  /// 余额为 0 时自动删除该 key。
+  bool _balanceAutoDeleteZeroKey = false;
 
   bool _loading = true;
   bool _saving = false;
@@ -115,6 +123,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           _modelsPathCtrl.text = path;
         }
         _useResponseApi = p.useResponseApi;
+        _balanceEndpointType = p.balanceEndpointType;
+        _balanceAutoDeleteZeroKey = p.balanceAutoDeleteZeroKey;
         _models = _aggregateKeyModels(_keys);
         if (_models.isEmpty) _models = List<String>.from(p.models);
         if (p.type == AIProviderTypes.azureOpenAI) {
@@ -177,6 +187,20 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     switch (_keySortMode) {
       case _ProviderKeySortMode.runtime:
         return list;
+      case _ProviderKeySortMode.balanceDesc:
+        list.sort((a, b) {
+          final int balance = _compareKeyBalance(a, b, descending: true);
+          if (balance != 0) return balance;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
+      case _ProviderKeySortMode.balanceAsc:
+        list.sort((a, b) {
+          final int balance = _compareKeyBalance(a, b, descending: false);
+          if (balance != 0) return balance;
+          return _compareDefaultKeyOrder(a, b);
+        });
+        return list;
       case _ProviderKeySortMode.successDesc:
         list.sort((a, b) {
           final int success = b.successCount.compareTo(a.successCount);
@@ -229,6 +253,24 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     }
   }
 
+  int _compareKeyBalance(
+    AIProviderKey a,
+    AIProviderKey b, {
+    required bool descending,
+  }) {
+    final bool aKnown = a.balanceTotal != null;
+    final bool bKnown = b.balanceTotal != null;
+    if (aKnown != bKnown) return aKnown ? -1 : 1;
+    if (!aKnown && !bKnown) {
+      final int display = (a.balanceDisplay ?? '').compareTo(
+        b.balanceDisplay ?? '',
+      );
+      return descending ? -display : display;
+    }
+    final int value = a.balanceTotal!.compareTo(b.balanceTotal!);
+    return descending ? -value : value;
+  }
+
   int _compareDefaultKeyOrder(AIProviderKey a, AIProviderKey b) {
     final int enabled = (b.enabled ? 1 : 0).compareTo(a.enabled ? 1 : 0);
     if (enabled != 0) return enabled;
@@ -239,10 +281,43 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     return (a.id ?? 0).compareTo(b.id ?? 0);
   }
 
+  String _formatBalanceTotal(double value) {
+    final rounded = value.toStringAsFixed(value.abs() >= 100 ? 2 : 4);
+    return rounded
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  String? _keysBalanceSummary() {
+    final provider = _loaded;
+    if (provider == null || !provider.hasBalanceQuery || _keys.isEmpty) {
+      return null;
+    }
+    final known = _keys.where((key) => key.balanceTotal != null).toList();
+    if (known.isEmpty) return '总余额 —';
+    final double total = known.fold<double>(
+      0,
+      (sum, key) => sum + (key.balanceTotal ?? 0),
+    );
+    final currencies = known
+        .map((key) => (key.balanceCurrency ?? '').trim())
+        .where((currency) => currency.isNotEmpty)
+        .toSet();
+    final currency = currencies.length == 1 ? ' ${currencies.first}' : '';
+    final partial = known.length < _keys.length
+        ? '（${known.length}/${_keys.length}）'
+        : '';
+    return '总余额 ${_formatBalanceTotal(total)}$currency$partial';
+  }
+
   String _keySortModeLabel(_ProviderKeySortMode mode) {
     switch (mode) {
       case _ProviderKeySortMode.runtime:
         return '默认顺序';
+      case _ProviderKeySortMode.balanceDesc:
+        return '余额从高到低';
+      case _ProviderKeySortMode.balanceAsc:
+        return '余额从低到高';
       case _ProviderKeySortMode.successDesc:
         return '成功次数';
       case _ProviderKeySortMode.recentSuccessDesc:
@@ -277,6 +352,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
       models: List<String>.from(_models),
       extra: _buildExtra(),
       orderIndex: _loaded?.orderIndex ?? 0,
+      balanceEndpointType: _balanceEndpointType,
+      balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
     );
   }
 
@@ -636,6 +713,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           isDefault: false,
           extra: _buildExtra(),
           models: _models,
+          balanceEndpointType: _balanceEndpointType,
+          balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
         );
         if (id == null) {
           throw Exception('Insert failed');
@@ -653,6 +732,9 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           isDefault: false,
           extra: _buildExtra(),
           models: _models,
+          balanceEndpointType: _balanceEndpointType,
+          setBalanceEndpointType: true,
+          balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
         );
         if (!ok) {
           throw Exception('Update failed');
@@ -782,6 +864,8 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           models: const <String>[],
           extra: _buildExtra(),
           orderIndex: _loaded?.orderIndex ?? 0,
+          balanceEndpointType: _balanceEndpointType,
+          balanceAutoDeleteZeroKey: _balanceAutoDeleteZeroKey,
         );
         final fetched = await _svc.fetchModels(
           provider: provider,
@@ -789,9 +873,24 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         );
         if (!mounted || !dialogContext.mounted) return;
         modelsCtrl.text = fetched.join('\n');
+        // Best-effort: 若提供商配置了余额查询，顺带拉取并附加到提示中
+        String balanceHint = '';
+        if (provider.hasBalanceQuery) {
+          try {
+            final balance = await _svc.fetchBalance(
+              provider: provider,
+              apiKey: apiKey,
+            );
+            balanceHint = '，余额：${balance.display}';
+          } catch (_) {
+            balanceHint = '，余额：获取失败';
+          }
+        }
+        if (!mounted || !dialogContext.mounted) return;
         UINotifier.success(
           context,
-          AppLocalizations.of(context).modelsUpdatedToast(fetched.length),
+          AppLocalizations.of(context).modelsUpdatedToast(fetched.length) +
+              balanceHint,
         );
       } catch (_) {
         if (mounted) {
@@ -895,6 +994,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     }
     final priority =
         int.tryParse(priorityCtrl.text.trim()) ?? AIProviderKey.defaultPriority;
+    final List<int> createdKeyIds = <int>[];
     if (key == null) {
       final existingApiKeys = _keys.map((k) => k.apiKey.trim()).toSet();
       final keysToCreate = apiKeys
@@ -906,7 +1006,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         return;
       }
       for (var i = 0; i < keysToCreate.length; i++) {
-        await _svc.createProviderKey(
+        final newId = await _svc.createProviderKey(
           providerId: providerId,
           name: _keyNameForBatch(
             baseName: nameCtrl.text,
@@ -920,6 +1020,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
           priority: priority,
           orderIndex: _keys.length + i,
         );
+        if (newId != null) createdKeyIds.add(newId);
       }
       if (mounted && keysToCreate.length > 1) {
         UINotifier.success(
@@ -938,6 +1039,28 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
         enabled: enabled,
         priority: priority,
       );
+      createdKeyIds.add(key.id!);
+    }
+    // Best-effort：若当前页面已开启余额查询，保存 Key 后立即拉取余额再刷新 UI。
+    // 使用当前表单快照，避免“配置还没点保存”时 DB 中仍是 none 而跳过余额查询。
+    if (createdKeyIds.isNotEmpty) {
+      final providerSnapshot = _currentProviderSnapshot();
+      if (providerSnapshot?.hasBalanceQuery ?? false) {
+        setState(() => _fetching = true);
+        try {
+          await Future.wait(
+            createdKeyIds.map(
+              (keyId) => _svc.refreshBalanceForKey(
+                providerId: providerId,
+                keyId: keyId,
+                providerOverride: providerSnapshot,
+              ),
+            ),
+          );
+        } finally {
+          if (mounted) setState(() => _fetching = false);
+        }
+      }
     }
     await _reloadKeys();
   }
@@ -1200,6 +1323,19 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                         ? theme.colorScheme.error
                         : theme.colorScheme.onSurfaceVariant,
                   ),
+                  if ((_loaded?.hasBalanceQuery ?? false)) ...[
+                    _buildThinVerticalDivider(theme),
+                    _buildKeyStatCell(
+                      icon: Icons.account_balance_wallet_outlined,
+                      value: key.balanceDisplay ?? '—',
+                      label: '余额',
+                      color: key.hasBalance
+                          ? (key.isBalanceZero
+                                ? theme.colorScheme.error
+                                : AppTheme.info)
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1458,12 +1594,24 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             hint: AppLocalizations.of(context).azureApiVersionHint,
           ),
         ],
+        const SizedBox(height: AppTheme.spacing4),
+        _buildBalanceEndpointPicker(),
+        if (_balanceEndpointType != AIBalanceEndpointTypes.none) ...[
+          const SizedBox(height: AppTheme.spacing4),
+          _buildSwitchRow(
+            label: '余额为 0 时自动删除该 Key',
+            description: '检测到主余额为 0 时，自动从该提供商下移除对应 Key',
+            value: _balanceAutoDeleteZeroKey,
+            onChanged: (v) => setState(() => _balanceAutoDeleteZeroKey = v),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildKeysHeaderCard(ThemeData theme) {
     final badgeText = _keys.length > 99 ? '99+' : '${_keys.length}';
+    final balanceSummary = _keysBalanceSummary();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1541,6 +1689,43 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
             ),
           ],
         ),
+        if (balanceSummary != null) ...[
+          const SizedBox(height: AppTheme.spacing3),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.spacing3,
+              vertical: AppTheme.spacing2,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.22,
+              ),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.35),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 17,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  balanceSummary,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: AppTheme.spacing4),
         Row(
           children: [
@@ -1963,6 +2148,85 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     );
   }
 
+  Widget _buildBalanceEndpointPicker() {
+    final theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color fieldBg = isDark
+        ? theme.colorScheme.surface
+        : theme.scaffoldBackgroundColor;
+    const items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: AIBalanceEndpointTypes.none, child: Text('不查询')),
+      DropdownMenuItem(
+        value: AIBalanceEndpointTypes.newApi,
+        child: Text('new-api（/dashboard/billing）'),
+      ),
+      DropdownMenuItem(
+        value: AIBalanceEndpointTypes.sub2api,
+        child: Text('sub2api（/v1/usage）'),
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '余额查询接口',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: fieldBg,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.55),
+                  width: 0.5,
+                ),
+              ),
+              child: Text(
+                '可选',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTheme.spacing1),
+        DropdownButtonFormField<String>(
+          initialValue: _balanceEndpointType,
+          isDense: true,
+          style: theme.textTheme.bodyMedium,
+          items: items,
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {
+              _balanceEndpointType = AIBalanceEndpointTypes.normalize(v);
+              if (_balanceEndpointType == AIBalanceEndpointTypes.none) {
+                _balanceAutoDeleteZeroKey = false;
+              }
+            });
+          },
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: fieldBg,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.spacing3,
+              vertical: AppTheme.spacing2,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTypePicker() {
     final theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
@@ -2050,8 +2314,10 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
+    String? description,
   }) {
     final theme = Theme.of(context);
+    final desc = description ?? '启用 OpenAI Responses 接口（实验性）';
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacing4,
@@ -2079,7 +2345,7 @@ class _ProviderEditPageState extends State<ProviderEditPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '启用 OpenAI Responses 接口（实验性）',
+                  desc,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

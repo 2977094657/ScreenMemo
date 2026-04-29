@@ -119,6 +119,16 @@ class AIRequestGateway {
     final int? keyId = endpoint.providerKeyId;
     if (keyId == null) return;
     await AIProvidersService.instance.markProviderKeySuccess(keyId);
+
+    // 请求成功后异步刷新余额；余额接口未开启时 service 会直接跳过。
+    final int? providerId = endpoint.providerId;
+    if (providerId == null) return;
+    unawaited(
+      AIProvidersService.instance.refreshBalanceForKey(
+        providerId: providerId,
+        keyId: keyId,
+      ),
+    );
   }
 
   Future<void> _markEndpointFailure({

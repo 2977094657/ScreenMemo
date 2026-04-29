@@ -1563,7 +1563,7 @@ object SegmentSummaryManager {
                     stageReporter = stageReporter,
                     stageScope = stageScope,
                 )
-                AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
+                AISettingsNative.markProviderKeySuccess(ctx, cfg)
                 return result
             } catch (e: Exception) {
                 lastError = e

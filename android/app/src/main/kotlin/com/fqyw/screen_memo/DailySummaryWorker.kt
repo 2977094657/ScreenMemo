@@ -1097,7 +1097,7 @@ class DailySummaryWorker(appContext: Context, params: WorkerParameters) : Worker
                         FileLogger.i(TAG, "DailySummary AI key candidate ${index + 1}/${configs.size}: key_id=${cfg.providerKeyId ?: 0} key_name=${cfg.providerKeyName ?: "legacy"} model=${cfg.model}")
                     }
                     val result = callTextModelWithConfig(ctx, prompt, lang, cfg)
-                    AISettingsNative.markProviderKeySuccess(ctx, cfg.providerKeyId)
+                    AISettingsNative.markProviderKeySuccess(ctx, cfg)
                     return result
                 } catch (e: Exception) {
                     lastError = e
