@@ -201,6 +201,8 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
     if (_appIconCacheLoaded) return;
     unawaited(() async {
       try {
+        final cachedApps = await AppSelectionService.instance
+            .getCachedAppInfoByPackage();
         var apps = await AppSelectionService.instance.getSelectedApps();
         // Selected apps carry cached icons (no platform plugin call). If empty,
         // fall back to installed app scan on Android only.
@@ -210,6 +212,12 @@ class _ThinkingTimelineCardState extends State<_ThinkingTimelineCard> {
 
         final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
         final Map<String, Uint8List?> byName = <String, Uint8List?>{};
+        for (final a in cachedApps.values) {
+          final String pkg = a.packageName.trim();
+          if (pkg.isNotEmpty) byPkg[pkg] = a.icon;
+          final String nameKey = a.appName.trim().toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = a.icon;
+        }
         for (final a in apps) {
           final String pkg = a.packageName.trim();
           if (pkg.isNotEmpty) byPkg[pkg] = a.icon;

@@ -1258,16 +1258,21 @@ class _ScreenshotViewerPageState extends State<ScreenshotViewerPage> {
                 ? _currentIndex
                 : 0];
         final pkg = head.appPackageName;
+        final cachedApp = await AppSelectionService.instance.getCachedAppInfo(
+          pkg,
+        );
         final apps = await AppSelectionService.instance.getAllInstalledApps();
         app = apps.firstWhere(
           (a) => a.packageName == pkg,
-          orElse: () => AppInfo(
-            packageName: pkg,
-            appName: head.appName,
-            icon: null,
-            version: '',
-            isSystemApp: false,
-          ),
+          orElse: () =>
+              cachedApp ??
+              AppInfo(
+                packageName: pkg,
+                appName: head.appName,
+                icon: null,
+                version: '',
+                isSystemApp: false,
+              ),
         );
       } catch (_) {}
       if (!mounted) return;

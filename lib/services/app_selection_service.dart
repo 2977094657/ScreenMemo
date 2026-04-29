@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/user_settings_keys.dart';
@@ -21,23 +22,27 @@ class AppSelectionService {
   static const String _screenshotEnabledKey = 'screenshot_enabled';
   static const String _appsCacheKey = 'all_apps_cache';
   static const String _appsCacheTsKey = 'all_apps_cache_ts';
+  static const String _appIdentityCacheKey = 'app_identity_cache';
   static const int _appsCacheTtlSeconds = 28800; // 8小时TTL（秒）
   static const String _privacyModeKey = 'privacy_mode_enabled';
 
   List<AppInfo> _allApps = [];
   List<AppInfo> _selectedApps = [];
   String _displayMode = 'grid'; // 'grid' or 'list'
-  String _sortMode = 'timeDesc'; // 新排序键：timeAsc/timeDesc, sizeAsc/sizeDesc, countAsc/countDesc
+  String _sortMode =
+      'timeDesc'; // 新排序键：timeAsc/timeDesc, sizeAsc/sizeDesc, countAsc/countDesc
   int _screenshotInterval = 5; // 默认5秒
   bool _screenshotEnabled = false;
   bool _privacyModeEnabled = true; // 默认开启
 
   // 排序模式变更广播（用于通知首页自动刷新排序）
-  static final StreamController<String> _sortModeController = StreamController<String>.broadcast();
+  static final StreamController<String> _sortModeController =
+      StreamController<String>.broadcast();
   Stream<String> get onSortModeChanged => _sortModeController.stream;
 
   // 隐私模式变更广播
-  static final StreamController<bool> _privacyModeController = StreamController<bool>.broadcast();
+  static final StreamController<bool> _privacyModeController =
+      StreamController<bool>.broadcast();
   Stream<bool> get onPrivacyModeChanged => _privacyModeController.stream;
 
   /// 获取所有已安装的应用（带内存/本地缓存，避免每次进入都全量扫描）
@@ -66,7 +71,9 @@ class AppSelectionService {
                 .map((m) => AppInfo.fromJson(m))
                 .toList();
             // 排除本应用自身
-            _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+            _allApps = _allApps
+                .where((a) => a.packageName != 'com.fqyw.screen_memo')
+                .toList();
             _allApps = await ImeExclusionService.filterOutImeApps(_allApps);
             // 确保排序一致
             _allApps.sort((a, b) => a.appName.compareTo(b.appName));
@@ -74,13 +81,18 @@ class AppSelectionService {
               _allApps = [];
               await prefs.remove(_appsCacheKey);
               await prefs.remove(_appsCacheTsKey);
-              throw StateError('installed app cache contains package fallback names');
+              throw StateError(
+                'installed app cache contains package fallback names',
+              );
             }
+            await _mergeAndSaveAppIdentityCache(_allApps, prefs);
             // 如果即将过期（<60秒），提前后台续期
             final remainingMs = _appsCacheTtlSeconds * 1000 - (now - ts);
             if (remainingMs <= 60000) {
               // ignore: unawaited_futures
-              getAllInstalledApps(forceRefresh: true).catchError((_) => _allApps);
+              getAllInstalledApps(
+                forceRefresh: true,
+              ).catchError((_) => _allApps);
             }
             StartupProfiler.end('AppSelectionService.getAllInstalledApps');
             return _allApps;
@@ -101,15 +113,21 @@ class AppSelectionService {
 
       _allApps = apps.map((app) => AppInfo.fromInstalledApp(app)).toList();
       // 排除本应用自身
-      _allApps = _allApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+      _allApps = _allApps
+          .where((a) => a.packageName != 'com.fqyw.screen_memo')
+          .toList();
       _allApps = await ImeExclusionService.filterOutImeApps(_allApps);
       _allApps.sort((a, b) => a.appName.compareTo(b.appName));
+      await _mergeAndSaveAppIdentityCache(_allApps, prefs);
 
       // 4) 保存至本地缓存
       try {
         final encoded = jsonEncode(_allApps.map((a) => a.toJson()).toList());
         await prefs.setString(_appsCacheKey, encoded);
-        await prefs.setInt(_appsCacheTsKey, DateTime.now().millisecondsSinceEpoch);
+        await prefs.setInt(
+          _appsCacheTsKey,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       } catch (e) {
         // 忽略缓存失败
       }
@@ -147,11 +165,11 @@ class AppSelectionService {
   /// 搜索应用
   List<AppInfo> searchApps(String query) {
     if (query.isEmpty) return _allApps;
-    
+
     final lowerQuery = query.toLowerCase();
     return _allApps.where((app) {
       return app.appName.toLowerCase().contains(lowerQuery) ||
-             app.packageName.toLowerCase().contains(lowerQuery);
+          app.packageName.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 
@@ -160,7 +178,10 @@ class AppSelectionService {
     try {
       final prefs = await SharedPreferences.getInstance();
       // 保存前排除本应用自身
-      final filtered = selectedApps.where((a) => a.packageName != 'com.fqyw.screen_memo').toList();
+      final filtered = selectedApps
+          .where((a) => a.packageName != 'com.fqyw.screen_memo')
+          .toList();
+      await _mergeAndSaveAppIdentityCache(filtered, prefs);
       final appsJson = filtered.map((app) => app.toJson()).toList();
       await prefs.setString(_selectedAppsKey, jsonEncode(appsJson));
       _selectedApps = filtered;
@@ -175,10 +196,17 @@ class AppSelectionService {
       StartupProfiler.begin('AppSelectionService.getSelectedApps');
       final prefs = await SharedPreferences.getInstance();
       final appsJsonString = prefs.getString(_selectedAppsKey);
-      
+
       if (appsJsonString != null) {
         final appsJson = jsonDecode(appsJsonString) as List;
-        _selectedApps = appsJson.map((json) => AppInfo.fromJson(json)).toList();
+        final cachedByPackage = await getCachedAppInfoByPackage();
+        _selectedApps = appsJson
+            .map((json) => AppInfo.fromJson(json))
+            .map(
+              (app) =>
+                  _withCachedIdentity(app, cachedByPackage[app.packageName]),
+            )
+            .toList();
       }
       StartupProfiler.end('AppSelectionService.getSelectedApps');
       return _selectedApps;
@@ -187,6 +215,161 @@ class AppSelectionService {
       StartupProfiler.end('AppSelectionService.getSelectedApps');
       return [];
     }
+  }
+
+  /// 获取历史应用身份缓存。
+  ///
+  /// 该缓存独立于“当前已安装应用列表”，每次获取到新的应用列表或保存选择时都会增量更新。
+  /// 因此应用卸载后，历史截图、首页列表等仍可以继续显示最后一次缓存的应用名与图标。
+  Future<Map<String, AppInfo>> getCachedAppInfoByPackage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return _readAppIdentityCache(prefs);
+    } catch (e) {
+      print('应用身份缓存失败: $e');
+      return <String, AppInfo>{};
+    }
+  }
+
+  Future<AppInfo?> getCachedAppInfo(String packageName) async {
+    final pkg = packageName.trim();
+    if (pkg.isEmpty) return null;
+    final cached = await getCachedAppInfoByPackage();
+    return cached[pkg];
+  }
+
+  Map<String, AppInfo> _readAppIdentityCache(SharedPreferences prefs) {
+    final raw = prefs.getString(_appIdentityCacheKey);
+    if (raw == null || raw.isEmpty) return <String, AppInfo>{};
+
+    try {
+      final decoded = jsonDecode(raw);
+      final Map<String, AppInfo> result = <String, AppInfo>{};
+
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is! Map) continue;
+          final app = AppInfo.fromJson(Map<String, dynamic>.from(item));
+          final pkg = app.packageName.trim();
+          if (pkg.isNotEmpty && pkg != 'com.fqyw.screen_memo') {
+            result[pkg] = app;
+          }
+        }
+      } else if (decoded is Map) {
+        decoded.forEach((key, value) {
+          if (value is! Map) return;
+          final map = Map<String, dynamic>.from(value);
+          map['packageName'] ??= key.toString();
+          final app = AppInfo.fromJson(map);
+          final pkg = app.packageName.trim();
+          if (pkg.isNotEmpty && pkg != 'com.fqyw.screen_memo') {
+            result[pkg] = app;
+          }
+        });
+      }
+
+      return result;
+    } catch (e) {
+      print('应用身份缓存失败: $e');
+      return <String, AppInfo>{};
+    }
+  }
+
+  Future<void> _mergeAndSaveAppIdentityCache(
+    List<AppInfo> latestApps,
+    SharedPreferences prefs,
+  ) async {
+    if (latestApps.isEmpty) return;
+
+    try {
+      final Map<String, AppInfo> merged = _readAppIdentityCache(prefs);
+      for (final app in latestApps) {
+        final String pkg = app.packageName.trim();
+        if (pkg.isEmpty || pkg == 'com.fqyw.screen_memo') continue;
+
+        final AppInfo? old = merged[pkg];
+        final String nextName = _bestCachedAppName(
+          packageName: pkg,
+          latestName: app.appName,
+          oldName: old?.appName,
+        );
+        final Uint8List? nextIcon = (app.icon != null && app.icon!.isNotEmpty)
+            ? app.icon
+            : old?.icon;
+
+        merged[pkg] = AppInfo(
+          packageName: pkg,
+          appName: nextName,
+          icon: nextIcon,
+          version: app.version.isNotEmpty ? app.version : (old?.version ?? ''),
+          isSystemApp: app.isSystemApp,
+          // 这是身份缓存，不代表当前安装状态；读取方会自行结合当前安装列表判断。
+          isInstalled: old?.isInstalled ?? app.isInstalled,
+          isSelected: app.isSelected || (old?.isSelected ?? false),
+        );
+      }
+
+      final encoded = jsonEncode(
+        merged.values.map((app) => app.toJson()).toList(),
+      );
+      await prefs.setString(_appIdentityCacheKey, encoded);
+    } catch (e) {
+      print('应用身份缓存失败: $e');
+    }
+  }
+
+  AppInfo _withCachedIdentity(AppInfo app, AppInfo? cached) {
+    if (cached == null) return app;
+    final String name = _bestCachedAppName(
+      packageName: app.packageName,
+      latestName: app.appName,
+      oldName: cached.appName,
+    );
+    final Uint8List? icon = (app.icon != null && app.icon!.isNotEmpty)
+        ? app.icon
+        : cached.icon;
+
+    return AppInfo(
+      packageName: app.packageName,
+      appName: name,
+      icon: icon,
+      version: app.version.isNotEmpty ? app.version : cached.version,
+      isSystemApp: app.isSystemApp,
+      isInstalled: app.isInstalled,
+      isSelected: app.isSelected,
+    );
+  }
+
+  String _bestCachedAppName({
+    required String packageName,
+    String? latestName,
+    String? oldName,
+  }) {
+    final String latest = latestName?.trim() ?? '';
+    if (latest.isNotEmpty && !_looksLikePackageFallback(latest, packageName)) {
+      return latest;
+    }
+
+    final String old = oldName?.trim() ?? '';
+    if (old.isNotEmpty && !_looksLikePackageFallback(old, packageName)) {
+      return old;
+    }
+
+    if (latest.isNotEmpty) return latest;
+    if (old.isNotEmpty) return old;
+    return packageName;
+  }
+
+  bool _looksLikePackageFallback(String value, String packageName) {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) return true;
+    if (trimmed == packageName) return true;
+    if (trimmed.contains(' ') ||
+        trimmed.contains('-') ||
+        trimmed.contains('_')) {
+      return false;
+    }
+    return RegExp(r'^[a-zA-Z0-9]+(\.[a-zA-Z0-9_]+)+$').hasMatch(trimmed);
   }
 
   bool _hasSuspiciousInstalledAppNames(List<AppInfo> apps) {

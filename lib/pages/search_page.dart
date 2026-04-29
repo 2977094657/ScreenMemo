@@ -450,11 +450,14 @@ class _SearchPageState extends State<SearchPage>
 
   Future<void> _loadAppInfos() async {
     try {
+      final cachedApps = await AppSelectionService.instance
+          .getCachedAppInfoByPackage();
       final apps = await AppSelectionService.instance.getAllInstalledApps();
       if (!mounted) return;
       setState(() {
         _appInfoByPackage
           ..clear()
+          ..addAll(cachedApps)
           ..addEntries(apps.map((a) => MapEntry(a.packageName, a)));
       });
     } catch (_) {}

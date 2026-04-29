@@ -97,6 +97,8 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
     _appIconCacheLoading = true;
     unawaited(() async {
       try {
+        final cachedApps = await AppSelectionService.instance
+            .getCachedAppInfoByPackage();
         var apps = await AppSelectionService.instance.getSelectedApps();
         if (apps.isEmpty && Platform.isAndroid) {
           apps = await AppSelectionService.instance.getAllInstalledApps();
@@ -105,6 +107,16 @@ class _DailySummaryPageState extends State<DailySummaryPage> {
         final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
         final Map<String, Uint8List?> byName = <String, Uint8List?>{};
         final Map<String, String> nameByPkg = <String, String>{};
+        for (final app in cachedApps.values) {
+          final String pkg = app.packageName.trim();
+          final String name = app.appName.trim();
+          if (pkg.isNotEmpty) {
+            byPkg[pkg] = app.icon;
+            if (name.isNotEmpty) nameByPkg[pkg] = name;
+          }
+          final String nameKey = name.toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = app.icon;
+        }
         for (final app in apps) {
           final String pkg = app.packageName.trim();
           final String name = app.appName.trim();

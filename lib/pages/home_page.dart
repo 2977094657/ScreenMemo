@@ -64,6 +64,7 @@ class _HomePageState extends State<HomePage>
   List<AppInfo> _savedSelectedApps = AppSelectionService.instance.selectedApps;
   Set<String> _installedPackages = <String>{};
   Map<String, AppInfo> _installedAppsByPackage = <String, AppInfo>{};
+  Map<String, AppInfo> _cachedAppsByPackage = <String, AppInfo>{};
   bool _installedAppsLoaded = false;
   String _sortMode = 'timeDesc';
   bool _sortOrderAsc = false; // 新增：排序顺序，false为降序，true为升序
@@ -305,6 +306,7 @@ class _HomePageState extends State<HomePage>
       // 加载用户设置
       final selectedApps = await _appService.getSelectedApps();
       final installedApps = await _appService.getAllInstalledApps();
+      final cachedAppsByPackage = await _appService.getCachedAppInfoByPackage();
       final sortMode = await _appService.getSortMode();
       final screenshotEnabled = await _appService.getScreenshotEnabled();
       final screenshotInterval = await _appService.getScreenshotInterval();
@@ -321,6 +323,7 @@ class _HomePageState extends State<HomePage>
             for (final AppInfo app in installedApps)
               if (app.packageName.trim().isNotEmpty) app.packageName: app,
           };
+          _cachedAppsByPackage = cachedAppsByPackage;
           _installedAppsLoaded = true;
           _selectedApps = List<AppInfo>.from(selectedApps);
           _sortMode = sortMode;
@@ -503,10 +506,12 @@ class _HomePageState extends State<HomePage>
     for (final app in _savedSelectedApps) {
       final Map<String, dynamic>? stat = appStats[app.packageName];
       final String statName = (stat?['appName'] as String?)?.trim() ?? '';
+      final AppInfo? cachedApp = _cachedAppsByPackage[app.packageName];
       final String displayName = _resolvePreferredAppName(
         packageName: app.packageName,
         installedName: _installedAppsByPackage[app.packageName]?.appName,
         savedName: app.appName,
+        cachedName: cachedApp?.appName,
         statName: statName,
       );
       final bool isInstalled =
@@ -515,7 +520,9 @@ class _HomePageState extends State<HomePage>
       visible[app.packageName] = AppInfo(
         packageName: app.packageName,
         appName: displayName,
-        icon: isInstalled ? (installedApp?.icon ?? app.icon) : null,
+        icon: isInstalled
+            ? (installedApp?.icon ?? app.icon ?? cachedApp?.icon)
+            : (app.icon ?? cachedApp?.icon),
         version: isInstalled
             ? (installedApp?.version ?? app.version)
             : app.version,
@@ -536,13 +543,15 @@ class _HomePageState extends State<HomePage>
         if (_installedPackages.contains(packageName)) continue;
         final Map<String, dynamic> stat = entry.value;
         final String rawName = (stat['appName'] as String?)?.trim() ?? '';
+        final AppInfo? cachedApp = _cachedAppsByPackage[packageName];
         visible[packageName] = AppInfo(
           packageName: packageName,
           appName: _resolvePreferredAppName(
             packageName: packageName,
+            cachedName: cachedApp?.appName,
             statName: rawName,
           ),
-          icon: null,
+          icon: cachedApp?.icon,
           version: '',
           isSystemApp: false,
           isInstalled: false,
@@ -557,11 +566,13 @@ class _HomePageState extends State<HomePage>
     required String packageName,
     String? installedName,
     String? savedName,
+    String? cachedName,
     String? statName,
   }) {
     final List<String?> candidates = <String?>[
       installedName,
       savedName,
+      cachedName,
       statName,
     ];
 
@@ -2578,7 +2589,7 @@ class _HomePageState extends State<HomePage>
                   clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(
-                      child: app.isInstalled && app.icon != null
+                      child: app.icon != null
                           ? Image.memory(
                               app.icon!,
                               width: 48,

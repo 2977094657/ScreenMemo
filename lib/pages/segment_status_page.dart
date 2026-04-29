@@ -876,9 +876,12 @@ class _SegmentStatusPageState extends State<SegmentStatusPage>
     final Stopwatch sw = Stopwatch()..start();
     _beginEntryPerfLoad('segment.apps');
     try {
+      final cachedApps = await AppSelectionService.instance
+          .getCachedAppInfoByPackage();
       final apps = await AppSelectionService.instance.getAllInstalledApps();
       if (!mounted) return;
       setState(() {
+        _appInfoByPackage.addAll(cachedApps);
         for (final a in apps) {
           _appInfoByPackage[a.packageName] = a;
         }

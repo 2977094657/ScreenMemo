@@ -96,7 +96,10 @@ class _FavoritesPageState extends State<FavoritesPage>
       final favList = await ScreenshotDatabase.instance.getAllFavorites();
       final List<_FavoriteItem> items = [];
 
-      // 获取所有应用信息
+      // 获取所有应用信息，先加载历史身份缓存，再用当前已安装信息覆盖。
+      final cachedApps = await AppSelectionService.instance
+          .getCachedAppInfoByPackage();
+      _appInfoCache.addAll(cachedApps);
       final allApps = await AppSelectionService.instance.getAllInstalledApps();
       for (final app in allApps) {
         _appInfoCache[app.packageName] = app;

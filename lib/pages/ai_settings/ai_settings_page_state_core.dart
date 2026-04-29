@@ -6,6 +6,8 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
     _chatAppIconCacheLoading = true;
     unawaited(() async {
       try {
+        final cachedApps = await AppSelectionService.instance
+            .getCachedAppInfoByPackage();
         var apps = await AppSelectionService.instance.getSelectedApps();
         if (apps.isEmpty && Platform.isAndroid) {
           apps = await AppSelectionService.instance.getAllInstalledApps();
@@ -14,6 +16,16 @@ extension _AISettingsPageStateCoreExt on _AISettingsPageState {
         final Map<String, Uint8List?> byPkg = <String, Uint8List?>{};
         final Map<String, Uint8List?> byName = <String, Uint8List?>{};
         final Map<String, String> nameByPkg = <String, String>{};
+        for (final a in cachedApps.values) {
+          final String pkg = a.packageName.trim();
+          final String name = a.appName.trim();
+          if (pkg.isNotEmpty) {
+            byPkg[pkg] = a.icon;
+            if (name.isNotEmpty) nameByPkg[pkg] = name;
+          }
+          final String nameKey = name.toLowerCase();
+          if (nameKey.isNotEmpty) byName[nameKey] = a.icon;
+        }
         for (final a in apps) {
           final String pkg = a.packageName.trim();
           final String name = a.appName.trim();
